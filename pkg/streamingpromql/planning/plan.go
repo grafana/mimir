@@ -639,7 +639,7 @@ func newQueryPlanDecoder(encodedNodes []*EncodedNode) *queryPlanDecoder {
 	return &queryPlanDecoder{
 		encodedNodes: encodedNodes,
 		nodes:        make([]Node, len(encodedNodes)),
-		decoding:     make([]bool, len(encodedNodes)),
+		decoding:     make([]bool, len(encodedNodes)), // ignoreunpooledslice: Plan decoding runs before query memory tracking becomes available.
 	}
 }
 
