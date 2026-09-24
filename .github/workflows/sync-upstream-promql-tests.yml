@@ -5,7 +5,7 @@ name: Sync upstream PromQL test cases
 # by hand against that PR's branch. It re-syncs pkg/streamingpromql/testdata/upstream with the vendored
 # upstream test cases and comments out the ones Mimir's engine fails, pushing the result to the branch
 # as two verified commits (re-sync, then disable). Intended to be wired into the vendoring workflow
-# automatically once proven.
+# automatically once proven. See tools/sync-upstream-promql-tests/README.md for how to use it.
 #
 # The work is split across jobs so that the job running code from the branch (including newly vendored
 # upstream code) has no write access or OIDC token, and the job holding credentials never runs it.
@@ -90,7 +90,7 @@ jobs:
             | select(.author.login != "mimir-vendoring[bot]" or .committer.login != "web-flow" or .commit.verification.verified != true)
             | "\(.sha[0:12]) \(.author.login // .commit.author.name)"' <<<"$compare")
           if [ -n "$others" ]; then
-            echo "::error::$BRANCH has commits not made by mimir-vendoring[bot]. Run the tools locally instead (make sync-upstream-promql-tests disable-failing-upstream-promql-tests) so the PR gets an independent review:"
+            echo "::error::$BRANCH has commits not made by mimir-vendoring[bot]. Run the tools locally instead (make sync-upstream-promql-tests disable-failing-upstream-promql-tests) so the PR gets an independent review (see tools/sync-upstream-promql-tests/README.md):"
             echo "$others"
             exit 1
           fi
