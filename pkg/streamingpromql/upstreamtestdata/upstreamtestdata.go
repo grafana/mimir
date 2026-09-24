@@ -143,7 +143,8 @@ func ClassifyEval(ctx context.Context, engine promql.QueryEngine, evalLine strin
 
 // CommentOutEvals comments out the eval blocks beginning at the given 1-based line numbers (as
 // reported by promqltest's "line N" subtests), in the form RestoreUnsupportedTestCases reverses. An
-// eval block runs to the next blank or comment line. It returns the rewritten content and any
+// eval block runs to the next blank or comment line, and comment lines directly after a disabled block
+// are commented again. It returns the rewritten content and any
 // requested lines that did not start an eval block.
 func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
 	lines := strings.Split(content, "\n")
@@ -170,17 +171,23 @@ func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
 	nextBlock := 0
 	for i := 0; i < len(lines); {
 		if nextBlock < len(blocks) && blocks[nextBlock].start == i {
-			b := blocks[nextBlock]
-			if disabled[nextBlock] {
-				out = append(out, UnsupportedMarker)
-				for _, l := range lines[b.start:b.end] {
-					out = append(out, commentLine(l))
-				}
-			} else {
-				out = append(out, lines[b.start:b.end]...)
-			}
-			i = b.end
+			b, disable := blocks[nextBlock], disabled[nextBlock]
 			nextBlock++
+			if !disable {
+				out = append(out, lines[b.start:b.end]...)
+				i = b.end
+				continue
+			}
+			out = append(out, UnsupportedMarker)
+			for _, l := range lines[b.start:b.end] {
+				out = append(out, commentLine(l))
+			}
+			// RestoreUnsupportedTestCases also un-comments any "# " or "#\t" lines directly after the block,
+			// so comment them too for them to be restored as they were. Another disabled case's marker
+			// ends the block for RestoreUnsupportedTestCases, so it is left alone.
+			for i = b.end; i < len(lines) && lines[i] != UnsupportedMarker && (strings.HasPrefix(lines[i], "# ") || strings.HasPrefix(lines[i], "#\t")); i++ {
+				out = append(out, commentLine(lines[i]))
+			}
 			continue
 		}
 		out = append(out, lines[i])

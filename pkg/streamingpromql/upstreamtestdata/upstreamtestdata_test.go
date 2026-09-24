@@ -40,6 +40,16 @@ func TestCommentOutEvals(t *testing.T) {
 			evalLines: map[int]bool{1: true},
 			expected:  "# Unsupported by streaming engine.\n# eval instant at 0m foo\n#   expect fail msg: bad\n",
 		},
+		"comment lines directly after the block are commented again": {
+			content:   "eval instant at 0m foo\n  {} 1\n# empty\n#\tnote\neval instant at 0m bar\n  {} 2\n",
+			evalLines: map[int]bool{1: true},
+			expected:  "# Unsupported by streaming engine.\n# eval instant at 0m foo\n#   {} 1\n# # empty\n# #\tnote\neval instant at 0m bar\n  {} 2\n",
+		},
+		"a disabled case directly after the block is left alone": {
+			content:   "eval instant at 0m foo\n  {} 1\n# Unsupported by streaming engine.\n# eval instant at 0m bar\n#   {} 2\n",
+			evalLines: map[int]bool{1: true},
+			expected:  "# Unsupported by streaming engine.\n# eval instant at 0m foo\n#   {} 1\n# Unsupported by streaming engine.\n# eval instant at 0m bar\n#   {} 2\n",
+		},
 		"lines that don't start an eval block are reported and left alone": {
 			content:       loadAndTwoEvals,
 			evalLines:     map[int]bool{1: true, 5: true},
@@ -55,7 +65,7 @@ func TestCommentOutEvals(t *testing.T) {
 			require.Equal(t, tc.expectedLines, unmatched)
 
 			// The in-sync test relies on this reversing exactly.
-			require.Equal(t, tc.content, RestoreUnsupportedTestCases(actual))
+			require.Equal(t, RestoreUnsupportedTestCases(tc.content), RestoreUnsupportedTestCases(actual))
 		})
 	}
 }
