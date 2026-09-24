@@ -126,7 +126,7 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	require.Len(t, fixtures, 4)
+	require.Len(t, fixtures, 5)
 	policy := scallop.DefaultPolicy()
 	policy.MaxActions = 4
 	policy.Weights.Resolution = 0.005
@@ -259,7 +259,8 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	for _, policy := range first.Ranked {
 		for _, fixture := range policy.Fixtures {
 			requireSevenEvaluationGroups(t, fixture.Evaluation)
-			if fixture.FixtureName == "large-cell-static" {
+			if fixture.FixtureName == "large-cell-static" ||
+				fixture.FixtureName == "many-tiny-tenants-consolidating" {
 				require.Greater(t, fixture.CandidateSearch.RoundsTruncated, 0)
 			} else {
 				require.Zero(t, fixture.CandidateSearch.RoundsTruncated,

@@ -39,9 +39,10 @@ type RoundRecord struct {
 	PrePlan  ImbalancePoint `json:"pre_plan"`
 	PostPlan ImbalancePoint `json:"post_plan"`
 
-	TotalLoad        float64 `json:"total_load"`
-	RangeCount       int     `json:"range_count"`
-	TenantPartitions int     `json:"tenant_partitions"`
+	TotalLoad         float64        `json:"total_load"`
+	RangeCount        int            `json:"range_count"`
+	TenantPartitions  int            `json:"tenant_partitions"`
+	TenantRangeCounts map[string]int `json:"tenant_range_counts"`
 
 	Actions         []scallop.Action                   `json:"actions"`
 	CandidateSearch scallop.CandidateSearchDiagnostics `json:"candidate_search"`
@@ -187,16 +188,17 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 		sim.updateLocality(sim.assignment, sim.now)
 
 		rounds = append(rounds, RoundRecord{
-			Tick:             tick,
-			Time:             sim.now,
-			Static:           imbalancePoint(static),
-			PrePlan:          imbalancePoint(pre),
-			PostPlan:         imbalancePoint(post),
-			TotalLoad:        post.TotalLoad,
-			RangeCount:       len(sim.assignment.Entries),
-			TenantPartitions: tenantPartitionCount(sim.assignment),
-			Actions:          plan.Actions,
-			CandidateSearch:  plan.CandidateSearch,
+			Tick:              tick,
+			Time:              sim.now,
+			Static:            imbalancePoint(static),
+			PrePlan:           imbalancePoint(pre),
+			PostPlan:          imbalancePoint(post),
+			TotalLoad:         post.TotalLoad,
+			RangeCount:        len(sim.assignment.Entries),
+			TenantPartitions:  tenantPartitionCount(sim.assignment),
+			TenantRangeCounts: tenantRangeCounts(sim.assignment),
+			Actions:           plan.Actions,
+			CandidateSearch:   plan.CandidateSearch,
 		})
 		sim.now = sim.now.Add(time.Duration(fixture.TickSeconds) * time.Second)
 	}
@@ -346,6 +348,15 @@ func tenantPartitionCount(a *assignment.Assignment) int {
 		}{entry.TenantID, entry.PartitionID}] = struct{}{}
 	}
 	return len(seen)
+}
+
+// tenantRangeCounts exposes per-tenant structural progress for consolidation fixtures.
+func tenantRangeCounts(a *assignment.Assignment) map[string]int {
+	counts := map[string]int{}
+	for _, entry := range a.Entries {
+		counts[entry.TenantID]++
+	}
+	return counts
 }
 
 func cloneAssignment(a *assignment.Assignment) *assignment.Assignment {
