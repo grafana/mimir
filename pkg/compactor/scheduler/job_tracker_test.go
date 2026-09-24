@@ -23,8 +23,9 @@ func at(hour, minute int) time.Time {
 
 func newTestJobTracker(clk clock.Clock) (*JobTracker, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
-	return NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(reg, lanePolicy)
+	return NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
 }
 
 type errJobPersister struct{ NopJobPersister }
@@ -103,8 +104,9 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	}
 
 	t.Run("returns error on persist failure", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+		lanePolicy := newSimpleLanePolicy()
+		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
 		require.Error(t, err)
@@ -113,8 +115,9 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	})
 
 	t.Run("planning skipped when plan is false", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+		lanePolicy := newSimpleLanePolicy()
+		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
 		require.NoError(t, err)
 		require.Empty(t, transition)
@@ -253,8 +256,8 @@ func assertTrackerBytes(t *testing.T, reg *prometheus.Registry, msg string, spli
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 		# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
 		# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",lane="compaction"} %g
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",lane="compaction"} %g
 	`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 }
 
@@ -335,11 +338,12 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()
-	sm := newSchedulerMetrics(reg)
+	lanePolicy := newSimpleLanePolicy()
+	sm := newSchedulerMetrics(reg, lanePolicy)
 
 	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
-	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
-	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
+	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, lanePolicy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
+	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, lanePolicy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
 
 	jt1.recoverFrom([]*TrackedCompactionJob{
 		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now()),
@@ -397,8 +401,9 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 	const maxLeases = 2
 
 	clk := clock.NewMock()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-	jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
 	require.NoError(t, err)
@@ -447,8 +452,9 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clk := clock.NewMock()
-			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-			jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+			lanePolicy := newSimpleLanePolicy()
+			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+			jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 			lane := compactionLane
 			if tc.planJob {

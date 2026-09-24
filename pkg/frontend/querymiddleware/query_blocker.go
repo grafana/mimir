@@ -112,7 +112,9 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			"query_duration_ms", queryDurationMs,
 			"step_ms", stepMs,
 			"index", ruleIndex,
+			"id", block.ID,
 			"reason", block.Reason,
+			"expired", block.IsExpired(time.Now()),
 		)
 
 		return true, block.Reason

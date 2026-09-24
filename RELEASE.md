@@ -29,6 +29,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.17.0  | 2025-07-07 | Jeanette Tan       |
 | 3.0.0   | 2025-10-20 | Dimitar Dimitrov   |
 | 3.1.0   | 2026-05-18 | Toni Cárdenas      |
+| 3.2.0   | 2026-08-19 | Laurent Dufresne   |
 
 ## Release shepherd responsibilities
 
@@ -120,6 +121,7 @@ If something is not clear, you can get back to this document to learn more about
     - CHANGELOG
     - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
     - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
+    - Run `make build-jsonnet-tests`
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
     - NOTE: The release notes should be included at `docs/sources/mimir/release-notes` on the branch _before_ tagging the release.
     ```bash
@@ -141,8 +143,6 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
   - [ ] Ensure the workflow to sync linux packages (RPM, deb) runs successfully within the next N hours or trigger it manually
-  - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
-    - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
     - _This is addressed by Grafana Labs_
   - [ ] Publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)

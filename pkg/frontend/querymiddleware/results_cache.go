@@ -569,8 +569,8 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 	return result
 }
 
-func filterFloatStream(start, end int64, streamSamples []mimirpb.Sample) []mimirpb.Sample {
-	result := make([]mimirpb.Sample, 0, len(streamSamples))
+func filterFloatStream(start, end int64, streamSamples []mimirpb.FloatSample) []mimirpb.FloatSample {
+	result := make([]mimirpb.FloatSample, 0, len(streamSamples))
 	for _, sample := range streamSamples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
 			result = append(result, sample)

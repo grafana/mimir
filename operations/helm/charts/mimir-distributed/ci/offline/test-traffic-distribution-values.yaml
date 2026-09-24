@@ -1,0 +1,30 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+distributor:
+  service:
+    trafficDistribution: PreferClose
+
+gateway:
+  service:
+    trafficDistribution: PreferClose
+
+ingester:
+  service:
+    trafficDistribution: PreferClose
+
+querier:
+  service:
+    trafficDistribution: PreferClose
+
+query_frontend:
+  service:
+    trafficDistribution: PreferClose
+
+query_scheduler:
+  service:
+    trafficDistribution: PreferClose
+
+store_gateway:
+  service:
+    trafficDistribution: PreferClose

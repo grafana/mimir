@@ -201,6 +201,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		// where the crc32 + length varint size are a substantial part of the chunk.
 		localStats.chunksTouchedSizeSum += varint.UvarintSize(chunkDataLen) + chunkEncDataLen + crc32.Size
 	}
+
+	// Chunk lengths are estimated, so drain any overfetched tail to make the connection reusable.
+	_, _ = io.Copy(io.Discard, reader)
+
 	return nil
 }
 
@@ -234,6 +238,10 @@ func populateChunk(out *storepb.AggrChunk, in rawChunk) error {
 		enc = storepb.Chunk_FloatHistogram
 	case chunkenc.EncXOR2:
 		enc = storepb.Chunk_XOR2
+	case chunkenc.EncHistogramST:
+		enc = storepb.Chunk_HistogramST
+	case chunkenc.EncFloatHistogramST:
+		enc = storepb.Chunk_FloatHistogramST
 	default:
 		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}

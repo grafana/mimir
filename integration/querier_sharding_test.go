@@ -6,7 +6,10 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -17,10 +20,12 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/tools/querytee"
 )
 
 type querierShardingTestConfig struct {
@@ -152,7 +157,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		c, err := e2emimir.NewClient("", q.HTTPEndpoint(), "", "", userID)
 		require.NoError(t, err)
 
-		_, err = c.Query("series_1", now)
+		_, _, _, err = c.Query("series_1", now)
 		require.NoError(t, err)
 	}
 
@@ -170,7 +175,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
-			result, err := c.Query("series_1", now)
+			result, _, _, err := c.Query("series_1", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector, result.(model.Vector))
@@ -218,4 +223,202 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	assertServiceMetricsPrefixes(t, Querier, querier2)
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
+}
+
+// TestQuerySharding_ResultConsistency verifies that sharded queries (via query-frontend)
+// produce the same results as unsharded queries (direct to querier) for functions like
+// rate(), sum(), avg(), etc. that operate over range vectors.
+func TestQuerySharding_ResultConsistency(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
+
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		// Results caching is deliberately disabled (also the default): the sharded and unsharded requests
+		// share tenant, query, and time range, so a shared results cache could serve one path's response to
+		// the other and make the comparison pass even if sharded evaluation were wrong.
+		"-query-frontend.cache-results":                       "false",
+		"-query-frontend.parallelize-shardable-queries":       "true",
+		"-query-frontend.query-sharding-total-shards":         "0", // Disable sharding by default.
+		"-query-frontend.enable-remote-execution":             "true",
+		"-query-frontend.use-mimir-query-engine-for-sharding": "true",
+	})
+
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Enable query sharding for a specific tenant via runtime config.
+	runtimeConfig := "runtime-config.yaml"
+	require.NoError(t, writeFileToSharedDir(s, runtimeConfig, []byte(`
+overrides:
+  sharded-tenant:
+    query_sharding_total_shards: 8
+`)))
+	flags["-runtime-config.file"] = filepath.Join(e2e.ContainerSharedDir, runtimeConfig)
+
+	// Start query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+	// Start services.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	querier1 := e2emimir.NewQuerier("querier-1", consul.NetworkHTTPEndpoint(), flags)
+	querier2 := e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(querier1, querier2, ingester, distributor))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	require.NoError(t, querier1.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until both queriers connect to the query-scheduler, each with the minimum 4 connections.
+	// Without this, sharded queries issued through the query-frontend can race the querier-to-scheduler
+	// worker connections and time out while no querier is connected yet.
+	require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Equals(8), "cortex_query_scheduler_connected_querier_clients"))
+
+	now := time.Now()
+	numSamples := 20
+	numSeries := 10
+
+	// Push multiple counter-like series with samples spanning 20 minutes (one per minute).
+	// Build all series upfront and push in a single batch to avoid timestamp-too-old rejections.
+	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "sharded-tenant")
+	require.NoError(t, err)
+
+	var allSeries []prompb.TimeSeries
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		samples := make([]prompb.Sample, numSamples)
+		for i := 0; i < numSamples; i++ {
+			// Monotonically increasing values (counter-like).
+			samples[i] = prompb.Sample{
+				Value:     float64((seriesIdx+1)*100 + i),
+				Timestamp: now.Add(time.Duration(i-numSamples+1) * time.Minute).UnixMilli(),
+			}
+		}
+
+		allSeries = append(allSeries, prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: model.MetricNameLabel, Value: "test_counter"},
+				{Name: "instance", Value: fmt.Sprintf("instance_%d", seriesIdx)},
+				{Name: "group", Value: fmt.Sprintf("group_%d", seriesIdx%3)},
+			},
+			Samples: samples,
+		})
+	}
+
+	res, err := writeClient.Push(allSeries)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Both clients query the same tenant and data through the query-frontend, so the only difference is
+	// whether the request is sharded. unshardedClient disables sharding per-request via the internal
+	// Sharding-Control header (querying the querier directly is avoided since those HTTP endpoints are
+	// being phased out).
+	unshardedClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "sharded-tenant", e2emimir.WithAddHeader("Sharding-Control", "0"))
+	require.NoError(t, err)
+	shardedClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "sharded-tenant")
+	require.NoError(t, err)
+
+	queries := []struct {
+		name  string
+		query string
+	}{
+		{"sum_rate", `sum(rate(test_counter[5m]))`},
+		{"avg_rate", `avg(rate(test_counter[5m]))`},
+	}
+
+	queryStart := now.Add(-15 * time.Minute)
+	queryEnd := now.Add(-1 * time.Minute)
+	queryStep := time.Minute
+
+	// Reuse query-tee's response comparator (the same logic query-tee uses to compare two backends) rather
+	// than hand-rolling one. It compares the raw JSON responses of both paths: sample values (with float
+	// tolerance and NaN/Inf/StaleNaN handling), result type, and warning/info annotations. Skip options are
+	// left at zero so no samples are excluded from the comparison.
+	comparator := querytee.NewSamplesComparator(querytee.SampleComparisonOptions{
+		Tolerance:        1e-6, // Matches promqltest's defaultEpsilon.
+		UseRelativeError: true,
+	})
+
+	// runQuery issues a single raw query and asserts how it affected the query-frontend's sharding-rewrite
+	// counter: an unsharded request (Sharding-Control: 0) must leave it unchanged, while a sharded request
+	// must increase it. Measuring the delta per request keeps the sharded and unsharded paths separate, so we
+	// verify each independently instead of only their combined total (which could hide, e.g., the
+	// Sharding-Control header being ignored). Only the direction of the change is checked, so this doesn't
+	// assume a fixed number of rewrites per query (e.g. it tolerates query splitting).
+	runQuery := func(t *testing.T, expectSharded bool, do func() (*http.Response, []byte, error)) []byte {
+		t.Helper()
+		const rewritesMetric = "cortex_frontend_query_sharding_rewrites_succeeded_total"
+
+		before, err := queryFrontend.SumMetrics([]string{rewritesMetric})
+		require.NoError(t, err)
+
+		res, body, reqErr := do()
+		resp := requireSuccessfulQueryResponse(t, res, body, reqErr)
+
+		if expectSharded {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(before[0]), rewritesMetric))
+		} else {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(before[0]), rewritesMetric))
+		}
+		return resp
+	}
+
+	for _, tc := range queries {
+		t.Run(tc.name+"/instant", func(t *testing.T) {
+			unshardedResp := runQuery(t, false, func() (*http.Response, []byte, error) { return unshardedClient.QueryRawAt(tc.query, queryEnd) })
+			shardedResp := runQuery(t, true, func() (*http.Response, []byte, error) { return shardedClient.QueryRawAt(tc.query, queryEnd) })
+
+			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
+			require.NoError(t, err)
+			requireSingleInfoAnnotation(t, unshardedResp)
+		})
+
+		t.Run(tc.name+"/range", func(t *testing.T) {
+			unshardedResp := runQuery(t, false, func() (*http.Response, []byte, error) {
+				return unshardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			})
+			shardedResp := runQuery(t, true, func() (*http.Response, []byte, error) {
+				return shardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			})
+
+			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
+			require.NoError(t, err)
+			requireSingleInfoAnnotation(t, unshardedResp)
+		})
+	}
+}
+
+// requireSuccessfulQueryResponse asserts a raw query response was returned with HTTP 200 and returns its body
+// for further comparison.
+func requireSuccessfulQueryResponse(t *testing.T, res *http.Response, body []byte, err error) []byte {
+	t.Helper()
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode, "unexpected status code, body: %s", body)
+	return body
+}
+
+// requireSingleInfoAnnotation asserts the raw query response carries exactly one info-level annotation. The
+// comparator only checks that both responses' annotations match each other, so this guards that annotations
+// are actually present (rate() over the counter data emits one info annotation).
+func requireSingleInfoAnnotation(t *testing.T, body []byte) {
+	t.Helper()
+	var resp querytee.SamplesResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Infos, 1)
 }

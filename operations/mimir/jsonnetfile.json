@@ -35,7 +35,7 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "v0.38.1"
+      "version": "v0.40.0"
     },
     {
       "source": {
@@ -50,7 +50,7 @@
       "source": {
         "git": {
           "remote": "https://github.com/jsonnet-libs/keda-libsonnet.git",
-          "subdir": "2.15"
+          "subdir": "2.17"
         }
       },
       "version": "main",

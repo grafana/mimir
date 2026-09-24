@@ -43,6 +43,7 @@ const (
 const (
 	BuiltinAWSLambdaExtension         string = "builtin/aws/lambda"
 	BuiltinExtAuthzExtension          string = "builtin/ext-authz"
+	BuiltinExtProcExtension           string = "builtin/ext-proc"
 	BuiltinLuaExtension               string = "builtin/lua"
 	BuiltinOTELAccessLoggingExtension string = "builtin/otel-access-logging"
 	BuiltinPropertyOverrideExtension  string = "builtin/property-override"
@@ -288,6 +289,19 @@ type PassiveHealthCheck struct {
 	// This setting can be used to disable ejection or to ramp it up slowly.
 	EnforcingConsecutive5xx *uint32 `json:",omitempty" alias:"enforcing_consecutive_5xx"`
 
+	// EnforcingConsecutiveGatewayFailure is the % chance that a host will be actually ejected
+	// when an outlier status is detected through consecutive gateway failures(codes-502, 503, 504).
+	// This setting can be used to disable ejection or to ramp it up slowly. Defaults to 0.
+	EnforcingConsecutiveGatewayFailure *uint32 `json:",omitempty" alias:"enforcing_consecutive_gateway_failure"`
+
+	// Consecutive5xx is the number of consecutive 5xx responses that trigger outlier detection.
+	// If not set, defaults to 5. Setting this overrides MaxFailures for 5xx detection.
+	Consecutive5xx *uint32 `json:",omitempty" alias:"consecutive_5xx"`
+
+	// ConsecutiveGatewayFailure is the number of consecutive gateway failures (502, 503, 504)
+	// that trigger outlier detection. If not set, defaults to 0 (disabled).
+	ConsecutiveGatewayFailure *uint32 `json:",omitempty" alias:"consecutive_gateway_failure"`
+
 	// The maximum % of an upstream cluster that can be ejected due to outlier detection.
 	// Defaults to 10% but will eject at least one host regardless of the value.
 	MaxEjectionPercent *uint32 `json:",omitempty" alias:"max_ejection_percent"`
@@ -315,6 +329,12 @@ type UpstreamLimits struct {
 	// to the upstream cluster at a point in time. This is mostly applicable to HTTP/2
 	// clusters since all HTTP/1.1 requests are limited by MaxConnections.
 	MaxConcurrentRequests *int `alias:"max_concurrent_requests"`
+
+	// PassiveHealthCheck configuration determines how upstream proxy instances will
+	// be monitored for removal from the load balancing pool. When set on an API
+	// gateway's Defaults it applies to all routed services; a per-service value
+	// overrides it.
+	PassiveHealthCheck *PassiveHealthCheck `json:",omitempty" alias:"passive_health_check"`
 }
 
 // RateLimits is rate limiting configuration that is applied to

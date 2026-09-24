@@ -60,7 +60,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
-							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+							Samples: []mimirpb.FloatSample{{TimestampMs: 1_500}},
 						},
 					},
 				},
@@ -84,7 +84,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValScalar.String(),
 					Result: []SampleStream{
-						{Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
 					},
 				},
 				Headers: expectedRespHeaders,
@@ -107,8 +107,8 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValVector.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
-						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 201}}},
 					},
 				},
 				Headers: expectedRespHeaders,
@@ -131,8 +131,8 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
-						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
 					},
 				},
 				Headers: expectedRespHeaders,
@@ -435,7 +435,7 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels:     []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Samples:    []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
+							Samples:    []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
 							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: &responseHistogram}}},
 					},
 				},
@@ -628,9 +628,9 @@ func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 func benchmarkPrometheusResponse(seriesCount, samplesPerSeries int) *PrometheusResponse {
 	result := make([]SampleStream, seriesCount)
 	for i := range result {
-		samples := make([]mimirpb.Sample, samplesPerSeries)
+		samples := make([]mimirpb.FloatSample, samplesPerSeries)
 		for j := range samples {
-			samples[j] = mimirpb.Sample{TimestampMs: int64((i*samplesPerSeries + j) * 15000), Value: float64(i*samplesPerSeries + j)}
+			samples[j] = mimirpb.FloatSample{TimestampMs: int64((i*samplesPerSeries + j) * 15000), Value: float64(i*samplesPerSeries + j)}
 		}
 		result[i] = SampleStream{
 			Labels:  []mimirpb.LabelAdapter{{Name: "series", Value: fmt.Sprintf("series_%d", i)}},

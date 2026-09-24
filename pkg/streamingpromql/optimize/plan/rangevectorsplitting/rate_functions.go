@@ -53,11 +53,11 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermedia
 
 	if fCount == 1 {
 		return RateIntermediate{
-			FirstSample: &mimirpb.Sample{
+			FirstSample: &mimirpb.FloatSample{
 				TimestampMs: firstPoint.T,
 				Value:       firstPoint.F,
 			},
-			LastSample: &mimirpb.Sample{
+			LastSample: &mimirpb.FloatSample{
 				TimestampMs: firstPoint.T,
 				Value:       firstPoint.F,
 			},
@@ -70,11 +70,11 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermedia
 	firstPoint, lastPoint, delta := functions.CalculateFloatDelta(fHead, fTail)
 
 	return RateIntermediate{
-		FirstSample: &mimirpb.Sample{
+		FirstSample: &mimirpb.FloatSample{
 			TimestampMs: firstPoint.T,
 			Value:       firstPoint.F,
 		},
-		LastSample: &mimirpb.Sample{
+		LastSample: &mimirpb.FloatSample{
 			TimestampMs: lastPoint.T,
 			Value:       lastPoint.F,
 		},

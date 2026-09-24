@@ -4171,17 +4171,16 @@ data:
                    "type": "datasource"
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": ".*",
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": true,
                    "label": "cluster",
-                   "multi": true,
+                   "multi": false,
                    "name": "cluster",
                    "options": [ ],
                    "query": "label_values(cortex_build_info, cluster)",
@@ -4195,17 +4194,16 @@ data:
                    "useTags": false
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": null,
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": false,
                    "label": "namespace",
-                   "multi": true,
+                   "multi": false,
                    "name": "namespace",
                    "options": [ ],
                    "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
@@ -4434,7 +4432,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 3,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} > 0\n",
@@ -4444,6 +4442,55 @@ data:
                          }
                       ],
                       "title": "Tenants compaction progress",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 3,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
+                            "format": "time_series",
+                            "legendFormat": "Jobs",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated Compaction Jobs",
                       "type": "timeseries"
                    },
                    {
@@ -4528,7 +4575,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 3,
+                      "id": 4,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -4558,7 +4605,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 2,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -4759,7 +4806,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4863,55 +4910,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 5,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
-                            "format": "time_series",
-                            "legendFormat": "Jobs",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Estimated Compaction Jobs",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
                       "description": "### Source blocks age\nThe difference between the maximum timestamp of the block being compacted and the current time.\nA steadily increasing value indicates that the compactor cannot keep up with the produced blocks by the ingesters.\nIncrease the number of compactors when this value is consistently increasing.\n\n",
                       "fieldConfig": {
                          "defaults": {
@@ -4948,7 +4946,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_compactor_block_max_time_delta_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -5045,7 +5043,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval]))",
@@ -5095,7 +5093,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(prometheus_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -13131,25 +13129,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -13296,25 +13318,49 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -13436,6 +13482,461 @@ data:
                 "titleSize": "h6"
              },
              {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Blocked and limited queries by tenant\nRate of queries rejected per tenant because they matched a blocked_queries or limited_queries rule.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "rate"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 3
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "reqps"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "reason"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "reason"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 22,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 3,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total{$read_path_matcher, reason=~\"blocked|limited\"}[$__rate_interval]))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Blocked and limited queries by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Expired blocked-query rules by tenant\nNumber of blocked_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "expired rules"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 23,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "count by (user) (max by (user, id) (cortex_blocked_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Expired blocked-query rules by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Expired limited-query rules by tenant\nNumber of limited_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "expired rules"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 24,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "count by (user) (max by (user, id) (cortex_limited_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Expired limited-query rules by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query blocking and rate limiting",
+                "titleSize": "h6"
+             },
+             {
                 "collapse": false,
                 "height": "250px",
                 "panels": [
@@ -13464,7 +13965,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13543,7 +14044,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13622,7 +14123,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13745,7 +14246,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13832,7 +14333,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13899,7 +14400,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13913,25 +14414,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14009,7 +14534,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14064,7 +14589,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14078,25 +14603,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14131,7 +14680,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14145,25 +14694,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14209,7 +14782,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14306,7 +14879,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14421,7 +14994,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14483,7 +15056,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14515,7 +15088,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 35,
+                      "id": 38,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -14581,7 +15154,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14641,7 +15214,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14732,7 +15305,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14786,7 +15359,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14896,7 +15469,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14950,7 +15523,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14998,7 +15571,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15058,7 +15631,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15112,7 +15685,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15168,7 +15741,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15235,7 +15808,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15314,7 +15887,7 @@ data:
                             }
                          ]
                       },
-                      "id": 47,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15399,7 +15972,7 @@ data:
                             }
                          ]
                       },
-                      "id": 48,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15465,7 +16038,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15513,7 +16086,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15611,7 +16184,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 54,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15721,7 +16294,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15770,7 +16343,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15819,7 +16392,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 57,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -32750,7 +33323,7 @@ data:
                 },
                 "targets": [
                    {
-                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,
@@ -32759,7 +33332,7 @@ data:
                       "step": null
                    },
                    {
-                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,
@@ -34723,6 +35296,438 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Ruler ring members\nRuler ring members by state. Every replica reports its own view of its cell's ring, so this takes the maximum within each ring and then sums across the selected cells.\n\n`ACTIVE` is the set rule groups are evaluated over. A replica's first sync after startup shards over `ACTIVE` and `JOINING`, which is why a rollout briefly raises the rule group total.\n\nRing membership can change within a scrape interval, so this panel may miss `JOINING` and `LEAVING` states. It can also overcount by one while replicas disagree, because the maximum is taken for each state separately. The `ring-change` series in the Syncs panel is the reliable record that the ring changed.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 7,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (state) (max by (cluster, namespace, state) (cortex_ring_members{name=\"ruler\", cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))",
+                            "format": "time_series",
+                            "legendFormat": "{{ state }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ruler ring members",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Syncs\nRate of rule group sync operations, split by what triggered them.\n\n- `periodic`: the `-ruler.poll-interval` timer, 10m by default.\n- `ring-change`: the ruler saw the ruler ring change and resynced. Watch this to spot rule group resharding.\n- `api-change`: a tenant changed its rule configuration.\n- `initial`: the sync at startup, before the ruler starts to evaluate rules.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (reason) (rate(cortex_ruler_sync_rules_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{ reason }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Syncs",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Sync duration\nTime for a ruler replica to sync the rule groups it owns.\n\nThis includes the time to list and load the rule groups from object storage, filter them, and apply them to the rule managers. For the object storage operations alone, see the ruler configuration object store row.\n\nThe metric covers both full and partial syncs, and is not split by what triggered the sync.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 10,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 9,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(sum(histogram_sum(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C"
+                         },
+                         {
+                            "expr": "(sum(rate(cortex_ruler_sync_rules_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ruler_sync_rules_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
+                         }
+                      ],
+                      "title": "Sync duration",
+                      "type": "timeseries",
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group sync",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule groups per replica\nNumber of rule groups owned by each ruler replica, stacked.\n\nEach rule group is owned by one replica at a time, so in steady state the stack total is the number of rule groups the selected cells evaluate. A band shrinking while another grows is resharding.\n\nThe total rises during a rollout. A replica loads its rule groups while joining the ring, before it starts evaluating them, so joining and leaving replicas are counted alongside the ones they replace.\n\nA lasting imbalance in band heights means the rule groups are not spread evenly over the ruler ring tokens.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 10,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "count by (pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule groups per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Tenants per replica\nNumber of tenants with a rule manager on each ruler replica, stacked.\n\nA replica keeps a rule manager for a tenant while it owns at least one of that tenant's rule groups. A tenant is therefore counted once per replica holding its rule groups, so the stack total is higher than the number of tenants in the cell.\n\nMany rule groups can move between replicas without this changing, so read it as ownership context rather than as a measure of resharding.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 11,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (pod) (cortex_ruler_managers_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Tenants per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule configuration updates\nRate of tenants whose rule set on a replica changed during a sync.\n\nThis counts both a tenant editing its rules and rule groups moving between replicas. Read it with the Syncs panel: a rise next to `ring-change` syncs is resharding, a rise next to `api-change` syncs is a tenant edit.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_config_updates_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "updates",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule configuration updates",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Ring check errors\nRate of failures to read the ruler ring while working out which rule groups a replica owns.\n\nRule groups can be missed while this is not zero.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Errors / sec"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_ring_check_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Errors / sec",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ring check errors",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group ownership",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -34897,7 +35902,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34951,7 +35956,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35077,7 +36082,7 @@ data:
                             }
                          ]
                       },
-                      "id": 9,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35132,7 +36137,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 10,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35361,7 +36366,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35415,7 +36420,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35575,7 +36580,7 @@ data:
                             }
                          ]
                       },
-                      "id": 13,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35713,7 +36718,7 @@ data:
                             }
                          ]
                       },
-                      "id": 14,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35779,7 +36784,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35878,7 +36883,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36101,7 +37106,7 @@ data:
                             }
                          ]
                       },
-                      "id": 17,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36155,7 +37160,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36264,7 +37269,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36361,7 +37366,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36476,7 +37481,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36537,7 +37542,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36599,7 +37604,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36654,7 +37659,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36714,7 +37719,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36762,7 +37767,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36810,7 +37815,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36870,7 +37875,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36930,7 +37935,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36963,7 +37968,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 30,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37011,7 +38016,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37108,7 +38113,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37205,7 +38210,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 40,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37302,7 +38307,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37399,7 +38404,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37496,7 +38501,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 43,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49024,25 +50029,49 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -49093,7 +50122,14 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    count(count by(namespace, pod) (cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n        > 0\n    )\n  )\n  * 2\n)\n",
+                            "expr": "(histogram_quantile(1.0, sum by (le,pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (le,pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "exemplar": true,
+                            "expr": "(histogram_quantile(1.0, sum by (pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
@@ -49142,25 +50178,49 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null

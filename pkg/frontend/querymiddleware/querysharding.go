@@ -462,12 +462,12 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		return []SampleStream{
 			{
 				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
-				Samples: []mimirpb.Sample{{TimestampMs: v.T}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: v.T}},
 			},
 		}, nil
 	case promql.Scalar:
 		return []SampleStream{
-			{Samples: []mimirpb.Sample{{TimestampMs: v.T, Value: v.V}}},
+			{Samples: []mimirpb.FloatSample{{TimestampMs: v.T, Value: v.V}}},
 		}, nil
 
 	case promql.Vector:
@@ -479,7 +479,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			if sample.H != nil {
 				ss.Histograms = mimirpb.FromHPointsToHistograms([]promql.HPoint{{T: sample.T, H: sample.H}})
 			} else {
-				ss.Samples = mimirpb.FromFPointsToSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
+				ss.Samples = mimirpb.FromFPointsToFloatSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
 			}
 			res = append(res, ss)
 		}
@@ -491,7 +491,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
 			}
-			samples := mimirpb.FromFPointsToSamples(series.Floats)
+			samples := mimirpb.FromFPointsToFloatSamples(series.Floats)
 			if len(samples) > 0 {
 				ss.Samples = samples
 			}

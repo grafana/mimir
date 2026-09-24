@@ -123,11 +123,25 @@ func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 }
 
 func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookback time.Duration) (planning.QueriedTimeRange, error) {
+	return m.queriedTimeRange(queryTimeRange, m.GetRangeParams(), lookback)
+}
+
+func (m *MatrixSelector) QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams planning.RangeParams, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return m.queriedTimeRange(queryTimeRange, overrideRangeParams, lookbackDelta)
+}
+
+func (m *MatrixSelector) queriedTimeRange(queryTimeRange types.QueryTimeRange, rangeParams planning.RangeParams, lookback time.Duration) (planning.QueriedTimeRange, error) {
 	if !m.Anchored && !m.Smoothed {
 		// Normal matrix selectors do not use the lookback delta, so we don't pass it below.
 		lookback = 0
 	}
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), lookback, m.Anchored, m.Smoothed)
+
+	var ts *time.Time
+	if rangeParams.HasTimestamp {
+		ts = &rangeParams.Timestamp
+	}
+
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(ts), rangeParams.Range, rangeParams.Offset.Milliseconds(), lookback, m.Anchored, m.Smoothed)
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 

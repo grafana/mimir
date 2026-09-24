@@ -1260,7 +1260,7 @@ func extentFor(timeRange types.QueryTimeRange, oldestEvaluationTime time.Time, n
 		})
 
 		data = append(data, querierpb.InstantVectorSeriesData{
-			Floats:     mimirpb.FromFPointsToSamples(s.floats),
+			Floats:     mimirpb.FromFPointsToFloatSamples(s.floats),
 			Histograms: mimirpb.FromHPointsToHistograms(s.histograms),
 		})
 	}

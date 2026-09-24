@@ -152,14 +152,13 @@ func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) 
 
 func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte, err error) {
 	l.requests.Add(float64(len(keys)))
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
 	var (
 		found = make(map[string][]byte, len(keys))
 		miss  = make([]string, 0, len(keys))
 		now   = time.Now()
 	)
 
+	l.mtx.Lock()
 	for _, k := range keys {
 		item, ok := l.lru.Get(k)
 		if !ok {
@@ -174,10 +173,17 @@ func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ..
 		miss = append(miss, k)
 
 	}
+	l.mtx.Unlock()
 	l.hits.Add(float64(len(found)))
 
+	// Fetch misses from the remote backing cache without holding the mutex lock.
+	// The mutex lock is not sharded by key and therefore blocks every other concurrent operation.
+	// Tradeoff: may result in extra trips to the remote cache and extra local LRU set operations
+	// in the case that multiple callers experience local LRU miss on the same keys concurrently.
 	if len(miss) > 0 {
 		result, err = l.c.GetMultiWithError(ctx, miss, opts...)
+
+		l.mtx.Lock()
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
 			l.lru.Add(k, &Item{
@@ -186,6 +192,7 @@ func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ..
 			})
 			found[k] = v
 		}
+		l.mtx.Unlock()
 	}
 
 	return found, err

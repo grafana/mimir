@@ -46,7 +46,7 @@ message SampleStream {
     (gogoproto.jsontag) = "metric",
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
-  repeated cortexpb.Sample samples = 2 [
+  repeated cortexpb.FloatSample samples = 2 [
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "values,omitempty"
   ];

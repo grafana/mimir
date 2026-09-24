@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -147,17 +149,12 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			return storage.ErrSeriesSet(errors.New("subqueries spin-off is not supported in range queries"))
 		}
 
-		// Subqueries are always aligned to absolute time in PromQL, so we need to make the same adjustment here for correctness.
-		// Find the first timestamp inside the subquery range that is aligned to the step.
-		// This is taken from MQE: https://github.com/grafana/mimir/blob/266a393379b2c981a83557c5d66e56c97251ffeb/pkg/streamingpromql/query.go#L384-L398
-		alignedStart := step * ((start - queryOffset.Milliseconds() - queryRange.Milliseconds()) / step)
-		if alignedStart < start-queryOffset.Milliseconds()-queryRange.Milliseconds() {
-			alignedStart += step
-		}
-		// Align the end too, to allow for caching
-		alignedEnd := alignedStart + queryRange.Milliseconds()
-		if alignedEnd > end {
-			alignedEnd -= step
+		// Compute the spun-off range query window with the same logic MQE uses natively for subqueries,
+		// so the spun-off range query evaluates the same grid and its result matches native evaluation.
+		alignedStart, alignedEnd, ok := subquerySpinOffChildTimeRange(start, queryRange, queryStep, queryOffset)
+		if !ok {
+			// The subquery range selects no steps (e.g. range smaller than the step and misaligned): no series.
+			return storage.EmptySeriesSet()
 		}
 
 		// Split queries into multiple smaller queries if they have more than 11000 datapoints
@@ -206,6 +203,21 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 	default:
 		return storage.ErrSeriesSet(errors.Errorf("invalid metric name for the spin-off middleware: %s", name))
 	}
+}
+
+// subquerySpinOffChildTimeRange returns the [start, end] (both inclusive, ms since epoch) of the
+// range query that a spun-off subquery evaluated at queryTimeMS should run over. It delegates to the
+// same logic MQE uses natively for subqueries so the spun-off result matches the engine's native
+// subquery grid: the first step is left-open at queryTime-range and the last step is the largest
+// step-aligned timestamp <= queryTime (right-closed). ok is false when the range selects no steps.
+func subquerySpinOffChildTimeRange(queryTimeMS int64, queryRange, queryStep, queryOffset time.Duration) (start, end int64, ok bool) {
+	tr := core.SubqueryChildrenTimeRange(types.NewInstantQueryTimeRange(time.UnixMilli(queryTimeMS)), queryRange, queryStep, queryOffset, nil)
+	if tr.StepCount == 0 {
+		return 0, 0, false
+	}
+	// tr.EndT may not be step-aligned (it is the raw evaluation time for instant queries), so use the
+	// last actual step on the grid.
+	return tr.StartT, tr.IndexTime(int64(tr.StepCount - 1)), true
 }
 
 // LabelValues implements storage.LabelQuerier.

@@ -822,3 +822,63 @@ func TestRemoveStaticallyEmptyExpressions_Toggles_EndToEnd(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveStaticallyEmptyExpressions_DoesNotCollapseFilledBinop(t *testing.T) {
+	// A fill modifier synthesises a value for the empty side. The optimizer must not collapse
+	// the expression to a NoOp just because one side is statically empty.
+	data := `
+		load 1m
+			real_metric{series="1"} 0+1x10
+	`
+
+	// vector(0) == 1 is statically empty (constant comparison that never matches).
+	// A fill modifier synthesises a value for the empty side, so the overall expression still
+	// produces output. This must hold for both arithmetic and comparison operators.
+	// real_metric evaluates to 10 at t=10m; fill values are chosen so each comparison passes.
+	queries := []string{
+		`real_metric + fill_right(3) (vector(0) == 1)`,
+		`(vector(0) == 1) + fill_left(3) real_metric`,
+		`real_metric == fill_right(10) (vector(0) == 1)`,
+		`(vector(0) == 1) == fill_left(10) real_metric`,
+		`real_metric > fill_right(0) (vector(0) == 1)`,
+		`(vector(0) == 1) < fill_left(0) real_metric`,
+		`real_metric >= fill_right(0) (vector(0) == 1)`,
+		`(vector(0) == 1) <= fill_left(0) real_metric`,
+	}
+
+	ctx := context.Background()
+	end := timestamp.Time(0).Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	runQuery := func(t *testing.T, expr string, withOptimization bool) string {
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+
+		if withOptimization {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+
+		engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+		require.NoError(t, err)
+
+		q, err := engine.NewInstantQuery(ctx, storage, nil, expr, end)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		return res.String()
+	}
+
+	for _, expr := range queries {
+		t.Run(expr, func(t *testing.T) {
+			withOptimization := runQuery(t, expr, true)
+			withoutOptimization := runQuery(t, expr, false)
+			require.Equal(t, withoutOptimization, withOptimization, "optimizer must not collapse a filled binop to a NoOp")
+			require.NotEmpty(t, withOptimization, "filled binop must produce output even when one side is statically empty")
+		})
+	}
+}

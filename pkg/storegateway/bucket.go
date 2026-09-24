@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/multierror"
@@ -51,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -599,18 +597,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
-		if err != nil {
-			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
-		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		// Note that we use a different but equivalent hints type for the opaque field.
-		reqHints := &hintspb.SeriesRequestHints{}
-		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
-			return status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal series request hints").Error())
-		}
-
-		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
@@ -1311,18 +1297,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		reqHints := &hintspb.LabelNamesRequestHints{}
-		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		err := types.UnmarshalAny(req.Hints, reqHints)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label names request hints").Error())
-		}
-
-		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
-		}
 	}
 
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
@@ -1504,18 +1478,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
-		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		reqHints := &hintspb.LabelValuesRequestHints{}
-		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		err := types.UnmarshalAny(req.Hints, reqHints)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
-		}
-
-		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}

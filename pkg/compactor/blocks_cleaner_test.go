@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -39,6 +40,7 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type testBlocksCleanerOptions struct {
@@ -1857,6 +1859,7 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 }
 
 type mockConfigProvider struct {
+	floatChunkEncodings          map[string]chunkenc.Encoding
 	userRetentionPeriods         map[string]time.Duration
 	splitAndMergeShards          map[string]int
 	oooSplitAndMergeShards       map[string]int
@@ -1874,6 +1877,7 @@ type mockConfigProvider struct {
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
+		floatChunkEncodings:          make(map[string]chunkenc.Encoding),
 		userRetentionPeriods:         make(map[string]time.Duration),
 		splitAndMergeShards:          make(map[string]int),
 		oooSplitAndMergeShards:       make(map[string]int),
@@ -1942,6 +1946,13 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
+}
+
+func (m *mockConfigProvider) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	if result, ok := m.floatChunkEncodings[userID]; ok {
+		return result
+	}
+	return validation.ParseFloatChunkEncoding(validation.DefaultFloatChunkEncodingValue)
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

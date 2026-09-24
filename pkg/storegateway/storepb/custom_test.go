@@ -42,6 +42,18 @@ func TestAggrChunk_GetChunkEncoding(t *testing.T) {
 			expectedOK:  true,
 		},
 		{
+			name:        "HistogramST",
+			rawType:     Chunk_HistogramST,
+			expectedEnc: chunk.PrometheusHistogramSTChunk,
+			expectedOK:  true,
+		},
+		{
+			name:        "FloatHistogramST",
+			rawType:     Chunk_FloatHistogramST,
+			expectedEnc: chunk.PrometheusFloatHistogramSTChunk,
+			expectedOK:  true,
+		},
+		{
 			name:       "unknown encoding returns false",
 			rawType:    Chunk_Encoding(99),
 			expectedOK: false,

@@ -51,6 +51,22 @@ test_deployment_with_zero_maxunavailable {
 	no_rollingupdate_violations with input as input
 }
 
+test_singleinstance_deployment_with_non_zero_maxsurge {
+	deployment_file := sprintf("%s/maxsurge-non-zero.yaml", [deployment_rollingupdate_root_test_fixture_dir])
+	input := parse_combined_config_files([deployment_file])
+
+	denies := deny_deployment_rollingupdate with input as input
+	trace(sprintf("Denies: %v", [denies]))
+	denies["Deployment/test-deployment has spec.strategy.rollingUpdate.maxSurge set to 1, but 0 is required"]
+}
+
+test_singleinstance_deployment_with_zero_maxsurge {
+	deployment_file := sprintf("%s/maxsurge-zero.yaml", [deployment_rollingupdate_root_test_fixture_dir])
+	input := parse_combined_config_files([deployment_file])
+
+	no_rollingupdate_violations with input as input
+}
+
 test_not_a_deployment {
 	deployment_file := sprintf("%s/non-deployment.yaml", [deployment_rollingupdate_root_test_fixture_dir])
 	input := parse_combined_config_files([deployment_file])

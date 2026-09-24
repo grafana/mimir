@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -87,13 +89,17 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 
+	if opts.EnablePropagateMatchers {
+		planner.RegisterASTOptimizationPass(ast.NewPropagateMatchers(opts.CommonOpts.Reg)) // Propagate matchers before reducing them.
+	}
+
 	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
 	if opts.EnableReduceMatchers {
 		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
+	// After query sharding is moved here, we want to move reorder histogram aggregation here as well before query sharding.
 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
@@ -117,7 +123,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
+		if opts.RangeVectorSplitting.EnableSubquerySplitting && !opts.EnableCommonSubexpressionElimination {
+			return nil, errors.New("cannot enable subquery splitting in range vector splitting without common subexpression elimination")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -309,6 +319,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
+		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
@@ -541,7 +552,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 	case *parser.BinaryExpr:
 		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
-			return nil, compat.NewNotSupportedError("'fill' modifier")
+			// Only one-to-one matching supports the 'fill' modifier so far.
+			// Grouped (group_left/group_right) fills remain unsupported.
+			// The parser rejects a fill on a set operator before the query reaches here.
+			if expr.VectorMatching.Card != parser.CardOneToOne {
+				return nil, compat.NewNotSupportedError("'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)")
+			}
+
+			// The match group key keeps __name__ when the query lists it in on(...), but the output
+			// labels of a filled series always drop __name__. So two match groups that differ only
+			// by __name__ produce the same output labels. The engine then needs one output series
+			// that draws from several match groups. MQE does not support that yet.
+			if expr.VectorMatching.On && slices.Contains(expr.VectorMatching.MatchingLabels, model.MetricNameLabel) {
+				return nil, compat.NewNotSupportedError("'fill' modifier with __name__ in the 'on' clause")
+			}
 		}
 
 		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)

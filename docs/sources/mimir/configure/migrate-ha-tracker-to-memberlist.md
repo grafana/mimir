@@ -39,6 +39,8 @@ The migration uses Mimir's multi KV store feature to transition from Consul or e
 
 Configure the HA tracker to use the `multi` KV store with your current backend, Consul or etcd, as the primary store and memberlist as the secondary store.
 
+The HA tracker uses the memberlist cluster that the rest of Mimir already uses, which you configure in the top-level `memberlist` block. If you already run memberlist for the hash rings, no additional memberlist configuration is required.
+
 For Consul:
 
 ```yaml
@@ -55,10 +57,11 @@ distributor:
       consul:
         # Your existing Consul configuration
         host: "consul.default.svc.cluster.local:8500"
-      memberlist:
-        # Memberlist configuration - typically shared with other components
-        join_members:
-          - mimir-gossip-ring.default.svc.cluster.local:7946
+
+# Your existing memberlist configuration, shared with other components
+memberlist:
+  join_members:
+    - mimir-gossip-ring.default.svc.cluster.local:7946
 ```
 
 For etcd:
@@ -78,10 +81,11 @@ distributor:
         # Your existing etcd configuration
         endpoints:
           - etcd.default.svc.cluster.local:2379
-      memberlist:
-        # Memberlist configuration - typically shared with other components
-        join_members:
-          - mimir-gossip-ring.default.svc.cluster.local:7946
+
+# Your existing memberlist configuration, shared with other components
+memberlist:
+  join_members:
+    - mimir-gossip-ring.default.svc.cluster.local:7946
 ```
 
 Apply this configuration change. This step requires a rollout of all distributor instances.
@@ -174,9 +178,11 @@ distributor:
     enable_ha_tracker: true
     kvstore:
       store: memberlist # Changed in this step
-      memberlist:
-        join_members:
-          - mimir-gossip-ring.default.svc.cluster.local:7946
+
+# Your existing memberlist configuration, shared with other components
+memberlist:
+  join_members:
+    - mimir-gossip-ring.default.svc.cluster.local:7946
 ```
 
 Apply this configuration change. This step requires a rollout of all distributor instances.
@@ -216,3 +222,5 @@ mimir:
           #   endpoints:
           #     - "{{ .Release.Name }}-etcd.{{ .Release.Namespace }}.svc.cluster.local:2379"
 ```
+
+By default, the chart configures the top-level `memberlist` block with the gossip ring service. The HA tracker doesn't need additional memberlist values of its own.
