@@ -95,6 +95,7 @@ var (
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
+	errInvalidHistogramChunkEncoding               = fmt.Errorf("invalid histogram chunk encoding (supported values: %s)", strings.Join(HistogramChunkEncodingValues, ", "))
 )
 
 const (
@@ -125,6 +126,37 @@ func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
 		return enc
 	}
 	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
+
+// DefaultHistogramChunkEncodingValue is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit used
+// when the limit is unset, or holds a value this version does not support. It selects the EncHistogram and
+// EncFloatHistogram chunk encodings.
+const DefaultHistogramChunkEncodingValue = "histogram"
+
+// HistogramChunkEncodingST is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit that selects the
+// start-timestamp-capable EncHistogramST and EncFloatHistogramST chunk encodings.
+const HistogramChunkEncodingST = "histogram_st"
+
+// histogramChunkEncodings maps every value the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts to
+// whether it selects the start-timestamp-capable histogram chunk encodings.
+var histogramChunkEncodings = map[string]bool{
+	DefaultHistogramChunkEncodingValue: false,
+	HistogramChunkEncodingST:           true,
+}
+
+// HistogramChunkEncodingValues holds the values the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var HistogramChunkEncodingValues = slices.Sorted(maps.Keys(histogramChunkEncodings))
+
+// ParseHistogramSTEncodingEnabled returns whether the given value of the
+// -blocks-storage.tsdb.histogram-chunk-encoding limit selects the start-timestamp-capable histogram chunk
+// encodings. A value the limit does not accept, the empty string included, selects the encodings of
+// DefaultHistogramChunkEncodingValue.
+func ParseHistogramSTEncodingEnabled(value string) bool {
+	if enabled, ok := histogramChunkEncodings[value]; ok {
+		return enabled
+	}
+	return histogramChunkEncodings[DefaultHistogramChunkEncodingValue]
 }
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -224,6 +256,9 @@ type Limits struct {
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
+
+	// Histogram chunk encoding. Resolved when a tenant TSDB opens.
+	HistogramChunkEncoding string `yaml:"histogram_chunk_encoding" json:"histogram_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -447,6 +482,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
+	f.StringVar(&l.HistogramChunkEncoding, "blocks-storage.tsdb.histogram-chunk-encoding", DefaultHistogramChunkEncodingValue, fmt.Sprintf("Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. The %s value selects the start-timestamp-capable encodings. Supported values are: %s.", HistogramChunkEncodingST, strings.Join(HistogramChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -763,6 +799,9 @@ func (l *Limits) Validate() error {
 
 	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
+	}
+	if l.HistogramChunkEncoding != "" && !slices.Contains(HistogramChunkEncodingValues, l.HistogramChunkEncoding) {
+		return errInvalidHistogramChunkEncoding
 	}
 
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
@@ -1458,6 +1497,12 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 // FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
 	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+}
+
+// HistogramSTEncodingEnabled returns whether new integer and float histogram chunks for this tenant use the
+// start-timestamp-capable encodings (EncHistogramST and EncFloatHistogramST).
+func (o *Overrides) HistogramSTEncodingEnabled(userID string) bool {
+	return ParseHistogramSTEncodingEnabled(o.getOverridesForUser(userID).HistogramChunkEncoding)
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
