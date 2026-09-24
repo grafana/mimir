@@ -127,11 +127,11 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	})
 }
 
-// TestReaderPool_OnDiskVersionMetric asserts that indexheader_on_disk reflects the on-disk
-// index-header version for Reader implementations as soon as NewBinaryReader returns (before any read),
-// and drops back to zero once the reader is closed.
+// TestReaderPool_OnDiskVersionMetric asserts that indexheader_on_disk reflects the on-disk index-header version for Reader implementations even before any read,
+// and that closing the reader does not decrement it.
 func TestReaderPool_OnDiskVersionMetric(t *testing.T) {
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
+	blockDir := filepath.Join(tmpDir, blockID.String())
 
 	for _, lazyReaderEnabled := range []bool{false, true} {
 		name := "non-lazy reader"
@@ -146,17 +146,25 @@ func TestReaderPool_OnDiskVersionMetric(t *testing.T) {
 			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 
 			require.NoError(t, r.Close())
+			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")),
+				"Closing the reader must not change the gauge if the file is still on disk")
+
+			pool.RecordOnDiskIndexHeaderRemoval(blockDir)
 			require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 		})
 	}
 }
 
-// TestReaderPool_OnDiskVersionMetric asserts that indexheader_on_disk reflects a block's index-header's on-disk state for the reader's whole tenure in the pool,
-// regardless of if an index-header is unloaded due to the idle timeout.
+// TestReaderPool_OnDiskVersionMetricIdleUnload asserts that indexheader_on_disk reflects a
+// block's index-header's on-disk state for the reader's whole tenure in the pool, regardless of
+// if an index-header is unloaded due to the idle timeout, and that neither an idle unload/reload
+// cycle nor a final Close() ever changes it - only RecordOnDiskIndexHeaderRemoval, called right before the block's
+// directory is actually removed, does.
 func TestReaderPool_OnDiskVersionMetricIdleUnload(t *testing.T) {
 	const idleTimeout = time.Second
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+	blockDir := filepath.Join(tmpDir, blockID.String())
 
 	pool := newReaderPool(log.NewNopLogger(), Config{
 		LazyLoadingEnabled:     true,
@@ -183,8 +191,12 @@ func TestReaderPool_OnDiskVersionMetricIdleUnload(t *testing.T) {
 	require.Equal(t, []string{"a"}, labelNames)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 
-	// Closing the reader decrements
+	// Closing the reader must not change the gauge - the file is still on disk.
 	require.NoError(t, r.Close())
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	// Only accounting for the actual removal decrements it.
+	pool.RecordOnDiskIndexHeaderRemoval(blockDir)
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 }
 
