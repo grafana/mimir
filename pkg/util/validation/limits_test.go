@@ -1716,6 +1716,36 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should fail if histogram_chunk_encoding is not a known encoding": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "HISTOGRAM_ST"
+
+				return cfg
+			}(),
+			expectedErr: errInvalidHistogramChunkEncoding,
+		},
+		"should pass if histogram_chunk_encoding is histogram_st": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "histogram_st"
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if histogram_chunk_encoding is empty": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = ""
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
 				cfg := Limits{}
@@ -3182,6 +3212,52 @@ func TestOverrides_FloatChunkEncodingValue(t *testing.T) {
 	// Never the empty string: ApplyConfig() would read it as "keep the startup encoding".
 	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user2"))
 	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user3"))
+}
+
+func TestOverrides_HistogramSTEncodingEnabled(t *testing.T) {
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{HistogramChunkEncoding: "histogram_st"}
+	})
+
+	assert.True(t, overrides.HistogramSTEncodingEnabled("user1"))
+
+	// A tenant without an override gets the default encoding.
+	assert.False(t, overrides.HistogramSTEncodingEnabled("user2"))
+}
+
+func TestHistogramChunkEncodingValues(t *testing.T) {
+	assert.Equal(t, []string{"histogram", "histogram_st"}, HistogramChunkEncodingValues)
+
+	seen := map[bool]string{}
+	for _, value := range HistogramChunkEncodingValues {
+		limits := Limits{}
+		flagext.DefaultValues(&limits)
+		limits.HistogramChunkEncoding = value
+		assert.NoError(t, limits.Validate())
+
+		enabled := ParseHistogramSTEncodingEnabled(value)
+		assert.NotContains(t, seen, enabled)
+		seen[enabled] = value
+	}
+}
+
+func TestParseHistogramSTEncodingEnabled(t *testing.T) {
+	tests := map[string]struct {
+		value    string
+		expected bool
+	}{
+		"empty selects the default":              {value: "", expected: false},
+		"histogram":                              {value: "histogram", expected: false},
+		"histogram_st":                           {value: "histogram_st", expected: true},
+		"uppercase is not accepted":              {value: "HISTOGRAM_ST", expected: false},
+		"xor2 is not a histogram chunk encoding": {value: "xor2", expected: false},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, testData.expected, ParseHistogramSTEncodingEnabled(testData.value))
+		})
+	}
 }
 
 func boolPtr(b bool) *bool {

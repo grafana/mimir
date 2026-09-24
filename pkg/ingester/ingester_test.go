@@ -12555,7 +12555,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 			))
 			require.NoError(t, err)
 
-			chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_xor2_before")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
 
@@ -12572,7 +12572,146 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 			))
 			require.NoError(t, err)
 
-			chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
+		})
+	}
+}
+
+func TestIngesterHistogramSTEncodingEnabled(t *testing.T)  { testIngesterHistogramSTEncoding(t, true) }
+func TestIngesterHistogramSTEncodingDisabled(t *testing.T) { testIngesterHistogramSTEncoding(t, false) }
+
+func testIngesterHistogramSTEncoding(t *testing.T, histogramSTEnabled bool) {
+	limits := defaultLimitsTestConfig()
+	if histogramSTEnabled {
+		limits.HistogramChunkEncoding = "histogram_st"
+	}
+
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
+	})
+
+	cfg := defaultIngesterTestConfig(t)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), "user1")
+
+	const ts = int64(1000)
+	h := util_test.GenerateTestHistogram(1)
+	fh := util_test.GenerateTestFloatHistogram(1)
+	_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+		[][]mimirpb.LabelAdapter{
+			{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
+			{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
+		},
+		[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
+		nil,
+	))
+	require.NoError(t, err)
+
+	expectedChunkEnc := chunkenc.EncHistogram
+	expectedClientEnc := int32(chunk.PrometheusHistogramChunk)
+	expectedFloatChunkEnc := chunkenc.EncFloatHistogram
+	expectedFloatClientEnc := int32(chunk.PrometheusFloatHistogramChunk)
+	if histogramSTEnabled {
+		expectedChunkEnc = chunkenc.EncHistogramST
+		expectedClientEnc = int32(chunk.PrometheusHistogramSTChunk)
+		expectedFloatChunkEnc = chunkenc.EncFloatHistogramST
+		expectedFloatClientEnc = int32(chunk.PrometheusFloatHistogramSTChunk)
+	}
+
+	chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram")
+	require.Len(t, chunks, 1)
+	assert.Equal(t, expectedClientEnc, chunks[0].Encoding)
+	verifyHistogramChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, h.ToFloat(nil))
+
+	chunks = queryChunksForMetric(ctx, t, i, "testmetric_float_histogram")
+	require.Len(t, chunks, 1)
+	assert.Equal(t, expectedFloatClientEnc, chunks[0].Encoding)
+	verifyHistogramChunkSample(t, expectedFloatChunkEnc, chunks[0].Data, ts, fh)
+}
+
+// TestIngesterHistogramSTEncodingRuntimeToggle covers changing the histogram_chunk_encoding limit at runtime,
+// in both directions. It takes effect once the tenant's TSDB is reopened.
+func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
+	tests := map[string]struct {
+		initialLimit   string
+		updatedLimit   string
+		expectedBefore chunk.Encoding
+		expectedAfter  chunk.Encoding
+	}{
+		"enabling HistogramST": {
+			initialLimit: "", updatedLimit: "histogram_st",
+			expectedBefore: chunk.PrometheusHistogramChunk, expectedAfter: chunk.PrometheusHistogramSTChunk,
+		},
+		"clearing the limit falls back to Histogram": {
+			initialLimit: "histogram_st", updatedLimit: "",
+			expectedBefore: chunk.PrometheusHistogramSTChunk, expectedAfter: chunk.PrometheusHistogramChunk,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			userID := "user1"
+			tenantOverride := new(TenantLimitsMock)
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{HistogramChunkEncoding: testData.initialLimit, NativeHistogramsIngestionEnabled: true})
+
+			override := validation.NewOverrides(defaultLimitsTestConfig(), tenantOverride)
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+			dataDir := t.TempDir()
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, dataDir, "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_before"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram_before")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
+
+			// Change the limit at runtime.
+			tenantOverride.ExpectedCalls = nil
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{HistogramChunkEncoding: testData.updatedLimit, NativeHistogramsIngestionEnabled: true})
+			<-time.After(1500 * time.Millisecond)
+
+			// A new series always starts a fresh chunk, but it keeps the encoding the open TSDB was seeded with.
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_histogram_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
+
+			// Restarting the ingester reopens the tenant's TSDB, which uses the updated setting.
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+			i, r, err = prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, r, dataDir, "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after_reopen"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_histogram_after_reopen")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
 		})
@@ -12581,10 +12720,10 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 
 func queryXOR2Chunks(ctx context.Context, t *testing.T, i *Ingester) []client.Chunk {
 	t.Helper()
-	return queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2")
+	return queryChunksForMetric(ctx, t, i, "testmetric_xor2")
 }
 
-func queryXOR2ChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
+func queryChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
 	t.Helper()
 	queryReq := &client.QueryRequest{
 		StartTimestampMs:         math.MinInt64,
@@ -12612,6 +12751,27 @@ func verifyChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expecte
 	actualTs, actualVal := it.At()
 	assert.Equal(t, expectedTs, actualTs)
 	assert.Equal(t, expectedVal, actualVal)
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
+}
+
+func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedTs int64, expected *histogram.FloatHistogram) {
+	t.Helper()
+	chk, err := chunkenc.FromData(enc, data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	expectedValType := chunkenc.ValFloatHistogram
+	if enc == chunkenc.EncHistogram || enc == chunkenc.EncHistogramST {
+		expectedValType = chunkenc.ValHistogram
+	}
+	require.Equal(t, expectedValType, it.Next())
+	// Integer histograms are read as float histograms too, so both kinds compare against a float histogram.
+	actualTs, actual := it.AtFloatHistogram(nil)
+	assert.Equal(t, expectedTs, actualTs)
+	// Equals() ignores the counter reset hint, which the chunk encoding sets independently of the pushed sample.
+	assert.True(t, expected.Equals(actual), "expected %s, got %s", expected, actual)
+	// The push path does not pass start timestamps to the TSDB yet.
+	assert.Zero(t, it.AtST())
 	assert.Equal(t, chunkenc.ValNone, it.Next())
 	assert.NoError(t, it.Err())
 }
