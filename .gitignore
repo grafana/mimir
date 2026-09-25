@@ -12,6 +12,7 @@ cmd/metaconvert/metaconvert
 cmd/metaconvert/metaconvert_linux_amd64
 cmd/metaconvert/metaconvert_linux_arm64
 tools/config-inspector/config-inspector
+tools/grpc-tee/grpc-tee
 tools/kafkatool/kafkatool
 .bak
 .uptodate

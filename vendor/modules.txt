@@ -1268,6 +1268,9 @@ github.com/shirou/gopsutil/v4/internal/common
 github.com/shirou/gopsutil/v4/mem
 github.com/shirou/gopsutil/v4/net
 github.com/shirou/gopsutil/v4/process
+# github.com/siderolabs/grpc-proxy v0.5.2
+## explicit; go 1.24.0
+github.com/siderolabs/grpc-proxy/proxy
 # github.com/spf13/afero v1.15.0
 ## explicit; go 1.23.0
 github.com/spf13/afero

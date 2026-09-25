@@ -70,6 +70,7 @@ require (
 	github.com/prometheus/procfs v0.22.0
 	github.com/prometheus/sigv4 v0.5.0
 	github.com/shirou/gopsutil/v4 v4.26.6
+	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
