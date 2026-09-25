@@ -135,6 +135,7 @@
       - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
+      - "./config/dashboards-freshness:/var/lib/grafana/dashboards-freshness"
   "grafana-alloy":
     "command":
       - "run"
@@ -142,6 +143,8 @@
       - "--server.http.listen-addr=127.0.0.1:9091"
       - "--stability.level=experimental"
       - "/etc/agent-config/config.alloy"
+    "extra_hosts":
+      - "host.docker.internal:host-gateway"
     "image": "grafana/alloy:v1.17.1@sha256:4f6ddc56ffdcf8a6316748fc5162972e20cb301523cac1bb4a31957df733ae9b"
     "ports":
       - "9091:9091"

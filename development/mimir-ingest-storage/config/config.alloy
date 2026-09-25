@@ -203,3 +203,10 @@ loki.write "local" {
                 url = "http://loki:3100/loki/api/v1/push"
         }
 }
+
+// The freshness recommender runs on the host (hackathon-18-query-freshness).
+prometheus.scrape "freshness_recommender" {
+        targets         = [{__address__ = "host.docker.internal:8099", job = "freshness-recommender"}]
+        forward_to      = [prometheus.remote_write.metrics_local.receiver]
+        scrape_interval = "15s"
+}

@@ -325,6 +325,7 @@ std.manifestYamlDoc({
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
+        './config/dashboards-freshness:/var/lib/grafana/dashboards-freshness',
       ],
       ports: ['3000:3000'],
     },
@@ -340,6 +341,8 @@ std.manifestYamlDoc({
       command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '--stability.level=experimental', '/etc/agent-config/config.alloy'],
       // The Docker socket lets Alloy ship query-frontend logs to Loki for the freshness recommender.
       volumes: ['./config:/etc/agent-config', '/var/run/docker.sock:/var/run/docker.sock'],
+      // The freshness recommender runs on the host.
+      extra_hosts: ['host.docker.internal:host-gateway'],
       ports: ['9091:9091'],
     },
   },

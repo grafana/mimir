@@ -9,3 +9,11 @@ providers:
     updateIntervalSeconds: 10 #how often Grafana will scan for changed dashboards
     options:
       path: /var/lib/grafana/dashboards
+  - name: 'query-freshness'
+    orgId: 1
+    folder: 'Query freshness'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards-freshness
