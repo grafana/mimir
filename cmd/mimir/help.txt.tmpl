@@ -237,6 +237,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
+  -blocks-storage.tsdb.float-chunk-encoding string
+    	Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2. (default "xor")
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks. (default 13h0m0s)
   -common.storage.azure.account-key string
