@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 type mockSearchLabelNamesServer struct {
@@ -348,6 +349,130 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	err := streamBucketSearchResults(ctx, rs, nil, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
+}
+
+func TestStorepbToParams(t *testing.T) {
+	t.Run("nil filter returns nil params", func(t *testing.T) {
+		params, err := storepbToParams(nil)
+		require.NoError(t, err)
+		assert.Nil(t, params)
+	})
+
+	t.Run("terms only builds Params via NewParams", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, []string{"foo"}, params.Terms)
+		assert.Empty(t, params.Expression())
+	})
+
+	t.Run("expression only builds Params via NewExpressionParams", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Expression: "foo AND NOT bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "foo AND NOT bar", params.Expression())
+		assert.Empty(t, params.Terms)
+	})
+
+	t.Run("terms and expression are rejected when both are set on the wire", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.EqualError(t, err, "search terms and search expression are mutually exclusive")
+		require.ErrorIs(t, err, streaminglabelvalues.ErrTermsAndExpression)
+		assert.Nil(t, params)
+	})
+
+	t.Run("invalid expression returns an error", func(t *testing.T) {
+		_, err := storepbToParams(&storepb.SearchFilter{Expression: "foo AND"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "search expression:")
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING_LEFT", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING_LEFT})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstringLeft, params.FuzzAlg)
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+	})
+
+	t.Run("carries ResumeAfter", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.ResumeAfter)
+	})
+}
+
+func TestStorepbToParams_CarriesScoreAfter(t *testing.T) {
+	wf := &storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	params, err := storepbToParams(wf)
+	require.NoError(t, err)
+	assert.Equal(t, "bar", params.ResumeAfter)
+	assert.Equal(t, 0.75, params.ScoreAfter)
+}
+
+func TestApplyPerBlockSearchHintsExcludesValuesAtOrBeforeResumeAfter(t *testing.T) {
+	params, err := streaminglabelvalues.NewParams([]string{"pod"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "kube_pod_info"
+
+	values := []string{"kube_pod_container_status_pod", "kube_pod_info", "kube_pod_status_ready"}
+	rs, err := applyPerBlockSearchHints(values, params, storage.OrderByValueAsc, 0)
+	require.NoError(t, err)
+	require.NotNil(t, rs)
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"kube_pod_status_ready"}, got, "only the value alphabetically after the resume point survives")
+}
+
+func TestApplyPerBlockSearchHintsExcludesScoreAfterUnderScoreOrdering(t *testing.T) {
+	params, err := streaminglabelvalues.NewParams([]string{"foo"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "bar"
+	params.ScoreAfter = 0.75
+	rs, err := applyPerBlockSearchHints([]string{"foo", "zzz"}, params, storage.OrderByScoreDesc, 10)
+	require.NoError(t, err)
+	// "zzz" never matches term "foo" at all, so once "foo" is excluded by
+	// ScoreAfter, no candidate survives and applyPerBlockSearchHints
+	// returns a nil result set by design (see the len(results)==0 guard).
+	var got []string
+	if rs != nil {
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+	}
+	assert.Empty(t, got, "score 1.0 exceeds afterScore 0.75, already returned")
+}
+
+func TestApplyPerBlockSearchHintsDoesNotApplyScoreResumeAfterUnderAlphaOrdering(t *testing.T) {
+	// These inputs must discriminate the two rules: with ResumeAfter="eee",
+	// ScoreAfter=0.9, the value-rule accepts "foo" (not <= "eee") while a
+	// wrongly-applied score-rule would reject it (term "foo" scores 1.0,
+	// which exceeds afterScore 0.9).
+	params, err := streaminglabelvalues.NewParams([]string{"foo"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "eee"
+	params.ScoreAfter = 0.9
+	rs, err := applyPerBlockSearchHints([]string{"foo"}, params, storage.OrderByValueAsc, 10)
+	require.NoError(t, err)
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Contains(t, got, "foo", "value-based resume: 'foo' is not <= after 'eee', so it is accepted — if the score-rule leaked in here instead, it would wrongly reject since score 1.0 > ScoreAfter 0.9")
 }
 
 // prepareBenchmarkSearchStore builds a BucketStore backed by the same series

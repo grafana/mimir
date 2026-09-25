@@ -131,12 +131,39 @@ message SearchFilter {
   enum FuzzAlg {
     FUZZ_ALG_SUBSEQUENCE = 0;
     FUZZ_ALG_JARO_WINKLER = 1;
+    // FUZZ_ALG_SUBSTRING_LEFT applies no fuzzy matching: a plain substring
+    // match, scoring higher for matches further left in the value.
+    FUZZ_ALG_SUBSTRING_LEFT = 2;
+    // FUZZ_ALG_SUBSTRING applies no fuzzy matching: a plain substring match,
+    // scoring 1.0 regardless of match position.
+    FUZZ_ALG_SUBSTRING = 3;
   }
   FuzzAlg fuzz_alg = 3;
   // FuzzThreshold is the minimum fuzzy score expressed as int 0-100,
   // matching Prometheus PR #18573's fuzz_threshold URL param. The server
   // divides by 100 to compare against the matcher's [0,1] score.
   int32 fuzz_threshold = 4;
+  // Expression is an optional boolean search expression (AND/OR/NOT, quoting,
+  // parentheses) as an alternative to terms. Mutually exclusive with terms;
+  // validated at every HTTP and gRPC boundary before use.
+  string expression = 5;
+  // ResumeAfter is the last value returned by a previous page of a
+  // cursor-paginated search, for either sort_by=alpha or sort_by=score.
+  // Empty means no cursor is in effect. When set, the server excludes
+  // values already returned by an earlier page from its own local result
+  // set before applying limit, so a resumed search does not re-return the
+  // same top-N candidates on every page. See
+  // docs/superpowers/specs/2026-09-22-search-cursor-pagination-design.md.
+  string resume_after = 6;
+  // ScoreAfter is the score of the last value returned by a previous page
+  // of a sort_by=score cursor-paginated search. Only meaningful when
+  // resume_after is non-empty and the effective ordering is sort_by=score;
+  // 0.0 is a legitimate score and carries no meaning on its own. The server
+  // excludes any candidate whose (score, value) pair — under the same
+  // (Score desc, Value asc) total order the merge layer already uses to
+  // break score ties — is at or before this resume point. See
+  // docs/superpowers/specs/2026-09-23-search-cursor-pagination-score-ordering-design.md.
+  double score_after = 7;
 }
 
 message SearchLabelNamesRequest {

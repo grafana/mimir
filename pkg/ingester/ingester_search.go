@@ -121,6 +121,18 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
+	order := protoToOrdering(ord)
+	// params is nil when wf is nil (protoToParams's documented nil-input
+	// contract); guard the field access rather than pass an empty
+	// ResumeAfter, since both ApplyResumeAfter and ApplyScoreResumeAfter
+	// treat "" as "no cursor" anyway.
+	if params != nil {
+		if order == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, order)
+		}
+	}
 	if limit < 0 {
 		return nil, nil, fmt.Errorf("limit must be >= 0, got %d", limit)
 	}
@@ -130,23 +142,47 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	}
 	hints := &storage.SearchHints{
 		Filter:  filter,
-		OrderBy: protoToOrdering(ord),
+		OrderBy: order,
 		Limit:   hintsLimit,
 	}
 	return hints, matchers, nil
 }
 
 // protoToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// streaminglabelvalues.Params via NewParams or NewExpressionParams. A nil
+// input returns (nil, nil). Terms and Expression are mutually exclusive on
+// every boundary, including direct gRPC callers that bypass the HTTP handler.
 func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
-		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	if len(wf.Terms) > 0 && wf.Expression != "" {
+		return nil, streaminglabelvalues.ErrTermsAndExpression
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	alg := streaminglabelvalues.FuzzAlgSubsequence
+	switch wf.FuzzAlg {
+	case client.FUZZ_ALG_JARO_WINKLER:
+		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case client.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case client.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
+	}
+	var (
+		params *streaminglabelvalues.Params
+		err    error
+	)
+	if wf.Expression != "" {
+		params, err = streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	} else {
+		params, err = streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	}
+	if err != nil {
+		return nil, err
+	}
+	params.ResumeAfter = wf.ResumeAfter
+	params.ScoreAfter = wf.ScoreAfter
+	return params, nil
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus

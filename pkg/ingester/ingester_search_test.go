@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -326,6 +327,103 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
 }
 
+func TestProtoToParams(t *testing.T) {
+	t.Run("nil filter returns nil params", func(t *testing.T) {
+		params, err := protoToParams(nil)
+		require.NoError(t, err)
+		assert.Nil(t, params)
+	})
+
+	t.Run("terms only builds Params via NewParams", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, []string{"foo"}, params.Terms)
+		assert.Empty(t, params.Expression())
+	})
+
+	t.Run("expression only builds Params via NewExpressionParams", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Expression: "foo AND NOT bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "foo AND NOT bar", params.Expression())
+		assert.Empty(t, params.Terms)
+	})
+
+	t.Run("terms and expression are rejected when both are set on the wire", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.EqualError(t, err, "search terms and search expression are mutually exclusive")
+		require.ErrorIs(t, err, streaminglabelvalues.ErrTermsAndExpression)
+		assert.Nil(t, params)
+	})
+
+	t.Run("invalid expression returns an error", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo AND"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "search expression:")
+	})
+
+	t.Run("respects fuzz alg and threshold for expression params", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{
+			Expression:      "foo",
+			CaseInsensitive: true,
+			FuzzAlg:         client.FUZZ_ALG_JARO_WINKLER,
+			FuzzThreshold:   50,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.False(t, params.CaseSensitive)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgJaroWinkler, params.FuzzAlg)
+		assert.Equal(t, 50, params.FuzzThreshold)
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING_LEFT", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstringLeft, params.FuzzAlg)
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+	})
+
+	t.Run("carries ResumeAfter", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.ResumeAfter)
+	})
+}
+
+// TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument
+// mirrors TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument
+// for the search_expr wire path.
+func TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchLabelValuesRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   200_000,
+		Name:             "status",
+		Filter:           &client.SearchFilter{Expression: "foo AND"},
+	}
+	s := &mockSearchLabelValuesStream{ctx: ctx}
+	err := i.SearchLabelValues(req, s)
+	require.Error(t, err)
+	st, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
+}
+
 // TestStreamSearchResults covers streamSearchResults' batching and warnings
 // behaviour.
 func TestStreamSearchResults(t *testing.T) {
@@ -405,6 +503,83 @@ func TestBuildSearchHintsLimitGuard(t *testing.T) {
 			assert.Equal(t, tc.want, hints.Limit)
 		})
 	}
+}
+
+func TestBuildSearchHintsExcludesValuesAtOrBeforeResumeAfter(t *testing.T) {
+	hints, matchers, err := buildSearchHints(
+		&client.SearchFilter{Terms: []string{"pod"}, ResumeAfter: "kube_pod_info"},
+		client.ORDER_BY_VALUE_ASC,
+		10,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, matchers)
+	require.NotNil(t, hints.Filter)
+
+	accepted, _ := hints.Filter.Accept("kube_pod_info")
+	assert.False(t, accepted, "the resume-after value itself must not be re-returned")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_container_status_pod")
+	assert.False(t, accepted, "alphabetically before the resume-after value")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_status_ready")
+	assert.True(t, accepted, "alphabetically after the resume-after value, and matches the term")
+}
+
+func TestBuildSearchHintsExcludesValuesAtOrAfterResumeAfterDescending(t *testing.T) {
+	hints, _, err := buildSearchHints(
+		&client.SearchFilter{Terms: []string{"pod"}, ResumeAfter: "kube_pod_status_ready"},
+		client.ORDER_BY_VALUE_DESC,
+		10,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+
+	accepted, _ := hints.Filter.Accept("kube_pod_status_ready")
+	assert.False(t, accepted, "the resume-after value itself must not be re-returned")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_container_status_pod")
+	assert.True(t, accepted, "alphabetically before the resume-after value, so it comes after it in descending order")
+}
+
+func TestProtoToParams_CarriesScoreAfter(t *testing.T) {
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	params, err := protoToParams(wf)
+	require.NoError(t, err)
+	assert.Equal(t, "bar", params.ResumeAfter)
+	assert.Equal(t, 0.75, params.ScoreAfter)
+}
+
+func TestBuildSearchHintsExcludesScoreAfterUnderScoreOrdering(t *testing.T) {
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	hints, _, err := buildSearchHints(wf, client.ORDER_BY_SCORE_DESC, 10, nil)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+	// "foo" as a value scores 1.0 under FuzzAlgSubsequence's prefix rule
+	// (term == value), which is > afterScore 0.75, so it must be excluded —
+	// this candidate was already returned on an earlier page.
+	accepted, _ := hints.Filter.Accept("foo")
+	assert.False(t, accepted, "score 1.0 exceeds afterScore 0.75, already returned")
+}
+
+func TestBuildSearchHintsDoesNotApplyScoreResumeAfterUnderAlphaOrdering(t *testing.T) {
+	// Guard against the score branch leaking into the alpha path: a filter
+	// built for OrderByValueAsc must use ApplyResumeAfter's value-based
+	// rule, not the score-based one, even if ScoreAfter happens to be set
+	// (which toSearchRequest/decode should never actually produce for an
+	// alpha cursor, but buildSearchHints itself must not assume that).
+	//
+	// These inputs must discriminate the two rules: with ResumeAfter="eee",
+	// ScoreAfter=0.9, the value-rule accepts "foo" (not <= "eee") while a
+	// wrongly-applied score-rule would reject it (score 1.0 > afterScore
+	// 0.9).
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "eee", ScoreAfter: 0.9}
+	hints, _, err := buildSearchHints(wf, client.ORDER_BY_VALUE_ASC, 10, nil)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+	accepted, _ := hints.Filter.Accept("foo")
+	assert.True(t, accepted, "value-based resume: 'foo' is not <= after 'eee', so it is accepted — if the score-rule leaked in here instead, it would wrongly reject since score 1.0 > ScoreAfter 0.9")
 }
 
 // Benchmark fixture shape mirrors BenchmarkIngester_LabelValuesCardinality

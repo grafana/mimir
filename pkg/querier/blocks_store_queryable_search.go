@@ -559,18 +559,28 @@ func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 	}
 }
 
+// paramsToSGProto returns nil for nil/empty Params. A ResumeAfter-only
+// Params is not empty: a cursor walk with no search[]/search_expr still
+// needs search_after pushed down.
 func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil || (!p.HasSearchTerms() && p.ResumeAfter == "") {
 		return nil
 	}
 	wf := &storepb.SearchFilter{
 		Terms:           p.Terms,
+		Expression:      p.Expression(),
 		CaseInsensitive: !p.CaseSensitive,
 		FuzzThreshold:   int32(p.FuzzThreshold),
+		ResumeAfter:     p.ResumeAfter,
+		ScoreAfter:      p.ScoreAfter,
 	}
 	switch p.FuzzAlg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
 		wf.FuzzAlg = storepb.FUZZ_ALG_JARO_WINKLER
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING_LEFT
+	case streaminglabelvalues.FuzzAlgSubstring:
+		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING
 	default:
 		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSEQUENCE
 	}

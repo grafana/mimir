@@ -3,7 +3,9 @@
 package streaminglabelvalues
 
 import (
+	"reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +32,96 @@ func TestNewParamsAcceptsValid(t *testing.T) {
 			assert.Equal(t, tc.p, got)
 		})
 	}
+}
+
+func TestNewExpressionParamsAcceptsValid(t *testing.T) {
+	got, err := NewExpressionParams("foo AND NOT old", false, FuzzAlgSubsequence, 80)
+	require.NoError(t, err)
+	assert.False(t, got.CaseSensitive)
+	assert.Equal(t, FuzzAlgSubsequence, got.FuzzAlg)
+	assert.Equal(t, 80, got.FuzzThreshold)
+	assert.Equal(t, "foo AND NOT old", got.Expression())
+	assert.True(t, got.HasSearchTerms())
+	assert.NotNil(t, got.expressionExpr)
+}
+
+func TestNewExpressionParamsOwnsExpressionSource(t *testing.T) {
+	input := []byte("foo AND NOT old")
+	expression := unsafe.String(unsafe.SliceData(input), len(input))
+
+	params, err := NewExpressionParams(expression, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	input[0] = 'x'
+	assert.Equal(t, "foo AND NOT old", params.Expression())
+}
+
+func TestNilParamsAccessors(t *testing.T) {
+	var params *Params
+	assert.Empty(t, params.Expression())
+	assert.False(t, params.HasSearchTerms())
+}
+
+func TestParamsDoesNotExposeMutableExpressionSource(t *testing.T) {
+	typeOfParams := reflect.TypeOf(Params{})
+	exportedFields := make([]string, 0, typeOfParams.NumField())
+	for i := 0; i < typeOfParams.NumField(); i++ {
+		field := typeOfParams.Field(i)
+		if field.PkgPath == "" {
+			exportedFields = append(exportedFields, field.Name)
+		}
+	}
+	assert.Equal(t, []string{"Terms", "CaseSensitive", "FuzzAlg", "FuzzThreshold", "ResumeAfter", "ScoreAfter"}, exportedFields,
+		"an exported expression source could diverge from the private validated AST")
+}
+
+func TestParamsResumeAfterIsAPlainField(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	assert.Empty(t, p.ResumeAfter, "zero value is empty, no cursor in effect")
+	p.ResumeAfter = "kube_pod_status_ready"
+	assert.Equal(t, "kube_pod_status_ready", p.ResumeAfter)
+}
+
+func TestParamsScoreAfterIsAPlainField(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, p.ScoreAfter, "zero value is 0, no cursor in effect")
+	p.ScoreAfter = 0.75
+	assert.Equal(t, 0.75, p.ScoreAfter)
+}
+
+func TestNilParamsValidates(t *testing.T) {
+	var params *Params
+	require.NoError(t, params.validate())
+}
+
+func TestNewExpressionParamsRejectsInvalid(t *testing.T) {
+	got, err := NewExpressionParams("", true, FuzzAlgSubsequence, 0)
+	require.EqualError(t, err, "search expression is empty")
+	assert.Nil(t, got)
+
+	got, err = NewExpressionParams("  \t", true, FuzzAlgSubsequence, 0)
+	require.EqualError(t, err, "search expression is empty")
+	assert.Nil(t, got)
+
+	got, err = NewExpressionParams("foo AND", true, FuzzAlgSubsequence, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "search expression:")
+	assert.Nil(t, got)
+
+	got, err = NewExpressionParams("NOT old", true, FuzzAlgSubsequence, 0)
+	require.EqualError(t, err, "search expression: every accepting path must require a positive term")
+	assert.Nil(t, got)
+}
+
+func TestParamsRejectsTermsAndExpression(t *testing.T) {
+	p, err := NewExpressionParams("foo", true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	p.Terms = []string{"bar"}
+	err = p.validate()
+	require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+	require.ErrorIs(t, err, ErrTermsAndExpression)
 }
 
 func TestNewParamsRejectsInvalid(t *testing.T) {

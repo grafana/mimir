@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
@@ -154,9 +156,10 @@ type searchBatchEnvelope[T any] struct {
 
 // searchTrailerEnvelope is the final NDJSON line on a successful stream.
 type searchTrailerEnvelope struct {
-	Status   string   `json:"status"`
-	HasMore  bool     `json:"has_more"`
-	Warnings []string `json:"warnings,omitempty"`
+	Status     string   `json:"status"`
+	HasMore    bool     `json:"has_more"`
+	NextCursor string   `json:"next_cursor,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 // searchErrorEnvelope is the final NDJSON line when iteration fails after at
@@ -193,6 +196,284 @@ type searchRequest struct {
 	labelName string
 }
 
+// searchCursorVersion is the current cursor payload version. Bump this and
+// reject unrecognized versions on decode if the payload shape ever changes,
+// so an old in-flight cursor fails clearly instead of being misinterpreted.
+const searchCursorVersion = 1
+
+// searchCursor is the JSON payload encoded into the opaque `cursor` query
+// parameter. It is the sole source of every search-defining parameter for a
+// cursor-driven request. See
+// docs/superpowers/specs/2026-09-22-search-cursor-pagination-design.md.
+//
+// SortBy is "" or "alpha" for an alpha-ordered cursor, or "score" for a
+// score-ordered one. ScoreAfter is only meaningful alongside a non-empty
+// ResumeAfter and SortBy=="score" — 0.0 is a legitimate score and has no
+// independent meaning as "no cursor."
+type searchCursor struct {
+	Version         int               `json:"v"`
+	Terms           []string          `json:"terms,omitempty"`
+	Expression      string            `json:"expression,omitempty"`
+	CaseSensitive   bool              `json:"case_sensitive"`
+	FuzzAlg         string            `json:"fuzz_alg"`
+	FuzzThreshold   int               `json:"fuzz_threshold"`
+	SortBy          string            `json:"sort_by,omitempty"`
+	SortDir         string            `json:"sort_dir"`
+	Limit           int               `json:"limit"`
+	BatchSize       int               `json:"batch_size"`
+	IncludeScore    bool              `json:"include_score"`
+	IncludeMetadata bool              `json:"include_metadata"`
+	Label           string            `json:"label,omitempty"`
+	StartMs         int64             `json:"start_ms"`
+	EndMs           int64             `json:"end_ms"`
+	Matchers        [][]cursorMatcher `json:"matchers,omitempty"`
+	ResumeAfter     string            `json:"resume_after"`
+	ScoreAfter      float64           `json:"score_after,omitempty"`
+}
+
+// cursorMatcher mirrors the wire LabelMatcher encoding (pkg/ingester/client's
+// MatchType enum: EQUAL=0, NOT_EQUAL=1, REGEX_MATCH=2, REGEX_NO_MATCH=3,
+// which is numerically identical to labels.MatchType) so a matcher set
+// round-trips through JSON without a PromQL-text detour.
+type cursorMatcher struct {
+	Type  int    `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// fuzzAlgToCursorString and cursorStringToFuzzAlg convert between
+// streaminglabelvalues.FuzzAlg and the same string vocabulary
+// parseSearchRequest already accepts on fuzz_alg, so a cursor's encoding is
+// exactly what a client could have typed.
+func fuzzAlgToCursorString(alg streaminglabelvalues.FuzzAlg) string {
+	switch alg {
+	case streaminglabelvalues.FuzzAlgJaroWinkler:
+		return "jarowinkler"
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		return "substring_left"
+	case streaminglabelvalues.FuzzAlgSubstring:
+		return "substring"
+	default:
+		return "subsequence"
+	}
+}
+
+func cursorStringToFuzzAlg(s string) (streaminglabelvalues.FuzzAlg, error) {
+	switch s {
+	case "", "subsequence":
+		return streaminglabelvalues.FuzzAlgSubsequence, nil
+	case "jarowinkler":
+		return streaminglabelvalues.FuzzAlgJaroWinkler, nil
+	case "substring_left":
+		return streaminglabelvalues.FuzzAlgSubstringLeft, nil
+	case "substring":
+		return streaminglabelvalues.FuzzAlgSubstring, nil
+	default:
+		return 0, fmt.Errorf("invalid fuzz_alg %q in cursor", s)
+	}
+}
+
+// orderingToSortDir converts a resolved storage.Ordering back into the
+// sort_dir vocabulary parseSortOrder accepts. Only ever called for
+// OrderByValueAsc/OrderByValueDesc — encodeSearchCursor's score-ordering
+// branch sets SortBy/ScoreAfter directly instead and never calls this.
+func orderingToSortDir(order storage.Ordering) string {
+	if order == storage.OrderByValueDesc {
+		return "dsc"
+	}
+	return "asc"
+}
+
+// matchersToCursor and cursorToMatchers convert between the searchRequest's
+// [][]*labels.Matcher (one slice per match[] entry) and the cursor's JSON
+// encoding.
+func matchersToCursor(matcherSets [][]*labels.Matcher) [][]cursorMatcher {
+	if len(matcherSets) == 0 {
+		return nil
+	}
+	out := make([][]cursorMatcher, len(matcherSets))
+	for i, set := range matcherSets {
+		row := make([]cursorMatcher, len(set))
+		for j, m := range set {
+			row[j] = cursorMatcher{Type: int(m.Type), Name: m.Name, Value: m.Value}
+		}
+		out[i] = row
+	}
+	return out
+}
+
+func cursorToMatchers(rows [][]cursorMatcher) ([][]*labels.Matcher, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	out := make([][]*labels.Matcher, len(rows))
+	for i, row := range rows {
+		set := make([]*labels.Matcher, len(row))
+		for j, cm := range row {
+			m, err := labels.NewMatcher(labels.MatchType(cm.Type), cm.Name, cm.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid cursor matcher %d/%d: %w", i, j, err)
+			}
+			set[j] = m
+		}
+		out[i] = set
+	}
+	return out, nil
+}
+
+// encodeSearchCursor builds the opaque cursor value for the next page of
+// req, given resumeAfter and afterScore — the value and (for score
+// ordering) raw score of the last record emitted on the current page.
+// afterScore is ignored for alpha ordering. Callers must pass the raw,
+// unrounded storage.SearchResult.Score, never a display-rounded copy — see
+// this plan's Global Constraints.
+func encodeSearchCursor(req *searchRequest, resumeAfter string, afterScore float64) (string, error) {
+	c := searchCursor{
+		Version:         searchCursorVersion,
+		Terms:           req.params.Terms,
+		Expression:      req.params.Expression(),
+		CaseSensitive:   req.params.CaseSensitive,
+		FuzzAlg:         fuzzAlgToCursorString(req.params.FuzzAlg),
+		FuzzThreshold:   req.params.FuzzThreshold,
+		Limit:           req.limit,
+		BatchSize:       req.batchSize,
+		IncludeScore:    req.includeScore,
+		IncludeMetadata: req.includeMetadata,
+		Label:           req.labelName,
+		StartMs:         req.startMs,
+		EndMs:           req.endMs,
+		Matchers:        matchersToCursor(req.matchers),
+		ResumeAfter:     resumeAfter,
+	}
+	if req.hints.OrderBy == storage.OrderByScoreDesc {
+		c.SortBy = "score"
+		c.ScoreAfter = afterScore
+	} else {
+		c.SortDir = orderingToSortDir(req.hints.OrderBy)
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// decodeSearchCursor parses and structurally validates the opaque cursor
+// value. It does not yet build a searchRequest — see toSearchRequest.
+func decodeSearchCursor(raw string) (*searchCursor, error) {
+	data, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	var c searchCursor
+	if err := json.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	if c.Version != searchCursorVersion {
+		return nil, fmt.Errorf("invalid cursor: unsupported version %d", c.Version)
+	}
+	if c.SortBy != "" && c.SortBy != "alpha" && c.SortBy != "score" {
+		return nil, fmt.Errorf("invalid cursor: sort_by=%q is not supported with a cursor", c.SortBy)
+	}
+	return &c, nil
+}
+
+// toSearchRequest rebuilds a *searchRequest from a decoded cursor, routing
+// every field through the same validation a fresh request would use
+// (NewParams/NewExpressionParams, parseSortOrder, limit/batch_size bounds),
+// so a malformed or hand-crafted cursor fails the same way a bad request
+// would. Cursors are unsigned, so any client can hand-craft one; every
+// field must be validated here rather than trusted.
+func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, error) {
+	alg, err := cursorStringToFuzzAlg(c.FuzzAlg)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(c.Terms) > maxSearchTermsPerRequest {
+		return nil, fmt.Errorf("invalid cursor: too many search terms: got %d, maximum is %d", len(c.Terms), maxSearchTermsPerRequest)
+	}
+	if c.Limit < 0 {
+		return nil, errors.New("invalid cursor: limit must be >= 0")
+	}
+	if c.BatchSize < 0 || c.BatchSize > maxSearchBatchSize {
+		return nil, fmt.Errorf("invalid cursor: batch_size %d must be between 0 and %d", c.BatchSize, maxSearchBatchSize)
+	}
+	batchSize := c.BatchSize
+	if batchSize == 0 {
+		batchSize = searchDefaultBatchSize
+	}
+
+	sortBy := c.SortBy
+	if sortBy == "" {
+		sortBy = "alpha"
+	}
+	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgSubstring {
+		return nil, errors.New("invalid cursor: sort_by=score is not supported with fuzz_alg=substring; every match scores 1.0, use sort_by=alpha")
+	}
+	if sortBy == "score" && len(c.Terms) == 0 && c.Expression == "" {
+		return nil, errors.New("invalid cursor: sort_by=score requires search terms or an expression")
+	}
+	if c.ScoreAfter < 0 || c.ScoreAfter > 1 {
+		return nil, fmt.Errorf("invalid cursor: score_after %v must be between 0 and 1", c.ScoreAfter)
+	}
+
+	var params *streaminglabelvalues.Params
+	if c.Expression != "" {
+		if len(c.Terms) > 0 {
+			return nil, errors.New("invalid cursor: terms and expression are mutually exclusive")
+		}
+		params, err = streaminglabelvalues.NewExpressionParams(c.Expression, c.CaseSensitive, alg, c.FuzzThreshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cursor: %w", err)
+		}
+	} else {
+		params, err = streaminglabelvalues.NewParams(c.Terms, c.CaseSensitive, alg, c.FuzzThreshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cursor: %w", err)
+		}
+	}
+	params.ResumeAfter = c.ResumeAfter
+	if sortBy == "score" {
+		params.ScoreAfter = c.ScoreAfter
+	}
+
+	order, err := parseSortOrder(sortBy, c.SortDir, c.SortDir != "")
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+
+	if requireLabelName && c.Label == "" {
+		return nil, errors.New(`invalid cursor: missing required parameter "label"`)
+	}
+	if c.EndMs < c.StartMs {
+		return nil, errors.New("invalid cursor: end timestamp must not be before start timestamp")
+	}
+
+	matchers, err := cursorToMatchers(c.Matchers)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+
+	hintsLimit := c.Limit
+	if c.Limit > 0 && c.Limit < math.MaxInt {
+		hintsLimit = c.Limit + 1
+	}
+
+	return &searchRequest{
+		params:          params,
+		matchers:        matchers,
+		hints:           &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
+		limit:           c.Limit,
+		startMs:         c.StartMs,
+		endMs:           c.EndMs,
+		batchSize:       batchSize,
+		includeScore:    c.IncludeScore,
+		includeMetadata: c.IncludeMetadata,
+		labelName:       c.Label,
+	}, nil
+}
+
 // parseSearchRequest reads the HTTP request and builds a searchRequest.
 // requireLabelName is true for the label-values endpoint where the `label`
 // parameter is mandatory. Returns a wrapped error suitable for surfacing as
@@ -204,11 +485,33 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 
 	q := r.Form
 
+	// Presence, not non-emptiness: a present-but-empty cursor= must still be
+	// treated as "a cursor was supplied" so it cannot silently fall through
+	// to ordinary parsing. A lone empty value then fails decode validation.
+	if _, present := q["cursor"]; present {
+		cursor := q.Get("cursor")
+		if len(q) != 1 {
+			return nil, errors.New("cursor and other search parameters are mutually exclusive")
+		}
+		decoded, err := decodeSearchCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		return decoded.toSearchRequest(requireLabelName)
+	}
+
 	// Search terms (search[]). Capped at maxSearchTermsPerRequest to bound
 	// per-request filter construction cost; matches Prometheus PR #18573.
 	terms := q["search[]"]
 	if len(terms) > maxSearchTermsPerRequest {
 		return nil, fmt.Errorf("too many search[] terms: got %d, maximum is %d", len(terms), maxSearchTermsPerRequest)
+	}
+
+	// search_expr is a boolean expression alternative to search[] (AND/OR/NOT,
+	// quoted terms, parentheses); the two are mutually exclusive.
+	expr := q.Get("search_expr")
+	if expr != "" && len(terms) > 0 {
+		return nil, errors.New("search[] and search_expr are mutually exclusive")
 	}
 
 	// Case sensitivity defaults to true per Prometheus URL polarity.
@@ -224,12 +527,23 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		// keep default
 	case "jarowinkler":
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case "substring_left":
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case "substring":
+		alg = streaminglabelvalues.FuzzAlgSubstring
 	default:
-		return nil, fmt.Errorf("invalid fuzz_alg %q (allowed: subsequence, jarowinkler)", q.Get("fuzz_alg"))
+		return nil, fmt.Errorf("invalid fuzz_alg %q (allowed: subsequence, jarowinkler, substring_left, substring)", q.Get("fuzz_alg"))
 	}
 
-	// Fuzz threshold (int 0-100, default 0).
+	// Fuzz threshold (int 0-100, default 0). fuzz_alg=substring ignores the
+	// fuzzy threshold entirely (FilterContains with anyPosition=true always
+	// scores 1.0 on a match), so 100 is the only value that makes sense;
+	// default to it and reject any other explicit value rather than
+	// silently ignoring it.
 	threshold := 0
+	if alg == streaminglabelvalues.FuzzAlgSubstring {
+		threshold = 100
+	}
 	if v := q.Get("fuzz_threshold"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil {
@@ -237,6 +551,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		}
 		if parsed < 0 || parsed > 100 {
 			return nil, fmt.Errorf("invalid fuzz_threshold: got %v but must be between 0 and 100", parsed)
+		}
+		if alg == streaminglabelvalues.FuzzAlgSubstring && parsed != 100 {
+			return nil, fmt.Errorf("invalid fuzz_threshold: fuzz_alg=substring only supports fuzz_threshold=100, got %d", parsed)
 		}
 		threshold = parsed
 	}
@@ -247,10 +564,16 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		sortBy = "alpha"
 	}
 	// sort_by=score sorts by relevance score, which is only meaningful when
-	// at least one search[] term has been supplied to produce the scores.
-	// Matches Prometheus PR #18573.
-	if sortBy == "score" && len(terms) == 0 {
-		return nil, errors.New("sort_by=score requires search[] to be set")
+	// at least one search[] term or a search_expr has been supplied to
+	// produce the scores. Matches Prometheus PR #18573.
+	if sortBy == "score" && len(terms) == 0 && expr == "" {
+		return nil, errors.New("sort_by=score requires search[] or search_expr to be set")
+	}
+	// fuzz_alg=substring scores every match 1.0 (FilterContains with
+	// anyPosition=true), so sorting by score carries no information; only
+	// alpha ordering makes sense.
+	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgSubstring {
+		return nil, errors.New("sort_by=score is not supported with fuzz_alg=substring; every match scores 1.0, use sort_by=alpha")
 	}
 	sortDir := q.Get("sort_dir")
 	if sortDir == "" {
@@ -322,9 +645,17 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	params, err := streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
-	if err != nil {
-		return nil, fmt.Errorf("invalid search params: %w", err)
+	var params *streaminglabelvalues.Params
+	if expr != "" {
+		params, err = streaminglabelvalues.NewExpressionParams(expr, caseSensitive, alg, threshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid search_expr: %w", err)
+		}
+	} else {
+		params, err = streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid search params: %w", err)
+		}
 	}
 
 	// URL param is "label"; required by the label-values endpoint.
@@ -437,6 +768,112 @@ func dispatchSearchOverMatcherSets(matcherSets [][]*labels.Matcher, hints *stora
 	return storage.MergeSearchResultSets(sets, hints)
 }
 
+// cursorResumingSearchResultSet wraps inner so it discards every record up
+// to and including resumeAfter before passing records through unchanged.
+// For alpha ordering, "up to and including" is a value comparison. For
+// score ordering (byScore), it is the same (Score desc, Value asc) total
+// order ApplyScoreResumeAfter applies on the source side: a record is
+// already-returned when its score is higher than afterScore, or equal to
+// afterScore with a value <= resumeAfter — both sides of the resume
+// boundary must agree on this rule for a correct walk. This is the
+// querier-side backstop described in
+// docs/superpowers/specs/2026-09-22-search-cursor-pagination-design.md: even
+// once every ingester/store-gateway honors Params.ResumeAfter, an
+// old-binary source during a rolling upgrade will silently ignore it and
+// return its ordinary first-N results, so the querier must always be able
+// to re-apply the same exclusion itself. resumeAfter == "" makes this a
+// no-op pass-through (used when there is no cursor in effect).
+//
+// The backstop guarantees no already-seen record is ever re-emitted, and
+// that the walk terminates. It does NOT recover a fully correct walk
+// against a source that ignores search_after: such a source still honors
+// the older Limit field positionally, so it returns the same first-Limit
+// window of the ordering on every page, and everything past that window is
+// unreachable until the source is upgraded. When that window is entirely
+// discarded, streamSearchNDJSON discloses the possibly-incomplete page via
+// a response warning (see innerRecordsDiscarded) rather than reporting a
+// silently complete walk.
+type cursorResumingSearchResultSet struct {
+	inner       storage.SearchResultSet
+	resumeAfter string
+	descending  bool
+	byScore     bool
+	afterScore  float64
+	pastCursor  bool
+	innerSeen   int
+}
+
+func newCursorResumingSearchResultSet(inner storage.SearchResultSet, resumeAfter string, order storage.Ordering, afterScore float64) storage.SearchResultSet {
+	if resumeAfter == "" {
+		return inner
+	}
+	return &cursorResumingSearchResultSet{
+		inner:       inner,
+		resumeAfter: resumeAfter,
+		descending:  order == storage.OrderByValueDesc,
+		byScore:     order == storage.OrderByScoreDesc,
+		afterScore:  afterScore,
+	}
+}
+
+func (s *cursorResumingSearchResultSet) Next() bool {
+	if s.pastCursor {
+		return s.inner.Next()
+	}
+	for s.inner.Next() {
+		s.innerSeen++
+		r := s.inner.At()
+		if s.byScore {
+			if r.Score < s.afterScore || (r.Score == s.afterScore && r.Value > s.resumeAfter) {
+				s.pastCursor = true
+				return true
+			}
+			continue
+		}
+		if s.descending {
+			if r.Value < s.resumeAfter {
+				s.pastCursor = true
+				return true
+			}
+		} else if r.Value > s.resumeAfter {
+			s.pastCursor = true
+			return true
+		}
+	}
+	return false
+}
+
+// innerRecordsDiscarded reports how many records the wrapped source
+// returned up to and including the first one found to be strictly past
+// resumeAfter, or the whole response if none was. If that count reached the
+// caller's probed limit, the source may have positionally truncated its
+// response at or before the cursor's resume point — for example, a source
+// mid-rolling-upgrade that doesn't yet understand search_after but still
+// honors the older Limit field, which then returns the same fixed window on
+// every page. streamSearchNDJSON uses this to disclose a possibly-incomplete
+// page via a response warning rather than silently reporting a complete,
+// successful walk. It covers both the fully-discarded page and the partially
+// discarded one, since both hide the same unreachable tail.
+//
+// The count stops growing once the wrapper is past the cursor, so a healthy
+// search_after-aware source — which returns its first record already past
+// resumeAfter — leaves this at 1 and never trips the caller's check.
+func (s *cursorResumingSearchResultSet) innerRecordsDiscarded() int {
+	return s.innerSeen
+}
+
+func (s *cursorResumingSearchResultSet) At() storage.SearchResult          { return s.inner.At() }
+func (s *cursorResumingSearchResultSet) Warnings() annotations.Annotations { return s.inner.Warnings() }
+func (s *cursorResumingSearchResultSet) Err() error                        { return s.inner.Err() }
+func (s *cursorResumingSearchResultSet) Close() error                      { return s.inner.Close() }
+
+// roundScore rounds a relevance score to 3 decimal places before it goes on
+// the wire (e.g. 0.727906976744186 -> 0.728), so include_score=true results
+// are readable without every client needing to round the raw float itself.
+func roundScore(score float64) float64 {
+	return math.Round(score*1000) / 1000
+}
+
 // SearchLabelNamesHandler returns the handler for GET/POST /api/v1/search/label_names.
 func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -458,12 +895,13 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelNames(r.Context(), req.params, req.hints, m...)
 		})
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 		defer rs.Close()
 		if req.includeScore {
 			env := getSearchEnvelope[searchLabelNameRecordWithScore](req, &searchLabelNameWithScorePool)
 			defer putSearchEnvelope(env, &searchLabelNameWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelNameRecordWithScore {
-				return searchLabelNameRecordWithScore{Name: r.Value, Score: r.Score}
+				return searchLabelNameRecordWithScore{Name: r.Value, Score: roundScore(r.Score)}
 			})
 			return
 		}
@@ -496,12 +934,13 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, m...)
 		})
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 		defer rs.Close()
 		if req.includeScore {
 			env := getSearchEnvelope[searchLabelValueRecordWithScore](req, &searchLabelValueWithScorePool)
 			defer putSearchEnvelope(env, &searchLabelValueWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelValueRecordWithScore {
-				return searchLabelValueRecordWithScore{Value: r.Value, Score: r.Score}
+				return searchLabelValueRecordWithScore{Value: r.Value, Score: roundScore(r.Score)}
 			})
 			return
 		}
@@ -537,6 +976,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 
 		// Metric metadata (include_metadata) is enriched here, above every merge,
 		// so a single batched fetch covers the fully-deduped result.
@@ -571,7 +1011,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			env := getSearchEnvelope[searchMetricNameRecordWithScore](req, &searchMetricNameWithScorePool)
 			defer putSearchEnvelope(env, &searchMetricNameWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchMetricNameRecordWithScore {
-				rec := searchMetricNameRecordWithScore{Name: r.Value, Score: r.Score}
+				rec := searchMetricNameRecordWithScore{Name: r.Value, Score: roundScore(r.Score)}
 				if md := r.Metadata; md != nil {
 					rec.Type = string(md.Type)
 					rec.Help = md.Help
@@ -694,6 +1134,8 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 
 	flushedAny := false
 	emitted := 0
+	var lastValue string
+	var lastScore float64
 	flushBatch := func() error {
 		if len(env.Results) == 0 {
 			return nil
@@ -723,6 +1165,8 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		if req.limit > 0 && emitted > req.limit {
 			break
 		}
+		lastValue = rs.At().Value
+		lastScore = rs.At().Score
 		env.Results = append(env.Results, build(rs.At()))
 		if len(env.Results) >= req.batchSize {
 			if err := flushBatch(); err != nil {
@@ -794,6 +1238,21 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		trailer.HasMore = true
 	case clampEnforcedMin >= 0 && emitted >= clampEnforcedMin:
 		trailer.HasMore = true
+	}
+	// Known scope limitation: the assertion is on the concrete rs handed to
+	// this function, so metric-names with include_metadata=true never gets
+	// this warning — rs is re-wrapped by then.
+	if crs, ok := rs.(*cursorResumingSearchResultSet); ok && req.hints.Limit > 0 && crs.innerRecordsDiscarded() >= req.hints.Limit {
+		trailer.Warnings = append(trailer.Warnings, "a search source may not yet support cursor-based resume (a rolling upgrade may be in progress); this page's results may be incomplete")
+	}
+	// lastValue == "" means nothing was emitted, so there is no resume
+	// point to encode; a cursor carrying an empty resume_after would
+	// restart the walk from the beginning. This now applies to both
+	// orderings — score ordering no longer refuses to emit a cursor.
+	if trailer.HasMore && lastValue != "" {
+		if cursor, err := encodeSearchCursor(req, lastValue, lastScore); err == nil {
+			trailer.NextCursor = cursor
+		}
 	}
 	// Fast path for the common case: success trailer with no warnings and
 	// no has_more flag. Bypassing json.Encoder skips one bytes allocation
