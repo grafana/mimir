@@ -161,6 +161,8 @@ prometheus.remote_write "metrics_local" {
                 // Send metrics using remote write 2.0, which carries metric metadata inline.
                 protobuf_message = "io.prometheus.write.v2.Request"
 
+                headers = {"X-Scope-OrgID" = "anonymous"}
+
                 queue_config { }
         }
 }

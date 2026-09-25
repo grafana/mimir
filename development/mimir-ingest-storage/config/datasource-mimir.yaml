@@ -10,6 +10,33 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: anonymous
+  - name: Mimir (standard)
+    type: prometheus
+    access: proxy
+    uid: mimir-standard
+    orgID: 1
+    url: http://nginx:8080/prometheus
+    jsonData:
+      prometheusType: Mimir
+      timeInterval: 5s
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: standard
+  - name: Mimir (delayed)
+    type: prometheus
+    access: proxy
+    uid: mimir-delayed
+    orgID: 1
+    url: http://nginx:8080/prometheus
+    jsonData:
+      prometheusType: Mimir
+      timeInterval: 5s
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: delayed
   - name: Tempo
     type: tempo
     access: proxy

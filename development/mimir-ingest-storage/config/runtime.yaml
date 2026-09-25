@@ -3,3 +3,11 @@ overrides:
   anonymous:
     labels_query_optimizer_enabled: true
     ruler_evaluation_consistency_max_delay: 1m
+  # standard and delayed receive identical series from tools/freshness-loadgen.
+  standard: {}
+  delayed:
+    # Don't cache results newer than the block-builder lag: delayed series fill in after publication.
+    max_cache_freshness: 30m
+    delayed_series:
+      - match: '{__name__=~"grafana_http_request_duration_seconds_.*"}'
+        except: ['{cluster=~"prod-0[0-4]"}']

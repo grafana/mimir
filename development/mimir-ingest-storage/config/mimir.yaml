@@ -1,4 +1,4 @@
-multitenancy_enabled: false
+multitenancy_enabled: true
 
 common:
   storage:
@@ -39,7 +39,7 @@ block_builder:
 
 block_builder_scheduler:
   scheduling_interval: 30s
-  job_size: 1m
+  job_size: 5m
   startup_observe_time: 5s
 
 blocks_storage:
@@ -52,6 +52,10 @@ blocks_storage:
     block_postings_for_matchers_cache_force: true
 
   bucket_store:
+    # Make block-builder blocks queryable within minutes, so delayed series are visible quickly.
+    ignore_blocks_within: 0s
+    sync_interval: 1m
+
     index_cache:
       backend: memcached
       memcached:
@@ -66,6 +70,11 @@ blocks_storage:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+      # Short TTLs so new tenants, blocks and bucket indexes are seen within a minute.
+      tenants_list_ttl: 1m
+      tenant_blocks_list_ttl: 1m
+      bucket_index_content_ttl: 1m
+      metafile_doesnt_exist_ttl: 1m
 
 
 memberlist:
@@ -92,6 +101,9 @@ ruler_storage:
     backend: memcached
     memcached:
       addresses: dns+memcached:11211
+
+compactor:
+  cleanup_interval: 1m
 
 query_scheduler:
   service_discovery_mode: "ring"
@@ -156,6 +168,7 @@ usage_tracker:
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000
+  max_global_series_per_user: 0
 
 runtime_config:
   file: ./config/runtime.yaml
