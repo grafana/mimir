@@ -89,6 +89,9 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
+  - Debounce ring-change-triggered rule syncs.
+    - `-ruler.ring-change-debounce`
+    - `-ruler.ring-change-max-debounce`
   - `-ruler.min-rule-evaluation-interval`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
@@ -130,11 +133,13 @@ The following features are currently experimental:
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
   - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
     - `-distributor.ha-tracker.per-sample-dedupe`
+  - Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted instead of being silently dropped by ingesters
+    - `-distributor.merge-duplicate-timeseries`
 - Ingester
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Per-tenant float chunk encoding selection (`-ingester.float-chunk-encoding`)
+  - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -246,10 +251,10 @@ The following features are currently experimental:
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
+  - Rate limiting queries on a per-tenant basis (configured with the `limited_queries` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit, as well as `-query-frontend.subquery-spin-off-simple-subqueries` and `-query-frontend.subquery-spin-off-with-excess-downstream-queries`)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-  - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - Separate query sharding limit for cardinality API requests (active series and active native histogram metrics): `-query-frontend.cardinality-sharding-max-sharded-queries`
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
@@ -262,9 +267,10 @@ The following features are currently experimental:
   - Scalar common subexpression elimination: `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
-  - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
+  - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
+  - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
@@ -320,6 +326,11 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.role`
 - Memberlist rejoin custom seed nodes
   - `-memberlist.rejoin-seed-nodes`
+- Runtime configuration
+  - Method used to decode runtime configuration files (`-runtime-config.loader`)
+- Memberlist backoff between CAS retries
+  - `-memberlist.cas-retry-min-backoff`
+  - `-memberlist.cas-retry-max-backoff`
 - Jsonnet
   - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.

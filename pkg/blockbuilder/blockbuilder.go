@@ -453,7 +453,9 @@ func (b *BlockBuilder) consumePartitionSection(
 	}
 	client := r.client
 
-	lastConsumedOffset := startOffset
+	// startOffset is inclusive, so the last offset consumed before this section is startOffset-1.
+	// Initializing to startOffset would skip a job spanning exactly one record.
+	lastConsumedOffset := startOffset - 1
 	if startOffset >= endOffset {
 		level.Info(logger).Log("msg", "nothing to consume")
 		return

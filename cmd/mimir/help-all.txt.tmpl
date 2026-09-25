@@ -859,6 +859,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100). (default 15)
   -blocks-storage.tsdb.early-head-compaction-min-in-memory-series int
     	[experimental] When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether an early compaction is required. Use 0 to disable it.
+  -blocks-storage.tsdb.float-chunk-encoding string
+    	[experimental] Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2. (default "xor")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
@@ -1151,6 +1153,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
+  -compactor.block-symbol-table-size-threshold uint
+    	[experimental] Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.
   -compactor.block-sync-concurrency int
     	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
@@ -1186,9 +1190,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
   -compactor.first-level-compaction-ooo-wait-period duration
-    	[experimental] How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.
+    	How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction. (default 5m0s)
   -compactor.first-level-compaction-skip-future-max-time
-    	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
+    	When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data. (default true)
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
@@ -1287,6 +1291,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign
     	[experimental] Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown). (default true)
+  -compactor.scheduler-client.enable-ring-based-cleanup
+    	[experimental] Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide. (default true)
   -compactor.scheduler-client.enabled
     	[experimental] Controls whether compactors should contact a scheduler to request work.
   -compactor.scheduler-client.grpc-client-config.backoff-max-period duration
@@ -1527,6 +1533,8 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.merge-duplicate-timeseries
+    	[experimental] Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.
   -distributor.nautilus-ingest-routing string
     	[experimental] Whether this tenant is enrolled in the Nautilus write policy. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (startup-configured Nautilus write destinations: production ingest, nautilus ingest, or both). Must move in lockstep with readcache_read_routing. (default "disabled")
   -distributor.nautilus-ingest-topic string
@@ -1971,8 +1979,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
-  -ingester.float-chunk-encoding string
-    	[experimental] Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'. (default "xor")
   -ingester.ignore-ooo-exemplars
     	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string
@@ -2299,6 +2305,10 @@ Usage of ./cmd/mimir/mimir:
     	Port to listen on for gossip messages. (default 7946)
   -memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
     	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -memberlist.cas-retry-max-backoff duration
+    	[experimental] Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set. (default 10s)
+  -memberlist.cas-retry-min-backoff duration
+    	[experimental] Minimum delay between CAS retries after a version mismatch. 0 disables the delay.
   -memberlist.cluster-label string
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
@@ -2595,6 +2605,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
+  -querier.mimir-query-engine.enable-propagate-matchers
+    	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
     	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers
@@ -2609,6 +2621,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    	[experimental] Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.
   -querier.mimir-query-engine.range-vector-splitting.enabled
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
@@ -2869,10 +2883,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution
     	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers. (default true)
+  -query-frontend.enabled-promql-binop-fill-modifiers comma-separated-list-of-strings
+    	Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
-    	Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.
+    	Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.
   -query-frontend.grpc-client-config.backoff-max-period duration
@@ -2936,13 +2952,15 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.labels-query-optimizer-enabled
     	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
-    	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
+    	[deprecated] (use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.
   -query-frontend.max-body-size int
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
+  -query-frontend.max-inflight-metrics-enabled
+    	[experimental] Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
@@ -3031,8 +3049,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.rewrite-histogram-queries
     	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
-  -query-frontend.rewrite-propagate-matchers
-    	[experimental] Set to true to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
@@ -3673,6 +3689,10 @@ Usage of ./cmd/mimir/mimir:
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
+  -ruler.ring-change-debounce duration
+    	[experimental] How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.
+  -ruler.ring-change-max-debounce duration
+    	[experimental] The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0. (default 15s)
   -ruler.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 2)
   -ruler.ring.consul.acl-token string
@@ -3754,13 +3774,15 @@ Usage of ./cmd/mimir/mimir:
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
-    	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+    	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: ";optional-on-startup" lets the process start without it, but a later failure still fails the reload; ";optional-keep-last-value-on-failure" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because ";" starts a new command.
   -runtime-config.http-client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -runtime-config.http-client-disable-keep-alives
     	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
+  -runtime-config.loader string
+    	[experimental] Method used to decode the runtime configuration files. Supported values are: "map" (decode directly using mapstructure) and "yaml" (decode by round-tripping through YAML). (default "yaml")
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.additional-labels comma-separated-list-of-strings
@@ -3781,6 +3803,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Primary cluster validation label.
   -server.create-new-traces
     	Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.
+  -server.enable-open-metrics-text-created-samples
+    	Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and "_created" suffix. Only applies if -server.register-instrumentation is set to true.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-collect-max-streams-by-conn

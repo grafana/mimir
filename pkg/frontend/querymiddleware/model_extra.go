@@ -1140,5 +1140,5 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 }
 
 func createQueryOpts(stats string, lookbackDelta time.Duration) (promql.QueryOpts, error) {
-	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta), nil
+	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta, nil), nil
 }

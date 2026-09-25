@@ -6,7 +6,7 @@ local filename = 'mimir-compactor-resources.json';
     assert std.md5(filename) == '09a5c49e9cdb2f2b24c6d184574a07fd' : 'UID of the dashboard has changed, please update references to dashboard.';
     local compactor_scheduler_enabled = $._config.compactor_scheduler_enabled;
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
-    .addClusterSelectorTemplates()
+    .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Compactor resources')
       .addPanel(

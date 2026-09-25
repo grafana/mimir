@@ -34,6 +34,16 @@ eval range from 0 to 5m step 1m histogram_stdvar(single_histogram)
 eval range from 0 to 5m step 1m histogram_sum(single_histogram)
   {} 5 5 5 5 5 20
 
+# histogram_stddev/histogram_stdvar operate on the buckets, so their input's buckets must never be skipped,
+# even when nested under histogram_sum/histogram_count/histogram_avg (which would otherwise enable skipping via
+# the "skip decoding histogram buckets" optimization). If the buckets were skipped, histogram_stddev/histogram_stdvar
+# would see an empty bucket set and return 0, making the surrounding histogram_sum 0 as well.
+eval instant at 5m histogram_sum(single_histogram * histogram_stddev(single_histogram))
+  {} 59.72564428477802
+
+eval instant at 5m histogram_sum(single_histogram * histogram_stdvar(single_histogram))
+  {} 178.35762926159188
+
 clear
 
 # Test metric with mixed floats and histograms

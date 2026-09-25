@@ -156,6 +156,11 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
   expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
   expect no_info
   {} 10.5`,
+
+			// TODO: Precision is lost calculating avg_over_time across a block boundary, in cases
+			// of huge opposite-sign values (eg. +1e100/-1e100) that should cancel out exactly.
+			`eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
+    {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}`,
 		}
 
 	default:

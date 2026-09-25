@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -50,8 +51,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	logger, ctx := spanlogger.New(ctx, e.engine.logger, tracer, "Evaluator.Evaluate")
 	defer logger.Finish()
 
+	// Identifies the user query this evaluation belongs to. In a querier this comes from the
+	// query-scheduler request; in the query-frontend it comes from the HTTP transport handler.
+	// Read here rather than in the deferred function below, which runs after ctx is reassigned.
+	rootQueryID := rootqueryid.IDFromContext(ctx)
+
 	defer func() {
-		msg := make([]interface{}, 0, 2*(6+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
+		msg := make([]interface{}, 0, 2*(6+4+2+1)) // 3 fields for all query types, plus worst case of 4 fields for range queries, 2 fields for a failed query and 1 for the root query ID
 
 		msg = append(msg,
 			"msg", "evaluation stats",
@@ -59,6 +65,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 			"originalExpression", e.originalExpression,
 			"nodeCount", len(e.nodeRequests),
 		)
+
+		msg = rootqueryid.AppendLogFields(msg, rootQueryID)
 
 		if len(e.nodeRequests) == 1 {
 			timeRange := e.nodeRequests[0].TimeRange

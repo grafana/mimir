@@ -425,7 +425,13 @@ runtime_config:
 
   # Comma separated list of yaml files or URLs with the configuration that can
   # be updated at runtime. Runtime config files will be merged from left to
-  # right.
+  # right. An entry can end with semicolon-separated parameters that say what
+  # happens when it cannot be read: ";optional-on-startup" lets the process
+  # start without it, but a later failure still fails the reload;
+  # ";optional-keep-last-value-on-failure" also lets the process start without
+  # it, and a later failure keeps the value the source supplied last. Without a
+  # parameter, a source that cannot be read fails the load. Quote the value in a
+  # shell, because ";" starts a new command.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
 
@@ -445,6 +451,12 @@ runtime_config:
   # balancer, such as a Kubernetes Service.
   # CLI flag: -runtime-config.http-client-disable-keep-alives
   [http_client_disable_keep_alives: <boolean> | default = true]
+
+  # (experimental) Method used to decode the runtime configuration files.
+  # Supported values are: "map" (decode directly using mapstructure) and "yaml"
+  # (decode by round-tripping through YAML).
+  # CLI flag: -runtime-config.loader
+  [loader: <string> | default = "yaml"]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
@@ -969,6 +981,13 @@ cluster_validation:
 # using Open-Telemetry tracing.
 # CLI flag: -server.create-new-traces
 [create_new_traces: <boolean> | default = false]
+
+# Specifies if this handler should emit start timestamps for counters,
+# histograms and summaries over OpenMetrics 1.0, which are defined as extra
+# series with the same name and "_created" suffix. Only applies if
+# -server.register-instrumentation is set to true.
+# CLI flag: -server.enable-open-metrics-text-created-samples
+[enable_open_metrics_text_created_samples: <boolean> | default = false]
 ```
 
 ### distributor
@@ -2166,6 +2185,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
+  # (experimental) Enable propagating label matchers across binary expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = false]
+
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
@@ -2206,6 +2229,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+    # (experimental) Enable splitting subqueries, in addition to range vector
+    # selectors. Requires
+    # -querier.mimir-query-engine.range-vector-splitting.enabled and
+    # -querier.mimir-query-engine.enable-common-subexpression-elimination to
+    # also be enabled.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    [enable_subquery_splitting: <boolean> | default = false]
 
   time_splitting_and_caching:
     # (experimental) Enable caching of query results that were not fully
@@ -2328,8 +2359,9 @@ ring:
 The `frontend` block configures the query-frontend.
 
 ```yaml
-# Log queries that are slower than the specified duration. Set to 0 to disable.
-# Set to < 0 to enable on all queries.
+# (deprecated) (use query-frontend.query-stats-enabled instead) Log queries that
+# are slower than the specified duration. Set to 0 to disable. Set to < 0 to
+# enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
 
@@ -2478,11 +2510,6 @@ results_cache:
 # CLI flag: -query-frontend.rewrite-histogram-queries
 [rewrite_histogram_queries: <boolean> | default = false]
 
-# (experimental) Set to true to enable rewriting queries to propagate label
-# matchers across binary expressions.
-# CLI flag: -query-frontend.rewrite-propagate-matchers
-[rewrite_propagate_matchers: <boolean> | default = false]
-
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -2550,6 +2577,14 @@ client_cluster_validation:
 # empty, so starting to serve before then means failing queries.
 # CLI flag: -query-frontend.wait-for-querier-ring-on-startup
 [wait_for_querier_ring_on_startup: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_frontend_max_inflight_requests and
+# cortex_query_frontend_max_inflight_request_age_seconds metrics, which report
+# the per-tenant peak number of concurrent in-flight requests and the greatest
+# age an in-flight request reached since the last scrape. Disabling it skips
+# per-tenant in-flight tracking on every request.
+# CLI flag: -query-frontend.max-inflight-metrics-enabled
+[max_inflight_metrics_enabled: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -3151,6 +3186,22 @@ tenant_federation:
 # (experimental) Interval between applying queued incoming rule sync requests.
 # CLI flag: -ruler.inbound-sync-queue-poll-interval
 [inbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) How long to wait for the ring to stop changing before syncing
+# rules in response to a ring change. This can reduce duplicate rule evaluation
+# when multiple ring changes happen in quick succession, such as during a
+# rollout. 0 disables debouncing and syncs immediately on every detected ring
+# change, which is the default and historical behaviour. Must be less than
+# -ruler.ring-change-max-debounce.
+# CLI flag: -ruler.ring-change-debounce
+[ring_change_debounce: <duration> | default = 0s]
+
+# (experimental) The maximum time to keep postponing a ring-change-triggered
+# sync while the ring keeps changing, so continuous ring churn can't
+# indefinitely delay picking up a ring change. Only used when
+# -ruler.ring-change-debounce is greater than 0.
+# CLI flag: -ruler.ring-change-max-debounce
+[ring_change_max_debounce: <duration> | default = 15s]
 
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
@@ -4331,6 +4382,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.watch-prefix-buffer-size
 [watch_prefix_buffer_size: <int> | default = 128]
 
+# (experimental) Minimum delay between CAS retries after a version mismatch. 0
+# disables the delay.
+# CLI flag: -memberlist.cas-retry-min-backoff
+[cas_retry_min_backoff: <duration> | default = 0s]
+
+# (experimental) Maximum delay between CAS retries after a version mismatch.
+# Only takes effect if cas-retry-min-backoff is also set.
+# CLI flag: -memberlist.cas-retry-max-backoff
+[cas_retry_max_backoff: <duration> | default = 10s]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
@@ -4496,6 +4557,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # federation or metrics proxies.
 # CLI flag: -distributor.ha-tracker.per-sample-dedupe
 [ha_tracker_per_sample_dedupe: <boolean> | default = false]
+
+# (experimental) Merge timeseries that share the same label set and created
+# timestamp within a single write request, so that duplicate samples within that
+# same request are deduplicated and counted in cortex_discarded_samples_total
+# instead of being silently dropped by ingesters.
+# CLI flag: -distributor.merge-duplicate-timeseries
+[merge_duplicate_timeseries: <boolean> | default = false]
 
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster
@@ -4671,9 +4739,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
-# (experimental) Encoding used for float chunks in the ingester and block
-# builder for this tenant. Valid values are 'xor' and 'xor2'.
-# CLI flag: -ingester.float-chunk-encoding
+# (experimental) Encoding used for float chunks written for this tenant by the
+# ingester and block-builder, and by the compactor when it re-encodes
+# overlapping chunks. Supported values are: xor, xor2.
+# CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
 
 # (advanced) Custom trackers for active metrics. If there are active series
@@ -5068,12 +5137,17 @@ blocked_requests:
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
-# Enable certain experimental PromQL extended range selector modifiers, which
-# are subject to being changed or removed at any time, on a per-tenant basis.
-# Defaults to empty which means all experimental modifiers are disabled. Set to
-# 'all' to enable all experimental modifiers.
+# Deprecated: this setting has no effect. The PromQL extended range selector
+# modifiers smoothed and anchored are always enabled.
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
+
+# Enable certain experimental PromQL binary operation fill modifiers (fill,
+# fill_left, fill_right), which are subject to being changed or removed at any
+# time, on a per-tenant basis. Defaults to empty which means all fill modifiers
+# are disabled. Set to 'all' to enable all fill modifiers.
+# CLI flag: -query-frontend.enabled-promql-binop-fill-modifiers
+[enabled_promql_binop_fill_modifiers: <string> | default = ""]
 
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
@@ -6766,18 +6840,17 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks containing out-of-order samples. When set to 0 (default), out-of-order
-# blocks do not delay compaction.
+# How long the compactor waits before compacting first-level blocks containing
+# out-of-order samples. When set to 0, out-of-order blocks do not delay
+# compaction.
 # CLI flag: -compactor.first-level-compaction-ooo-wait-period
-[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
+[first_level_compaction_ooo_wait_period: <duration> | default = 5m]
 
-# (experimental) When enabled, the compactor skips first-level compaction jobs
-# if any source block has a MaxTime more recent than the wait period threshold.
-# This prevents premature compaction of blocks that may still receive
-# late-arriving data.
+# When enabled, the compactor skips first-level compaction jobs if any source
+# block has a MaxTime more recent than the wait period threshold. This prevents
+# premature compaction of blocks that may still receive late-arriving data.
 # CLI flag: -compactor.first-level-compaction-skip-future-max-time
-[first_level_compaction_skip_future_max_time: <boolean> | default = false]
+[first_level_compaction_skip_future_max_time: <boolean> | default = true]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -6834,6 +6907,12 @@ The `compactor` block configures the compactor component.
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
+
+# (experimental) Maximum symbol table size in bytes for a compacted block. When
+# the symbol table of a just-compacted block exceeds this threshold, the block
+# is proactively marked as no-compact. 0 = disabled.
+# CLI flag: -compactor.block-symbol-table-size-threshold
+[block_symbol_table_size_threshold: <int> | default = 0]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise
@@ -6947,6 +7026,13 @@ scheduler_client:
   # request work.
   # CLI flag: -compactor.scheduler-client.enabled
   [enabled: <boolean> | default = false]
+
+  # (experimental) Run the ring-based blocks cleaner and join the compactor
+  # ring, which is otherwise unused. Can only be disabled when
+  # -compactor.scheduler-client.enabled is true. WARNING: disabling this on
+  # every compactor stops cleanup and breaks reads cluster-wide.
+  # CLI flag: -compactor.scheduler-client.enable-ring-based-cleanup
+  [enable_ring_based_cleanup: <boolean> | default = true]
 
   # (experimental) Compactor scheduler endpoint.
   # CLI flag: -compactor.scheduler-client.scheduler-endpoint

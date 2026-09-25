@@ -31,6 +31,10 @@ message EncodedQueryPlan {
     (gogoproto.nullable) = false,
     (gogoproto.stdduration) = true
   ];
+
+  // cacheDisabled carries the request's Cache-Control: no-store option to the querier, where the
+  // splitting/caching passes run and cannot otherwise see the request's options.
+  bool cacheDisabled = 8;
 }
 
 message EncodedNode {
