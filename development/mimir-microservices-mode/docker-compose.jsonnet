@@ -2,14 +2,14 @@ std.manifestYamlDoc({
   _config:: {
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
-    debug: false,
+    debug: true,
 
     // When debug is true, controls which targets run under Delve.
     // If empty, all components run under Delve.
     // If non-empty, only the listed components run under Delve.
     // Example: ['querier', 'ingester'] to debug only querier and ingester.
-    // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test.
-    debug_targets: [],
+    // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test, grpc-tee.
+    debug_targets: ['querier', 'grpc-tee', 'store-gateway'],
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
@@ -17,7 +17,7 @@ std.manifestYamlDoc({
     // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
     ruler_use_remote_execution: false,
 
-    enable_continuous_test: true,
+    enable_continuous_test: false,
 
     // If true, a load generator is started.
     enable_load_generator: false,
@@ -36,6 +36,9 @@ std.manifestYamlDoc({
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
 
+    // If true, a grpc-tee instance is started in front of store-gateway-1.
+    enable_grpc_tee: true,
+
     // If true, a secondary query path is started.
     enable_secondary_query_path: false,
     secondary_query_path_extra_args: [],
@@ -47,10 +50,10 @@ std.manifestYamlDoc({
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
     (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
-    self.store_gateways(3) +
+    self.store_gateways(1) +
     self.compactor +
-    self.rulers(2) +
-    self.alertmanagers(3) +
+//    self.rulers(2) +
+//    self.alertmanagers(3) +
     self.nginx +
     self.minio +
     (if $._config.enable_continuous_test then self.continuous_test else {}) +
@@ -63,6 +66,7 @@ std.manifestYamlDoc({
     self.memcached +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
+    (if $._config.enable_grpc_tee then self.grpc_tee else {}) +
     {},
 
   distributor:: {
@@ -177,6 +181,12 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
+      // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee address in the ring,
+      // so queriers connect through grpc-tee.
+      extraArguments: if $._config.enable_grpc_tee && id == 1 then [
+        '-store-gateway.sharding-ring.instance-addr=grpc-tee',
+        '-store-gateway.sharding-ring.instance-port=9095',
+      ] else [],
     })
     for id in std.range(1, count)
   },
@@ -299,10 +309,10 @@ std.manifestYamlDoc({
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
         'distributor-1',
-        'alertmanager-1',
-        'ruler-1',
+//        'alertmanager-1',
+//        'ruler-1',
         'query-frontend',
-        'compactor',
+//        'compactor',
         'grafana',
       ],
       environment: [
@@ -476,6 +486,30 @@ std.manifestYamlDoc({
       environment: formatEnv(env),
       hostname: 'query-tee',
       ports: ['9999:80'],
+    },
+  },
+
+  grpc_tee:: {
+    local grpcPort = 9095,
+    local debugPort = 19095,
+    local useDelve = $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, 'grpc-tee')),
+    local flags = [
+      '-server.grpc-listen-address=:%d' % grpcPort,
+      '-backend.address=store-gateway-1:9011',
+    ],
+
+    'grpc-tee': {
+      image: 'grpc-tee',
+      build: {
+        context: '../../tools/grpc-tee',
+        [if useDelve then 'dockerfile']: 'dev.dockerfile',
+      },
+      command: if useDelve
+      then ['/bin/dlv', 'exec', '/bin/grpc-tee', '--listen=:%d' % debugPort, '--headless=true', '--api-version=2', '--accept-multiclient', '--continue', '--'] + flags
+      else flags,
+      hostname: 'grpc-tee',
+      ports: ['%d:%d' % [grpcPort, grpcPort]] + (if useDelve then ['%d:%d' % [debugPort, debugPort]] else []),
+      depends_on: ['store-gateway-1'],
     },
   },
 

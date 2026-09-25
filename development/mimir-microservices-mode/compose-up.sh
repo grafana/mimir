@@ -48,4 +48,12 @@ if [ "$(yq '.services."query-tee"' "${SCRIPT_DIR}"/docker-compose.yml)" != "null
   docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
 fi
 
+if [ "$(yq '.services."grpc-tee"' "${SCRIPT_DIR}"/docker-compose.yml)" != "null" ]; then
+  # If grpc-tee is enabled, build its binary and image as well.
+  if needs_build "${SCRIPT_DIR}/../../tools/grpc-tee/grpc-tee" "${SCRIPT_DIR}/../../tools/grpc-tee" "${SCRIPT_DIR}/../../vendor"; then
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../tools/grpc-tee/grpc-tee "${SCRIPT_DIR}"/../../tools/grpc-tee
+  fi
+  docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" grpc-tee
+fi
+
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
