@@ -1289,6 +1289,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
+  -compactor.scheduler-client.backfill-mode-enabled
+    	[experimental] If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.
   -compactor.scheduler-client.compaction-dir-cleanup-interval duration
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign
@@ -1348,7 +1350,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduler-client.lanes comma-separated-list-of-strings
-    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. (default compact+plan,plan)
+    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. When -compactor.scheduler-client.backfill-mode-enabled is true, lanes must be set and must not include plan. (default compact+plan,plan)
   -compactor.scheduler-client.last-contact-timeout duration
     	[experimental] Duration without a successful job lease update after which a compactor stops the job. The compactor scheduler also reads this value and must be configured with the same value. Required when the compactor scheduler runs in backfill mode. 0 to disable.
   -compactor.scheduler-client.leasing-max-backoff duration

@@ -17,6 +17,8 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
@@ -173,6 +175,46 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 			assertCounter(t, reg, 1)
 		})
 	})
+}
+
+func TestScheduler_PlannedJobs_CompactionBackfillID(t *testing.T) {
+	tests := map[string]struct {
+		backfillMode bool
+		backfillID   string
+	}{
+		"cell mode with a backfill ID": {
+			backfillMode: false,
+			backfillID:   "01K5ZQ3Y8V0M6T2B4C9D7E1F3G",
+		},
+		"backfill mode without a backfill ID": {
+			backfillMode: true,
+			backfillID:   "",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := newTestSchedulerConfig()
+			if tc.backfillMode {
+				cfg.BackfillModeEnabled = true
+				cfg.LanePolicy.Policy = lanePolicyBackfill
+			}
+			scheduler, _ := newTestScheduler(t, objstore.NewInMemBucket(), cfg)
+
+			_, err := scheduler.PlannedJobs(t.Context(), &compactorschedulerpb.PlannedJobsRequest{
+				Key:    &compactorschedulerpb.JobKey{Id: planJobId, Epoch: 1},
+				Tenant: "tenant1",
+				Jobs: []*compactorschedulerpb.PlannedJob{
+					{Id: "compaction-job-1", Job: &compactorschedulerpb.PlannedJob_Compaction{Compaction: &compactorschedulerpb.CompactionJob{
+						BlockIds:   [][]byte{[]byte("block-a")},
+						BackfillId: tc.backfillID,
+					}}},
+				},
+			})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			require.ErrorContains(t, err, `planned compaction job "compaction-job-1" must have a backfill ID if and only if backfill mode is enabled`)
+		})
+	}
 }
 
 func newTestSchedulerConfig() Config {

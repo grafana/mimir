@@ -361,7 +361,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					numLeases:    1,
 					epoch:        234,
 				},
-				value:           &CompactionJob{blocks: testBlockIDs, isSplit: true},
+				value:           &CompactionJob{blocks: testBlockIDs, isSplit: true, backfillID: "01KBACKFILL"},
 				order:           1,
 				totalBlockBytes: 12345,
 			},
@@ -371,6 +371,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
 				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
+				require.Equal(t, writtenJob.value.backfillID, readJob.value.backfillID)
 				require.Equal(t, writtenJob.order, readJob.order)
 				require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
 			},

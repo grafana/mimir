@@ -7031,6 +7031,8 @@ scheduler_client:
   # (experimental) Lanes to request for each worker goroutine. Each entry is a
   # '+'-separated list of job types in priority order. Valid job types: plan,
   # compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.
+  # When -compactor.scheduler-client.backfill-mode-enabled is true, lanes must
+  # be set and must not include plan.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 
@@ -7038,6 +7040,12 @@ scheduler_client:
   # job is interrupted (e.g., clean shutdown).
   # CLI flag: -compactor.scheduler-client.enable-interrupted-reassign
   [enable_interrupted_reassign: <boolean> | default = true]
+
+  # (experimental) If enabled, the compactor runs jobs for backfills from a
+  # compactor scheduler in backfill mode instead of compaction of the tenants in
+  # a cell.
+  # CLI flag: -compactor.scheduler-client.backfill-mode-enabled
+  [backfill_mode_enabled: <boolean> | default = false]
 ```
 
 ### store_gateway

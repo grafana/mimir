@@ -180,8 +180,9 @@ func baseTrackedJobFromInfo(id string, info *compactorschedulerpb.StoredJobInfo)
 }
 
 type CompactionJob struct {
-	blocks  [][]byte
-	isSplit bool
+	blocks     [][]byte
+	isSplit    bool
+	backfillID string // empty outside of backfill mode
 }
 
 type TrackedCompactionJob struct {
@@ -226,6 +227,7 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			BlockIds:         j.value.blocks,
 			Split:            j.value.isSplit,
 			TotalBlocksBytes: j.totalBlockBytes,
+			BackfillId:       j.value.backfillID,
 		},
 		Order: j.order,
 	}
@@ -245,6 +247,7 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 				BlockIds:         j.value.blocks,
 				Split:            j.value.isSplit,
 				TotalBlocksBytes: j.totalBlockBytes,
+				BackfillId:       j.value.backfillID,
 			},
 		},
 	}
@@ -486,8 +489,9 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			epoch:        stored.Info.Epoch,
 		},
 		value: &CompactionJob{
-			blocks:  stored.Job.BlockIds,
-			isSplit: stored.Job.Split,
+			blocks:     stored.Job.BlockIds,
+			isSplit:    stored.Job.Split,
+			backfillID: stored.Job.BackfillId,
 		},
 		order:           stored.Order,
 		totalBlockBytes: stored.Job.TotalBlocksBytes,

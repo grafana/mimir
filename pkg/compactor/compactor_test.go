@@ -177,6 +177,33 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidSchedulerUpdateInterval.Error(),
 		},
+		"should fail with scheduler backfill mode enabled and no last contact timeout": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.BackfillModeEnabled = true
+			},
+			expected: errInvalidSchedulerBackfillLastContactTimeout.Error(),
+		},
+		"should fail with scheduler backfill mode enabled and the default lanes": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.BackfillModeEnabled = true
+				cfg.SchedulerClientConfig.LastContactTimeout = 5 * time.Minute
+			},
+			expected: errInvalidSchedulerBackfillLanes.Error(),
+		},
+		"should pass with scheduler backfill mode enabled and backfill lanes": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.BackfillModeEnabled = true
+				cfg.SchedulerClientConfig.LastContactTimeout = 5 * time.Minute
+				cfg.SchedulerClientConfig.Lanes = flagext.StringSliceCSV{"backfill-cleanup+backfill-validate+compact+backfill-plan", "backfill-plan"}
+			},
+			expected: "",
+		},
 		"should pass with an in-range read compartment ID when compartments are enabled": {
 			setup:        func(cfg *Config) { cfg.ReadCompartmentID = 1 },
 			compartments: compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},

@@ -539,7 +539,7 @@ func TestJobTracker_OfferJobs_BackfillCleanup(t *testing.T) {
 	require.Empty(t, jt.incompleteJobs, "pending and active jobs are replaced and the cleanup job is parked")
 	require.False(t, jt.RenewLease(activeResp.Key.Id, activeResp.Key.Epoch), "the worker of the preempted job must find out on its next update")
 
-	clk.Add(lastContactTimeout - time.Minute)
+	clk.Add(lastContactTimeout + cleanupReleaseMargin - time.Minute)
 	becameNonEmpty, err := jt.Maintenance(leaseDuration, true, true, planningInterval, 0, lastContactTimeout)
 	require.NoError(t, err)
 	require.Empty(t, becameNonEmpty, "released before the last contact timeout")

@@ -314,11 +314,15 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID", "id", job.Id)
 				continue
 			}
+			if (j.Compaction.BackfillId != "") != s.cfg.BackfillModeEnabled {
+				return nil, status.Errorf(codes.InvalidArgument, "planned compaction job %q must have a backfill ID if and only if backfill mode is enabled", job.Id)
+			}
 			tj = NewTrackedCompactionJob(
 				job.Id,
 				&CompactionJob{
-					blocks:  j.Compaction.BlockIds,
-					isSplit: j.Compaction.Split,
+					blocks:     j.Compaction.BlockIds,
+					isSplit:    j.Compaction.Split,
+					backfillID: j.Compaction.BackfillId,
 				},
 				order,
 				j.Compaction.TotalBlocksBytes,

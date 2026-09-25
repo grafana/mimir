@@ -17,30 +17,20 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// phasesPrefix holds one marker object per tenant for each backfill phase, named phases/<phase>/<tenant>
-const phasesPrefix = "phases/"
-
-var backfillPhases = map[string]struct{}{
-	"backfill": {},
-	"validate": {},
-	"compact":  {},
-	"copy":     {},
-	"cleanup":  {},
-}
-
 // listBackfillTenants lists the tenants that have a marker for any backfill phase.
 func listBackfillTenants(ctx context.Context, bkt objstore.Bucket) ([]string, error) {
 	seen := make(map[string]struct{})
-	err := bkt.Iter(ctx, phasesPrefix, func(name string) error {
-		phase, tenantID, ok := strings.Cut(strings.TrimPrefix(name, phasesPrefix), objstore.DirDelim)
+	err := bkt.Iter(ctx, backfill.PhasesPrefix, func(name string) error {
+		phase, tenantID, ok := strings.Cut(strings.TrimPrefix(name, backfill.PhasesPrefix), objstore.DirDelim)
 		if !ok {
 			return nil
 		}
-		if _, ok := backfillPhases[phase]; !ok {
+		if !backfill.IsPhase(phase) {
 			return nil
 		}
 		if err := tenant.ValidTenantID(tenantID); err != nil {

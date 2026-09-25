@@ -14776,7 +14776,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.",
+              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. When -compactor.scheduler-client.backfill-mode-enabled is true, lanes must be set and must not include plan.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -14791,6 +14791,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "compactor.scheduler-client.enable-interrupted-reassign",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "backfill_mode_enabled",
+              "required": false,
+              "desc": "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "compactor.scheduler-client.backfill-mode-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

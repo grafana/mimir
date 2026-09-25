@@ -29,10 +29,12 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -92,6 +94,8 @@ var (
 	errInvalidSchedulerUpdateMinBackoff              = errors.New("invalid compactor.scheduler-client.update-min-backoff, must be positive")
 	errInvalidSchedulerUpdateMaxBackoff              = errors.New("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
 	errInvalidSchedulerLastContactTimeout            = errors.New("invalid compactor.scheduler-client.last-contact-timeout, must be 0 or greater than the update interval")
+	errInvalidSchedulerBackfillLastContactTimeout    = errors.New("invalid compactor.scheduler-client.last-contact-timeout, must be positive when compactor.scheduler-client.backfill-mode-enabled is true")
+	errInvalidSchedulerBackfillLanes                 = errors.New("invalid compactor.scheduler-client.lanes, must be set without the plan job type when compactor.scheduler-client.backfill-mode-enabled is true")
 	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
 	errInvalidSchedulerRingBasedCleanup              = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, can only be disabled when compactor.scheduler-client.enabled is true")
 )
@@ -112,6 +116,7 @@ type SchedulerClientConfig struct {
 	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
 	Lanes                         flagext.StringSliceCSV `yaml:"lanes" category:"experimental"`
 	EnableInterruptedReassign     bool                   `yaml:"enable_interrupted_reassign" category:"experimental"`
+	BackfillModeEnabled           bool                   `yaml:"backfill_mode_enabled" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -128,8 +133,9 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
+	f.BoolVar(&cfg.BackfillModeEnabled, flagPrefix+"backfill-mode-enabled", false, "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. When -"+flagPrefix+"backfill-mode-enabled is true, lanes must be set and must not include plan.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -161,6 +167,12 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	}
 	if cfg.LastContactTimeout < 0 || (cfg.LastContactTimeout > 0 && cfg.LastContactTimeout <= cfg.UpdateInterval) {
 		return errInvalidSchedulerLastContactTimeout
+	}
+	if cfg.BackfillModeEnabled && cfg.LastContactTimeout == 0 {
+		return errInvalidSchedulerBackfillLastContactTimeout
+	}
+	if cfg.BackfillModeEnabled && slices.ContainsFunc(cfg.Lanes, func(l string) bool { return slices.Contains(strings.Split(l, "+"), "plan") }) {
+		return errInvalidSchedulerBackfillLanes
 	}
 	if err := cfg.MetadataCacheConfig.Validate(); err != nil {
 		return err
@@ -350,9 +362,9 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 		}
 		// Each worker compacts into its own subdirectory so that they can independently perform periodic cleanup
 		workerCompactDir := filepath.Join(compactDir, fmt.Sprintf("compact-%d", i))
-		// Only compaction and backfill validation workers write to the compaction directory, so only they perform cleanup
+		// Only compaction workers write to the compaction directory, so only they perform cleanup
 		cleanup := slices.ContainsFunc(lanes, func(lr *compactorschedulerpb.LaneRequest) bool {
-			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION || lr.JobType == compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE
+			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION
 		})
 		req := &compactorschedulerpb.LeaseJobRequest{
 			WorkerId:     workerID,
@@ -455,6 +467,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 	for {
 		select {
 		case <-ticker.C:
+			sent := time.Now()
 			if err := e.updateJobStatus(ctx, key, spec, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS); err != nil {
 				// Check if the job was canceled from the scheduler side (not found response)
 				if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
@@ -467,7 +480,8 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 				// Update scheduler contact timestamp on successful heartbeat
 				c.schedulerLastContact.SetToCurrentTime()
 				if fence != nil {
-					fence.Reset(e.cfg.LastContactTimeout)
+					// Measured from the send since the scheduler may have renewed the lease any time after it
+					fence.Reset(e.cfg.LastContactTimeout - time.Since(sent))
 				}
 			}
 		case <-ctx.Done():
@@ -500,24 +514,9 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 	jobId := key.Id
 	jobTenant := spec.Tenant
 
-	var err error
-	switch spec.JobType {
-	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = e.retryable.WithContext(graceCtx).Run(func() error {
-			_, err := e.schedulerClient.UpdateCompactionJob(graceCtx, req)
-			return err
-		})
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = e.retryable.WithContext(graceCtx).Run(func() error {
-			_, err := e.schedulerClient.UpdatePlanJob(graceCtx, req)
-			return err
-		})
-	default:
-		err = fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
-	}
-
+	err := e.retryable.WithContext(graceCtx).Run(func() error {
+		return e.updateJobStatus(graceCtx, key, spec, status)
+	})
 	if err != nil {
 		level.Error(e.logger).Log("msg", "failed to send final status update", "job_id", jobId, "tenant", jobTenant, "status", status, "err", err)
 	}
@@ -558,8 +557,39 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
-	if !jobTypeValid(jobType) {
-		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+	// Jobs either report a final status or, for plan jobs, send their results through PlannedJobs
+	var (
+		run  func(context.Context) (compactorschedulerpb.UpdateType, error)
+		plan func(context.Context) (*compactorschedulerpb.PlannedJobsRequest, error)
+	)
+	switch {
+	case jobType == compactorschedulerpb.JOB_TYPE_COMPACTION:
+		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
+			userBucket := e.jobBucket(c, jobTenant, resp.Spec.Job.GetBackfillId())
+			return e.executeCompactionJob(ctx, c, compactDir, userBucket, resp.Key, resp.Spec)
+		}
+	case jobType == compactorschedulerpb.JOB_TYPE_PLANNING && !e.cfg.BackfillModeEnabled:
+		plan = func(ctx context.Context) (*compactorschedulerpb.PlannedJobsRequest, error) {
+			plannedJobs, err := e.executePlanningJob(ctx, c, compactDir, e.jobBucket(c, jobTenant, ""), jobTenant, "")
+			if err != nil {
+				return nil, err
+			}
+			return &compactorschedulerpb.PlannedJobsRequest{Jobs: plannedJobs}, nil
+		}
+	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING && e.cfg.BackfillModeEnabled:
+		plan = func(ctx context.Context) (*compactorschedulerpb.PlannedJobsRequest, error) {
+			return e.executeBackfillPhasePlanningJob(ctx, c, compactDir, resp.Spec)
+		}
+	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE && e.cfg.BackfillModeEnabled:
+		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
+			return e.executeBackfillValidateJob(ctx, c, resp.Spec)
+		}
+	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP && e.cfg.BackfillModeEnabled:
+		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
+			return e.executeBackfillCleanupJob(ctx, c, resp.Spec)
+		}
+	default:
+		return false, fmt.Errorf("unsupported job type %q with backfill mode %t", jobType.String(), e.cfg.BackfillModeEnabled)
 	}
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
@@ -570,23 +600,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.startJobStatusUpdater(jobCtx, c, resp.Key, resp.Spec, cancelJob)
 	})
 
-	switch jobType {
-	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		status, err := e.executeCompactionJob(jobCtx, c, compactDir, resp.Key, resp.Spec)
-		cancelJob(err)
-		wg.Wait()
-		if err != nil {
-			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
-				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
-			}
-			return true, err
-		}
-		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
-		return true, nil
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
+	if plan != nil {
 		planStartTime := time.Now()
-		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, compactDir, jobTenant)
+		plannedJobs, planErr := plan(jobCtx)
 		cancelJob(planErr)
 		wg.Wait()
 		if planErr != nil {
@@ -600,24 +616,25 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 		// For planning jobs, no final status update is sent on success. Completion is communicated via PlannedJobs.
 		if err := e.sendPlannedJobs(ctx, resp.Key, resp.Spec, plannedJobs); err != nil {
-			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
+			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs.Jobs), "err", err)
 			return true, err
 		}
 		c.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
-	default:
-		// Should not happen because this case is caught above.
-		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
 	}
-}
 
-func jobTypeValid(jobType compactorschedulerpb.JobType) bool {
-	switch jobType {
-	case compactorschedulerpb.JOB_TYPE_COMPACTION, compactorschedulerpb.JOB_TYPE_PLANNING:
-		return true
-	default:
-		return false
+	status, err := run(jobCtx)
+	cancelJob(err)
+	wg.Wait()
+	if err != nil {
+		level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
+		if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+		}
+		return true, err
 	}
+	e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+	return true, nil
 }
 
 func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, updType compactorschedulerpb.UpdateType) error {
@@ -626,16 +643,28 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 		return err
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
+	case compactorschedulerpb.JOB_TYPE_PLANNING, compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP, compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE:
+		req := &compactorschedulerpb.UpdateBackfillJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
+		_, err := e.schedulerClient.UpdateBackfillJob(ctx, req)
+		return err
 	default:
-		return fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
+		return fmt.Errorf("unsupported job type %q", spec.JobType.String())
 	}
 }
 
-func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, compactDir string, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+// jobBucket returns the bucket a compaction or planning job for the tenant works on
+func (e *schedulerExecutor) jobBucket(c *MultitenantCompactor, tenant, backfillID string) objstore.Bucket {
+	if e.cfg.BackfillModeEnabled {
+		return bucket.NewPrefixedBucketClient(c.bucketClient, backfill.DataPrefix(backfillID, tenant))
+	}
+	return bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
+}
+
+func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, compactDir string, userBucket objstore.Bucket, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
 	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
 		level.Error(e.logger).Log("msg", "invalid compaction plan, abandoning job", "tenant", spec.Tenant)
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, errCompactionJobHasNoBlocks
@@ -646,8 +675,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
-
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
 	for i, id := range spec.Job.BlockIds {
@@ -737,8 +764,8 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 }
 
-func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedJob, error) {
-	userBucket := bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
+// executePlanningJob plans the compaction jobs of a tenant. backfillID is empty outside of backfill mode.
+func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, userBucket objstore.Bucket, tenant, backfillID string) ([]*compactorschedulerpb.PlannedJob, error) {
 	userLogger := log.With(e.logger, "user", tenant)
 
 	reg := prometheus.NewRegistry()
@@ -750,7 +777,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	}
 
 	maxLookback := c.cfgProvider.CompactorMaxLookback(tenant)
-	if c.cfgProvider.CompactorBlockUploadEnabled(tenant) {
+	if c.cfgProvider.CompactorBlockUploadEnabled(tenant) || backfillID != "" {
 		maxLookback = 0
 	}
 
@@ -784,7 +811,10 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		level.Info(userLogger).Log("msg", "unknown sorting, jobs will be unsorted")
 	}
 
-	jobs = bucketCompactor.filterJobsByWaitPeriod(ctx, jobs)
+	// Backfill uploads are finished before compaction, so no blocks can arrive late
+	if backfillID == "" {
+		jobs = bucketCompactor.filterJobsByWaitPeriod(ctx, jobs)
+	}
 
 	now := time.Now()
 	for _, delta := range bucketCompactor.blockMaxTimeDeltas(now, jobs) {
@@ -811,6 +841,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 					Split:            job.useSplitting,
 					BlockIds:         serializeBlockIds(toCompact),
 					TotalBlocksBytes: sumBlockBytes(toCompact),
+					BackfillId:       backfillID,
 				},
 			},
 		}
@@ -837,13 +868,10 @@ func sumBlockBytes(metas []*block.Meta) uint64 {
 	return total
 }
 
-// sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, plannedJobs []*compactorschedulerpb.PlannedJob) error {
-	req := &compactorschedulerpb.PlannedJobsRequest{
-		Key:    key,
-		Tenant: spec.Tenant,
-		Jobs:   plannedJobs,
-	}
+// sendPlannedJobs sends the results of a plan job back to the scheduler with retries.
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, req *compactorschedulerpb.PlannedJobsRequest) error {
+	req.Key = key
+	req.Tenant = spec.Tenant
 
 	return e.retryable.WithContext(ctx).Run(func() error {
 		_, err := e.schedulerClient.PlannedJobs(ctx, req)

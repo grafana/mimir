@@ -846,7 +846,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
 			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), key, tc.spec)
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), bucket.NewUserBucketClient(tc.spec.Tenant, c.bucketClient, c.cfgProvider), key, tc.spec)
 
 			require.Error(t, err)
 			assert.Equal(t, tc.expectedStatus, status)
@@ -975,7 +975,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			}
 
 			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), key, spec)
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), bucket.NewUserBucketClient(spec.Tenant, c.bucketClient, c.cfgProvider), key, spec)
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -1043,7 +1043,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_AbandonsWhenBlockDeletedAfterMet
 	}
 
 	key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
-	status, err := schedulerExec.executeCompactionJob(ctx, c, t.TempDir(), key, spec)
+	status, err := schedulerExec.executeCompactionJob(ctx, c, t.TempDir(), bucket.NewUserBucketClient(spec.Tenant, c.bucketClient, c.cfgProvider), key, spec)
 
 	require.Error(t, err)
 	ok, notFoundErr := isBlockFileNotFoundError(err)

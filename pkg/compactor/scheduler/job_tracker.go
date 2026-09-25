@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
+const cleanupReleaseMargin = time.Minute
+
 // JobTracker tracks pending, active, and (temporarily) complete jobs for tenants.
 //
 // Pending jobs are either plan jobs scheduled during Maintenance, or compaction jobs offered
@@ -283,7 +285,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // A new plan job is added to pending when the current planning window (determined by planningInterval
 // and compactionWaitPeriod) has not yet been planned.
 //
-// If enforceLeaseExpiration is true, a parked cleanup job is added to pending once lastContactTimeout has passed since its creation.
+// If enforceLeaseExpiration is true, a parked cleanup job is added to pending once lastContactTimeout (plus a margin) has passed since its creation.
 // Workers stop their jobs after that long without contact, so workers of the jobs it replaced have stopped by then.
 //
 // Maintenance returns the lanes whose pending queues transitioned from empty to non-empty.
@@ -306,7 +308,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	// The parked job is already persisted as available, so releasing it only changes in-memory state
-	releaseCleanup := enforceLeaseExpiration && jt.parkedCleanup != nil && !now.Before(jt.parkedCleanup.CreationTime().Add(lastContactTimeout))
+	releaseCleanup := enforceLeaseExpiration && jt.parkedCleanup != nil && !now.Before(jt.parkedCleanup.CreationTime().Add(lastContactTimeout+cleanupReleaseMargin))
 
 	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil && !releaseCleanup {
 		return nil, nil
@@ -544,6 +546,7 @@ func (jt *JobTracker) OfferJobs(jobs []TrackedJob, planJobEpoch int64) (accepted
 		cleanupJob, _ = jobs[0].(*TrackedBackfillCleanupJob)
 	}
 
+	// Blocks conflict regardless of job type
 	conflictMap := make(map[string]struct{})
 	if len(jobs) > 0 { // if there are no jobs being offered then there is nothing to check conflicts against
 		// We don't want to add a job that works on a block if that work was already completed or is currently active.
