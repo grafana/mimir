@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"mime"
 	"net"
 	"net/http"
@@ -885,6 +886,32 @@ func TestConfigValidation(t *testing.T) {
 				cfg := newDefaultConfig()
 				cfg.Compartments.Enabled = false
 				cfg.Distributor.WriteCompartmentID = 1
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if the maximum number of derived token partitions is 0",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.PartitionRing.MaxDerivedTokenPartitions = 0
+				return cfg
+			},
+		},
+		{
+			name: "should fail if the maximum number of derived token partitions is negative",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.PartitionRing.MaxDerivedTokenPartitions = -1
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the maximum number of derived token partitions doesn't fit a partition ID",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.PartitionRing.MaxDerivedTokenPartitions = math.MaxInt32 + 1
 				return cfg
 			},
 			expectAnyError: true,

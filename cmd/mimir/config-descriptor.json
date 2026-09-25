@@ -4738,6 +4738,17 @@
               "fieldDefaultValue": 46800000000000,
               "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "create_partitions_with_derived_tokens",
+              "required": false,
+              "desc": "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.partition-ring.create-partitions-with-derived-tokens",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -10188,6 +10199,27 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "partition_ring",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "max_derived_token_partitions",
+          "required": false,
+          "desc": "The number of partition IDs, starting from 0, that can use derived tokens. Only supported by the ingester partition ring for now. Components that read the ring generate the tokens of these partitions at startup.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "partition-ring.max-derived-token-partitions",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         }
       ],

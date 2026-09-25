@@ -22,6 +22,13 @@ type PartitionRingConfig struct {
 	// DeleteInactivePartitionAfter maps to ring.PartitionInstanceLifecyclerConfig's DeleteInactivePartitionAfterDuration.
 	DeleteInactivePartitionAfter time.Duration `yaml:"delete_inactive_partition_after"`
 
+	// CreatePartitionsWithDerivedTokens maps to ring.PartitionInstanceLifecyclerConfig's CreatePartitionsWithDerivedTokens.
+	CreatePartitionsWithDerivedTokens bool `yaml:"create_partitions_with_derived_tokens" category:"experimental"`
+
+	// MaxDerivedTokenPartitions maps to ring.PartitionInstanceLifecyclerConfig's MaxDerivedTokenPartitions.
+	// It's copied from the top-level partition ring config.
+	MaxDerivedTokenPartitions int32 `yaml:"-"`
+
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
 	lifecyclerPollingInterval time.Duration
 }
@@ -35,6 +42,7 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MinOwnersCount, "ingester.partition-ring.min-partition-owners-count", 1, "Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.MinOwnersDuration, "ingester.partition-ring.min-partition-owners-duration", 10*time.Second, "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.DeleteInactivePartitionAfter, "ingester.partition-ring.delete-inactive-partition-after", 13*time.Hour, "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.")
+	f.BoolVar(&cfg.CreatePartitionsWithDerivedTokens, "ingester.partition-ring.create-partitions-with-derived-tokens", false, "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring.")
 }
 
 func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID string) ring.PartitionInstanceLifecyclerConfig {
@@ -45,5 +53,7 @@ func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID
 		WaitOwnersDurationOnPending:          cfg.MinOwnersDuration,
 		DeleteInactivePartitionAfterDuration: cfg.DeleteInactivePartitionAfter,
 		PollingInterval:                      cfg.lifecyclerPollingInterval,
+		CreatePartitionsWithDerivedTokens:    cfg.CreatePartitionsWithDerivedTokens,
+		MaxDerivedTokenPartitions:            cfg.MaxDerivedTokenPartitions,
 	}
 }

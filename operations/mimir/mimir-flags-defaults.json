@@ -694,6 +694,7 @@
   "ingest-storage.ordered-consumption.max-batch-wait": 50000000,
   "ingest-storage.ordered-consumption.input-buffer-size": 0,
   "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency": 4,
+  "partition-ring.max-derived-token-partitions": 0,
   "blocks-storage.backend": "filesystem",
   "blocks-storage.s3.endpoint": "",
   "blocks-storage.s3.region": "",
