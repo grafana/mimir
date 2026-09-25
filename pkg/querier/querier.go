@@ -366,8 +366,10 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
-	if tenantID, err := tenant.TenantID(ctx); err == nil && mq.limits.DelayedSeries(tenantID).MayMatch(matchers) {
-		ctx = withDelayedSeriesRead(ctx)
+	if tenantID, err := tenant.TenantID(ctx); err == nil {
+		if active, retired := mq.limits.DelayedSeries(tenantID).MayMatch(matchers, time.Now(), mq.cfg.QueryStoreAfter); active || retired {
+			ctx = withDelayedSeriesRead(ctx, active)
+		}
 	}
 
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT)

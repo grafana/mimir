@@ -30,12 +30,13 @@ func TestMultiQuerier_DelayedSeriesQueryBlockStoreForRecentData(t *testing.T) {
 	const tenantID = "delayed"
 
 	tests := map[string]struct {
-		metric             string
-		expectedStoreHit   bool
-		expectedDelayedCtx bool
+		metric           string
+		expectedStoreHit bool
+		expectedAnnotate bool
 	}{
-		"selector can match delayed series":   {metric: "delayed_metric", expectedStoreHit: true, expectedDelayedCtx: true},
-		"selector can't match delayed series": {metric: "standard_metric", expectedStoreHit: false},
+		"selector can match delayed series":          {metric: "delayed_metric", expectedStoreHit: true, expectedAnnotate: true},
+		"selector can match a recently retired rule": {metric: "retired_metric", expectedStoreHit: true, expectedAnnotate: false},
+		"selector can't match delayed series":        {metric: "standard_metric", expectedStoreHit: false},
 	}
 
 	for name, tc := range tests {
@@ -45,7 +46,10 @@ func TestMultiQuerier_DelayedSeriesQueryBlockStoreForRecentData(t *testing.T) {
 			cfg.QueryStoreAfter = 12 * time.Hour
 
 			tenantLimits := defaultLimitsConfig()
-			tenantLimits.DelayedSeries = validation.DelayedSeriesConfig{{Match: `{__name__="delayed_metric"}`}}
+			tenantLimits.DelayedSeries = validation.DelayedSeriesConfig{
+				{Match: `{__name__="delayed_metric"}`},
+				{Match: `{__name__="retired_metric"}`, RetiredAt: time.Now().Add(-time.Hour)},
+			}
 			require.NoError(t, tenantLimits.DelayedSeries.Validate())
 			overrides := validation.NewOverrides(defaultLimitsConfig(), validation.NewMockTenantLimits(map[string]*validation.Limits{tenantID: &tenantLimits}))
 
@@ -78,7 +82,7 @@ func TestMultiQuerier_DelayedSeriesQueryBlockStoreForRecentData(t *testing.T) {
 				return
 			}
 			storeQuerier.AssertCalled(t, "Select", mock.MatchedBy(func(ctx context.Context) bool {
-				return isDelayedSeriesRead(ctx) == tc.expectedDelayedCtx
+				return isDelayedSeriesRead(ctx) && annotateDelayedSeriesRead(ctx) == tc.expectedAnnotate
 			}), true, mock.Anything, matchers)
 		})
 	}

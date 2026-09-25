@@ -4773,6 +4773,11 @@ delayed_series:
     # standard path.
     [except: <list of strings> | default = ]
 
+    # If set, the rule no longer applies to ingestion, but queriers keep reading
+    # its series from store-gateways until -querier.query-store-after has passed
+    # since this time.
+    retired_at:
+
 # (advanced) Whether the shipper should label out-of-order blocks with an
 # external label before uploading them. Setting this label will compact
 # out-of-order blocks separately from non-out-of-order blocks

@@ -6074,6 +6074,14 @@
                 "fieldValue": null,
                 "fieldDefaultValue": [],
                 "fieldType": "list of strings"
+              },
+              {
+                "kind": "block",
+                "name": "retired_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
               }
             ],
             "fieldValue": null,

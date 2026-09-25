@@ -4,6 +4,7 @@ package validation
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -16,6 +17,9 @@ import (
 type DelayedSeriesRule struct {
 	Match  string   `yaml:"match" json:"match" doc:"description=Series selector for the series to delay, for example {__name__=\"http_request_duration_seconds_bucket\"}."`
 	Except []string `yaml:"except,omitempty" json:"except,omitempty" doc:"description=Series selectors excluded from the rule. Matching series stay on the standard path."`
+	// RetiredAt keeps a removed rule around: ingesters append its series to the head again, while queriers keep
+	// reading them from store-gateways, because the ingesters don't hold what was ingested while the rule applied.
+	RetiredAt time.Time `yaml:"retired_at,omitempty" json:"retired_at,omitempty" doc:"description=If set, the rule no longer applies to ingestion, but queriers keep reading its series from store-gateways until -querier.query-store-after has passed since this time."`
 
 	match  []*labels.Matcher
 	except [][]*labels.Matcher
@@ -45,9 +49,12 @@ func (c DelayedSeriesConfig) Validate() error {
 	return nil
 }
 
-// IsDelayed returns whether the series matches any rule and none of that rule's exceptions.
+// IsDelayed returns whether the series matches any active rule and none of that rule's exceptions.
 func (c DelayedSeriesConfig) IsDelayed(lbls []mimirpb.LabelAdapter) bool {
 	for i := range c {
+		if !c[i].RetiredAt.IsZero() {
+			continue
+		}
 		if matchesAll(c[i].match, lbls) && !matchesAny(c[i].except, lbls) {
 			return true
 		}
@@ -95,16 +102,22 @@ func (c *DelayedSeriesConfig) ExampleDoc() (comment string, yaml any) {
 		}
 }
 
-// MayMatch returns whether a selector with the given matchers can select series matching any rule.
-// It returns false only when a rule is provably disjoint from the selector, so exceptions are not
-// considered.
-func (c DelayedSeriesConfig) MayMatch(matchers []*labels.Matcher) bool {
+// MayMatch reports whether a selector with the given matchers can select series matching an active rule,
+// or a rule retired less than retiredFor ago. It returns false only when a rule is provably disjoint from
+// the selector, so exceptions are not considered.
+func (c DelayedSeriesConfig) MayMatch(matchers []*labels.Matcher, now time.Time, retiredFor time.Duration) (active, retired bool) {
 	for i := range c {
-		if !disjoint(c[i].match, matchers) {
-			return true
+		if disjoint(c[i].match, matchers) {
+			continue
+		}
+		switch {
+		case c[i].RetiredAt.IsZero():
+			active = true
+		case now.Sub(c[i].RetiredAt) < retiredFor:
+			retired = true
 		}
 	}
-	return false
+	return active, retired
 }
 
 func disjoint(a, b []*labels.Matcher) bool {

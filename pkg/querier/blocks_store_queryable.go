@@ -678,7 +678,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	if isDelayedSeriesRead(ctx) {
+	if annotateDelayedSeriesRead(ctx) {
 		if completeThrough, err := q.delayedSeriesCompleteThrough(ctx, tenantID, minT, maxT); err != nil {
 			level.Warn(spanLog).Log("msg", "failed to find newest block for delayed series", "err", err)
 		} else if completeThrough < maxT {
