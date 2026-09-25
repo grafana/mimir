@@ -11,4 +11,7 @@ metadata:
   annotations:
     {{- toYaml .Values.ruler.serviceAccount.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
+{{- with (include "mimir.lib.saAutomountServiceAccountToken" (dict "ctx" . "component" "ruler")) }}
+automountServiceAccountToken: {{ . }}
+{{- end }}
 {{- end }}
