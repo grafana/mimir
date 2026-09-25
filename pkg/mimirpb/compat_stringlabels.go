@@ -64,6 +64,15 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return r
 }
 
+// FromLabelsToLabelAdaptersReuse reuses dst to avoid allocating for each converted series.
+func FromLabelsToLabelAdaptersReuse(ls labels.Labels, dst []LabelAdapter) []LabelAdapter {
+	dst = dst[:0]
+	ls.Range(func(l labels.Label) {
+		dst = append(dst, LabelAdapter{Name: l.Name, Value: l.Value})
+	})
+	return dst
+}
+
 // CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	l := len(a)

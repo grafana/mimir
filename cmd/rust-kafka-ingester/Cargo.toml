@@ -1,0 +1,63 @@
+[package]
+name = "mimir-rust-kafka-ingester"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+compact_str = "0.10.0"
+crc32fast = "1"
+futures = "0.3"
+lz4_flex = "0.14"
+pprof = { version = "0.15", default-features = false, features = ["prost-codec"] }
+prost = "0.14"
+rayon = "1.11"
+regex = "1"
+rdkafka = { version = "0.38", default-features = false, features = ["tokio", "libz-static"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio-stream = "0.1"
+tonic = { version = "0.14", features = ["gzip", "tls-ring"] }
+tonic-prost = "0.14"
+zstd = "0.13"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+flate2 = "1"
+jemalloc_pprof = { version = "0.9", features = ["symbolize"] }
+tikv-jemalloc-ctl = { version = "0.7", features = ["stats"] }
+tikv-jemallocator = { version = "0.7", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+
+[profile.release]
+debug = "line-tables-only"
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-prost-build = "0.14"
+
+[dev-dependencies]
+libc = "0.2"
+snap = "1.1"
+
+[[bench]]
+name = "query_stream"
+harness = false
+
+[[bench]]
+name = "histogram_query"
+harness = false
+
+[[bench]]
+name = "float_window_query"
+harness = false
+
+[[bench]]
+name = "recovery"
+harness = false
+
+[[bench]]
+name = "compression"
+harness = false

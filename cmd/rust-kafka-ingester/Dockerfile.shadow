@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+FROM --platform=$BUILDPLATFORM rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS rust-builder
+ARG TARGETARCH
+RUN test "$TARGETARCH" = amd64
+RUN apt-get update && apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu g++-x86-64-linux-gnu libc6-dev-amd64-cross && rm -rf /var/lib/apt/lists/*
+RUN rustup target add x86_64-unknown-linux-gnu
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc
+ENV CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc
+ENV AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar
+ENV CC=x86_64-linux-gnu-gcc
+ENV CXX=x86_64-linux-gnu-g++
+ENV AR=x86_64-linux-gnu-ar
+WORKDIR /src
+COPY cmd/rust-kafka-ingester/Cargo.toml cmd/rust-kafka-ingester/Cargo.lock ./
+COPY cmd/rust-kafka-ingester/build.rs ./
+COPY cmd/rust-kafka-ingester/proto ./proto
+COPY cmd/rust-kafka-ingester/src ./src
+COPY cmd/rust-kafka-ingester/benches ./benches
+RUN cargo build --locked --release --target x86_64-unknown-linux-gnu --bin mimir-rust-kafka-ingester
+
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY vendor ./vendor
+COPY pkg ./pkg
+COPY cmd/rust-kafka-ingester/ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -o /out/rust-ingester-ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS certs
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+COPY --from=certs /etc/ssl/certs /etc/ssl/certs
+COPY --from=rust-builder /src/target/x86_64-unknown-linux-gnu/release/mimir-rust-kafka-ingester /usr/local/bin/mimir-rust-kafka-ingester
+COPY --from=go-builder /out/rust-ingester-ring-sidecar /usr/local/bin/rust-ingester-ring-sidecar
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/mimir-rust-kafka-ingester"]

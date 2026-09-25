@@ -1,0 +1,22 @@
+name: Build Rust Kafka ingester image
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/rust-kafka-ingester-image.yml
+      - cmd/rust-kafka-ingester/**
+      - go.mod
+      - go.sum
+      - vendor/**
+permissions:
+  contents: read
+
+jobs:
+  build-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Build deployment image
+        run: docker build --platform linux/amd64 -f cmd/rust-kafka-ingester/Dockerfile.shadow -t rust-kafka-ingester:ci .

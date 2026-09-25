@@ -1185,6 +1185,7 @@ func createTestIngesterWithIngestStorage(
 	ingestersRing ring.ReadRing,
 	reg prometheus.Registerer,
 	logger log.Logger,
+	externalKafkaAddress ...string,
 ) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
 	var (
 		ctx                   = context.Background()
@@ -1218,8 +1219,13 @@ func createTestIngesterWithIngestStorage(
 	ingesterCfg.IngesterPartitionRing.MinOwnersDuration = 0
 	ingesterCfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
 
-	// Create a fake Kafka cluster.
-	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
+	var kafkaCluster *kfake.Cluster
+	var kafkaAddr string
+	if len(externalKafkaAddress) > 0 {
+		kafkaAddr = externalKafkaAddress[0]
+	} else {
+		kafkaCluster, kafkaAddr = testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
+	}
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = flagext.StringSliceCSV{kafkaAddr}
 
 	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
@@ -1351,12 +1357,17 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			// Start the timer and measure the time to replay all records.
 			// StartAndAwaitRunning waits for the ingester to finish replaying.
 			b.ResetTimer()
+			started := time.Now()
 
 			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
 			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(targetOffset)))
 
 			// Stop the timer so cleanup functions don't affect the measurement.
 			b.StopTimer()
+			elapsed := time.Since(started)
+			b.ReportMetric(float64(b.N)/elapsed.Seconds(), "series/s")
+			b.ReportMetric(float64(numRecordsProduced)/elapsed.Seconds(), "records/s")
+			b.ReportMetric(float64(b.N*2)/elapsed.Seconds(), "samples/s")
 		})
 	}
 }
