@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add `service.ipFamilies` and `service.ipFamilyPolicy` values to all components with a chart-rendered Service, including the memcached caches (`chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`) and the `gossip-ring` Service, allowing dual-stack configuration. Nothing is rendered unless the values are set. #16659
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
 * [CHANGE] Stop restarting every pod on a chart version bump: the `checksum/config` and `checksum/alertmanager-fallback-config` annotations now hash only the data of the ConfigMap or Secret, and `helm.sh/chart` is no longer set on the pod labels. The chart version remains on the objects themselves. Adopting this release recomputes the annotations once, so the pods roll a single time on this specific upgrade. #16571
