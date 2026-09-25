@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
+
+	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
