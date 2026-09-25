@@ -1,0 +1,3 @@
+.git
+cmd/rust-kafka-ingester/target
+**/node_modules
