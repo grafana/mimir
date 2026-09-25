@@ -678,9 +678,37 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
+	if isDelayedSeriesRead(ctx) {
+		if completeThrough, err := q.delayedSeriesCompleteThrough(ctx, tenantID, minT, maxT); err != nil {
+			level.Warn(spanLog).Log("msg", "failed to find newest block for delayed series", "err", err)
+		} else if completeThrough < maxT {
+			resWarnings.Add(newDelayedSeriesCompleteThroughInfo(completeThrough))
+		}
+	}
+
 	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
 		resWarnings)
+}
+
+// delayedSeriesCompleteThrough approximates the time until which delayed series are queryable with the
+// upload time of the newest block-builder block. Block-builder blocks span aligned block ranges, so
+// their max time says nothing about publication. The upload time overstates completeness by the
+// block-builder job's processing time.
+func (q *blocksStoreQuerier) delayedSeriesCompleteThrough(ctx context.Context, tenantID string, minT, maxT int64) (int64, error) {
+	var newest int64
+	for _, id := range q.targetCompartments(tenantID, nil) {
+		blocks, _, err := q.compartments[id].finder.GetBlocks(ctx, tenantID, minT, maxT)
+		if err != nil {
+			return 0, err
+		}
+		for _, b := range blocks {
+			if b.Source == string(block.BlockBuilderSource) {
+				newest = max(newest, b.UploadedAt*1000)
+			}
+		}
+	}
+	return newest, nil
 }
 
 func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
@@ -722,12 +750,17 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 ) (stats storeGatewayQueryStats, returnErr error) {
 	now := time.Now()
 
-	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
+	queryStoreAfter := q.queryStoreAfter
+	if isDelayedSeriesRead(ctx) {
+		queryStoreAfter = 0
+	}
+
+	if !ShouldQueryBlockStore(queryStoreAfter, now, minT) {
 		spanLog.DebugLog("msg", "not querying block store; query time range begins after the query-store-after limit")
 		return storeGatewayQueryStats{}, nil
 	}
 
-	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
+	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, indexMeta, err := finder.GetBlocks(ctx, tenantID, minT, maxT)

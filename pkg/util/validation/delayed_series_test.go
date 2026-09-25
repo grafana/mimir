@@ -9,6 +9,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestDelayedSeriesConfig_IsDelayed(t *testing.T) {
@@ -77,4 +78,29 @@ delayed_series:
 `), &l)
 		require.ErrorContains(t, err, `delayed_series[0].except[0]: invalid selector "{cluster=}"`)
 	})
+}
+
+func TestDelayedSeriesConfig_MayMatch(t *testing.T) {
+	cfg := DelayedSeriesConfig{{Match: `{__name__=~"grafana_http_.*", cluster!="hot"}`, Except: []string{`{cluster="prod-00"}`}}}
+	require.NoError(t, cfg.Validate())
+
+	tests := map[string]struct {
+		selector string
+		expected bool
+	}{
+		"same metric":                                {`{__name__="grafana_http_request_duration_seconds_bucket"}`, true},
+		"regex metric":                               {`{__name__=~"grafana_.*"}`, true},
+		"label-only selector":                        {`{cluster="prod-10"}`, true},
+		"different metric":                           {`{__name__="up"}`, false},
+		"excluded by rule matcher":                   {`{__name__="grafana_http_requests_total", cluster="hot"}`, false},
+		"exceptions are not considered":              {`{__name__="grafana_http_requests_total", cluster="prod-00"}`, true},
+		"regex selector disjoint only when provable": {`{__name__=~"node_.*"}`, true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			matchers, err := promqlext.NewPromQLParser().ParseMetricSelector(tc.selector)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, cfg.MayMatch(matchers))
+		})
+	}
 }

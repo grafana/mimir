@@ -325,6 +325,7 @@ func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 func (v *InstantVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := v.evaluationStats
 	v.evaluationStats = nil
+	v.annos.Merge(v.Selector.StorageAnnotations())
 	return stats, v.annos, nil
 }
 

@@ -342,7 +342,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
-	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, minT) {
+	if mq.blockStore != nil && (isDelayedSeriesRead(ctx) || ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, minT)) {
 		q, err := mq.blockStore.Querier(minT, maxT)
 		if err != nil {
 			return nil, nil, 0, 0, err
@@ -365,6 +365,10 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
+
+	if tenantID, err := tenant.TenantID(ctx); err == nil && mq.limits.DelayedSeries(tenantID).MayMatch(matchers) {
+		ctx = withDelayedSeriesRead(ctx)
+	}
 
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
 	if errors.Is(err, errEmptyTimeRange) {
@@ -686,6 +690,7 @@ func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.Series
 
 	otherSets := []storage.SeriesSet(nil)
 	chunks := []chunk.Chunk(nil)
+	var warnings annotations.Annotations
 
 	for _, set := range sets {
 		nonChunkSeries := []storage.Series(nil)
@@ -701,6 +706,7 @@ func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.Series
 			}
 		}
 
+		warnings.Merge(set.Warnings())
 		if err := set.Err(); err != nil {
 			otherSets = append(otherSets, storage.ErrSeriesSet(err))
 		} else if len(nonChunkSeries) > 0 {
@@ -709,18 +715,18 @@ func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.Series
 	}
 
 	if len(chunks) == 0 {
-		return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
+		return series.NewSeriesSetWithWarnings(storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge), warnings)
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
 	chunksSet := partitionChunks(chunks)
 
 	if len(otherSets) == 0 {
-		return chunksSet
+		return series.NewSeriesSetWithWarnings(chunksSet, warnings)
 	}
 
 	otherSets = append(otherSets, chunksSet)
-	return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
+	return series.NewSeriesSetWithWarnings(storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge), warnings)
 }
 
 type sliceSeriesSet struct {

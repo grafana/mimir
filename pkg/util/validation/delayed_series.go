@@ -94,3 +94,32 @@ func (c *DelayedSeriesConfig) ExampleDoc() (comment string, yaml any) {
 			},
 		}
 }
+
+// MayMatch returns whether a selector with the given matchers can select series matching any rule.
+// It returns false only when a rule is provably disjoint from the selector, so exceptions are not
+// considered.
+func (c DelayedSeriesConfig) MayMatch(matchers []*labels.Matcher) bool {
+	for i := range c {
+		if !disjoint(c[i].match, matchers) {
+			return true
+		}
+	}
+	return false
+}
+
+func disjoint(a, b []*labels.Matcher) bool {
+	for _, ma := range a {
+		for _, mb := range b {
+			if ma.Name != mb.Name {
+				continue
+			}
+			if ma.Type == labels.MatchEqual && !mb.Matches(ma.Value) {
+				return true
+			}
+			if mb.Type == labels.MatchEqual && !ma.Matches(mb.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}

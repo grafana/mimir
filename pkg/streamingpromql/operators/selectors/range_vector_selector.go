@@ -308,7 +308,7 @@ func (m *RangeVectorSelector) FinishedReading(ctx context.Context) error {
 func (m *RangeVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := m.evaluationStats
 	m.evaluationStats = nil
-	return stats, nil, nil
+	return stats, m.Selector.StorageAnnotations(), nil
 }
 
 func (m *RangeVectorSelector) Close() {

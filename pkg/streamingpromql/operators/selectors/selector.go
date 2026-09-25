@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -57,6 +58,9 @@ type Selector struct {
 	querier   storage.Querier
 	seriesSet storage.SeriesSet
 	series    *seriesList
+
+	// storageAnnos holds the annotations returned by the queried storage, such as store-gateway infos.
+	storageAnnos annotations.Annotations
 
 	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
 
@@ -112,6 +116,8 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	if s.seriesSet.Err() != nil {
 		return nil, s.seriesSet.Err()
 	}
+
+	s.storageAnnos = s.seriesSet.Warnings()
 
 	metadata, err := s.series.ToSeriesMetadata()
 	if err != nil {
@@ -505,4 +511,9 @@ func (s *skipHistogramBucketsSeries) Iterator(iterator chunkenc.Iterator) chunke
 	}
 
 	return promql.NewHistogramStatsIterator(s.series.Iterator(iterator))
+}
+
+// StorageAnnotations returns the annotations reported by the storage while loading series.
+func (s *Selector) StorageAnnotations() annotations.Annotations {
+	return s.storageAnnos
 }
