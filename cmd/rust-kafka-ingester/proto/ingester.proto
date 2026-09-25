@@ -1,0 +1,75 @@
+syntax = "proto3";
+package cortex;
+import "mimir.proto";
+
+service Ingester {
+  rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse);
+  rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse);
+  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse);
+  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse);
+  rpc UserStats(UserStatsRequest) returns (UserStatsResponse);
+  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse);
+  rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse);
+  rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse);
+  rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse);
+  rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse);
+  rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse);
+  rpc SearchLabelNames(SearchLabelNamesRequest) returns (stream SearchResultBatch);
+  rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch);
+}
+
+message LabelNamesAndValuesRequest { repeated LabelMatcher matchers = 1; CountMethod count_method = 2; }
+message LabelNamesAndValuesResponse { repeated LabelValues items = 1; }
+message LabelValues { string label_name = 1; repeated string values = 2; }
+message LabelValuesCardinalityRequest { repeated string label_names = 1; repeated LabelMatcher matchers = 2; CountMethod count_method = 3; }
+message LabelValuesCardinalityResponse { repeated LabelValueSeriesCount items = 1; }
+message LabelValueSeriesCount { string label_name = 1; map<string, uint64> label_value_series = 2; }
+
+message QueryRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; repeated LabelMatcher matchers = 3; uint64 streaming_chunks_batch_size = 100; }
+message QueryStreamResponse { repeated QueryStreamSeries streaming_series = 3; bool is_end_of_series_stream = 4; repeated QueryStreamSeriesChunks streaming_series_chunks = 5; bytes encoded_response = 1000; }
+message QueryStreamSeries { repeated cortexpb.LabelPair labels = 1; int64 chunk_count = 2; }
+message QueryStreamSeriesChunks { uint64 series_index = 1; repeated Chunk chunks = 2; }
+message Chunk { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; int32 encoding = 3; bytes data = 4; }
+
+message ExemplarQueryRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; repeated LabelMatchers matchers = 3; }
+message ExemplarQueryResponse { repeated cortexpb.TimeSeries timeseries = 1; }
+message LabelValuesRequest { string label_name = 1; int64 start_timestamp_ms = 2; int64 end_timestamp_ms = 3; LabelMatchers matchers = 4; int64 limit = 5; }
+message LabelValuesResponse { repeated string label_values = 1; }
+message LabelNamesRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; LabelMatchers matchers = 3; int64 limit = 4; }
+message LabelNamesResponse { repeated string label_names = 1; }
+message UserStatsRequest { CountMethod count_method = 1; }
+message UserStatsResponse { double ingestion_rate = 1; uint64 num_series = 2; double api_ingestion_rate = 3; double rule_ingestion_rate = 4; }
+message UserIDStatsResponse { string user_id = 1; UserStatsResponse data = 2; }
+message UsersStatsResponse { repeated UserIDStatsResponse stats = 1; }
+message MetricsForLabelMatchersRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; repeated LabelMatchers matchers_set = 3; int64 limit = 4; }
+message MetricsForLabelMatchersResponse { repeated cortexpb.Metric metric = 1; }
+message MetricsMetadataRequest { sint32 limit = 1; sint32 limit_per_metric = 2; string metric = 3; repeated string metric_names = 4; }
+message MetricsMetadataResponse { repeated cortexpb.MetricMetadata metadata = 1; }
+
+message ActiveSeriesRequest {
+  repeated LabelMatcher matchers = 1;
+  enum RequestType { SERIES = 0; NATIVE_HISTOGRAM_SERIES = 1; }
+  RequestType type = 2;
+}
+message ActiveSeriesResponse { repeated cortexpb.Metric metric = 1; repeated uint64 bucket_count = 2; }
+
+enum SearchOrdering { ORDER_BY_VALUE_ASC = 0; ORDER_BY_VALUE_DESC = 1; ORDER_BY_SCORE_DESC = 2; }
+message SearchFilter {
+  repeated string terms = 1;
+  bool case_insensitive = 2;
+  enum FuzzAlg { FUZZ_ALG_SUBSEQUENCE = 0; FUZZ_ALG_JARO_WINKLER = 1; }
+  FuzzAlg fuzz_alg = 3;
+  int32 fuzz_threshold = 4;
+}
+message SearchLabelNamesRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; repeated LabelMatcher matchers = 3; SearchFilter filter = 4; SearchOrdering ordering = 5; int64 limit = 6; }
+message SearchLabelValuesRequest { int64 start_timestamp_ms = 1; int64 end_timestamp_ms = 2; string name = 3; repeated LabelMatcher matchers = 4; SearchFilter filter = 5; SearchOrdering ordering = 6; int64 limit = 7; }
+message SearchResultBatch {
+  message Result { string value = 1; double score = 2; }
+  repeated Result results = 1;
+  repeated string warnings = 2;
+}
+
+message LabelMatchers { repeated LabelMatcher matchers = 1; }
+enum MatchType { EQUAL = 0; NOT_EQUAL = 1; REGEX_MATCH = 2; REGEX_NO_MATCH = 3; }
+message LabelMatcher { MatchType type = 1; string name = 2; string value = 3; }
+enum CountMethod { IN_MEMORY = 0; ACTIVE = 1; }
