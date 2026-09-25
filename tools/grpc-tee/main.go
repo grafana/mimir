@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/siderolabs/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -15,7 +16,9 @@ import (
 func main() {
 	listenAddress := flag.String("server.grpc-listen-address", ":9095", "Address to listen on for gRPC requests.")
 	backendAddress := flag.String("backend.address", "localhost:9096", "Address of the gRPC backend to forward requests to.")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalf("failed to parse flags: %v", err)
+	}
 
 	// The client uses the raw codec, so response frames return as opaque bytes.
 	conn, err := grpc.NewClient(
@@ -31,8 +34,8 @@ func main() {
 	backend := &proxy.SingleBackend{
 		GetConn: func(ctx context.Context) (context.Context, *grpc.ClientConn, error) {
 			// Forward the inbound metadata (for example X-Scope-OrgID) to the backend.
-			md, _ := metadata.FromIncomingContext(ctx)
-			return metadata.NewOutgoingContext(ctx, md.Copy()), conn, nil
+			md, _ := metadata.FromIncomingContext(ctx) //lint:ignore faillint The proxy forwards all keys.
+			return metadata.NewOutgoingContext(ctx, md), conn, nil
 		},
 	}
 

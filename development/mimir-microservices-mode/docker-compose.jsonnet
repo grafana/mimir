@@ -52,8 +52,8 @@ std.manifestYamlDoc({
     (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
     self.store_gateways(1) +
     self.compactor +
-//    self.rulers(2) +
-//    self.alertmanagers(3) +
+    //    self.rulers(2) +
+    //    self.alertmanagers(3) +
     self.nginx +
     self.minio +
     (if $._config.enable_continuous_test then self.continuous_test else {}) +
@@ -309,10 +309,10 @@ std.manifestYamlDoc({
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
         'distributor-1',
-//        'alertmanager-1',
-//        'ruler-1',
+        //        'alertmanager-1',
+        //        'ruler-1',
         'query-frontend',
-//        'compactor',
+        //        'compactor',
         'grafana',
       ],
       environment: [
