@@ -187,6 +187,104 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	})
 }
 
+func TestEnsureIndexHeaderOnDisk(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	tests := map[string]struct {
+		setup           func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string)
+		writeV2Header   bool
+		expectedVersion int
+	}{
+		"v1 required, nothing on disk": {
+			writeV2Header:   false,
+			expectedVersion: BinaryFormatV1,
+		},
+		"v2 required, nothing on disk": {
+			writeV2Header:   true,
+			expectedVersion: BinaryFormatV2,
+		},
+		"v2 required, v1 on disk": {
+			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
+				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
+			},
+			writeV2Header:   true,
+			expectedVersion: BinaryFormatV2,
+		},
+		"v1 required, v2 on disk": {
+			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
+				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV2))
+			},
+			writeV2Header:   false,
+			expectedVersion: BinaryFormatV1,
+		},
+		"v1 required, v1 on disk": {
+			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
+				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
+			},
+			writeV2Header:   false,
+			expectedVersion: BinaryFormatV1,
+		},
+		"v2 required, v2 on disk": {
+			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
+				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV2))
+			},
+			writeV2Header:   true,
+			expectedVersion: BinaryFormatV2,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+			blockDir := filepath.Join(tmpDir, blockID.String())
+
+			if tt.setup != nil {
+				tt.setup(t, bkt, blockID, blockDir)
+			}
+
+			cfg := Config{BucketReader: BucketReaderConfig{Enabled: tt.writeV2Header}}
+			require.NoError(t, ensureIndexHeaderOnDisk(ctx, blockID, bkt, tmpDir, cfg, logger))
+
+			// Exactly the required version should remain, and any other version must have been removed.
+			headers, err := IndexHeadersOnDisk(blockDir)
+			require.NoError(t, err)
+			require.Len(t, headers, 1)
+			require.Equal(t, tt.expectedVersion, headers[0].Version)
+			require.Equal(t, indexHeaderPath(blockDir, tt.expectedVersion), headers[0].Path)
+		})
+	}
+
+	for _, bucketReaderEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("corrupted header of the required version is left to be rebuilt later, bucket reader enabled=%v", bucketReaderEnabled), func(t *testing.T) {
+			tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+			blockDir := filepath.Join(tmpDir, blockID.String())
+			cfg := Config{BucketReader: BucketReaderConfig{Enabled: bucketReaderEnabled}}
+
+			requiredHeaderPath := indexHeaderPath(blockDir, requiredIndexHeaderVersion(cfg))
+			require.NoError(t, os.WriteFile(requiredHeaderPath, []byte("xxx"), os.ModePerm))
+
+			require.NoError(t, ensureIndexHeaderOnDisk(ctx, blockID, bkt, tmpDir, cfg, logger))
+
+			content, err := os.ReadFile(requiredHeaderPath)
+			require.NoError(t, err)
+			require.Equal(t, []byte("xxx"), content)
+		})
+	}
+
+	t.Run("unrecognized version is removed", func(t *testing.T) {
+		tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+		blockDir := filepath.Join(tmpDir, blockID.String())
+		unknownPath := filepath.Join(blockDir, "index-header-v9")
+		require.NoError(t, os.WriteFile(unknownPath, []byte("future format"), os.ModePerm))
+
+		require.NoError(t, ensureIndexHeaderOnDisk(ctx, blockID, bkt, tmpDir, Config{}, logger))
+
+		_, err := os.Stat(unknownPath)
+		require.True(t, os.IsNotExist(err), "an unrecognized version should have been removed")
+	})
+}
+
 func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
@@ -693,8 +791,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, filepath.Join(bucketDir, idIndexV2.String()), BinaryFormatV1))
 
 			diskReaderBenchFactory := func(
 				cachingBucket *bucketcache.CachingBucket,

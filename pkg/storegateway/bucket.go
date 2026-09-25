@@ -446,10 +446,16 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
+	// If we create the index-header and addBlock fails, we need to record the removal of the block's index-header.
+	var indexHeaderCreated bool
+
 	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
 	defer func() {
 		if err != nil {
 			s.metrics.blockLoadFailures.Inc()
+			if indexHeaderCreated {
+				s.indexReaderPool.RecordOnDiskIndexHeaderRemoval(dir)
+			}
 			if err2 := os.RemoveAll(dir); err2 != nil {
 				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
 			}
@@ -477,6 +483,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
 	}
+	indexHeaderCreated = true
 
 	defer func() {
 		if err != nil {
@@ -531,6 +538,8 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	if err := b.Close(); err != nil {
 		return errors.Wrap(err, "close block")
 	}
+
+	s.indexReaderPool.RecordOnDiskIndexHeaderRemoval(b.dir)
 	if err := os.RemoveAll(b.dir); err != nil {
 		return errors.Wrap(err, "delete block")
 	}
@@ -2139,15 +2148,16 @@ func (b *bucketBlock) Close() error {
 
 // collectBucketBlockFileStats collects the files of the on-disk block representation.
 func collectBucketBlockFileStats(blockDir string) (res []block.File, _ error) {
-	indexHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.IndexHeaderFilename))
+	headers, err := indexheader.IndexHeadersOnDisk(blockDir)
 	if err != nil {
-		return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.IndexHeaderFilename), err)
+		return nil, fmt.Errorf("list index-headers in %v: %w", blockDir, err)
 	}
-	mf := block.File{
-		RelPath:   indexHeaderInfo.Name(),
-		SizeBytes: indexHeaderInfo.Size(),
+	if len(headers) == 0 {
+		return nil, fmt.Errorf("no index-header present in %v", blockDir)
 	}
-	res = append(res, mf)
+	for _, h := range headers {
+		res = append(res, block.File{RelPath: h.Info.Name(), SizeBytes: h.Info.Size()})
+	}
 
 	// Sparse index headers are optional and may not exist on disk.
 	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.SparseIndexHeaderFilename))

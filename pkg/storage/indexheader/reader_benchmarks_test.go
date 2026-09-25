@@ -44,8 +44,8 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
 	require.NoError(b, err)
 
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+	blockDir := filepath.Join(bucketDir, idIndexV2.String())
+	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
 	// TODO: are these sensible values for parallelism?
 	for _, parallelism := range []int{1, 2, 4, 8, 20, 100} {
@@ -126,8 +126,7 @@ func BenchmarkLabelNames(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, blockDir, nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
 			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
@@ -169,8 +168,8 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(dir, blockID.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(dir, blockID.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, blockID, indexName))
+			blockDir := filepath.Join(dir, blockID.String())
+			require.NoError(b, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
 
 			bucketReg := prometheus.NewPedanticRegistry()
 
@@ -354,8 +353,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(dir, idIndexV2.String()), nil)
 		require.NoError(b, err)
 
-		indexName := filepath.Join(dir, idIndexV2.String(), block.IndexHeaderFilename)
-		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, filepath.Join(dir, idIndexV2.String()), BinaryFormatV1))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
@@ -400,8 +398,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, blockDir, nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, blockDir, BinaryFormatV1))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {

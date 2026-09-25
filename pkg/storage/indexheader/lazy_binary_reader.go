@@ -26,7 +26,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 var (
@@ -135,7 +134,7 @@ func NewLazyBinaryReader(
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	localBlockDir := filepath.Join(localDir, id.String())
-	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	headerPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
 
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
@@ -147,7 +146,7 @@ func NewLazyBinaryReader(
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, cfg, logger)
 	})
 
 	g.Go(func() error {
@@ -163,7 +162,7 @@ func NewLazyBinaryReader(
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
-		filepath:        indexHeaderPath,
+		filepath:        headerPath,
 		metrics:         metrics,
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
@@ -181,36 +180,45 @@ func NewLazyBinaryReader(
 	return reader, nil
 }
 
+// ensureIndexHeaderOnDisk builds an index-header of the version required from the bucket if it is not already on disk,
+// and removes any other version that may already have existed.
 func ensureIndexHeaderOnDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
+	cfg Config,
 	logger log.Logger,
 ) error {
 	localBlockDir := filepath.Join(dir, blockID.String())
-	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	requiredVersion := requiredIndexHeaderVersion(cfg)
 
-	_, err := os.Stat(indexHeaderPath)
-	// The header is already on disk
-	if err == nil {
-		return nil
-	}
-	if !os.IsNotExist(err) {
-		level.Error(logger).Log("msg", "failed to stat existing index-header on disk", "err", err)
-		return err
+	headers, err := IndexHeadersOnDisk(localBlockDir)
+	if err != nil {
+		return fmt.Errorf("list index-headers on disk: %w", err)
 	}
 
-	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
+	for _, h := range headers {
+		if h.Version == requiredVersion {
+			// We already have the right header; sweep all other versions that may happen to also be on disk.
+			return removeOtherIndexHeaderVersions(localBlockDir, requiredVersion)
+		}
+	}
+
+	level.Debug(logger).Log(
+		"msg", "index-header for required version not found on disk; will build from bucket",
+		"path", indexHeaderPath(localBlockDir, requiredVersion), "requiredVersion", requiredVersion,
+	)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
+	if err := WriteBinary(ctx, bkt, blockID, localBlockDir, requiredVersion); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
 
-	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
-	return nil
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath(localBlockDir, requiredVersion), "elapsed", time.Since(start))
+
+	return removeOtherIndexHeaderVersions(localBlockDir, requiredVersion)
 }
 
 // Close implements Reader.
