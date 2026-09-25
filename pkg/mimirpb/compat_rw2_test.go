@@ -31,12 +31,9 @@ func TestRW2TypesCompatible(t *testing.T) {
 	actualTree := treeprint.NewWithRoot("<root>")
 	test.AddTypeToTree(actualType, actualTree, false, true, true, false)
 
-	// mimirpb.Sample fields order MUST match promql.FPoint so that we can
-	// cast types between them. However this makes test.RequireSameShape
-	// fail because the order is different.
-	// So we need to reverse the order of the fields in the tree.
-	// Also the name of the Timestamp field is slightly different in the
-	// two types.
+	// mimirpb.Sample retains its historical timestamp-before-value field order.
+	// Swap those fields and normalize TimestampMs to the upstream Timestamp name
+	// when comparing the protobuf shapes.
 	var firstValue, secondValue string
 	rootNode, _ := actualTree.(*treeprint.Node)
 	firstValue, _ = rootNode.Nodes[1].Nodes[1].Nodes[0].Value.(string)
@@ -44,15 +41,10 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
-	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
+	// Mimir's RW2 types match upstream Prometheus, except we retain the series-level CreatedTimestamp.
+	// See mimir.proto for more details.
 	rootNode, _ = expectedTree.(*treeprint.Node)
 	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
-	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
-	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
-	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]
-	require.Contains(t, rootNode.Nodes[1].Nodes[2].Nodes[14].String(), " StartTimestamp:")
-	// TimeSeries is node 1 of the request, Histogram is node 2 of TimeSeries, StartTimestamp is node 14 of Histogram.
-	rootNode.Nodes[1].Nodes[2].Nodes = rootNode.Nodes[1].Nodes[2].Nodes[0:14]
 
 	require.Equal(t, expectedTree.String(), actualTree.String(), "Proto types are not compatible")
 }

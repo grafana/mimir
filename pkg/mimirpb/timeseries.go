@@ -748,6 +748,7 @@ func copyHistogram(src Histogram) Histogram {
 		ResetHint:      src.ResetHint,
 		Timestamp:      src.Timestamp,
 		CustomValues:   slices.Clone(src.CustomValues),
+		StartTimestamp: src.StartTimestamp,
 	}
 }
 
