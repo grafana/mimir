@@ -367,6 +367,8 @@ type Ingester struct {
 
 	costAttributionMgr *costattribution.Manager
 
+	delayedSeries *delayedSeriesTracker
+
 	tsdbMetrics *mimir_tsdb.TSDBMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
@@ -501,6 +503,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	i.costAttributionMgr = costAttributionMgr
+	i.delayedSeries = newDelayedSeriesTracker(cfg.ActiveSeriesMetrics.IdleTimeout, registerer)
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -910,10 +913,15 @@ func (i *Ingester) ingesterRunning(ctx context.Context) error {
 	tsdbUpdateTicker := time.NewTicker(i.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateTicker.Stop()
 
+	delayedSeriesPurgeTicker := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
+	defer delayedSeriesPurgeTicker.Stop()
+
 	for {
 		select {
 		case <-tsdbUpdateTicker.C:
 			i.applyTSDBSettings()
+		case now := <-delayedSeriesPurgeTicker.C:
+			i.delayedSeries.purge(now)
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():

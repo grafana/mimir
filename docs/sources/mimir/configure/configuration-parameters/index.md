@@ -4755,6 +4755,24 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
+# (experimental) Series that ingesters with ingest storage enabled don't keep in
+# the TSDB head. They are queryable once the block-builder has published them.
+# Example:
+#   The following configuration delays a histogram for every cluster except the
+#   one queried in real time.
+#   delayed_series:
+#       - match: '{__name__="http_request_duration_seconds_bucket"}'
+#         except:
+#           - '{cluster="prod-us-east-0"}'
+delayed_series:
+  - # Series selector for the series to delay, for example
+    # {__name__="http_request_duration_seconds_bucket"}.
+    [match: <string> | default = ""]
+
+    # Series selectors excluded from the rule. Matching series stay on the
+    # standard path.
+    [except: <list of strings> | default = ]
+
 # (advanced) Whether the shipper should label out-of-order blocks with an
 # external label before uploading them. Setting this label will compact
 # out-of-order blocks separately from non-out-of-order blocks

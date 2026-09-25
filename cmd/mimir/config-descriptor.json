@@ -6045,6 +6045,43 @@
         },
         {
           "kind": "field",
+          "name": "delayed_series",
+          "required": false,
+          "desc": "Series that ingesters with ingest storage enabled don't keep in the TSDB head. They are queryable once the block-builder has published them.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "delayed_series",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "match",
+                "required": false,
+                "desc": "Series selector for the series to delay, for example {__name__=\"http_request_duration_seconds_bucket\"}.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "except",
+                "required": false,
+                "desc": "Series selectors excluded from the rule. Matching series stay on the standard path.",
+                "fieldValue": null,
+                "fieldDefaultValue": [],
+                "fieldType": "list of strings"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "field",
           "name": "out_of_order_blocks_external_label_enabled",
           "required": false,
           "desc": "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks",

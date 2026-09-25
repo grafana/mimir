@@ -232,8 +232,9 @@ type Limits struct {
 	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
 
 	// Max allowed time window for out-of-order samples.
-	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
-	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"advanced"`
+	OutOfOrderTimeWindow                 model.Duration      `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
+	DelayedSeries                        DelayedSeriesConfig `yaml:"delayed_series,omitempty" json:"delayed_series,omitempty" doc:"nocli|description=Series that ingesters with ingest storage enabled don't keep in the TSDB head. They are queryable once the block-builder has published them." category:"experimental"`
+	OutOfOrderBlocksExternalLabelEnabled bool                `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"advanced"`
 
 	// User defined label to give the option of subdividing specific metrics by another label
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
@@ -745,6 +746,10 @@ func (l *Limits) Validate() error {
 		cfg.NameValidationScheme = validationScheme
 	}
 
+	if err := l.DelayedSeries.Validate(); err != nil {
+		return err
+	}
+
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
@@ -1132,6 +1137,11 @@ func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 // MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
 func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
+}
+
+// DelayedSeries returns the series that ingesters don't keep in the TSDB head.
+func (o *Overrides) DelayedSeries(userID string) DelayedSeriesConfig {
+	return o.getOverridesForUser(userID).DelayedSeries
 }
 
 // BlockedQueries returns the blocked queries.

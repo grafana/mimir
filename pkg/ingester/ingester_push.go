@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -260,6 +261,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
 		// Distributor counts both samples and metadata, so for consistency ingester does the same.
 		i.ingestionRate.Add(int64(ingestedMetadata))
+	}
+
+	if i.cfg.IngestStorageConfig.Enabled {
+		i.removeDelayedSeries(userID, req)
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
@@ -958,4 +963,34 @@ func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64
 		}
 	}
 	return true
+}
+
+// removeDelayedSeries removes the series matching the tenant's delayed_series limit from req, so they
+// are not appended to the TSDB head. The block-builder consumes the same records and still publishes them.
+func (i *Ingester) removeDelayedSeries(userID string, req *mimirpb.WriteRequest) {
+	delayed := i.limits.DelayedSeries(userID)
+	if len(delayed) == 0 {
+		return
+	}
+
+	var removeIndexes []int
+	for idx, ts := range req.Timeseries {
+		if delayed.IsDelayed(ts.Labels) {
+			removeIndexes = append(removeIndexes, idx)
+		}
+	}
+	if len(removeIndexes) == 0 {
+		return
+	}
+
+	removed := make([]mimirpb.PreallocTimeseries, 0, len(removeIndexes))
+	for _, idx := range removeIndexes {
+		removed = append(removed, req.Timeseries[idx])
+	}
+	i.delayedSeries.observe(userID, removed, time.Now())
+
+	for _, idx := range removeIndexes {
+		mimirpb.ReusePreallocTimeseries(&req.Timeseries[idx])
+	}
+	req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 }
