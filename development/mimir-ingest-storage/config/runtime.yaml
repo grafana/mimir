@@ -17,3 +17,5 @@ overrides:
           - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-03"}'
           - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-04"}'
       - match: '{__name__="grafana_http_request_duration_seconds_sum"}'
+      - match: '{__name__="grafana_http_request_duration_seconds_count"}'
+        retired_at: 2026-09-25T16:53:00Z
