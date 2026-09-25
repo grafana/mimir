@@ -113,3 +113,28 @@ eval instant at 10m (up * 1)[3m:1m]
   {foo="bar"} 8 9 10
   {foo="bar2"} 24 27 30
   {foo="bar3"} 40 45 50
+
+# Two series colliding after name removal, with non-overlapping samples, must merge into one series,
+# matching Prometheus.
+load 1m
+  a{foo="x"} 1 2 3 stale
+  b{foo="x"} _ _ _ 4 5 6
+
+eval instant at 5m ({foo="x"} * 1)[5m1s:1m]
+  expect range vector from 0 to 5m step 1m
+  {foo="x"} 1 2 3 4 5 6
+
+# The merged series sits between unique series, which must be returned unchanged and in order.
+load 1m
+  c{foo="w"} 1 1 1 1 1 1
+  d{foo="z"} 2 2 2 2 2 2
+
+eval instant at 5m ({foo=~"w|x|z"} * 1)[5m1s:1m]
+  expect range vector from 0 to 5m step 1m
+  {foo="w"} 1 1 1 1 1 1
+  {foo="x"} 1 2 3 4 5 6
+  {foo="z"} 2 2 2 2 2 2
+
+# Colliding series with samples at the same timestamps must fail, matching Prometheus.
+eval_fail instant at 5m ({foo="bar"} * 1)[3m1s:1m]
+  expect fail msg: vector cannot contain metrics with the same labelset

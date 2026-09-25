@@ -405,9 +405,8 @@ func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node
 	// is a no-op for series not flagged for name removal, so this is safe even when no name is
 	// removed.
 	//
-	// Prometheus also merges matrix series that collide after name removal (cleanupMetricLabels ->
-	// mergeSeriesWithSameLabelset); MQE has no range vector equivalent of DeduplicateAndMerge, so
-	// that rare case is not merged here.
+	// Series that collide after name removal are merged afterwards by Query.Exec, matching
+	// Prometheus (cleanupMetricLabels -> mergeSeriesWithSameLabelset).
 	resultType, err := root.ResultType()
 	if err != nil {
 		return nil, err
