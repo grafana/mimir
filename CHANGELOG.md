@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Distributor: `PushWrappers` must finish reading decoded request data before calling `next`. Copy values needed for post-push processing before forwarding the request. #16676
+
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
 * [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544
@@ -24,6 +26,7 @@
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
 * [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
+* [ENHANCEMENT] Distributor: Release decoded write requests after serialization when writing only to ingest storage, while keeping admission accounting active until the writes complete. #16676
 * [ENHANCEMENT] Ruler: Split oversized remote distributor writes to keep resulting calls within the configured gRPC maximum send size, and expose the number of generated requests in `cortex_ruler_remote_distributor_requests_per_write_request`. #16160
 * [ENHANCEMENT] Alerts: Don't fire `MimirMemberlistZoneAwareRoutingAutoFailover` while the node is still joining the cluster. #16315
 * [ENHANCEMENT] Store-gateway: added a `route` label to the `cortex_bucket_store_series_request_stage_duration_seconds` metric to match the `route` label of `cortex_request_duration_seconds`. #16374

@@ -136,6 +136,7 @@ func OTLPHandler(
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
 				rb.CleanUp()
+				req.WriteRequest = mimirpb.WriteRequest{}
 			}
 			return &req.WriteRequest, cleanup, uncompressedSize, nil
 		}
