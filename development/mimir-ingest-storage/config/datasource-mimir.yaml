@@ -10,6 +10,8 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
+      # Delayed series come from local store-gateways; wide queries over them can take ~1 minute.
+      timeout: 120
       httpHeaderName1: X-Scope-OrgID
     secureJsonData:
       httpHeaderValue1: anonymous
@@ -22,6 +24,8 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
+      # Delayed series come from local store-gateways; wide queries over them can take ~1 minute.
+      timeout: 120
       httpHeaderName1: X-Scope-OrgID
     secureJsonData:
       httpHeaderValue1: standard
@@ -34,6 +38,8 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
+      # Delayed series come from local store-gateways; wide queries over them can take ~1 minute.
+      timeout: 120
       httpHeaderName1: X-Scope-OrgID
     secureJsonData:
       httpHeaderValue1: delayed
