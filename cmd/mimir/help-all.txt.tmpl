@@ -1119,12 +1119,14 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -common.storage.swift.username string
     	OpenStack Swift username.
+  -compactor-scheduler.backfill-mode-enabled
+    	[experimental] If enabled, the compactor scheduler schedules work for backfills instead of compaction of the tenants in a cell.
   -compactor-scheduler.bbolt.dir string
     	[experimental] The directory where bbolt shard database files are stored for the compactor scheduler. (default "./data-compactor-scheduler")
   -compactor-scheduler.bbolt.shard-count int
     	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
   -compactor-scheduler.lane-policy.policy string
-    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
+    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple, backfill. backfill is required if and only if -compactor-scheduler.backfill-mode-enabled is true. (default "simple")
   -compactor-scheduler.lease-duration duration
     	[experimental] The duration of time without contact until the scheduler is able to lease a work item to another worker. (default 10m0s)
   -compactor-scheduler.maintenance-interval duration
@@ -1346,7 +1348,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduler-client.lanes comma-separated-list-of-strings
-    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. (default compact+plan,plan)
+    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. (default compact+plan,plan)
+  -compactor.scheduler-client.last-contact-timeout duration
+    	[experimental] Duration without a successful job lease update after which a compactor stops the job. The compactor scheduler also reads this value and must be configured with the same value. Required when the compactor scheduler runs in backfill mode. 0 to disable.
   -compactor.scheduler-client.leasing-max-backoff duration
     	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
   -compactor.scheduler-client.leasing-min-backoff duration

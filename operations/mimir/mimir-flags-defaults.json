@@ -1016,6 +1016,7 @@
   "compactor.scheduler-client.update-interval": 15000000000,
   "compactor.scheduler-client.update-min-backoff": 1000000000,
   "compactor.scheduler-client.update-max-backoff": 32000000000,
+  "compactor.scheduler-client.last-contact-timeout": 0,
   "compactor.scheduler-client.compaction-dir-cleanup-interval": 1800000000000,
   "compactor.scheduler-client.metadata-cache.backend": "",
   "compactor.scheduler-client.metadata-cache.memcached.addresses": "",

@@ -14483,6 +14483,17 @@
             },
             {
               "kind": "field",
+              "name": "last_contact_timeout",
+              "required": false,
+              "desc": "Duration without a successful job lease update after which a compactor stops the job. The compactor scheduler also reads this value and must be configured with the same value. Required when the compactor scheduler runs in backfill mode. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "compactor.scheduler-client.last-contact-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "compaction_dir_cleanup_interval",
               "required": false,
               "desc": "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.",
@@ -14765,7 +14776,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.",
+              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -14981,7 +14992,7 @@
               "kind": "field",
               "name": "policy",
               "required": false,
-              "desc": "The lane policy the compactor scheduler should use. Valid values: simple",
+              "desc": "The lane policy the compactor scheduler should use. Valid values: simple, backfill. backfill is required if and only if -compactor-scheduler.backfill-mode-enabled is true.",
               "fieldValue": null,
               "fieldDefaultValue": "simple",
               "fieldFlag": "compactor-scheduler.lane-policy.policy",
@@ -14991,6 +15002,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "backfill_mode_enabled",
+          "required": false,
+          "desc": "If enabled, the compactor scheduler schedules work for backfills instead of compaction of the tenants in a cell.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor-scheduler.backfill-mode-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

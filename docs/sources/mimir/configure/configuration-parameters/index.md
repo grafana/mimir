@@ -286,9 +286,15 @@ compactor_scheduler:
 
   lane_policy:
     # (experimental) The lane policy the compactor scheduler should use. Valid
-    # values: simple
+    # values: simple, backfill. backfill is required if and only if
+    # -compactor-scheduler.backfill-mode-enabled is true.
     # CLI flag: -compactor-scheduler.lane-policy.policy
     [policy: <string> | default = "simple"]
+
+  # (experimental) If enabled, the compactor scheduler schedules work for
+  # backfills instead of compaction of the tenants in a cell.
+  # CLI flag: -compactor-scheduler.backfill-mode-enabled
+  [backfill_mode_enabled: <boolean> | default = false]
 
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
@@ -6989,6 +6995,13 @@ scheduler_client:
   # CLI flag: -compactor.scheduler-client.update-max-backoff
   [update_max_backoff: <duration> | default = 32s]
 
+  # (experimental) Duration without a successful job lease update after which a
+  # compactor stops the job. The compactor scheduler also reads this value and
+  # must be configured with the same value. Required when the compactor
+  # scheduler runs in backfill mode. 0 to disable.
+  # CLI flag: -compactor.scheduler-client.last-contact-timeout
+  [last_contact_timeout: <duration> | default = 0s]
+
   # (experimental) Defines how frequently to clean up the compaction working
   # directory. The directory is cleaned on startup and then only when this
   # interval has elapsed since the last cleanup. Set to 0 to disable periodic
@@ -7016,7 +7029,8 @@ scheduler_client:
   [terminating_final_status_timeout: <duration> | default = 30s]
 
   # (experimental) Lanes to request for each worker goroutine. Each entry is a
-  # '+'-separated list of job types in priority order.
+  # '+'-separated list of job types in priority order. Valid job types: plan,
+  # compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 
