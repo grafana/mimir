@@ -5,7 +5,9 @@ package readcache
 import (
 	"slices"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -45,6 +47,24 @@ import (
 type partitionRanges struct {
 	mu sync.RWMutex
 
+	// tenantRangeState is the legacy empty-tenant bucket. Embedding it
+	// keeps empty TenantID a first-class key while preserving the
+	// existing package-local helpers used by legacy tests.
+	tenantRangeState
+
+	// byTenant isolates ownership, residue, counts, examples, and
+	// sample-rate EWMAs for non-empty tenant IDs. Identical numeric
+	// ranges owned by different tenants therefore never share state.
+	byTenant map[string]*tenantRangeState
+
+	// unknownFirstSeen records the earliest wall clock at which a live
+	// tenant was observed on this partition without configured current
+	// ranges. Entries are removed when the tenant becomes configured or
+	// no longer has a live TSDB.
+	unknownFirstSeen map[string]int64
+}
+
+type tenantRangeState struct {
 	currentRanges    []assignment.HashRange
 	historicalRanges []assignment.HashRange
 	rangeCounts      map[assignment.HashRange]int64
@@ -81,6 +101,14 @@ type partitionRanges struct {
 
 func newPartitionRanges() *partitionRanges {
 	return &partitionRanges{
+		tenantRangeState: newTenantRangeState(),
+		byTenant:         make(map[string]*tenantRangeState),
+		unknownFirstSeen: make(map[string]int64),
+	}
+}
+
+func newTenantRangeState() tenantRangeState {
+	return tenantRangeState{
 		rangeCounts:   make(map[assignment.HashRange]int64),
 		exampleSeries: make(map[assignment.HashRange]string),
 		sampleRates:   make(map[assignment.HashRange]*util_math.EwmaRate),
@@ -110,61 +138,101 @@ func newPartitionRangeEWMA() *util_math.EwmaRate {
 // ranges that fell out of both sets are discarded. It returns true
 // when the current range assignment materially changed.
 func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) bool {
+	return pr.setRangesForTenant("", newRanges)
+}
+
+func (pr *partitionRanges) setRangesForTenant(tenantID string, newRanges []assignment.HashRange) bool {
 	sortedNew := sortedNonOverlappingCopy(newRanges)
+	tenantID = strings.Clone(tenantID)
 
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	changed := !slices.Equal(pr.currentRanges, sortedNew)
+	state := pr.stateForTenantLocked(tenantID)
+	if state == nil {
+		if len(sortedNew) == 0 {
+			return false
+		}
+		created := newTenantRangeState()
+		pr.byTenant[tenantID] = &created
+		state = &created
+	}
+
+	changed := setTenantRangesLocked(state, sortedNew)
+	if len(state.currentRanges) > 0 {
+		delete(pr.unknownFirstSeen, tenantID)
+	}
+	pr.deleteTenantStateIfEmptyLocked(tenantID, state)
+	return changed
+}
+
+func setTenantRangesLocked(state *tenantRangeState, sortedNew []assignment.HashRange) bool {
+	changed := !slices.Equal(state.currentRanges, sortedNew)
 
 	// Hash space that this partition just lost.
-	removed := rangeDiff(pr.currentRanges, sortedNew)
+	removed := rangeDiff(state.currentRanges, sortedNew)
 	// Existing historical ranges that the new current re-claims must
 	// drop out of historical (they will be tracked on the current side
 	// from now on).
-	keptHistorical := rangeDiff(pr.historicalRanges, sortedNew)
+	keptHistorical := rangeDiff(state.historicalRanges, sortedNew)
 	// New historical = (kept historical) ∪ (just-removed current).
-	pr.historicalRanges = rangeUnionPreservingBoundaries(keptHistorical, removed)
+	state.historicalRanges = rangeUnionPreservingBoundaries(keptHistorical, removed)
 
-	pr.currentRanges = sortedNew
+	state.currentRanges = sortedNew
 
 	// Pre-create EwmaRate entries for every current range so the
 	// ingest hot path (recordSampleBatch) never has to allocate or
 	// take the write lock to install a new rate. Historical ranges
 	// keep their existing entries; ranges that leave both sets are
 	// GC'd below.
-	for _, r := range pr.currentRanges {
-		if _, ok := pr.sampleRates[r]; !ok {
-			pr.sampleRates[r] = newPartitionRangeEWMA()
+	for _, r := range state.currentRanges {
+		if _, ok := state.sampleRates[r]; !ok {
+			state.sampleRates[r] = newPartitionRangeEWMA()
 		}
 	}
 
 	// Drop counts for ranges that are now in neither set.
-	if len(pr.rangeCounts) > 0 || len(pr.exampleSeries) > 0 || len(pr.sampleRates) > 0 {
-		live := make(map[assignment.HashRange]struct{}, len(pr.currentRanges)+len(pr.historicalRanges))
-		for _, r := range pr.currentRanges {
+	if len(state.rangeCounts) > 0 || len(state.exampleSeries) > 0 || len(state.sampleRates) > 0 {
+		live := make(map[assignment.HashRange]struct{}, len(state.currentRanges)+len(state.historicalRanges))
+		for _, r := range state.currentRanges {
 			live[r] = struct{}{}
 		}
-		for _, r := range pr.historicalRanges {
+		for _, r := range state.historicalRanges {
 			live[r] = struct{}{}
 		}
-		for r := range pr.rangeCounts {
+		for r := range state.rangeCounts {
 			if _, ok := live[r]; !ok {
-				delete(pr.rangeCounts, r)
+				delete(state.rangeCounts, r)
 			}
 		}
-		for r := range pr.exampleSeries {
+		for r := range state.exampleSeries {
 			if _, ok := live[r]; !ok {
-				delete(pr.exampleSeries, r)
+				delete(state.exampleSeries, r)
 			}
 		}
-		for r := range pr.sampleRates {
+		for r := range state.sampleRates {
 			if _, ok := live[r]; !ok {
-				delete(pr.sampleRates, r)
+				delete(state.sampleRates, r)
 			}
 		}
 	}
 	return changed
+}
+
+func (pr *partitionRanges) stateForTenantLocked(tenantID string) *tenantRangeState {
+	if tenantID == "" {
+		return &pr.tenantRangeState
+	}
+	return pr.byTenant[tenantID]
+}
+
+func (pr *partitionRanges) deleteTenantStateIfEmptyLocked(tenantID string, state *tenantRangeState) {
+	if tenantID == "" || len(state.currentRanges) > 0 || len(state.historicalRanges) > 0 {
+		return
+	}
+	if len(state.rangeCounts) == 0 && len(state.exampleSeries) == 0 && len(state.sampleRates) == 0 {
+		delete(pr.byTenant, tenantID)
+	}
 }
 
 // rangesSnapshot returns the current working set of ranges (current ∪
@@ -172,15 +240,27 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) bool {
 // retain. The walker uses this as the bucket boundary list for one
 // head walk.
 func (pr *partitionRanges) rangesSnapshot() []assignment.HashRange {
+	return pr.rangesSnapshotForTenant("")
+}
+
+func (pr *partitionRanges) rangesSnapshotForTenant(tenantID string) []assignment.HashRange {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
-	if len(pr.currentRanges) == 0 && len(pr.historicalRanges) == 0 {
+	state := pr.stateForTenantLocked(tenantID)
+	if state == nil {
 		return nil
 	}
-	out := make([]assignment.HashRange, 0, len(pr.currentRanges)+len(pr.historicalRanges))
-	out = append(out, pr.currentRanges...)
-	out = append(out, pr.historicalRanges...)
+	return rangesSnapshotLocked(state)
+}
+
+func rangesSnapshotLocked(state *tenantRangeState) []assignment.HashRange {
+	if len(state.currentRanges) == 0 && len(state.historicalRanges) == 0 {
+		return nil
+	}
+	out := make([]assignment.HashRange, 0, len(state.currentRanges)+len(state.historicalRanges))
+	out = append(out, state.currentRanges...)
+	out = append(out, state.historicalRanges...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Lo < out[j].Lo })
 	return out
 }
@@ -205,6 +285,10 @@ func (pr *partitionRanges) rangesSnapshot() []assignment.HashRange {
 // update is discarded — currentRanges shifted mid-walk and a fresh
 // walk on the new snapshot will reconcile.
 func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, counts []int64, examples []string) bool {
+	return pr.applyWalkResultForTenant("", forRanges, counts, examples)
+}
+
+func (pr *partitionRanges) applyWalkResultForTenant(tenantID string, forRanges []assignment.HashRange, counts []int64, examples []string) bool {
 	if len(forRanges) != len(counts) {
 		return false
 	}
@@ -215,11 +299,20 @@ func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, cou
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
+	state := pr.stateForTenantLocked(tenantID)
+	if state == nil {
+		return len(forRanges) == 0
+	}
+	applied := applyTenantWalkResultLocked(state, forRanges, counts, examples)
+	if applied {
+		pr.deleteTenantStateIfEmptyLocked(tenantID, state)
+	}
+	return applied
+}
+
+func applyTenantWalkResultLocked(state *tenantRangeState, forRanges []assignment.HashRange, counts []int64, examples []string) bool {
 	// Validate the snapshot still matches.
-	snap := make([]assignment.HashRange, 0, len(pr.currentRanges)+len(pr.historicalRanges))
-	snap = append(snap, pr.currentRanges...)
-	snap = append(snap, pr.historicalRanges...)
-	sort.Slice(snap, func(i, j int) bool { return snap[i].Lo < snap[j].Lo })
+	snap := rangesSnapshotLocked(state)
 	if len(snap) != len(forRanges) {
 		return false
 	}
@@ -229,8 +322,8 @@ func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, cou
 		}
 	}
 
-	currentSet := make(map[assignment.HashRange]struct{}, len(pr.currentRanges))
-	for _, r := range pr.currentRanges {
+	currentSet := make(map[assignment.HashRange]struct{}, len(state.currentRanges))
+	for _, r := range state.currentRanges {
 		currentSet[r] = struct{}{}
 	}
 
@@ -261,32 +354,32 @@ func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, cou
 		// doesn't blank the UI.
 		if examples != nil && examples[i] != "" {
 			nextExamples[r] = examples[i]
-		} else if prev, ok := pr.exampleSeries[r]; ok {
+		} else if prev, ok := state.exampleSeries[r]; ok {
 			nextExamples[r] = prev
 		}
 	}
 	sort.Slice(newHistorical, func(i, j int) bool { return newHistorical[i].Lo < newHistorical[j].Lo })
 
-	pr.historicalRanges = newHistorical
-	pr.rangeCounts = nextCounts
-	pr.exampleSeries = nextExamples
+	state.historicalRanges = newHistorical
+	state.rangeCounts = nextCounts
+	state.exampleSeries = nextExamples
 
 	// GC sample-rate EwmaRates for ranges that just fell out of the
 	// working set (current ∪ historical). Without this, residue
 	// ranges whose head finally compacted would keep their EwmaRate
 	// alive forever, slowly leaking memory in proportion to the
 	// number of range moves over the lifetime of the pod.
-	if len(pr.sampleRates) > 0 {
-		live := make(map[assignment.HashRange]struct{}, len(pr.currentRanges)+len(pr.historicalRanges))
-		for _, r := range pr.currentRanges {
+	if len(state.sampleRates) > 0 {
+		live := make(map[assignment.HashRange]struct{}, len(state.currentRanges)+len(state.historicalRanges))
+		for _, r := range state.currentRanges {
 			live[r] = struct{}{}
 		}
-		for _, r := range pr.historicalRanges {
+		for _, r := range state.historicalRanges {
 			live[r] = struct{}{}
 		}
-		for r := range pr.sampleRates {
+		for r := range state.sampleRates {
 			if _, ok := live[r]; !ok {
-				delete(pr.sampleRates, r)
+				delete(state.sampleRates, r)
 			}
 		}
 	}
@@ -302,31 +395,52 @@ func (pr *partitionRanges) snapshotCounts() []hashRangeCount {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
-	if len(pr.rangeCounts) == 0 && len(pr.currentRanges) == 0 {
+	out := snapshotTenantCountsLocked("", &pr.tenantRangeState)
+	tenantIDs := make([]string, 0, len(pr.byTenant))
+	for tenantID := range pr.byTenant {
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+	sort.Strings(tenantIDs)
+	for _, tenantID := range tenantIDs {
+		out = append(out, snapshotTenantCountsLocked(tenantID, pr.byTenant[tenantID])...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID != out[j].TenantID {
+			return out[i].TenantID < out[j].TenantID
+		}
+		return out[i].Range.Lo < out[j].Range.Lo
+	})
+	return out
+}
+
+func snapshotTenantCountsLocked(tenantID string, state *tenantRangeState) []hashRangeCount {
+	if len(state.rangeCounts) == 0 && len(state.currentRanges) == 0 {
 		return nil
 	}
 	// Always emit currentRanges (even if zero) so the rebalancer sees
 	// the partition's claimed footprint. Historical entries are only
 	// emitted if they have residue (count > 0).
-	out := make([]hashRangeCount, 0, len(pr.currentRanges)+len(pr.historicalRanges))
-	seen := make(map[assignment.HashRange]struct{}, len(pr.currentRanges))
-	for _, r := range pr.currentRanges {
+	out := make([]hashRangeCount, 0, len(state.currentRanges)+len(state.historicalRanges))
+	seen := make(map[assignment.HashRange]struct{}, len(state.currentRanges))
+	for _, r := range state.currentRanges {
 		out = append(out, hashRangeCount{
+			TenantID:   tenantID,
 			Range:      r,
-			Count:      pr.rangeCounts[r],
-			SampleRate: rateOf(pr.sampleRates[r]),
+			Count:      state.rangeCounts[r],
+			SampleRate: rateOf(state.sampleRates[r]),
 		})
 		seen[r] = struct{}{}
 	}
-	for _, r := range pr.historicalRanges {
+	for _, r := range state.historicalRanges {
 		if _, dup := seen[r]; dup {
 			continue
 		}
-		if c := pr.rangeCounts[r]; c > 0 {
+		if c := state.rangeCounts[r]; c > 0 {
 			out = append(out, hashRangeCount{
+				TenantID:   tenantID,
 				Range:      r,
 				Count:      c,
-				SampleRate: rateOf(pr.sampleRates[r]),
+				SampleRate: rateOf(state.sampleRates[r]),
 			})
 		}
 	}
@@ -344,6 +458,100 @@ func (pr *partitionRanges) currentRangesCopy() []assignment.HashRange {
 	return out
 }
 
+type tenantCurrentRanges struct {
+	TenantID string
+	Ranges   []assignment.HashRange
+}
+
+func (pr *partitionRanges) currentRangesByTenant() []tenantCurrentRanges {
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
+
+	out := make([]tenantCurrentRanges, 0, len(pr.byTenant)+1)
+	if len(pr.currentRanges) > 0 {
+		out = append(out, tenantCurrentRanges{TenantID: "", Ranges: slices.Clone(pr.currentRanges)})
+	}
+	for tenantID, state := range pr.byTenant {
+		if len(state.currentRanges) == 0 {
+			continue
+		}
+		out = append(out, tenantCurrentRanges{TenantID: tenantID, Ranges: slices.Clone(state.currentRanges)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TenantID < out[j].TenantID })
+	return out
+}
+
+func (pr *partitionRanges) configuredTenantIDs() []string {
+	snap := pr.currentRangesByTenant()
+	out := make([]string, len(snap))
+	for i := range snap {
+		out[i] = snap[i].TenantID
+	}
+	return out
+}
+
+func (pr *partitionRanges) trackedTenantIDs() []string {
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
+
+	out := make([]string, 0, len(pr.byTenant)+1)
+	if len(pr.currentRanges) > 0 || len(pr.historicalRanges) > 0 {
+		out = append(out, "")
+	}
+	for tenantID, state := range pr.byTenant {
+		if len(state.currentRanges) > 0 || len(state.historicalRanges) > 0 {
+			out = append(out, tenantID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+type unknownTenant struct {
+	TenantID        string
+	PartitionID     int32
+	FirstSeenUnixMs int64
+}
+
+func (pr *partitionRanges) unknownTenants(liveTenantIDs []string, partitionID int32, observedAt time.Time) []unknownTenant {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+
+	live := make(map[string]struct{}, len(liveTenantIDs))
+	for _, tenantID := range liveTenantIDs {
+		live[tenantID] = struct{}{}
+	}
+
+	for tenantID := range pr.unknownFirstSeen {
+		state := pr.stateForTenantLocked(tenantID)
+		_, stillLive := live[tenantID]
+		if !stillLive || (state != nil && len(state.currentRanges) > 0) {
+			delete(pr.unknownFirstSeen, tenantID)
+		}
+	}
+
+	out := make([]unknownTenant, 0, len(liveTenantIDs))
+	for _, tenantID := range liveTenantIDs {
+		state := pr.stateForTenantLocked(tenantID)
+		if state != nil && len(state.currentRanges) > 0 {
+			continue
+		}
+		firstSeen, ok := pr.unknownFirstSeen[tenantID]
+		if !ok {
+			tenantID = strings.Clone(tenantID)
+			firstSeen = observedAt.UnixMilli()
+			pr.unknownFirstSeen[tenantID] = firstSeen
+		}
+		out = append(out, unknownTenant{
+			TenantID:        tenantID,
+			PartitionID:     partitionID,
+			FirstSeenUnixMs: firstSeen,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TenantID < out[j].TenantID })
+	return out
+}
+
 // adminSnapshot returns the current and historical ranges with their
 // per-range counts and example series, split into two slices so the
 // admin page can show growth (current) and residue (historical)
@@ -355,22 +563,35 @@ func (pr *partitionRanges) adminSnapshot() (current, historical []hashRangeCount
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
-	current = make([]hashRangeCount, 0, len(pr.currentRanges))
-	for _, r := range pr.currentRanges {
+	current, historical = appendTenantAdminSnapshotLocked(current, historical, "", &pr.tenantRangeState)
+	tenantIDs := make([]string, 0, len(pr.byTenant))
+	for tenantID := range pr.byTenant {
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+	sort.Strings(tenantIDs)
+	for _, tenantID := range tenantIDs {
+		current, historical = appendTenantAdminSnapshotLocked(current, historical, tenantID, pr.byTenant[tenantID])
+	}
+	return current, historical
+}
+
+func appendTenantAdminSnapshotLocked(current, historical []hashRangeCount, tenantID string, state *tenantRangeState) ([]hashRangeCount, []hashRangeCount) {
+	for _, r := range state.currentRanges {
 		current = append(current, hashRangeCount{
+			TenantID:   tenantID,
 			Range:      r,
-			Count:      pr.rangeCounts[r],
-			Example:    pr.exampleSeries[r],
-			SampleRate: rateOf(pr.sampleRates[r]),
+			Count:      state.rangeCounts[r],
+			Example:    state.exampleSeries[r],
+			SampleRate: rateOf(state.sampleRates[r]),
 		})
 	}
-	historical = make([]hashRangeCount, 0, len(pr.historicalRanges))
-	for _, r := range pr.historicalRanges {
+	for _, r := range state.historicalRanges {
 		historical = append(historical, hashRangeCount{
+			TenantID:   tenantID,
 			Range:      r,
-			Count:      pr.rangeCounts[r],
-			Example:    pr.exampleSeries[r],
-			SampleRate: rateOf(pr.sampleRates[r]),
+			Count:      state.rangeCounts[r],
+			Example:    state.exampleSeries[r],
+			SampleRate: rateOf(state.sampleRates[r]),
 		})
 	}
 	return current, historical
@@ -399,7 +620,15 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 	}
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
-	if len(pr.currentRanges) == 0 {
+	state := pr.stateForTenantLocked(userID)
+	// Empty TenantID is the legacy unscoped assignment. Use it only
+	// when this tenant has no scoped state at all, so upgraded
+	// readcaches continue to report load while the rebalancer rolls
+	// forward to tenant-tagged SetHashRanges requests.
+	if state == nil {
+		state = &pr.tenantRangeState
+	}
+	if len(state.currentRanges) == 0 {
 		return
 	}
 	for _, ts := range timeseries {
@@ -409,20 +638,20 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 		}
 		metric := metricNameOf(ts.Labels)
 		hash := mimirpb.ShardByMetricNameLocality(userID, metric, ts.Labels)
-		// Binary-search currentRanges for the tile containing hash.
-		// currentRanges is sorted by Lo and non-overlapping (the
+		// Binary-search this tenant's currentRanges for the tile containing
+		// hash. currentRanges is sorted by Lo and non-overlapping (the
 		// rebalancer's assignment guarantees this).
-		idx := sort.Search(len(pr.currentRanges), func(i int) bool {
-			return pr.currentRanges[i].Lo > hash
+		idx := sort.Search(len(state.currentRanges), func(i int) bool {
+			return state.currentRanges[i].Lo > hash
 		}) - 1
 		if idx < 0 {
 			continue
 		}
-		r := pr.currentRanges[idx]
+		r := state.currentRanges[idx]
 		if !r.Contains(hash) {
 			continue
 		}
-		if rate := pr.sampleRates[r]; rate != nil {
+		if rate := state.sampleRates[r]; rate != nil {
 			rate.Add(n)
 		}
 	}
@@ -447,6 +676,11 @@ func (pr *partitionRanges) tickSampleRates() {
 	defer pr.mu.RUnlock()
 	for _, rate := range pr.sampleRates {
 		rate.Tick()
+	}
+	for _, state := range pr.byTenant {
+		for _, rate := range state.sampleRates {
+			rate.Tick()
+		}
 	}
 }
 
@@ -486,6 +720,7 @@ func rateOf(r *util_math.EwmaRate) float64 {
 // EwmaRate has not been ticked yet"; the latter is only true for
 // the first 15s after a partition is adopted.
 type hashRangeCount struct {
+	TenantID   string
 	Range      assignment.HashRange
 	Count      int64
 	Example    string

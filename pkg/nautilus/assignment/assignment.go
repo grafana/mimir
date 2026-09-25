@@ -3,11 +3,14 @@
 package assignment
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"sort"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // HashRange represents a contiguous range [Lo, Hi] in the 32-bit hash space.
@@ -33,36 +36,46 @@ func (r HashRange) Size() uint64 {
 	return uint64(r.Hi) - uint64(r.Lo) + 1
 }
 
-// Entry maps a hash range to a partition.
+// Entry maps a tenant's hash range to a partition.
 type Entry struct {
+	TenantID    string    `json:"tenant_id,omitempty"`
 	Range       HashRange `json:"range"`
 	PartitionID int32     `json:"partition_id"`
 }
 
-// Assignment maps contiguous, non-overlapping hash ranges to partitions,
-// covering the full 32-bit hash space. Entries are sorted by Range.Lo
-// to enable binary search lookup.
+// Assignment maps each tenant's contiguous, non-overlapping hash ranges to
+// partitions. Every tenant represented in Entries independently covers the
+// full 32-bit hash space. Entries are sorted by (TenantID, Range.Lo).
 type Assignment struct {
 	Entries []Entry `json:"entries"`
 }
 
 // Lookup returns the partition ID that owns the given hash key.
-// Returns (partitionID, true) on success or (0, false) if the assignment
-// is empty or the key somehow falls outside the covered range.
+// It is the legacy empty-tenant wrapper around LookupForTenant.
 func (a *Assignment) Lookup(key uint32) (int32, bool) {
+	return a.LookupForTenant("", key)
+}
+
+// LookupForTenant returns the partition ID that owns key for tenantID.
+// Returns (partitionID, true) on success or (0, false) if the assignment
+// has no entries for the tenant or the key falls outside its covered range.
+func (a *Assignment) LookupForTenant(tenantID string, key uint32) (int32, bool) {
 	if len(a.Entries) == 0 {
 		return 0, false
 	}
 
-	// Binary search: find the last entry whose Lo <= key.
-	i := sort.Search(len(a.Entries), func(i int) bool {
-		return a.Entries[i].Range.Lo > key
-	}) - 1
-
-	if i < 0 {
+	start, end := assignmentTenantBounds(a.Entries, tenantID)
+	if start == end {
 		return 0, false
 	}
 
+	// Binary search: find the last entry for this tenant whose Lo <= key.
+	i := start + sort.Search(end-start, func(i int) bool {
+		return a.Entries[start+i].Range.Lo > key
+	}) - 1
+	if i < start {
+		return 0, false
+	}
 	e := &a.Entries[i]
 	if key >= e.Range.Lo && key <= e.Range.Hi {
 		return e.PartitionID, true
@@ -70,35 +83,55 @@ func (a *Assignment) Lookup(key uint32) (int32, bool) {
 	return 0, false
 }
 
-// Validate checks that entries are sorted, non-overlapping, and cover the
-// full 32-bit hash space [0, math.MaxUint32].
+// Validate checks that entries are sorted by (TenantID, Range.Lo) and that
+// every represented tenant independently covers [0, math.MaxUint32] without
+// gaps or overlaps.
 func (a *Assignment) Validate() error {
 	if len(a.Entries) == 0 {
 		return fmt.Errorf("assignment has no entries")
 	}
 
-	if a.Entries[0].Range.Lo != 0 {
-		return fmt.Errorf("first entry must start at 0, got %d", a.Entries[0].Range.Lo)
-	}
-
-	if a.Entries[len(a.Entries)-1].Range.Hi != math.MaxUint32 {
-		return fmt.Errorf("last entry must end at %d, got %d", uint32(math.MaxUint32), a.Entries[len(a.Entries)-1].Range.Hi)
+	first := &a.Entries[0]
+	if first.Range.Lo != 0 {
+		return fmt.Errorf("tenant %q first entry must start at 0, got %d", first.TenantID, first.Range.Lo)
 	}
 
 	for i := 1; i < len(a.Entries); i++ {
 		prev := &a.Entries[i-1]
 		curr := &a.Entries[i]
-		if curr.Range.Lo != prev.Range.Hi+1 {
-			return fmt.Errorf("gap or overlap between entries %d and %d: prev.Hi=%d, curr.Lo=%d", i-1, i, prev.Range.Hi, curr.Range.Lo)
+		if curr.TenantID < prev.TenantID {
+			return fmt.Errorf("entries are not sorted by tenant at indexes %d and %d: %q before %q", i-1, i, prev.TenantID, curr.TenantID)
+		}
+		if curr.TenantID != prev.TenantID {
+			if prev.Range.Hi != math.MaxUint32 {
+				return fmt.Errorf("tenant %q last entry must end at %d, got %d", prev.TenantID, uint32(math.MaxUint32), prev.Range.Hi)
+			}
+			if curr.Range.Lo != 0 {
+				return fmt.Errorf("tenant %q first entry must start at 0, got %d", curr.TenantID, curr.Range.Lo)
+			}
+			continue
+		}
+		if uint64(curr.Range.Lo) != uint64(prev.Range.Hi)+1 {
+			return fmt.Errorf("tenant %q has gap or overlap between entries %d and %d: prev.Hi=%d, curr.Lo=%d", curr.TenantID, i-1, i, prev.Range.Hi, curr.Range.Lo)
 		}
 	}
 
+	last := &a.Entries[len(a.Entries)-1]
+	if last.Range.Hi != math.MaxUint32 {
+		return fmt.Errorf("tenant %q last entry must end at %d, got %d", last.TenantID, uint32(math.MaxUint32), last.Range.Hi)
+	}
 	return nil
 }
 
 // EvenSplit creates an assignment that divides the full 32-bit hash space
-// evenly across the given partition IDs.
+// evenly across the given partition IDs for the legacy empty tenant.
 func EvenSplit(partitionIDs []int32) *Assignment {
+	return EvenSplitForTenant("", partitionIDs)
+}
+
+// EvenSplitForTenant creates an assignment that divides tenantID's full
+// 32-bit hash space evenly across the given partition IDs.
+func EvenSplitForTenant(tenantID string, partitionIDs []int32) *Assignment {
 	n := len(partitionIDs)
 	if n == 0 {
 		return &Assignment{}
@@ -114,6 +147,7 @@ func EvenSplit(partitionIDs []int32) *Assignment {
 			hi = uint64(math.MaxUint32)
 		}
 		entries[i] = Entry{
+			TenantID:    tenantID,
 			Range:       HashRange{Lo: uint32(lo), Hi: uint32(hi)},
 			PartitionID: partitionIDs[i],
 		}
@@ -125,8 +159,14 @@ func EvenSplit(partitionIDs []int32) *Assignment {
 // FineEvenSplit creates an assignment like EvenSplit but with
 // slicesPerPartition sub-ranges per partition. This provides the
 // granularity needed by the slicer algorithm to make moves on the
-// first rebalance round.
+// first rebalance round for the legacy empty tenant.
 func FineEvenSplit(partitionIDs []int32, slicesPerPartition int) *Assignment {
+	return FineEvenSplitForTenant("", partitionIDs, slicesPerPartition)
+}
+
+// FineEvenSplitForTenant creates an assignment like EvenSplitForTenant but
+// with slicesPerPartition sub-ranges per partition.
+func FineEvenSplitForTenant(tenantID string, partitionIDs []int32, slicesPerPartition int) *Assignment {
 	n := len(partitionIDs)
 	if n == 0 {
 		return &Assignment{}
@@ -146,12 +186,84 @@ func FineEvenSplit(partitionIDs []int32, slicesPerPartition int) *Assignment {
 			hi = uint64(math.MaxUint32)
 		}
 		entries = append(entries, Entry{
+			TenantID:    tenantID,
 			Range:       HashRange{Lo: uint32(lo), Hi: uint32(hi)},
 			PartitionID: partitionIDs[i/slicesPerPartition],
 		})
 	}
 
 	return &Assignment{Entries: entries}
+}
+
+const (
+	BootstrapHashRanges     = 64
+	BootstrapPartitionCount = 6
+)
+
+// BootstrapAssignmentForTenant returns the deterministic placement used before
+// a tenant has assignment-log history: 64 equal hash ranges spread evenly over
+// six tenant-specific active partitions.
+func BootstrapAssignmentForTenant(tenantID string, activePartitionIDs []int32) *Assignment {
+	return DeterministicAssignmentForTenant(tenantID, activePartitionIDs, BootstrapHashRanges, BootstrapPartitionCount)
+}
+
+// DeterministicAssignmentForTenant splits a tenant's hash space into
+// hashRangeCount equal ranges spread evenly over partitionCount
+// tenant-specific active partitions.
+func DeterministicAssignmentForTenant(tenantID string, activePartitionIDs []int32, hashRangeCount, partitionCount int) *Assignment {
+	if hashRangeCount < 1 {
+		return &Assignment{}
+	}
+	selected := DeterministicPartitionsForTenant(tenantID, activePartitionIDs, partitionCount)
+	if len(selected) == 0 {
+		return &Assignment{}
+	}
+	destinations := make([]int32, hashRangeCount)
+	for i := range destinations {
+		destinations[i] = selected[i%len(selected)]
+	}
+	return EvenSplitForTenant(tenantID, destinations)
+}
+
+// DeterministicPartitionsForTenant selects up to partitionCount distinct active
+// partitions using tenant-scoped rendezvous hashing. Selection is independent
+// of activePartitionIDs order and stable across process restarts.
+func DeterministicPartitionsForTenant(tenantID string, activePartitionIDs []int32, partitionCount int) []int32 {
+	if partitionCount < 1 {
+		return nil
+	}
+	type scoredPartition struct {
+		id    int32
+		score uint64
+	}
+
+	seen := make(map[int32]struct{}, len(activePartitionIDs))
+	scored := make([]scoredPartition, 0, len(activePartitionIDs))
+	for _, partitionID := range activePartitionIDs {
+		if _, exists := seen[partitionID]; exists {
+			continue
+		}
+		seen[partitionID] = struct{}{}
+		h := xxhash.New()
+		_, _ = h.WriteString(tenantID)
+		var partitionBytes [4]byte
+		binary.LittleEndian.PutUint32(partitionBytes[:], uint32(partitionID))
+		_, _ = h.Write(partitionBytes[:])
+		scored = append(scored, scoredPartition{id: partitionID, score: h.Sum64()})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].id < scored[j].id
+	})
+
+	n := min(partitionCount, len(scored))
+	selected := make([]int32, n)
+	for i := range selected {
+		selected[i] = scored[i].id
+	}
+	return selected
 }
 
 // Load reads a JSON-encoded assignment from r. This function signature
@@ -185,4 +297,14 @@ func (a *Assignment) WriteJSON(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(a)
+}
+
+func assignmentTenantBounds(entries []Entry, tenantID string) (int, int) {
+	start := sort.Search(len(entries), func(i int) bool {
+		return entries[i].TenantID >= tenantID
+	})
+	end := start + sort.Search(len(entries)-start, func(i int) bool {
+		return entries[start+i].TenantID > tenantID
+	})
+	return start, end
 }

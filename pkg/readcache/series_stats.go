@@ -91,53 +91,58 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 			return
 		}
 
-		// Snapshot the partition's bucket set ONCE at the start of
-		// the walk. If SetHashRanges fires while we're walking, the
-		// applyWalkResult call will detect the mismatch and discard
-		// this round; the next tick uses the new snapshot.
-		bucketRanges := p.ranges.rangesSnapshot()
-		counts := make([]int64, len(bucketRanges))
-		// examples is parallel to bucketRanges. The walker writes
-		// one labels.Labels.String() per range (first series seen
-		// wins) so the readcache admin page can show a concrete
-		// example next to each hash range. The cost is bounded:
-		// at most one allocation per range per walk, regardless of
-		// head size.
-		examples := make([]string, len(bucketRanges))
-
 		type tenantDB struct {
 			tenantID string
 			db       *partitionTSDB
 		}
 		var dbs []tenantDB
+		seenTenants := make(map[string]struct{})
 
 		p.tenantsMu.RLock()
 		for tenantID, db := range p.tenants {
-			if len(bucketRanges) > 0 {
-				dbs = append(dbs, tenantDB{tenantID: tenantID, db: db})
-			}
+			dbs = append(dbs, tenantDB{tenantID: tenantID, db: db})
+			seenTenants[tenantID] = struct{}{}
 		}
 		p.tenantsMu.RUnlock()
+		// Configured tenants with no live TSDB still need a zero-count
+		// result so periodic refreshes maintain the current-range
+		// bookkeeping without walking another tenant's head.
+		for _, tenantID := range p.ranges.trackedTenantIDs() {
+			if _, ok := seenTenants[tenantID]; !ok {
+				dbs = append(dbs, tenantDB{tenantID: tenantID})
+			}
+		}
 
 		for _, td := range dbs {
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			if _, err := loadstats.CountSeriesByHashRange(ctx, td.db.Head(), bucketRanges, counts, examples); err != nil {
-				level.Warn(r.logger).Log(
-					"msg", "hash range series walk failed",
-					"partition", p.partitionID,
-					"tenant", td.tenantID,
-					"err", err,
-				)
+			// Snapshot and walk only this tenant's buckets. If
+			// SetHashRanges changes this tenant while its head is being
+			// walked, applyWalkResultForTenant rejects the stale result.
+			bucketRanges := p.ranges.rangesSnapshotForTenant(td.tenantID)
+			if len(bucketRanges) == 0 {
+				continue
 			}
-		}
-
-		if len(bucketRanges) > 0 {
-			if !p.ranges.applyWalkResult(bucketRanges, counts, examples) {
+			counts := make([]int64, len(bucketRanges))
+			// examples is parallel to bucketRanges. At most one
+			// labels string is captured per tenant and range.
+			examples := make([]string, len(bucketRanges))
+			if td.db != nil {
+				if _, err := loadstats.CountSeriesByHashRange(ctx, td.db.Head(), bucketRanges, counts, examples); err != nil {
+					level.Warn(r.logger).Log(
+						"msg", "hash range series walk failed",
+						"partition", p.partitionID,
+						"tenant", td.tenantID,
+						"err", err,
+					)
+				}
+			}
+			if !p.ranges.applyWalkResultForTenant(td.tenantID, bucketRanges, counts, examples) {
 				level.Debug(r.logger).Log(
 					"msg", "discarded stale hash range series walk",
 					"partition", p.partitionID,
+					"tenant", td.tenantID,
 				)
 			}
 		}

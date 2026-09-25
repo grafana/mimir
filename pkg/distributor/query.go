@@ -314,15 +314,60 @@ func extractMetricNamesForReadcacheRouting(matchers []*labels.Matcher) ([]string
 	return metricNames, len(metricNames) > 0
 }
 
-func partitionsForMetricNames(log *assignment.Log, userID string, w0, w1 time.Time, metricNames []string) []int32 {
+func partitionsForMetricNames(log *assignment.Log, assignmentTenantID, userID string, w0, w1 time.Time, metricNames []string) []int32 {
 	partitionSet := make(map[int32]struct{}, len(metricNames))
 	for _, metricName := range metricNames {
 		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
-		for _, partitionID := range log.PartitionsOverlappingInterval(w0, w1, lo, hi) {
+		for _, partitionID := range log.PartitionsOverlappingIntervalForTenant(assignmentTenantID, w0, w1, lo, hi) {
 			partitionSet[partitionID] = struct{}{}
 		}
 	}
 
+	partitionIDs := make([]int32, 0, len(partitionSet))
+	for partitionID := range partitionSet {
+		partitionIDs = append(partitionIDs, partitionID)
+	}
+	slices.Sort(partitionIDs)
+	return partitionIDs
+}
+
+func partitionsForNautilusQuery(snapshot *nautilusAssignmentSnapshot, userID string, w0, w1 time.Time, metricNames []string, metricScoped bool, activePartitionIDs []int32) []int32 {
+	assignmentTenantID := ""
+	if snapshot.tenantScoped {
+		assignmentTenantID = userID
+	}
+
+	var partitionIDs []int32
+	if metricScoped {
+		partitionIDs = partitionsForMetricNames(snapshot.log, assignmentTenantID, userID, w0, w1, metricNames)
+	} else {
+		partitionIDs = snapshot.log.AllPartitionsDuringForTenant(assignmentTenantID, w0, w1)
+	}
+
+	if !snapshot.tenantScoped {
+		return partitionIDs
+	}
+
+	// Before a tenant's first explicit placement, writes use the deterministic
+	// six-partition bootstrap tiling. A query that overlaps that era must retain
+	// all bootstrap partitions alongside the tenant's later assignment history.
+	earliest, hasHistory := snapshot.log.EarliestFromForTenant(userID)
+	if !hasHistory || w0.Before(earliest) {
+		for _, partitionID := range assignment.DeterministicPartitionsForTenant(userID, activePartitionIDs, assignment.BootstrapPartitionCount) {
+			if !slices.Contains(partitionIDs, partitionID) {
+				partitionIDs = append(partitionIDs, partitionID)
+			}
+		}
+		slices.Sort(partitionIDs)
+	}
+	return partitionIDs
+}
+
+func liveReadcachePartitionIDs(log *readcacheassignment.Log, at time.Time) []int32 {
+	partitionSet := make(map[int32]struct{})
+	for _, entry := range log.LiveEntries(at) {
+		partitionSet[entry.PartitionID] = struct{}{}
+	}
 	partitionIDs := make([]int32, 0, len(partitionSet))
 	for partitionID := range partitionSet {
 		partitionIDs = append(partitionIDs, partitionID)
@@ -390,8 +435,8 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		return nil, nil, nil
 	}
 
-	log := d.GetNautilusLog()
-	if log == nil {
+	snapshot := d.nautilusSnapshotAt(d.now())
+	if snapshot == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
 	}
 	rcState := d.loadReadcacheAssignment()
@@ -401,13 +446,8 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	rcLog := rcState.log
 	replicaMap := rcState.replicaMap
 
-	var partitionIDs []int32
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
-	if metricScoped {
-		partitionIDs = partitionsForMetricNames(log, userID, w0, w1, metricNames)
-	} else {
-		partitionIDs = log.AllPartitionsDuring(w0, w1)
-	}
+	partitionIDs := partitionsForNautilusQuery(snapshot, userID, w0, w1, metricNames, metricScoped, liveReadcachePartitionIDs(rcLog, d.now()))
 	if len(partitionIDs) == 0 {
 		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
 	}

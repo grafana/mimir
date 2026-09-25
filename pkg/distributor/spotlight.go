@@ -94,7 +94,7 @@ func (t *distributorSpotlightTracker) setSpotlights(s []rebalancer.SpotlightedRa
 // hash of req.Timeseries[i] for i < initialMetadataIndex.
 // Metadata indexes (i >= initialMetadataIndex) are skipped because
 // they don't carry samples.
-func (t *distributorSpotlightTracker) observeWrite(keys []uint32, partitionKeys []ring.PartitionKeys, req *mimirpb.WriteRequest, initialMetadataIndex int) {
+func (t *distributorSpotlightTracker) observeWrite(tenantID string, keys []uint32, partitionKeys []ring.PartitionKeys, req *mimirpb.WriteRequest, initialMetadataIndex int) {
 	if req == nil {
 		return
 	}
@@ -129,7 +129,7 @@ func (t *distributorSpotlightTracker) observeWrite(keys []uint32, partitionKeys 
 			keyHash := keys[idx]
 			var sampleCount int
 			for _, sp := range spotlights {
-				if keyHash < sp.Lo || keyHash > sp.Hi {
+				if sp.TenantId != tenantID || keyHash < sp.Lo || keyHash > sp.Hi {
 					continue
 				}
 				if sampleCount == 0 {
@@ -222,6 +222,7 @@ func (t *distributorSpotlightTracker) emitAndReset(logger log.Logger, instanceID
 			level.Info(logger).Log(
 				"msg", "nautilus spotlight: distributor observation",
 				"spotlight_id", traceID,
+				"tenant", sp.TenantId,
 				"reason", sp.Reason,
 				"range_lo", sp.Lo,
 				"range_hi", sp.Hi,

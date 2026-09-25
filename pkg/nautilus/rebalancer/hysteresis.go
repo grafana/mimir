@@ -2,11 +2,7 @@
 
 package rebalancer
 
-import (
-	"time"
-
-	"github.com/grafana/mimir/pkg/nautilus/assignment"
-)
+import "time"
 
 type partitionRoleCooldowns struct {
 	recentSources      map[int32]time.Time
@@ -73,12 +69,12 @@ func (r *Rebalancer) recordStructuralCooldowns(now time.Time, actions []Action) 
 		return
 	}
 	if r.structuralCooldowns == nil {
-		r.structuralCooldowns = map[assignment.HashRange]time.Time{}
+		r.structuralCooldowns = map[tenantRangeKey]time.Time{}
 	}
 	until := now.Add(r.cfg.StructuralCooldown)
 	for _, action := range actions {
 		if action.Kind == ActionMerge || action.Kind == ActionSplit {
-			r.structuralCooldowns[action.Range] = until
+			r.structuralCooldowns[tenantRangeKey{tenantID: action.TenantID, hr: action.Range}] = until
 		}
 	}
 }

@@ -88,6 +88,9 @@ message HashRangeRate {
   // is uninitialised; the rebalancer's slicer treats 0 the same as
   // "no movable load" so cold ranges aren't yanked around.
   double sample_rate = 6;
+  // tenant_id scopes this range's ownership and load. Empty preserves
+  // compatibility with legacy callers that configured unscoped ranges.
+  string tenant_id = 7;
 }
 
 message HashRangeStatsResponse {
@@ -124,6 +127,16 @@ message HashRangeStatsResponse {
   // currently holds; the rebalancer uses these for partition-level L
   // instead of fanning out instance totals.
   repeated PartitionActiveSeries partition_active_series = 5 [(gogoproto.nullable) = false];
+  // unknown_tenants reports live tenant TSDBs observed on Kafka
+  // partition 0 that do not yet have any configured current ranges.
+  // The rebalancer uses these records to bootstrap tenant enrollment.
+  repeated UnknownTenant unknown_tenants = 6 [(gogoproto.nullable) = false];
+}
+
+message UnknownTenant {
+  string tenant_id = 1;
+  int32 partition_id = 2;
+  int64 first_seen_unix_ms = 3;
 }
 
 message PartitionQueryLoad {
@@ -162,6 +175,9 @@ message HashRangeEntry {
   // assignment from what the readcache currently believes it owns.
   // Zero is a valid partition id.
   int32 partition_id = 3;
+  // tenant_id scopes this ownership entry. Empty preserves compatibility
+  // with legacy callers that configured unscoped ranges.
+  string tenant_id = 4;
 }
 
 message SetHashRangesRequest {

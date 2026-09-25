@@ -4,6 +4,7 @@ package rebalancer
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -18,14 +19,28 @@ import (
 
 // reconstructRound queries readcache pods and reassembles a fresh
 // assignment from what the owners locally remember owning. Returns
-// nil to signal a fall-back to FineEvenSplit.
+// nil when no tenant-scoped assignment can be reconstructed.
 func (r *Rebalancer) reconstructRound(ctx context.Context, activePartitions []int32) *assignment.Assignment {
 	return r.reconstructAssignmentFromReadcache(ctx, activePartitions)
 }
 
+type unknownTenant struct {
+	tenantID  string
+	firstSeen time.Time
+}
+
+// readcacheStatsReadiness separates an authoritative zero load from load
+// that is absent because the assigned readcache replicas have not warmed yet.
+// Tier 1 excludes unreadyPartitions from balancing; tier 2 excludes
+// unreadyLogicalTargets from receiving more partitions.
+type readcacheStatsReadiness struct {
+	unreadyPartitions     map[int32]bool
+	unreadyLogicalTargets map[string]struct{}
+}
+
 // collectRoundStats queries all healthy readcache pods for per-range
 // stats and per-partition totals.
-func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, map[string]struct{}, error) {
+func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, []unknownTenant, readcacheStatsReadiness, map[string]struct{}, error) {
 	return r.collectRatesFromReadcaches(ctx)
 }
 
@@ -33,6 +48,103 @@ func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assign
 // one partition in the new assignment.
 func (r *Rebalancer) pushRanges(ctx context.Context, a *assignment.Assignment, at time.Time) {
 	r.pushRangesToReadcache(ctx, a, at)
+}
+
+func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.Assignment, unknowns []unknownTenant, activePartitions []int32) (*assignment.Assignment, int, error) {
+	activeTenants := make(map[string]struct{})
+	if current != nil {
+		for _, entry := range current.Entries {
+			activeTenants[entry.TenantID] = struct{}{}
+		}
+	}
+
+	var candidates []unknownTenant
+	for _, unknown := range unknowns {
+		if unknown.tenantID == "" {
+			continue
+		}
+		if _, exists := activeTenants[unknown.tenantID]; exists {
+			continue
+		}
+		candidates = append(candidates, unknown)
+		activeTenants[unknown.tenantID] = struct{}{}
+	}
+	if len(candidates) == 0 {
+		return current, 0, nil
+	}
+
+	if len(activePartitions) == 0 {
+		return current, 0, fmt.Errorf("cannot bootstrap %d unknown tenant(s): no active Kafka partitions", len(candidates))
+	}
+
+	placements := make([]tenantBootstrapPlacement, 0, len(candidates))
+	initialAssignments := make(map[string]*assignment.Assignment, len(candidates))
+	for _, candidate := range candidates {
+		firstSeen := candidate.firstSeen
+		if firstSeen.UnixMilli() <= 0 || firstSeen.After(now) {
+			firstSeen = now
+		}
+		placements = append(placements, tenantBootstrapPlacement{
+			firstSeen: firstSeen,
+			// Preserve the deterministic six-partition bootstrap placement:
+			// distributors wrote there before a readcache discovered the
+			// tenant, so queries must retain that ownership interval.
+			initial: assignment.BootstrapAssignmentForTenant(candidate.tenantID, activePartitions),
+		})
+		// Do not wait for partition 0 to report load before spreading a
+		// newly discovered tenant. Publish a small, deterministic random
+		// placement in this same round; normal measured rebalancing can
+		// refine it later.
+		initialAssignments[candidate.tenantID] = initialBootstrapAssignment(candidate.tenantID, activePartitions)
+	}
+
+	seeded, err := r.store.bootstrapTenants(now, placements, r.cfg.LeaseDuration, r.cfg.EntryRetention)
+	if err != nil {
+		return current, 0, fmt.Errorf("bootstrap unknown tenants: %w", err)
+	}
+	if len(seeded) == 0 {
+		return current, 0, nil
+	}
+
+	seededSet := make(map[string]struct{}, len(seeded))
+	for _, tenantID := range seeded {
+		seededSet[tenantID] = struct{}{}
+	}
+	entries := make([]assignment.Entry, 0, len(seeded)+len(activeTenants))
+	if current != nil {
+		entries = append(entries, current.Entries...)
+	}
+	for tenantID, initial := range initialAssignments {
+		if _, ok := seededSet[tenantID]; ok {
+			entries = append(entries, initial.Entries...)
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].TenantID != entries[j].TenantID {
+			return entries[i].TenantID < entries[j].TenantID
+		}
+		return entries[i].Range.Lo < entries[j].Range.Lo
+	})
+	combined := &assignment.Assignment{Entries: entries}
+	if err := combined.Validate(); err != nil {
+		return current, 0, fmt.Errorf("validate bootstrapped assignment: %w", err)
+	}
+	return combined, len(seeded), nil
+}
+
+const initialAssignmentPartitionCount = 4
+
+// initialBootstrapAssignment divides a tenant's hash space into 64 equal
+// ranges and places them evenly over four tenant-specific active partitions.
+// Rendezvous-style scoring makes the choice random-looking but deterministic,
+// so retries and rebalancer restarts produce the same initial placement.
+func initialBootstrapAssignment(tenantID string, activePartitions []int32) *assignment.Assignment {
+	return assignment.DeterministicAssignmentForTenant(
+		tenantID,
+		activePartitions,
+		assignment.BootstrapHashRanges,
+		initialAssignmentPartitionCount,
+	)
 }
 
 // partitionLByPID returns per-partition head-series load from
@@ -88,7 +200,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		}
 	}
 	if len(ownerships) == 0 {
-		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: empty log, falling back to even split")
+		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: empty readcache assignment log")
 		return nil
 	}
 
@@ -149,6 +261,12 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 
 		entries := make([]reportedEntry, 0, len(resp.Ranges))
 		for _, hr := range resp.Ranges {
+			// The production assignment stream is tenant-scoped. Do not
+			// resurrect the old shared empty-tenant tiling from residual
+			// readcache state during a restart.
+			if hr.TenantId == "" {
+				continue
+			}
 			// Only consider ranges the readcache claims for
 			// partitions the log says it currently owns. This
 			// guards against stale state on a readcache whose
@@ -158,6 +276,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 				continue
 			}
 			entries = append(entries, reportedEntry{
+				tenantID:    hr.TenantId,
 				partitionID: hr.PartitionId,
 				hr:          assignment.HashRange{Lo: hr.Lo, Hi: hr.Hi},
 			})
@@ -169,12 +288,12 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 
 	expected := int32(len(instanceList))
 	if expected <= 0 {
-		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: no readcaches mapped to active partitions, falling back to even split")
+		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: no readcaches mapped to active partitions")
 		return nil
 	}
 	if int64(ok.Load())*int64(reconstructionQuorumDen) < int64(expected)*int64(reconstructionQuorumNum) {
 		level.Warn(r.logger).Log(
-			"msg", "reconstructAssignmentFromReadcache: not enough readcaches responded, falling back to even split",
+			"msg", "reconstructAssignmentFromReadcache: not enough readcaches responded",
 			"instances", len(instanceList),
 			"unmapped", unmapped,
 			"ok", ok.Load(),
@@ -185,14 +304,15 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 
 	// Deduplicate (partitionID, range) pairs across owner reports.
 	type pRange struct {
-		pid int32
-		hr  assignment.HashRange
+		tenant string
+		pid    int32
+		hr     assignment.HashRange
 	}
 	seen := make(map[pRange]struct{})
 	var merged []reportedEntry
 	for _, list := range reports {
 		for _, e := range list {
-			k := pRange{pid: e.partitionID, hr: e.hr}
+			k := pRange{tenant: e.tenantID, pid: e.partitionID, hr: e.hr}
 			if _, dup := seen[k]; dup {
 				continue
 			}
@@ -201,7 +321,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		}
 	}
 	if len(merged) == 0 {
-		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: no ranges reported, falling back to even split")
+		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: no tenant-scoped ranges reported")
 		return nil
 	}
 
@@ -210,7 +330,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 
 	a := &assignment.Assignment{Entries: entries}
 	if err := a.Validate(); err != nil {
-		level.Error(r.logger).Log("msg", "reconstructAssignmentFromReadcache: stitched assignment invalid, falling back to even split", "err", err)
+		level.Error(r.logger).Log("msg", "reconstructAssignmentFromReadcache: stitched assignment invalid", "err", err)
 		return nil
 	}
 	return a
@@ -253,6 +373,9 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 //     across the pods that report the partition warm.
 //   - unnamedPerInstance: per-readcache unnamed query EWMA, surfaced
 //     for observability but not fed into the slicer.
+//   - readiness: partitions and logical targets for which no assigned
+//     concrete replica reported a warm partition. These must not be
+//     interpreted as genuinely idle.
 //   - failedInstances: the set of instance IDs whose client lookup or
 //     HashRangeStats RPC failed this round. Their partitions aggregate
 //     as zero load (we have no stats for them), which is NOT the same
@@ -263,10 +386,10 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // On any per-pod failure the round continues with whatever the
 // other pods returned; a single misbehaving readcache cannot block
 // the rebalance round behind TCP timeouts (see Config.IngesterRPCTimeout).
-func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, map[string]struct{}, error) {
+func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, []unknownTenant, readcacheStatsReadiness, map[string]struct{}, error) {
 	instances, err := r.fleet.healthyInstances()
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, readcacheStatsReadiness{}, nil, err
 	}
 
 	type result struct {
@@ -276,6 +399,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		partitionSeries []ingester_client.PartitionActiveSeries
 		partitionLoad   []ingester_client.PartitionQueryLoad
 		unnamedLoad     float64
+		unknownTenants  []ingester_client.UnknownTenant
 	}
 
 	results := make([]result, len(instances))
@@ -310,6 +434,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		rates := make([]rangeRate, len(resp.Rates))
 		for i, rate := range resp.Rates {
 			rates[i] = rangeRate{
+				tenantID:    rate.TenantId,
 				hr:          assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
 				series:      rate.ActiveSeries,
 				sampleRate:  rate.SampleRate,
@@ -323,6 +448,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 			partitionSeries: resp.PartitionActiveSeries,
 			partitionLoad:   resp.PartitionQueryLoads,
 			unnamedLoad:     resp.UnnamedQuerySamplesEwma,
+			unknownTenants:  resp.UnknownTenants,
 		}
 		ok.Add(1)
 		return nil
@@ -338,6 +464,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 	partitionTotals := map[int32]int64{}
 	partitionQuerySamples := map[int32]float64{}
 	unnamedPerInstance := map[string]float64{}
+	partitionWarmByInstance := make(map[string]map[int32]bool, len(results))
 	for _, res := range results {
 		if res.instanceID == "" {
 			continue
@@ -355,23 +482,26 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		// a reporter that claims to be warming while still publishing
 		// a rate. The query-load EWMA has no such source-side gate,
 		// so this is the only place it is filtered.
+		warmByPartition := make(map[int32]bool, len(res.partitionSeries))
 		var warming map[int32]struct{}
 		for _, p := range res.partitionSeries {
-			if !p.Warming {
-				continue
+			if p.Warming {
+				if warming == nil {
+					warming = make(map[int32]struct{}, 1)
+				}
+				warming[p.PartitionId] = struct{}{}
+			} else {
+				warmByPartition[p.PartitionId] = true
 			}
-			if warming == nil {
-				warming = make(map[int32]struct{}, 1)
-			}
-			warming[p.PartitionId] = struct{}{}
 		}
+		partitionWarmByInstance[res.instanceID] = warmByPartition
 
 		instanceTotals[res.instanceID] = res.totalSeries
 		for _, rr := range res.rates {
 			if _, isWarming := warming[rr.partitionID]; isWarming {
 				rr.sampleRate = 0
 			}
-			k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
+			k := partitionRangeKey{tenantID: rr.tenantID, partitionID: rr.partitionID, hr: rr.hr}
 			i, seen := rateAt[k]
 			if !seen {
 				rateAt[k] = len(all)
@@ -403,6 +533,27 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		}
 	}
 
+	unknownByTenant := make(map[string]time.Time)
+	for _, res := range results {
+		for _, unknown := range res.unknownTenants {
+			if unknown.TenantId == "" {
+				continue
+			}
+			var firstSeen time.Time
+			if unknown.FirstSeenUnixMs > 0 {
+				firstSeen = time.UnixMilli(unknown.FirstSeenUnixMs)
+			}
+			if previous, exists := unknownByTenant[unknown.TenantId]; !exists || previous.IsZero() || (!firstSeen.IsZero() && firstSeen.Before(previous)) {
+				unknownByTenant[unknown.TenantId] = firstSeen
+			}
+		}
+	}
+	unknownTenants := make([]unknownTenant, 0, len(unknownByTenant))
+	for tenantID, firstSeen := range unknownByTenant {
+		unknownTenants = append(unknownTenants, unknownTenant{tenantID: tenantID, firstSeen: firstSeen})
+	}
+	sort.Slice(unknownTenants, func(i, j int) bool { return unknownTenants[i].tenantID < unknownTenants[j].tenantID })
+
 	var failedInstances map[string]struct{}
 	for _, id := range failedIDs {
 		if id == "" {
@@ -414,8 +565,71 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		failedInstances[id] = struct{}{}
 	}
 
-	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load(), "rate_entries", len(all), "partitions_reported", len(partitionTotals))
-	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, failedInstances, nil
+	readiness := r.readcacheStatsReadiness(r.now(), partitionWarmByInstance)
+	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load(), "rate_entries", len(all), "partitions_reported", len(partitionTotals), "unknown_tenants", len(unknownTenants))
+	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, unknownTenants, readiness, failedInstances, nil
+}
+
+// readcacheStatsReadiness compares warm partition reports with the
+// authoritative tier-2 assignment. A concrete pod's report only covers a
+// logical owner when that pod is one of the owner's configured replicas;
+// residue for a partition on a previous owner must not make the current
+// owner look ready.
+func (r *Rebalancer) readcacheStatsReadiness(at time.Time, warmByInstance map[string]map[int32]bool) readcacheStatsReadiness {
+	if r.readcacheStore == nil {
+		return readcacheStatsReadiness{}
+	}
+
+	replicaMap := r.readcacheStore.getReplicaMap()
+	expectedByLogical := map[string]map[int32]struct{}{}
+	for _, entry := range r.readcacheStore.snapshot() {
+		if !entry.ActiveAt(at) {
+			continue
+		}
+		partitions := expectedByLogical[entry.InstanceID]
+		if partitions == nil {
+			partitions = map[int32]struct{}{}
+			expectedByLogical[entry.InstanceID] = partitions
+		}
+		partitions[entry.PartitionID] = struct{}{}
+	}
+
+	readiness := readcacheStatsReadiness{
+		unreadyPartitions:     map[int32]bool{},
+		unreadyLogicalTargets: map[string]struct{}{},
+	}
+	partitionReady := map[int32]bool{}
+	allExpectedPartitions := map[int32]struct{}{}
+	for logicalID, partitions := range expectedByLogical {
+		concreteIDs := replicaMap.ConcreteIDs(logicalID)
+		for partitionID := range partitions {
+			allExpectedPartitions[partitionID] = struct{}{}
+			ready := false
+			for _, concreteID := range concreteIDs {
+				if warmByInstance[concreteID][partitionID] {
+					ready = true
+					break
+				}
+			}
+			if ready {
+				partitionReady[partitionID] = true
+				continue
+			}
+			readiness.unreadyLogicalTargets[logicalID] = struct{}{}
+		}
+	}
+	for partitionID := range allExpectedPartitions {
+		if !partitionReady[partitionID] {
+			readiness.unreadyPartitions[partitionID] = true
+		}
+	}
+	if len(readiness.unreadyPartitions) == 0 {
+		readiness.unreadyPartitions = nil
+	}
+	if len(readiness.unreadyLogicalTargets) == 0 {
+		readiness.unreadyLogicalTargets = nil
+	}
+	return readiness
 }
 
 // pushRangesToReadcache calls SetHashRanges on each readcache that
@@ -458,7 +672,7 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 		if !ok || owner == "" {
 			continue
 		}
-		hr := ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID}
+		hr := ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID, TenantId: e.TenantID}
 		for _, concrete := range replicaMap.ConcreteIDs(owner) {
 			rangesByInstance[concrete] = append(rangesByInstance[concrete], hr)
 		}

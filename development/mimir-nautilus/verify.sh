@@ -6,17 +6,18 @@
 #
 #   1. /ready returns 200 on distributor, query-frontend, both
 #      readcache pods, and the rebalancer.
-#   2. A known sample pushed for the experimental `nautilus-tenant`
-#      can be read back via the query-frontend and the sample value
-#      matches.
-#   3. A negative test: pushing a sample for `default-tenant` is
+#   2. Known samples pushed for two experimental Nautilus tenants can
+#      be read back independently via the query-frontend.
+#   3. Both Nautilus tenants acquire valid full-space assignments
+#      spanning multiple Kafka partitions.
+#   4. A negative test: pushing a sample for `default-tenant` is
 #      readable via the production ingester path (proving the
 #      runtime-config gate works in both directions).
 #
 # Bounded retry budget (~60s wall clock). Prints PASS or FAIL the
 # parent agent can grep.
 
-set -u
+set -u -o pipefail
 
 PASS_PREFIX="PASS:"
 FAIL_PREFIX="FAIL:"
@@ -29,11 +30,21 @@ REBALANCER_URL="${REBALANCER_URL:-http://localhost:8019}"
 INGESTER_URL="${INGESTER_URL:-http://localhost:8002}"
 
 NAUTILUS_TENANT="${NAUTILUS_TENANT:-nautilus-tenant}"
+NAUTILUS_TENANT_B="${NAUTILUS_TENANT_B:-nautilus-tenant-b}"
 DEFAULT_TENANT="${DEFAULT_TENANT:-default-tenant}"
 
 SCRIPT_DIR="$(cd "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VERIFY_TOOL="$SCRIPT_DIR/.verify-tool"
+ASSIGNMENT_CHECK_OUTPUT="$SCRIPT_DIR/.assignment-check-output"
+
+docker_compose() {
+    if [ -x "$(command -v docker-compose)" ]; then
+        docker-compose "$@"
+    else
+        docker compose "$@"
+    fi
+}
 
 # Build the helper once per verify.sh invocation so it picks up any
 # Go changes the iteration loop has made. We use -mod=vendor so this
@@ -88,7 +99,30 @@ query_metric_expect() {
         -url "$QUERY_FRONTEND_URL" \
         -tenant "$tenant" \
         -query "$metric" \
-        -expect-value "$expect"
+        -expect-value "$expect" \
+        -expect-result-count 1
+}
+
+push_spike() {
+    local tenant="$1" metric="$2" count="$3" ts_ms="$4"
+    "$VERIFY_TOOL" spike \
+        -url "$DISTRIBUTOR_URL" \
+        -tenant "$tenant" \
+        -metric "$metric" \
+        -metrics 32 \
+        -count "$count" \
+        -timestamp-ms "$ts_ms" \
+        -id-prefix "${tenant}-"
+}
+
+multitenant_assignment_ready() {
+    local min_partitions="$1"
+    docker_compose -f "$SCRIPT_DIR/docker-compose.yml" exec -T nautilus-rebalancer \
+        cat /data/nautilus-rebalancer/assignment-log.json |
+        "$VERIFY_TOOL" assignment-log \
+            -file - \
+            -tenants "$NAUTILUS_TENANT,$NAUTILUS_TENANT_B" \
+            -min-partitions "$min_partitions" >"$ASSIGNMENT_CHECK_OUTPUT" 2>&1
 }
 
 # 1. Readiness.
@@ -101,14 +135,16 @@ require_ready "nautilus-rebalancer" "$REBALANCER_URL"
 
 NOW_MS=$(($(date +%s) * 1000))
 
-# 2. Push to the nautilus tenant; expect the value back through
-# query-frontend. The distributor's read path consults the per-tenant
-# `readcache_read_routing` knob (set to "nautilus-only" for
-# nautilus-tenant in runtime.yaml), so this exercises the readcache
-# path end-to-end.
-echo "pushing nautilus sample..."
+# 2. Push the same metric identity with different values to two Nautilus
+# tenants. Reading each value back proves both tenants traverse the readcache
+# path without sharing series.
+echo "pushing samples for two nautilus tenants..."
 push_sample "$NAUTILUS_TENANT" "verify_metric" 42 "$NOW_MS" || {
-    echo "$FAIL_PREFIX nautilus push failed"
+    echo "$FAIL_PREFIX first nautilus tenant push failed"
+    exit 1
+}
+push_sample "$NAUTILUS_TENANT_B" "verify_metric" 84 "$NOW_MS" || {
+    echo "$FAIL_PREFIX second nautilus tenant push failed"
     exit 1
 }
 
@@ -122,7 +158,65 @@ if ! retry_until query_metric_expect "$NAUTILUS_TENANT" "verify_metric" "42"; th
 fi
 echo "$PASS_PREFIX nautilus-tenant query returned the expected sample"
 
-# 3. Push to the default tenant; expect the value back too.
+if ! retry_until query_metric_expect "$NAUTILUS_TENANT_B" "verify_metric" "84"; then
+    echo "$FAIL_PREFIX nautilus-tenant-b query did not return 84 within budget"
+    exit 1
+fi
+echo "$PASS_PREFIX nautilus-tenant-b query returned the expected sample"
+
+# 3. Wait for the bootstrap round to publish each tenant's deterministic
+# multi-partition assignment before generating load.
+echo "waiting for both tenants to acquire multi-partition bootstrap assignments..."
+if ! RETRY_BUDGET="${REBALANCE_RETRY_BUDGET:-180}" retry_until multitenant_assignment_ready 4; then
+    echo "$FAIL_PREFIX tenants did not acquire valid bootstrap assignments"
+    cat "$ASSIGNMENT_CHECK_OUTPUT" 2>/dev/null || true
+    exit 1
+fi
+echo "$PASS_PREFIX both nautilus tenants acquired valid bootstrap assignments"
+
+# Generate enough tenant-local load for the slicer to refine the initial
+# placement. Then inspect the durable authoritative log and require each tenant
+# to independently tile the full uint32 space across multiple partitions.
+echo "pushing multi-tenant load to trigger rebalancing..."
+push_spike "$NAUTILUS_TENANT" "verify_spike_a" 6000 "$NOW_MS" || {
+    echo "$FAIL_PREFIX first nautilus tenant spike failed"
+    exit 1
+}
+push_spike "$NAUTILUS_TENANT_B" "verify_spike_b" 4000 "$NOW_MS" || {
+    echo "$FAIL_PREFIX second nautilus tenant spike failed"
+    exit 1
+}
+
+echo "waiting for independent multi-partition tenant assignments..."
+if ! RETRY_BUDGET="${REBALANCE_RETRY_BUDGET:-180}" retry_until multitenant_assignment_ready 2; then
+    echo "$FAIL_PREFIX tenants did not acquire valid multi-partition assignments"
+    cat "$ASSIGNMENT_CHECK_OUTPUT" 2>/dev/null || true
+    exit 1
+fi
+cat "$ASSIGNMENT_CHECK_OUTPUT"
+echo "$PASS_PREFIX both nautilus tenants have valid multi-partition assignments"
+
+# Verify writes issued after rebalancing remain independently queryable.
+AFTER_REBALANCE_MS=$(($(date +%s) * 1000))
+push_sample "$NAUTILUS_TENANT" "verify_after_rebalance" 142 "$AFTER_REBALANCE_MS" || {
+    echo "$FAIL_PREFIX first post-rebalance push failed"
+    exit 1
+}
+push_sample "$NAUTILUS_TENANT_B" "verify_after_rebalance" 184 "$AFTER_REBALANCE_MS" || {
+    echo "$FAIL_PREFIX second post-rebalance push failed"
+    exit 1
+}
+if ! retry_until query_metric_expect "$NAUTILUS_TENANT" "verify_after_rebalance" "142"; then
+    echo "$FAIL_PREFIX first post-rebalance query failed"
+    exit 1
+fi
+if ! retry_until query_metric_expect "$NAUTILUS_TENANT_B" "verify_after_rebalance" "184"; then
+    echo "$FAIL_PREFIX second post-rebalance query failed"
+    exit 1
+fi
+echo "$PASS_PREFIX post-rebalance writes remained tenant-isolated"
+
+# 4. Push to the default tenant; expect the value back too.
 echo "pushing default sample..."
 push_sample "$DEFAULT_TENANT" "verify_metric_default" 7 "$NOW_MS" || {
     echo "$FAIL_PREFIX default push failed"
@@ -134,4 +228,5 @@ if ! retry_until query_metric_expect "$DEFAULT_TENANT" "verify_metric_default" "
 fi
 echo "$PASS_PREFIX default-tenant query returned the expected sample"
 
+rm -f "$ASSIGNMENT_CHECK_OUTPUT"
 echo "$PASS_PREFIX all verify steps succeeded"

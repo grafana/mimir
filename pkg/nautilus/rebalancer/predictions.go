@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/nautilus/loadstats"
 )
 
@@ -21,6 +22,9 @@ import (
 // See predictionStore for the full design rationale and the math
 // connecting decay to the readcache's EWMA settle curve.
 type ratePrediction struct {
+	tenantID string
+	hr       assignment.HashRange
+
 	// pid is the destination partition that just gained the moved
 	// range. We don't track the source partition because
 	// filterRatesByCurrentOwnership already removes the source's
@@ -102,7 +106,7 @@ func (s *predictionStore) record(now time.Time, actions []Action, lm *loadMap) {
 		if a.FromPart == a.ToPart {
 			continue
 		}
-		rate := lm.sampleRateAt(a.FromPart, a.Range)
+		rate := lm.sampleRateAt(a.TenantID, a.FromPart, a.Range)
 		if rate <= 0 {
 			// Nothing to predict for cold ranges. (Also covers the
 			// case where lm has no entry for (FromPart, Range)
@@ -110,6 +114,8 @@ func (s *predictionStore) record(now time.Time, actions []Action, lm *loadMap) {
 			continue
 		}
 		s.preds = append(s.preds, ratePrediction{
+			tenantID:    a.TenantID,
+			hr:          a.Range,
 			pid:         a.ToPart,
 			rate:        rate,
 			committedAt: now,

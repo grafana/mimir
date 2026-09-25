@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/loadstats"
 )
 
 func hr(lo, hi uint32) assignment.HashRange {
@@ -615,4 +616,61 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 		assert.False(t, hasOldRate,
 			"applyWalkResult must GC EwmaRates whose range fell out of both sets")
 	})
+}
+
+func TestPartitionRanges_TenantScopedCountsAndRates(t *testing.T) {
+	pr := newPartitionRanges()
+	fullRange := hr(0, math.MaxUint32)
+	pr.setRangesForTenant("tenant-a", []assignment.HashRange{fullRange})
+	pr.setRangesForTenant("tenant-b", []assignment.HashRange{fullRange})
+
+	pr.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 3)})
+	pr.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 7)})
+	require.True(t, pr.applyWalkResultForTenant("tenant-a", []assignment.HashRange{fullRange}, []int64{11}, []string{`{__name__="tenant_a"}`}))
+	require.True(t, pr.applyWalkResultForTenant("tenant-b", []assignment.HashRange{fullRange}, []int64{22}, []string{`{__name__="tenant_b"}`}))
+	pr.tickSampleRates()
+
+	snapshot := pr.snapshotCounts()
+	require.Len(t, snapshot, 2)
+	assert.Equal(t, "tenant-a", snapshot[0].TenantID)
+	assert.Equal(t, int64(11), snapshot[0].Count)
+	assert.InDelta(t, float64(3)/loadstats.TickInterval.Seconds(), snapshot[0].SampleRate, 1e-9)
+	assert.Equal(t, "tenant-b", snapshot[1].TenantID)
+	assert.Equal(t, int64(22), snapshot[1].Count)
+	assert.InDelta(t, float64(7)/loadstats.TickInterval.Seconds(), snapshot[1].SampleRate, 1e-9)
+
+	current, _ := pr.adminSnapshot()
+	require.Len(t, current, 2)
+	assert.Equal(t, "tenant-a", current[0].TenantID)
+	assert.Equal(t, `{__name__="tenant_a"}`, current[0].Example)
+	assert.Equal(t, "tenant-b", current[1].TenantID)
+	assert.Equal(t, `{__name__="tenant_b"}`, current[1].Example)
+}
+
+func TestPartitionRanges_ResidueRemainsTenantScoped(t *testing.T) {
+	pr := newPartitionRanges()
+	oldRange := hr(0, 99)
+	newRange := hr(200, 299)
+	pr.setRangesForTenant("tenant-a", []assignment.HashRange{oldRange})
+	pr.setRangesForTenant("tenant-b", []assignment.HashRange{oldRange})
+	pr.setRangesForTenant("tenant-a", []assignment.HashRange{newRange})
+
+	require.True(t, pr.applyWalkResultForTenant(
+		"tenant-a",
+		[]assignment.HashRange{oldRange, newRange},
+		[]int64{13, 5},
+		nil,
+	))
+	require.True(t, pr.applyWalkResultForTenant(
+		"tenant-b",
+		[]assignment.HashRange{oldRange},
+		[]int64{29},
+		nil,
+	))
+
+	snapshot := pr.snapshotCounts()
+	require.Len(t, snapshot, 3)
+	assert.Equal(t, hashRangeCount{TenantID: "tenant-a", Range: oldRange, Count: 13}, snapshot[0])
+	assert.Equal(t, hashRangeCount{TenantID: "tenant-a", Range: newRange, Count: 5}, snapshot[1])
+	assert.Equal(t, hashRangeCount{TenantID: "tenant-b", Range: oldRange, Count: 29}, snapshot[2])
 }

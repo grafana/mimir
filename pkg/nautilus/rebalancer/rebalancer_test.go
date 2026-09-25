@@ -5,16 +5,21 @@ package rebalancer
 import (
 	"context"
 	"math"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
@@ -601,7 +606,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 	a1 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(time.Now(), a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	require.NotNil(t, initial)
@@ -621,7 +626,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 	s := newLogStore()
 
-	_, updates, unsubscribe := s.subscribe(false)
+	_, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	// Three back-to-back applies; a slow consumer should see exactly
@@ -648,7 +653,7 @@ func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 
 func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
 	s := newLogStore()
-	_, _, unsubscribe := s.subscribe(false)
+	_, _, unsubscribe := s.subscribe()
 	require.Equal(t, 1, s.numSubscribers())
 	unsubscribe()
 	require.Equal(t, 0, s.numSubscribers())
@@ -676,7 +681,7 @@ func TestLogStore_SubscribeBeforeFirstApplyReturnsNilInitial(t *testing.T) {
 	}
 	s.seedFromEntries(seeded)
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	assert.Nil(t, initial,
 		"subscribe must return nil initial before the first apply, even when the log has live entries, to prevent a freshly-restarted rebalancer from broadcasting stale state as authoritative")
@@ -691,7 +696,7 @@ func TestLogStore_FirstApplyPrimesSubscribersAttachedEarly(t *testing.T) {
 	s := newLogStore()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial")
 
@@ -735,7 +740,7 @@ func TestLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 	s.seedFromEntries(seedEntries)
 
 	// Subscriber connects before any apply.
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial even when log is non-empty")
 
@@ -768,7 +773,7 @@ func TestLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	assert.Len(t, initial.entries, len(a.Entries),
@@ -802,7 +807,7 @@ func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 	require.Greater(t, len(full), len(a.Entries),
 		"unfiltered snapshot must include both rounds")
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	require.NotNil(t, initial)
@@ -810,59 +815,55 @@ func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 		"subscribe must return the full retained log, expired entries included")
 }
 
-// TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention
-// asserts the broadcast counterpart of the above, and that pruning by
-// EntryRetention still bounds what subscribers receive.
-func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing.T) {
+// TestLogStore_DeltasPreserveRetainedHistoryAndHonourRetention verifies that
+// applying incremental broadcasts to the priming snapshot preserves retained
+// history and observes the server's pruning horizon.
+func TestLogStore_DeltasPreserveRetainedHistoryAndHonourRetention(t *testing.T) {
 	s := newLogStore()
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Subscribe before any apply so we can observe the broadcasts.
-	_, updates, unsubscribe := s.subscribe(false)
+	_, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	// Round 1.
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t1, a, time.Minute, 10*time.Second, time.Hour))
 	select {
-	case <-updates:
+	case u := <-updates:
+		require.True(t, u.reset)
+		client := assignment.NewLogFromEntries(u.entries)
+
+		// Round 2 past the round-1 lease horizon but within retention. The
+		// delta only carries mutations; the client retains round-1 history
+		// from its priming snapshot.
+		t2 := t1.Add(30 * time.Minute)
+		require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
+		select {
+		case delta := <-updates:
+			require.False(t, delta.reset)
+			client = client.MergedWithEntries(delta.entries)
+			client.Prune(delta.pruneBefore)
+			assert.Equal(t, s.snapshot(), client.Entries())
+		case <-time.After(time.Second):
+			t.Fatal("did not receive round-2 delta")
+		}
+
+		// Round 3 moves the retention horizon beyond round 1. Replaying the
+		// delta and prune marker must still exactly reproduce the server.
+		t3 := t1.Add(2 * time.Hour)
+		require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
+		select {
+		case delta := <-updates:
+			require.False(t, delta.reset)
+			client = client.MergedWithEntries(delta.entries)
+			client.Prune(delta.pruneBefore)
+			assert.Equal(t, s.snapshot(), client.Entries())
+		case <-time.After(time.Second):
+			t.Fatal("did not receive round-3 delta")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("did not receive round-1 broadcast")
-	}
-
-	// Round 2 past the round-1 lease horizon but within retention:
-	// the broadcast must still carry the expired round-1 entries.
-	t2 := t1.Add(30 * time.Minute)
-	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
-	expired := 0
-	select {
-	case u := <-updates:
-		require.NotEmpty(t, u.entries)
-		for _, e := range u.entries {
-			if !e.To.After(t2) {
-				expired++
-			}
-		}
-		require.NotZero(t, expired,
-			"round-2 broadcast must include the expired-but-retained round-1 entries")
-	case <-time.After(time.Second):
-		t.Fatal("did not receive round-2 broadcast")
-	}
-
-	// Round 3 beyond round 1's retention horizon: Prune drops the
-	// round-1 entries (To = t1+1m < t3-1h), so the broadcast may not
-	// grow without bound.
-	t3 := t1.Add(2 * time.Hour)
-	require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
-	select {
-	case u := <-updates:
-		require.NotEmpty(t, u.entries)
-		for _, e := range u.entries {
-			assert.False(t, e.To.Before(t3.Add(-time.Hour)),
-				"broadcast included an entry past the retention horizon: %+v", e)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("did not receive round-3 broadcast")
 	}
 }
 
@@ -878,7 +879,7 @@ func TestLogStore_DeltaSubscriberReceivesOnlyMutations(t *testing.T) {
 	a2 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t0, a2, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	require.True(t, initial.reset, "delta subscriber must be primed with a snapshot")
@@ -936,7 +937,7 @@ func TestLogStore_DeltaCoalescingLosesNothing(t *testing.T) {
 
 	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0}), testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	client := assignment.NewLogFromEntries(initial.entries)
@@ -965,30 +966,6 @@ func TestLogStore_DeltaCoalescingLosesNothing(t *testing.T) {
 
 	assert.Equal(t, s.snapshot(), client.Entries(),
 		"coalesced delta replay must reproduce the server log exactly")
-}
-
-// TestLogStore_LegacySubscriberStillGetsSnapshots pins backwards
-// compatibility: a subscriber that did not opt into deltas receives
-// a full snapshot on every mutating apply.
-func TestLogStore_LegacySubscriberStillGetsSnapshots(t *testing.T) {
-	s := newLogStore()
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
-
-	_, updates, unsubscribe := s.subscribe(false)
-	defer unsubscribe()
-
-	require.True(t, s.apply(t0.Add(time.Minute), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour))
-
-	select {
-	case u := <-updates:
-		assert.True(t, u.reset, "legacy subscriber broadcasts must be snapshots")
-		assert.Equal(t, s.snapshot(), u.entries,
-			"legacy subscriber must receive the full log on every broadcast")
-	case <-time.After(time.Second):
-		t.Fatal("did not receive broadcast")
-	}
 }
 
 func TestLogStore_ApplyOutsideLookaheadIsNoOp(t *testing.T) {
@@ -1074,22 +1051,147 @@ func TestLogStore_LeaseHorizon(t *testing.T) {
 func TestEntriesProtoRoundTrip(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	domain := []assignment.LogEntry{
-		{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: t0, To: t0.Add(time.Hour)},
-		{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 2, From: t0, To: t0.Add(30 * time.Minute)},
-		{Range: assignment.HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 3, From: t0, To: t0.Add(2 * time.Hour)},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: t0, To: t0.Add(time.Hour)},
+		{TenantID: "tenant-b", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 2, From: t0, To: t0.Add(30 * time.Minute)},
 	}
 
-	wire := EntriesToProto(domain)
-	require.Len(t, wire, len(domain))
+	wireResponse := &WatchAssignmentsResponse{
+		Entries:                    EntriesToProto(domain),
+		Reset_:                     true,
+		AssignmentGeneration:       9,
+		AssignmentValidUntilUnixMs: t0.Add(5 * time.Minute).UnixMilli(),
+	}
+	data, err := proto.Marshal(wireResponse)
+	require.NoError(t, err)
+	var decoded WatchAssignmentsResponse
+	require.NoError(t, proto.Unmarshal(data, &decoded))
+	require.Equal(t, uint64(9), decoded.AssignmentGeneration)
+	require.Equal(t, t0.Add(5*time.Minute).UnixMilli(), decoded.AssignmentValidUntilUnixMs)
 
-	round := EntriesFromProto(wire)
+	round := EntriesFromProto(decoded.Entries)
 	require.Len(t, round, len(domain))
 	for i, want := range domain {
+		require.Equal(t, want.TenantID, round[i].TenantID)
 		require.Equal(t, want.Range, round[i].Range)
 		require.Equal(t, want.PartitionID, round[i].PartitionID)
 		require.True(t, want.From.Equal(round[i].From))
 		require.True(t, want.To.Equal(round[i].To))
 	}
+}
+
+func TestLogStore_TenantScopedDeltaIdentityAndGenerationHeartbeat(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	full := assignment.HashRange{Lo: 0, Hi: math.MaxUint32}
+	initialAssignment := &assignment.Assignment{Entries: []assignment.Entry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1},
+		{TenantID: "tenant-b", Range: full, PartitionID: 2},
+	}}
+	require.True(t, s.apply(t0, initialAssignment, testStoreLease, testStoreLookahead, time.Hour))
+
+	initial, updates, unsubscribe := s.subscribe()
+	defer unsubscribe()
+	require.NotNil(t, initial)
+	assert.Equal(t, uint64(1), initial.generation)
+	assert.Equal(t, t0.Add(testStoreLease), initial.validUntil)
+	assert.True(t, initial.tenantAware)
+
+	// A placement-stable round advances only the global validity heartbeat.
+	assert.False(t, s.apply(t0.Add(time.Second), initialAssignment, testStoreLease, testStoreLookahead, time.Hour))
+	heartbeat := <-updates
+	assert.Empty(t, heartbeat.entries)
+	assert.Equal(t, uint64(1), heartbeat.generation)
+	assert.Equal(t, t0.Add(time.Second+testStoreLease), heartbeat.validUntil)
+
+	// Moving only tenant-b creates a distinct delta and advances generation.
+	moved := &assignment.Assignment{Entries: []assignment.Entry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1},
+		{TenantID: "tenant-b", Range: full, PartitionID: 3},
+	}}
+	require.True(t, s.apply(t0.Add(2*time.Second), moved, testStoreLease, testStoreLookahead, time.Hour))
+	update := <-updates
+	assert.Equal(t, uint64(2), update.generation)
+	require.NotEmpty(t, update.entries)
+	for _, entry := range update.entries {
+		assert.Equal(t, "tenant-b", entry.TenantID, "tenant-a's identical range identity must remain untouched")
+	}
+
+	previous := []assignment.LogEntry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1, From: t0, To: t0.Add(time.Minute)},
+		{TenantID: "tenant-b", Range: full, PartitionID: 1, From: t0, To: t0.Add(time.Minute)},
+	}
+	current := append([]assignment.LogEntry(nil), previous...)
+	current[1].To = t0.Add(2 * time.Minute)
+	delta := diffAssignmentEntries(previous, current)
+	require.Len(t, delta, 1)
+	assert.Equal(t, "tenant-b", delta[0].TenantID)
+}
+
+func TestRebalancer_WatchAssignmentsRejectsIncapableClientBeforeSubscribing(t *testing.T) {
+	r := &Rebalancer{store: newLogStore()}
+
+	stream := newFakeStream(t.Context(), 1)
+	err := r.WatchAssignments(&WatchAssignmentsRequest{}, stream)
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Empty(t, stream.sent)
+	assert.Zero(t, r.store.numSubscribers())
+}
+
+func TestRebalancer_WatchAssignmentsSendsEmptyTenantBootstrapHeartbeat(t *testing.T) {
+	r := &Rebalancer{store: newLogStore()}
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	r.store.apply(now, &assignment.Assignment{}, testStoreLease, testStoreLookahead, time.Hour)
+	heartbeatAt := now.Add(time.Minute)
+	r.store.apply(heartbeatAt, &assignment.Assignment{}, testStoreLease, testStoreLookahead, time.Hour)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stream := newFakeStream(ctx, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{
+			SupportsTenantScopedAssignments: true,
+		}, stream)
+	}()
+
+	select {
+	case response := <-stream.sent:
+		assert.True(t, response.Reset_)
+		assert.Empty(t, response.Entries)
+		assert.Equal(t, uint64(1), response.AssignmentGeneration)
+		assert.Equal(t, heartbeatAt.Add(testStoreLease).UnixMilli(), response.AssignmentValidUntilUnixMs)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for empty tenant bootstrap heartbeat")
+	}
+
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
+}
+
+func TestRebalancer_WatchAssignmentsRejectsIncapableClientOverGRPC(t *testing.T) {
+	r := &Rebalancer{store: newLogStore()}
+	r.store.apply(time.Now(), assignment.EvenSplitForTenant("tenant-a", []int32{1}), testStoreLease, testStoreLookahead, time.Hour)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := grpc.NewServer()
+	RegisterNautilusRebalancerServer(server, r)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(server.Stop)
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, conn.Close())
+	})
+
+	stream, err := NewNautilusRebalancerClient(conn).WatchAssignments(t.Context(), &WatchAssignmentsRequest{})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
 // fakeWatchAssignmentsStream implements
@@ -1149,18 +1251,12 @@ func TestRebalancer_NextRoundDelay(t *testing.T) {
 	// chain-end is the original lease's To.)
 	assert.Equal(t, cfg.MinRebalanceInterval, r.nextRoundDelay(t0.Add(cfg.LeaseDuration-10*time.Second)))
 
-	// After a successor has been queued at the lookahead edge, the
-	// chain extends to (original.To + leaseDuration). The next round
-	// must be scheduled relative to the chain end, not to the
-	// soon-to-expire active lease — otherwise the rebalancer would
-	// thrash at MinRebalanceInterval for the entire active-lease tail.
+	// At the lookahead edge, applying the same assignment refreshes the
+	// single generation-validity heartbeat for another lease duration.
 	tEdge := t0.Add(cfg.LeaseDuration - cfg.LeaseLookahead)
 	require.True(t, r.store.apply(tEdge, assignment.EvenSplit([]int32{0, 1}), cfg.LeaseDuration, cfg.LeaseLookahead, time.Hour))
-	// Chain-end = t0 + 2*lease. delay at tEdge = (t0+2*lease) - tEdge - lookahead = lease.
-	// That equals MaxRebalanceInterval here, so the ceiling clamps it.
-	assert.Equal(t, cfg.MaxRebalanceInterval, r.nextRoundDelay(tEdge))
-	// And one minute later we should still be ~lease - 1m away from
-	// needing to act (modulo the ceiling), well above the floor.
+	assert.Equal(t, cfg.LeaseDuration-cfg.LeaseLookahead, r.nextRoundDelay(tEdge))
+	// And one minute later we should still be well above the floor.
 	assert.Greater(t, r.nextRoundDelay(tEdge.Add(time.Minute)), cfg.MinRebalanceInterval)
 
 	// Hypothetical horizon very far in the future: ceiling kicks in.
@@ -1185,7 +1281,7 @@ func TestRebalancer_WatchAssignments_SkipsInitialBeforeFirstApply(t *testing.T) 
 
 	done := make(chan error, 1)
 	go func() {
-		done <- r.WatchAssignments(&WatchAssignmentsRequest{}, stream)
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{SupportsTenantScopedAssignments: true}, stream)
 	}()
 
 	// No apply has run; handler must not Send anything yet.
@@ -1225,7 +1321,7 @@ func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- r.WatchAssignments(&WatchAssignmentsRequest{}, stream)
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{SupportsTenantScopedAssignments: true}, stream)
 	}()
 
 	// Initial snapshot.
@@ -1273,7 +1369,9 @@ func TestRebalancer_WatchAssignments_StreamObservability(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- r.WatchAssignments(&WatchAssignmentsRequest{SupportsDeltas: true}, stream)
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{
+			SupportsTenantScopedAssignments: true,
+		}, stream)
 	}()
 
 	// Initial snapshot.
@@ -1293,7 +1391,7 @@ func TestRebalancer_WatchAssignments_StreamObservability(t *testing.T) {
 		t.Fatal("did not receive delta")
 	}
 
-	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsStarted.WithLabelValues("hash", "delta")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsStarted.WithLabelValues("hash")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsActive.WithLabelValues("hash")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "snapshot")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "delta")))
@@ -1317,11 +1415,11 @@ func TestLoadMap_SeriesAt(t *testing.T) {
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(100), lm.seriesAt(0, assignment.HashRange{Lo: 0, Hi: 999}))
-	assert.Equal(t, int64(300), lm.seriesAt(1, assignment.HashRange{Lo: 1000, Hi: 1999}))
-	assert.Equal(t, int64(0), lm.seriesAt(0, assignment.HashRange{Lo: 5000, Hi: 6000}))
+	assert.Equal(t, int64(100), lm.seriesAt("", 0, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, int64(300), lm.seriesAt("", 1, assignment.HashRange{Lo: 1000, Hi: 1999}))
+	assert.Equal(t, int64(0), lm.seriesAt("", 0, assignment.HashRange{Lo: 5000, Hi: 6000}))
 	// Same range under a different partition is a different key.
-	assert.Equal(t, int64(0), lm.seriesAt(1, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, int64(0), lm.seriesAt("", 1, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
 // TestLoadMap_MaxOverReplicas verifies that buildLoadMap aggregates
@@ -1342,7 +1440,7 @@ func TestLoadMap_MaxOverReplicas(t *testing.T) {
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(150), lm.seriesAt(0, hr))
+	assert.Equal(t, int64(150), lm.seriesAt("", 0, hr))
 }
 
 // TestLoadMap_PartitionResidueSeparate verifies that reports with the
@@ -1359,8 +1457,8 @@ func TestLoadMap_PartitionResidueSeparate(t *testing.T) {
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(50), lm.seriesAt(7, hr), "new owner only sees its growth")
-	assert.Equal(t, int64(200), lm.seriesAt(3, hr), "previous owner reports its residue")
+	assert.Equal(t, int64(50), lm.seriesAt("", 7, hr), "new owner only sees its growth")
+	assert.Equal(t, int64(200), lm.seriesAt("", 3, hr), "previous owner reports its residue")
 }
 
 // TestLoadMap_SampleRateAt verifies that buildLoadMap propagates the
@@ -1375,11 +1473,11 @@ func TestLoadMap_SampleRateAt(t *testing.T) {
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, 12345.5, lm.sampleRateAt(0, assignment.HashRange{Lo: 0, Hi: 999}))
-	assert.Equal(t, 6789.25, lm.sampleRateAt(1, assignment.HashRange{Lo: 1000, Hi: 1999}))
-	assert.Equal(t, 0.0, lm.sampleRateAt(0, assignment.HashRange{Lo: 5000, Hi: 6000}))
+	assert.Equal(t, 12345.5, lm.sampleRateAt("", 0, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, 6789.25, lm.sampleRateAt("", 1, assignment.HashRange{Lo: 1000, Hi: 1999}))
+	assert.Equal(t, 0.0, lm.sampleRateAt("", 0, assignment.HashRange{Lo: 5000, Hi: 6000}))
 	// Different partition is a different key.
-	assert.Equal(t, 0.0, lm.sampleRateAt(1, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, 0.0, lm.sampleRateAt("", 1, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
 // TestRunSlicer_SeriesOnlyReporterProducesNoMoves verifies that with
@@ -1403,7 +1501,7 @@ func TestRunSlicer_SeriesOnlyReporterProducesNoMoves(t *testing.T) {
 
 	r := &Rebalancer{
 		cfg:           seriesCfg(0.5),
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 	_, actions := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 
@@ -1433,9 +1531,9 @@ func TestLoadMap_SeriesOnlyReporterContributesZeroLoad(t *testing.T) {
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(42), lm.seriesAt(0, hr),
+	assert.Equal(t, int64(42), lm.seriesAt("", 0, hr),
 		"series count is still surfaced for observability")
-	assert.Equal(t, 0.0, lm.sampleRateAt(0, hr),
+	assert.Equal(t, 0.0, lm.sampleRateAt("", 0, hr),
 		"reporters with no sampleRate contribute zero to the slicer's load signal")
 }
 
@@ -1645,7 +1743,7 @@ func TestRunSlicer_ResidueDoesNotDriveMoves(t *testing.T) {
 
 	r := &Rebalancer{
 		cfg:           seriesCfg(0.5),
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 
 	// The production code path: filter residue against the current
@@ -1732,7 +1830,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 
 	cfg := seriesCfg(0.5)
 	cfg.MoveCooldown = 90 * time.Second
-	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[tenantRangeKey]time.Time)}
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -1779,9 +1877,9 @@ func TestRunSlicer_MoveCooldown_DisabledByZero(t *testing.T) {
 	hr := assignment.HashRange{Lo: 100, Hi: 200}
 	r := &Rebalancer{
 		cfg:           Config{MoveCooldown: 0},
-		moveCooldowns: map[assignment.HashRange]time.Time{hr: time.Now().Add(time.Hour)},
+		moveCooldowns: map[tenantRangeKey]time.Time{{hr: hr}: time.Now().Add(time.Hour)},
 	}
-	assert.False(t, r.isInMoveCooldown(time.Now(), hr),
+	assert.False(t, r.isInMoveCooldown(time.Now(), "", hr),
 		"cooldown should be disabled when MoveCooldown == 0")
 }
 
@@ -1793,20 +1891,20 @@ func TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges(t *testing.T) {
 	moved := assignment.HashRange{Lo: 1000, Hi: 1999}
 	r := &Rebalancer{
 		cfg:           Config{MoveCooldown: time.Minute},
-		moveCooldowns: map[assignment.HashRange]time.Time{moved: time.Now().Add(time.Minute)},
+		moveCooldowns: map[tenantRangeKey]time.Time{{hr: moved}: time.Now().Add(time.Minute)},
 	}
 	now := time.Now()
 
 	// Exact match.
-	assert.True(t, r.isInMoveCooldown(now, moved))
+	assert.True(t, r.isInMoveCooldown(now, "", moved))
 	// Sub-range of a recently moved range (split case).
-	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 1000, Hi: 1499}))
-	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 1500, Hi: 1999}))
+	assert.True(t, r.isInMoveCooldown(now, "", assignment.HashRange{Lo: 1000, Hi: 1499}))
+	assert.True(t, r.isInMoveCooldown(now, "", assignment.HashRange{Lo: 1500, Hi: 1999}))
 	// Super-range of a recently moved range (merge case).
-	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 500, Hi: 2500}))
+	assert.True(t, r.isInMoveCooldown(now, "", assignment.HashRange{Lo: 500, Hi: 2500}))
 	// Adjacent but not overlapping.
-	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 2000, Hi: 2500}))
-	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.False(t, r.isInMoveCooldown(now, "", assignment.HashRange{Lo: 2000, Hi: 2500}))
+	assert.False(t, r.isInMoveCooldown(now, "", assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
 // TestRunSlicer_MaxMovesPerRound_CapsPhase3 verifies the hard
@@ -1911,11 +2009,11 @@ func TestRecordMoveCooldowns_ArmsAllRelocationKinds(t *testing.T) {
 		{Kind: ActionSplit, Range: split, ToPart: 2},
 	})
 	assert.Equal(t, 3, armed)
-	assert.Contains(t, r.moveCooldowns, moved)
-	assert.Contains(t, r.moveCooldowns, reassigned)
-	assert.Contains(t, r.moveCooldowns, crossMerged)
-	assert.NotContains(t, r.moveCooldowns, sameMerged, "same-partition merges don't relocate hash space")
-	assert.NotContains(t, r.moveCooldowns, split, "cooldowning a split would block Phase 3 from placing the halves")
+	assert.Contains(t, r.moveCooldowns, tenantRangeKey{hr: moved})
+	assert.Contains(t, r.moveCooldowns, tenantRangeKey{hr: reassigned})
+	assert.Contains(t, r.moveCooldowns, tenantRangeKey{hr: crossMerged})
+	assert.NotContains(t, r.moveCooldowns, tenantRangeKey{hr: sameMerged}, "same-partition merges don't relocate hash space")
+	assert.NotContains(t, r.moveCooldowns, tenantRangeKey{hr: split}, "cooldowning a split would block Phase 3 from placing the halves")
 
 	pruned := r.pruneExpiredCooldowns(now.Add(2 * time.Minute))
 	assert.Equal(t, 3, pruned)
@@ -1969,7 +2067,7 @@ func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
 	// movable(P1) = 20000 - 12550 = 7450 (and 8*1000=8000 series of shedable load)
 
 	cfg := seriesCfg(0.5)
-	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[tenantRangeKey]time.Time)}
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
@@ -2017,7 +2115,7 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 	cfg := seriesCfg(0.5)
 	r := &Rebalancer{
 		cfg:           cfg,
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 
 	rates = withSampleRateFromSeries(rates)
@@ -2061,7 +2159,7 @@ func TestRunSlicer_PlannedAdditionsResetBetweenRounds(t *testing.T) {
 	cfg := seriesCfg(0.5)
 	r := &Rebalancer{
 		cfg:           cfg,
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -2112,7 +2210,7 @@ func TestRunPhase3_AntiOvershootCap(t *testing.T) {
 
 	r := &Rebalancer{
 		cfg:           seriesCfg(0.5),
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	actions := r.runPhase3(entries, partitionLoadByPID, activePartitions, nil, now)
@@ -2284,9 +2382,9 @@ func TestStitchReportedEntries_FullyCoveredRangeIsDropped(t *testing.T) {
 // TestStitchReportedEntries_EmptyInputReturnsFullRoundRobin verifies
 // that with no reported entries the stitch emits a single filler
 // covering [0, MaxUint32]. In production this path is unused because
-// reconstructAssignment short-circuits to FineEvenSplit when no ranges
-// are reported; this test exists to document stitch's behavior in
-// isolation.
+// reconstruction short-circuits to an empty tenant assignment when no
+// ranges are reported; this legacy helper test documents stitch's behavior
+// in isolation.
 func TestStitchReportedEntries_EmptyInputReturnsFullRoundRobin(t *testing.T) {
 	out := stitchReportedEntries(nil, []int32{5, 6}, log.NewNopLogger())
 	require.Len(t, out, 1)

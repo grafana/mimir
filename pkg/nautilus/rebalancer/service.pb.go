@@ -30,22 +30,11 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type WatchAssignmentsRequest struct {
-	// supports_deltas opts the subscriber into incremental updates:
-	// the server still sends a full snapshot (reset=true) as the first
-	// message, but subsequent broadcasts carry only the entries
-	// created or mutated since the previous message on this stream
-	// (reset=false), which the client must upsert into its local log
-	// by lease identity (lo, hi, partition_id, from_unix_ms). Leases
-	// are never deleted by the rebalancer — preemption rewrites
-	// to_unix_ms in place (possibly to a zero-length [from, from)
-	// window) — so upsert plus client-side pruning by
-	// prune_before_unix_ms reconstructs the server's log exactly.
-	//
-	// When false (old clients), every message is a full snapshot the
-	// client replaces wholesale, which at production subscriber counts
-	// resends the entire retention window (~hours of lease history)
-	// every rebalance round.
-	SupportsDeltas bool `protobuf:"varint,1,opt,name=supports_deltas,json=supportsDeltas,proto3" json:"supports_deltas,omitempty"`
+	// supports_tenant_scoped_assignments declares that the subscriber keys
+	// entries by tenant_id as well as range identity. This capability is
+	// mandatory; the server rejects a subscriber that does not declare it,
+	// including while the assignment is empty.
+	SupportsTenantScopedAssignments bool `protobuf:"varint,2,opt,name=supports_tenant_scoped_assignments,json=supportsTenantScopedAssignments,proto3" json:"supports_tenant_scoped_assignments,omitempty"`
 }
 
 func (m *WatchAssignmentsRequest) Reset()      { *m = WatchAssignmentsRequest{} }
@@ -80,21 +69,21 @@ func (m *WatchAssignmentsRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WatchAssignmentsRequest proto.InternalMessageInfo
 
-func (m *WatchAssignmentsRequest) GetSupportsDeltas() bool {
+func (m *WatchAssignmentsRequest) GetSupportsTenantScopedAssignments() bool {
 	if m != nil {
-		return m.SupportsDeltas
+		return m.SupportsTenantScopedAssignments
 	}
 	return false
 }
 
 // WatchAssignmentsResponse carries either a full snapshot of the
 // rebalancer's assignment log (reset=true) or an incremental delta
-// (reset=false; only sent to subscribers that set supports_deltas).
+// (reset=false).
 type WatchAssignmentsResponse struct {
 	Entries []LogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
 	// reset=true: entries is a complete snapshot; replace any local
 	// state. reset=false: entries are upserts keyed by
-	// (lo, hi, partition_id, from_unix_ms).
+	// (tenant_id, lo, hi, partition_id, from_unix_ms).
 	Reset_ bool `protobuf:"varint,2,opt,name=reset,proto3" json:"reset,omitempty"`
 	// prune_before_unix_ms is the server's retention horizon at
 	// broadcast time: entries whose to_unix_ms is strictly before it
@@ -103,6 +92,11 @@ type WatchAssignmentsResponse struct {
 	// skip pruning, matching the historical replace-wholesale
 	// behavior where snapshots were already retention-bounded.
 	PruneBeforeUnixMs int64 `protobuf:"varint,3,opt,name=prune_before_unix_ms,json=pruneBeforeUnixMs,proto3" json:"prune_before_unix_ms,omitempty"`
+	// assignment_generation changes only when range placement changes.
+	// assignment_valid_until_unix_ms is the global heartbeat deadline after
+	// which consumers must stop trusting this generation unless refreshed.
+	AssignmentGeneration       uint64 `protobuf:"varint,4,opt,name=assignment_generation,json=assignmentGeneration,proto3" json:"assignment_generation,omitempty"`
+	AssignmentValidUntilUnixMs int64  `protobuf:"varint,5,opt,name=assignment_valid_until_unix_ms,json=assignmentValidUntilUnixMs,proto3" json:"assignment_valid_until_unix_ms,omitempty"`
 }
 
 func (m *WatchAssignmentsResponse) Reset()      { *m = WatchAssignmentsResponse{} }
@@ -158,6 +152,20 @@ func (m *WatchAssignmentsResponse) GetPruneBeforeUnixMs() int64 {
 	return 0
 }
 
+func (m *WatchAssignmentsResponse) GetAssignmentGeneration() uint64 {
+	if m != nil {
+		return m.AssignmentGeneration
+	}
+	return 0
+}
+
+func (m *WatchAssignmentsResponse) GetAssignmentValidUntilUnixMs() int64 {
+	if m != nil {
+		return m.AssignmentValidUntilUnixMs
+	}
+	return 0
+}
+
 // LogEntry is the wire representation of a single (partition, hash
 // range) ownership lease that is valid during the wall-clock window
 // [from_unix_ms, to_unix_ms). Leases are time-boxed: to_unix_ms is
@@ -179,6 +187,9 @@ type LogEntry struct {
 	// leases by comparing to_unix_ms against their local clock.
 	FromUnixMs int64 `protobuf:"varint,4,opt,name=from_unix_ms,json=fromUnixMs,proto3" json:"from_unix_ms,omitempty"`
 	ToUnixMs   int64 `protobuf:"varint,5,opt,name=to_unix_ms,json=toUnixMs,proto3" json:"to_unix_ms,omitempty"`
+	// tenant_id scopes the hash-range tiling. Empty preserves the legacy
+	// single-tenant assignment namespace.
+	TenantId string `protobuf:"bytes,6,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 }
 
 func (m *LogEntry) Reset()      { *m = LogEntry{} }
@@ -248,11 +259,14 @@ func (m *LogEntry) GetToUnixMs() int64 {
 	return 0
 }
 
+func (m *LogEntry) GetTenantId() string {
+	if m != nil {
+		return m.TenantId
+	}
+	return ""
+}
+
 type WatchReadcacheAssignmentsRequest struct {
-	// supports_deltas mirrors WatchAssignmentsRequest.supports_deltas;
-	// delta entries are upserts keyed by
-	// (partition_id, instance_id, from_unix_ms).
-	SupportsDeltas bool `protobuf:"varint,1,opt,name=supports_deltas,json=supportsDeltas,proto3" json:"supports_deltas,omitempty"`
 }
 
 func (m *WatchReadcacheAssignmentsRequest) Reset()      { *m = WatchReadcacheAssignmentsRequest{} }
@@ -287,17 +301,10 @@ func (m *WatchReadcacheAssignmentsRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WatchReadcacheAssignmentsRequest proto.InternalMessageInfo
 
-func (m *WatchReadcacheAssignmentsRequest) GetSupportsDeltas() bool {
-	if m != nil {
-		return m.SupportsDeltas
-	}
-	return false
-}
-
 // WatchReadcacheAssignmentsResponse carries either a full snapshot
 // of the rebalancer's readcache-assignment log (reset=true) or an
-// incremental delta (reset=false; only sent to subscribers that set
-// supports_deltas). Field semantics mirror WatchAssignmentsResponse.
+// incremental delta (reset=false). Field semantics mirror
+// WatchAssignmentsResponse.
 type WatchReadcacheAssignmentsResponse struct {
 	Entries           []ReadcacheLogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
 	Reset_            bool                `protobuf:"varint,2,opt,name=reset,proto3" json:"reset,omitempty"`
@@ -658,6 +665,9 @@ type SpotlightedRange struct {
 	// segment spotlights when correlating decision-time logs with
 	// post-decision observations.
 	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	// tenant_id scopes the numeric hash range to one tenant's independent
+	// uint32 hash space.
+	TenantId string `protobuf:"bytes,9,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 }
 
 func (m *SpotlightedRange) Reset()      { *m = SpotlightedRange{} }
@@ -748,6 +758,13 @@ func (m *SpotlightedRange) GetReason() string {
 	return ""
 }
 
+func (m *SpotlightedRange) GetTenantId() string {
+	if m != nil {
+		return m.TenantId
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*WatchAssignmentsRequest)(nil), "nautilus.rebalancer.WatchAssignmentsRequest")
 	proto.RegisterType((*WatchAssignmentsResponse)(nil), "nautilus.rebalancer.WatchAssignmentsResponse")
@@ -765,56 +782,63 @@ func init() {
 func init() { proto.RegisterFile("service.proto", fileDescriptor_a0b84a42fa06f626) }
 
 var fileDescriptor_a0b84a42fa06f626 = []byte{
-	// 778 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0x4d, 0x4f, 0xe3, 0x46,
-	0x18, 0xce, 0x38, 0x21, 0x84, 0x37, 0x84, 0xc0, 0x10, 0xb5, 0x21, 0x05, 0x13, 0x2c, 0x95, 0x46,
-	0xa5, 0x0d, 0x94, 0xaa, 0xbd, 0x55, 0x2a, 0xe9, 0x07, 0x8a, 0xfa, 0xa1, 0xd6, 0xa8, 0xaa, 0xd4,
-	0x4b, 0x64, 0xec, 0x21, 0x19, 0xc9, 0x78, 0xcc, 0xcc, 0xa4, 0xa2, 0xad, 0x2a, 0xf5, 0xd2, 0x5b,
-	0x2b, 0x55, 0xe2, 0xd0, 0xeb, 0x1e, 0xf7, 0xa7, 0x70, 0xe4, 0xc8, 0x69, 0xb5, 0x84, 0xcb, 0x1e,
-	0xf9, 0x09, 0x2b, 0x4f, 0x26, 0x26, 0x38, 0x26, 0x0b, 0x5a, 0xed, 0xcd, 0xf3, 0x7e, 0x3d, 0xaf,
-	0x9f, 0xe7, 0x19, 0x1b, 0x4a, 0x82, 0xf0, 0x5f, 0xa9, 0x4b, 0x9a, 0x21, 0x67, 0x92, 0xe1, 0xe5,
-	0xc0, 0xe9, 0x4b, 0xea, 0xf7, 0x45, 0x93, 0x93, 0x43, 0xc7, 0x77, 0x02, 0x97, 0xf0, 0x5a, 0xa5,
-	0xcb, 0xba, 0x4c, 0xe5, 0xb7, 0xa3, 0xa7, 0x61, 0xa9, 0xd5, 0x82, 0xb7, 0x7f, 0x76, 0xa4, 0xdb,
-	0xdb, 0x13, 0x82, 0x76, 0x83, 0x63, 0x12, 0x48, 0x61, 0x93, 0x93, 0x3e, 0x11, 0x12, 0xbf, 0x07,
-	0x65, 0xd1, 0x0f, 0x43, 0xc6, 0xa5, 0xe8, 0x78, 0xc4, 0x97, 0x8e, 0xa8, 0xa2, 0x3a, 0x6a, 0x14,
-	0xec, 0x85, 0x51, 0xf8, 0x4b, 0x15, 0xb5, 0x9e, 0x20, 0xa8, 0x4e, 0x0e, 0x11, 0x21, 0x0b, 0x04,
-	0xc1, 0x9f, 0xc1, 0x2c, 0x09, 0x24, 0xa7, 0x24, 0xea, 0xce, 0x36, 0x8a, 0xbb, 0x6b, 0xcd, 0x94,
-	0xed, 0x9a, 0xdf, 0xb2, 0xee, 0x57, 0x81, 0xe4, 0xbf, 0xb5, 0x72, 0xe7, 0xcf, 0xd6, 0x33, 0xf6,
-	0xa8, 0x07, 0x57, 0x60, 0x86, 0x13, 0x41, 0x64, 0xd5, 0x50, 0xd0, 0xc3, 0x03, 0xde, 0x86, 0x4a,
-	0xc8, 0xfb, 0x01, 0xe9, 0x1c, 0x92, 0x23, 0xc6, 0x49, 0xa7, 0x1f, 0xd0, 0xd3, 0xce, 0xb1, 0xa8,
-	0x66, 0xeb, 0xa8, 0x91, 0xb5, 0x97, 0x54, 0xae, 0xa5, 0x52, 0x3f, 0x05, 0xf4, 0xf4, 0x3b, 0x61,
-	0xfd, 0x8b, 0xa0, 0x30, 0x82, 0xc0, 0x0b, 0x60, 0xf8, 0x4c, 0xbd, 0x4b, 0xc9, 0x36, 0x7c, 0x16,
-	0x9d, 0x7b, 0x54, 0x01, 0x94, 0x6c, 0xa3, 0x47, 0xf1, 0x06, 0xcc, 0x87, 0x0e, 0x97, 0x54, 0x52,
-	0x16, 0x74, 0xa8, 0xa7, 0xa6, 0xce, 0xd8, 0xc5, 0x38, 0xd6, 0xf6, 0x70, 0x1d, 0xe6, 0x8f, 0x38,
-	0x3b, 0x8e, 0x81, 0x73, 0x0a, 0x18, 0xa2, 0xd8, 0x10, 0x11, 0xaf, 0x02, 0x48, 0x16, 0xe7, 0x67,
-	0x54, 0xbe, 0x20, 0x99, 0xde, 0xe7, 0x1b, 0xa8, 0x2b, 0xc6, 0x6c, 0xe2, 0x78, 0xae, 0xe3, 0xf6,
-	0xc8, 0xeb, 0xf0, 0xff, 0xb7, 0x01, 0x1b, 0x53, 0xa6, 0x69, 0x21, 0xbe, 0x4e, 0x0a, 0xb1, 0x99,
-	0x2a, 0x44, 0x3c, 0xe3, 0xcd, 0x2a, 0x82, 0x7f, 0x84, 0x79, 0x4e, 0x42, 0x9f, 0xba, 0x4e, 0x47,
-	0x10, 0x19, 0x31, 0x18, 0xed, 0xd4, 0x98, 0xbe, 0x93, 0x3d, 0xec, 0x38, 0x20, 0x52, 0x6f, 0x55,
-	0xe4, 0x71, 0x44, 0x58, 0x7f, 0xc2, 0x72, 0x4a, 0x25, 0x5e, 0x03, 0xf0, 0x59, 0x97, 0xba, 0x8e,
-	0x1f, 0x89, 0x19, 0x51, 0x38, 0x67, 0xcf, 0xe9, 0x48, 0xdb, 0xc3, 0xfb, 0x50, 0xd0, 0x43, 0x44,
-	0xd5, 0x50, 0x4b, 0xbc, 0xfb, 0xa0, 0x25, 0xf4, 0x06, 0x71, 0xb3, 0xb5, 0x0f, 0x8b, 0xc9, 0x1a,
-	0xbc, 0x0e, 0x45, 0x1a, 0x08, 0x19, 0x4d, 0xb8, 0x05, 0x87, 0x51, 0xa8, 0xed, 0x61, 0x0c, 0xb9,
-	0xdf, 0x59, 0x40, 0x14, 0x99, 0x73, 0xb6, 0x7a, 0xb6, 0xfe, 0x47, 0xb0, 0x34, 0x21, 0xc3, 0x84,
-	0x2b, 0xd1, 0xa4, 0x2b, 0x13, 0x68, 0xc6, 0x04, 0x5a, 0xd2, 0xb6, 0xd9, 0x57, 0xd8, 0x36, 0x97,
-	0xb0, 0xed, 0x1a, 0xbc, 0xb3, 0x4f, 0xe4, 0x41, 0xc8, 0xa4, 0x4f, 0xbb, 0x3d, 0x49, 0x3c, 0xdb,
-	0x09, 0xba, 0x64, 0xe4, 0x58, 0xcb, 0x85, 0xd5, 0xf4, 0xb4, 0xb6, 0xe0, 0x17, 0x90, 0xe7, 0x2a,
-	0xa2, 0x1d, 0x98, 0x4e, 0x74, 0xb2, 0x5f, 0x13, 0xad, 0x5b, 0xad, 0x33, 0x03, 0x16, 0x93, 0x25,
-	0x78, 0x05, 0x0a, 0x92, 0x3b, 0xe3, 0x24, 0xcf, 0xaa, 0x73, 0xdb, 0xd3, 0xb7, 0xdd, 0x48, 0xdc,
-	0xf6, 0x6c, 0x7c, 0xdb, 0xb7, 0x00, 0x0b, 0xe9, 0x70, 0x49, 0xbc, 0x8e, 0x23, 0x13, 0x6f, 0x5e,
-	0xd6, 0x99, 0x3d, 0xa9, 0xe9, 0xd9, 0x02, 0x4c, 0x4e, 0x43, 0xca, 0x89, 0x18, 0x2f, 0x1e, 0xde,
-	0xee, 0xb2, 0xce, 0xc4, 0xc5, 0xef, 0xc3, 0x92, 0x62, 0xfb, 0x8e, 0x6c, 0x79, 0x25, 0x5b, 0x39,
-	0x4a, 0xfc, 0x30, 0x26, 0xdd, 0x26, 0x94, 0x25, 0xbb, 0x5b, 0x39, 0xab, 0x2a, 0x4b, 0x92, 0x8d,
-	0xd7, 0xbd, 0x05, 0x79, 0x4e, 0x1c, 0xc1, 0x82, 0x6a, 0x41, 0xbd, 0xa6, 0x3e, 0xed, 0x9e, 0x65,
-	0x01, 0x7f, 0xaf, 0xc9, 0xb4, 0x63, 0x2e, 0xf1, 0x09, 0x2c, 0x26, 0xbf, 0xcc, 0xf8, 0x83, 0x54,
-	0xd6, 0xef, 0xf9, 0x0b, 0xd4, 0x3e, 0x7c, 0x60, 0xf5, 0x50, 0xe2, 0x1d, 0x84, 0xff, 0x41, 0xb0,
-	0x72, 0xef, 0xd7, 0x08, 0x7f, 0x72, 0xff, 0xb8, 0x29, 0xdf, 0xc2, 0xda, 0xa7, 0x8f, 0x6d, 0x8b,
-	0xd7, 0xf9, 0x03, 0x2a, 0x69, 0x9e, 0xc4, 0x3b, 0xa9, 0x13, 0xa7, 0xb8, 0xbb, 0xf6, 0xd1, 0x23,
-	0x3a, 0x86, 0xf0, 0xad, 0xcf, 0x2f, 0xae, 0xcc, 0xcc, 0xe5, 0x95, 0x99, 0xb9, 0xb9, 0x32, 0xd1,
-	0x5f, 0x03, 0x13, 0x3d, 0x1d, 0x98, 0xe8, 0x7c, 0x60, 0xa2, 0x8b, 0x81, 0x89, 0x9e, 0x0f, 0x4c,
-	0xf4, 0x62, 0x60, 0x66, 0x6e, 0x06, 0x26, 0xfa, 0xef, 0xda, 0xcc, 0x5c, 0x5c, 0x9b, 0x99, 0xcb,
-	0x6b, 0x33, 0xf3, 0x0b, 0xdc, 0x8e, 0x3f, 0xcc, 0xab, 0xdf, 0xf4, 0xc7, 0x2f, 0x03, 0x00, 0x00,
-	0xff, 0xff, 0x24, 0x05, 0x14, 0xd5, 0xe2, 0x07, 0x00, 0x00,
+	// 884 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x56, 0x4f, 0x6f, 0x1b, 0x45,
+	0x14, 0xf7, 0xac, 0x1d, 0xc7, 0x7e, 0x49, 0x70, 0x32, 0x35, 0xe0, 0xba, 0xcd, 0xc6, 0x5d, 0x89,
+	0xca, 0xa2, 0x90, 0x96, 0x56, 0x20, 0x71, 0x40, 0xa2, 0x41, 0x10, 0x99, 0x7f, 0x82, 0x0d, 0x05,
+	0x89, 0xcb, 0x6a, 0xb2, 0x3b, 0xb5, 0x47, 0xda, 0xcc, 0x6c, 0x67, 0xc6, 0x55, 0x00, 0x55, 0xe2,
+	0xc2, 0x8d, 0x03, 0x12, 0x07, 0xc4, 0x37, 0x40, 0x9c, 0xf8, 0x18, 0x3d, 0xe6, 0xd8, 0x13, 0x22,
+	0xce, 0x85, 0x63, 0x3f, 0x02, 0xda, 0xd9, 0xf1, 0xda, 0x5e, 0x6f, 0x42, 0x7b, 0xe8, 0xcd, 0xf3,
+	0xde, 0xef, 0xfd, 0xfb, 0xbd, 0xdf, 0xcc, 0x1a, 0x36, 0x14, 0x95, 0x0f, 0x59, 0x48, 0x77, 0x13,
+	0x29, 0xb4, 0xc0, 0x97, 0x38, 0x19, 0x6b, 0x16, 0x8f, 0xd5, 0xae, 0xa4, 0x87, 0x24, 0x26, 0x3c,
+	0xa4, 0xb2, 0xdb, 0x1e, 0x8a, 0xa1, 0x30, 0xfe, 0x9b, 0xe9, 0xaf, 0x0c, 0xea, 0x3d, 0x82, 0x57,
+	0xbf, 0x21, 0x3a, 0x1c, 0xdd, 0x55, 0x8a, 0x0d, 0xf9, 0x11, 0xe5, 0x5a, 0xf9, 0xf4, 0xc1, 0x98,
+	0x2a, 0x8d, 0x3f, 0x01, 0x4f, 0x8d, 0x93, 0x44, 0x48, 0xad, 0x02, 0x4d, 0x39, 0xe1, 0x3a, 0x50,
+	0xa1, 0x48, 0x68, 0x14, 0x90, 0x19, 0xb8, 0xe3, 0xf4, 0x50, 0xbf, 0xe1, 0xef, 0x4c, 0x91, 0x5f,
+	0x19, 0xe0, 0x81, 0xc1, 0xcd, 0xe5, 0xfc, 0xb8, 0xd6, 0x40, 0x9b, 0x8e, 0xdf, 0xca, 0x13, 0x46,
+	0x34, 0xd6, 0x44, 0x79, 0xbf, 0x3b, 0xd0, 0x59, 0xae, 0xaf, 0x12, 0xc1, 0x15, 0xc5, 0xef, 0xc1,
+	0x2a, 0xe5, 0x5a, 0x32, 0xaa, 0x3a, 0xa8, 0x57, 0xed, 0xaf, 0xdd, 0xde, 0xde, 0x2d, 0x19, 0x6c,
+	0xf7, 0x53, 0x31, 0xfc, 0x90, 0x6b, 0xf9, 0xdd, 0x5e, 0xed, 0xf1, 0xdf, 0x3b, 0x15, 0x7f, 0x1a,
+	0x83, 0xdb, 0xb0, 0x22, 0xa9, 0xa2, 0xda, 0xb6, 0x98, 0x1d, 0xf0, 0x4d, 0x68, 0x27, 0x72, 0xcc,
+	0x69, 0x70, 0x48, 0xef, 0x0b, 0x49, 0x83, 0x31, 0x67, 0xc7, 0xc1, 0x91, 0xea, 0x54, 0x7b, 0xa8,
+	0x5f, 0xf5, 0xb7, 0x8c, 0x6f, 0xcf, 0xb8, 0xee, 0x71, 0x76, 0xfc, 0x99, 0xc2, 0x77, 0xe0, 0xe5,
+	0xd9, 0xbc, 0xc1, 0x90, 0x72, 0x2a, 0x89, 0x66, 0x82, 0x77, 0x6a, 0x3d, 0xd4, 0xaf, 0xf9, 0xed,
+	0x99, 0x73, 0x3f, 0xf7, 0xe1, 0x3d, 0x70, 0xe7, 0x82, 0x1e, 0x92, 0x98, 0x45, 0xc1, 0x98, 0x6b,
+	0x16, 0xe7, 0xf5, 0x56, 0x4c, 0xbd, 0xee, 0x0c, 0xf5, 0x75, 0x0a, 0xba, 0x97, 0x62, 0xb2, 0xc2,
+	0xde, 0x9f, 0x08, 0x1a, 0xd3, 0xd9, 0xf0, 0x4b, 0xe0, 0xc4, 0xa2, 0x83, 0x7a, 0xa8, 0xbf, 0xe1,
+	0x3b, 0xb1, 0x48, 0xcf, 0x23, 0x66, 0x26, 0xdb, 0xf0, 0x9d, 0x11, 0xc3, 0xd7, 0x60, 0x3d, 0x21,
+	0x52, 0xb3, 0xb4, 0x7a, 0xc0, 0x22, 0x33, 0xce, 0x8a, 0xbf, 0x96, 0xdb, 0x06, 0x11, 0xee, 0xc1,
+	0xfa, 0x7d, 0x29, 0x8e, 0xf2, 0x0e, 0x6a, 0xa6, 0x03, 0x48, 0x6d, 0x76, 0xd4, 0xab, 0x00, 0x5a,
+	0x14, 0x3a, 0x6c, 0x68, 0x61, 0xbd, 0x57, 0xa0, 0x69, 0x65, 0xc0, 0xa2, 0x4e, 0xbd, 0x87, 0xfa,
+	0x4d, 0xbf, 0x91, 0x19, 0x06, 0x91, 0xf7, 0x2e, 0xf4, 0xcc, 0x1e, 0x7d, 0x4a, 0xa2, 0x90, 0x84,
+	0x23, 0xba, 0x2c, 0xa8, 0xf3, 0x34, 0xf0, 0x93, 0x03, 0xd7, 0x2e, 0x88, 0xb5, 0x62, 0xf8, 0xa8,
+	0x28, 0x86, 0xeb, 0xa5, 0x62, 0xc8, 0x73, 0xbc, 0x60, 0x55, 0x7c, 0x09, 0xeb, 0x92, 0x26, 0x31,
+	0x0b, 0x49, 0xa0, 0xa8, 0x4e, 0xc9, 0x4c, 0x7b, 0xea, 0x5f, 0xdc, 0x93, 0x9f, 0x45, 0x1c, 0x50,
+	0x6d, 0xbb, 0x5a, 0x93, 0xb9, 0x45, 0x79, 0x8f, 0xe0, 0x52, 0x09, 0x12, 0x6f, 0x03, 0xc4, 0x62,
+	0xc8, 0x42, 0x12, 0xa7, 0xbc, 0x23, 0xc3, 0x7b, 0xd3, 0x5a, 0x06, 0x11, 0xde, 0x87, 0x86, 0x4d,
+	0x92, 0xde, 0xc5, 0xb4, 0x89, 0xd7, 0x9e, 0xa9, 0x09, 0xdb, 0x41, 0x1e, 0xec, 0xed, 0xc3, 0x66,
+	0x11, 0x83, 0x77, 0x60, 0x8d, 0x71, 0xa5, 0xd3, 0x0c, 0xb3, 0xe2, 0x30, 0x35, 0x0d, 0x22, 0x8c,
+	0xa1, 0xf6, 0xbd, 0xe0, 0xd4, 0x90, 0xd9, 0xf4, 0xcd, 0x6f, 0xef, 0x37, 0x04, 0x5b, 0x4b, 0x6b,
+	0x58, 0x12, 0x28, 0x5a, 0x16, 0x68, 0xa1, 0x9a, 0xb3, 0x54, 0xad, 0xa8, 0xe0, 0xea, 0xff, 0x28,
+	0xb8, 0xb6, 0xa8, 0x60, 0x6f, 0x1b, 0xae, 0xec, 0x53, 0x7d, 0x90, 0x08, 0x1d, 0xb3, 0xe1, 0x48,
+	0xd3, 0xc8, 0x27, 0x7c, 0x48, 0xa7, 0xfa, 0xf4, 0x42, 0xb8, 0x5a, 0xee, 0xb6, 0x12, 0xfc, 0x00,
+	0xea, 0xd2, 0x58, 0xac, 0x02, 0xcb, 0x89, 0x2e, 0xc6, 0x5b, 0xa2, 0x6d, 0xa8, 0xf7, 0x97, 0x03,
+	0x9b, 0x45, 0x08, 0xbe, 0x0c, 0x0d, 0x2d, 0xc9, 0x3c, 0xc9, 0xab, 0xe6, 0x3c, 0x88, 0xec, 0xc5,
+	0x77, 0x0a, 0x17, 0xbf, 0x9a, 0x5f, 0xfc, 0x1b, 0x80, 0x95, 0x26, 0x52, 0xa7, 0xcf, 0xb2, 0x2e,
+	0x4c, 0xde, 0xb2, 0x9e, 0xbb, 0xda, 0xd2, 0x73, 0x03, 0x30, 0x3d, 0x4e, 0x98, 0xa4, 0x6a, 0x1e,
+	0x9c, 0x5d, 0xf4, 0x96, 0xf5, 0xe4, 0xe0, 0xd7, 0x61, 0xcb, 0xb0, 0xbd, 0xb0, 0xb6, 0xba, 0x59,
+	0x5b, 0x2b, 0x75, 0x7c, 0x31, 0xb7, 0xba, 0xeb, 0xd0, 0xd2, 0x62, 0x11, 0xb9, 0x6a, 0x90, 0x1b,
+	0x5a, 0xcc, 0xe3, 0x5e, 0x81, 0xba, 0xa4, 0x44, 0x09, 0xde, 0x69, 0x98, 0x31, 0xed, 0x69, 0xf1,
+	0x6d, 0x69, 0x2e, 0xbe, 0x2d, 0xb7, 0x7f, 0xad, 0x02, 0xfe, 0xdc, 0x32, 0xed, 0xe7, 0x44, 0xe3,
+	0x07, 0xb0, 0x59, 0xfc, 0x74, 0xe0, 0x37, 0x4a, 0x57, 0x72, 0xce, 0x17, 0xae, 0xfb, 0xe6, 0x33,
+	0xa2, 0xb3, 0xfd, 0xdf, 0x42, 0xf8, 0x67, 0x04, 0x97, 0xcf, 0x7d, 0xaa, 0xf0, 0xdb, 0xe7, 0xa7,
+	0xbb, 0xe0, 0x59, 0xec, 0xbe, 0xf3, 0xbc, 0x61, 0x79, 0x3b, 0x3f, 0x40, 0xbb, 0x4c, 0xb0, 0xf8,
+	0x56, 0x69, 0xc6, 0x0b, 0xa4, 0xdf, 0x7d, 0xeb, 0x39, 0x22, 0xb2, 0xf2, 0x7b, 0xef, 0x9f, 0x9c,
+	0xba, 0x95, 0x27, 0xa7, 0x6e, 0xe5, 0xe9, 0xa9, 0x8b, 0x7e, 0x9c, 0xb8, 0xe8, 0x8f, 0x89, 0x8b,
+	0x1e, 0x4f, 0x5c, 0x74, 0x32, 0x71, 0xd1, 0x3f, 0x13, 0x17, 0xfd, 0x3b, 0x71, 0x2b, 0x4f, 0x27,
+	0x2e, 0xfa, 0xe5, 0xcc, 0xad, 0x9c, 0x9c, 0xb9, 0x95, 0x27, 0x67, 0x6e, 0xe5, 0x5b, 0x98, 0xa5,
+	0x3f, 0xac, 0x9b, 0xbf, 0x20, 0x77, 0xfe, 0x0b, 0x00, 0x00, 0xff, 0xff, 0x52, 0x9c, 0x6b, 0xd6,
+	0xbe, 0x08, 0x00, 0x00,
 }
 
 func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
@@ -836,7 +860,7 @@ func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.SupportsDeltas != that1.SupportsDeltas {
+	if this.SupportsTenantScopedAssignments != that1.SupportsTenantScopedAssignments {
 		return false
 	}
 	return true
@@ -872,6 +896,12 @@ func (this *WatchAssignmentsResponse) Equal(that interface{}) bool {
 		return false
 	}
 	if this.PruneBeforeUnixMs != that1.PruneBeforeUnixMs {
+		return false
+	}
+	if this.AssignmentGeneration != that1.AssignmentGeneration {
+		return false
+	}
+	if this.AssignmentValidUntilUnixMs != that1.AssignmentValidUntilUnixMs {
 		return false
 	}
 	return true
@@ -910,6 +940,9 @@ func (this *LogEntry) Equal(that interface{}) bool {
 	if this.ToUnixMs != that1.ToUnixMs {
 		return false
 	}
+	if this.TenantId != that1.TenantId {
+		return false
+	}
 	return true
 }
 func (this *WatchReadcacheAssignmentsRequest) Equal(that interface{}) bool {
@@ -929,9 +962,6 @@ func (this *WatchReadcacheAssignmentsRequest) Equal(that interface{}) bool {
 	if that1 == nil {
 		return this == nil
 	} else if this == nil {
-		return false
-	}
-	if this.SupportsDeltas != that1.SupportsDeltas {
 		return false
 	}
 	return true
@@ -1164,6 +1194,9 @@ func (this *SpotlightedRange) Equal(that interface{}) bool {
 	if this.Reason != that1.Reason {
 		return false
 	}
+	if this.TenantId != that1.TenantId {
+		return false
+	}
 	return true
 }
 func (this *WatchAssignmentsRequest) GoString() string {
@@ -1172,7 +1205,7 @@ func (this *WatchAssignmentsRequest) GoString() string {
 	}
 	s := make([]string, 0, 5)
 	s = append(s, "&rebalancer.WatchAssignmentsRequest{")
-	s = append(s, "SupportsDeltas: "+fmt.Sprintf("%#v", this.SupportsDeltas)+",\n")
+	s = append(s, "SupportsTenantScopedAssignments: "+fmt.Sprintf("%#v", this.SupportsTenantScopedAssignments)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1180,7 +1213,7 @@ func (this *WatchAssignmentsResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 9)
 	s = append(s, "&rebalancer.WatchAssignmentsResponse{")
 	if this.Entries != nil {
 		vs := make([]LogEntry, len(this.Entries))
@@ -1191,6 +1224,8 @@ func (this *WatchAssignmentsResponse) GoString() string {
 	}
 	s = append(s, "Reset_: "+fmt.Sprintf("%#v", this.Reset_)+",\n")
 	s = append(s, "PruneBeforeUnixMs: "+fmt.Sprintf("%#v", this.PruneBeforeUnixMs)+",\n")
+	s = append(s, "AssignmentGeneration: "+fmt.Sprintf("%#v", this.AssignmentGeneration)+",\n")
+	s = append(s, "AssignmentValidUntilUnixMs: "+fmt.Sprintf("%#v", this.AssignmentValidUntilUnixMs)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1198,13 +1233,14 @@ func (this *LogEntry) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 9)
+	s := make([]string, 0, 10)
 	s = append(s, "&rebalancer.LogEntry{")
 	s = append(s, "Lo: "+fmt.Sprintf("%#v", this.Lo)+",\n")
 	s = append(s, "Hi: "+fmt.Sprintf("%#v", this.Hi)+",\n")
 	s = append(s, "PartitionId: "+fmt.Sprintf("%#v", this.PartitionId)+",\n")
 	s = append(s, "FromUnixMs: "+fmt.Sprintf("%#v", this.FromUnixMs)+",\n")
 	s = append(s, "ToUnixMs: "+fmt.Sprintf("%#v", this.ToUnixMs)+",\n")
+	s = append(s, "TenantId: "+fmt.Sprintf("%#v", this.TenantId)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1212,9 +1248,8 @@ func (this *WatchReadcacheAssignmentsRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 5)
+	s := make([]string, 0, 4)
 	s = append(s, "&rebalancer.WatchReadcacheAssignmentsRequest{")
-	s = append(s, "SupportsDeltas: "+fmt.Sprintf("%#v", this.SupportsDeltas)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1313,7 +1348,7 @@ func (this *SpotlightedRange) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 12)
+	s := make([]string, 0, 13)
 	s = append(s, "&rebalancer.SpotlightedRange{")
 	s = append(s, "TraceId: "+fmt.Sprintf("%#v", this.TraceId)+",\n")
 	s = append(s, "Lo: "+fmt.Sprintf("%#v", this.Lo)+",\n")
@@ -1323,6 +1358,7 @@ func (this *SpotlightedRange) GoString() string {
 	s = append(s, "FromPartitionId: "+fmt.Sprintf("%#v", this.FromPartitionId)+",\n")
 	s = append(s, "ToPartitionId: "+fmt.Sprintf("%#v", this.ToPartitionId)+",\n")
 	s = append(s, "Reason: "+fmt.Sprintf("%#v", this.Reason)+",\n")
+	s = append(s, "TenantId: "+fmt.Sprintf("%#v", this.TenantId)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1349,12 +1385,10 @@ const _ = grpc.SupportPackageIsVersion4
 type NautilusRebalancerClient interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
 	// The server sends the current full snapshot immediately on
-	// connect. Subsequent messages depend on the request's
-	// supports_deltas flag: deltas (entries created/mutated since the
-	// previous message, merged across conflated rounds) for new
-	// clients, full snapshots for old ones. Slow subscribers never
-	// miss state: pending deltas are merged, not dropped, and
-	// snapshots are conflated to the most recent.
+	// connect. Subsequent messages are deltas containing entries
+	// created or mutated since the previous message, merged across
+	// conflated rounds. Slow subscribers never miss state: pending
+	// deltas are merged, not dropped.
 	WatchAssignments(ctx context.Context, in *WatchAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchAssignmentsClient, error)
 	// WatchReadcacheAssignments is the readcache-side analogue of
 	// WatchAssignments: instead of (hash range -> partition) leases it
@@ -1460,12 +1494,10 @@ func (c *nautilusRebalancerClient) GetSpotlightedRanges(ctx context.Context, in 
 type NautilusRebalancerServer interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
 	// The server sends the current full snapshot immediately on
-	// connect. Subsequent messages depend on the request's
-	// supports_deltas flag: deltas (entries created/mutated since the
-	// previous message, merged across conflated rounds) for new
-	// clients, full snapshots for old ones. Slow subscribers never
-	// miss state: pending deltas are merged, not dropped, and
-	// snapshots are conflated to the most recent.
+	// connect. Subsequent messages are deltas containing entries
+	// created or mutated since the previous message, merged across
+	// conflated rounds. Slow subscribers never miss state: pending
+	// deltas are merged, not dropped.
 	WatchAssignments(*WatchAssignmentsRequest, NautilusRebalancer_WatchAssignmentsServer) error
 	// WatchReadcacheAssignments is the readcache-side analogue of
 	// WatchAssignments: instead of (hash range -> partition) leases it
@@ -1608,15 +1640,15 @@ func (m *WatchAssignmentsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
-	if m.SupportsDeltas {
+	if m.SupportsTenantScopedAssignments {
 		i--
-		if m.SupportsDeltas {
+		if m.SupportsTenantScopedAssignments {
 			dAtA[i] = 1
 		} else {
 			dAtA[i] = 0
 		}
 		i--
-		dAtA[i] = 0x8
+		dAtA[i] = 0x10
 	}
 	return len(dAtA) - i, nil
 }
@@ -1641,6 +1673,16 @@ func (m *WatchAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error
 	_ = i
 	var l int
 	_ = l
+	if m.AssignmentValidUntilUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.AssignmentValidUntilUnixMs))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.AssignmentGeneration != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.AssignmentGeneration))
+		i--
+		dAtA[i] = 0x20
+	}
 	if m.PruneBeforeUnixMs != 0 {
 		i = encodeVarintService(dAtA, i, uint64(m.PruneBeforeUnixMs))
 		i--
@@ -1693,6 +1735,13 @@ func (m *LogEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.TenantId) > 0 {
+		i -= len(m.TenantId)
+		copy(dAtA[i:], m.TenantId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.TenantId)))
+		i--
+		dAtA[i] = 0x32
+	}
 	if m.ToUnixMs != 0 {
 		i = encodeVarintService(dAtA, i, uint64(m.ToUnixMs))
 		i--
@@ -1741,16 +1790,6 @@ func (m *WatchReadcacheAssignmentsRequest) MarshalToSizedBuffer(dAtA []byte) (in
 	_ = i
 	var l int
 	_ = l
-	if m.SupportsDeltas {
-		i--
-		if m.SupportsDeltas {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i--
-		dAtA[i] = 0x8
-	}
 	return len(dAtA) - i, nil
 }
 
@@ -2026,6 +2065,13 @@ func (m *SpotlightedRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.TenantId) > 0 {
+		i -= len(m.TenantId)
+		copy(dAtA[i:], m.TenantId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.TenantId)))
+		i--
+		dAtA[i] = 0x4a
+	}
 	if len(m.Reason) > 0 {
 		i -= len(m.Reason)
 		copy(dAtA[i:], m.Reason)
@@ -2090,7 +2136,7 @@ func (m *WatchAssignmentsRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.SupportsDeltas {
+	if m.SupportsTenantScopedAssignments {
 		n += 2
 	}
 	return n
@@ -2113,6 +2159,12 @@ func (m *WatchAssignmentsResponse) Size() (n int) {
 	}
 	if m.PruneBeforeUnixMs != 0 {
 		n += 1 + sovService(uint64(m.PruneBeforeUnixMs))
+	}
+	if m.AssignmentGeneration != 0 {
+		n += 1 + sovService(uint64(m.AssignmentGeneration))
+	}
+	if m.AssignmentValidUntilUnixMs != 0 {
+		n += 1 + sovService(uint64(m.AssignmentValidUntilUnixMs))
 	}
 	return n
 }
@@ -2138,6 +2190,10 @@ func (m *LogEntry) Size() (n int) {
 	if m.ToUnixMs != 0 {
 		n += 1 + sovService(uint64(m.ToUnixMs))
 	}
+	l = len(m.TenantId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
 	return n
 }
 
@@ -2147,9 +2203,6 @@ func (m *WatchReadcacheAssignmentsRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.SupportsDeltas {
-		n += 2
-	}
 	return n
 }
 
@@ -2294,6 +2347,10 @@ func (m *SpotlightedRange) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovService(uint64(l))
 	}
+	l = len(m.TenantId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
 	return n
 }
 
@@ -2308,7 +2365,7 @@ func (this *WatchAssignmentsRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&WatchAssignmentsRequest{`,
-		`SupportsDeltas:` + fmt.Sprintf("%v", this.SupportsDeltas) + `,`,
+		`SupportsTenantScopedAssignments:` + fmt.Sprintf("%v", this.SupportsTenantScopedAssignments) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2326,6 +2383,8 @@ func (this *WatchAssignmentsResponse) String() string {
 		`Entries:` + repeatedStringForEntries + `,`,
 		`Reset_:` + fmt.Sprintf("%v", this.Reset_) + `,`,
 		`PruneBeforeUnixMs:` + fmt.Sprintf("%v", this.PruneBeforeUnixMs) + `,`,
+		`AssignmentGeneration:` + fmt.Sprintf("%v", this.AssignmentGeneration) + `,`,
+		`AssignmentValidUntilUnixMs:` + fmt.Sprintf("%v", this.AssignmentValidUntilUnixMs) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2340,6 +2399,7 @@ func (this *LogEntry) String() string {
 		`PartitionId:` + fmt.Sprintf("%v", this.PartitionId) + `,`,
 		`FromUnixMs:` + fmt.Sprintf("%v", this.FromUnixMs) + `,`,
 		`ToUnixMs:` + fmt.Sprintf("%v", this.ToUnixMs) + `,`,
+		`TenantId:` + fmt.Sprintf("%v", this.TenantId) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2349,7 +2409,6 @@ func (this *WatchReadcacheAssignmentsRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&WatchReadcacheAssignmentsRequest{`,
-		`SupportsDeltas:` + fmt.Sprintf("%v", this.SupportsDeltas) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2454,6 +2513,7 @@ func (this *SpotlightedRange) String() string {
 		`FromPartitionId:` + fmt.Sprintf("%v", this.FromPartitionId) + `,`,
 		`ToPartitionId:` + fmt.Sprintf("%v", this.ToPartitionId) + `,`,
 		`Reason:` + fmt.Sprintf("%v", this.Reason) + `,`,
+		`TenantId:` + fmt.Sprintf("%v", this.TenantId) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2495,9 +2555,9 @@ func (m *WatchAssignmentsRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: WatchAssignmentsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
-		case 1:
+		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field SupportsDeltas", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field SupportsTenantScopedAssignments", wireType)
 			}
 			var v int
 			for shift := uint(0); ; shift += 7 {
@@ -2514,7 +2574,7 @@ func (m *WatchAssignmentsRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-			m.SupportsDeltas = bool(v != 0)
+			m.SupportsTenantScopedAssignments = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -2634,6 +2694,44 @@ func (m *WatchAssignmentsResponse) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.PruneBeforeUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AssignmentGeneration", wireType)
+			}
+			m.AssignmentGeneration = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.AssignmentGeneration |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AssignmentValidUntilUnixMs", wireType)
+			}
+			m.AssignmentValidUntilUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.AssignmentValidUntilUnixMs |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -2783,6 +2881,38 @@ func (m *LogEntry) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TenantId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TenantId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -2833,26 +2963,6 @@ func (m *WatchReadcacheAssignmentsRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: WatchReadcacheAssignmentsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field SupportsDeltas", wireType)
-			}
-			var v int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowService
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.SupportsDeltas = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -3740,6 +3850,38 @@ func (m *SpotlightedRange) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Reason = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TenantId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TenantId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

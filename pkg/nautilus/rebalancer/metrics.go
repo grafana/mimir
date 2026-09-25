@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
 // metrics holds the Prometheus collectors for the rebalancer. Phase 1
@@ -31,6 +33,11 @@ type metrics struct {
 	mu                sync.Mutex
 	lastPartitionKeys map[string]struct{}
 	lastInstanceKeys  map[string]struct{}
+
+	// tenantHashRanges reports the number of currently-assigned hash
+	// ranges for each tenant. One series is emitted per tenant.
+	tenantHashRanges *prometheus.GaugeVec
+	lastTenantKeys   map[string]struct{}
 
 	// readcacheInstanceLoad is the post-plan total load per readcache
 	// instance, set by the second slicer round.
@@ -79,7 +86,7 @@ type metrics struct {
 	// healthy delta subscriber receives exactly one snapshot per
 	// stream lifetime.
 	watchStreamsActive  *prometheus.GaugeVec   // stream
-	watchStreamsStarted *prometheus.CounterVec // stream, protocol
+	watchStreamsStarted *prometheus.CounterVec // stream
 	watchSentMessages   *prometheus.CounterVec // stream, kind
 	watchSentEntries    *prometheus.CounterVec // stream, kind
 	watchSentBytes      *prometheus.CounterVec // stream, kind
@@ -100,6 +107,11 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		}, []string{"instance"}),
 		lastPartitionKeys: map[string]struct{}{},
 		lastInstanceKeys:  map[string]struct{}{},
+		tenantHashRanges: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_nautilus_rebalancer_tenant_hash_ranges",
+			Help: "Number of hash ranges in the current assignment for each tenant. Stale tenant series are deleted when a tenant no longer has an assignment.",
+		}, []string{"tenant"}),
+		lastTenantKeys: map[string]struct{}{},
 		readcacheInstanceLoad: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_readcache_instance_load",
 			Help: "Total per-instance load (alpha*active_series + beta*samples_ewma) for the most recent readcache slicer round.",
@@ -128,8 +140,8 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		}, []string{"stream"}),
 		watchStreamsStarted: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_streams_started_total",
-			Help: "Total assignment watch streams accepted, by stream type and subscriber protocol (delta vs legacy). A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
-		}, []string{"stream", "protocol"}),
+			Help: "Total assignment watch streams accepted, by stream type. A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
+		}, []string{"stream"}),
 		watchSentMessages: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_sent_messages_total",
 			Help: "Watch messages sent, by stream type and kind (snapshot carries the full retention-bounded log; delta carries only the entries one round mutated).",
@@ -148,11 +160,11 @@ func newMetrics(r prometheus.Registerer) *metrics {
 
 // watchStreamStarted records a new watch stream and returns a done
 // func for the disconnect. Safe on a nil receiver (test wiring).
-func (m *metrics) watchStreamStarted(stream, protocol string) (done func()) {
+func (m *metrics) watchStreamStarted(stream string) (done func()) {
 	if m == nil {
 		return func() {}
 	}
-	m.watchStreamsStarted.WithLabelValues(stream, protocol).Inc()
+	m.watchStreamsStarted.WithLabelValues(stream).Inc()
 	m.watchStreamsActive.WithLabelValues(stream).Inc()
 	return func() { m.watchStreamsActive.WithLabelValues(stream).Dec() }
 }
@@ -204,6 +216,36 @@ func (m *metrics) updateRound(partitionQuerySamples map[int32]float64, unnamedPe
 		}
 	}
 	m.lastInstanceKeys = nextInstanceKeys
+}
+
+// updateTenantHashRanges replaces the per-tenant range counts with the
+// current assignment. Stale tenants are deleted instead of flat-lining.
+func (m *metrics) updateTenantHashRanges(current *assignment.Assignment) {
+	if m == nil {
+		return
+	}
+
+	counts := make(map[string]int)
+	if current != nil {
+		for _, entry := range current.Entries {
+			counts[entry.TenantID]++
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	nextTenantKeys := make(map[string]struct{}, len(counts))
+	for tenantID, count := range counts {
+		nextTenantKeys[tenantID] = struct{}{}
+		m.tenantHashRanges.WithLabelValues(tenantID).Set(float64(count))
+	}
+	for tenantID := range m.lastTenantKeys {
+		if _, ok := nextTenantKeys[tenantID]; !ok {
+			m.tenantHashRanges.DeleteLabelValues(tenantID)
+		}
+	}
+	m.lastTenantKeys = nextTenantKeys
 }
 
 // updateReadcacheRound replaces the previous round's readcache slicer

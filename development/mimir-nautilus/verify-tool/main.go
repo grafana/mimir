@@ -32,6 +32,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
+
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
 func main() {
@@ -47,10 +49,92 @@ func main() {
 		os.Exit(cmdQuery(os.Args[2:]))
 	case "spike":
 		os.Exit(cmdSpike(os.Args[2:]))
+	case "assignment-log":
+		os.Exit(cmdAssignmentLog(os.Args[2:]))
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+func cmdAssignmentLog(args []string) int {
+	fs := flag.NewFlagSet("assignment-log", flag.ExitOnError)
+	fileName := fs.String("file", "-", "assignment-log JSON file, or - for stdin")
+	tenantCSV := fs.String("tenants", "", "comma-separated tenant IDs that must have valid assignments")
+	minPartitions := fs.Int("min-partitions", 2, "minimum distinct active partitions required per tenant")
+	_ = fs.Parse(args)
+
+	if *tenantCSV == "" || *minPartitions <= 0 {
+		fmt.Fprintln(os.Stderr, "assignment-log: -tenants is required and -min-partitions must be > 0")
+		return 2
+	}
+
+	var input io.Reader = os.Stdin
+	if *fileName != "-" {
+		f, err := os.Open(*fileName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "assignment-log: open: %v\n", err)
+			return 1
+		}
+		defer f.Close()
+		input = f
+	}
+
+	var state struct {
+		Version                  int                   `json:"version"`
+		Entries                  []assignment.LogEntry `json:"entries"`
+		AssignmentGeneration     uint64                `json:"assignment_generation"`
+		AssignmentValidUntilTime time.Time             `json:"assignment_valid_until"`
+	}
+	if err := json.NewDecoder(input).Decode(&state); err != nil {
+		fmt.Fprintf(os.Stderr, "assignment-log: decode: %v\n", err)
+		return 1
+	}
+	if state.Version <= 0 {
+		fmt.Fprintln(os.Stderr, "assignment-log: missing or invalid version")
+		return 1
+	}
+	if state.AssignmentGeneration == 0 {
+		fmt.Fprintln(os.Stderr, "assignment-log: assignment generation has not been initialized")
+		return 1
+	}
+	if !state.AssignmentValidUntilTime.After(time.Now()) {
+		fmt.Fprintf(os.Stderr, "assignment-log: validity heartbeat expired at %s\n", state.AssignmentValidUntilTime.UTC().Format(time.RFC3339))
+		return 1
+	}
+
+	now := time.Now()
+	for _, tenantID := range strings.Split(*tenantCSV, ",") {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID == "" {
+			continue
+		}
+
+		active := make([]assignment.Entry, 0)
+		partitions := map[int32]struct{}{}
+		for _, entry := range state.Entries {
+			if entry.TenantID != tenantID || !entry.ActiveAt(now) {
+				continue
+			}
+			active = append(active, assignment.Entry{
+				TenantID:    entry.TenantID,
+				Range:       entry.Range,
+				PartitionID: entry.PartitionID,
+			})
+			partitions[entry.PartitionID] = struct{}{}
+		}
+		a := &assignment.Assignment{Entries: active}
+		if err := a.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "assignment-log: tenant %q has invalid active tiling: %v\n", tenantID, err)
+			return 1
+		}
+		if len(partitions) < *minPartitions {
+			fmt.Fprintf(os.Stderr, "assignment-log: tenant %q uses %d partition(s), want at least %d\n", tenantID, len(partitions), *minPartitions)
+			return 1
+		}
+		fmt.Printf("assignment_ok tenant=%s entries=%d partitions=%d generation=%d\n", tenantID, len(active), len(partitions), state.AssignmentGeneration)
+	}
+	return 0
 }
 
 func cmdPush(args []string) int {
@@ -115,6 +199,7 @@ func cmdQuery(args []string) int {
 	tenant := fs.String("tenant", "", "tenant ID for X-Scope-OrgID")
 	q := fs.String("query", "", "instant query string (e.g. verify_metric)")
 	expect := fs.String("expect-value", "", "if set, exit 0 only when this string appears as a sample value")
+	expectResultCount := fs.Int("expect-result-count", -1, "if >= 0, require exactly this many result series")
 	_ = fs.Parse(args)
 
 	if *tenant == "" || *q == "" {
@@ -165,6 +250,10 @@ func cmdQuery(args []string) int {
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		fmt.Fprintf(os.Stderr, "query: parse: %v\n", err)
+		return 1
+	}
+	if *expectResultCount >= 0 && len(parsed.Data.Result) != *expectResultCount {
+		fmt.Fprintf(os.Stderr, "query: got %d result series, want %d\n", len(parsed.Data.Result), *expectResultCount)
 		return 1
 	}
 	for _, r := range parsed.Data.Result {

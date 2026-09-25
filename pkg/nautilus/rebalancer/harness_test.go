@@ -76,14 +76,15 @@ type fakeReadcache struct {
 	id   string
 	addr string
 
-	mu      sync.Mutex
-	owned   map[int32][]assignment.HashRange // partitionID -> ranges currently owned
-	rates   map[partitionRangeKey]float64    // optional per-(P,R) sample rate
-	series  map[partitionRangeKey]int64      // optional per-(P,R) series count
-	pSeries map[int32]int64                  // optional per-partition total head series
-	pQuery  map[int32]float64                // optional per-partition query-samples EWMA
-	warming map[int32]struct{}               // partitions this pod reports as still replaying
-	unnamed float64                          // optional unnamed query EWMA
+	mu          sync.Mutex
+	owned       map[int32][]assignment.HashRange // partitionID -> ranges currently owned
+	scopedOwned map[int32]map[string][]assignment.HashRange
+	rates       map[partitionRangeKey]float64 // optional per-(P,R) sample rate
+	series      map[partitionRangeKey]int64   // optional per-(P,R) series count
+	pSeries     map[int32]int64               // optional per-partition total head series
+	pQuery      map[int32]float64             // optional per-partition query-samples EWMA
+	warming     map[int32]struct{}            // partitions this pod reports as still replaying
+	unnamed     float64                       // optional unnamed query EWMA
 
 	// Failure-injection knobs. Setting any of these makes the
 	// matching RPC return the error instead of touching state.
@@ -92,18 +93,20 @@ type fakeReadcache struct {
 	getHashRangesErr  error
 
 	onHashRangeStats func()
+	unknownTenants   []ingester_client.UnknownTenant
 }
 
 func newFakeReadcache(id string) *fakeReadcache {
 	return &fakeReadcache{
-		id:      id,
-		addr:    id, // address == id keeps assertions readable
-		owned:   make(map[int32][]assignment.HashRange),
-		rates:   make(map[partitionRangeKey]float64),
-		series:  make(map[partitionRangeKey]int64),
-		pSeries: make(map[int32]int64),
-		pQuery:  make(map[int32]float64),
-		warming: make(map[int32]struct{}),
+		id:          id,
+		addr:        id, // address == id keeps assertions readable
+		owned:       make(map[int32][]assignment.HashRange),
+		scopedOwned: make(map[int32]map[string][]assignment.HashRange),
+		rates:       make(map[partitionRangeKey]float64),
+		series:      make(map[partitionRangeKey]int64),
+		pSeries:     make(map[int32]int64),
+		pQuery:      make(map[int32]float64),
+		warming:     make(map[int32]struct{}),
 	}
 }
 
@@ -120,9 +123,13 @@ func (f *fakeReadcache) setWarming(pid int32) {
 // report for (pid, hr) on the next HashRangeStats call. Used by
 // tests that want to exercise the slicer's load-balancing path.
 func (f *fakeReadcache) setLoad(pid int32, hr assignment.HashRange, sampleRate float64, series int64) {
+	f.setTenantLoad("", pid, hr, sampleRate, series)
+}
+
+func (f *fakeReadcache) setTenantLoad(tenantID string, pid int32, hr assignment.HashRange, sampleRate float64, series int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	k := partitionRangeKey{partitionID: pid, hr: hr}
+	k := partitionRangeKey{tenantID: tenantID, partitionID: pid, hr: hr}
 	f.rates[k] = sampleRate
 	f.series[k] = series
 	f.pSeries[pid] += series
@@ -144,6 +151,7 @@ func (f *fakeReadcache) HashRangeStats(_ context.Context, _ *ingester_client.Has
 
 	resp := &ingester_client.HashRangeStatsResponse{
 		UnnamedQuerySamplesEwma: f.unnamed,
+		UnknownTenants:          append([]ingester_client.UnknownTenant(nil), f.unknownTenants...),
 	}
 	for pid, ranges := range f.owned {
 		for _, hr := range ranges {
@@ -168,6 +176,34 @@ func (f *fakeReadcache) HashRangeStats(_ context.Context, _ *ingester_client.Has
 				PartitionId: pid,
 				SamplesEwma: v,
 			})
+		}
+	}
+	for pid, byTenant := range f.scopedOwned {
+		for tenantID, ranges := range byTenant {
+			for _, hr := range ranges {
+				k := partitionRangeKey{tenantID: tenantID, partitionID: pid, hr: hr}
+				resp.Rates = append(resp.Rates, ingester_client.HashRangeRate{
+					TenantId:     tenantID,
+					Lo:           hr.Lo,
+					Hi:           hr.Hi,
+					PartitionId:  pid,
+					ActiveSeries: f.series[k],
+					SampleRate:   f.rates[k],
+				})
+				resp.TotalActiveSeries += f.series[k]
+			}
+		}
+		if _, legacy := f.owned[pid]; legacy {
+			continue
+		}
+		_, isWarming := f.warming[pid]
+		resp.PartitionActiveSeries = append(resp.PartitionActiveSeries, ingester_client.PartitionActiveSeries{
+			PartitionId:  pid,
+			ActiveSeries: f.pSeries[pid],
+			Warming:      isWarming,
+		})
+		if v, ok := f.pQuery[pid]; ok {
+			resp.PartitionQueryLoads = append(resp.PartitionQueryLoads, ingester_client.PartitionQueryLoad{PartitionId: pid, SamplesEwma: v})
 		}
 	}
 	// Sort everything so test assertions on the response are
@@ -198,14 +234,29 @@ func (f *fakeReadcache) SetHashRanges(_ context.Context, in *ingester_client.Set
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.owned = make(map[int32][]assignment.HashRange)
+	f.scopedOwned = make(map[int32]map[string][]assignment.HashRange)
 	for _, e := range in.Ranges {
-		f.owned[e.PartitionId] = append(f.owned[e.PartitionId], assignment.HashRange{Lo: e.Lo, Hi: e.Hi})
+		hr := assignment.HashRange{Lo: e.Lo, Hi: e.Hi}
+		if e.TenantId == "" {
+			f.owned[e.PartitionId] = append(f.owned[e.PartitionId], hr)
+			continue
+		}
+		if f.scopedOwned[e.PartitionId] == nil {
+			f.scopedOwned[e.PartitionId] = make(map[string][]assignment.HashRange)
+		}
+		f.scopedOwned[e.PartitionId][e.TenantId] = append(f.scopedOwned[e.PartitionId][e.TenantId], hr)
 	}
 	// Stable order within each partition for deterministic
 	// GetHashRanges responses.
 	for pid, rs := range f.owned {
 		sort.Slice(rs, func(i, j int) bool { return rs[i].Lo < rs[j].Lo })
 		f.owned[pid] = rs
+	}
+	for _, byTenant := range f.scopedOwned {
+		for tenantID, rs := range byTenant {
+			sort.Slice(rs, func(i, j int) bool { return rs[i].Lo < rs[j].Lo })
+			byTenant[tenantID] = rs
+		}
 	}
 	return &ingester_client.SetHashRangesResponse{}, nil
 }
@@ -228,7 +279,22 @@ func (f *fakeReadcache) GetHashRanges(_ context.Context, _ *ingester_client.GetH
 			})
 		}
 	}
+	for pid, byTenant := range f.scopedOwned {
+		for tenantID, ranges := range byTenant {
+			for _, hr := range ranges {
+				resp.Ranges = append(resp.Ranges, ingester_client.HashRangeEntry{
+					TenantId:    tenantID,
+					Lo:          hr.Lo,
+					Hi:          hr.Hi,
+					PartitionId: pid,
+				})
+			}
+		}
+	}
 	sort.Slice(resp.Ranges, func(i, j int) bool {
+		if resp.Ranges[i].TenantId != resp.Ranges[j].TenantId {
+			return resp.Ranges[i].TenantId < resp.Ranges[j].TenantId
+		}
 		if resp.Ranges[i].PartitionId != resp.Ranges[j].PartitionId {
 			return resp.Ranges[i].PartitionId < resp.Ranges[j].PartitionId
 		}
@@ -246,6 +312,11 @@ func (f *fakeReadcache) ownedPartitions() []int32 {
 	out := make([]int32, 0, len(f.owned))
 	for pid := range f.owned {
 		out = append(out, pid)
+	}
+	for pid := range f.scopedOwned {
+		if _, exists := f.owned[pid]; !exists {
+			out = append(out, pid)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
@@ -415,7 +486,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		fleet:              fleet,
 		store:              newLogStore(),
 		readcacheStore:     newReadcacheLogStore(),
-		moveCooldowns:      make(map[assignment.HashRange]time.Time),
+		moveCooldowns:      make(map[tenantRangeKey]time.Time),
 		readcacheCooldowns: make(readcacheMoveCooldowns),
 		metrics:            newMetrics(nil),
 		clock:              clock,

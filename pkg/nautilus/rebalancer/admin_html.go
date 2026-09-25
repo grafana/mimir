@@ -61,6 +61,19 @@ h2{font-size:14px;font-weight:600;margin:16px 0 8px;color:#333;border-bottom:1px
 .action-pill.act-reassign{border-color:#ff8787;background:#fff5f5;border:1px solid #ff8787}
 .no-data{text-align:center;padding:40px;color:#888;font-size:14px}
 .generated{font-size:11px;color:#888;margin-top:12px;text-align:right}
+.tenant-section{margin:16px 0 8px}
+.tenant-section>summary{font-size:14px;font-weight:600;color:#333;border-bottom:1px solid #ddd;padding-bottom:4px}
+.tenant-section[open]>summary{margin-bottom:8px}
+.tenant-inspector{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:12px}
+.tenant-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.tenant-controls select{min-width:220px;padding:5px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:12px}
+.tenant-status{font-size:11px;color:#666}
+.tenant-table-wrap{max-height:520px;overflow:auto;border:1px solid #eee;border-radius:4px}
+.tenant-table{width:100%;border-collapse:collapse;font-size:12px}
+.tenant-table th{position:sticky;top:0;background:#f8f9fa;text-align:left;padding:6px 8px;border-bottom:1px solid #ddd}
+.tenant-table td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
+.tenant-table .numeric{text-align:right;font-variant-numeric:tabular-nums}
+.tenant-table .hash-bound{font-family:"SF Mono",Consolas,monospace}
 details>summary{cursor:pointer;list-style:none}
 details>summary::-webkit-details-marker{display:none}
 </style>
@@ -143,6 +156,55 @@ details>summary::-webkit-details-marker{display:none}
 	<span style="font-size:11px;color:#666">Shows the metric's locality hash range, the assignment-log tiles it overlaps over the window, and the partitions + readcache owners a query would fan out to. Append &amp;format=json for machine output.</span>
 </form>
 
+<details class="tenant-section"{{if .SelectedTenantID}} open{{end}}>
+<summary>Tenant hash ranges</summary>
+<div class="tenant-inspector">
+	<form class="tenant-controls" method="GET" action="{{.AdminPathPrefix}}">
+		<label for="tenantSelect">Tenant</label>
+		<select id="tenantSelect" name="tenant" onchange="this.form.submit()"{{if eq (len .TenantIDs) 0}} disabled{{end}}>
+			<option value="">Select a tenant…</option>
+			{{range .TenantIDs}}<option value="{{.}}"{{if eq . $.SelectedTenantID}} selected{{end}}>{{.}}</option>{{end}}
+		</select>
+		<noscript><button type="submit">Show</button></noscript>
+		<span class="tenant-status">
+			{{if eq (len .TenantIDs) 0}}No tenant assignments available.
+			{{else if .SelectedTenantID}}{{len .SelectedTenantRanges}} current hash range{{if ne (len .SelectedTenantRanges) 1}}s{{end}}.
+			{{else}}Choose a tenant to inspect its current assignment.{{end}}
+		</span>
+	</form>
+	{{if .SelectedTenantID}}
+	{{if .SelectedTenantRanges}}
+	<div class="tenant-table-wrap">
+		<table class="tenant-table">
+			<thead>
+				<tr>
+					<th>Lo</th>
+					<th>Hi</th>
+					<th class="numeric">Partition</th>
+					<th class="numeric">Head series</th>
+					<th class="numeric">Samples/s</th>
+				</tr>
+			</thead>
+			<tbody>
+			{{range .SelectedTenantRanges}}
+				<tr>
+					<td class="hash-bound">0x{{printf "%08x" .Lo}}</td>
+					<td class="hash-bound">0x{{printf "%08x" .Hi}}</td>
+					<td class="numeric">P{{.PartitionID}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtSeries .HeadSeries}}{{else}}—{{end}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtRate .SampleRate}}{{else}}—{{end}}</td>
+				</tr>
+			{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<div class="no-data" style="padding:12px">No current hash ranges for this tenant.</div>
+	{{end}}
+	{{end}}
+</div>
+</details>
+
 <h2>Partitions (click to expand ranges)</h2>
 <div class="partitions">
 {{range .Partitions}}
@@ -166,7 +228,7 @@ details>summary::-webkit-details-marker{display:none}
 	<div class="part-ranges open">
 		<div class="range-grid">
 		{{range .Ranges}}
-			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Head series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s</span></span>
+			<span class="range {{actionClass .LastAction}}" title="Tenant: {{.TenantID}} · Size: {{fmtPct .SizePct}} · Head series: {{fmtSeries .Series}}">{{if .TenantID}}{{.TenantID}} {{end}}{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s</span></span>
 		{{end}}
 		</div>
 	</div>
@@ -194,7 +256,7 @@ details>summary::-webkit-details-marker{display:none}
 	{{if $r.Actions}}
 	<div class="round-actions">
 	{{range $r.Actions}}
-		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
+		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{if .TenantID}}{{.TenantID}} {{end}}{{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
 	{{end}}
 	</div>
 	{{end}}

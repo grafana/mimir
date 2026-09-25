@@ -91,6 +91,7 @@ type adminPartitionView struct {
 
 // adminRangeView is one (range, count) entry on the admin page.
 type adminRangeView struct {
+	Tenant string
 	Lo     uint32
 	Hi     uint32
 	Series int64
@@ -233,14 +234,14 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 		}
 		pv.Current = make([]adminRangeView, len(current))
 		for i, c := range current {
-			pv.Current[i] = makeRangeView(c.Range, c.Count, c.SampleRate, c.Example, hashSpaceTotal)
+			pv.Current[i] = makeRangeView(c.TenantID, c.Range, c.Count, c.SampleRate, c.Example, hashSpaceTotal)
 			pv.CurrentSeries += c.Count
 			pv.CurrentSampleRate += c.SampleRate
 			pv.CurrentHashPct += pv.Current[i].SizeP
 		}
 		pv.Historical = make([]adminRangeView, len(historical))
 		for i, h := range historical {
-			pv.Historical[i] = makeRangeView(h.Range, h.Count, h.SampleRate, h.Example, hashSpaceTotal)
+			pv.Historical[i] = makeRangeView(h.TenantID, h.Range, h.Count, h.SampleRate, h.Example, hashSpaceTotal)
 			pv.ResidueSeries += h.Count
 			pv.ResidueSampleRate += h.SampleRate
 			pv.HistoricalHashPct += pv.Historical[i].SizeP
@@ -463,9 +464,10 @@ func fmtUnixMilli(ms int64) string {
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
 
-func makeRangeView(hr assignment.HashRange, series int64, sampleRate float64, example string, hashSpaceTotal float64) adminRangeView {
+func makeRangeView(tenantID string, hr assignment.HashRange, series int64, sampleRate float64, example string, hashSpaceTotal float64) adminRangeView {
 	size := hr.Size()
 	return adminRangeView{
+		Tenant:     tenantID,
 		Lo:         hr.Lo,
 		Hi:         hr.Hi,
 		Series:     series,

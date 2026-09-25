@@ -1,7 +1,7 @@
 # Per-tenant runtime overrides for the nautilus / readcache dev cell.
 #
-# Two tenants are pre-configured:
-#   * `nautilus-tenant` is fully migrated to the experimental
+# Three tenants are pre-configured:
+#   * `nautilus-tenant` and `nautilus-tenant-b` are fully migrated to the experimental
 #     end-to-end path: writes land on the nautilus_ingest topic,
 #     reads are served by readcache pods.
 #   * `default-tenant` exercises the unchanged production path
@@ -12,6 +12,9 @@
 # reads ask the other. See pkg/util/validation/limits.go.
 overrides:
   nautilus-tenant:
+    nautilus_ingest_routing: nautilus-only
+    readcache_read_routing: nautilus-only
+  nautilus-tenant-b:
     nautilus_ingest_routing: nautilus-only
     readcache_read_routing: nautilus-only
   default-tenant:

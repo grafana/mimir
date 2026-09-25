@@ -15,13 +15,16 @@ import (
 // assignmentUpdate is one message bound for a watch subscriber:
 // either a full snapshot of the retention-bounded log (reset=true)
 // or the entries created/mutated since the subscriber's previous
-// message (reset=false, delta subscribers only).
+// message (reset=false).
 type assignmentUpdate struct {
-	entries []assignment.LogEntry
-	reset   bool
+	entries     []assignment.LogEntry
+	reset       bool
+	generation  uint64
+	validUntil  time.Time
+	tenantAware bool
 	// pruneBefore is the server's retention horizon at broadcast
-	// time. Delta subscribers prune their local log with it; zero
-	// means retention is disabled.
+	// time. Subscribers prune their local log with it; zero means
+	// retention is disabled.
 	pruneBefore time.Time
 }
 
@@ -32,10 +35,10 @@ type assignmentUpdate struct {
 // callers can iterate without holding the mutex. Apply mutates the
 // log under the mutex and broadcasts to all subscribers via
 // 1-buffered conflated channels. Conflation never loses state: for
-// snapshot subscribers a newer snapshot replaces the pending one;
-// for delta subscribers a new delta is merged (upsert by lease
-// identity) into the pending update, so a slow subscriber receives
-// the coalesced equivalent of every broadcast it missed.
+// an unprimed subscriber a newer snapshot replaces the pending one;
+// otherwise a new delta is merged (upsert by lease identity) into the
+// pending update, so a slow subscriber receives the coalesced equivalent
+// of every broadcast it missed.
 type logStore struct {
 	mu          sync.Mutex
 	log         *assignment.Log
@@ -49,6 +52,8 @@ type logStore struct {
 	// lastPruneBefore is the retention horizon of the most recent
 	// apply, stamped on initial snapshots handed to new subscribers.
 	lastPruneBefore time.Time
+	generation      uint64
+	validUntil      time.Time
 
 	// ready flips to true the first time apply() runs. Until then,
 	// subscribe() returns a nil initial snapshot so the gRPC handler
@@ -72,22 +77,23 @@ type logStore struct {
 	// failed write to a degraded volume doesn't stall live routing.
 	// The rebalancer's next changed apply() retries; durability is
 	// best-effort during volume degradation.
-	persistFn func([]assignment.LogEntry) error
+	persistFn func(assignment.LogState) error
 	logger    log.Logger
 }
 
 // subscription holds a single watcher's conflated update channel.
 type subscription struct {
 	ch chan assignmentUpdate
-	// wantsDeltas records whether the subscriber understands
-	// incremental updates (WatchAssignmentsRequest.supports_deltas).
-	// Legacy subscribers get a full snapshot on every broadcast.
-	wantsDeltas bool
 	// primed flips to true once the subscriber has been handed a
-	// full snapshot (either as subscribe()'s initial or as a
-	// reset broadcast); only primed delta subscribers may receive
-	// deltas. Guarded by logStore.mu.
+	// full snapshot (either as subscribe()'s initial or as a reset
+	// broadcast); only primed subscribers may receive deltas.
+	// Guarded by logStore.mu.
 	primed bool
+}
+
+type tenantBootstrapPlacement struct {
+	firstSeen time.Time
+	initial   *assignment.Assignment
 }
 
 func newLogStore() *logStore {
@@ -100,14 +106,16 @@ func newLogStore() *logStore {
 // apply installs next as the new desired tiling at wall-clock at,
 // pre-issuing successor leases of duration leaseDuration whenever
 // an existing lease's To falls within lookahead of at. Prunes
-// entries whose leases ended before at-retention, and broadcasts
-// the resulting snapshot to all subscribers if the log changed.
-// Returns true on change. retention <= 0 disables pruning.
+// entries whose leases ended before at-retention. Every apply publishes the
+// generation/validity heartbeat when it advances, even if placement and the
+// compatibility lease log are unchanged. Returns whether the lease log
+// changed. retention <= 0 disables pruning.
 //
 // On a stable cluster, most rounds are no-ops: the previous round
 // pre-issued a successor whose To is comfortably past at+lookahead.
 // Only when the lookahead window catches up does Apply append a new
-// successor and trigger a broadcast.
+// successor. Placement-stable rounds retain the generation while advancing
+// the global validity heartbeat.
 //
 // Broadcast contents cover the full retention-bounded log, history
 // included, NOT just the live entries. The write path only needs
@@ -120,15 +128,30 @@ func newLogStore() *logStore {
 // querier's lookback (QueryIngestersWithin), which the flag
 // documents.
 //
-// Delta subscribers receive only the entries this apply created or
-// mutated; legacy subscribers receive the full snapshot. Sends
-// happen while holding the mutex — conflateSendUpdate never blocks,
-// and in-lock sending guarantees subscribers observe deltas in
-// apply order and keeps the per-subscriber primed transition atomic
-// with its first snapshot.
+// Subscribers receive only the entries this apply created or mutated after
+// their initial full snapshot. Sends happen while holding the mutex —
+// conflateSendUpdate never blocks, and in-lock sending guarantees subscribers
+// observe deltas in apply order and keeps the per-subscriber primed transition
+// atomic with its first snapshot.
 func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	placementChanged := !assignmentsEqual(s.log.LatestActiveAssignments(at), next)
+	if s.ready && len(next.Entries) == 0 && s.log.Len() == 0 {
+		// LatestActiveAssignments cannot distinguish an initialized empty
+		// placement from an uninitialized store. The first empty apply creates
+		// generation 1; later tenantless heartbeats keep that generation stable.
+		placementChanged = false
+	}
+	if placementChanged {
+		s.generation++
+	}
+	nextValidUntil := at.Add(leaseDuration)
+	metadataChanged := placementChanged || nextValidUntil.After(s.validUntil)
+	if nextValidUntil.After(s.validUntil) {
+		s.validUntil = nextValidUntil
+	}
 
 	changed := s.log.Apply(at, next, leaseDuration, lookahead)
 	if retention > 0 {
@@ -143,37 +166,112 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 	// be up to LeaseDuration away.
 	becameReady := !s.ready
 	s.ready = true
-	if !changed && !becameReady {
+	if !changed && !becameReady && !metadataChanged {
 		return false
 	}
 	full := s.log.Entries()
 	delta := diffAssignmentEntries(s.lastBroadcast, full)
 	s.lastBroadcast = full
+	tenantAware := hasTenantScopedEntries(full)
 	if retention > 0 {
 		s.lastPruneBefore = at.Add(-retention)
 	}
-	if changed && s.persistFn != nil {
+	if (changed || metadataChanged) && s.persistFn != nil {
 		// Persist while still holding the mutex so a concurrent
 		// subscribe()'s initial snapshot can't see a state that
 		// hasn't been durably committed yet.
-		if err := s.persistFn(full); err != nil && s.logger != nil {
+		if err := s.persistFn(assignment.LogState{Entries: full, Generation: s.generation, ValidUntil: s.validUntil}); err != nil && s.logger != nil {
 			level.Error(s.logger).Log("msg", "failed to persist assignment log", "err", err)
 		}
 	}
 
 	for sub := range s.subscribers {
-		switch {
-		case !sub.wantsDeltas || !sub.primed:
+		if !sub.primed {
 			sub.primed = true
-			conflateSendUpdate(sub.ch, assignmentUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore})
-		case len(delta) == 0:
-			// A primed delta subscriber has nothing to learn from a
-			// no-op apply (e.g. the becameReady broadcast).
-		default:
-			conflateSendUpdate(sub.ch, assignmentUpdate{entries: delta, pruneBefore: s.lastPruneBefore})
+			conflateSendUpdate(sub.ch, assignmentUpdate{
+				entries:     full,
+				reset:       true,
+				pruneBefore: s.lastPruneBefore,
+				generation:  s.generation,
+				validUntil:  s.validUntil,
+				tenantAware: tenantAware,
+			})
+			continue
 		}
+		// An empty delta is still a validity heartbeat.
+		conflateSendUpdate(sub.ch, assignmentUpdate{
+			entries:     delta,
+			pruneBefore: s.lastPruneBefore,
+			generation:  s.generation,
+			validUntil:  s.validUntil,
+			tenantAware: tenantAware,
+		})
 	}
 	return changed
+}
+
+// bootstrapTenants appends only brand-new tenant histories, preserving every
+// existing tenant's placement timestamps. All seeded tenants are published in
+// one generation update.
+func (s *logStore) bootstrapTenants(at time.Time, placements []tenantBootstrapPlacement, leaseDuration, retention time.Duration) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seeded := make([]string, 0, len(placements))
+	for _, placement := range placements {
+		added, err := s.log.BootstrapTenant(placement.firstSeen, placement.initial)
+		if err != nil {
+			return nil, err
+		}
+		if added {
+			seeded = append(seeded, placement.initial.Entries[0].TenantID)
+		}
+	}
+	if len(seeded) == 0 {
+		return nil, nil
+	}
+
+	s.generation++
+	if validUntil := at.Add(leaseDuration); validUntil.After(s.validUntil) {
+		s.validUntil = validUntil
+	}
+	if retention > 0 {
+		s.log.Prune(at.Add(-retention))
+		s.lastPruneBefore = at.Add(-retention)
+	}
+	s.ready = true
+
+	full := s.log.Entries()
+	delta := diffAssignmentEntries(s.lastBroadcast, full)
+	s.lastBroadcast = full
+	tenantAware := hasTenantScopedEntries(full)
+	if s.persistFn != nil {
+		if err := s.persistFn(assignment.LogState{Entries: full, Generation: s.generation, ValidUntil: s.validUntil}); err != nil && s.logger != nil {
+			level.Error(s.logger).Log("msg", "failed to persist bootstrapped tenant assignments", "err", err)
+		}
+	}
+	for sub := range s.subscribers {
+		if !sub.primed {
+			sub.primed = true
+			conflateSendUpdate(sub.ch, assignmentUpdate{
+				entries:     full,
+				reset:       true,
+				pruneBefore: s.lastPruneBefore,
+				generation:  s.generation,
+				validUntil:  s.validUntil,
+				tenantAware: tenantAware,
+			})
+			continue
+		}
+		conflateSendUpdate(sub.ch, assignmentUpdate{
+			entries:     delta,
+			pruneBefore: s.lastPruneBefore,
+			generation:  s.generation,
+			validUntil:  s.validUntil,
+			tenantAware: tenantAware,
+		})
+	}
+	return seeded, nil
 }
 
 // diffAssignmentEntries returns the entries of cur that are absent
@@ -183,17 +281,18 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 // subscribers replicate locally via pruneBefore).
 func diffAssignmentEntries(prev, cur []assignment.LogEntry) []assignment.LogEntry {
 	type key struct {
+		tenant string
 		r      assignment.HashRange
 		pid    int32
 		fromMs int64
 	}
 	prevTo := make(map[key]time.Time, len(prev))
 	for _, e := range prev {
-		prevTo[key{r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}] = e.To
+		prevTo[key{tenant: e.TenantID, r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}] = e.To
 	}
 	var out []assignment.LogEntry
 	for _, e := range cur {
-		if to, ok := prevTo[key{r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}]; !ok || !to.Equal(e.To) {
+		if to, ok := prevTo[key{tenant: e.TenantID, r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}]; !ok || !to.Equal(e.To) {
 			out = append(out, e)
 		}
 	}
@@ -202,7 +301,7 @@ func diffAssignmentEntries(prev, cur []assignment.LogEntry) []assignment.LogEntr
 
 // setPersistFn installs a persist callback. Safe to call once at
 // startup before the rebalancer's running loop has started.
-func (s *logStore) setPersistFn(fn func([]assignment.LogEntry) error, logger log.Logger) {
+func (s *logStore) setPersistFn(fn func(assignment.LogState) error, logger log.Logger) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.persistFn = fn
@@ -213,9 +312,16 @@ func (s *logStore) setPersistFn(fn func([]assignment.LogEntry) error, logger log
 // entries. Used to load on-disk state during rebalancer startup
 // before any apply() runs.
 func (s *logStore) seedFromEntries(entries []assignment.LogEntry) {
+	s.seedFromState(assignment.LogState{Entries: entries})
+}
+
+// seedFromState replaces the in-memory log and heartbeat metadata.
+func (s *logStore) seedFromState(state assignment.LogState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.log = assignment.NewLogFromEntries(entries)
+	s.log = assignment.NewLogFromEntries(state.Entries)
+	s.generation = state.Generation
+	s.validUntil = state.ValidUntil
 }
 
 // leaseHorizon returns the soonest moment in the future at which
@@ -224,6 +330,9 @@ func (s *logStore) seedFromEntries(entries []assignment.LogEntry) {
 func (s *logStore) leaseHorizon(at time.Time) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.validUntil.After(at) {
+		return s.validUntil
+	}
 	return s.log.LeaseHorizon(at)
 }
 
@@ -235,13 +344,19 @@ func (s *logStore) snapshot() []assignment.LogEntry {
 	return s.log.Entries()
 }
 
+func (s *logStore) entriesOverlappingIntervalForTenant(tenantID string, w0, w1 time.Time, lo, hi uint32) []assignment.LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.log.EntriesOverlappingIntervalForTenant(tenantID, w0, w1, lo, hi)
+}
+
 // latestActiveAssignment returns the entries whose leases are
 // active at `at` collapsed into an *Assignment value, or nil if no
 // entries are active (e.g. all leases have expired).
 func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.log.LatestActiveAssignment(at)
+	return s.log.LatestActiveAssignments(at)
 }
 
 // subscribe registers a new watcher. If apply() has run at least
@@ -265,16 +380,21 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 // the history, not just the leases covering `now`. See the apply()
 // comment.
 //
-// wantsDeltas opts the subscriber into incremental broadcasts after
-// its priming snapshot; see assignmentUpdate.
-//
 // The caller MUST invoke unsubscribe when finished.
-func (s *logStore) subscribe(wantsDeltas bool) (initial *assignmentUpdate, updates <-chan assignmentUpdate, unsubscribe func()) {
-	sub := &subscription{ch: make(chan assignmentUpdate, 1), wantsDeltas: wantsDeltas}
+func (s *logStore) subscribe() (initial *assignmentUpdate, updates <-chan assignmentUpdate, unsubscribe func()) {
+	sub := &subscription{ch: make(chan assignmentUpdate, 1)}
 	s.mu.Lock()
 	if s.ready {
 		sub.primed = true
-		initial = &assignmentUpdate{entries: s.log.Entries(), reset: true, pruneBefore: s.lastPruneBefore}
+		entries := s.log.Entries()
+		initial = &assignmentUpdate{
+			entries:     entries,
+			reset:       true,
+			pruneBefore: s.lastPruneBefore,
+			generation:  s.generation,
+			validUntil:  s.validUntil,
+			tenantAware: hasTenantScopedEntries(entries),
+		}
 	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
@@ -341,6 +461,9 @@ func coalesceUpdates(pending, next assignmentUpdate) assignmentUpdate {
 		entries:     merged.Entries(),
 		reset:       pending.reset,
 		pruneBefore: pruneBefore,
+		generation:  next.generation,
+		validUntil:  next.validUntil,
+		tenantAware: next.tenantAware,
 	}
 }
 
@@ -349,12 +472,17 @@ func coalesceUpdates(pending, next assignmentUpdate) assignmentUpdate {
 func EntriesToProto(es []assignment.LogEntry) []LogEntry {
 	out := make([]LogEntry, len(es))
 	for i, e := range es {
+		var toUnixMs int64
+		if !e.To.IsZero() {
+			toUnixMs = e.To.UnixMilli()
+		}
 		out[i] = LogEntry{
+			TenantId:    e.TenantID,
 			Lo:          e.Range.Lo,
 			Hi:          e.Range.Hi,
 			PartitionId: e.PartitionID,
 			FromUnixMs:  e.From.UnixMilli(),
-			ToUnixMs:    e.To.UnixMilli(),
+			ToUnixMs:    toUnixMs,
 		}
 	}
 	return out
@@ -365,12 +493,41 @@ func EntriesToProto(es []assignment.LogEntry) []LogEntry {
 func EntriesFromProto(es []LogEntry) []assignment.LogEntry {
 	out := make([]assignment.LogEntry, len(es))
 	for i, e := range es {
+		var to time.Time
+		if e.ToUnixMs != 0 {
+			to = time.UnixMilli(e.ToUnixMs)
+		}
 		out[i] = assignment.LogEntry{
+			TenantID:    e.TenantId,
 			Range:       assignment.HashRange{Lo: e.Lo, Hi: e.Hi},
 			PartitionID: e.PartitionId,
 			From:        time.UnixMilli(e.FromUnixMs),
-			To:          time.UnixMilli(e.ToUnixMs),
+			To:          to,
 		}
 	}
 	return out
+}
+
+func assignmentsEqual(a, b *assignment.Assignment) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	if len(a.Entries) != len(b.Entries) {
+		return false
+	}
+	for i := range a.Entries {
+		if a.Entries[i] != b.Entries[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func hasTenantScopedEntries(entries []assignment.LogEntry) bool {
+	for _, e := range entries {
+		if e.TenantID != "" {
+			return true
+		}
+	}
+	return false
 }

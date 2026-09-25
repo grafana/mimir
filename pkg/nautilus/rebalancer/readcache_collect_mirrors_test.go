@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
 
 // TestCollectRatesFromReadcaches_MirrorsAggregateWithMax pins the
@@ -57,7 +58,7 @@ func TestCollectRatesFromReadcaches_MirrorsAggregateWithMax(t *testing.T) {
 	solo.setLoad(1, hrC, 160, 1600)
 	solo.pQuery[1] = 720
 
-	rates, _, partitionTotals, partitionQuerySamples, _, failed, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, partitionTotals, partitionQuerySamples, _, _, _, failed, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Empty(t, failed)
 
@@ -121,7 +122,7 @@ func TestCollectRatesFromReadcaches_WarmingMirrorRateIgnored(t *testing.T) {
 	replaying.pQuery[0] = 9000
 	replaying.setWarming(0)
 
-	rates, _, partitionTotals, partitionQuerySamples, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, partitionTotals, partitionQuerySamples, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 1)
 
@@ -149,7 +150,7 @@ func TestCollectRatesFromReadcaches_AllMirrorsWarmingReadsZero(t *testing.T) {
 		rc.setWarming(0)
 	}
 
-	rates, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, _, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 1)
 	assert.Zero(t, rates[0].sampleRate)
@@ -180,11 +181,74 @@ func TestCollectRatesFromReadcaches_ResidueStaysSeparate(t *testing.T) {
 	newOwner.owned[1] = []assignment.HashRange{hr}
 	newOwner.setLoad(1, hr, 50, 500)
 
-	rates, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, _, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 2)
 
 	load := partitionLoadFromRates(rates, []int32{0, 1})
 	assert.Equal(t, 200.0, load[0])
 	assert.Equal(t, 50.0, load[1])
+}
+
+func TestCollectRatesFromReadcaches_ReadinessUsesAssignedReplicas(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	now := h.clock.Now()
+	h.r.readcacheStore.setReplicaMap(readcacheassignment.ReplicaMap{
+		"readcache-0": {
+			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
+			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
+		},
+		"readcache-1": {
+			{InstanceID: "readcache-zone-a-1", Zone: "zone-a"},
+			{InstanceID: "readcache-zone-b-1", Zone: "zone-b"},
+		},
+	})
+	require.True(t, h.r.readcacheStore.apply(now, &readcacheassignment.Assignment{
+		Entries: []readcacheassignment.AssignmentEntry{
+			{PartitionID: 0, InstanceID: "readcache-0"},
+			{PartitionID: 1, InstanceID: "readcache-1"},
+		},
+	}, h.cfg.LeaseDuration, h.r.readcacheLeaseLookahead(), h.cfg.EntryRetention, 0))
+
+	// Both assigned replicas for partition 0 are warming. A warm residue
+	// report from a replica of another logical owner must not cover it.
+	for _, id := range []string{"readcache-zone-a-0", "readcache-zone-b-0"} {
+		rc := h.addReadcache(id)
+		rc.owned[0] = nil
+		rc.setWarming(0)
+	}
+	owner1 := h.addReadcache("readcache-zone-a-1")
+	owner1.owned[0] = nil // residue from an old owner
+	owner1.owned[1] = nil
+	h.addReadcache("readcache-zone-b-1")
+
+	_, _, _, _, _, _, readiness, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, map[int32]bool{0: true}, readiness.unreadyPartitions)
+	assert.Equal(t, map[string]struct{}{"readcache-0": {}}, readiness.unreadyLogicalTargets)
+}
+
+func TestCollectRatesFromReadcaches_OneWarmAssignedReplicaProvidesCoverage(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	now := h.clock.Now()
+	h.r.readcacheStore.setReplicaMap(readcacheassignment.ReplicaMap{
+		"readcache-0": {
+			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
+			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
+		},
+	})
+	require.True(t, h.r.readcacheStore.apply(now, &readcacheassignment.Assignment{
+		Entries: []readcacheassignment.AssignmentEntry{{PartitionID: 0, InstanceID: "readcache-0"}},
+	}, h.cfg.LeaseDuration, h.r.readcacheLeaseLookahead(), h.cfg.EntryRetention, 0))
+
+	warm := h.addReadcache("readcache-zone-a-0")
+	warm.owned[0] = nil
+	warming := h.addReadcache("readcache-zone-b-0")
+	warming.owned[0] = nil
+	warming.setWarming(0)
+
+	_, _, _, _, _, _, readiness, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	require.NoError(t, err)
+	assert.Empty(t, readiness.unreadyPartitions)
+	assert.Empty(t, readiness.unreadyLogicalTargets)
 }

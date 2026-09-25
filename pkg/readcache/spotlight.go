@@ -151,12 +151,13 @@ func emitReadcacheSpotlightForPartition(
 ) {
 	for _, row := range rows {
 		for _, sp := range spots {
-			if !hashRangesOverlapBounds(row.Range, sp.Lo, sp.Hi) {
+			if row.TenantID != sp.TenantId || !hashRangesOverlapBounds(row.Range, sp.Lo, sp.Hi) {
 				continue
 			}
 			level.Info(logger).Log(
 				"msg", "nautilus spotlight: readcache observation",
 				"spotlight_id", sp.TraceId,
+				"tenant", sp.TenantId,
 				"reason", sp.Reason,
 				"spotlight_lo", sp.Lo,
 				"spotlight_hi", sp.Hi,

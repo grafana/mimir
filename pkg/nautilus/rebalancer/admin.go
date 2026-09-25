@@ -32,6 +32,7 @@ const (
 // the slicer's algorithm runs on sample rate, not series.
 type Action struct {
 	Kind     ActionKind           `json:"kind"`
+	TenantID string               `json:"tenant_id,omitempty"`
 	Range    assignment.HashRange `json:"range"`
 	FromPart int32                `json:"from_partition,omitempty"`
 	ToPart   int32                `json:"to_partition,omitempty"`
@@ -64,7 +65,8 @@ const maxRoundLogs = 20
 // to, so the admin page can attribute residue to the partition that
 // has it rather than to whichever partition currently owns the range.
 type rangeStatsView struct {
-	Series int64
+	Series     int64
+	SampleRate float64
 }
 
 // adminState stores the data needed to render the admin page and to
@@ -194,9 +196,16 @@ func (s *adminState) setLastStats(
 	partitionRateByPID map[int32]float64,
 	activePartitions []int32,
 ) {
-	stats := make(map[partitionRangeKey]rangeStatsView, len(lm.series))
+	stats := make(map[partitionRangeKey]rangeStatsView, max(len(lm.series), len(lm.sampleRate)))
 	for k, n := range lm.series {
-		stats[k] = rangeStatsView{Series: n}
+		stat := stats[k]
+		stat.Series = n
+		stats[k] = stat
+	}
+	for k, rate := range lm.sampleRate {
+		stat := stats[k]
+		stat.SampleRate = rate
+		stats[k] = stat
 	}
 
 	partitionLCopy := make(map[int32]int64, len(partitionLByPID))
@@ -297,11 +306,23 @@ type partitionView struct {
 
 // rangeView is the data for one hash range in the admin page.
 type rangeView struct {
+	TenantID   string
 	Lo         uint32
 	Hi         uint32
 	Series     int64
 	SizePct    float64
 	LastAction ActionKind
+}
+
+// tenantRangeView is the current assignment and latest available load
+// information for one tenant hash range.
+type tenantRangeView struct {
+	Lo            uint32  `json:"lo"`
+	Hi            uint32  `json:"hi"`
+	PartitionID   int32   `json:"partition_id"`
+	HeadSeries    int64   `json:"head_series"`
+	SampleRate    float64 `json:"sample_rate"`
+	LoadAvailable bool    `json:"load_available"`
 }
 
 // readcacheReplicaView is one readcache pod and the Kafka partitions
@@ -334,16 +355,19 @@ type adminPageData struct {
 	// values are surfaced separately so the UI can label units
 	// (samples/s) and apply human-readable formatting. Zero when
 	// no rate signal has been reported yet.
-	MeanRate      float64
-	MaxRate       float64
-	MinRate       float64
-	RateImbalance float64
-	NumPartitions int
-	NumEntries    int
-	MovedFraction float64
-	Partitions    []partitionView
-	Rounds        []RoundLog
-	HeatmapData   string
+	MeanRate             float64
+	MaxRate              float64
+	MinRate              float64
+	RateImbalance        float64
+	NumPartitions        int
+	NumEntries           int
+	MovedFraction        float64
+	Partitions           []partitionView
+	Rounds               []RoundLog
+	HeatmapData          string
+	TenantIDs            []string
+	SelectedTenantID     string
+	SelectedTenantRanges []tenantRangeView
 
 	ReadcacheConfigured bool
 	ReadcacheReplicas   []readcacheReplicaView
@@ -382,17 +406,27 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		return data
 	}
 
+	tenantSet := make(map[string]struct{})
+	for _, e := range current.Entries {
+		tenantSet[e.TenantID] = struct{}{}
+	}
+	data.TenantIDs = make([]string, 0, len(tenantSet))
+	for tenantID := range tenantSet {
+		data.TenantIDs = append(data.TenantIDs, tenantID)
+	}
+	sort.Strings(data.TenantIDs)
+
 	// Compute last-round action lookups.
-	lastActions := make(map[assignment.HashRange]ActionKind)
+	lastActions := make(map[tenantRangeKey]ActionKind)
 	if len(rounds) > 0 {
 		for _, a := range rounds[len(rounds)-1].Actions {
-			lastActions[a.Range] = a.Kind
+			lastActions[tenantRangeKey{tenantID: a.TenantID, hr: a.Range}] = a.Kind
 		}
 	}
 
 	// Build partition views.
 	partMap := make(map[int32]*partitionView)
-	hashSpaceTotal := float64(uint64(math.MaxUint32) + 1)
+	hashSpaceTotal := float64(uint64(math.MaxUint32)+1) * float64(tenantCount(current.Entries))
 	var totalOwnedSeries int64
 
 	for _, e := range current.Entries {
@@ -402,12 +436,13 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 			partMap[e.PartitionID] = pv
 		}
 
-		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
+		stat := lastStats[partitionRangeKey{tenantID: e.TenantID, partitionID: e.PartitionID, hr: e.Range}]
 		sizePct := float64(e.Range.Size()) / hashSpaceTotal * 100
 
-		action := lastActions[e.Range]
+		action := lastActions[tenantRangeKey{tenantID: e.TenantID, hr: e.Range}]
 
 		pv.Ranges = append(pv.Ranges, rangeView{
+			TenantID:   e.TenantID,
 			Lo:         e.Range.Lo,
 			Hi:         e.Range.Hi,
 			Series:     stat.Series,
@@ -542,7 +577,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	heatmap := make([]float64, heatmapBuckets)
 	bucketSize := (uint64(math.MaxUint32) + 1) / uint64(heatmapBuckets)
 	for _, e := range current.Entries {
-		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
+		stat := lastStats[partitionRangeKey{tenantID: e.TenantID, partitionID: e.PartitionID, hr: e.Range}]
 		if stat.Series == 0 {
 			continue
 		}
@@ -679,7 +714,7 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	sub := strings.TrimPrefix(req.URL.Path, adminPathPrefix)
 	switch {
 	case sub == "" || sub == "/":
-		r.serveAdminHTML(w)
+		r.serveAdminHTMLForTenant(w, req.URL.Query().Get("tenant"))
 	case sub == "/rounds.json":
 		r.serveRoundsList(w)
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
@@ -694,19 +729,57 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// adminPathPrefix is the URL prefix under which the rebalancer's
-// admin handlers are mounted (see modules.go). Kept here so URL
-// dispatch in ServeHTTP and link generation in the HTML template
-// stay in sync.
-const adminPathPrefix = "/nautilus/rebalancer"
+func buildTenantRangeViews(current *assignment.Assignment, lastStats map[partitionRangeKey]rangeStatsView, tenantID string) []tenantRangeView {
+	ranges := make([]tenantRangeView, 0)
+	if current != nil {
+		for _, e := range current.Entries {
+			if e.TenantID != tenantID {
+				continue
+			}
+			stat, available := lastStats[partitionRangeKey{
+				tenantID:    e.TenantID,
+				partitionID: e.PartitionID,
+				hr:          e.Range,
+			}]
+			ranges = append(ranges, tenantRangeView{
+				Lo:            e.Range.Lo,
+				Hi:            e.Range.Hi,
+				PartitionID:   e.PartitionID,
+				HeadSeries:    stat.Series,
+				SampleRate:    stat.SampleRate,
+				LoadAvailable: available,
+			})
+		}
+	}
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].Lo < ranges[j].Lo
+	})
+	return ranges
+}
 
 func (r *Rebalancer) serveAdminHTML(w http.ResponseWriter) {
+	r.serveAdminHTMLForTenant(w, "")
+}
+
+func (r *Rebalancer) serveAdminHTMLForTenant(w http.ResponseWriter, tenantID string) {
 	data := r.buildAdminPageData()
+	data.SelectedTenantID = tenantID
+	if tenantID != "" {
+		_, lastStats, _, _ := r.admin.snapshot()
+		current := r.store.latestActiveAssignment(r.now())
+		data.SelectedTenantRanges = buildTenantRangeViews(current, lastStats, tenantID)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := adminTemplate.Execute(w, data); err != nil {
 		http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
 	}
 }
+
+// adminPathPrefix is the URL prefix under which the rebalancer's
+// admin handlers are mounted (see modules.go). Kept here so URL
+// dispatch in ServeHTTP and link generation in the HTML template
+// stay in sync.
+const adminPathPrefix = "/nautilus/rebalancer"
 
 func (r *Rebalancer) serveRoundsList(w http.ResponseWriter) {
 	traces := r.admin.traceSnapshot()

@@ -150,7 +150,7 @@ func (d *Distributor) watchReadcacheAssignments(ctx context.Context) {
 	backoff := minBackoff
 
 	for ctx.Err() == nil {
-		stream, err := client.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{SupportsDeltas: true})
+		stream, err := client.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{})
 		if err != nil {
 			level.Warn(d.log).Log("msg", "failed to open readcache WatchReadcacheAssignments stream", "err", err, "backoff", backoff)
 			d.sleepWithCtx(ctx, backoff)

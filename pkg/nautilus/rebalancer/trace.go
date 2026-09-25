@@ -3,6 +3,7 @@
 package rebalancer
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -73,7 +74,11 @@ import (
 // Version "8" adds the load no-op band, partition-role cooldowns,
 // and split/merge structural cooldowns. Their config and live state
 // are captured so replay preserves the new hysteresis decisions.
-const SlicerVersion = "8"
+//
+// Version "9" scopes every range identity by tenant and treats one
+// assignment as independent per-tenant uint32 tilings balanced over
+// shared physical partitions.
+const SlicerVersion = "9"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -90,6 +95,7 @@ const SlicerVersion = "8"
 // retained as observability metadata and surfaces on the admin
 // page, but does not feed Phase 3's hot/cold scoring.
 type RangeRate struct {
+	TenantID    string  `json:"tenant_id,omitempty"`
 	Lo          uint32  `json:"lo"`
 	Hi          uint32  `json:"hi"`
 	Series      int64   `json:"series"`
@@ -122,9 +128,8 @@ type ConfigSnapshot struct {
 //
 // where endAssignment.Entries equals t.End.
 //
-// Trace contains only ingestion-flow metadata (hash ranges,
-// partition IDs, instance IDs, counts). It contains no per-tenant or
-// per-series content and is safe to persist or share.
+// Trace contains ingestion-flow metadata (tenant IDs, hash ranges,
+// partition IDs, instance IDs, counts), but no per-series content.
 type Trace struct {
 	SlicerVersion string `json:"slicer_version"`
 
@@ -154,8 +159,8 @@ type Trace struct {
 	// rebalancing is hitting its ceiling.
 	UnnamedQuerySamples map[string]float64 `json:"unnamed_query_samples,omitempty"`
 	ActivePartitions    []int32            `json:"active_partitions"`
-	// Cooldowns is keyed by "lo:hi" (decimal) so the JSON map is
-	// well-formed; use FormatHashRangeKey / ParseHashRangeKey.
+	// Cooldowns is keyed by a tenant-aware, JSON-safe range identity.
+	// Empty-tenant entries retain the legacy "lo:hi" representation.
 	Cooldowns                   map[string]time.Time `json:"cooldowns"`
 	StructuralCooldowns         map[string]time.Time `json:"structural_cooldowns,omitempty"`
 	RecentSourcePartitions      map[int32]time.Time  `json:"recent_source_partitions,omitempty"`
@@ -190,12 +195,37 @@ func ParseHashRangeKey(s string) (assignment.HashRange, error) {
 	return assignment.HashRange{Lo: uint32(lo), Hi: uint32(hi)}, nil
 }
 
+func formatTenantHashRangeKey(tenantID string, hr assignment.HashRange) string {
+	if tenantID == "" {
+		return FormatHashRangeKey(hr)
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(tenantID)) + "|" + FormatHashRangeKey(hr)
+}
+
+func parseTenantHashRangeKey(s string) (tenantRangeKey, error) {
+	encodedTenant, rangeKey, found := strings.Cut(s, "|")
+	if !found {
+		hr, err := ParseHashRangeKey(s)
+		return tenantRangeKey{hr: hr}, err
+	}
+	tenantBytes, err := base64.RawURLEncoding.DecodeString(encodedTenant)
+	if err != nil {
+		return tenantRangeKey{}, fmt.Errorf("invalid tenant hash range key %q: bad tenant: %w", s, err)
+	}
+	hr, err := ParseHashRangeKey(rangeKey)
+	if err != nil {
+		return tenantRangeKey{}, err
+	}
+	return tenantRangeKey{tenantID: string(tenantBytes), hr: hr}, nil
+}
+
 // ratesToWire converts the unexported rangeRate (used by the slicer)
 // into the JSON-serializable RangeRate (used by Trace).
 func ratesToWire(in []rangeRate) []RangeRate {
 	out := make([]RangeRate, len(in))
 	for i, r := range in {
 		out[i] = RangeRate{
+			TenantID:    r.tenantID,
 			Lo:          r.hr.Lo,
 			Hi:          r.hr.Hi,
 			Series:      r.series,
@@ -211,6 +241,7 @@ func ratesFromWire(in []RangeRate) []rangeRate {
 	out := make([]rangeRate, len(in))
 	for i, r := range in {
 		out[i] = rangeRate{
+			tenantID:    r.TenantID,
 			hr:          assignment.HashRange{Lo: r.Lo, Hi: r.Hi},
 			series:      r.Series,
 			sampleRate:  r.SampleRate,
@@ -220,15 +251,15 @@ func ratesFromWire(in []RangeRate) []rangeRate {
 	return out
 }
 
-// cooldownsToWire converts the slicer's internal cooldown map (keyed
-// by HashRange) into the trace's string-keyed form. The whole map is
+// cooldownsToWire converts the slicer's internal tenant-range cooldown
+// map into the trace's string-keyed form. The whole map is
 // captured even though only entries with deadline > now are
 // load-bearing — extra entries are harmless on replay because
 // isInMoveCooldown filters expired deadlines internally.
-func cooldownsToWire(in map[assignment.HashRange]time.Time) map[string]time.Time {
+func cooldownsToWire(in map[tenantRangeKey]time.Time) map[string]time.Time {
 	out := make(map[string]time.Time, len(in))
-	for hr, t := range in {
-		out[FormatHashRangeKey(hr)] = t
+	for key, t := range in {
+		out[formatTenantHashRangeKey(key.tenantID, key.hr)] = t
 	}
 	return out
 }
@@ -236,14 +267,14 @@ func cooldownsToWire(in map[assignment.HashRange]time.Time) map[string]time.Time
 // cooldownsFromWire is the inverse of cooldownsToWire. Malformed
 // keys are silently dropped: a malformed key cannot match any real
 // hash range anyway, so dropping it is the conservative choice.
-func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Time {
-	out := make(map[assignment.HashRange]time.Time, len(in))
+func cooldownsFromWire(in map[string]time.Time) map[tenantRangeKey]time.Time {
+	out := make(map[tenantRangeKey]time.Time, len(in))
 	for k, t := range in {
-		hr, err := ParseHashRangeKey(k)
+		key, err := parseTenantHashRangeKey(k)
 		if err != nil {
 			continue
 		}
-		out[hr] = t
+		out[key] = t
 	}
 	return out
 }

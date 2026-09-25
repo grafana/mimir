@@ -37,6 +37,23 @@ func TestParseHashRangeKey_RejectsMalformed(t *testing.T) {
 	}
 }
 
+func TestTraceTenantScopedRangeIdentitiesRoundTrip(t *testing.T) {
+	hr := assignment.HashRange{Lo: 10, Hi: 20}
+	rates := []rangeRate{{tenantID: "tenant:a/b", partitionID: 2, hr: hr, sampleRate: 3.5, series: 4}}
+	assert.Equal(t, rates, ratesFromWire(ratesToWire(rates)))
+
+	deadline := time.Unix(1000, 0)
+	cooldowns := map[tenantRangeKey]time.Time{{tenantID: "tenant:a/b", hr: hr}: deadline}
+	assert.Equal(t, cooldowns, cooldownsFromWire(cooldownsToWire(cooldowns)))
+
+	action := Action{Kind: ActionMove, TenantID: "tenant:a/b", Range: hr, FromPart: 1, ToPart: 2}
+	buf, err := json.Marshal(action)
+	require.NoError(t, err)
+	var decoded Action
+	require.NoError(t, json.Unmarshal(buf, &decoded))
+	assert.Equal(t, action, decoded)
+}
+
 // TestTrace_QueryLoadFields_JSONRoundTrip checks that the Phase 1
 // query-load observability fields (PartitionQuerySamples,
 // UnnamedQuerySamples) survive JSON serialization. External replay
@@ -147,10 +164,10 @@ func nonTrivialTrace(t *testing.T) Trace {
 	}
 	r := &Rebalancer{
 		cfg:           cfg,
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		moveCooldowns: make(map[tenantRangeKey]time.Time),
 	}
 	// Pre-seed a cooldown so cooldown serialization is also exercised.
-	r.moveCooldowns[initial.Entries[0].Range] = time.Unix(2_000_000, 0)
+	r.moveCooldowns[tenantRangeKey{hr: initial.Entries[0].Range}] = time.Unix(2_000_000, 0)
 
 	now := time.Unix(1_000_000, 0)
 	return captureTrace(t, r, initial, rates, partL, partitions, now)

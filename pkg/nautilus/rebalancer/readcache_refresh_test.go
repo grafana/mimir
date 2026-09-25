@@ -234,7 +234,7 @@ func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 	})
 
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(false)
+	initial, updates, unsubscribe := r.readcacheStore.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial,
 		"sanity: subscribe before any apply must return nil initial")

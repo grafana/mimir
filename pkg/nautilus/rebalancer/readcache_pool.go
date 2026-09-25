@@ -118,8 +118,7 @@ func NewReadcachePool(_ ReadcacheClientConfig, ringClient readcacheRingClient, c
 	// previous behaviour) made every HashRangeStats / SetHashRanges
 	// / GetHashRanges call fail with "no org id" on the server side,
 	// which in turn forced reconstructRound's quorum check to fail
-	// and the rebalancer to fall into the FineEvenSplit cold-start
-	// branch every round, producing a self-sustaining outage.
+	// and prevented the rebalancer from recovering tenant placements.
 	unary := []grpc.UnaryClientInterceptor{middleware.ClientUserHeaderInterceptor}
 	if clusterValidationLabel != "" {
 		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter))

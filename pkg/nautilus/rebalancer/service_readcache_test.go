@@ -30,7 +30,7 @@ func TestReadcacheLogStore_SubscribeBeforeFirstApplyReturnsNilInitial(t *testing
 		{PartitionID: 0, InstanceID: "rc-a", From: t0, To: t0.Add(time.Hour)},
 	})
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	assert.Nil(t, initial,
 		"subscribe must return nil initial before the first apply, even when seeded entries are live, so a rebalancer restart never broadcasts stale persisted state as authoritative")
@@ -43,7 +43,7 @@ func TestReadcacheLogStore_FirstApplyPrimesSubscriber(t *testing.T) {
 	s := newReadcacheLogStore()
 	t0 := time.Unix(1000, 0)
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial)
 
@@ -82,7 +82,7 @@ func TestReadcacheLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 	}
 	s.seedFromEntries(seed)
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial)
 
@@ -116,7 +116,7 @@ func TestReadcacheLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 		},
 	}, time.Minute, 10*time.Second, time.Hour, 0))
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	assert.Len(t, initial.entries, 1,
@@ -140,7 +140,7 @@ func TestReadcacheLogStore_DeltaSubscriberSurvivesPartitionMove(t *testing.T) {
 		},
 	}, lease, lookahead, time.Hour, safety))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	require.True(t, initial.reset)
@@ -207,7 +207,7 @@ func TestReadcacheLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 		},
 	}, time.Minute, 10*time.Second, time.Hour, 0))
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	require.NotNil(t, initial)

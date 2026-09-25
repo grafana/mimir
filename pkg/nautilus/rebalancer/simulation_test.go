@@ -253,7 +253,7 @@ func (s *simulation) partitionLoads() map[int32]float64 {
 	lm := buildLoadMap(rates)
 	loads := make(map[int32]float64)
 	for _, e := range s.assignment.Entries {
-		loads[e.PartitionID] += float64(lm.seriesAt(e.PartitionID, e.Range))
+		loads[e.PartitionID] += float64(lm.seriesAt(e.TenantID, e.PartitionID, e.Range))
 	}
 	return loads
 }

@@ -22,7 +22,6 @@ type watchStreamObserver struct {
 	r        *Rebalancer
 	stream   string // "hash" | "readcache"
 	peer     string
-	deltas   bool
 	start    time.Time
 	gaugeDec func()
 
@@ -32,29 +31,23 @@ type watchStreamObserver struct {
 	err                        error
 }
 
-func newWatchStreamObserver(r *Rebalancer, stream string, supportsDeltas bool, ctx context.Context) *watchStreamObserver {
+func newWatchStreamObserver(r *Rebalancer, stream string, ctx context.Context) *watchStreamObserver {
 	peerAddr := "unknown"
 	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
 		peerAddr = p.Addr.String()
-	}
-	protocol := "legacy"
-	if supportsDeltas {
-		protocol = "delta"
 	}
 	o := &watchStreamObserver{
 		r:        r,
 		stream:   stream,
 		peer:     peerAddr,
-		deltas:   supportsDeltas,
 		start:    r.now(),
-		gaugeDec: r.metrics.watchStreamStarted(stream, protocol),
+		gaugeDec: r.metrics.watchStreamStarted(stream),
 	}
 	if r.logger != nil {
 		level.Info(r.logger).Log(
 			"msg", "assignment watch stream connected",
 			"stream", stream,
 			"peer", peerAddr,
-			"supports_deltas", supportsDeltas,
 		)
 	}
 	return o
@@ -95,7 +88,6 @@ func (o *watchStreamObserver) finish() {
 		"msg", "assignment watch stream closed",
 		"stream", o.stream,
 		"peer", o.peer,
-		"supports_deltas", o.deltas,
 		"duration", o.r.now().Sub(o.start).Round(time.Millisecond),
 		"snapshots_sent", o.snapshots,
 		"snapshot_entries", o.snapshotEntries,

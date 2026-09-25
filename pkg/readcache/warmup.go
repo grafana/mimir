@@ -23,6 +23,13 @@ import (
 // the protobuf surface untouched.
 const stillWarmingDetail = "readcache:still_warming"
 
+// assignmentNotReadyDetail is returned by HashRangeStats before this
+// readcache has successfully reconciled its first assignment snapshot. A
+// successful empty stats response is ambiguous to the rebalancer: it looks
+// exactly like a warm, idle placement target and can attract hot partitions
+// while this pod is still starting.
+const assignmentNotReadyDetail = "readcache:assignment_not_ready"
+
 // partitionEpochUnavailableDetail is returned when the distributor
 // routes a partition-hinted query to this pod but the pod has neither
 // a live nor a frozen epoch for that partition. Returning an empty
@@ -38,6 +45,10 @@ const partitionEpochUnavailableDetail = "readcache:partition_epoch_unavailable"
 // lease owner.
 func errStillWarming(partitionID int32) error {
 	return status.Errorf(codes.Unavailable, "%s partition=%d", stillWarmingDetail, partitionID)
+}
+
+func errAssignmentNotReady() error {
+	return status.Error(codes.Unavailable, assignmentNotReadyDetail)
 }
 
 // errPartitionEpochUnavailable is returned when a partition-hinted

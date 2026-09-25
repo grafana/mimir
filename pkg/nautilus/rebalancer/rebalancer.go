@@ -20,6 +20,8 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -178,12 +180,11 @@ type Config struct {
 	// persists both the (hash-range -> partition) and the (partition
 	// -> readcache instance) logs. On restart the rebalancer seeds
 	// the in-memory logs from disk so the very first round after a
-	// crash doesn't reset routing to FineEvenSplit, which would
-	// shuffle every partition's owner and stall every readcache for
-	// the duration of a warm-up.
+	// crash can reconstruct existing tenant placements without
+	// shuffling every partition's owner.
 	//
-	// Empty string disables persistence (logs are seeded from
-	// FineEvenSplit / GetHashRanges as before).
+	// Empty string disables persistence; existing tenant placements
+	// may still be reconstructed from readcache GetHashRanges reports.
 	DataDir string `yaml:"data_dir"`
 
 	// KafkaTopic is the Kafka topic the rebalancer asks Kafka to
@@ -244,7 +245,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.LeaseLookahead, prefix+"lease-lookahead", 90*time.Second, "How far before an active lease's expiry the rebalancer pre-issues its successor. Steady-state rebalance interval is approximately LeaseDuration; LeaseLookahead is the safety buffer to disseminate the successor to all consumers before the active lease ends.")
 	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
 	f.DurationVar(&cfg.ReadcacheMoveSafetyWindow, prefix+"readcache-move-safety-window", 0, "Overlap window kept on the previous readcache owner when a partition moves between instances. The new owner adopts the partition at the Kafka live edge immediately; the previous owner keeps consuming and stays queryable until move_time+this before freezing its slice, guaranteeing no gap across the handoff at the cost of a small duplicate band absorbed by query-time dedup. 0 keeps the legacy immediate handoff.")
-	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
+	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart existing tenant placements may still be reconstructed from readcache reports. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
 	f.Var(&asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
 	f.Var(&asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K); when 0 it uses -nautilus-rebalancer.partition-count. Must be <= -nautilus-rebalancer.partition-count when both are set.")
@@ -327,7 +328,7 @@ type Rebalancer struct {
 	// moved, the wall-clock time at which it (and any range overlapping
 	// its boundaries) becomes eligible to be moved again. Mutated only
 	// by rebalance(), which runs single-threaded from running().
-	moveCooldowns map[assignment.HashRange]time.Time
+	moveCooldowns map[tenantRangeKey]time.Time
 
 	// cooldownsFile persists moveCooldowns under cfg.DataDir so a
 	// restart doesn't forget in-flight cooldowns and immediately
@@ -343,7 +344,7 @@ type Rebalancer struct {
 
 	// structuralCooldowns tracks split/merge lineage by range overlap.
 	// Unlike moveCooldowns, it is consulted only by Phases 2 and 4.
-	structuralCooldowns map[assignment.HashRange]time.Time
+	structuralCooldowns map[tenantRangeKey]time.Time
 
 	// readcacheCooldowns tracks per-partition cooldowns for the
 	// second slicer round (partition -> readcache instance). Mutated
@@ -431,9 +432,9 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		fleet:               readcachePool,
 		store:               newLogStore(),
 		readcacheStore:      newReadcacheLogStore(),
-		moveCooldowns:       make(map[assignment.HashRange]time.Time),
+		moveCooldowns:       make(map[tenantRangeKey]time.Time),
 		partitionRoles:      newPartitionRoleCooldowns(),
-		structuralCooldowns: make(map[assignment.HashRange]time.Time),
+		structuralCooldowns: make(map[tenantRangeKey]time.Time),
 		readcacheCooldowns:  make(readcacheMoveCooldowns),
 		readcacheMembership: newReadcacheMembershipTracker(),
 		metrics:             newMetrics(registerer),
@@ -459,9 +460,9 @@ func (r *Rebalancer) starting(_ context.Context) error {
 		}
 
 		assignmentFile := newLogFile(filepath.Join(r.cfg.DataDir, assignmentLogFilename), log.With(r.logger, "component", "assignment_log_file"))
-		if entries, ok := assignmentFile.readAssignmentLog(); ok {
-			level.Info(r.logger).Log("msg", "seeded assignment log from disk", "entries", len(entries))
-			r.store.seedFromEntries(entries)
+		if state, ok := assignmentFile.readAssignmentLog(); ok {
+			level.Info(r.logger).Log("msg", "seeded assignment log from disk", "entries", len(state.Entries), "generation", state.Generation)
+			r.store.seedFromState(state)
 		}
 		r.store.setPersistFn(assignmentFile.writeAssignmentLog, r.logger)
 
@@ -539,7 +540,8 @@ func (r *Rebalancer) running(ctx context.Context) error {
 	}
 }
 
-// nextRoundDelay computes the time until the next rebalance round.
+// nextRoundDelay computes the time until the next rebalance round from the
+// earliest tier-1 or tier-2 ownership horizon.
 // In steady state the result equals LeaseDuration (one round per
 // lease, scheduled LeaseLookahead before the current lease expires).
 // On cold start (no leases yet) or after a full lease expiry the
@@ -548,6 +550,12 @@ func (r *Rebalancer) running(ctx context.Context) error {
 // future" cases.
 func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 	horizon := r.store.leaseHorizon(now)
+	if r.readcacheStore != nil {
+		readcacheHorizon := r.readcacheStore.leaseHorizon(now)
+		if !readcacheHorizon.IsZero() && (horizon.IsZero() || readcacheHorizon.Before(horizon)) {
+			horizon = readcacheHorizon
+		}
+	}
 	var delay time.Duration
 	if horizon.IsZero() {
 		// No active or pre-issued leases. Likely either a cold start
@@ -596,17 +604,19 @@ func (r *Rebalancer) readcacheLeaseLookahead() time.Duration {
 // WatchAssignments implements NautilusRebalancerServer. It sends
 // a full snapshot of the retention-bounded assignment log (expired
 // entries, active leases, and pre-issued successors; reset=true)
-// immediately on connect. Subsequent messages depend on the
-// request's supports_deltas flag: subscribers that set it receive
-// only the entries each rebalance round created or mutated
-// (reset=false, upserts by lease identity), while legacy subscribers
-// receive a fresh full snapshot per mutating round.
+// immediately on connect. Subsequent messages contain only the entries each
+// rebalance round created or mutated (reset=false, upserts by lease identity).
 // Expired-but-retained entries are load-bearing for the
 // distributor's read path, which resolves partition ownership over a
 // query's wall-clock window rather than at `now`; the state size is
 // bounded by EntryRetention, which must exceed the querier's
 // lookback (QueryIngestersWithin). Slow subscribers lose nothing:
 // pending deltas are coalesced, pending snapshots replaced.
+//
+// Clients must declare supports_tenant_scoped_assignments. The server
+// rejects incapable clients before subscribing, including while the current
+// assignment is empty, because an empty snapshot means "no tenants observed
+// yet" rather than a legacy shared tiling.
 //
 // If the rebalancer has not yet completed its first apply() the
 // initial Send is skipped; the subscriber waits on the updates
@@ -616,10 +626,14 @@ func (r *Rebalancer) readcacheLeaseLookahead() time.Duration {
 // state (whose leases have all expired during the restart window).
 func (r *Rebalancer) WatchAssignments(req *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
 	ctx := stream.Context()
-	obs := newWatchStreamObserver(r, "hash", req.GetSupportsDeltas(), ctx)
+	obs := newWatchStreamObserver(r, "hash", ctx)
 	defer obs.finish()
 
-	initial, updates, unsubscribe := r.store.subscribe(req.GetSupportsDeltas())
+	if !req.GetSupportsTenantScopedAssignments() {
+		return obs.fail(status.Error(codes.FailedPrecondition, "WatchAssignments client must support tenant-scoped assignments"))
+	}
+
+	initial, updates, unsubscribe := r.store.subscribe()
 	defer unsubscribe()
 
 	send := func(u assignmentUpdate) error {
@@ -654,31 +668,35 @@ func (r *Rebalancer) WatchAssignments(req *WatchAssignmentsRequest, stream Nauti
 
 func assignmentUpdateToProto(u assignmentUpdate) *WatchAssignmentsResponse {
 	resp := &WatchAssignmentsResponse{
-		Entries: EntriesToProto(u.entries),
-		Reset_:  u.reset,
+		Entries:                    EntriesToProto(u.entries),
+		Reset_:                     u.reset,
+		AssignmentGeneration:       u.generation,
+		AssignmentValidUntilUnixMs: u.validUntil.UnixMilli(),
 	}
 	if !u.pruneBefore.IsZero() {
 		resp.PruneBeforeUnixMs = u.pruneBefore.UnixMilli()
+	}
+	if u.validUntil.IsZero() {
+		resp.AssignmentValidUntilUnixMs = 0
 	}
 	return resp
 }
 
 // WatchReadcacheAssignments is the readcache-side analogue of
 // WatchAssignments: instead of (hash range -> ingester partition) it
-// streams (Kafka partition -> readcache instance) leases. The wire
-// contract is identical (full snapshot on connect, deltas or
-// snapshots after depending on supports_deltas). The same
+// streams (Kafka partition -> readcache instance) leases. The wire contract is
+// identical (full snapshot on connect, deltas after). The same
 // first-apply gate applies: the initial Send is skipped until the
 // readcache log has been touched by apply() at least once (cold
 // start, regular slicer round, or admin reset), so a rebalancer
 // restart never broadcasts an empty/expired view that would tell
 // every readcache to drop all partitions.
-func (r *Rebalancer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
 	ctx := stream.Context()
-	obs := newWatchStreamObserver(r, "readcache", req.GetSupportsDeltas(), ctx)
+	obs := newWatchStreamObserver(r, "readcache", ctx)
 	defer obs.finish()
 
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(req.GetSupportsDeltas())
+	initial, updates, unsubscribe := r.readcacheStore.subscribe()
 	defer unsubscribe()
 
 	send := func(u readcacheUpdate) error {
@@ -734,6 +752,7 @@ func (r *Rebalancer) GetSpotlightedRanges(_ context.Context, _ *GetSpotlightedRa
 	for i, s := range snap {
 		out.Ranges[i] = SpotlightedRange{
 			TraceId:         s.TraceID,
+			TenantId:        s.TenantID,
 			Lo:              s.Range.Lo,
 			Hi:              s.Range.Hi,
 			StartedAtUnixMs: s.StartedAt.UnixMilli(),
@@ -791,30 +810,47 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	replicaMap := r.refreshReplicaMap()
 	current := r.store.latestActiveAssignment(now)
 	if current == nil {
-		// Cold start: try to reconstruct the assignment from whatever
-		// each owning pod (readcache when wired, ingester otherwise)
-		// locally remembers (via GetHashRanges). On a rolling
-		// rebalancer restart this preserves rebalanced state; on a
-		// truly-cold cluster it falls back to FineEvenSplit.
+		// Cold start: try to reconstruct tenant assignments from whatever
+		// each owning readcache locally remembers (via GetHashRanges). On a
+		// rolling rebalancer restart this preserves rebalanced state. A
+		// truly-cold cluster remains empty until a partition-0 report
+		// identifies a tenant that needs bootstrapping.
 		current = r.reconstructRound(ctx, activePartitions)
+		if current != nil {
+			// Publish reconstructed tenants before adding any unknown
+			// tenant history, so bootstrap never exposes a transient
+			// snapshot containing only the newly discovered tenants.
+			r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
+		}
+		_, _, _, _, _, unknownTenants, _, _, collectErr := r.collectRoundStats(ctx, current)
+		if collectErr != nil {
+			level.Warn(r.logger).Log("msg", "failed to collect unknown tenants during cold start", "err", collectErr)
+		} else {
+			bootstrappedCurrent, bootstrapped, bootstrapErr := r.bootstrapUnknownTenants(now, current, unknownTenants, activePartitions)
+			if bootstrapErr != nil {
+				return bootstrapErr
+			}
+			current = bootstrappedCurrent
+			if bootstrapped > 0 {
+				level.Info(r.logger).Log("msg", "bootstrapped unknown tenants during cold start", "tenants", bootstrapped)
+			}
+		}
 		if current == nil {
-			current = assignment.FineEvenSplit(activePartitions, initialSlicesPerPartition)
-			level.Info(r.logger).Log("msg", "initialized assignment with fine even split",
-				"partitions", len(activePartitions),
-				"slices_per_partition", initialSlicesPerPartition,
-				"total_slices", len(current.Entries))
+			current = &assignment.Assignment{}
+			level.Info(r.logger).Log("msg", "initialized empty tenant assignment",
+				"partitions", len(activePartitions))
 		} else {
 			level.Info(r.logger).Log("msg", "initialized assignment from readcache reports",
 				"partitions", len(activePartitions),
 				"total_entries", len(current.Entries))
 		}
 		r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
+		r.metrics.updateTenantHashRanges(current)
 		level.Info(r.logger).Log(
 			"msg", "cold start hash assignment log seeded",
 			"entries", len(current.Entries),
 			"subscribers", r.store.numSubscribers(),
 		)
-		r.pushRanges(ctx, current, now)
 		// Seed the readcache slicer too: without this the readcache
 		// log stays empty until the next round, which is up to
 		// LeaseDuration - LeaseLookahead away (3.5min by default).
@@ -827,16 +863,24 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
 			if instances := placementInstances; len(instances) > 0 {
-				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil, nil) {
-					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
+				decision := shouldFireTier2(r.cfg.ReadcacheSlicer.RoundInterval, now, r.lastTier2RoundAt, instances, r.lastTier2Instances)
+				if decision.fire {
+					if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil, nil) {
+						level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
+					}
+					r.lastTier2RoundAt = now
+					r.lastTier2Instances = append([]string(nil), instances...)
+					r.metrics.recordTier2FireDecision(decision.reason)
+				} else {
+					r.metrics.recordTier2SkipDecision(decision.reason)
+					level.Debug(r.logger).Log(
+						"msg", "skipping tier-2 round, gated by round interval",
+						"reason", decision.reason,
+						"interval", r.cfg.ReadcacheSlicer.RoundInterval,
+						"since_last_fire", now.Sub(r.lastTier2RoundAt),
+					)
+					r.refreshReadcacheLeases()
 				}
-				// Initialize tier-2 gating state so RoundInterval
-				// starts counting from the cold-start fire rather
-				// than from "never" — otherwise the next regular
-				// round would re-fire tier-2 immediately with
-				// reason=first_round, defeating the interval.
-				r.lastTier2RoundAt = now
-				r.lastTier2Instances = append([]string(nil), instances...)
 			}
 		} else {
 			// Slicer disabled: extend whatever (partition ->
@@ -846,6 +890,9 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			// Falls through silently when nothing is active.
 			r.refreshReadcacheLeases()
 		}
+		// Push after tier-2 has been seeded so every partition can be
+		// resolved to a concrete readcache owner in this same round.
+		r.pushRanges(ctx, current, now)
 		return nil
 	}
 	level.Info(r.logger).Log(
@@ -906,10 +953,23 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		)
 	}
 
-	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, failedReadcaches, err := r.collectRoundStats(ctx, current)
+	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, unknownTenants, statsReadiness, failedReadcaches, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
+	}
+	current, bootstrapped, err := r.bootstrapUnknownTenants(now, current, unknownTenants, activePartitions)
+	if err != nil {
+		return err
+	}
+	if bootstrapped > 0 {
+		level.Info(r.logger).Log(
+			"msg", "bootstrapped unknown tenants",
+			"tenants", bootstrapped,
+			"bootstrap_partitions", min(assignment.BootstrapPartitionCount, len(activePartitions)),
+		)
+		// bootstrapUnknownTenants publishes placement history first.
+		r.pushRanges(ctx, current, now)
 	}
 	// A readcache in its first unavailable round remains in the stable
 	// membership set so its partitions are not evacuated yet, but it
@@ -997,6 +1057,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		activePartitions,
 	)
 	r.metrics.setRateZeroExclusions(len(excludedFromSlicer))
+	if len(statsReadiness.unreadyPartitions) > 0 {
+		if excludedFromSlicer == nil {
+			excludedFromSlicer = make(map[int32]bool, len(statsReadiness.unreadyPartitions))
+		}
+		for partitionID := range statsReadiness.unreadyPartitions {
+			excludedFromSlicer[partitionID] = true
+		}
+	}
 	if len(excludedFromSlicer) > 0 {
 		excludedIDs := make([]int32, 0, len(excludedFromSlicer))
 		for pid := range excludedFromSlicer {
@@ -1005,7 +1073,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		level.Info(r.logger).Log(
 			"msg", "excluded rate-unknown partitions from slicer pool",
 			"count", len(excludedFromSlicer),
-			"reason", "rate=0 but L>0; likely tier-2 reassignment or readcache restart",
+			"reason", "rate=0 with L>0 or no assigned readcache replica has reported the partition warm",
 			"partitions", formatInt32IDs(excludedIDs, 16),
 		)
 	}
@@ -1041,6 +1109,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	hashLogChanged := r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
+	r.metrics.updateTenantHashRanges(newAssignment)
 	if hashLogChanged {
 		level.Info(r.logger).Log(
 			"msg", "hash assignment log updated",
@@ -1096,6 +1165,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				excludedTargets := failedReadcaches
 				if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
 					excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
+				}
+				if len(statsReadiness.unreadyLogicalTargets) > 0 {
+					if excludedTargets == nil {
+						excludedTargets = make(map[string]struct{}, len(statsReadiness.unreadyLogicalTargets))
+					}
+					for instanceID := range statsReadiness.unreadyLogicalTargets {
+						excludedTargets[instanceID] = struct{}{}
+					}
 				}
 				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets, excludedFromSlicer)
 				// Update the gating state regardless of whether the
@@ -1153,7 +1230,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		imbalance = float64(maxL) / float64(meanL)
 	}
 	movedFraction := 0.0
-	hashSpaceSize := float64(uint64(math.MaxUint32) + 1)
+	hashSpaceSize := float64(uint64(math.MaxUint32)+1) * float64(tenantCount(newAssignment.Entries))
 	for _, a := range actions {
 		if a.Kind == ActionMove || a.Kind == ActionReassign {
 			movedFraction += float64(a.Range.Size()) / hashSpaceSize
@@ -1230,9 +1307,9 @@ func (r *Rebalancer) withRPCTimeout(ctx context.Context) (context.Context, conte
 
 // reconstructionQuorumNum / reconstructionQuorumDen together express the
 // minimum fraction of expected readcache pods that must successfully return
-// their hash ranges for reconstruction to be trusted. Below this, we
-// fall back to FineEvenSplit rather than take a destructive action
-// (e.g. blowing up a range's ownership) on a minority view.
+// their hash ranges for reconstruction to be trusted. Below this, we leave
+// tier-1 empty rather than take a destructive action (e.g. blowing up a
+// tenant range's ownership) on a minority view.
 const (
 	reconstructionQuorumNum = 1
 	reconstructionQuorumDen = 2
@@ -1241,6 +1318,7 @@ const (
 // reportedEntry is a (partition, range) pair collected from a
 // GetHashRanges response during assignment reconstruction.
 type reportedEntry struct {
+	tenantID    string
 	partitionID int32
 	hr          assignment.HashRange
 }
@@ -1250,6 +1328,9 @@ type reportedEntry struct {
 // to establish stitchReportedEntries' precondition.
 func sortReportedEntries(entries []reportedEntry) {
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].tenantID != entries[j].tenantID {
+			return entries[i].tenantID < entries[j].tenantID
+		}
 		if entries[i].hr.Lo != entries[j].hr.Lo {
 			return entries[i].hr.Lo < entries[j].hr.Lo
 		}
@@ -1272,7 +1353,33 @@ func sortReportedEntries(entries []reportedEntry) {
 // Lo == 0 and the last Hi == math.MaxUint32, i.e. ready for
 // Assignment.Validate.
 func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, logger log.Logger) []assignment.Entry {
+	if len(sorted) == 0 {
+		if len(activePartitions) == 0 {
+			return nil
+		}
+		return []assignment.Entry{{
+			Range:       assignment.HashRange{Lo: 0, Hi: math.MaxUint32},
+			PartitionID: activePartitions[0],
+		}}
+	}
+	var out []assignment.Entry
+	for start := 0; start < len(sorted); {
+		end := start + 1
+		for end < len(sorted) && sorted[end].tenantID == sorted[start].tenantID {
+			end++
+		}
+		out = append(out, stitchReportedTenantEntries(sorted[start:end], activePartitions, logger)...)
+		start = end
+	}
+	return out
+}
+
+func stitchReportedTenantEntries(sorted []reportedEntry, activePartitions []int32, logger log.Logger) []assignment.Entry {
 	out := make([]assignment.Entry, 0, len(sorted)+1)
+	if len(sorted) == 0 {
+		return out
+	}
+	tenantID := sorted[0].tenantID
 	// gapRR is the round-robin cursor for assigning gap-filler entries
 	// to active partitions. Advances only when a filler is emitted.
 	gapRR := 0
@@ -1283,6 +1390,7 @@ func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, log
 		pid := activePartitions[gapRR%len(activePartitions)]
 		gapRR++
 		out = append(out, assignment.Entry{
+			TenantID:    tenantID,
 			Range:       assignment.HashRange{Lo: lo, Hi: hi},
 			PartitionID: pid,
 		})
@@ -1307,6 +1415,7 @@ func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, log
 			// already won this span.
 			level.Warn(logger).Log(
 				"msg", "reconstructAssignment: dropping overlapped range",
+				"tenant", e.tenantID,
 				"partition", e.partitionID,
 				"lo", e.hr.Lo,
 				"hi", e.hr.Hi,
@@ -1319,6 +1428,7 @@ func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, log
 			// Partial overlap: truncate to [cursor, hi].
 			level.Warn(logger).Log(
 				"msg", "reconstructAssignment: truncating overlapped range",
+				"tenant", e.tenantID,
 				"partition", e.partitionID,
 				"orig_lo", e.hr.Lo,
 				"orig_hi", e.hr.Hi,
@@ -1328,6 +1438,7 @@ func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, log
 		}
 
 		out = append(out, assignment.Entry{
+			TenantID:    tenantID,
 			Range:       assignment.HashRange{Lo: uint32(lo), Hi: uint32(hi)},
 			PartitionID: e.partitionID,
 		})
@@ -1348,9 +1459,16 @@ const (
 	// the move step enough granularity on the first round.
 	initialSlicesPerPartition = 64
 
-	// minSlicesPerPartition is the floor below which merging stops.
-	// Matches Slicer paper's "50 slices per task" guideline.
-	minSlicesPerPartition = 50
+	// minRangesPerTenant is the floor below which merging stops for an
+	// individual tenant. Tenant hash spaces are independent, so applying
+	// the Slicer paper's fleet-wide "slices per task" floor to every
+	// tenant prevents small tenants from ever compacting.
+	minRangesPerTenant = 4
+
+	// minRangesPerPartition prevents cross-partition merges from draining
+	// an active Kafka partition completely. This is an ownership safety
+	// guard, not a fleet-wide granularity target.
+	minRangesPerPartition = 1
 
 	// maxSlicesPerPartition is the ceiling above which splitting
 	// stops. Matches Slicer paper's "150 slices per task" guideline.
@@ -1374,6 +1492,7 @@ const (
 // partitionID is filled in from the current assignment at load-map
 // build time.
 type rangeRate struct {
+	tenantID    string
 	hr          assignment.HashRange
 	series      int64
 	sampleRate  float64
@@ -1405,7 +1524,7 @@ type rangeLoad struct {
 //
 //  1. Reassign slices from inactive partitions.
 //  2. Merge adjacent cold slices to defragment (cap: 1% churn, floor:
-//     minSlicesPerPartition).
+//     minRangesPerTenant for each tenant).
 //  3. Weighted-move: greedily move slices from the hottest partition
 //     (highest sample rate, minus moves already booked this round)
 //     to the coldest (lowest sample rate plus moves already booked
@@ -1442,6 +1561,10 @@ func (r *Rebalancer) runSlicer(
 ) (*assignment.Assignment, []Action) {
 	lm := buildLoadMap(rates)
 	numPartitions := len(activePartitions)
+	if numPartitions == 0 {
+		return &assignment.Assignment{Entries: append([]assignment.Entry(nil), current.Entries...)}, nil
+	}
+	numTenants := tenantCount(current.Entries)
 	var actions []Action
 
 	activeSet := make(map[int32]bool, numPartitions)
@@ -1462,8 +1585,8 @@ func (r *Rebalancer) runSlicer(
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
 	for i, e := range current.Entries {
-		series := lm.seriesAt(e.PartitionID, e.Range)
-		rate := lm.sampleRateAt(e.PartitionID, e.Range)
+		series := lm.seriesAt(e.TenantID, e.PartitionID, e.Range)
+		rate := lm.sampleRateAt(e.TenantID, e.PartitionID, e.Range)
 		entries[i] = rangeLoad{
 			entry:  e,
 			load:   rate,
@@ -1473,6 +1596,7 @@ func (r *Rebalancer) runSlicer(
 			newPID := activePartitions[rrIdx%numPartitions]
 			actions = append(actions, Action{
 				Kind:     ActionReassign,
+				TenantID: e.TenantID,
 				Range:    e.Range,
 				FromPart: e.PartitionID,
 				ToPart:   newPID,
@@ -1524,26 +1648,24 @@ func (r *Rebalancer) runSlicer(
 	if r.cfg.StructuralCooldown > 0 {
 		structuralIdx = newCooldownIndex(now, r.structuralCooldowns)
 	}
-	structurallyBlocked := func(hr assignment.HashRange) bool {
-		return structuralIdx.overlaps(hr)
+	structurallyBlocked := func(tenantID string, hr assignment.HashRange) bool {
+		return structuralIdx.overlaps(tenantID, hr)
 	}
-	if structuralRebalanceNeeded && len(entries) > minSlicesPerPartition*numPartitions {
-		meanSliceLoad := totalLoad / float64(len(entries))
-		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
-		var mergeActions []Action
-		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, minSlicesPerPartition, structurallyBlocked)
-		actions = append(actions, mergeActions...)
-	}
+	meanSliceLoad := totalLoad / float64(len(entries))
+	mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1) * float64(numTenants)
+	var mergeActions []Action
+	entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minRangesPerTenant, minRangesPerPartition, structurallyBlocked)
+	actions = append(actions, mergeActions...)
 	if err := validateSlicerPhaseEntries(entries); err != nil {
 		logSlicerPhaseError(r.logger, entries, "phase2-merge", err)
 		entries = pre2Entries
 		actions = actions[:pre2ActionsLen]
 	}
 	r.spotlightMergeActions(now, actions[pre2ActionsLen:])
-	mergedThisRound := make([]assignment.HashRange, 0, len(actions)-pre2ActionsLen)
+	mergedThisRound := make([]tenantRangeKey, 0, len(actions)-pre2ActionsLen)
 	for _, action := range actions[pre2ActionsLen:] {
 		if action.Kind == ActionMerge {
-			mergedThisRound = append(mergedThisRound, action.Range)
+			mergedThisRound = append(mergedThisRound, tenantRangeKey{tenantID: action.TenantID, hr: action.Range})
 		}
 	}
 
@@ -1576,9 +1698,14 @@ func (r *Rebalancer) runSlicer(
 	// splits drag down the mean and cause everything to look "hot".
 	pre4Entries := snapshotRangeLoads(entries)
 	pre4ActionsLen := len(actions)
-	maxTotal := maxSlicesPerPartition * numPartitions
+	maxTotal := maxSlicesPerPartition * numPartitions * numTenants
 	if structuralRebalanceNeeded && len(entries) < maxTotal {
 		partitionLoads := computePartitionLoads(entries)
+		tenantEntryCounts := make(map[string]int, numTenants)
+		for _, entry := range entries {
+			tenantEntryCounts[entry.entry.TenantID]++
+		}
+		tenantEntryCap := maxSlicesPerPartition * numPartitions
 
 		var nonZeroCount int
 		var nonZeroLoad float64
@@ -1606,12 +1733,12 @@ func (r *Rebalancer) runSlicer(
 			}
 			recentlyMerged := false
 			for _, merged := range mergedThisRound {
-				if hashRangesOverlap(rl.entry.Range, merged) {
+				if rl.entry.TenantID == merged.tenantID && hashRangesOverlap(rl.entry.Range, merged.hr) {
 					recentlyMerged = true
 					break
 				}
 			}
-			if !structurallyBlocked(rl.entry.Range) && !recentlyMerged && rl.load > splitThreshold && rl.entry.Range.Size() > 1 && overloaded[rl.entry.PartitionID] {
+			if tenantEntryCounts[rl.entry.TenantID] < tenantEntryCap && !structurallyBlocked(rl.entry.TenantID, rl.entry.Range) && !recentlyMerged && rl.load > splitThreshold && rl.entry.Range.Size() > 1 && overloaded[rl.entry.PartitionID] {
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
@@ -1620,10 +1747,10 @@ func (r *Rebalancer) runSlicer(
 				// next SetHashRanges). The fallback below distributes
 				// the parent's load proportionally to keep Phase 2
 				// from immediately re-merging.
-				leftSeries := lm.seriesAt(rl.entry.PartitionID, left)
-				rightSeries := lm.seriesAt(rl.entry.PartitionID, right)
-				leftLoad := lm.sampleRateAt(rl.entry.PartitionID, left)
-				rightLoad := lm.sampleRateAt(rl.entry.PartitionID, right)
+				leftSeries := lm.seriesAt(rl.entry.TenantID, rl.entry.PartitionID, left)
+				rightSeries := lm.seriesAt(rl.entry.TenantID, rl.entry.PartitionID, right)
+				leftLoad := lm.sampleRateAt(rl.entry.TenantID, rl.entry.PartitionID, left)
+				rightLoad := lm.sampleRateAt(rl.entry.TenantID, rl.entry.PartitionID, right)
 				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
 					// Newly split sub-ranges have no per-range data yet.
 					// Distribute the parent's load proportionally so the
@@ -1635,15 +1762,17 @@ func (r *Rebalancer) runSlicer(
 					rightSeries = rl.series - leftSeries
 				}
 				newEntries = append(newEntries,
-					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad, series: leftSeries},
-					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad, series: rightSeries},
+					rangeLoad{entry: assignment.Entry{TenantID: rl.entry.TenantID, Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad, series: leftSeries},
+					rangeLoad{entry: assignment.Entry{TenantID: rl.entry.TenantID, Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad, series: rightSeries},
 				)
+				tenantEntryCounts[rl.entry.TenantID]++
 				actions = append(actions, Action{
-					Kind:   ActionSplit,
-					Range:  rl.entry.Range,
-					ToPart: rl.entry.PartitionID,
-					Series: rl.series,
-					Detail: fmt.Sprintf("series=%d > threshold=%.0f, split on P%d", rl.series, splitThreshold, rl.entry.PartitionID),
+					Kind:     ActionSplit,
+					TenantID: rl.entry.TenantID,
+					Range:    rl.entry.Range,
+					ToPart:   rl.entry.PartitionID,
+					Series:   rl.series,
+					Detail:   fmt.Sprintf("series=%d > threshold=%.0f, split on P%d", rl.series, splitThreshold, rl.entry.PartitionID),
 				})
 				r.emitSplitSpotlight(now, rl, left, right, leftLoad, rightLoad, splitThreshold)
 			} else {
@@ -1660,6 +1789,9 @@ func (r *Rebalancer) runSlicer(
 
 	// --- Build result --------------------------------------------------
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].entry.TenantID != entries[j].entry.TenantID {
+			return entries[i].entry.TenantID < entries[j].entry.TenantID
+		}
 		return entries[i].entry.Range.Lo < entries[j].entry.Range.Lo
 	})
 
@@ -1696,6 +1828,9 @@ func validateSlicerPhaseEntries(entries []rangeLoad) error {
 		snapshot[i] = rl.entry
 	}
 	sort.Slice(snapshot, func(i, j int) bool {
+		if snapshot[i].TenantID != snapshot[j].TenantID {
+			return snapshot[i].TenantID < snapshot[j].TenantID
+		}
 		return snapshot[i].Range.Lo < snapshot[j].Range.Lo
 	})
 	a := assignment.Assignment{Entries: snapshot}
@@ -1713,6 +1848,9 @@ func logSlicerPhaseError(logger log.Logger, entries []rangeLoad, phase string, e
 		snapshot[i] = rl.entry
 	}
 	sort.Slice(snapshot, func(i, j int) bool {
+		if snapshot[i].TenantID != snapshot[j].TenantID {
+			return snapshot[i].TenantID < snapshot[j].TenantID
+		}
 		return snapshot[i].Range.Lo < snapshot[j].Range.Lo
 	})
 	ctxLo, ctxHi := slicerInvalidBoundaryWindow(snapshot)
@@ -1746,7 +1884,15 @@ func slicerInvalidBoundaryWindow(snapshot []assignment.Entry) (int, int) {
 		return 0, end
 	}
 	for i := 1; i < len(snapshot); i++ {
-		if snapshot[i].Range.Lo != snapshot[i-1].Range.Hi+1 {
+		prev := snapshot[i-1]
+		curr := snapshot[i]
+		invalid := false
+		if curr.TenantID != prev.TenantID {
+			invalid = prev.Range.Hi != math.MaxUint32 || curr.Range.Lo != 0
+		} else {
+			invalid = uint64(curr.Range.Lo) != uint64(prev.Range.Hi)+1
+		}
+		if invalid {
 			start := i - 2
 			if start < 0 {
 				start = 0
@@ -1782,7 +1928,7 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 		if i > first {
 			b = append(b, ',', ' ')
 		}
-		b = append(b, []byte(fmt.Sprintf("[%d]={Lo=%d,Hi=%d,P=%d}", i, snapshot[i].Range.Lo, snapshot[i].Range.Hi, snapshot[i].PartitionID))...)
+		b = append(b, []byte(fmt.Sprintf("[%d]={Tenant=%q,Lo=%d,Hi=%d,P=%d}", i, snapshot[i].TenantID, snapshot[i].Range.Lo, snapshot[i].Range.Hi, snapshot[i].PartitionID))...)
 	}
 	return string(b)
 }
@@ -1910,7 +2056,7 @@ func (r *Rebalancer) runPhase3(
 		return s - upperLoad
 	}
 
-	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
+	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1) * float64(tenantCountFromRangeLoads(entries))
 	var moved float64
 
 	// Improvement floor: a candidate move must narrow the hot/cold
@@ -2003,7 +2149,7 @@ func (r *Rebalancer) runPhase3(
 			if rl.entry.PartitionID != hotPID {
 				continue
 			}
-			if cdIdx.overlaps(rl.entry.Range) {
+			if cdIdx.overlaps(rl.entry.TenantID, rl.entry.Range) {
 				continue
 			}
 			moveCost := float64(rl.entry.Range.Size())
@@ -2101,6 +2247,7 @@ func (r *Rebalancer) runPhase3(
 
 		actions = append(actions, Action{
 			Kind:     ActionMove,
+			TenantID: entries[bestIdx].entry.TenantID,
 			Range:    entries[bestIdx].entry.Range,
 			FromPart: fromPID,
 			ToPart:   coldPID,
@@ -2114,11 +2261,12 @@ func (r *Rebalancer) runPhase3(
 		// "anchor" line consumers later correlate observations to via
 		// trace_id.
 		if r.spotlights != nil {
-			if sp, ok := r.spotlights.maybeSpotlight(now, entries[bestIdx].entry.Range, fromPID, coldPID, "phase3-move"); ok {
+			if sp, ok := r.spotlights.maybeSpotlight(now, entries[bestIdx].entry.TenantID, entries[bestIdx].entry.Range, fromPID, coldPID, "phase3-move"); ok {
 				level.Info(r.logger).Log(
 					"msg", "nautilus spotlight: move decision",
 					"spotlight_id", sp.TraceID,
 					"reason", sp.Reason,
+					"tenant", sp.TenantID,
 					"range_lo", sp.Range.Lo,
 					"range_hi", sp.Range.Hi,
 					"range_size", sp.Range.Size(),
@@ -2162,7 +2310,7 @@ func (r *Rebalancer) spotlightMergeActions(now time.Time, mergeActions []Action)
 		if a.Kind != ActionMerge {
 			continue
 		}
-		sp, ok := r.spotlights.maybeSpotlight(now, a.Range, a.FromPart, a.ToPart, "phase2-merge")
+		sp, ok := r.spotlights.maybeSpotlight(now, a.TenantID, a.Range, a.FromPart, a.ToPart, "phase2-merge")
 		if !ok {
 			continue
 		}
@@ -2174,6 +2322,7 @@ func (r *Rebalancer) spotlightMergeActions(now time.Time, mergeActions []Action)
 			"msg", "nautilus spotlight: merge decision",
 			"spotlight_id", sp.TraceID,
 			"reason", sp.Reason,
+			"tenant", sp.TenantID,
 			"range_lo", sp.Range.Lo,
 			"range_hi", sp.Range.Hi,
 			"range_size", sp.Range.Size(),
@@ -2204,7 +2353,7 @@ func (r *Rebalancer) emitSplitSpotlight(now time.Time, parent rangeLoad, left, r
 		return
 	}
 	pid := parent.entry.PartitionID
-	sp, ok := r.spotlights.maybeSpotlight(now, parent.entry.Range, 0, pid, "phase4-split")
+	sp, ok := r.spotlights.maybeSpotlight(now, parent.entry.TenantID, parent.entry.Range, 0, pid, "phase4-split")
 	if !ok {
 		return
 	}
@@ -2212,6 +2361,7 @@ func (r *Rebalancer) emitSplitSpotlight(now time.Time, parent rangeLoad, left, r
 		"msg", "nautilus spotlight: split decision",
 		"spotlight_id", sp.TraceID,
 		"reason", sp.Reason,
+		"tenant", sp.TenantID,
 		"range_lo", sp.Range.Lo,
 		"range_hi", sp.Range.Hi,
 		"range_size", sp.Range.Size(),
@@ -2241,13 +2391,44 @@ func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	return m
 }
 
+func tenantCount(entries []assignment.Entry) int {
+	if len(entries) == 0 {
+		return 1
+	}
+	count := 0
+	last := ""
+	for i, entry := range entries {
+		if i == 0 || entry.TenantID != last {
+			count++
+			last = entry.TenantID
+		}
+	}
+	return count
+}
+
+func tenantCountFromRangeLoads(entries []rangeLoad) int {
+	assignmentEntries := make([]assignment.Entry, len(entries))
+	for i, entry := range entries {
+		assignmentEntries[i] = entry.entry
+	}
+	return tenantCount(assignmentEntries)
+}
+
 // partitionRangeKey is the (partition, range) key for loadMap.
 // Two reporters reporting load for the same hash range with different
 // partition IDs (e.g. current owner + a residue holder) end up as
 // distinct entries.
 type partitionRangeKey struct {
+	tenantID    string
 	partitionID int32
 	hr          assignment.HashRange
+}
+
+// tenantRangeKey identifies a numeric interval within one tenant's
+// independent uint32 hash space.
+type tenantRangeKey struct {
+	tenantID string
+	hr       assignment.HashRange
 }
 
 // currentOwnershipSet returns the set of (partitionID, range) pairs
@@ -2267,7 +2448,7 @@ func currentOwnershipSet(current *assignment.Assignment) map[partitionRangeKey]s
 	}
 	owned := make(map[partitionRangeKey]struct{}, len(current.Entries))
 	for _, e := range current.Entries {
-		owned[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}] = struct{}{}
+		owned[partitionRangeKey{tenantID: e.TenantID, partitionID: e.PartitionID, hr: e.Range}] = struct{}{}
 	}
 	return owned
 }
@@ -2296,7 +2477,7 @@ func filterRatesByCurrentOwnership(rates []rangeRate, owned map[partitionRangeKe
 	}
 	kept = make([]rangeRate, 0, len(rates))
 	for _, rr := range rates {
-		if _, ok := owned[partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}]; !ok {
+		if _, ok := owned[partitionRangeKey{tenantID: rr.tenantID, partitionID: rr.partitionID, hr: rr.hr}]; !ok {
 			dropped++
 			continue
 		}
@@ -2361,7 +2542,7 @@ func buildLoadMap(rates []rangeRate) *loadMap {
 		sampleRate: make(map[partitionRangeKey]float64, len(rates)),
 	}
 	for _, rr := range rates {
-		k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
+		k := partitionRangeKey{tenantID: rr.tenantID, partitionID: rr.partitionID, hr: rr.hr}
 		if rr.series > lm.series[k] {
 			lm.series[k] = rr.series
 		}
@@ -2379,16 +2560,16 @@ func buildLoadMap(rates []rangeRate) *loadMap {
 // range. Any residue on a previous owner is recorded under that
 // previous owner's partition id, so it does NOT contribute to the
 // load returned here for the current owner.
-func (lm *loadMap) seriesAt(partitionID int32, hr assignment.HashRange) int64 {
-	return lm.series[partitionRangeKey{partitionID: partitionID, hr: hr}]
+func (lm *loadMap) seriesAt(tenantID string, partitionID int32, hr assignment.HashRange) int64 {
+	return lm.series[partitionRangeKey{tenantID: tenantID, partitionID: partitionID, hr: hr}]
 }
 
 // sampleRateAt returns the samples-per-second EWMA for the given
 // (partition, range), or 0 if the pair is unknown. This is the
 // primary load signal used by the slicer's Phase 2/3/4 scoring;
 // seriesAt is retained only for observability and trace continuity.
-func (lm *loadMap) sampleRateAt(partitionID int32, hr assignment.HashRange) float64 {
-	return lm.sampleRate[partitionRangeKey{partitionID: partitionID, hr: hr}]
+func (lm *loadMap) sampleRateAt(tenantID string, partitionID int32, hr assignment.HashRange) float64 {
+	return lm.sampleRate[partitionRangeKey{tenantID: tenantID, partitionID: partitionID, hr: hr}]
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range
@@ -2397,7 +2578,7 @@ func (lm *loadMap) sampleRateAt(partitionID int32, hr assignment.HashRange) floa
 // implicitly: any overlap with a cooled-down ancestor's boundaries
 // disqualifies the candidate. Always returns false when the cooldown
 // is disabled (cfg.MoveCooldown <= 0) or no cooldowns are tracked.
-func (r *Rebalancer) isInMoveCooldown(now time.Time, hr assignment.HashRange) bool {
+func (r *Rebalancer) isInMoveCooldown(now time.Time, tenantID string, hr assignment.HashRange) bool {
 	if r.cfg.MoveCooldown <= 0 || len(r.moveCooldowns) == 0 {
 		return false
 	}
@@ -2405,7 +2586,7 @@ func (r *Rebalancer) isInMoveCooldown(now time.Time, hr assignment.HashRange) bo
 		if !now.Before(deadline) {
 			continue
 		}
-		if hashRangesOverlap(hr, cooled) {
+		if tenantID == cooled.tenantID && hashRangesOverlap(hr, cooled.hr) {
 			return true
 		}
 	}
@@ -2444,12 +2625,12 @@ func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) int {
 			continue
 		}
 		if r.moveCooldowns == nil {
-			r.moveCooldowns = make(map[assignment.HashRange]time.Time)
+			r.moveCooldowns = make(map[tenantRangeKey]time.Time)
 		}
 		// Use the post-move (current) range as the cooldown key. If a
 		// later round splits or merges this range, the overlap test
 		// in isInMoveCooldown will still match.
-		r.moveCooldowns[a.Range] = deadline
+		r.moveCooldowns[tenantRangeKey{tenantID: a.TenantID, hr: a.Range}] = deadline
 		armed++
 	}
 	return armed
@@ -2502,48 +2683,54 @@ func hashRangesOverlap(a, b assignment.HashRange) bool {
 //   - merged load < meanSliceLoad
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
-//   - total entries don't drop below minEntries
+//   - each tenant retains at least perTenantFloor entries
 //   - cross-partition merges never push the donor partition below
 //     perPartitionFloor entries. Without this floor the merge phase
 //     can drain a lightly-loaded partition completely (every range is
 //     "cold" relative to meanSliceLoad and gets absorbed by neighbours
 //     over a few rounds), at which point traffic to that partition's
 //     keyspace flips to other ingesters until Phase 3 floods it back.
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries, perPartitionFloor int, structurallyBlocked func(assignment.HashRange) bool) ([]rangeLoad, []Action) {
-	if len(entries) <= 1 || len(entries) <= minEntries {
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, perTenantFloor, perPartitionFloor int, structurallyBlocked func(string, assignment.HashRange) bool) ([]rangeLoad, []Action) {
+	if len(entries) <= 1 {
 		return entries, nil
 	}
 
 	maxPartitionLoad := targetLoad * 1.5
 	partitionLoads := computePartitionLoads(entries)
 	partitionEntries := make(map[int32]int, len(partitionLoads))
+	tenantEntries := make(map[string]int)
 	for _, rl := range entries {
 		partitionEntries[rl.entry.PartitionID]++
+		tenantEntries[rl.entry.TenantID]++
+	}
+	tenantFloors := make(map[string]int, len(tenantEntries))
+	for tenantID, count := range tenantEntries {
+		tenantFloors[tenantID] = min(count, perTenantFloor)
 	}
 	var churned float64
 	var actions []Action
 
 	result := []rangeLoad{entries[0]}
 	for i := 1; i < len(entries); i++ {
-		if len(result)+len(entries)-i <= minEntries {
-			result = append(result, entries[i:]...)
-			break
-		}
 		prev := &result[len(result)-1]
 		curr := entries[i]
 
-		if prev.entry.Range.Hi+1 != curr.entry.Range.Lo {
+		if prev.entry.TenantID != curr.entry.TenantID || prev.entry.Range.Hi == math.MaxUint32 || prev.entry.Range.Hi+1 != curr.entry.Range.Lo {
 			result = append(result, curr)
 			continue
 		}
 
 		mergedLoad := prev.load + curr.load
-		if mergedLoad >= meanSliceLoad {
+		if meanSliceLoad > 0 && mergedLoad >= meanSliceLoad {
 			result = append(result, curr)
 			continue
 		}
 		mergedRange := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
-		if structurallyBlocked != nil && structurallyBlocked(mergedRange) {
+		if structurallyBlocked != nil && structurallyBlocked(prev.entry.TenantID, mergedRange) {
+			result = append(result, curr)
+			continue
+		}
+		if tenantEntries[prev.entry.TenantID]-1 < tenantFloors[prev.entry.TenantID] {
 			result = append(result, curr)
 			continue
 		}
@@ -2553,17 +2740,19 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				mergeCost := float64(curr.entry.Range.Size())
 				if churned+mergeCost <= churnBudget {
 					actions = append(actions, Action{
-						Kind:   ActionMerge,
-						Range:  mergedRange,
-						ToPart: prev.entry.PartitionID,
-						Series: prev.series + curr.series,
-						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.4f", prev.entry.PartitionID, mergedLoad),
+						Kind:     ActionMerge,
+						TenantID: prev.entry.TenantID,
+						Range:    mergedRange,
+						ToPart:   prev.entry.PartitionID,
+						Series:   prev.series + curr.series,
+						Detail:   fmt.Sprintf("same-partition merge on P%d, combined load=%.4f", prev.entry.PartitionID, mergedLoad),
 					})
 					prev.entry.Range = mergedRange
 					prev.load = mergedLoad
 					prev.series += curr.series
 					churned += mergeCost
 					partitionEntries[prev.entry.PartitionID]--
+					tenantEntries[prev.entry.TenantID]--
 					continue
 				}
 			}
@@ -2599,9 +2788,11 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				partitionLoads[receiverPID] += donorLoad
 				partitionLoads[donorPID] -= donorLoad
 				partitionEntries[donorPID]--
+				tenantEntries[prev.entry.TenantID]--
 
 				actions = append(actions, Action{
 					Kind:     ActionMerge,
+					TenantID: prev.entry.TenantID,
 					Range:    mergedRange,
 					FromPart: donorPID,
 					ToPart:   receiverPID,

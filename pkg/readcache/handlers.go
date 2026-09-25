@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -788,6 +789,10 @@ func (r *Readcache) activeSeries(_ *client.ActiveSeriesRequest, srv client.Inges
 // the head compacts and the count drops to zero, the walker GCs the
 // historical entry on the next tick.
 func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
+	if r.cfg.RebalancerAddress != "" && !r.assignmentReady.Load() {
+		return nil, errAssignmentNotReady()
+	}
+
 	r.partitionMu.RLock()
 	parts := make([]*partitionState, 0, len(r.partitions))
 	for _, p := range r.partitions {
@@ -807,21 +812,51 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 		}
 	}
 
-	partitionSeries := make([]client.PartitionActiveSeries, len(partSnap.Partitions))
-	for i, e := range partSnap.Partitions {
+	partitionSeriesByPID := make(map[int32]client.PartitionActiveSeries, len(partSnap.Partitions)+len(parts))
+	for _, e := range partSnap.Partitions {
 		_, stillWarming := warming[e.PartitionID]
-		partitionSeries[i] = client.PartitionActiveSeries{
+		partitionSeriesByPID[e.PartitionID] = client.PartitionActiveSeries{
 			PartitionId:  e.PartitionID,
 			ActiveSeries: e.ActiveSeries,
 			Warming:      stillWarming,
 		}
 	}
+	// A newly acquired partition may not have appeared in the asynchronous
+	// series walk yet. Emit it explicitly at zero series so the rebalancer
+	// can distinguish "owned but still warming" from "not reported", and
+	// therefore from a genuinely warm, idle partition.
+	for _, p := range parts {
+		if _, exists := partitionSeriesByPID[p.partitionID]; exists {
+			continue
+		}
+		partitionSeriesByPID[p.partitionID] = client.PartitionActiveSeries{
+			PartitionId: p.partitionID,
+			Warming:     !p.warm.Load(),
+		}
+	}
+	partitionSeries := make([]client.PartitionActiveSeries, 0, len(partitionSeriesByPID))
+	for _, entry := range partitionSeriesByPID {
+		partitionSeries = append(partitionSeries, entry)
+	}
+	sort.Slice(partitionSeries, func(i, j int) bool {
+		return partitionSeries[i].PartitionId < partitionSeries[j].PartitionId
+	})
 
 	resp := &client.HashRangeStatsResponse{
 		TotalActiveSeries:     partSnap.Total,
 		PartitionActiveSeries: partitionSeries,
 	}
 
+	configuredTenants := make(map[string]struct{})
+	for _, p := range parts {
+		for _, tenantID := range p.ranges.configuredTenantIDs() {
+			if tenantID != "" {
+				configuredTenants[tenantID] = struct{}{}
+			}
+		}
+	}
+
+	observedAt := time.Now()
 	for _, p := range parts {
 		for _, hrc := range p.ranges.snapshotCounts() {
 			resp.Rates = append(resp.Rates, client.HashRangeRate{
@@ -830,6 +865,23 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 				ActiveSeries: hrc.Count,
 				SampleRate:   hrc.SampleRate,
 				PartitionId:  p.partitionID,
+				TenantId:     hrc.TenantID,
+			})
+		}
+		p.tenantsMu.RLock()
+		liveTenantIDs := make([]string, 0, len(p.tenants))
+		for tenantID := range p.tenants {
+			if _, configured := configuredTenants[tenantID]; configured {
+				continue
+			}
+			liveTenantIDs = append(liveTenantIDs, tenantID)
+		}
+		p.tenantsMu.RUnlock()
+		for _, unknown := range p.ranges.unknownTenants(liveTenantIDs, p.partitionID, observedAt) {
+			resp.UnknownTenants = append(resp.UnknownTenants, client.UnknownTenant{
+				TenantId:        unknown.TenantID,
+				PartitionId:     unknown.PartitionID,
+				FirstSeenUnixMs: unknown.FirstSeenUnixMs,
 			})
 		}
 	}
@@ -848,17 +900,22 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 
 // setHashRanges installs the latest per-partition hash range assignment
 // from the rebalancer. The request is a flat list of
-// (partition_id, lo, hi) entries; we group by partition and call
-// setRanges on each partition's bookkeeping in turn. Partitions owned
-// by this readcache that don't appear in the request have their
-// currentRanges cleared (any residue moves to historicalRanges).
+// (tenant_id, partition_id, lo, hi) entries; we group by tenant and
+// partition and update each isolated range state in turn. Existing
+// tenant-partition assignments omitted from the request are cleared
+// (any residue moves to that tenant's historicalRanges).
 // Entries naming an unowned partition are dropped with a debug log —
 // the next assignment reconcile from the rebalancer will straighten it
 // out.
 func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRequest) (*client.SetHashRangesResponse, error) {
-	byPartition := make(map[int32][]assignment.HashRange)
+	byPartition := make(map[int32]map[string][]assignment.HashRange)
 	for _, rng := range req.Ranges {
-		byPartition[rng.PartitionId] = append(byPartition[rng.PartitionId], assignment.HashRange{Lo: rng.Lo, Hi: rng.Hi})
+		byTenant := byPartition[rng.PartitionId]
+		if byTenant == nil {
+			byTenant = make(map[string][]assignment.HashRange)
+			byPartition[rng.PartitionId] = byTenant
+		}
+		byTenant[rng.TenantId] = append(byTenant[rng.TenantId], assignment.HashRange{Lo: rng.Lo, Hi: rng.Hi})
 	}
 
 	r.partitionMu.RLock()
@@ -874,11 +931,20 @@ func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRe
 	rangesChanged := false
 	for _, p := range parts {
 		owned[p.partitionID] = struct{}{}
-		ranges := byPartition[p.partitionID]
-		if p.ranges.setRanges(ranges) {
-			rangesChanged = true
+		incoming := byPartition[p.partitionID]
+		tenantIDs := make(map[string]struct{}, len(incoming))
+		for tenantID := range incoming {
+			tenantIDs[tenantID] = struct{}{}
 		}
-		if len(ranges) > 0 {
+		for _, tenantID := range p.ranges.configuredTenantIDs() {
+			tenantIDs[tenantID] = struct{}{}
+		}
+		for tenantID := range tenantIDs {
+			if p.ranges.setRangesForTenant(tenantID, incoming[tenantID]) {
+				rangesChanged = true
+			}
+		}
+		if len(incoming) > 0 {
 			updatedPartitions = append(updatedPartitions, p.partitionID)
 		} else {
 			clearedPartitions = append(clearedPartitions, p.partitionID)
@@ -931,12 +997,15 @@ func (r *Readcache) getHashRanges(_ context.Context, _ *client.GetHashRangesRequ
 
 	resp := &client.GetHashRangesResponse{}
 	for _, p := range parts {
-		for _, rng := range p.ranges.currentRangesCopy() {
-			resp.Ranges = append(resp.Ranges, client.HashRangeEntry{
-				Lo:          rng.Lo,
-				Hi:          rng.Hi,
-				PartitionId: p.partitionID,
-			})
+		for _, tenantRanges := range p.ranges.currentRangesByTenant() {
+			for _, rng := range tenantRanges.Ranges {
+				resp.Ranges = append(resp.Ranges, client.HashRangeEntry{
+					Lo:          rng.Lo,
+					Hi:          rng.Hi,
+					PartitionId: p.partitionID,
+					TenantId:    tenantRanges.TenantID,
+				})
+			}
 		}
 	}
 	return resp, nil

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -75,6 +77,20 @@ func minimalDistributorForRouting(t *testing.T, required bool) *Distributor {
 	return d
 }
 
+func installTenantSnapshot(d *Distributor, now, validUntil time.Time, entries []assignment.LogEntry) {
+	assignmentLog := assignment.NewLogFromEntries(entries)
+	table := assignmentLog.ActiveTable(now)
+	d.nautilusLog.Store(assignmentLog)
+	d.nautilusActiveTable.Store(table)
+	d.nautilusAssignmentSnapshot.Store(&nautilusAssignmentSnapshot{
+		log:          assignmentLog,
+		table:        table,
+		generation:   1,
+		validUntil:   validUntil,
+		tenantScoped: true,
+	})
+}
+
 func TestWritePartitionTopicsConcurrently(t *testing.T) {
 	t.Run("single topic", func(t *testing.T) {
 		writes := []partitionTopicWrite{{topic: "ingest"}}
@@ -129,7 +145,7 @@ func TestGetKeysByAssignment_RequiredRejectsKeyNotCovered(t *testing.T) {
 	}).ActiveTable(time.Now())
 	require.NotNil(t, gappy)
 
-	_, err := d.getKeysByAssignment(context.Background(), "test", gappy, nil, []uint32{50, 1000})
+	_, err := d.getKeysByAssignment(context.Background(), "test", "", gappy, []uint32{50, 1000})
 	require.Error(t, err)
 	var rejErr nautilusRoutingUnavailableError
 	require.ErrorAs(t, err, &rejErr)
@@ -145,7 +161,7 @@ func TestGetKeysByAssignment_RequiredPassesThroughWhenCovered(t *testing.T) {
 	tbl := buildActiveTable(t, []int32{1, 2, 3}, []uint32{99, 199})
 
 	// Keys at 50, 150, 250 should map to partitions 1, 2, 3.
-	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, nil, []uint32{50, 150, 250})
+	got, err := d.getKeysByAssignment(context.Background(), "test", "", tbl, []uint32{50, 150, 250})
 	require.NoError(t, err)
 
 	byPID := map[int32][]int{}
@@ -160,24 +176,247 @@ func TestGetKeysByAssignment_RequiredPassesThroughWhenCovered(t *testing.T) {
 	assert.Equal(t, float64(0), rej)
 }
 
-func TestGetKeysByAssignment_NotRequiredFallsBackToPartitionRing(t *testing.T) {
-	// In the default (non-required) mode, getKeysByAssignment should
-	// fall back to the partition ring for uncovered keys. We verify
-	// here that uncovered keys cause d.partitionsRing to be consulted
-	// — the lazy fetch will panic with a nil pointer if it is
-	// referenced. To avoid wiring a real ring just to exercise the
-	// fallback branch, we assert that with a fully-covering table the
-	// function never touches the ring.
+func TestGetKeysByAssignment_NotRequiredRoutesCompleteTiling(t *testing.T) {
+	// Non-required mode may use the ring only when the entire live stream is
+	// unavailable. Once a tenant exists, its assignment must be complete.
 	d := minimalDistributorForRouting(t, false)
 	tbl := buildActiveTable(t, []int32{1, 2}, []uint32{math.MaxUint32 / 2})
 
-	// All keys covered → no fallback.
-	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, nil, []uint32{0, math.MaxUint32})
+	got, err := d.getKeysByAssignment(context.Background(), "test", "", tbl, []uint32{0, math.MaxUint32})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 
 	rej := testutil.ToFloat64(d.nautilusRoutingRejected.WithLabelValues("key_not_covered"))
 	assert.Equal(t, float64(0), rej, "fallback mode must not increment the required-rejection counter")
+}
+
+func TestTenantScopedWriteRouting(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	half := uint32(math.MaxUint32 / 2)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, now.Add(time.Minute), []assignment.LogEntry{
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: half}, PartitionID: 1, From: now},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: half + 1, Hi: math.MaxUint32}, PartitionID: 2, From: now},
+		{TenantID: "tenant-b", Range: assignment.HashRange{Lo: 0, Hi: half}, PartitionID: 3, From: now},
+		{TenantID: "tenant-b", Range: assignment.HashRange{Lo: half + 1, Hi: math.MaxUint32}, PartitionID: 4, From: now},
+	})
+
+	for tenantID, expected := range map[string][]int32{
+		"tenant-a": {1, 2},
+		"tenant-b": {3, 4},
+	} {
+		routing := d.nautilusRoutingForTenant(tenantID, now)
+		got, err := d.getKeysByTenantAssignment(t.Context(), tenantID, routing, []uint32{1, math.MaxUint32}, nil)
+		require.NoError(t, err)
+		var partitions []int32
+		for _, keys := range got {
+			partitions = append(partitions, keys.PartitionID)
+		}
+		assert.ElementsMatch(t, expected, partitions)
+	}
+}
+
+func TestTenantScopedUnknownWriteBootstrapsAcrossSixTenantPartitions(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, now.Add(time.Minute), []assignment.LogEntry{{
+		TenantID: "known", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 7, From: now,
+	}})
+
+	routing := d.nautilusRoutingForTenant("new-tenant", now)
+	require.True(t, routing.snapshotAvailable)
+	require.False(t, routing.tenantKnown)
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	keys := make([]uint32, assignment.BootstrapHashRanges)
+	rangeSize := (uint64(math.MaxUint32) + 1) / assignment.BootstrapHashRanges
+	for i := range keys {
+		keys[i] = uint32(uint64(i) * rangeSize)
+	}
+	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, keys, activePartitions)
+	require.NoError(t, err)
+	var gotPartitions []int32
+	totalIndexes := 0
+	for _, partitionKeys := range got {
+		gotPartitions = append(gotPartitions, partitionKeys.PartitionID)
+		totalIndexes += len(partitionKeys.Indexes)
+	}
+	assert.ElementsMatch(t,
+		assignment.DeterministicPartitionsForTenant("new-tenant", activePartitions, assignment.BootstrapPartitionCount),
+		gotPartitions,
+	)
+	assert.Equal(t, len(keys), totalIndexes)
+}
+
+func TestTenantScopedHandoffWriteAndBootstrapQuery(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	handoff := now.Add(-time.Hour)
+	secondHandoff := handoff.Add(30 * time.Minute)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, now.Add(time.Minute), []assignment.LogEntry{
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 9, From: handoff, To: secondHandoff},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 10, From: secondHandoff},
+	})
+
+	routing := d.nautilusRoutingForTenant("tenant-a", now)
+	got, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{42}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []ring.PartitionKeys{{PartitionID: 10, Indexes: []int{0}}}, got)
+
+	snapshot := d.nautilusSnapshotAt(now)
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	withPartitions := func(base []int32, extras ...int32) []int32 {
+		set := make(map[int32]struct{}, len(base)+len(extras))
+		for _, partitionID := range append(base, extras...) {
+			set[partitionID] = struct{}{}
+		}
+		out := make([]int32, 0, len(set))
+		for partitionID := range set {
+			out = append(out, partitionID)
+		}
+		return out
+	}
+	assert.ElementsMatch(t,
+		withPartitions(assignment.DeterministicPartitionsForTenant("tenant-a", activePartitions, assignment.BootstrapPartitionCount), 9, 10),
+		partitionsForNautilusQuery(snapshot, "tenant-a", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false, activePartitions),
+	)
+	assert.Equal(t, []int32{9, 10}, partitionsForNautilusQuery(snapshot, "tenant-a", handoff, now.Add(time.Minute), nil, false, activePartitions))
+	assert.ElementsMatch(t,
+		assignment.DeterministicPartitionsForTenant("tenant-b", activePartitions, assignment.BootstrapPartitionCount),
+		partitionsForNautilusQuery(snapshot, "tenant-b", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false, activePartitions),
+	)
+}
+
+func TestTenantScopedExpiredGenerationIsRejected(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, now, []assignment.LogEntry{{
+		TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: now.Add(-time.Hour),
+	}})
+
+	assert.False(t, d.nautilusRoutingForTenant("tenant-a", now).snapshotAvailable)
+	assert.Nil(t, d.nautilusSnapshotAt(now))
+}
+
+func TestTenantScopedMissingGenerationValidityIsRejected(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, time.Time{}, []assignment.LogEntry{{
+		TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: now.Add(-time.Hour),
+	}})
+
+	assert.Nil(t, d.nautilusSnapshotAt(now))
+}
+
+func TestLegacyAssignmentStillUsesPerRangeLeaseFreshness(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+	assignmentLog := assignment.NewLogFromEntries([]assignment.LogEntry{{
+		Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: now.Add(-time.Minute), To: now.Add(time.Minute),
+	}})
+	d.nautilusLog.Store(assignmentLog)
+
+	assert.True(t, d.nautilusRoutingForTenant("any-tenant", now).snapshotAvailable)
+	assert.False(t, d.nautilusRoutingForTenant("any-tenant", now.Add(time.Minute)).snapshotAvailable)
+}
+
+func TestExistingTenantPartialTilingNeverBootstraps(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, false)
+	d.now = func() time.Time { return now }
+	installTenantSnapshot(d, now, now.Add(time.Minute), []assignment.LogEntry{{
+		TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: now,
+	}})
+
+	routing := d.nautilusRoutingForTenant("tenant-a", now)
+	require.True(t, routing.tenantKnown)
+	_, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{100}, nil)
+	require.Error(t, err)
+}
+
+func TestApplyNautilusAssignmentResponse_DeltaResetReplayKeepsGeneration(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	full := assignment.HashRange{Lo: 0, Hi: math.MaxUint32}
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+
+	entry := func(tenantID string, partitionID int32) rebalancer.LogEntry {
+		return rebalancer.EntriesToProto([]assignment.LogEntry{{
+			TenantID: tenantID, Range: full, PartitionID: partitionID, From: now,
+		}})[0]
+	}
+	d.applyNautilusAssignmentResponse(&rebalancer.WatchAssignmentsResponse{
+		Reset_:                     true,
+		Entries:                    []rebalancer.LogEntry{entry("tenant-a", 1)},
+		AssignmentGeneration:       7,
+		AssignmentValidUntilUnixMs: now.Add(time.Minute).UnixMilli(),
+	}, true)
+	d.applyNautilusAssignmentResponse(&rebalancer.WatchAssignmentsResponse{
+		Entries:                    []rebalancer.LogEntry{entry("tenant-b", 2)},
+		AssignmentGeneration:       8,
+		AssignmentValidUntilUnixMs: now.Add(2 * time.Minute).UnixMilli(),
+	}, false)
+	d.applyNautilusAssignmentResponse(&rebalancer.WatchAssignmentsResponse{
+		AssignmentGeneration:       8,
+		AssignmentValidUntilUnixMs: now.Add(3 * time.Minute).UnixMilli(),
+	}, false)
+
+	snapshot := d.nautilusAssignmentSnapshot.Load()
+	require.NotNil(t, snapshot)
+	assert.Equal(t, uint64(8), snapshot.generation)
+	assert.True(t, now.Add(3*time.Minute).Equal(snapshot.validUntil))
+	assert.True(t, snapshot.log.HasTenantHistory("tenant-a"))
+	assert.True(t, snapshot.log.HasTenantHistory("tenant-b"))
+
+	d.applyNautilusAssignmentResponse(&rebalancer.WatchAssignmentsResponse{
+		Reset_: true,
+		Entries: []rebalancer.LogEntry{
+			entry("tenant-a", 1),
+			entry("tenant-b", 2),
+		},
+		AssignmentGeneration:       8,
+		AssignmentValidUntilUnixMs: now.Add(3 * time.Minute).UnixMilli(),
+	}, false)
+	snapshot = d.nautilusAssignmentSnapshot.Load()
+	assert.Equal(t, uint64(8), snapshot.generation)
+	assert.True(t, now.Add(3*time.Minute).Equal(snapshot.validUntil))
+	assert.Equal(t, 2, snapshot.log.Len())
+}
+
+func TestApplyNautilusAssignmentResponse_EmptySnapshotIsTenantScopedBootstrap(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	d := minimalDistributorForRouting(t, true)
+	d.now = func() time.Time { return now }
+
+	d.applyNautilusAssignmentResponse(&rebalancer.WatchAssignmentsResponse{
+		Reset_:                     true,
+		AssignmentGeneration:       1,
+		AssignmentValidUntilUnixMs: now.Add(time.Minute).UnixMilli(),
+	}, true)
+
+	snapshot := d.nautilusAssignmentSnapshot.Load()
+	require.NotNil(t, snapshot)
+	assert.True(t, snapshot.tenantScoped)
+	assert.Equal(t, uint64(1), snapshot.generation)
+	assert.True(t, now.Add(time.Minute).Equal(snapshot.validUntil))
+
+	routing := d.nautilusRoutingForTenant("new-tenant", now)
+	require.True(t, routing.snapshotAvailable)
+	require.False(t, routing.tenantKnown)
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7}
+	keys := []uint32{10, 20, 30, 40}
+	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, keys, activePartitions)
+	require.NoError(t, err)
+	bootstrap := assignment.BootstrapAssignmentForTenant("new-tenant", activePartitions)
+	expectedPartition, ok := bootstrap.LookupForTenant("new-tenant", keys[0])
+	require.True(t, ok)
+	assert.Equal(t, []ring.PartitionKeys{{PartitionID: expectedPartition, Indexes: []int{0, 1, 2, 3}}}, got,
+		"items in the same bootstrap hash range, including metadata indexes, must stay together")
 }
 
 func TestSendWriteRequestToPartitions_RequiredRejectsWhenTableUnavailable(t *testing.T) {
@@ -188,6 +427,7 @@ func TestSendWriteRequestToPartitions_RequiredRejectsWhenTableUnavailable(t *tes
 		context.Background(),
 		"tenant",
 		nil, // tenantRing — unused on this code path because we exit early
+		nil, // activePartitionIDs — unused on this code path because we exit early
 		nil, // req — unused
 		[]uint32{42},
 		0,

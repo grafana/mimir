@@ -20,6 +20,7 @@ func TestIsStillWarming(t *testing.T) {
 	require.False(t, IsStillWarming(errors.New("not a status")))
 	require.False(t, IsStillWarming(status.Error(codes.Unavailable, "transport problem")))
 	require.False(t, IsStillWarming(status.Error(codes.NotFound, stillWarmingDetail+" partition=1")))
+	require.False(t, IsStillWarming(errAssignmentNotReady()), "assignment-not-ready must not trigger query fallback")
 	require.False(t, IsStillWarming(errPartitionEpochUnavailable(7)), "epoch-unavailable must not trigger still-warming fallback")
 }
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"testing"
@@ -222,6 +223,83 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		var rcErr errReadcacheRoutingUnavailable
 		assert.True(t, errors.As(err, &rcErr))
 	})
+}
+
+func TestDistributor_GetReadcacheReplicationSetsForQuery_TenantBootstrapIsolation(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	handoff := now.Add(-time.Hour)
+	secondHandoff := handoff.Add(30 * time.Minute)
+	full := assignment.HashRange{Lo: 0, Hi: math.MaxUint32}
+	d := &Distributor{
+		now:    func() time.Time { return now },
+		limits: validation.NewOverrides(validation.Limits{}, nil),
+	}
+	installTenantSnapshot(d, now, now.Add(time.Minute), []assignment.LogEntry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 9, From: handoff, To: secondHandoff},
+		{TenantID: "tenant-a", Range: full, PartitionID: 10, From: secondHandoff},
+		{TenantID: "tenant-b", Range: full, PartitionID: 11, From: handoff.Add(-time.Hour)},
+	})
+	d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "rc-0", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
+		{PartitionID: 9, InstanceID: "rc-9", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
+		{PartitionID: 10, InstanceID: "rc-10", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
+		{PartitionID: 11, InstanceID: "rc-11", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
+	}), nil)
+
+	from := model.TimeFromUnixNano(handoff.Add(-30 * time.Minute).UnixNano())
+	to := model.TimeFromUnixNano(now.UnixNano())
+	partitionsFor := func(tenantID string) []int32 {
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(tenantID, from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
+		require.NoError(t, err)
+		partitions := make([]int32, 0, len(sets))
+		for _, set := range sets {
+			require.Len(t, set.Instances, 1)
+			partitions = append(partitions, partitionByInstance[set.Instances[0].Id])
+		}
+		slices.Sort(partitions)
+		return partitions
+	}
+
+	assert.Equal(t, []int32{0, 9, 10, 11}, partitionsFor("tenant-a"))
+	assert.Equal(t, []int32{11}, partitionsFor("tenant-b"))
+	assert.Equal(t, []int32{0, 9, 10, 11}, partitionsFor("tenant-with-no-history"))
+
+	plan := d.ExplainReadcacheQuery(t.Context(), "tenant-a", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
+	require.Empty(t, plan.Unavailable)
+	var explained []int32
+	for _, partition := range plan.Partitions {
+		explained = append(explained, partition.PartitionID)
+	}
+	assert.Equal(t, []int32{0, 9, 10, 11}, explained)
+
+	noHistoryPlan := d.ExplainReadcacheQuery(t.Context(), "tenant-with-no-history", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
+	require.Empty(t, noHistoryPlan.Unavailable)
+	require.Len(t, noHistoryPlan.Partitions, 4)
+}
+
+func TestDistributor_GetReadcacheReplicationSetsForQuery_RejectsExpiredGeneration(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	full := assignment.HashRange{Lo: 0, Hi: math.MaxUint32}
+	d := &Distributor{
+		now:    func() time.Time { return now },
+		limits: validation.NewOverrides(validation.Limits{}, nil),
+	}
+	installTenantSnapshot(d, now, now, []assignment.LogEntry{{
+		TenantID: "tenant-a", Range: full, PartitionID: 1, From: now.Add(-time.Hour),
+	}})
+	d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{{
+		PartitionID: 1, InstanceID: "rc-1", From: now.Add(-time.Hour), To: now.Add(time.Hour),
+	}}), nil)
+
+	from := model.TimeFromUnixNano(now.Add(-time.Minute).UnixNano())
+	to := model.TimeFromUnixNano(now.UnixNano())
+	_, _, err := d.getReadcacheReplicationSetsForQuery("tenant-a", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
+	require.Error(t, err)
+	var unavailable errReadcacheRoutingUnavailable
+	require.ErrorAs(t, err, &unavailable)
+
+	plan := d.ExplainReadcacheQuery(t.Context(), "tenant-a", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
+	assert.NotEmpty(t, plan.Unavailable)
 }
 
 // TestDistributor_GetReadcacheReplicationSetsForQuery_Interval proves
