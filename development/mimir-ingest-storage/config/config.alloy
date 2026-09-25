@@ -166,3 +166,40 @@ prometheus.remote_write "metrics_local" {
                 queue_config { }
         }
 }
+
+// Ship query-frontend logs, which include the "query stats" lines the freshness recommender reads.
+discovery.docker "containers" {
+        host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "query_frontend" {
+        targets = discovery.docker.containers.targets
+
+        rule {
+                source_labels = ["__meta_docker_container_name"]
+                regex         = "/.*query-frontend.*"
+                action        = "keep"
+        }
+
+        rule {
+                target_label = "name"
+                replacement  = "query-frontend"
+        }
+
+        rule {
+                target_label = "namespace"
+                replacement  = "mimir-ingest-storage"
+        }
+}
+
+loki.source.docker "query_frontend" {
+        host       = "unix:///var/run/docker.sock"
+        targets    = discovery.relabel.query_frontend.output
+        forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+        endpoint {
+                url = "http://loki:3100/loki/api/v1/push"
+        }
+}

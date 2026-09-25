@@ -147,6 +147,7 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
+      - "/var/run/docker.sock:/var/run/docker.sock"
   "ingester-zone-a-1":
     "build":
       "context": "."
@@ -271,6 +272,12 @@
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29094:29094"
+  "loki":
+    "command":
+      - "-config.file=/etc/loki/local-config.yaml"
+    "image": "grafana/loki:3.5.0"
+    "ports":
+      - "3100:3100"
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "minio":

@@ -9,5 +9,12 @@ overrides:
     # Don't cache results newer than the block-builder lag: delayed series fill in after publication.
     max_cache_freshness: 30m
     delayed_series:
-      - match: '{__name__=~"grafana_http_request_duration_seconds_.*"}'
-        except: ['{cluster=~"prod-0[0-4]"}']
+      - match: '{__name__="grafana_http_request_duration_seconds_bucket"}'
+        except:
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-00"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-01"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-02"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-03"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-04"}'
+      - match: '{__name__="grafana_http_request_duration_seconds_count"}'
+      - match: '{__name__="grafana_http_request_duration_seconds_sum"}'

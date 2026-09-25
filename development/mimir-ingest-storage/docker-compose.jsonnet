@@ -23,6 +23,7 @@ std.manifestYamlDoc({
     self.kafka_3 +
     self.redpanda_console +
     self.tempo +
+    self.loki +
     {},
 
   distributors:: {
@@ -337,8 +338,17 @@ std.manifestYamlDoc({
       // --stability.level=experimental is required by remote write 2.0 (protobuf_message)
       // and honor_metadata, both still experimental in Alloy.
       command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '--stability.level=experimental', '/etc/agent-config/config.alloy'],
-      volumes: ['./config:/etc/agent-config'],
+      // The Docker socket lets Alloy ship query-frontend logs to Loki for the freshness recommender.
+      volumes: ['./config:/etc/agent-config', '/var/run/docker.sock:/var/run/docker.sock'],
       ports: ['9091:9091'],
+    },
+  },
+
+  loki:: {
+    loki: {
+      image: 'grafana/loki:3.5.0',
+      command: ['-config.file=/etc/loki/local-config.yaml'],
+      ports: ['3100:3100'],
     },
   },
 

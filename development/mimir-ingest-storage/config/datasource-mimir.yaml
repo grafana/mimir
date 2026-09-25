@@ -43,3 +43,9 @@ datasources:
     uid: tempo
     orgID: 1
     url: http://tempo:3200/
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki
+    orgID: 1
+    url: http://loki:3100/
