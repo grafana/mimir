@@ -1110,8 +1110,16 @@ ingester:
     enabled: true
     # -- Maximum number of ingesters that can be unavailable per zone during rollout
     maxUnavailable: 50
-    # -- Minimum time for the rollout operator to wait between ingester zone down scales
+    # -- Minimum time for the rollout operator to wait between ingester zone down scales, ignored when readOnlyDownscaleDelay is set.
     minTimeBetweenZonesDownscale: 12h
+    # -- Delay before downscaling ingester StatefulSets after a partition enters read-only mode.
+    # Set it to the same duration as `querier.query-ingesters-within`, which defaults to 13h.
+    # When this option is set, replicas are managed through a ReplicaTemplate. Updating the
+    # replicas in the ReplicaTemplate causes the rollout-operator to set the affected ingester
+    # or partition to read-only, then wait for this delay before downscaling the ingester
+    # StatefulSets. This is the recommended approach for managing ingester downscaling in
+    # ingest-storage multi-zone deployments.
+    readOnlyDownscaleDelay: null
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
