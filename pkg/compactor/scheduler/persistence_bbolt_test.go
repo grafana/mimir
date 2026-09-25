@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ var testBlockIDs = [][]byte{ulid.MustNewDefault(time.Now()).Bytes()}
 func setupBboltManager(t *testing.T) (*BboltJobPersistenceManager, *bbolt.DB) {
 	tempDir := t.TempDir()
 	dbDir := filepath.Join(tempDir, "shards")
-	mgr, err := openBboltJobPersistenceManager(dbDir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dbDir, 1, false, log.NewNopLogger())
 	require.NoError(t, err)
 	return mgr, mgr.dbs[0]
 }
@@ -75,9 +76,9 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Empty recovery should succeed
@@ -110,9 +111,9 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 	})
 
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Create a bucket with an invalid tenant name
@@ -220,14 +221,14 @@ func TestMetadataBucketNameIsInvalidTenantID(t *testing.T) {
 func TestBboltJobPersistenceManager_CreationTimePersists(t *testing.T) {
 	dir := t.TempDir()
 
-	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
 	require.NoError(t, mgr.Close())
 
 	// Reopen with the same shard count
-	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved on reopen")
 	require.NoError(t, mgr.Close())
@@ -237,7 +238,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	dir := t.TempDir()
 
 	// Open with 1 shard and write some data
-	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
@@ -251,7 +252,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	require.NoError(t, mgr.Close())
 
 	// Reopen with 2 shards
-	mgr, err = openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 2, false, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-up migration")
@@ -259,9 +260,9 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, len(tenants))
@@ -293,7 +294,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	dir := t.TempDir()
 
 	// Open with 2 shards, place a tenant on each shard directly.
-	mgr, err := openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 2, false, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
@@ -309,7 +310,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	require.NoError(t, mgr.Close())
 
 	// Reopen with 1 shard.
-	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-down migration")
@@ -322,9 +323,9 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, 2)
@@ -335,6 +336,16 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 	now := time.Now()
+
+	verifyBackfillBlockJob := func(t *testing.T, written, read TrackedJob) {
+		writtenJob := written.(*TrackedBackfillBlockJob)
+		readJob, ok := read.(*TrackedBackfillBlockJob)
+		require.True(t, ok)
+		require.Equal(t, writtenJob.jobType, readJob.jobType)
+		require.Equal(t, writtenJob.backfillID, readJob.backfillID)
+		require.Equal(t, writtenJob.block, readJob.block)
+		require.Equal(t, writtenJob.order, readJob.order)
+	}
 
 	tests := map[string]struct {
 		job                  TrackedJob
@@ -379,6 +390,32 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				// No fields to validate
 			},
 		},
+		"backfill cleanup job": {
+			job: &TrackedBackfillCleanupJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           backfillCleanupJobId,
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+				backfillID: "01KBACKFILL",
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				readJob, ok := read.(*TrackedBackfillCleanupJob)
+				require.True(t, ok)
+				require.Equal(t, written.(*TrackedBackfillCleanupJob).backfillID, readJob.backfillID)
+			},
+		},
+		"backfill validate job": {
+			job:                  NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, "01KBLOCK", "01KBACKFILL", testBlockIDs[0], 3, now),
+			verifySpecificFields: verifyBackfillBlockJob,
+		},
+		"backfill copy job": {
+			job:                  NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, "01KBLOCK", "01KBACKFILL", testBlockIDs[0], 3, now),
+			verifySpecificFields: verifyBackfillBlockJob,
+		},
 	}
 
 	for name, tc := range tests {
@@ -394,28 +431,37 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			err = persister.WriteJob(tc.job)
 			require.NoError(t, err)
 
-			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanup *keyCleanup, err error) {
+			// Helper function since the test reads twice. Returns every recovered job regardless of kind.
+			readJobs := func() (readJobs []TrackedJob, cleanup *keyCleanup, err error) {
 				err = db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob, cleanup = jobsFromTenantBucket(b)
+					var jobs recoveredJobs
+					jobs, cleanup = jobsFromTenantBucket(b)
+					for _, j := range jobs.compaction {
+						readJobs = append(readJobs, j)
+					}
+					for _, j := range jobs.block {
+						readJobs = append(readJobs, j)
+					}
+					if jobs.plan != nil {
+						readJobs = append(readJobs, jobs.plan)
+					}
+					if jobs.cleanup != nil {
+						readJobs = append(readJobs, jobs.cleanup)
+					}
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, cleanup, err := readJobs()
+			readJobsList, cleanup, err := readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
-			var readJob TrackedJob
-			if len(compactionJobs) == 1 {
-				readJob = compactionJobs[0]
-			} else {
-				readJob = planJob
-			}
+			require.Len(t, readJobsList, 1)
+			readJob := readJobsList[0]
 			require.Equal(t, tc.job.ID(), readJob.ID())
 			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
 			require.Equal(t, tc.job.Status(), readJob.Status())
@@ -427,11 +473,61 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, cleanup, err = readJobs()
+			readJobsList, cleanup, err = readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
-			require.Empty(t, compactionJobs)
-			require.Nil(t, planJob)
+			require.Empty(t, readJobsList)
 		})
 	}
+}
+
+func TestJobsFromTenantBucket_UnrecognizedTypedKeys(t *testing.T) {
+	mgr, db := setupBboltManager(t)
+	t.Cleanup(func() {
+		require.NoError(t, mgr.Close())
+	})
+
+	// Keys a future version could write, which must never be misread as compaction jobs
+	keys := []string{"#x01KBLOCK", "#v"}
+	require.NoError(t, db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("tenant"))
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if err := b.Put([]byte(k), []byte("value")); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	require.NoError(t, db.View(func(tx *bbolt.Tx) error {
+		jobs, cleanup := jobsFromTenantBucket(tx.Bucket([]byte("tenant")))
+		require.Empty(t, jobs.compaction)
+		require.Empty(t, jobs.block)
+		require.NotNil(t, cleanup)
+		var cleanupKeys []string
+		for _, ke := range cleanup.keyErrors {
+			cleanupKeys = append(cleanupKeys, string(ke.key))
+			require.EqualError(t, ke.err, "unknown key")
+		}
+		require.ElementsMatch(t, keys, cleanupKeys)
+		return nil
+	}))
+}
+
+func TestBboltJobPersistenceManager_BackfillModePersists(t *testing.T) {
+	dir := t.TempDir()
+
+	mgr, err := openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, mgr.Close())
+
+	_, err = openBboltJobPersistenceManager(dir, 1, true, log.NewNopLogger())
+	require.EqualError(t, err, fmt.Sprintf("failed to prepare bbolt shards: bbolt state in %s was created with backfill mode false, but -compactor-scheduler.backfill-mode-enabled is true", dir))
+
+	mgr, err = openBboltJobPersistenceManager(dir, 1, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, mgr.Close())
 }

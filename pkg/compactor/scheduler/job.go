@@ -5,19 +5,59 @@ package scheduler
 import (
 	"errors"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
+// Job keys, which are also job IDs:
+//   - single character: a job type with at most one instance per tenant
+//   - typedJobKeyPrefix + type byte + planner ID: a job type with many instances per tenant
+//   - anything else: a compaction job
 const (
-	reservedJobIdLen = 1
-	planJobId        = "p"
-	infiniteLeases   = 0
+	reservedJobIdLen     = 1
+	planJobId            = "p"
+	backfillCleanupJobId = "b"
+	typedJobKeyPrefix    = "#"
+	validateJobKeyType   = 'v'
+	copyJobKeyType       = 'c'
+	infiniteLeases       = 0
 )
+
+func isTypedJobKey(id string) bool {
+	return strings.HasPrefix(id, typedJobKeyPrefix)
+}
+
+func typedJobKey(keyType byte, plannerID string) string {
+	return typedJobKeyPrefix + string(keyType) + plannerID
+}
+
+// blockJobTypeForKey returns the backfill block job type of a typed job key, if it has one
+func blockJobTypeForKey(id string) (compactorschedulerpb.JobType, bool) {
+	// A typed key must have a type byte and a non-empty planner ID
+	if !isTypedJobKey(id) || len(id) < len(typedJobKeyPrefix)+2 {
+		return compactorschedulerpb.JOB_TYPE_UNKNOWN, false
+	}
+	switch id[len(typedJobKeyPrefix)] {
+	case validateJobKeyType:
+		return compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, true
+	case copyJobKeyType:
+		return compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, true
+	}
+	return compactorschedulerpb.JOB_TYPE_UNKNOWN, false
+}
+
+func blockJobKeyType(jobType compactorschedulerpb.JobType) byte {
+	if jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_COPY {
+		return copyJobKeyType
+	}
+	return validateJobKeyType
+}
 
 type TrackedJob interface {
 	ID() string
+	Type() compactorschedulerpb.JobType
 	CreationTime() time.Time
 	Status() compactorschedulerpb.StoredJobStatus
 	StatusTime() time.Time // time of last renewal or time of completion
@@ -34,6 +74,11 @@ type TrackedJob interface {
 	ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse
 	CopyBase() TrackedJob // copies the underlying base job to allow for mutation (mark leased/clear lease)
 	Order() uint32        // the order of jobs where lower is higher priority
+	Blocks() [][]byte     // the blocks this job works on, used to avoid repeating work
+}
+
+func isPlanJob(j TrackedJob) bool {
+	return j.Type() == compactorschedulerpb.JOB_TYPE_PLANNING
 }
 
 type baseTrackedJob struct {
@@ -113,6 +158,27 @@ func (j *baseTrackedJob) Epoch() int64 {
 	return j.epoch
 }
 
+func (j *baseTrackedJob) storedInfo() *compactorschedulerpb.StoredJobInfo {
+	return &compactorschedulerpb.StoredJobInfo{
+		CreationTime: j.creationTime.Unix(),
+		Status:       j.status,
+		StatusTime:   j.statusTime.Unix(),
+		NumLeases:    int32(j.numLeases),
+		Epoch:        j.epoch,
+	}
+}
+
+func baseTrackedJobFromInfo(id string, info *compactorschedulerpb.StoredJobInfo) baseTrackedJob {
+	return baseTrackedJob{
+		id:           id,
+		creationTime: time.Unix(info.CreationTime, 0),
+		status:       info.Status,
+		statusTime:   time.Unix(info.StatusTime, 0),
+		numLeases:    int(info.NumLeases),
+		epoch:        info.Epoch,
+	}
+}
+
 type CompactionJob struct {
 	blocks  [][]byte
 	isSplit bool
@@ -132,6 +198,10 @@ func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, tota
 		order:           order,
 		totalBlockBytes: totalBlockBytes,
 	}
+}
+
+func (j *TrackedCompactionJob) Type() compactorschedulerpb.JobType {
+	return compactorschedulerpb.JOB_TYPE_COMPACTION
 }
 
 func (j *TrackedCompactionJob) CopyBase() TrackedJob {
@@ -184,6 +254,10 @@ func (j *TrackedCompactionJob) Order() uint32 {
 	return j.order
 }
 
+func (j *TrackedCompactionJob) Blocks() [][]byte {
+	return j.value.blocks
+}
+
 type TrackedPlanJob struct {
 	baseTrackedJob
 }
@@ -194,6 +268,10 @@ func NewTrackedPlanJob(creationTime time.Time) *TrackedPlanJob {
 	}
 }
 
+func (j *TrackedPlanJob) Type() compactorschedulerpb.JobType {
+	return compactorschedulerpb.JOB_TYPE_PLANNING
+}
+
 func (j *TrackedPlanJob) CopyBase() TrackedJob {
 	return &TrackedPlanJob{
 		baseTrackedJob: j.baseTrackedJob,
@@ -201,14 +279,7 @@ func (j *TrackedPlanJob) CopyBase() TrackedJob {
 }
 
 func (j *TrackedPlanJob) Serialize() ([]byte, error) {
-	info := compactorschedulerpb.StoredJobInfo{
-		CreationTime: j.creationTime.Unix(),
-		Status:       compactorschedulerpb.StoredJobStatus(j.status),
-		StatusTime:   j.StatusTime().Unix(),
-		NumLeases:    int32(j.numLeases),
-		Epoch:        j.epoch,
-	}
-	return info.Marshal()
+	return j.storedInfo().Marshal()
 }
 
 func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
@@ -228,20 +299,171 @@ func (j *TrackedPlanJob) Order() uint32 {
 	return 0
 }
 
+func (j *TrackedPlanJob) Blocks() [][]byte {
+	return nil
+}
+
 func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {
 	var info compactorschedulerpb.StoredJobInfo
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err
 	}
-	return &TrackedPlanJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           planJobId,
-			creationTime: time.Unix(info.CreationTime, 0),
-			status:       info.Status,
-			statusTime:   time.Unix(info.StatusTime, 0),
-			numLeases:    int(info.NumLeases),
-			epoch:        info.Epoch,
+	return &TrackedPlanJob{baseTrackedJob: baseTrackedJobFromInfo(planJobId, &info)}, nil
+}
+
+// TrackedBackfillCleanupJob deletes the data and markers of a backfill
+type TrackedBackfillCleanupJob struct {
+	baseTrackedJob
+	backfillID string
+}
+
+func NewTrackedBackfillCleanupJob(backfillID string, creationTime time.Time) *TrackedBackfillCleanupJob {
+	return &TrackedBackfillCleanupJob{
+		baseTrackedJob: newBaseTrackedJob(backfillCleanupJobId, creationTime),
+		backfillID:     backfillID,
+	}
+}
+
+func (j *TrackedBackfillCleanupJob) Type() compactorschedulerpb.JobType {
+	return compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP
+}
+
+func (j *TrackedBackfillCleanupJob) CopyBase() TrackedJob {
+	return &TrackedBackfillCleanupJob{
+		baseTrackedJob: j.baseTrackedJob,
+		backfillID:     j.backfillID,
+	}
+}
+
+func (j *TrackedBackfillCleanupJob) Serialize() ([]byte, error) {
+	stored := &compactorschedulerpb.StoredBackfillCleanupJob{
+		Info:       j.storedInfo(),
+		BackfillId: j.backfillID,
+	}
+	return stored.Marshal()
+}
+
+func (j *TrackedBackfillCleanupJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
+	return &compactorschedulerpb.LeaseJobResponse{
+		Key: &compactorschedulerpb.JobKey{
+			Id:    backfillCleanupJobId,
+			Epoch: j.epoch,
 		},
+		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:          tenant,
+			JobType:         compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP,
+			BackfillCleanup: &compactorschedulerpb.BackfillCleanupJob{BackfillId: j.backfillID},
+		},
+	}
+}
+
+func (j *TrackedBackfillCleanupJob) Order() uint32 {
+	return 1
+}
+
+func (j *TrackedBackfillCleanupJob) Blocks() [][]byte {
+	return nil
+}
+
+func deserializeBackfillCleanupJob(content []byte) (*TrackedBackfillCleanupJob, error) {
+	var stored compactorschedulerpb.StoredBackfillCleanupJob
+	if err := stored.Unmarshal(content); err != nil {
+		return nil, err
+	}
+	if stored.Info == nil {
+		return nil, errors.New("invalid backfill cleanup job can not be deserialized")
+	}
+	return &TrackedBackfillCleanupJob{
+		baseTrackedJob: baseTrackedJobFromInfo(backfillCleanupJobId, stored.Info),
+		backfillID:     stored.BackfillId,
+	}, nil
+}
+
+// TrackedBackfillBlockJob validates or copies a single block of a backfill
+type TrackedBackfillBlockJob struct {
+	baseTrackedJob
+	jobType    compactorschedulerpb.JobType // JOB_TYPE_BACKFILL_VALIDATE or JOB_TYPE_BACKFILL_COPY
+	backfillID string
+	block      []byte
+	order      uint32
+}
+
+func NewTrackedBackfillBlockJob(jobType compactorschedulerpb.JobType, plannerID string, backfillID string, block []byte, order uint32, creationTime time.Time) *TrackedBackfillBlockJob {
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: newBaseTrackedJob(typedJobKey(blockJobKeyType(jobType), plannerID), creationTime),
+		jobType:        jobType,
+		backfillID:     backfillID,
+		block:          block,
+		order:          order,
+	}
+}
+
+func (j *TrackedBackfillBlockJob) Type() compactorschedulerpb.JobType {
+	return j.jobType
+}
+
+func (j *TrackedBackfillBlockJob) CopyBase() TrackedJob {
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: j.baseTrackedJob,
+		jobType:        j.jobType,
+		backfillID:     j.backfillID,
+		block:          j.block,
+		order:          j.order,
+	}
+}
+
+func (j *TrackedBackfillBlockJob) Serialize() ([]byte, error) {
+	stored := &compactorschedulerpb.StoredBackfillBlockJob{
+		Info:  j.storedInfo(),
+		Job:   j.blockJob(),
+		Order: j.order,
+	}
+	return stored.Marshal()
+}
+
+func (j *TrackedBackfillBlockJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
+	return &compactorschedulerpb.LeaseJobResponse{
+		Key: &compactorschedulerpb.JobKey{
+			Id:    j.id,
+			Epoch: j.epoch,
+		},
+		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:        tenant,
+			JobType:       j.jobType,
+			BackfillBlock: j.blockJob(),
+		},
+	}
+}
+
+func (j *TrackedBackfillBlockJob) Order() uint32 {
+	return j.order
+}
+
+func (j *TrackedBackfillBlockJob) Blocks() [][]byte {
+	return [][]byte{j.block}
+}
+
+func (j *TrackedBackfillBlockJob) blockJob() *compactorschedulerpb.BackfillBlockJob {
+	return &compactorschedulerpb.BackfillBlockJob{
+		BackfillId: j.backfillID,
+		BlockId:    j.block,
+	}
+}
+
+func deserializeBackfillBlockJob(k []byte, v []byte, jobType compactorschedulerpb.JobType) (*TrackedBackfillBlockJob, error) {
+	var stored compactorschedulerpb.StoredBackfillBlockJob
+	if err := stored.Unmarshal(v); err != nil {
+		return nil, err
+	}
+	if stored.Info == nil || stored.Job == nil {
+		return nil, errors.New("invalid backfill block job can not be deserialized")
+	}
+	return &TrackedBackfillBlockJob{
+		baseTrackedJob: baseTrackedJobFromInfo(string(k), stored.Info),
+		jobType:        jobType,
+		backfillID:     stored.Job.BackfillId,
+		block:          stored.Job.BlockId,
+		order:          stored.Order,
 	}, nil
 }
 

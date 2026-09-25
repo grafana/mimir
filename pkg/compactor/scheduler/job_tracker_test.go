@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
 func at(hour, minute int) time.Time {
@@ -22,10 +24,17 @@ func at(hour, minute int) time.Time {
 }
 
 func newTestJobTracker(clk clock.Clock) (*JobTracker, *prometheus.Registry) {
+	return newTestJobTrackerForMode(clk, false)
+}
+
+func newTestJobTrackerForMode(clk clock.Clock, backfillMode bool) (*JobTracker, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(reg, lanePolicy)
-	return NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
+	if backfillMode {
+		lanePolicy = newBackfillLanePolicy()
+	}
+	metrics := newSchedulerMetrics(reg, lanePolicy, backfillMode)
+	return NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, infiniteLeases, infiniteLeases, backfillMode, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
 }
 
 type errJobPersister struct{ NopJobPersister }
@@ -90,7 +99,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 				tc.setup(jt)
 			}
 
-			transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
+			transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod, 0)
 			require.NoError(t, err)
 
 			if tc.expectedPlan {
@@ -105,10 +114,10 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 	t.Run("returns error on persist failure", func(t *testing.T) {
 		lanePolicy := newSimpleLanePolicy()
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
-		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
+		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod, 0)
 		require.Error(t, err)
 		require.Empty(t, transition)
 		require.NotContains(t, jt.incompleteJobs, planJobId)
@@ -116,9 +125,9 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 	t.Run("planning skipped when plan is false", func(t *testing.T) {
 		lanePolicy := newSimpleLanePolicy()
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
-		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
+		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), lanePolicy, infiniteLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod, 0)
 		require.NoError(t, err)
 		require.Empty(t, transition)
 		require.NotContains(t, jt.incompleteJobs, planJobId)
@@ -135,7 +144,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		jt, _ := newTestJobTracker(clk)
 		jt.completePlanTime = at(2, 3)
 
-		transition, err := jt.Maintenance(leaseDuration, false, true, planInterval, waitPeriod)
+		transition, err := jt.Maintenance(leaseDuration, false, true, planInterval, waitPeriod, 0)
 		require.NoError(t, err)
 		require.NotEmpty(t, transition)
 		require.Contains(t, jt.incompleteJobs, planJobId)
@@ -234,13 +243,13 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			jt, _ := newTestJobTracker(clock.NewMock())
 
-			jt.recoverFrom(tc.compactionJobs, tc.planJob)
+			jt.recoverFrom(recoveredJobs{compaction: tc.compactionJobs, plan: tc.planJob})
 			pendingIDs := append(toSlice(jt.pending[planLane]), toSlice(jt.pending[compactionLane])...)
 			require.Equal(t, tc.expectedPending, pendingIDs)
 
 			require.Equal(t, tc.expectedActive, toSlice(jt.active))
 			var completeIDs []string
-			for _, j := range jt.completeCompactionJobs {
+			for _, j := range jt.completeJobs {
 				completeIDs = append(completeIDs, j.ID())
 			}
 			require.Equal(t, tc.expectedCompleteJobs, completeIDs)
@@ -268,7 +277,7 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now())
 	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 2, 200, clk.Now())
 
-	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil)
+	jt.recoverFrom(recoveredJobs{compaction: []*TrackedCompactionJob{splitJob, mergeJob}})
 	assertTrackerBytes(t, reg, "both jobs pending after recovery", 100, 200)
 
 	leaseResp, _, err := jt.Lease(compactionLane)
@@ -314,7 +323,7 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 
 	assertPlanJobLocation("no plan jobs yet", 0, 0)
 
-	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0)
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0, 0)
 	require.NoError(t, err)
 	assertPlanJobLocation("plan job pending", 1, 0)
 
@@ -339,25 +348,25 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()
 	lanePolicy := newSimpleLanePolicy()
-	sm := newSchedulerMetrics(reg, lanePolicy)
+	sm := newSchedulerMetrics(reg, lanePolicy, false)
 
 	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
-	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, lanePolicy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
-	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, lanePolicy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
+	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, lanePolicy, infiniteLeases, infiniteLeases, false, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
+	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, lanePolicy, infiniteLeases, infiniteLeases, false, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
 
-	jt1.recoverFrom([]*TrackedCompactionJob{
+	jt1.recoverFrom(recoveredJobs{compaction: []*TrackedCompactionJob{
 		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now()),
-	}, nil)
-	jt2.recoverFrom([]*TrackedCompactionJob{
+	}})
+	jt2.recoverFrom(recoveredJobs{compaction: []*TrackedCompactionJob{
 		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 1, 200, clk.Now()),
-	}, nil)
+	}})
 	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
 
 	// Set time past the first planning window to force planning on Maintenance()
 	clk.Set(at(3, 0))
-	_, err := jt1.Maintenance(time.Minute, false, true, time.Hour, 0)
+	_, err := jt1.Maintenance(time.Minute, false, true, time.Hour, 0, 0)
 	require.NoError(t, err)
-	_, err = jt2.Maintenance(time.Minute, false, true, time.Hour, 0)
+	_, err = jt2.Maintenance(time.Minute, false, true, time.Hour, 0, 0)
 	require.NoError(t, err)
 
 	// Lease both of tenant1's jobs
@@ -402,10 +411,10 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 
 	clk := clock.NewMock()
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-	jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, maxLeases, infiniteLeases, false, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
-	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute, 0)
 	require.NoError(t, err)
 
 	for range maxLeases + 1 {
@@ -453,18 +462,18 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			clk := clock.NewMock()
 			lanePolicy := newSimpleLanePolicy()
-			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-			jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy, false)
+			jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, tc.maxLeases, tc.threshold, false, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 			lane := compactionLane
 			if tc.planJob {
 				lane = planLane
-				_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
+				_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute, 0)
 				require.NoError(t, err)
 			} else {
-				jt.recoverFrom([]*TrackedCompactionJob{
+				jt.recoverFrom(recoveredJobs{compaction: []*TrackedCompactionJob{
 					NewTrackedCompactionJob("merge-job", &CompactionJob{}, 1, 100, clk.Now()),
-				}, nil)
+				}})
 			}
 
 			for _, interrupted := range tc.interrupted {
@@ -483,4 +492,141 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 			require.Equal(t, tc.expectedRepeatedFailures, prom_testutil.ToFloat64(jt.metrics.repeatedJobFailures))
 		})
 	}
+}
+
+func TestJobTracker_OfferJobs_BackfillCleanup(t *testing.T) {
+	const (
+		leaseDuration      = 10 * time.Minute
+		planningInterval   = 5 * time.Minute
+		lastContactTimeout = 10 * time.Minute
+	)
+
+	clk := clock.NewMock()
+	clk.Set(at(3, 0))
+	jt, _ := newTestJobTrackerForMode(clk, true)
+
+	lease := func(l lane) *compactorschedulerpb.LeaseJobResponse {
+		t.Helper()
+		resp, _, err := jt.Lease(l)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		return resp
+	}
+	// Lease expiration is not enforced so jobs stay active as the clock advances
+	plan := func() *compactorschedulerpb.LeaseJobResponse {
+		t.Helper()
+		_, err := jt.Maintenance(leaseDuration, false, true, planningInterval, 0, lastContactTimeout)
+		require.NoError(t, err)
+		return lease(planLane)
+	}
+
+	// One compaction job becomes active and another stays pending
+	planResp := plan()
+	_, found, _, err := jt.OfferJobs([]TrackedJob{
+		NewTrackedCompactionJob("compaction-1", &CompactionJob{blocks: [][]byte{[]byte("block-1")}}, 1, 100, clk.Now()),
+		NewTrackedCompactionJob("compaction-2", &CompactionJob{blocks: [][]byte{[]byte("block-2")}}, 2, 100, clk.Now()),
+	}, planResp.Key.Epoch)
+	require.NoError(t, err)
+	require.True(t, found)
+	activeResp := lease(compactionLane)
+
+	clk.Add(planningInterval)
+	planResp = plan()
+	_, found, transitions, err := jt.OfferJobs([]TrackedJob{NewTrackedBackfillCleanupJob("backfill-1", clk.Now())}, planResp.Key.Epoch)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []laneTransition{{lane: compactionLane, kind: rotationRemoveTracker}}, transitions)
+	require.Empty(t, jt.incompleteJobs, "pending and active jobs are replaced and the cleanup job is parked")
+	require.False(t, jt.RenewLease(activeResp.Key.Id, activeResp.Key.Epoch), "the worker of the preempted job must find out on its next update")
+
+	clk.Add(lastContactTimeout - time.Minute)
+	becameNonEmpty, err := jt.Maintenance(leaseDuration, true, true, planningInterval, 0, lastContactTimeout)
+	require.NoError(t, err)
+	require.Empty(t, becameNonEmpty, "released before the last contact timeout")
+	require.NotContains(t, jt.incompleteJobs, planJobId, "planning while a cleanup job is parked")
+
+	clk.Add(time.Minute)
+	becameNonEmpty, err = jt.Maintenance(leaseDuration, false, true, planningInterval, 0, lastContactTimeout)
+	require.NoError(t, err)
+	require.Empty(t, becameNonEmpty, "released while lease expiration is not enforced")
+
+	becameNonEmpty, err = jt.Maintenance(leaseDuration, true, true, planningInterval, 0, lastContactTimeout)
+	require.NoError(t, err)
+	require.Equal(t, []lane{backfillCleanupLane}, becameNonEmpty)
+
+	cleanupResp := lease(backfillCleanupLane)
+	require.Equal(t, compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP, cleanupResp.Spec.JobType)
+	require.Equal(t, "backfill-1", cleanupResp.Spec.BackfillCleanup.BackfillId)
+
+	clk.Add(planningInterval)
+	_, err = jt.Maintenance(leaseDuration, false, true, planningInterval, 0, lastContactTimeout)
+	require.NoError(t, err)
+	require.NotContains(t, jt.incompleteJobs, planJobId, "planning while a cleanup job is active")
+}
+
+func TestJobTracker_Lease_BackfillPhasePlanning(t *testing.T) {
+	tests := map[string]struct {
+		backfillMode        bool
+		outstandingJob      bool
+		expectedJobType     compactorschedulerpb.JobType
+		expectedOutstanding *compactorschedulerpb.BackfillPhasePlanningJob
+	}{
+		"cell mode": {
+			outstandingJob:  true,
+			expectedJobType: compactorschedulerpb.JOB_TYPE_PLANNING,
+		},
+		"backfill mode without outstanding jobs": {
+			backfillMode:        true,
+			expectedJobType:     compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			expectedOutstanding: &compactorschedulerpb.BackfillPhasePlanningJob{HasOutstandingJobs: false},
+		},
+		"backfill mode with outstanding jobs": {
+			backfillMode:        true,
+			outstandingJob:      true,
+			expectedJobType:     compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			expectedOutstanding: &compactorschedulerpb.BackfillPhasePlanningJob{HasOutstandingJobs: true},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			clk := clock.NewMock()
+			clk.Set(at(3, 0))
+			jt, _ := newTestJobTrackerForMode(clk, tc.backfillMode)
+			if tc.outstandingJob {
+				jt.toPendingBack(NewTrackedCompactionJob("compaction-1", &CompactionJob{}, 1, 100, clk.Now()))
+			}
+			_, err := jt.Maintenance(10*time.Minute, false, true, 30*time.Minute, 0, 0)
+			require.NoError(t, err)
+
+			resp, _, err := jt.Lease(planLane)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedJobType, resp.Spec.JobType)
+			require.Equal(t, tc.expectedOutstanding, resp.Spec.BackfillPhasePlanning)
+		})
+	}
+}
+
+func TestJobTracker_CompletePlanJob(t *testing.T) {
+	clk := clock.NewMock()
+	clk.Set(at(3, 0))
+	jt, _ := newTestJobTracker(clk)
+
+	jt.toPendingBack(NewTrackedCompactionJob("compaction-1", &CompactionJob{}, 1, 100, clk.Now()))
+	_, err := jt.Maintenance(10*time.Minute, false, true, 30*time.Minute, 0, 0)
+	require.NoError(t, err)
+	resp, _, err := jt.Lease(planLane)
+	require.NoError(t, err)
+
+	found, err := jt.CompletePlanJob(resp.Key.Epoch + 1)
+	require.NoError(t, err)
+	require.False(t, found, "completed with a stale epoch")
+
+	found, err = jt.CompletePlanJob(resp.Key.Epoch)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotContains(t, jt.incompleteJobs, planJobId)
+	require.Equal(t, clk.Now(), jt.completePlanTime)
+	require.Equal(t, 1, jt.pending[compactionLane].Len(), "pending jobs are unchanged")
+	require.Contains(t, jt.incompleteJobs, "compaction-1", "pending jobs are unchanged")
 }

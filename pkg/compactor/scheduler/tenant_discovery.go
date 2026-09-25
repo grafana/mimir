@@ -5,17 +5,55 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/thanos-io/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+// phasesPrefix holds one marker object per tenant for each backfill phase, named phases/<phase>/<tenant>
+const phasesPrefix = "phases/"
+
+var backfillPhases = map[string]struct{}{
+	"backfill": {},
+	"validate": {},
+	"compact":  {},
+	"copy":     {},
+	"cleanup":  {},
+}
+
+// listBackfillTenants lists the tenants that have a marker for any backfill phase.
+func listBackfillTenants(ctx context.Context, bkt objstore.Bucket) ([]string, error) {
+	seen := make(map[string]struct{})
+	err := bkt.Iter(ctx, phasesPrefix, func(name string) error {
+		phase, tenantID, ok := strings.Cut(strings.TrimPrefix(name, phasesPrefix), objstore.DirDelim)
+		if !ok {
+			return nil
+		}
+		if _, ok := backfillPhases[phase]; !ok {
+			return nil
+		}
+		if err := tenant.ValidTenantID(tenantID); err != nil {
+			return nil
+		}
+		seen[tenantID] = struct{}{}
+		return nil
+	}, objstore.WithRecursiveIter())
+	if err != nil {
+		return nil, err
+	}
+	return slices.Collect(maps.Keys(seen)), nil
+}
 
 // TenantDiscoverer periodically scans the bucket for new tenants.
 type TenantDiscoverer struct {
@@ -32,7 +70,9 @@ type TenantDiscoverer struct {
 	rotator                        *Rotator
 	maxLeases                      int
 	repeatedFailureReportThreshold int
+	backfillMode                   bool
 	knownTenants                   map[string]struct{}
+	listTenants                    func(context.Context, objstore.Bucket) ([]string, error)
 }
 
 func NewTenantDiscoverer(
@@ -56,7 +96,12 @@ func NewTenantDiscoverer(
 		rotator:                        rotator,
 		maxLeases:                      cfg.MaxLeases,
 		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
+		backfillMode:                   cfg.BackfillModeEnabled,
 		knownTenants:                   make(map[string]struct{}),
+		listTenants:                    mimir_tsdb.ListUsers,
+	}
+	if cfg.BackfillModeEnabled {
+		s.listTenants = listBackfillTenants
 	}
 	s.Service = services.NewTimerService(cfg.TenantDiscoveryInterval, s.start, s.iter, nil)
 	return s
@@ -89,7 +134,7 @@ func (s *TenantDiscoverer) iter(ctx context.Context) error {
 }
 
 func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
-	tenants, err := mimir_tsdb.ListUsers(ctx, s.bkt)
+	tenants, err := s.listTenants(ctx, s.bkt)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed tenant discovery", "err", err)
 		return err
@@ -111,7 +156,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker := NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.backfillMode, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}

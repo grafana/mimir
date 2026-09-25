@@ -131,7 +131,7 @@ type BboltJobPersistenceManager struct {
 	logger log.Logger
 }
 
-func openBboltJobPersistenceManager(dir string, shardCount int, logger log.Logger) (*BboltJobPersistenceManager, error) {
+func openBboltJobPersistenceManager(dir string, shardCount int, backfillMode bool, logger log.Logger) (*BboltJobPersistenceManager, error) {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("failed to create bbolt shard directory: %w", err)
 	}
@@ -141,7 +141,7 @@ func openBboltJobPersistenceManager(dir string, shardCount int, logger log.Logge
 		return nil, fmt.Errorf("failed to sync parent directory: %w", err)
 	}
 
-	dbs, meta, err := prepare(dir, shardCount, logger)
+	dbs, meta, err := prepare(dir, shardCount, backfillMode, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare bbolt shards: %w", err)
 	}
@@ -182,10 +182,13 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	jobTrackers := make(map[string]*JobTracker)
 
 	var (
-		numCompactionJobsRecovered int
-		numPlanJobsRecovered       int
-		numBucketCleanups          int
-		numKeyCleanups             int
+		numCompactionJobsRecovered       int
+		numPlanJobsRecovered             int
+		numBackfillCleanupJobsRecovered  int
+		numBackfillValidateJobsRecovered int
+		numBackfillCopyJobsRecovered     int
+		numBucketCleanups                int
+		numKeyCleanups                   int
 	)
 
 	level.Info(m.logger).Log("msg", "starting job recovery")
@@ -198,6 +201,9 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		}
 		numCompactionJobsRecovered += stats.numCompactionJobs
 		numPlanJobsRecovered += stats.numPlanJobs
+		numBackfillCleanupJobsRecovered += stats.numBackfillCleanupJobs
+		numBackfillValidateJobsRecovered += stats.numBackfillValidateJobs
+		numBackfillCopyJobsRecovered += stats.numBackfillCopyJobs
 		numBucketCleanups += stats.numBucketCleanups
 		numKeyCleanups += stats.numKeyCleanups
 	}
@@ -207,6 +213,9 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		"num_tenants_recovered", len(jobTrackers),
 		"num_compaction_jobs_recovered", numCompactionJobsRecovered,
 		"num_plan_jobs_recovered", numPlanJobsRecovered,
+		"num_backfill_cleanup_jobs_recovered", numBackfillCleanupJobsRecovered,
+		"num_backfill_validate_jobs_recovered", numBackfillValidateJobsRecovered,
+		"num_backfill_copy_jobs_recovered", numBackfillCopyJobsRecovered,
 		"num_bucket_cleanups", numBucketCleanups,
 		"num_key_cleanups", numKeyCleanups,
 	)
@@ -215,10 +224,13 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 }
 
 type recoveryStats struct {
-	numCompactionJobs int
-	numPlanJobs       int
-	numBucketCleanups int
-	numKeyCleanups    int
+	numCompactionJobs       int
+	numPlanJobs             int
+	numBackfillCleanupJobs  int
+	numBackfillValidateJobs int
+	numBackfillCopyJobs     int
+	numBucketCleanups       int
+	numKeyCleanups          int
 }
 
 // recoverDB recovers all job trackers from a single bbolt database.
@@ -249,10 +261,20 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 				return nil
 			}
 
-			compactionJobs, planJob, keyCleanup := jobsFromTenantBucket(b)
-			stats.numCompactionJobs += len(compactionJobs)
-			if planJob != nil {
+			jobs, keyCleanup := jobsFromTenantBucket(b)
+			stats.numCompactionJobs += len(jobs.compaction)
+			if jobs.plan != nil {
 				stats.numPlanJobs++
+			}
+			if jobs.cleanup != nil {
+				stats.numBackfillCleanupJobs++
+			}
+			for _, j := range jobs.block {
+				if j.Type() == compactorschedulerpb.JOB_TYPE_BACKFILL_COPY {
+					stats.numBackfillCopyJobs++
+				} else {
+					stats.numBackfillValidateJobs++
+				}
 			}
 			if keyCleanup != nil {
 				cleanup[tenant] = keyCleanup
@@ -260,7 +282,7 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 
 			jp := newBboltJobPersister(db, []byte(tenant), logger)
 			jt := jobTrackerFactory(tenant, jp)
-			jt.recoverFrom(compactionJobs, planJob)
+			jt.recoverFrom(jobs)
 			jobTrackers[tenant] = jt
 			return nil
 		}); err != nil {
@@ -315,9 +337,8 @@ func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Log
 	return
 }
 
-func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *TrackedPlanJob, *keyCleanup) {
-	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
-	var planJob *TrackedPlanJob // may be nil
+func jobsFromTenantBucket(bucket *bbolt.Bucket) (recoveredJobs, *keyCleanup) {
+	jobs := recoveredJobs{compaction: make([]*TrackedCompactionJob, 0, 10)}
 	var keyErrs []keyError
 
 	c := bucket.Cursor()
@@ -331,17 +352,37 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *Track
 					keyErrs = append(keyErrs, keyError{k, err})
 					continue
 				}
-				planJob = job
+				jobs.plan = job
+			case backfillCleanupJobId:
+				job, err := deserializeBackfillCleanupJob(v)
+				if err != nil {
+					keyErrs = append(keyErrs, keyError{k, err})
+					continue
+				}
+				jobs.cleanup = job
 			default:
 				keyErrs = append(keyErrs, keyError{k, errors.New("unknown key")})
 			}
+		} else if isTypedJobKey(string(k)) {
+			jobType, ok := blockJobTypeForKey(string(k))
+			if !ok {
+				// Never misread an unknown typed key as another kind of job
+				keyErrs = append(keyErrs, keyError{k, errors.New("unknown key")})
+				continue
+			}
+			job, err := deserializeBackfillBlockJob(k, v, jobType)
+			if err != nil {
+				keyErrs = append(keyErrs, keyError{k, err})
+				continue
+			}
+			jobs.block = append(jobs.block, job)
 		} else {
 			compactionJob, err := deserializeCompactionJob(k, v)
 			if err != nil {
 				keyErrs = append(keyErrs, keyError{k, err})
 				continue
 			}
-			compactionJobs = append(compactionJobs, compactionJob)
+			jobs.compaction = append(jobs.compaction, compactionJob)
 		}
 	}
 
@@ -350,7 +391,7 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *Track
 		kc = &keyCleanup{bucket, keyErrs}
 	}
 
-	return compactionJobs, planJob, kc
+	return jobs, kc
 }
 
 func (m *BboltJobPersistenceManager) Close() error {
@@ -421,7 +462,7 @@ func countShardFiles(dir string) (int, error) {
 	return len(seen), nil
 }
 
-func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, *compactorschedulerpb.PersistenceMetadata, error) {
+func prepare(dir string, targetCount int, backfillMode bool, logger log.Logger) ([]*bbolt.DB, *compactorschedulerpb.PersistenceMetadata, error) {
 	existingCount, err := countShardFiles(dir)
 	if err != nil {
 		return nil, nil, err
@@ -442,6 +483,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, *comp
 		meta := &compactorschedulerpb.PersistenceMetadata{
 			ShardCount:   uint32(targetCount),
 			CreationTime: time.Now().Unix(),
+			BackfillMode: backfillMode,
 		}
 		if err := writeShardMetadata(dbs[0], meta); err != nil {
 			closeDbs(dbs, logger)
@@ -460,6 +502,12 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, *comp
 	if err != nil {
 		closeDbs(dbs, logger)
 		return nil, nil, fmt.Errorf("failed to read shard metadata: %w", err)
+	}
+
+	// The persisted jobs of each mode are not meaningful to the other
+	if meta.BackfillMode != backfillMode {
+		closeDbs(dbs, logger)
+		return nil, nil, fmt.Errorf("bbolt state in %s was created with backfill mode %t, but -compactor-scheduler.backfill-mode-enabled is %t", dir, meta.BackfillMode, backfillMode)
 	}
 
 	// Verify that no shard files have gone missing. countShardFiles checks that files are

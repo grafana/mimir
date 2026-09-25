@@ -19,12 +19,32 @@ enum JobType {
   JOB_TYPE_UNKNOWN = 0;
   JOB_TYPE_COMPACTION = 1;
   JOB_TYPE_PLANNING = 2;
+  JOB_TYPE_BACKFILL_PHASE_PLANNING = 3;
+  JOB_TYPE_BACKFILL_CLEANUP = 4;
+  JOB_TYPE_BACKFILL_VALIDATE = 5;
+  JOB_TYPE_BACKFILL_COPY = 6;
 }
 
 message JobSpec {
   string tenant = 1;
   CompactionJob job = 2;
   JobType job_type = 3;
+  BackfillPhasePlanningJob backfill_phase_planning = 4;
+  BackfillCleanupJob backfill_cleanup = 5;
+  BackfillBlockJob backfill_block = 6;
+}
+
+message BackfillBlockJob {
+  string backfill_id = 1;
+  bytes block_id = 2;
+}
+
+message BackfillPhasePlanningJob {
+  bool has_outstanding_jobs = 1;
+}
+
+message BackfillCleanupJob {
+  string backfill_id = 1;
 }
 
 message CompactionJob {
@@ -38,6 +58,7 @@ service CompactorScheduler {
   rpc PlannedJobs(PlannedJobsRequest) returns (PlannedJobsResponse);
   rpc UpdatePlanJob(UpdatePlanJobRequest) returns (UpdateJobResponse);
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
+  rpc UpdateBackfillJob(UpdateBackfillJobRequest) returns (UpdateJobResponse);
 }
 
 message LaneRequest {
@@ -54,15 +75,21 @@ message LeaseJobResponse {
   JobSpec spec = 2;
 }
 
-message PlannedCompactionJob {
+message PlannedJob {
   string id = 1;
-  CompactionJob job = 2;
+  oneof job {
+    CompactionJob compaction = 2;
+    BackfillCleanupJob backfill_cleanup = 3;
+    BackfillBlockJob backfill_validate = 4;
+    BackfillBlockJob backfill_copy = 5;
+  }
 }
 
 message PlannedJobsRequest {
   JobKey key = 1;
   string tenant = 2;
-  repeated PlannedCompactionJob jobs = 3;
+  repeated PlannedJob jobs = 3;
+  bool unchanged = 4;
 }
 
 message PlannedJobsResponse {}
@@ -83,6 +110,12 @@ message UpdatePlanJobRequest {
 }
 
 message UpdateCompactionJobRequest {
+  JobKey key = 1;
+  string tenant = 2;
+  UpdateType update = 3;
+}
+
+message UpdateBackfillJobRequest {
   JobKey key = 1;
   string tenant = 2;
   UpdateType update = 3;
@@ -111,7 +144,19 @@ message StoredCompactionJob {
   uint32 order = 3;
 }
 
+message StoredBackfillCleanupJob {
+  StoredJobInfo info = 1;
+  string backfill_id = 2;
+}
+
+message StoredBackfillBlockJob {
+  StoredJobInfo info = 1;
+  BackfillBlockJob job = 2;
+  uint32 order = 3;
+}
+
 message PersistenceMetadata {
   uint32 shard_count = 1;
   int64 creation_time = 2;
+  bool backfill_mode = 3;
 }

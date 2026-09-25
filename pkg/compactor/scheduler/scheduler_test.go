@@ -72,10 +72,10 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	_, err = scheduler.PlannedJobs(ctx, &compactorschedulerpb.PlannedJobsRequest{
 		Key:    leaseResp.Key,
 		Tenant: leaseResp.Spec.Tenant,
-		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+		Jobs: []*compactorschedulerpb.PlannedJob{
 			// Two compaction jobs offered: one to be abandoned, one to be completed below.
-			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, Split: true, TotalBlocksBytes: 100}},
-			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}, TotalBlocksBytes: 200}},
+			{Id: "compaction-job-1", Job: &compactorschedulerpb.PlannedJob_Compaction{Compaction: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, Split: true, TotalBlocksBytes: 100}}},
+			{Id: "compaction-job-2", Job: &compactorschedulerpb.PlannedJob_Compaction{Compaction: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}, TotalBlocksBytes: 200}}},
 		},
 	})
 	require.NoError(t, err)

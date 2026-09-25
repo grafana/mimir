@@ -36,6 +36,7 @@ var (
 	errLeaseNotFound       = status.Error(codes.NotFound, "lease was not found")
 	errInvalidLanes        = status.Error(codes.InvalidArgument, "the requested lanes were invalid")
 	errMissingKey          = status.Error(codes.InvalidArgument, "missing required job key")
+	errBackfillModeOff     = status.Error(codes.InvalidArgument, "backfill jobs can only be planned when backfill mode is enabled")
 	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
 )
 
@@ -52,6 +53,7 @@ type Config struct {
 	RepeatedFailureReportThreshold              int              `yaml:"repeated_failure_report_threshold" category:"experimental"`
 	Bbolt                                       BboltConfig      `yaml:"bbolt"`
 	LanePolicy                                  LanePolicyConfig `yaml:"lane_policy"`
+	BackfillModeEnabled                         bool             `yaml:"backfill_mode_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -67,9 +69,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit.")
 	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
 	cfg.LanePolicy.RegisterFlagsWithPrefix("compactor-scheduler.lane-policy", f)
+	f.BoolVar(&cfg.BackfillModeEnabled, "compactor-scheduler.backfill-mode-enabled", false, "If enabled, the compactor scheduler schedules work for backfills instead of compaction of the tenants in a cell.")
 }
 
 func (cfg *Config) Validate() error {
+	isBackfillPolicy := cfg.LanePolicy.Policy == lanePolicyBackfill
+	if cfg.BackfillModeEnabled && !isBackfillPolicy {
+		return fmt.Errorf("compactor-scheduler.lane-policy.policy must be %s when compactor-scheduler.backfill-mode-enabled is true", lanePolicyBackfill)
+	}
+	if !cfg.BackfillModeEnabled && isBackfillPolicy {
+		return fmt.Errorf("compactor-scheduler.lane-policy.policy can only be %s when compactor-scheduler.backfill-mode-enabled is true", lanePolicyBackfill)
+	}
 	if cfg.MaxLeases < 0 {
 		return errors.New("compactor-scheduler.max-leases must be non-negative")
 	}
@@ -119,6 +129,11 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
+	if cfg.BackfillModeEnabled && compactorCfg.SchedulerClientConfig.LastContactTimeout <= 0 {
+		// Without it there is no bound on how long workers of preempted jobs keep running
+		return nil, errors.New("compactor.scheduler-client.last-contact-timeout must be positive when compactor-scheduler.backfill-mode-enabled is true")
+	}
+
 	allowList := util.NewAllowList(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants)
 
 	jpm, err := jobPersistenceManagerFactory(cfg, logger)
@@ -126,6 +141,7 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
+	// TODO: use the backfill storage bucket when backfill mode is enabled
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
@@ -148,12 +164,19 @@ func newCompactorScheduler(
 		return nil, err
 	}
 
-	metrics := newSchedulerMetrics(registerer, lanePolicy)
+	metrics := newSchedulerMetrics(registerer, lanePolicy, cfg.BackfillModeEnabled)
+
+	compactionWaitPeriod := compactorCfg.CompactionWaitPeriod
+	if cfg.BackfillModeEnabled {
+		// Backfilled blocks are complete when uploaded, so there is no need to wait before compacting them
+		compactionWaitPeriod = 0
+	}
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
 		cfg.PlanningInterval,
-		compactorCfg.CompactionWaitPeriod,
+		compactionWaitPeriod,
+		compactorCfg.SchedulerClientConfig.LastContactTimeout,
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
@@ -189,7 +212,7 @@ func newCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.cfg.BackfillModeEnabled, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -268,44 +291,86 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, errNotRunning
 	}
 
-	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
-	level.Info(logger).Log("msg", "received plan results", "job_count", len(req.Jobs))
-
-	now := s.clock.Now()
-	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
-	idSet := make(map[string]struct{}, len(req.Jobs))
-	for i, job := range req.Jobs {
-		if job.Job == nil {
-			return nil, status.Errorf(codes.InvalidArgument, "planned job %q is missing required job field", job.Id)
-		}
-		if len(job.Id) == reservedJobIdLen {
-			// This is never expected to actually happen. We reserve single character keys for internal use.
-			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
-			continue
-		}
-		if _, ok := idSet[job.Id]; ok {
-			// This is never expected to actually happen. It enforces a guarantee for later code.
-			level.Warn(logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
-			continue
-		}
-
-		idSet[job.Id] = struct{}{}
-
-		jobs = append(jobs, NewTrackedCompactionJob(
-			job.Id,
-			&CompactionJob{
-				blocks:  job.Job.BlockIds,
-				isSplit: job.Job.Split,
-			},
-			// Technically this casting could truncate, but that's an unrealistic case.
-			// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
-			uint32(i+1),
-			job.Job.TotalBlocksBytes,
-			now,
-		))
+	if req.Unchanged && len(req.Jobs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, "planned jobs can not be provided when planning is unchanged")
 	}
 
-	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
+	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+	level.Info(logger).Log("msg", "received plan results", "job_count", len(req.Jobs), "unchanged", req.Unchanged)
+
+	now := s.clock.Now()
+	jobs := make([]TrackedJob, 0, len(req.Jobs))
+	idSet := make(map[string]struct{}, len(req.Jobs))
+	for i, job := range req.Jobs {
+		// Technically this casting could truncate, but that's an unrealistic case.
+		// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
+		order := uint32(i + 1)
+
+		var tj TrackedJob
+		switch j := job.Job.(type) {
+		case *compactorschedulerpb.PlannedJob_Compaction:
+			if len(job.Id) == reservedJobIdLen || isTypedJobKey(job.Id) {
+				// This is never expected to actually happen. We reserve these keys for internal use.
+				level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID", "id", job.Id)
+				continue
+			}
+			tj = NewTrackedCompactionJob(
+				job.Id,
+				&CompactionJob{
+					blocks:  j.Compaction.BlockIds,
+					isSplit: j.Compaction.Split,
+				},
+				order,
+				j.Compaction.TotalBlocksBytes,
+				now,
+			)
+		case *compactorschedulerpb.PlannedJob_BackfillValidate:
+			if !s.cfg.BackfillModeEnabled {
+				return nil, errBackfillModeOff
+			}
+			if job.Id == "" {
+				level.Warn(logger).Log("msg", "ignoring planned backfill validate job with an empty ID")
+				continue
+			}
+			tj = NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, job.Id, j.BackfillValidate.BackfillId, j.BackfillValidate.BlockId, order, now)
+		case *compactorschedulerpb.PlannedJob_BackfillCopy:
+			if !s.cfg.BackfillModeEnabled {
+				return nil, errBackfillModeOff
+			}
+			if job.Id == "" {
+				level.Warn(logger).Log("msg", "ignoring planned backfill copy job with an empty ID")
+				continue
+			}
+			tj = NewTrackedBackfillBlockJob(compactorschedulerpb.JOB_TYPE_BACKFILL_COPY, job.Id, j.BackfillCopy.BackfillId, j.BackfillCopy.BlockId, order, now)
+		case *compactorschedulerpb.PlannedJob_BackfillCleanup:
+			if !s.cfg.BackfillModeEnabled {
+				return nil, errBackfillModeOff
+			}
+			if len(req.Jobs) != 1 {
+				return nil, status.Error(codes.InvalidArgument, "a backfill cleanup job must be the only planned job")
+			}
+			// The provided ID is not used since a tenant has at most one cleanup job
+			tj = NewTrackedBackfillCleanupJob(j.BackfillCleanup.BackfillId, now)
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "planned job %q is missing required job field", job.Id)
+		}
+
+		if _, ok := idSet[tj.ID()]; ok {
+			// This is never expected to actually happen. It enforces a guarantee for later code.
+			level.Warn(logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", tj.ID())
+			continue
+		}
+		idSet[tj.ID()] = struct{}{}
+		jobs = append(jobs, tj)
+	}
+
+	var found bool
+	var err error
+	if req.Unchanged {
+		found, err = s.rotator.CompletePlanJob(req.Tenant, req.Key.Epoch)
+	} else {
+		_, found, err = s.rotator.OfferJobs(req.Tenant, jobs, req.Key.Epoch)
+	}
 	if err != nil {
 		level.Error(logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, errFailedCompletingJob // this error is used because PlannedJobs is the completion of a plan job
@@ -438,6 +503,85 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	}
 
 	level.Info(logger).Log("msg", "could not find lease during update for compaction job", "update_type", req.Update.String())
+	return nil, errLeaseNotFound
+}
+
+// backfillJobTypeLabel returns the metric label for the job type of a backfill job key, if it is one
+func backfillJobTypeLabel(id string) (string, bool) {
+	if id == backfillCleanupJobId {
+		return jobTypeLabel(compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP), true
+	}
+	jobType, ok := blockJobTypeForKey(id)
+	if !ok {
+		return "", false
+	}
+	return jobTypeLabel(jobType), true
+}
+
+func (s *Scheduler) UpdateBackfillJob(ctx context.Context, req *compactorschedulerpb.UpdateBackfillJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
+	jobType, ok := backfillJobTypeLabel(req.Key.Id)
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "job %q is not a backfill job", req.Key.Id)
+	}
+	if !s.isRunning() {
+		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
+		return nil, errNotRunning
+	}
+
+	logger := log.With(s.logger, "user", req.Tenant, "job_type", jobType, "id", req.Key.Id, "epoch", req.Key.Epoch)
+
+	switch req.Update {
+	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
+		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			// Lease renewals are only debug logged to prevent noise
+			level.Debug(logger).Log("msg", "backfill job lease renewed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, true)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job completion", "err", err)
+			return nil, errFailedCompletingJob
+		}
+		if removed {
+			s.metrics.jobsCompleted.WithLabelValues(jobType).Inc()
+			level.Info(logger).Log("msg", "backfill job completed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job abandon", "err", err)
+			return nil, errFailedAbandoningJob
+		}
+		if removed {
+			level.Info(logger).Log("msg", "backfill job abandoned")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
+		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed backfill job cancel", "err", err)
+			return nil, errFailedCancelLease
+		}
+		if canceled {
+			level.Info(logger).Log("msg", "backfill job lease canceled", "worker_interrupted", interrupted)
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	default:
+		return nil, invalidUpdateTypeError(req.Update)
+	}
+
+	if !s.isRunning() {
+		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
+		return nil, errNotRunning
+	}
+
+	level.Info(logger).Log("msg", "could not find lease during update for backfill job", "update_type", req.Update.String())
 	return nil, errLeaseNotFound
 }
 

@@ -40,6 +40,7 @@ type Rotator struct {
 	leaseDuration                    time.Duration
 	planningInterval                 time.Duration
 	compactionWaitPeriod             time.Duration
+	lastContactTimeout               time.Duration
 	maintenanceInterval              time.Duration
 	intervalsBeforeLeaseExpiration   int
 	intervalsBeforeColdStartPlanning int
@@ -64,7 +65,7 @@ type tenantRotationState struct {
 	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, lanePendingJobsLastEmpty map[lane]prometheus.Gauge, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, lastContactTimeout, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, lanePendingJobsLastEmpty map[lane]prometheus.Gauge, logger log.Logger) *Rotator {
 	laneRotations := make(map[lane]*laneRotation)
 	for _, lane := range lanePolicy.AllLanes() {
 		laneRotations[lane] = &laneRotation{rotation: list.New()}
@@ -74,6 +75,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		leaseDuration:                    leaseDuration,
 		planningInterval:                 planningInterval,
 		compactionWaitPeriod:             compactionWaitPeriod,
+		lastContactTimeout:               lastContactTimeout,
 		maintenanceInterval:              maintenanceInterval,
 		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
@@ -271,7 +273,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64, interru
 	return canceled, nil
 }
 
-func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJob, planJobEpoch int64) (int, bool, error) {
+func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, planJobEpoch int64) (int, bool, error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
@@ -279,7 +281,7 @@ func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJo
 		r.mtx.RUnlock()
 		return 0, false, nil
 	}
-	added, found, transitions, err := tenantState.tracker.OfferCompactionJobs(jobs, planJobEpoch)
+	added, found, transitions, err := tenantState.tracker.OfferJobs(jobs, planJobEpoch)
 	if err != nil {
 		r.mtx.RUnlock()
 		return 0, found, err
@@ -314,6 +316,18 @@ func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJo
 	}
 
 	return added, found, nil
+}
+
+func (r *Rotator) CompletePlanJob(tenant string, planJobEpoch int64) (bool, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		return false, nil
+	}
+
+	return tenantState.tracker.CompletePlanJob(planJobEpoch)
 }
 
 func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete bool) (bool, error) {
@@ -390,7 +404,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			r.mtx.RUnlock()
 			return
 		}
-		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
+		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod, r.lastContactTimeout)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)
 			continue

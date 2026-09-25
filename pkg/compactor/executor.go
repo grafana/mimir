@@ -44,6 +44,7 @@ var (
 	errCompactionJobHasNoBlocks      = errors.New("compaction job has no blocks")
 	errNoBlockMetadataProvided       = errors.New("no block metadata provided")
 	errJobCanceledByScheduler        = errors.New("job canceled by scheduler")
+	errLastContactTimeout            = errors.New("job stopped after losing contact with the scheduler")
 	errFinalStatusGracePeriodTimeout = errors.New("final status grace period timed out")
 )
 
@@ -90,6 +91,7 @@ var (
 	errInvalidSchedulerLeasingMaxBackoff             = errors.New("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
 	errInvalidSchedulerUpdateMinBackoff              = errors.New("invalid compactor.scheduler-client.update-min-backoff, must be positive")
 	errInvalidSchedulerUpdateMaxBackoff              = errors.New("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerLastContactTimeout            = errors.New("invalid compactor.scheduler-client.last-contact-timeout, must be 0 or greater than the update interval")
 	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
 	errInvalidSchedulerRingBasedCleanup              = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, can only be disabled when compactor.scheduler-client.enabled is true")
 )
@@ -104,6 +106,7 @@ type SchedulerClientConfig struct {
 	UpdateInterval                time.Duration          `yaml:"update_interval" category:"experimental"`
 	UpdateMinBackoff              time.Duration          `yaml:"update_min_backoff" category:"experimental"`
 	UpdateMaxBackoff              time.Duration          `yaml:"update_max_backoff" category:"experimental"`
+	LastContactTimeout            time.Duration          `yaml:"last_contact_timeout" category:"experimental"`
 	CompactionDirCleanupInterval  time.Duration          `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
 	MetadataCacheConfig           MetadataCacheConfig    `yaml:"metadata_cache"`
 	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
@@ -121,11 +124,12 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.LeasingMaxBackoff, flagPrefix+"leasing-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.UpdateMinBackoff, flagPrefix+"update-min-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
+	f.DurationVar(&cfg.LastContactTimeout, flagPrefix+"last-contact-timeout", 0, "Duration without a successful job lease update after which a compactor stops the job. The compactor scheduler also reads this value and must be configured with the same value. Required when the compactor scheduler runs in backfill mode. 0 to disable.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -154,6 +158,9 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	}
 	if cfg.UpdateMaxBackoff <= cfg.UpdateMinBackoff {
 		return errInvalidSchedulerUpdateMaxBackoff
+	}
+	if cfg.LastContactTimeout < 0 || (cfg.LastContactTimeout > 0 && cfg.LastContactTimeout <= cfg.UpdateInterval) {
+		return errInvalidSchedulerLastContactTimeout
 	}
 	if err := cfg.MetadataCacheConfig.Validate(); err != nil {
 		return err
@@ -279,6 +286,14 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING})
 			case "compact":
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION})
+			case "backfill-plan":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING})
+			case "backfill-validate":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE})
+			case "backfill-copy":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COPY})
+			case "backfill-cleanup":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP})
 			default:
 				return nil, fmt.Errorf("unknown job type in lane configuration: %q", lane)
 			}
@@ -335,9 +350,9 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 		}
 		// Each worker compacts into its own subdirectory so that they can independently perform periodic cleanup
 		workerCompactDir := filepath.Join(compactDir, fmt.Sprintf("compact-%d", i))
-		// Only compaction workers write to the compaction directory, so only they perform cleanup
+		// Only compaction and backfill validation workers write to the compaction directory, so only they perform cleanup
 		cleanup := slices.ContainsFunc(lanes, func(lr *compactorschedulerpb.LaneRequest) bool {
-			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION
+			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION || lr.JobType == compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE
 		})
 		req := &compactorschedulerpb.LeaseJobRequest{
 			WorkerId:     workerID,
@@ -426,6 +441,17 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 	jobId := key.Id
 	jobTenant := spec.Tenant
 
+	// Stop the job if the scheduler can't be reached for too long, since it may have given the job away.
+	// This is a timer rather than a check in the loop below because a status update can block while retrying.
+	var fence *time.Timer
+	if e.cfg.LastContactTimeout > 0 {
+		fence = time.AfterFunc(e.cfg.LastContactTimeout, func() {
+			level.Warn(e.logger).Log("msg", "lost contact with scheduler, stopping work", "job_id", jobId, "tenant", jobTenant, "last_contact_timeout", e.cfg.LastContactTimeout)
+			cancelJob(errLastContactTimeout)
+		})
+		defer fence.Stop()
+	}
+
 	for {
 		select {
 		case <-ticker.C:
@@ -440,6 +466,9 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 			} else {
 				// Update scheduler contact timestamp on successful heartbeat
 				c.schedulerLastContact.SetToCurrentTime()
+				if fence != nil {
+					fence.Reset(e.cfg.LastContactTimeout)
+				}
 			}
 		case <-ctx.Done():
 			return
@@ -708,7 +737,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 }
 
-func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
+func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedJob, error) {
 	userBucket := bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
 	userLogger := log.With(e.logger, "user", tenant)
 
@@ -762,7 +791,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		bucketCompactor.metrics.blocksMaxTimeDelta.Observe(delta)
 	}
 
-	plannedJobs := make([]*compactorschedulerpb.PlannedCompactionJob, 0, len(jobs))
+	plannedJobs := make([]*compactorschedulerpb.PlannedJob, 0, len(jobs))
 	for _, job := range jobs {
 		toCompact, err := c.blocksPlanner.Plan(ctx, job.metasByMinTime)
 		if err != nil {
@@ -775,12 +804,14 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 			continue
 		}
 
-		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
+		plannedJob := &compactorschedulerpb.PlannedJob{
 			Id: job.key,
-			Job: &compactorschedulerpb.CompactionJob{
-				Split:            job.useSplitting,
-				BlockIds:         serializeBlockIds(toCompact),
-				TotalBlocksBytes: sumBlockBytes(toCompact),
+			Job: &compactorschedulerpb.PlannedJob_Compaction{
+				Compaction: &compactorschedulerpb.CompactionJob{
+					Split:            job.useSplitting,
+					BlockIds:         serializeBlockIds(toCompact),
+					TotalBlocksBytes: sumBlockBytes(toCompact),
+				},
 			},
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
@@ -807,7 +838,7 @@ func sumBlockBytes(metas []*block.Meta) uint64 {
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, plannedJobs []*compactorschedulerpb.PlannedJob) error {
 	req := &compactorschedulerpb.PlannedJobsRequest{
 		Key:    key,
 		Tenant: spec.Tenant,

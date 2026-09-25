@@ -105,6 +105,10 @@ func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, 
 	return m.UpdateJobFunc(ctx, in)
 }
 
+func (m *mockCompactorSchedulerClient) UpdateBackfillJob(context.Context, *compactorschedulerpb.UpdateBackfillJobRequest, ...grpc.CallOption) (*compactorschedulerpb.UpdateJobResponse, error) {
+	return nil, errors.New("backfill jobs are not supported by the executor")
+}
+
 func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *compactorschedulerpb.PlannedJobsRequest, opts ...grpc.CallOption) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	m.mu.Lock()
 	m.recvPlannedReq = true
@@ -689,6 +693,41 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 
 	// check that exactly 2 updates were sent. First recv OK, next recv NOT_FOUND to trigger cancel
 	require.Equal(t, 2, mockSchedulerClient.GetUpdateJobCallCount(), "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
+}
+
+func TestSchedulerExecutor_JobCancellationOn_LastContactTimeout(t *testing.T) {
+	// The scheduler is unreachable, so every update fails and is retried
+	mockSchedulerClient := &mockCompactorSchedulerClient{
+		UpdateJobFunc: func(context.Context, *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+			return nil, status.Error(codes.Unavailable, "connection refused")
+		},
+	}
+
+	cfg := makeTestCompactorConfig(t)
+	cfg.SchedulerClientConfig.UpdateInterval = 15 * time.Second
+	cfg.SchedulerClientConfig.LastContactTimeout = 10 * time.Minute
+
+	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
+	jobKey := &compactorschedulerpb.JobKey{Id: "test-job"}
+	jobSpec := &compactorschedulerpb.JobSpec{Tenant: "test-tenant", JobType: compactorschedulerpb.JOB_TYPE_COMPACTION}
+	mockCompactor := &MultitenantCompactor{
+		schedulerLastContact: promauto.With(nil).NewGauge(prometheus.GaugeOpts{Name: "test_last_contact"}),
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(context.Background())
+		defer cancel(nil)
+
+		go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, cancel)
+
+		time.Sleep(cfg.SchedulerClientConfig.LastContactTimeout - time.Second)
+		synctest.Wait()
+		require.NoError(t, ctx.Err(), "job context should not be canceled before the last contact timeout")
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.ErrorIs(t, context.Cause(ctx), errLastContactTimeout)
+	})
 }
 
 func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
