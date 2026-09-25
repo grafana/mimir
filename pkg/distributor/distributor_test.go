@@ -253,7 +253,7 @@ func TestDistributor_Push(t *testing.T) {
 			// Custom request with two different samples with same timestamp.
 			customRequest: makeWriteRequestWith(
 				makeTimeseries([]string{model.MetricNameLabel, "test_metric", "job", "test"},
-					append(makeSamples(10000, 1.0), append(makeSamples(20000, 1.0), makeSamples(20000, 2.0)...)...), nil, nil),
+					append(makeSamples(10000, 0, 1.0), append(makeSamples(20000, 0, 1.0), makeSamples(20000, 0, 2.0)...)...), nil, nil),
 			),
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -1614,21 +1614,21 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 	}{
 		"do not deduplicate if there are no duplicated timestamps": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
-				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
+				makeTimeseries(labels, makeSamples(10, 0, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 0, 2), nil, nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
-				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
+				makeTimeseries(labels, makeSamples(10, 0, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 0, 2), nil, nil),
 			},
 		},
 		"deduplicate duplicated timestamps within a single timeseries, and return the first error encountered": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, append(makeSamples(10, 1), append(makeSamples(20, 2), append(makeSamples(10, 3), makeSamples(20, 4)...)...)...), nil, nil),
+				makeTimeseries(labels, append(makeSamples(10, 0, 1), append(makeSamples(20, 0, 2), append(makeSamples(10, 0, 3), makeSamples(20, 0, 4)...)...)...), nil, nil),
 				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), append(makeHistograms(40, generateTestHistogram(1)), append(makeHistograms(40, generateTestHistogram(2)), makeHistograms(30, generateTestHistogram(3))...)...)...), nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(20, 2)...), nil, nil),
+				makeTimeseries(labels, append(makeSamples(10, 0, 1), makeSamples(20, 0, 2)...), nil, nil),
 				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), makeHistograms(40, generateTestHistogram(1))...), nil),
 			},
 			expectedMetrics: `
@@ -1639,14 +1639,14 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 		},
 		"do not deduplicate duplicated timestamps in different timeseries": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(10, 2)...), makeHistograms(30, generateTestHistogram(0)), nil),
-				makeTimeseries(labels, makeSamples(10, 3), append(makeHistograms(20, generateTestHistogram(1)), makeHistograms(20, generateTestHistogram(2))...), nil),
-				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
+				makeTimeseries(labels, append(makeSamples(10, 0, 1), makeSamples(10, 0, 2)...), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 0, 3), append(makeHistograms(20, generateTestHistogram(1)), makeHistograms(20, generateTestHistogram(2))...), nil),
+				makeTimeseries(labels, makeSamples(10, 0, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(10, 1), makeHistograms(30, generateTestHistogram(0)), nil),
-				makeTimeseries(labels, makeSamples(10, 3), makeHistograms(20, generateTestHistogram(1)), nil),
-				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
+				makeTimeseries(labels, makeSamples(10, 0, 1), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 0, 3), makeHistograms(20, generateTestHistogram(1)), nil),
+				makeTimeseries(labels, makeSamples(10, 0, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
 			},
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -1698,7 +1698,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with one sample": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, makeSamples(timestamp, 1), nil, nil),
+					makeTimeseries(labels, makeSamples(timestamp, 0, 1), nil, nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1722,7 +1722,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with one sample and one histogram": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, makeSamples(timestamp-1, 1), makeHistograms(timestamp, generateTestHistogram(2)), nil),
+					makeTimeseries(labels, makeSamples(timestamp-1, 0, 1), makeHistograms(timestamp, generateTestHistogram(2)), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1734,7 +1734,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with two samples": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), nil, nil),
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 0, 1), makeSamples(timestamp, 0, 2)...), nil, nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1758,7 +1758,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with two samples and two histograms": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), append(makeHistograms(timestamp-1, generateTestHistogram(3)), makeHistograms(timestamp, generateTestHistogram(4))...), nil),
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 0, 1), makeSamples(timestamp, 0, 2)...), append(makeHistograms(timestamp-1, generateTestHistogram(3)), makeHistograms(timestamp, generateTestHistogram(4))...), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -4849,13 +4849,13 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testing.T) {
 	var (
 		// Define fixtures used in tests.
-		series1 = makeTimeseries([]string{model.MetricNameLabel, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series2 = makeTimeseries([]string{model.MetricNameLabel, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series3 = makeTimeseries([]string{model.MetricNameLabel, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series4 = makeTimeseries([]string{model.MetricNameLabel, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series5 = makeTimeseries([]string{model.MetricNameLabel, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
-		series6 = makeTimeseries([]string{model.MetricNameLabel, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
-		other1  = makeTimeseries([]string{model.MetricNameLabel, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series1 = makeTimeseries([]string{model.MetricNameLabel, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0, 0), nil, nil)
+		series2 = makeTimeseries([]string{model.MetricNameLabel, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0, 0), nil, nil)
+		series3 = makeTimeseries([]string{model.MetricNameLabel, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0, 0), nil, nil)
+		series4 = makeTimeseries([]string{model.MetricNameLabel, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0, 0), nil, nil)
+		series5 = makeTimeseries([]string{model.MetricNameLabel, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0, 0), nil, nil)
+		series6 = makeTimeseries([]string{model.MetricNameLabel, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0, 0), nil, nil)
+		other1  = makeTimeseries([]string{model.MetricNameLabel, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -5622,7 +5622,7 @@ func BenchmarkHaDedupeStrategy(b *testing.B) {
 							for s := 0; s < seriesPerReplica; s++ {
 								template.Timeseries = append(template.Timeseries, makeTimeseries(
 									[]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s), "__replica__", replicaName(r), "cluster", clusterName(c)},
-									makeSamples(now.UnixMilli(), float64(s)), nil, nil,
+									makeSamples(now.UnixMilli(), 0, float64(s)), nil, nil,
 								))
 							}
 						}
@@ -5922,7 +5922,7 @@ func TestRelabelMiddleware(t *testing.T) {
 						model.MetricNameLabel, "metric1",
 						"label1", "value1",
 					},
-					makeSamples(123, 1.23),
+					makeSamples(123, 0, 1.23),
 					nil,
 					nil,
 				)},
@@ -5934,7 +5934,7 @@ func TestRelabelMiddleware(t *testing.T) {
 						"label1", "value1",
 						"tenant_id", "user",
 					},
-					makeSamples(123, 1.23),
+					makeSamples(123, 0, 1.23),
 					nil,
 					nil,
 				)},
@@ -6089,7 +6089,7 @@ func mockWriteRequest(la []mimirpb.LabelAdapter, value float64, timestampMs int6
 }
 
 func mockWriteHistogramRequest(lbls []mimirpb.LabelAdapter, value float64, timestampMs int64) *mimirpb.WriteRequest {
-	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, util_test.GenerateTestHistogram(int(value)))}
+	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, 0, util_test.GenerateTestHistogram(int(value)))}
 
 	req := mimirpb.NewWriteRequest(nil, mimirpb.API)
 	return req.AddHistogramSeries([][]mimirpb.LabelAdapter{lbls}, histograms, nil)
@@ -6685,7 +6685,7 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 					"bar", "baz",
 					"sample", fmt.Sprintf("%d", i),
 				},
-				makeSamples(startTimestampMs+int64(i), float64(i)),
+				makeSamples(startTimestampMs+int64(i), 0, float64(i)),
 				nil,
 				nil,
 			)
@@ -6741,10 +6741,11 @@ func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, histograms 
 	}
 }
 
-func makeSamples(ts int64, value float64) []mimirpb.Sample {
+func makeSamples(ts, st int64, value float64) []mimirpb.Sample {
 	return []mimirpb.Sample{{
-		Value:       value,
-		TimestampMs: ts,
+		Value:          value,
+		TimestampMs:    ts,
+		StartTimestamp: st,
 	}}
 }
 
@@ -6757,11 +6758,11 @@ func makeExemplars(exemplarLabels []string, ts int64, value float64) []mimirpb.E
 }
 
 func makeHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 func makeFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
@@ -8279,17 +8280,17 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
 				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
 	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
-				"cortex_distributor_requests_in_total",
-				"cortex_distributor_samples_in_total",
-				"cortex_distributor_exemplars_in_total",
-				"cortex_distributor_metadata_in_total",
-				"cortex_distributor_received_requests_total",
-				"cortex_distributor_received_samples_total",
-				"cortex_distributor_received_exemplars_total",
-				"cortex_distributor_received_metadata_total",
-				"cortex_distributor_received_native_histogram_samples_total",
-				"cortex_distributor_received_native_histogram_buckets_total",
-			}
+			"cortex_distributor_requests_in_total",
+			"cortex_distributor_samples_in_total",
+			"cortex_distributor_exemplars_in_total",
+			"cortex_distributor_metadata_in_total",
+			"cortex_distributor_received_requests_total",
+			"cortex_distributor_received_samples_total",
+			"cortex_distributor_received_exemplars_total",
+			"cortex_distributor_received_metadata_total",
+			"cortex_distributor_received_native_histogram_samples_total",
+			"cortex_distributor_received_native_histogram_buckets_total",
+		}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}
@@ -9568,7 +9569,7 @@ func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 0, 1), nil, nil),
 		},
 		Source: mimirpb.API,
 	}

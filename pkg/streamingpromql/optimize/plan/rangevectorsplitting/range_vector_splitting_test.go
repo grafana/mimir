@@ -622,7 +622,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 
 	require.Len(t, backend.Entries, 1)
 
-	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, 0, h)
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
 	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()

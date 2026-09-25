@@ -307,7 +307,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 									series.NewConcreteSeries(
 										labels.FromStrings("foo", "bar"),
 										[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-										[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+										[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, 0, test.GenerateTestHistogram(4))},
 									),
 								})
 							}
@@ -400,8 +400,8 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 							labels.FromStrings("foo", "bar"),
 							nil,
 							[]mimirpb.Histogram{
-								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
-								mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+								mimirpb.FromHistogramToHistogramProto(1, 0, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, 0, test.GenerateTestHistogram(2)),
 							},
 						),
 					}),
@@ -421,7 +421,7 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 							labels.FromStrings("foo", "bar"),
 							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
 							[]mimirpb.Histogram{
-								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+								mimirpb.FromHistogramToHistogramProto(3, 0, test.GenerateTestHistogram(3)),
 							},
 						),
 					}),
@@ -507,9 +507,9 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 							labels.FromStrings("foo", "bar"),
 							nil,
 							[]mimirpb.Histogram{
-								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
-								mimirpb.FromHistogramToHistogramProto(2, staleHist),
-								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+								mimirpb.FromHistogramToHistogramProto(1, 0, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, 0, staleHist),
+								mimirpb.FromHistogramToHistogramProto(3, 0, test.GenerateTestHistogram(3)),
 							},
 						),
 					}),
@@ -621,8 +621,8 @@ func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
 								labels.FromStrings("foo", "bar"),
 								nil,
 								[]mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
-									mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(1, 0, test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(2, 0, test.GenerateTestHistogram(2)),
 								},
 							),
 						}),
@@ -1341,7 +1341,7 @@ func getNHistogramSamples(n int) []mimirpb.Histogram {
 	var ret []mimirpb.Histogram
 	for i := 0; i < n; i++ {
 		h := test.GenerateTestHistogram(i)
-		ret = append(ret, mimirpb.FromHistogramToHistogramProto(int64(i), h))
+		ret = append(ret, mimirpb.FromHistogramToHistogramProto(int64(i), 0, h))
 	}
 	return ret
 }
@@ -1350,7 +1350,7 @@ func getNFloatHistogramSamples(n int) []mimirpb.Histogram {
 	var ret []mimirpb.Histogram
 	for i := 0; i < n; i++ {
 		h := test.GenerateTestFloatHistogram(i)
-		ret = append(ret, mimirpb.FromFloatHistogramToHistogramProto(int64(i), h))
+		ret = append(ret, mimirpb.FromFloatHistogramToHistogramProto(int64(i), 0, h))
 	}
 	return ret
 }
@@ -1593,12 +1593,12 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		series.NewConcreteSeries(
 			labels.FromStrings("foo", "bar"),
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, 0, test.GenerateTestHistogram(4))},
 		),
 		series.NewConcreteSeries(
 			labels.FromStrings("foo", "baz"),
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, 0, test.GenerateTestHistogram(4))},
 		),
 	})
 
@@ -1606,12 +1606,12 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		series.NewConcreteSeries(
 			labels.FromStrings("foo", "qux"),
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, 0, test.GenerateTestHistogram(4))},
 		),
 		series.NewConcreteSeries(
 			labels.FromStrings("foo", "quux"),
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, 0, test.GenerateTestHistogram(4))},
 		),
 	})
 
