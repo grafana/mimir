@@ -83,13 +83,14 @@ func AnalyzeGrafana(ctx context.Context, c *minisdk.Client, folders []string, re
 	}
 
 	filterOnFolders := len(folders) > 0
+	libraryPanels := libraryPanelCache{}
 
 	for _, link := range boardLinks {
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
 
-		err := processDashboard(ctx, c, link, output, readTimeout, promqlParser, logger)
+		err := processDashboard(ctx, c, link, output, readTimeout, libraryPanels, promqlParser, logger)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 		}
@@ -105,8 +106,10 @@ func AnalyzeGrafana(ctx context.Context, c *minisdk.Client, folders []string, re
 	return output, nil
 }
 
+type libraryPanelCache map[string]minisdk.Panel
+
 // processDashboard fetches and processes a single Grafana dashboard.
-func processDashboard(ctx context.Context, c *minisdk.Client, link minisdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) error {
+func processDashboard(ctx context.Context, c *minisdk.Client, link minisdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, libraryPanels libraryPanelCache, promqlParser parser.Parser, logger log.Logger) error {
 	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
 
@@ -120,8 +123,68 @@ func processDashboard(ctx context.Context, c *minisdk.Client, link minisdk.Found
 		return err
 	}
 
-	analyze.ParseMetricsInBoard(output, board, promqlParser, logger)
+	parseErrors := resolveLibraryPanels(ctx, c, &board, libraryPanels, readTimeout)
+	analyze.ParseMetricsInBoardWithParseErrors(output, board, parseErrors, promqlParser, logger)
 	return nil
+}
+
+func resolveLibraryPanels(ctx context.Context, c *minisdk.Client, board *minisdk.Board, libraryPanels libraryPanelCache, readTimeout time.Duration) []error {
+	var parseErrors []error
+	for _, panel := range board.Panels {
+		if panel == nil {
+			continue
+		}
+		parseErrors = append(parseErrors, resolveLibraryPanel(ctx, c, panel, libraryPanels, readTimeout)...)
+	}
+
+	for _, row := range board.Rows {
+		if row == nil {
+			continue
+		}
+		for i := range row.Panels {
+			parseErrors = append(parseErrors, resolveLibraryPanel(ctx, c, &row.Panels[i], libraryPanels, readTimeout)...)
+		}
+	}
+
+	return parseErrors
+}
+
+func resolveLibraryPanel(ctx context.Context, c *minisdk.Client, panel *minisdk.Panel, libraryPanels libraryPanelCache, readTimeout time.Duration) []error {
+	var parseErrors []error
+	if panel.LibraryPanel != nil {
+		libraryPanel, err := getLibraryPanel(ctx, c, *panel.LibraryPanel, libraryPanels, readTimeout)
+		if err != nil {
+			parseErrors = append(parseErrors, err)
+		} else {
+			*panel = libraryPanel
+		}
+	}
+
+	for i := range panel.SubPanels {
+		parseErrors = append(parseErrors, resolveLibraryPanel(ctx, c, &panel.SubPanels[i], libraryPanels, readTimeout)...)
+	}
+
+	return parseErrors
+}
+
+func getLibraryPanel(ctx context.Context, c *minisdk.Client, ref minisdk.LibraryPanelRef, libraryPanels libraryPanelCache, readTimeout time.Duration) (minisdk.Panel, error) {
+	if ref.UID == "" {
+		return minisdk.Panel{}, fmt.Errorf("library panel %q has no uid", ref.Name)
+	}
+
+	if panel, ok := libraryPanels[ref.UID]; ok {
+		return panel, nil
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+
+	panel, err := c.GetLibraryElementByUID(fetchCtx, ref.UID)
+	if err != nil {
+		return minisdk.Panel{}, fmt.Errorf("library panel %q (%s): %w", ref.Name, ref.UID, err)
+	}
+	libraryPanels[ref.UID] = panel
+	return panel, nil
 }
 
 func getAllDashboards(ctx context.Context, c *minisdk.Client) ([]minisdk.FoundBoard, error) {
