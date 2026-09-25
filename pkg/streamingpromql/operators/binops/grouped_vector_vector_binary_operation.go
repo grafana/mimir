@@ -55,6 +55,11 @@ type GroupedVectorVectorBinaryOperation struct {
 	lastManySideSeriesIndex int
 	leftFinishedReading     bool
 	rightFinishedReading    bool
+	manyPresenceGroups      []*oneSideMatchGroup
+	oneSideValidationGroups []*oneSideMatchGroup
+	oneSideValidationSeen   []int
+	oneSideValidationSource []int
+	oneSideValidationRound  int
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -67,16 +72,34 @@ type GroupedVectorVectorBinaryOperation struct {
 var _ types.InstantVectorOperator = &GroupedVectorVectorBinaryOperation{}
 
 type groupedBinaryOperationOutputSeries struct {
-	manySide    *manySide
-	oneSide     *oneSide
-	fillCarrier *oneSide
+	manySide             *manySide
+	oneSide              *oneSide
+	fillCarrier          *oneSide
+	manySideFillCarriers []syntheticManySideCarrier
+	fillCarriersFinished bool
+	referencesFinished   bool
 }
 
 func (g *groupedBinaryOperationOutputSeries) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	g.finishFillCarrier(memoryConsumptionTracker)
-	g.manySide.FinishedReading(memoryConsumptionTracker)
+	g.finishManySideFillCarriers(memoryConsumptionTracker)
+	g.finishReferences()
+	if g.manySide != nil {
+		g.manySide.FinishedReading(memoryConsumptionTracker)
+	}
 	if g.oneSide != nil {
 		g.oneSide.FinishedReading(memoryConsumptionTracker)
+	}
+	seen := make(map[*oneSide]struct{}, len(g.manySideFillCarriers)+1)
+	if g.oneSide != nil {
+		seen[g.oneSide] = struct{}{}
+	}
+	for _, carrier := range g.manySideFillCarriers {
+		if _, exists := seen[carrier.oneSide]; exists {
+			continue
+		}
+		seen[carrier.oneSide] = struct{}{}
+		carrier.oneSide.FinishedReading(memoryConsumptionTracker)
 	}
 }
 
@@ -91,9 +114,70 @@ func (g *groupedBinaryOperationOutputSeries) finishFillCarrier(memoryConsumption
 	g.fillCarrier = nil
 }
 
+func (g *groupedBinaryOperationOutputSeries) finishManySideFillCarriers(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	if g.fillCarriersFinished {
+		return
+	}
+
+	for _, carrier := range g.manySideFillCarriers {
+		carrier.matchGroup.manySideFillCarrierFinished(memoryConsumptionTracker)
+	}
+	g.fillCarriersFinished = true
+}
+
+func (g *groupedBinaryOperationOutputSeries) finishReferences() (map[*oneSide]bool, bool) {
+	if g.referencesFinished {
+		return nil, false
+	}
+
+	oneSides := make(map[*oneSide]bool, len(g.manySideFillCarriers)+1)
+	if g.oneSide != nil {
+		oneSides[g.oneSide] = false
+	}
+	for _, carrier := range g.manySideFillCarriers {
+		oneSides[carrier.oneSide] = false
+	}
+	for side := range oneSides {
+		side.outputSeriesCount--
+		oneSides[side] = side.outputSeriesCount == 0
+	}
+
+	lastManySideUse := false
+	if g.manySide != nil {
+		g.manySide.outputSeriesCount--
+		lastManySideUse = g.manySide.outputSeriesCount == 0
+	}
+	g.referencesFinished = true
+	return oneSides, lastManySideUse
+}
+
+func (g *groupedBinaryOperationOutputSeries) releaseZeroReferenceData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	seen := make(map[*oneSide]struct{}, len(g.manySideFillCarriers)+1)
+	if g.oneSide != nil {
+		seen[g.oneSide] = struct{}{}
+	}
+	for _, carrier := range g.manySideFillCarriers {
+		seen[carrier.oneSide] = struct{}{}
+	}
+	for side := range seen {
+		if side.outputSeriesCount == 0 {
+			side.FinishedReading(memoryConsumptionTracker)
+		}
+	}
+	if g.manySide != nil && g.manySide.outputSeriesCount == 0 {
+		g.manySide.FinishedReading(memoryConsumptionTracker)
+	}
+}
+
 type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
+}
+
+type syntheticManySideCarrier struct {
+	oneSide      *oneSide
+	matchGroup   *oneSideMatchGroup
+	variantIndex int
 }
 
 type normalizedGroupedSides struct {
@@ -135,6 +219,8 @@ type manySide struct {
 	mergedData    types.InstantVectorSeriesData
 
 	outputSeriesCount int
+	matchGroup        *oneSideMatchGroup
+	presenceRecorded  bool
 }
 
 // latestSeriesIndex returns the index of the last series from this side.
@@ -204,10 +290,61 @@ func (g *matchGroup) fillCarrierFinished(memoryConsumptionTracker *limiter.Memor
 }
 
 type oneSideMatchGroup struct {
-	sides      map[string]*oneSide
-	ordered    []*oneSide
-	matchGroup *matchGroup
-	relevant   bool
+	sides                     map[string]*oneSide
+	ordered                   []*oneSide
+	matchGroup                *matchGroup
+	relevant                  bool
+	latestManySideSeriesIndex int
+	manySides                 []*manySide
+	manyPresence              []int
+	manySideFillCarrierCount  int
+}
+
+func (g *oneSideMatchGroup) ensureMatchGroup() {
+	if g.matchGroup != nil {
+		return
+	}
+
+	g.matchGroup = &matchGroup{
+		oneSides:     g.ordered,
+		oneSideCount: len(g.ordered),
+	}
+	for _, side := range g.ordered {
+		side.matchGroup = g.matchGroup
+	}
+}
+
+func (g *oneSideMatchGroup) latestOneSideSeriesIndex() int {
+	latest := -1
+	for _, side := range g.ordered {
+		latest = max(latest, side.latestSeriesIndex())
+	}
+	return latest
+}
+
+func (g *oneSideMatchGroup) requiresValidation() bool {
+	seriesCount := 0
+	for _, side := range g.ordered {
+		seriesCount += len(side.seriesIndices)
+	}
+	return seriesCount > 1
+}
+
+func (g *oneSideMatchGroup) releaseManyPresence(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	if g.manyPresence != nil {
+		types.IntSlicePool.Put(&g.manyPresence, memoryConsumptionTracker)
+	}
+}
+
+func (g *oneSideMatchGroup) manySideFillCarrierFinished(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	if g.manySideFillCarrierCount == 0 {
+		return
+	}
+
+	g.manySideFillCarrierCount--
+	if g.manySideFillCarrierCount == 0 {
+		g.releaseManyPresence(memoryConsumptionTracker)
+	}
 }
 
 // updatePresence records the presence of a sample from the series with index seriesIdx at the timestamp with index timestampIdx.
@@ -288,9 +425,9 @@ func NewGroupedVectorVectorBinaryOperation(
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
 func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
+	if shouldContinue, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
-	} else if !canProduceAnySeries {
+	} else if !shouldContinue {
 		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
@@ -303,20 +440,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 		return nil, err
 	}
 
-	if len(allMetadata) == 0 {
-		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
-
-		if err := g.FinishedReading(ctx); err != nil {
-			return nil, err
-		}
-
-		return nil, nil
-	}
-
-	g.sortSeries(allMetadata, allSeries)
-	g.remainingSeries = allSeries
 	g.lastOneSideSeriesIndex = lastOneSideSeriesUsedIndex
 	g.lastManySideSeriesIndex = lastManySideSeriesUsedIndex
 
@@ -328,14 +451,32 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 	} else {
 		g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, g.MemoryConsumptionTracker)
 	}
-	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, lastManySideSeriesUsedIndex, g.MemoryConsumptionTracker)
+	if lastManySideSeriesUsedIndex == -1 {
+		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
+		if err := g.finishManySide(ctx); err != nil {
+			return nil, err
+		}
+	} else {
+		g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, lastManySideSeriesUsedIndex, g.MemoryConsumptionTracker)
+	}
+
+	if len(allMetadata) == 0 {
+		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
+
+		if err := g.FinishedReading(ctx); err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	g.sortSeries(allMetadata, allSeries)
+	g.remainingSeries = allSeries
 
 	return allMetadata, nil
 }
 
-// loadSeriesMetadata loads child metadata and reports whether labels can drive output.
-// A nonempty side can drive output when the empty normalized side has a fill value.
-// Two empty sides cannot drive output.
+// loadSeriesMetadata loads child metadata and reports whether output or fill validation remains.
 func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, matchers types.Matchers) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
@@ -387,7 +528,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	if oneSideEmpty && manySideEmpty {
 		return false, nil
 	}
-	if manySideEmpty && g.fillValues.LHS == nil {
+	if manySideEmpty && g.fillValues.LHS == nil && g.fillValues.RHS == nil {
 		return false, nil
 	}
 	if oneSideEmpty {
@@ -428,14 +569,16 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	// [env=prod][region=us]: {...}
 	additionalLabelsKeyFunc := g.additionalLabelsKeyFunc()
 	oneSideMap := map[string]*oneSideMatchGroup{}
+	oneSideGroups := make([]*oneSideMatchGroup, 0, len(g.oneSideMetadata))
 
 	for idx, s := range g.oneSideMetadata {
 		groupKey := groupKeyFunc(s.Labels)
 		oneSideGroup, exists := oneSideMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !exists {
-			oneSideGroup = &oneSideMatchGroup{sides: map[string]*oneSide{}}
+			oneSideGroup = &oneSideMatchGroup{sides: map[string]*oneSide{}, latestManySideSeriesIndex: -1}
 			oneSideMap[string(groupKey)] = oneSideGroup
+			oneSideGroups = append(oneSideGroups, oneSideGroup)
 		}
 
 		additionalLabelsKey := additionalLabelsKeyFunc(s.Labels)
@@ -448,6 +591,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 
 		side.seriesIndices = append(side.seriesIndices, idx)
+	}
+	for _, oneSideGroup := range oneSideGroups {
+		if len(oneSideGroup.ordered) > 1 {
+			oneSideGroup.ensureMatchGroup()
+		}
 	}
 
 	// Now iterate through all series on the "many" side and determine all the possible output series, as
@@ -479,14 +627,9 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			oneSideGroup = &oneSideMatchGroup{}
 		} else {
 			oneSideGroup.relevant = true
-			if oneSideGroup.matchGroup == nil && (g.fillValues.RHS != nil || len(oneSideGroup.ordered) > 1) {
-				oneSideGroup.matchGroup = &matchGroup{
-					oneSides:     oneSideGroup.ordered,
-					oneSideCount: len(oneSideGroup.ordered),
-				}
-				for _, side := range oneSideGroup.ordered {
-					side.matchGroup = oneSideGroup.matchGroup
-				}
+			oneSideGroup.latestManySideSeriesIndex = idx
+			if g.fillValues.RHS != nil {
+				oneSideGroup.ensureMatchGroup()
 			}
 		}
 
@@ -503,7 +646,9 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 
 		thisManySide = &manySide{
 			seriesIndices: []int{idx},
+			matchGroup:    oneSideGroup,
 		}
+		oneSideGroup.manySides = append(oneSideGroup.manySides, thisManySide)
 
 		manySideMap[string(manySideGroupKey)] = thisManySide
 
@@ -580,6 +725,59 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 	}
 
+	if g.fillValues.LHS != nil {
+		for _, oneSideGroup := range oneSideGroups {
+			oneSideGroup.relevant = true
+			g.manyPresenceGroups = append(g.manyPresenceGroups, oneSideGroup)
+			for variantIndex, oneSide := range oneSideGroup.ordered {
+				oneSideLabels := g.oneSideMetadata[oneSide.seriesIndices[0]].Labels
+				syntheticManySideLabels := g.syntheticManySideLabels(oneSideLabels)
+				l := outputSeriesLabelsFunc(oneSideLabels, syntheticManySideLabels)
+				key := string(l.Bytes(buf))
+				carrier := syntheticManySideCarrier{
+					oneSide:      oneSide,
+					matchGroup:   oneSideGroup,
+					variantIndex: variantIndex,
+				}
+				oneSideGroup.manySideFillCarrierCount++
+
+				if existing, exists := outputSeriesMap[key]; exists {
+					if !outputSeriesReferencesOneSide(existing.outputSeries, oneSide) {
+						oneSide.outputSeriesCount++
+					}
+					existing.outputSeries.manySideFillCarriers = append(existing.outputSeries.manySideFillCarriers, carrier)
+					continue
+				}
+
+				oneSide.outputSeriesCount++
+				if err := g.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+					return nil, nil, nil, -1, nil, -1, err
+				}
+				outputSeriesMap[key] = groupedBinaryOperationOutputSeriesWithLabels{
+					labels: l,
+					outputSeries: &groupedBinaryOperationOutputSeries{
+						manySideFillCarriers: []syntheticManySideCarrier{carrier},
+					},
+				}
+			}
+		}
+	}
+
+	var oneSideValidationGroups []*oneSideMatchGroup
+	if g.fillValues.LHS == nil && g.fillValues.RHS != nil {
+		for _, oneSideGroup := range oneSideGroups {
+			if oneSideGroup.relevant || !oneSideGroup.requiresValidation() {
+				continue
+			}
+
+			oneSideGroup.relevant = true
+			oneSideValidationGroups = append(oneSideValidationGroups, oneSideGroup)
+		}
+		sort.Slice(oneSideValidationGroups, func(i, j int) bool {
+			return oneSideValidationGroups[i].latestOneSideSeriesIndex() < oneSideValidationGroups[j].latestOneSideSeriesIndex()
+		})
+	}
+
 	// Next, go through all the "one" side groups again, and determine which of the "one" side series we'll actually need.
 	oneSideSeriesUsed, err := types.BoolSlicePool.Get(len(g.oneSideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
@@ -616,6 +814,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
+	g.oneSideValidationGroups = oneSideValidationGroups
 
 	return outputMetadata, outputSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, nil
 }
@@ -651,6 +850,24 @@ func (g *GroupedVectorVectorBinaryOperation) syntheticOneSideLabelsFunc() func(m
 	return func(manySideLabels labels.Labels) labels.Labels {
 		return manySideLabels.MatchLabels(g.VectorMatching.On, g.VectorMatching.MatchingLabels...)
 	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) syntheticManySideLabels(oneSideLabels labels.Labels) labels.Labels {
+	return oneSideLabels.MatchLabels(g.VectorMatching.On, g.VectorMatching.MatchingLabels...).DropReserved(func(name string) bool {
+		return name == model.MetricNameLabel
+	})
+}
+
+func outputSeriesReferencesOneSide(series *groupedBinaryOperationOutputSeries, side *oneSide) bool {
+	if series.oneSide == side {
+		return true
+	}
+	for _, carrier := range series.manySideFillCarriers {
+		if carrier.oneSide == side {
+			return true
+		}
+	}
+	return false
 }
 
 // manySideGroupKeyFunc returns a function that extracts a key representing the set of labels from the "many" side that will contribute
@@ -769,13 +986,73 @@ func (s favourManySideSorter) Len() int {
 }
 
 func (s favourManySideSorter) Less(i, j int) bool {
-	iMany := s.series[i].manySide.latestSeriesIndex()
-	jMany := s.series[j].manySide.latestSeriesIndex()
+	iMany := outputLatestManySideSeriesIndex(s.series[i])
+	jMany := outputLatestManySideSeriesIndex(s.series[j])
 	if iMany != jMany {
 		return iMany < jMany
 	}
+	if outputManySideCarrierFollows(s.series[i], s.series[j]) {
+		return false
+	}
+	if outputManySideCarrierFollows(s.series[j], s.series[i]) {
+		return true
+	}
 
-	return outputOneSideSeriesIndex(s.series[i]) < outputOneSideSeriesIndex(s.series[j])
+	iCarrierSeries, iCarrierVariant := outputManySideCarrierOrder(s.series[i])
+	jCarrierSeries, jCarrierVariant := outputManySideCarrierOrder(s.series[j])
+	if iCarrierSeries != jCarrierSeries {
+		return iCarrierSeries < jCarrierSeries
+	}
+	if iCarrierVariant != jCarrierVariant {
+		return iCarrierVariant < jCarrierVariant
+	}
+
+	iOne := outputOneSideSeriesIndex(s.series[i])
+	jOne := outputOneSideSeriesIndex(s.series[j])
+	if iOne != jOne {
+		return iOne < jOne
+	}
+
+	return labels.Compare(s.metadata[i].Labels, s.metadata[j].Labels) < 0
+}
+
+func outputLatestManySideSeriesIndex(series *groupedBinaryOperationOutputSeries) int {
+	latest := -1
+	if series.manySide != nil {
+		latest = series.manySide.latestSeriesIndex()
+	}
+	for _, carrier := range series.manySideFillCarriers {
+		latest = max(latest, carrier.matchGroup.latestManySideSeriesIndex)
+	}
+	return latest
+}
+
+func outputManySideCarrierFollows(carrier, real *groupedBinaryOperationOutputSeries) bool {
+	if len(carrier.manySideFillCarriers) == 0 || real.manySide == nil || len(real.manySideFillCarriers) > 0 {
+		return false
+	}
+	for _, candidate := range carrier.manySideFillCarriers {
+		if candidate.matchGroup == real.manySide.matchGroup {
+			return true
+		}
+	}
+	return false
+}
+
+func outputManySideCarrierOrder(series *groupedBinaryOperationOutputSeries) (int, int) {
+	if len(series.manySideFillCarriers) == 0 {
+		return -1, -1
+	}
+	seriesIndex := int(^uint(0) >> 1)
+	variantIndex := int(^uint(0) >> 1)
+	for _, carrier := range series.manySideFillCarriers {
+		candidateSeriesIndex := carrier.oneSide.latestSeriesIndex()
+		if candidateSeriesIndex < seriesIndex || candidateSeriesIndex == seriesIndex && carrier.variantIndex < variantIndex {
+			seriesIndex = candidateSeriesIndex
+			variantIndex = carrier.variantIndex
+		}
+	}
+	return seriesIndex, variantIndex
 }
 
 func outputOneSideSeriesIndex(series *groupedBinaryOperationOutputSeries) int {
@@ -785,22 +1062,63 @@ func outputOneSideSeriesIndex(series *groupedBinaryOperationOutputSeries) int {
 	return series.oneSide.latestSeriesIndex()
 }
 
+func outputLatestOneSideSeriesIndexForRead(series *groupedBinaryOperationOutputSeries) int {
+	latest := -1
+	if series.oneSide != nil {
+		latest = series.oneSide.latestSeriesIndex()
+	}
+	for _, carrier := range series.manySideFillCarriers {
+		latest = max(latest, carrier.oneSide.latestSeriesIndex())
+	}
+	if series.fillCarrier != nil && series.fillCarrier.matchGroup != nil {
+		for _, side := range series.fillCarrier.matchGroup.oneSides {
+			latest = max(latest, side.latestSeriesIndex())
+		}
+	}
+	return latest
+}
+
 func (s favourManySideSorter) Swap(i, j int) {
 	s.metadata[i], s.metadata[j] = s.metadata[j], s.metadata[i]
 	s.series[i], s.series[j] = s.series[j], s.series[i]
 }
 
-func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+type groupedEvaluationComponent struct {
+	manySide *manySide
+	oneSide  *oneSide
+	options  computeResultOptions
+}
+
+func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (result types.InstantVectorSeriesData, err error) {
 	if len(g.remainingSeries) == 0 {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	thisSeries := g.remainingSeries[0]
-	g.remainingSeries = g.remainingSeries[1:]
-	defer thisSeries.finishFillCarrier(g.MemoryConsumptionTracker)
+	defer func() {
+		thisSeries.finishFillCarrier(g.MemoryConsumptionTracker)
+		thisSeries.finishManySideFillCarriers(g.MemoryConsumptionTracker)
+		if err != nil {
+			thisSeries.finishReferences()
+			thisSeries.releaseZeroReferenceData(g.MemoryConsumptionTracker)
+			g.releaseManyPresence()
+		}
+	}()
+	validationSeriesIndex := outputLatestOneSideSeriesIndexForRead(thisSeries)
+	if len(g.remainingSeries) == 1 {
+		validationSeriesIndex = int(^uint(0) >> 1)
+	}
+	if err := g.validateOneSideGroupsThrough(ctx, validationSeriesIndex); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
 	if thisSeries.oneSide != nil {
 		if err := g.ensureOneSidePopulated(ctx, thisSeries.oneSide); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+	}
+	for _, carrier := range thisSeries.manySideFillCarriers {
+		if err := g.ensureOneSidePopulated(ctx, carrier.oneSide); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
@@ -813,49 +1131,82 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 	if err := g.ensureManySidePopulated(ctx, thisSeries.manySide); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
-
-	isLastOutputSeriesForOneSide := false
-	oneSideData := types.InstantVectorSeriesData{}
-	if thisSeries.oneSide != nil {
-		thisSeries.oneSide.outputSeriesCount--
-		isLastOutputSeriesForOneSide = thisSeries.oneSide.outputSeriesCount == 0
-		oneSideData = thisSeries.oneSide.mergedData
+	for _, carrier := range thisSeries.manySideFillCarriers {
+		if err := g.ensureManySideGroupPopulated(ctx, carrier.matchGroup); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
 	}
 
-	thisSeries.manySide.outputSeriesCount--
-	isLastOutputSeriesForManySide := thisSeries.manySide.outputSeriesCount == 0
+	components := g.evaluationComponents(thisSeries)
+	oneSideUses := make(map[*oneSide]int, len(components))
+	for _, component := range components {
+		if component.oneSide != nil {
+			oneSideUses[component.oneSide]++
+		}
+	}
+	lastOneSideUse, lastManySideUse := thisSeries.finishReferences()
 
-	var result types.InstantVectorSeriesData
-	var err error
-	options := g.computeResultOptions(thisSeries)
+	componentResults := make([]types.InstantVectorSeriesData, 0, len(components))
+	for _, component := range components {
+		if err := ctx.Err(); err != nil {
+			putSeriesData(componentResults, g.MemoryConsumptionTracker)
+			return types.InstantVectorSeriesData{}, fmt.Errorf("evaluate grouped output: %w", err)
+		}
 
-	switch g.VectorMatching.Card {
-	case parser.CardOneToMany:
-		// The grouped operator never splits fill-left points, so the second return value is always empty.
-		result, _, err = g.evaluator.computeResult(oneSideData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide, options)
-	case parser.CardManyToOne:
-		result, _, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, oneSideData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide, options)
-	default:
-		panic(fmt.Sprintf("unsupported cardinality %d", int(g.VectorMatching.Card)))
+		takeOneSide := false
+		if component.oneSide != nil {
+			oneSideUses[component.oneSide]--
+			takeOneSide = lastOneSideUse[component.oneSide] && oneSideUses[component.oneSide] == 0
+		}
+		takeManySide := component.manySide != nil && lastManySideUse
+
+		componentResult, computeErr := g.evaluateComponent(component, takeManySide, takeOneSide)
+		if takeOneSide {
+			if computeErr != nil {
+				component.oneSide.FinishedReading(g.MemoryConsumptionTracker)
+			}
+			component.oneSide.mergedData = types.InstantVectorSeriesData{}
+		}
+		if takeManySide {
+			if computeErr != nil {
+				component.manySide.FinishedReading(g.MemoryConsumptionTracker)
+			}
+			component.manySide.mergedData = types.InstantVectorSeriesData{}
+		}
+		if computeErr != nil {
+			putSeriesData(componentResults, g.MemoryConsumptionTracker)
+			return types.InstantVectorSeriesData{}, fmt.Errorf("evaluate grouped output component: %w", computeErr)
+		}
+		componentResults = append(componentResults, componentResult)
 	}
 
-	// If this is the last output series for that side, then we've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
-	if isLastOutputSeriesForOneSide && thisSeries.oneSide != nil {
-		thisSeries.oneSide.mergedData = types.InstantVectorSeriesData{}
-	}
-
-	if isLastOutputSeriesForManySide {
-		thisSeries.manySide.mergedData = types.InstantVectorSeriesData{}
-	}
-
+	result, err = g.mergeComponentResults(ctx, componentResults)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
-
+	g.remainingSeries = g.remainingSeries[1:]
 	return result, nil
 }
 
-func (g *GroupedVectorVectorBinaryOperation) computeResultOptions(series *groupedBinaryOperationOutputSeries) computeResultOptions {
+func (g *GroupedVectorVectorBinaryOperation) evaluationComponents(series *groupedBinaryOperationOutputSeries) []groupedEvaluationComponent {
+	components := make([]groupedEvaluationComponent, 0, 1+len(series.manySideFillCarriers))
+	if series.manySide != nil {
+		components = append(components, groupedEvaluationComponent{
+			manySide: series.manySide,
+			oneSide:  series.oneSide,
+			options:  g.realComponentOptions(series),
+		})
+	}
+	for _, carrier := range series.manySideFillCarriers {
+		components = append(components, groupedEvaluationComponent{
+			oneSide: carrier.oneSide,
+			options: g.manySideCarrierOptions(carrier.matchGroup.manyPresence),
+		})
+	}
+	return components
+}
+
+func (g *GroupedVectorVectorBinaryOperation) realComponentOptions(series *groupedBinaryOperationOutputSeries) computeResultOptions {
 	oneMissing := missingSideOptions{mode: missingSkip}
 	if series.fillCarrier != nil {
 		oneMissing = missingSideOptions{}
@@ -865,9 +1216,231 @@ func (g *GroupedVectorVectorBinaryOperation) computeResultOptions(series *groupe
 	}
 
 	if g.VectorMatching.Card == parser.CardOneToMany {
-		return computeResultOptions{missingLeft: oneMissing}
+		return computeResultOptions{
+			missingLeft:  oneMissing,
+			missingRight: missingSideOptions{mode: missingSkip},
+		}
 	}
-	return computeResultOptions{missingRight: oneMissing}
+	return computeResultOptions{
+		missingLeft:  missingSideOptions{mode: missingSkip},
+		missingRight: oneMissing,
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) manySideCarrierOptions(presence []int) computeResultOptions {
+	manyMissing := missingSideOptions{groupPresence: presence}
+	if g.VectorMatching.Card == parser.CardOneToMany {
+		return computeResultOptions{
+			missingLeft:  missingSideOptions{mode: missingSkip},
+			missingRight: manyMissing,
+		}
+	}
+	return computeResultOptions{
+		missingLeft:  manyMissing,
+		missingRight: missingSideOptions{mode: missingSkip},
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) evaluateComponent(component groupedEvaluationComponent, takeManySide, takeOneSide bool) (types.InstantVectorSeriesData, error) {
+	manyData := types.InstantVectorSeriesData{}
+	if component.manySide != nil {
+		manyData = component.manySide.mergedData
+	}
+	oneData := types.InstantVectorSeriesData{}
+	if component.oneSide != nil {
+		oneData = component.oneSide.mergedData
+	}
+
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		result, _, err := g.evaluator.computeResult(oneData, manyData, takeOneSide, takeManySide, component.options)
+		return result, err
+	case parser.CardManyToOne:
+		result, _, err := g.evaluator.computeResult(manyData, oneData, takeManySide, takeOneSide, component.options)
+		return result, err
+	default:
+		return types.InstantVectorSeriesData{}, fmt.Errorf("unsupported cardinality %d", int(g.VectorMatching.Card))
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) mergeComponentResults(ctx context.Context, results []types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+	if err := ctx.Err(); err != nil {
+		putSeriesData(results, g.MemoryConsumptionTracker)
+		return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", err)
+	}
+	if len(results) == 1 {
+		return results[0], nil
+	}
+
+	floatCount, histogramCount := 0, 0
+	for resultIndex, result := range results {
+		if resultIndex&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				putSeriesData(results, g.MemoryConsumptionTracker)
+				return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", err)
+			}
+		}
+		floatCount += len(result.Floats)
+		histogramCount += len(result.Histograms)
+	}
+	merged := types.InstantVectorSeriesData{}
+	var err error
+	if floatCount > 0 {
+		merged.Floats, err = types.FPointSlicePool.Get(floatCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			putSeriesData(results, g.MemoryConsumptionTracker)
+			return types.InstantVectorSeriesData{}, fmt.Errorf("allocate merged output floats: %w", err)
+		}
+	}
+	if histogramCount > 0 {
+		merged.Histograms, err = types.HPointSlicePool.Get(histogramCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			types.FPointSlicePool.Put(&merged.Floats, g.MemoryConsumptionTracker)
+			putSeriesData(results, g.MemoryConsumptionTracker)
+			return types.InstantVectorSeriesData{}, fmt.Errorf("allocate merged output histograms: %w", err)
+		}
+	}
+
+	heap := make(groupedResultCursorHeap, 0, len(results))
+	for resultIndex := range results {
+		if resultIndex&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				releasePartialMergedResult(merged, g.MemoryConsumptionTracker)
+				putSeriesData(results, g.MemoryConsumptionTracker)
+				return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", err)
+			}
+		}
+		cursor := groupedResultCursor{resultIndex: resultIndex}
+		if cursor.advance(results) {
+			heap.push(cursor)
+		}
+	}
+
+	var previousTimestamp int64
+	havePreviousTimestamp := false
+	for pointCount := 0; len(heap) > 0; pointCount++ {
+		if pointCount&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				releasePartialMergedResult(merged, g.MemoryConsumptionTracker)
+				putSeriesData(results, g.MemoryConsumptionTracker)
+				return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", err)
+			}
+		}
+
+		cursor := heap.pop()
+		if havePreviousTimestamp && cursor.timestamp == previousTimestamp {
+			releasePartialMergedResult(merged, g.MemoryConsumptionTracker)
+			putSeriesData(results, g.MemoryConsumptionTracker)
+			overlapErr := fmt.Errorf("unexpected overlapping result point at timestamp %d", cursor.timestamp)
+			return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", overlapErr)
+		}
+		previousTimestamp = cursor.timestamp
+		havePreviousTimestamp = true
+
+		result := results[cursor.resultIndex]
+		if cursor.histogram {
+			merged.Histograms = append(merged.Histograms, result.Histograms[cursor.pointIndex])
+		} else {
+			merged.Floats = append(merged.Floats, result.Floats[cursor.pointIndex])
+		}
+		if cursor.advance(results) {
+			heap.push(cursor)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		releasePartialMergedResult(merged, g.MemoryConsumptionTracker)
+		putSeriesData(results, g.MemoryConsumptionTracker)
+		return types.InstantVectorSeriesData{}, fmt.Errorf("merge grouped output components: %w", err)
+	}
+
+	putTransferredSeriesData(results, g.MemoryConsumptionTracker)
+	return merged, nil
+}
+
+type groupedResultCursor struct {
+	resultIndex    int
+	floatIndex     int
+	histogramIndex int
+	pointIndex     int
+	timestamp      int64
+	histogram      bool
+}
+
+func (c *groupedResultCursor) advance(results []types.InstantVectorSeriesData) bool {
+	result := results[c.resultIndex]
+	hasFloat := c.floatIndex < len(result.Floats)
+	hasHistogram := c.histogramIndex < len(result.Histograms)
+	if !hasFloat && !hasHistogram {
+		return false
+	}
+	if !hasHistogram || hasFloat && result.Floats[c.floatIndex].T <= result.Histograms[c.histogramIndex].T {
+		c.pointIndex = c.floatIndex
+		c.timestamp = result.Floats[c.floatIndex].T
+		c.histogram = false
+		c.floatIndex++
+		return true
+	}
+	c.pointIndex = c.histogramIndex
+	c.timestamp = result.Histograms[c.histogramIndex].T
+	c.histogram = true
+	c.histogramIndex++
+	return true
+}
+
+type groupedResultCursorHeap []groupedResultCursor
+
+func (h *groupedResultCursorHeap) push(cursor groupedResultCursor) {
+	*h = append(*h, cursor)
+	for child := len(*h) - 1; child > 0; {
+		parent := (child - 1) / 2
+		if (*h)[parent].timestamp <= (*h)[child].timestamp {
+			break
+		}
+		(*h)[parent], (*h)[child] = (*h)[child], (*h)[parent]
+		child = parent
+	}
+}
+
+func (h *groupedResultCursorHeap) pop() groupedResultCursor {
+	result := (*h)[0]
+	last := len(*h) - 1
+	(*h)[0] = (*h)[last]
+	*h = (*h)[:last]
+	for parent := 0; ; {
+		left := 2*parent + 1
+		if left >= len(*h) {
+			break
+		}
+		smallest := left
+		right := left + 1
+		if right < len(*h) && (*h)[right].timestamp < (*h)[left].timestamp {
+			smallest = right
+		}
+		if (*h)[parent].timestamp <= (*h)[smallest].timestamp {
+			break
+		}
+		(*h)[parent], (*h)[smallest] = (*h)[smallest], (*h)[parent]
+		parent = smallest
+	}
+	return result
+}
+
+func releasePartialMergedResult(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	clear(data.Histograms)
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+}
+
+func putTransferredSeriesData(data []types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	for idx := range data {
+		clear(data[idx].Histograms)
+		types.PutInstantVectorSeriesData(data[idx], memoryConsumptionTracker)
+	}
+}
+
+func putSeriesData(data []types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	for idx := range data {
+		types.PutInstantVectorSeriesData(data[idx], memoryConsumptionTracker)
+	}
 }
 
 func (g *GroupedVectorVectorBinaryOperation) ensureOneSideGroupPopulated(ctx context.Context, group *matchGroup) error {
@@ -882,6 +1455,142 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSideGroupPopulated(ctx con
 	return nil
 }
 
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideGroupsThrough(ctx context.Context, maxSeriesIndex int) error {
+	for len(g.oneSideValidationGroups) > 0 {
+		group := g.oneSideValidationGroups[0]
+		if group.latestOneSideSeriesIndex() > maxSeriesIndex {
+			return nil
+		}
+
+		if err := g.startOneSideValidationRound(ctx); err != nil {
+			g.oneSideValidationGroups = nil
+			g.releaseOneSideValidationState()
+			return fmt.Errorf("prepare unmatched one-side group validation: %w", err)
+		}
+		g.oneSideValidationGroups = g.oneSideValidationGroups[1:]
+		if err := g.validateOneSideGroup(ctx, group); err != nil {
+			g.oneSideValidationGroups = nil
+			g.releaseOneSideValidationState()
+			return fmt.Errorf("validate unmatched one-side group for fill: %w", err)
+		}
+	}
+
+	g.releaseOneSideValidationState()
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) startOneSideValidationRound(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("start one-side validation: %w", err)
+	}
+
+	if g.oneSideValidationSeen == nil {
+		var err error
+		g.oneSideValidationSeen, err = types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.oneSideValidationSeen = g.oneSideValidationSeen[:g.timeRange.StepCount]
+
+		g.oneSideValidationSource, err = types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			types.IntSlicePool.Put(&g.oneSideValidationSeen, g.MemoryConsumptionTracker)
+			return err
+		}
+		g.oneSideValidationSource = g.oneSideValidationSource[:g.timeRange.StepCount]
+
+		for idx := range g.oneSideValidationSeen {
+			if idx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("initialize one-side validation state: %w", err)
+				}
+			}
+			g.oneSideValidationSeen[idx] = 0
+		}
+	}
+
+	if g.oneSideValidationRound == int(^uint(0)>>1) {
+		clear(g.oneSideValidationSeen)
+		g.oneSideValidationRound = 0
+	}
+	g.oneSideValidationRound++
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) releaseOneSideValidationState() {
+	types.IntSlicePool.Put(&g.oneSideValidationSeen, g.MemoryConsumptionTracker)
+	types.IntSlicePool.Put(&g.oneSideValidationSource, g.MemoryConsumptionTracker)
+	g.oneSideValidationRound = 0
+}
+
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideGroup(ctx context.Context, group *oneSideMatchGroup) error {
+
+	for _, side := range group.ordered {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("validate one-side group: %w", err)
+		}
+
+		latestSeriesIndex := side.latestSeriesIndex()
+		data, err := g.oneSideBuffer.GetSeries(ctx, side.seriesIndices)
+		if err != nil {
+			return fmt.Errorf("read one-side group for validation: %w", err)
+		}
+		if latestSeriesIndex == g.lastOneSideSeriesIndex {
+			g.markOneSideFinishedReading()
+		}
+
+		err = g.validateOneSideData(ctx, side.seriesIndices, data)
+		putSeriesData(data, g.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideData(ctx context.Context, seriesIndices []int, data []types.InstantVectorSeriesData) error {
+	for dataIdx, seriesData := range data {
+		seriesIndex := seriesIndices[dataIdx]
+		for pointIdx, point := range seriesData.Floats {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("validate one-side float data: %w", err)
+				}
+			}
+			if err := g.recordOneSideValidationPresence(seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+		for pointIdx, point := range seriesData.Histograms {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("validate one-side histogram data: %w", err)
+				}
+			}
+			if err := g.recordOneSideValidationPresence(seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) recordOneSideValidationPresence(seriesIndex int, timestamp int64) error {
+	timestampIndex, err := g.presenceTimestampIndex(timestamp, len(g.oneSideValidationSeen))
+	if err != nil {
+		return fmt.Errorf("record one-side validation presence at timestamp %d: %w", timestamp, err)
+	}
+	if g.oneSideValidationSeen[timestampIndex] == g.oneSideValidationRound {
+		return formatConflictError(g.oneSideValidationSource[timestampIndex], seriesIndex, "duplicate series", timestamp, g.oneSideMetadata, g.oneSideHandedness(), g.VectorMatching, g.Op, g.ReturnBool)
+	}
+
+	g.oneSideValidationSeen[timestampIndex] = g.oneSideValidationRound
+	g.oneSideValidationSource[timestampIndex] = seriesIndex
+	return nil
+}
+
 func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.Context, side *oneSide) error {
 	if side.seriesIndices == nil {
 		// Already populated.
@@ -892,19 +1601,23 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.
 	latestSeriesIndex := side.latestSeriesIndex()
 	data, err := g.oneSideBuffer.GetSeries(ctx, side.seriesIndices)
 	if err != nil {
-		return err
+		return fmt.Errorf("read one-side series: %w", err)
 	}
 	if latestSeriesIndex == g.lastOneSideSeriesIndex {
 		g.markOneSideFinishedReading()
 	}
 
-	if err := g.updateOneSidePresence(side, data); err != nil {
+	if err := g.updateOneSidePresence(ctx, side, data); err != nil {
+		putSeriesData(data, g.MemoryConsumptionTracker)
+		if side.matchGroup != nil {
+			side.matchGroup.releasePresence(g.MemoryConsumptionTracker)
+		}
 		return err
 	}
 
 	side.mergedData, err = g.mergeOneSide(data, side.seriesIndices)
 	if err != nil {
-		return err
+		return fmt.Errorf("merge one-side series: %w", err)
 	}
 
 	// Clear seriesIndices to indicate that we've populated it.
@@ -913,7 +1626,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.
 	return nil
 }
 
-func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide, data []types.InstantVectorSeriesData) error {
+func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(ctx context.Context, side *oneSide, data []types.InstantVectorSeriesData) error {
 	matchGroup := side.matchGroup
 	if matchGroup == nil {
 		// If there is only one set of additional labels for this set of grouping labels, then there's nothing to do.
@@ -922,6 +1635,9 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 
 	// If there are multiple sets of additional labels for the same set of grouping labels, check that there is only one series at each
 	// time step for each set of grouping labels.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("update one-side presence: %w", err)
+	}
 
 	if matchGroup.presence == nil {
 		var err error
@@ -934,6 +1650,11 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 		matchGroup.presence = matchGroup.presence[:g.timeRange.StepCount]
 
 		for idx := range matchGroup.presence {
+			if idx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("initialize one-side presence: %w", err)
+				}
+			}
 			matchGroup.presence[idx] = -1
 		}
 	}
@@ -941,13 +1662,23 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 	for dataIdx, seriesData := range data {
 		seriesIdx := side.seriesIndices[dataIdx]
 
-		for _, p := range seriesData.Floats {
+		for pointIdx, p := range seriesData.Floats {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("update one-side float presence: %w", err)
+				}
+			}
 			if err := g.recordOneSidePresence(matchGroup, seriesIdx, p.T); err != nil {
 				return err
 			}
 		}
 
-		for _, p := range seriesData.Histograms {
+		for pointIdx, p := range seriesData.Histograms {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("update one-side histogram presence: %w", err)
+				}
+			}
 			if err := g.recordOneSidePresence(matchGroup, seriesIdx, p.T); err != nil {
 				return err
 			}
@@ -1007,7 +1738,22 @@ func (g *GroupedVectorVectorBinaryOperation) mergeOneSide(data []types.InstantVe
 	return merged, nil
 }
 
+func (g *GroupedVectorVectorBinaryOperation) ensureManySideGroupPopulated(ctx context.Context, group *oneSideMatchGroup) error {
+	for _, side := range group.manySides {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("populate grouped many-side presence: %w", err)
+		}
+		if err := g.ensureManySidePopulated(ctx, side); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context.Context, side *manySide) error {
+	if side == nil {
+		return nil
+	}
 	if side.seriesIndices == nil {
 		// Already populated.
 		return nil
@@ -1017,21 +1763,97 @@ func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context
 	latestSeriesIndex := side.latestSeriesIndex()
 	data, err := g.manySideBuffer.GetSeries(ctx, side.seriesIndices)
 	if err != nil {
-		return err
+		return fmt.Errorf("read many-side series: %w", err)
 	}
 	if latestSeriesIndex == g.lastManySideSeriesIndex {
 		g.markManySideFinishedReading()
 	}
 
+	if err := g.updateManySidePresence(ctx, side, data); err != nil {
+		putSeriesData(data, g.MemoryConsumptionTracker)
+		return err
+	}
+
 	side.mergedData, err = g.mergeManySide(data, side.seriesIndices)
 	if err != nil {
-		return err
+		if errors.Is(err, errMultipleMatchesOnManySide) {
+			return err
+		}
+		return fmt.Errorf("merge many-side series: %w", err)
 	}
 
 	// Clear seriesIndices to indicate that we've populated it.
 	side.seriesIndices = nil
 
 	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) updateManySidePresence(ctx context.Context, side *manySide, data []types.InstantVectorSeriesData) error {
+	group := side.matchGroup
+	if side.presenceRecorded || group == nil || group.manySideFillCarrierCount == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("update many-side presence: %w", err)
+	}
+	if group.manyPresence == nil {
+		presence, err := types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			return fmt.Errorf("allocate many-side presence: %w", err)
+		}
+		group.manyPresence = presence[:g.timeRange.StepCount]
+		for idx := range group.manyPresence {
+			if idx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("initialize many-side presence: %w", err)
+				}
+			}
+			group.manyPresence[idx] = -1
+		}
+	}
+
+	for dataIdx, seriesData := range data {
+		seriesIndex := side.seriesIndices[dataIdx]
+		for pointIdx, point := range seriesData.Floats {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("update many-side float presence: %w", err)
+				}
+			}
+			if err := g.recordManySidePresence(group, seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+		for pointIdx, point := range seriesData.Histograms {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("update many-side histogram presence: %w", err)
+				}
+			}
+			if err := g.recordManySidePresence(group, seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+	}
+	side.presenceRecorded = true
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) recordManySidePresence(group *oneSideMatchGroup, seriesIndex int, timestamp int64) error {
+	timestampIndex, err := g.presenceTimestampIndex(timestamp, len(group.manyPresence))
+	if err != nil {
+		return fmt.Errorf("record many-side presence at timestamp %d: %w", timestamp, err)
+	}
+	if group.manyPresence[timestampIndex] == -1 {
+		group.manyPresence[timestampIndex] = seriesIndex
+	}
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) releaseManyPresence() {
+	for _, group := range g.manyPresenceGroups {
+		group.releaseManyPresence(g.MemoryConsumptionTracker)
+	}
 }
 
 func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int) (types.InstantVectorSeriesData, error) {
@@ -1126,6 +1948,13 @@ func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) e
 }
 
 func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context) error {
+	var validationErr error
+	if g.oneSideBuffer != nil {
+		validationErr = g.validateOneSideGroupsThrough(ctx, int(^uint(0)>>1))
+	}
+	g.oneSideValidationGroups = nil
+	g.releaseOneSideValidationState()
+
 	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
@@ -1144,12 +1973,11 @@ func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context
 	}
 
 	g.remainingSeries = nil
+	g.releaseManyPresence()
 
-	if err := g.finishLeft(ctx); err != nil {
-		return err
-	}
-
-	return g.finishRight(ctx)
+	leftErr := g.finishLeft(ctx)
+	rightErr := g.finishRight(ctx)
+	return errors.Join(validationErr, leftErr, rightErr)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) finishOneSide(ctx context.Context) error {
