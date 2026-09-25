@@ -3339,6 +3339,10 @@ gateway:
   resources: {}
   # -- Grace period to allow the gateway container to shut down before it is killed
   terminationGracePeriodSeconds: 30
+  # -- Lifecycle hooks for the gateway container. A `preStop` sleep keeps NGINX
+  # serving while the Pod's removal from the Service endpoints propagates, so that
+  # requests still routed to a terminating Pod are not refused and retried.
+  lifecycle: {}
 
   affinity: {}
 
