@@ -11,18 +11,26 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	hashivault "github.com/hashicorp/vault/api"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/vault"
 )
 
@@ -493,4 +501,62 @@ func TestMimir_InitQuerierRing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMimir_InitIngesterPartitionRing_ResolvesDerivedTokensInEveryReadCompartment(t *testing.T) {
+	const numCompartments = 2
+	partitionIDs := []int32{0, 1}
+
+	kvClient, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	for c := range numCompartments {
+		require.NoError(t, kvClient.CAS(t.Context(), compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, c), func(interface{}) (interface{}, bool, error) {
+			desc := ring.NewPartitionRingDesc()
+			for _, id := range partitionIDs {
+				desc.AddPartitionWithDerivedTokens(id, ring.PartitionActive, time.Now())
+			}
+			return desc, true, nil
+		}))
+	}
+
+	cfg := newDefaultConfig()
+	cfg.IngestStorage.Enabled = true
+	cfg.Compartments.Enabled = true
+	cfg.Compartments.Read.NumCompartments = numCompartments
+	cfg.PartitionRing.MaxDerivedTokenPartitions = len(partitionIDs)
+	cfg.Ingester.IngesterRing.KVStore.Store = "inmemory"
+	cfg.Ingester.IngesterPartitionRing.KVStore.Mock = kvClient
+
+	reg := prometheus.NewPedanticRegistry()
+	mimir := &Mimir{
+		Cfg:        *cfg,
+		Registerer: reg,
+		Server:     &server.Server{HTTP: mux.NewRouter(), Registerer: prometheus.NewPedanticRegistry()},
+	}
+	for _, initModule := range []func() (services.Service, error){mimir.initAPI, mimir.initIngesterRing} {
+		_, err := initModule()
+		require.NoError(t, err)
+	}
+
+	svc, err := mimir.initIngesterPartitionRing()
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), svc))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), svc))
+	})
+
+	for c := range numCompartments {
+		for _, id := range partitionIDs {
+			ranges, err := mimir.IngesterPartitionRingWatchers.PartitionRing(c).GetTokenRangesForPartition(id)
+			require.NoError(t, err)
+			assert.NotEmpty(t, ranges, "compartment %d, partition %d", c, id)
+		}
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_partition_ring_max_derived_token_partitions Number of partition IDs, from 0, that can use derived tokens.
+		# TYPE cortex_partition_ring_max_derived_token_partitions gauge
+		cortex_partition_ring_max_derived_token_partitions 2
+	`), "cortex_partition_ring_max_derived_token_partitions"))
 }

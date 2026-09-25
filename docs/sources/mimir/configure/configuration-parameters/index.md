@@ -203,6 +203,14 @@ api:
 # The ingest_storage block configures the Kafka-based ingest storage.
 [ingest_storage: <ingest_storage>]
 
+partition_ring:
+  # (experimental) The number of partition IDs, starting from 0, that can use
+  # derived tokens. Only supported by the ingester partition ring for now.
+  # Components that read the ring generate the tokens of these partitions at
+  # startup.
+  # CLI flag: -partition-ring.max-derived-token-partitions
+  [max_derived_token_partitions: <int> | default = 0]
+
 # The blocks_storage block configures the blocks storage.
 [blocks_storage: <blocks_storage>]
 
@@ -1498,6 +1506,12 @@ partition_ring:
   # partitions deletion.
   # CLI flag: -ingester.partition-ring.delete-inactive-partition-after
   [delete_inactive_partition_after: <duration> | default = 13h]
+
+  # (experimental) When the ingester creates its partition, create it with
+  # tokens that are derived from the partition ID instead of storing the tokens
+  # in the partition ring.
+  # CLI flag: -ingester.partition-ring.create-partitions-with-derived-tokens
+  [create_partitions_with_derived_tokens: <boolean> | default = false]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.

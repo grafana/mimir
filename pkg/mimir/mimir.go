@@ -81,6 +81,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
+	"github.com/grafana/mimir/pkg/util/partitionring"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -129,6 +130,7 @@ type Config struct {
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
 	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
 	Compartments                   compartments.Config             `yaml:"compartments" doc:"hidden"`
+	PartitionRing                  partitionring.Config            `yaml:"partition_ring"`
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
@@ -206,6 +208,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
 	c.Compartments.RegisterFlags(f)
+	c.PartitionRing.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
@@ -297,6 +300,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
+	}
+	if err := c.PartitionRing.Validate(); err != nil {
+		return errors.Wrap(err, "invalid partition ring config")
 	}
 	if c.Compartments.Enabled {
 		if !c.IngestStorage.Enabled {

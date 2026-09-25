@@ -17,11 +17,14 @@ import (
 // behaving exactly as before compartments existed (numCompartments is ignored). When compartmentsEnabled
 // is true it watches numCompartments rings, each keyed for its read compartment via
 // compartments.WithReadCompartmentSuffix. Watchers are indexed by read compartment ID.
-func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, ringName, ringKey string, kvClient kv.Client, logger log.Logger, reg prometheus.Registerer) (*ring.PartitionRingWatchers, error) {
+func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, ringName, ringKey string, kvClient kv.Client, tokenGenerator ring.PartitionTokenGenerator, logger log.Logger, reg prometheus.Registerer) (*ring.PartitionRingWatchers, error) {
+	opts := ring.DefaultPartitionRingOptions()
+	opts.TokenGenerator = tokenGenerator
+
 	var watchers []*ring.PartitionRingWatcher
 	if !compartmentsEnabled {
 		watchers = []*ring.PartitionRingWatcher{
-			ring.NewPartitionRingWatcher(ringName, ringKey, kvClient, logger, reg),
+			ring.NewPartitionRingWatcherWithOptions(ringName, ringKey, kvClient, opts, logger, reg),
 		}
 	} else {
 		if numCompartments < 1 {
@@ -32,7 +35,7 @@ func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, rin
 			name := compartments.WithReadCompartmentSuffix(ringName, c)
 			key := compartments.WithReadCompartmentSuffix(ringKey, c)
 
-			watchers[c] = ring.NewPartitionRingWatcher(name, key, kvClient, logger, reg)
+			watchers[c] = ring.NewPartitionRingWatcherWithOptions(name, key, kvClient, opts, logger, reg)
 		}
 	}
 
