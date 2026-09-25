@@ -48,12 +48,13 @@ func TestPredictionStore_FreshPredictionAddsFullRate(t *testing.T) {
 
 // TestPredictionStore_HalfLifeMatchesEWMA verifies the decay curve
 // against the readcache's actual EWMA. After one half-life
-// (alpha=0.1591, tick=15s → 60s), the EWMA at the destination has
+// (alpha=0.5, tick=15s → 15s), the EWMA at the destination has
 // absorbed 50% of the moved load, so the prediction should still
 // contribute the remaining 50%.
 func TestPredictionStore_HalfLifeMatchesEWMA(t *testing.T) {
 	commit := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// Half-life: ln(2) / (-ln(1-alpha)/tick) ≈ 60s at alpha=0.1591.
+	// Derive the half-life from the production EWMA constants so this
+	// invariant remains covered if the smoothing policy changes.
 	halfLife := time.Duration(math.Round(math.Ln2/(-math.Log(1-loadstats.Alpha)/loadstats.TickInterval.Seconds()))) * time.Second
 	s := predictionStore{
 		preds: []ratePrediction{
@@ -72,7 +73,7 @@ func TestPredictionStore_HalfLifeMatchesEWMA(t *testing.T) {
 // observed rate should sum to the true rate at every point along
 // the settle curve. We simulate the readcache-side EWMA growth and
 // confirm the rebalancer's view (prediction + EWMA) tracks the true
-// rate within tight bounds for the full ~4 minutes of settle.
+// rate within tight bounds across and beyond the settle window.
 func TestPredictionStore_FullSettleSumIsConstant(t *testing.T) {
 	commit := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	const trueRate = 1000.0
@@ -110,7 +111,7 @@ func TestPredictionStore_FullSettleSumIsConstant(t *testing.T) {
 }
 
 // TestPredictionStore_DropsAfterFloor confirms that predictions
-// older than the floor (~22 minutes at default config) are evicted
+// older than the floor (about 65 seconds at the default config) are evicted
 // from the store, bounding memory under sustained move volume.
 func TestPredictionStore_DropsAfterFloor(t *testing.T) {
 	commit := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -120,10 +121,9 @@ func TestPredictionStore_DropsAfterFloor(t *testing.T) {
 			{pid: 2, rate: 500.0, committedAt: commit},
 		},
 	}
-	// 30 minutes is comfortably past 4 half-lives (~20min) and so
-	// past predictionFloor=0.05.
+	// Two minutes is comfortably past predictionFloor=0.05.
 	rates := map[int32]float64{1: 500, 2: 500}
-	kept, dropped := s.applyTo(commit.Add(30*time.Minute), rates)
+	kept, dropped := s.applyTo(commit.Add(2*time.Minute), rates)
 	assert.Equal(t, 0, kept)
 	assert.Equal(t, 2, dropped)
 	assert.Equal(t, 0, s.len(), "store should compact dropped predictions")

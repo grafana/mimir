@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 )
 
 // ActionKind describes what the slicer did to a hash range.
@@ -45,16 +46,18 @@ type Action struct {
 // ingesters for each partition), matching the denominator of
 // cortex_ingester_memory_series.
 type RoundLog struct {
-	Time           time.Time `json:"time"`
-	TotalL         int64     `json:"total_l"`
-	MeanL          int64     `json:"mean_l"`
-	MaxL           int64     `json:"max_l"`
-	MinL           int64     `json:"min_l"`
-	ImbalanceRatio float64   `json:"imbalance_ratio"`
-	NumEntries     int       `json:"num_entries"`
-	NumPartitions  int       `json:"num_partitions"`
-	MovedFraction  float64   `json:"moved_fraction"`
-	Actions        []Action  `json:"actions"`
+	Planner        string           `json:"planner,omitempty"`
+	Time           time.Time        `json:"time"`
+	TotalL         int64            `json:"total_l"`
+	MeanL          int64            `json:"mean_l"`
+	MaxL           int64            `json:"max_l"`
+	MinL           int64            `json:"min_l"`
+	ImbalanceRatio float64          `json:"imbalance_ratio"`
+	NumEntries     int              `json:"num_entries"`
+	NumPartitions  int              `json:"num_partitions"`
+	MovedFraction  float64          `json:"moved_fraction"`
+	Actions        []Action         `json:"actions"`
+	ScallopActions []scallop.Action `json:"scallop_actions,omitempty"`
 }
 
 const maxRoundLogs = 20
@@ -696,6 +699,8 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	GET  /rounds.json            → list of recent round summaries
 //	GET  /rounds/{idx}.json      → full Trace for one round
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
+//	GET  /rounds/{idx}/replay.json
+//	                            → replay-ready Scallop Snapshot and Policy
 //	GET  /metric                 → metric-name hash range lookup tool
 //	                               (?user=&metric=[&window=][&format=json])
 //	POST /readcache/reset        → force an even-split
@@ -717,6 +722,9 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.serveAdminHTMLForTenant(w, req.URL.Query().Get("tenant"))
 	case sub == "/rounds.json":
 		r.serveRoundsList(w)
+	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, "/replay.json"):
+		idxStr := strings.TrimSuffix(strings.TrimPrefix(sub, "/rounds/"), "/replay.json")
+		r.serveScallopReplayEnvelope(w, idxStr)
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
 		idxStr := strings.TrimSuffix(strings.TrimPrefix(sub, "/rounds/"), ".json")
 		r.serveRoundTrace(w, idxStr)
@@ -815,6 +823,31 @@ func (r *Rebalancer) serveRoundTrace(w http.ResponseWriter, idxStr string) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(tr); err != nil {
+		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
+	}
+}
+
+// serveScallopReplayEnvelope emits the complete input to the selected round's Plan call.
+func (r *Rebalancer) serveScallopReplayEnvelope(w http.ResponseWriter, idxStr string) {
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid round index %q", idxStr), http.StatusBadRequest)
+		return
+	}
+	tr, ok := r.admin.traceAt(idx)
+	if !ok {
+		http.NotFound(w, nil)
+		return
+	}
+	envelope, err := tr.scallopReplayEnvelope()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(envelope); err != nil {
 		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
 	}
 }

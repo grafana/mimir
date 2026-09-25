@@ -24,11 +24,21 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+)
+
+const (
+	plannerLegacy  = "legacy"
+	plannerScallop = "scallop"
 )
 
 // Config holds the configuration for the nautilus ingestion rebalancer.
 type Config struct {
+	// Planner selects the sole planning engine for each round. Legacy remains
+	// the default until Scallop has replaced the production planner completely.
+	Planner string `yaml:"planner"`
+
 	// MinRebalanceInterval is a lower bound on the gap between
 	// rebalance rounds. The rebalancer normally schedules itself
 	// dynamically — each round is timed to fire LeaseLookahead
@@ -230,6 +240,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Planner, prefix+"planner", plannerLegacy, "Planning engine to use for each rebalance round. Supported values: legacy, scallop.")
 	f.DurationVar(&cfg.MinRebalanceInterval, prefix+"min-rebalance-interval", 30*time.Second, "Lower bound on the gap between rebalance rounds. The rebalancer schedules itself dynamically (next round at lease_horizon - LeaseLookahead), but this floor protects against degenerate cases such as just-truncated leases or a fully-expired log.")
 	f.DurationVar(&cfg.MaxRebalanceInterval, prefix+"max-rebalance-interval", 5*time.Minute, "Upper bound on the gap between rebalance rounds. Acts as a heartbeat for stats collection and reassignment reactivity even when the lease horizon would otherwise allow a longer wait.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
@@ -256,6 +267,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 // Validate returns an error if the config is internally inconsistent.
 // Called by pkg/mimir during configuration parsing.
 func (cfg *Config) Validate() error {
+	if cfg.Planner != plannerLegacy && cfg.Planner != plannerScallop {
+		return fmt.Errorf("nautilus-rebalancer.planner must be one of %q or %q, got %q", plannerLegacy, plannerScallop, cfg.Planner)
+	}
 	if cfg.LoadHysteresis < 0 || cfg.LoadHysteresis >= 1 {
 		return fmt.Errorf("nautilus-rebalancer.load-hysteresis must be in [0, 1), got %f", cfg.LoadHysteresis)
 	}
@@ -272,6 +286,14 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("nautilus-rebalancer requires either -nautilus-rebalancer.partition-count or -nautilus-rebalancer.active-partition-count > 0")
 	}
 	return nil
+}
+
+// planner returns the configured engine while treating zero-value configs as legacy.
+func (cfg *Config) planner() string {
+	if cfg.Planner == "" {
+		return plannerLegacy
+	}
+	return cfg.Planner
 }
 
 // asInt32Var adapts an *int32 to flag.Value, which only ships with
@@ -323,6 +345,8 @@ type Rebalancer struct {
 	readcacheApplyMu sync.Mutex
 	admin            adminState
 	metrics          *metrics
+	// scallopPlan is injectable for round-level tests; nil uses scallop.Plan.
+	scallopPlan func(scallop.Snapshot, scallop.Policy) (scallop.PlanResult, error)
 
 	// moveCooldowns records, for each hash range that was recently
 	// moved, the wall-clock time at which it (and any range overlapping
@@ -851,6 +875,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			"entries", len(current.Entries),
 			"subscribers", r.store.numSubscribers(),
 		)
+		if r.cfg.planner() == plannerScallop {
+			if r.seedScallopReadcacheCoverage(now, activePartitions, placementInstances) {
+				level.Info(r.logger).Log("msg", "cold start Scallop readcache assignment log seeded")
+			}
+			r.pushRanges(ctx, current, now)
+			r.metrics.recordPlannerRound(plannerScallop, "success", "cold_start")
+			return nil
+		}
 		// Seed the readcache slicer too: without this the readcache
 		// log stays empty until the next round, which is up to
 		// LeaseDuration - LeaseLookahead away (3.5min by default).
@@ -893,6 +925,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// Push after tier-2 has been seeded so every partition can be
 		// resolved to a concrete readcache owner in this same round.
 		r.pushRanges(ctx, current, now)
+		r.metrics.recordPlannerRound(plannerLegacy, "success", "cold_start")
 		return nil
 	}
 	level.Info(r.logger).Log(
@@ -956,6 +989,10 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, unknownTenants, statsReadiness, failedReadcaches, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
+		if r.cfg.planner() == plannerScallop {
+			r.metrics.recordPlannerRound(plannerScallop, "error", "stats_collection")
+			r.refreshCurrentLeases(now, current)
+		}
 		return nil
 	}
 	current, bootstrapped, err := r.bootstrapUnknownTenants(now, current, unknownTenants, activePartitions)
@@ -992,7 +1029,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// Drop residue from previous owners before aggregating load.
 	// After a range moves P_old -> P_new the readcache that hosted
 	// P_old still reports a sample rate for (P_old, range) for one
-	// EWMA half-life (~1 min). Summing that into the slicer's per-
+	// EWMA half-life (15s). Summing that into the slicer's per-
 	// partition load signal makes P_old look perpetually hot and
 	// causes runPhase3 to shuffle unrelated ranges off P_old to
 	// balance phantom load. Filtering against the current assignment
@@ -1018,10 +1055,29 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	lm := buildLoadMap(rates)
 	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
 
+	// Scallop owns both placement layers. Branch before all legacy
+	// prediction, cooldown, slicer, and tier-2 decision code.
+	if r.cfg.planner() == plannerScallop {
+		r.admin.setLastStats(lm, partitionLByPID, partitionRateByPID, activePartitions)
+		return r.runScallopRound(ctx, scallopRoundInput{
+			now:                      now,
+			current:                  current,
+			rates:                    rates,
+			activePartitions:         activePartitions,
+			activeReplicas:           placementInstances,
+			replicaMap:               replicaMap,
+			statsReadiness:           statsReadiness,
+			failedConcreteReadcaches: failedReadcaches,
+			partitionL:               partitionLByPID,
+			partitionQuerySamples:    partitionQuerySamples,
+			unnamedQuerySamples:      unnamedPerInstance,
+		})
+	}
+
 	// Fold predictions from recent rounds into the partition rates.
-	// The readcache EWMA at the destination of a move takes ~1 min
-	// (one half-life) to reflect half of the moved load and ~4 min
-	// to reflect about 95% of it. Without this correction the slicer
+	// The readcache EWMA at the destination of a move takes 15s
+	// (one half-life) to reflect half of the moved load and about 1m
+	// to reflect about 94% of it. Without this correction the slicer
 	// sees the destination as much cooler than it really is during
 	// that settling window, keeps moving more ranges into it, and
 	// over-shoots. predictions.applyTo adds
@@ -1292,6 +1348,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		"max_l", maxL,
 		"mean_l", meanL,
 	)
+	r.metrics.recordPlannerRound(plannerLegacy, "success", "planned")
 	return nil
 }
 
@@ -1976,7 +2033,7 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 //
 // The failure mode this guards against: when tier-2 moves a
 // partition from readcache A to readcache B, B's per-partition rate
-// EWMA starts from zero and takes ~1 min (one half-life) to reflect
+// EWMA starts from zero and takes 15s (one half-life) to reflect
 // half of the steady-state. If Phase 3 reads "rate=0" for such a
 // partition it concludes the partition is cold and floods it with
 // hash ranges from the hottest sources, overshooting the true
@@ -2458,7 +2515,7 @@ func currentOwnershipSet(current *assignment.Assignment) map[partitionRangeKey]s
 // we suppress residue: when a range moves from P_old to P_new, the
 // readcache that used to own P_old still has the data in its TSDB
 // head and its EWMA still reports a non-zero sample rate for
-// (P_old, range) for one EWMA half-life (~1 minute). If that residue
+// (P_old, range) for one EWMA half-life (15s). If that residue
 // is summed into partitionLoadFromRates, the slicer sees P_old as
 // hot, declares it a move source, and shuffles unrelated ranges off
 // P_old to balance phantom load. By filtering to current ownership

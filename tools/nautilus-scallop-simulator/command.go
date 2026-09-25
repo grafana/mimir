@@ -93,10 +93,15 @@ type FixtureSummaryRecord struct {
 	Baseline        FixtureBaselineSummary `json:"consolidation_baseline"`
 }
 
-// runCLI dispatches the default beam search or the standalone fixture runner.
+// runCLI dispatches beam search, fixture simulation, or snapshot replay.
 func runCLI(args []string, stdout, stderr io.Writer) error {
-	if len(args) > 0 && args[0] == "run-fixture" {
-		return runFixtureCommand(args[1:], stdout, stderr)
+	if len(args) > 0 {
+		switch args[0] {
+		case "run-fixture":
+			return runFixtureCommand(args[1:], stdout, stderr)
+		case "replay-snapshot":
+			return runReplaySnapshotCommand(args[1:], stdout, stderr)
+		}
 	}
 	return runSearchCommand(args, stdout, stderr)
 }

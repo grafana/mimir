@@ -93,6 +93,7 @@ type fakeReadcache struct {
 	getHashRangesErr  error
 
 	onHashRangeStats func()
+	onSetHashRanges  func()
 	unknownTenants   []ingester_client.UnknownTenant
 }
 
@@ -228,6 +229,9 @@ func (f *fakeReadcache) HashRangeStats(_ context.Context, _ *ingester_client.Has
 // readcache where SetHashRanges fully reconciles the partition's
 // range set rather than appending.
 func (f *fakeReadcache) SetHashRanges(_ context.Context, in *ingester_client.SetHashRangesRequest, _ ...grpc.CallOption) (*ingester_client.SetHashRangesResponse, error) {
+	if f.onSetHashRanges != nil {
+		f.onSetHashRanges()
+	}
 	if f.setHashRangesErr != nil {
 		return nil, f.setHashRangesErr
 	}

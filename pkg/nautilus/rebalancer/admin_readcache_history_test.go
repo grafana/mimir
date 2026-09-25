@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 )
 
 // TestAdminState_ReadcacheHistory_FiltersNoOpRounds confirms that
@@ -222,6 +223,28 @@ func TestAdminHTML_RendersBothImbalanceStats(t *testing.T) {
 	// alongside the summary cards. We use a substring rather than
 	// a fixed format so future formatter tweaks don't break this.
 	assert.Contains(t, body, "/s")
+}
+
+func TestAdminHTML_ScallopPartitionMoveIncludesPartitionID(t *testing.T) {
+	var buf bytesBuffer
+	data := adminPageData{
+		GeneratedAt:   "2026-05-20T00:00:00Z",
+		HeatmapData:   "[]",
+		NumPartitions: 1,
+		Rounds: []RoundLog{{
+			Planner: plannerScallop,
+			ScallopActions: []scallop.Action{{
+				Kind:        scallop.ActionMovePartition,
+				PartitionID: 0,
+				FromReplica: "rc-a",
+				ToReplica:   "rc-b",
+			}},
+		}},
+	}
+
+	require.NoError(t, adminTemplate.Execute(&buf, data))
+	assert.Contains(t, buf.String(), "move_partition P0 rc-a\u2192rc-b")
+	assert.Contains(t, buf.String(), `/nautilus/rebalancer/rounds/0/replay.json`)
 }
 
 // bytesBuffer is a tiny adapter so tests don't need to import

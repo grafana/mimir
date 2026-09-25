@@ -163,7 +163,7 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	// zone-b fleet warmed.
 	//
 	// The cost is that a warming partition reads 0 until it catches
-	// up, then ramps over a few EWMA half-lives (60s). Under RF>=2
+	// up, then ramps over a few EWMA half-lives (about 1m). Under RF>=2
 	// the warm mirrors cover the gap via the max. Under RF=1 this
 	// matches what a freshly adopted range already reported while
 	// its EWMA was uninitialised, and the slicer treats 0 as "no

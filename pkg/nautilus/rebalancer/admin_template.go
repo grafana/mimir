@@ -57,15 +57,15 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
 			return ""
 		}
 	},
-	"actionClass": func(a ActionKind) string {
-		switch a {
-		case ActionMove:
+	"actionClass": func(a interface{}) string {
+		switch fmt.Sprint(a) {
+		case string(ActionMove), "move_range":
 			return "act-move"
-		case ActionMerge:
+		case string(ActionMerge), "merge_ranges":
 			return "act-merge"
-		case ActionSplit:
+		case string(ActionSplit), "split_range":
 			return "act-split"
-		case ActionReassign:
+		case string(ActionReassign), "move_partition":
 			return "act-reassign"
 		default:
 			return ""

@@ -202,9 +202,8 @@ func TestHarness_Predictions_DecayOverManyRounds(t *testing.T) {
 	}
 	require.Equal(t, 60, s.len())
 
-	// Advance well past the floor (≥ 30 min after the FIRST
-	// commit). Predictions younger than ~4.3min (4 half-lives at
-	// alpha=0.1591) survive; older ones are dropped.
+	// Advance well past the roughly 65-second floor after the latest
+	// commit, so all of the seeded predictions are eligible for removal.
 	rates := map[int32]float64{0: 0, 1: 0, 2: 0, 3: 0}
 	kept, dropped := s.applyTo(now.Add(45*time.Minute), rates)
 

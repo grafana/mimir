@@ -15,6 +15,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
 
 // reconstructRound queries readcache pods and reassembles a fresh
@@ -715,7 +716,30 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 		"total_ranges", totalRanges,
 		"partitions_without_owner", len(partitionsWithoutOwner),
 	)
+	r.pushRangesByInstance(ctx, rangesByInstance)
+}
 
+// pushScallopRanges resolves immutable plan intents and sends them to concrete replicas.
+func (r *Rebalancer) pushScallopRanges(ctx context.Context, intents []scallopRangePushIntent, replicaMap readcacheassignment.ReplicaMap) {
+	rangesByInstance := resolveScallopPushIntents(intents, replicaMap)
+	if len(rangesByInstance) == 0 {
+		level.Debug(r.logger).Log("msg", "Scallop plan has no hash ranges to push")
+		return
+	}
+	totalRanges := 0
+	for _, ranges := range rangesByInstance {
+		totalRanges += len(ranges)
+	}
+	level.Info(r.logger).Log(
+		"msg", "pushing Scallop hash ranges to readcache",
+		"instances", len(rangesByInstance),
+		"total_ranges", totalRanges,
+	)
+	r.pushRangesByInstance(ctx, rangesByInstance)
+}
+
+// pushRangesByInstance performs the concrete SetHashRanges RPC fan-out.
+func (r *Rebalancer) pushRangesByInstance(ctx context.Context, rangesByInstance map[string][]ingester_client.HashRangeEntry) {
 	// Resolve instance IDs to ring entries (need Addr for dialling).
 	instances, err := r.fleet.healthyInstances()
 	if err != nil {

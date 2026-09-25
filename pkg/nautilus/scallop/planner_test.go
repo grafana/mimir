@@ -61,6 +61,43 @@ func TestPlanMovesPartitionWithoutChangingRangePlacement(t *testing.T) {
 	require.Zero(t, result.Actions[0].MovedHashFraction)
 }
 
+// TestDefaultWeightsAllowPartitionMoveReversal reproduces partition ping-pong after a small observed-load shift.
+func TestDefaultWeightsAllowPartitionMoveReversal(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1, 2, 3, 4, 5},
+		[]float64{1, 10, 10, 9, 10, 0},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-a", 3: "rc-b", 4: "rc-b", 5: "rc-b"},
+	)
+	snapshot.LastHostedAt = map[string]map[string]time.Time{
+		"tenant-a": {"rc-a": snapshot.At, "rc-b": snapshot.At},
+	}
+	policy := DefaultPolicy()
+	policy.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
+
+	first, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, first.Actions, 1)
+	require.Equal(t, ActionMovePartition, first.Actions[0].Kind)
+	require.Equal(t, int32(0), first.Actions[0].PartitionID)
+	require.Equal(t, "rc-a", first.Actions[0].FromReplica)
+	require.Equal(t, "rc-b", first.Actions[0].ToReplica)
+
+	snapshot.At = snapshot.At.Add(time.Minute)
+	snapshot.PartitionOwners = first.PartitionOwners
+	for i, entry := range snapshot.Assignment.Entries {
+		snapshot.RangeLoads[RangeKey{TenantID: entry.TenantID, Range: entry.Range}] =
+			[]float64{1, 8, 10, 11, 10, 0}[i]
+	}
+
+	second, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, second.Actions, 1)
+	require.Equal(t, ActionMovePartition, second.Actions[0].Kind)
+	require.Equal(t, first.Actions[0].PartitionID, second.Actions[0].PartitionID)
+	require.Equal(t, first.Actions[0].ToReplica, second.Actions[0].FromReplica)
+	require.Equal(t, first.Actions[0].FromReplica, second.Actions[0].ToReplica)
+}
+
 // TestJointPlannerChangesActionTypeWithObservedLoad proves range and partition moves compete each round.
 func TestJointPlannerChangesActionTypeWithObservedLoad(t *testing.T) {
 	firstSnapshot := testSnapshot(

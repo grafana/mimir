@@ -44,6 +44,29 @@ JSON Lines: one record per tick followed by one summary record containing all
 seven trajectory-wide evaluation groups. The optional output paths write the
 equivalent JSONL or CSV records.
 
+## Replay a production snapshot
+
+`replay-snapshot` reads one strict, versioned JSON envelope containing a
+complete `scallop.Snapshot` and `scallop.Policy`, calls `scallop.Plan` once,
+and writes one deterministic result record:
+
+```bash
+curl -o ./scallop-snapshot.json \
+  http://localhost:8011/nautilus/rebalancer/rounds/0/replay.json
+
+go run ./tools/nautilus-scallop-simulator replay-snapshot \
+  -input ./scallop-snapshot.json
+```
+
+The rebalancer endpoint reconstructs the original planner input from its
+bounded trace history. It retains only the Scallop-specific inputs that are not
+already present in the trace, rather than storing a duplicate assignment and
+range-load map.
+
+The output includes a canonical input identity, ordered actions, projected
+hash and readcache assignments, initial/final costs, and bounded-search
+diagnostics. Replay performs no fixture generation, search, or RPCs.
+
 ## Workload model
 
 Each tenant has a uniform baseline plus independent wrapped spatial Gaussians:

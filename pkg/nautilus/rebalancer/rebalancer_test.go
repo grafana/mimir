@@ -2454,13 +2454,13 @@ func TestConfig_Validate(t *testing.T) {
 		cfg     Config
 		wantErr bool
 	}{
-		{name: "partition count only", cfg: Config{PartitionCount: 100}},
-		{name: "cap within partition count", cfg: Config{PartitionCount: 100, ActivePartitionCount: 50}},
-		{name: "cap equal to partition count", cfg: Config{PartitionCount: 100, ActivePartitionCount: 100}},
-		{name: "negative cap rejected", cfg: Config{ActivePartitionCount: -1}, wantErr: true},
-		{name: "cap above partition count rejected", cfg: Config{PartitionCount: 100, ActivePartitionCount: 101}, wantErr: true},
-		{name: "neither partition count nor cap rejected", cfg: Config{}, wantErr: true},
-		{name: "cap alone allowed", cfg: Config{ActivePartitionCount: 320}},
+		{name: "partition count only", cfg: Config{Planner: plannerLegacy, PartitionCount: 100}},
+		{name: "cap within partition count", cfg: Config{Planner: plannerLegacy, PartitionCount: 100, ActivePartitionCount: 50}},
+		{name: "cap equal to partition count", cfg: Config{Planner: plannerLegacy, PartitionCount: 100, ActivePartitionCount: 100}},
+		{name: "negative cap rejected", cfg: Config{Planner: plannerLegacy, ActivePartitionCount: -1}, wantErr: true},
+		{name: "cap above partition count rejected", cfg: Config{Planner: plannerLegacy, PartitionCount: 100, ActivePartitionCount: 101}, wantErr: true},
+		{name: "neither partition count nor cap rejected", cfg: Config{Planner: plannerLegacy}, wantErr: true},
+		{name: "cap alone allowed", cfg: Config{Planner: plannerLegacy, ActivePartitionCount: 320}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

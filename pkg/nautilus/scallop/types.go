@@ -5,6 +5,7 @@ package scallop
 // This file defines Scallop's public planning contract and private per-call state.
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -19,6 +20,28 @@ const hashSpaceSize = float64(uint64(math.MaxUint32) + 1)
 type RangeKey struct {
 	TenantID string               `json:"tenant_id"`
 	Range    assignment.HashRange `json:"range"`
+}
+
+// MarshalText gives RangeLoads a lossless, deterministic JSON object-key encoding.
+func (k RangeKey) MarshalText() ([]byte, error) {
+	return json.Marshal(struct {
+		TenantID string               `json:"tenant_id"`
+		Range    assignment.HashRange `json:"range"`
+	}{TenantID: k.TenantID, Range: k.Range})
+}
+
+// UnmarshalText decodes the JSON object-key representation produced by MarshalText.
+func (k *RangeKey) UnmarshalText(data []byte) error {
+	var decoded struct {
+		TenantID string               `json:"tenant_id"`
+		Range    assignment.HashRange `json:"range"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	k.TenantID = decoded.TenantID
+	k.Range = decoded.Range
+	return nil
 }
 
 // Snapshot is the complete observed input to one planning round.
@@ -120,11 +143,11 @@ type Policy struct {
 func DefaultPolicy() Policy {
 	return Policy{
 		Weights: Weights{
-			ReplicaBalance:      1,
-			TransitionEvents:    0.05,
+			ReplicaBalance:      0.44668359215096315,
+			TransitionEvents:    0.07062687723113772,
 			TransitionLoad:      0.1,
 			TransitionHashSpace: 0.1,
-			LocalityMiss:        0.1,
+			LocalityMiss:        0.01778279410038923,
 			Fragmentation:       10,
 			Resolution:          10,
 		},

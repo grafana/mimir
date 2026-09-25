@@ -246,17 +246,26 @@ details>summary::-webkit-details-marker{display:none}
 <div class="round">
 	<div class="round-header">
 		<strong>{{$r.Time.Format "15:04:05"}}</strong>
+		<span>Planner: {{if $r.Planner}}{{$r.Planner}}{{else}}legacy{{end}}</span>
 		<span>Σ L: {{fmtSeries $r.TotalL}}</span>
 		<span>Imbalance: {{fmtImbalance $r.ImbalanceRatio}}</span>
 		<span>Ranges: {{$r.NumEntries}}</span>
 		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
-		<span>Actions: {{len $r.Actions}}</span>
+		<span>Actions: {{if $r.ScallopActions}}{{len $r.ScallopActions}}{{else}}{{len $r.Actions}}{{end}}</span>
 		<span><a href="/nautilus/rebalancer/rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
+		{{if eq $r.Planner "scallop"}}<span><a href="/nautilus/rebalancer/rounds/{{$i}}/replay.json" title="Download the exact Scallop snapshot and policy for offline replay">replay.json</a></span>{{end}}
 	</div>
 	{{if $r.Actions}}
 	<div class="round-actions">
 	{{range $r.Actions}}
 		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{if .TenantID}}{{.TenantID}} {{end}}{{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
+	{{end}}
+	</div>
+	{{end}}
+	{{if $r.ScallopActions}}
+	<div class="round-actions">
+	{{range $r.ScallopActions}}
+		<span class="action-pill {{actionClass .Kind}}" title="{{.Explanation}}">{{.Kind}}{{if eq .Kind "move_partition"}} P{{.PartitionID}}{{end}}{{if .TenantID}} {{.TenantID}} {{hexRange .Range.Lo .Range.Hi}}{{end}}{{if .FromReplica}} {{.FromReplica}}→{{.ToReplica}}{{end}}</span>
 	{{end}}
 	</div>
 	{{end}}

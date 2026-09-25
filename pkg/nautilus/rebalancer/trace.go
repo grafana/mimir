@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 )
 
 // SlicerVersion identifies the algorithmic contract of runSlicer at
@@ -132,6 +133,7 @@ type ConfigSnapshot struct {
 // partition IDs, instance IDs, counts), but no per-series content.
 type Trace struct {
 	SlicerVersion string `json:"slicer_version"`
+	Planner       string `json:"planner,omitempty"`
 
 	// Round mirrors the lightweight summary kept for the admin
 	// page's "Recent Rebalance Rounds" panel. Embedded by value so
@@ -167,8 +169,103 @@ type Trace struct {
 	RecentDestinationPartitions map[int32]time.Time  `json:"recent_destination_partitions,omitempty"`
 	Config                      ConfigSnapshot       `json:"config"`
 
+	// Scallop records the joint planner's costs and bounded-search evidence.
+	Scallop *ScallopTrace `json:"scallop,omitempty"`
+
 	// Output of runSlicer + its post-condition.
 	End []assignment.Entry `json:"end_assignment"`
+}
+
+// ScallopTrace captures joint-planner evidence without inventing legacy phases.
+type ScallopTrace struct {
+	Policy scallop.Policy `json:"policy"`
+
+	// These fields supplement Trace's shared round inputs so the original
+	// Scallop Snapshot can be reconstructed without retaining duplicate
+	// assignment entries or range-load maps.
+	InputPartitionOwners map[int32]string                   `json:"input_partition_owners"`
+	ActiveReplicas       []string                           `json:"active_replicas"`
+	LastHostedAt         map[string]map[string]time.Time    `json:"last_hosted_at,omitempty"`
+	PartitionOwners      map[int32]string                   `json:"partition_owners"`
+	InitialCost          scallop.CostBreakdown              `json:"initial_cost"`
+	FinalCost            scallop.CostBreakdown              `json:"final_cost"`
+	CandidateSearch      scallop.CandidateSearchDiagnostics `json:"candidate_search"`
+}
+
+// scallopReplayEnvelope reconstructs the exact planner input from one Scallop trace.
+func (t Trace) scallopReplayEnvelope() (scallop.ReplaySnapshotEnvelope, error) {
+	if t.Scallop == nil {
+		return scallop.ReplaySnapshotEnvelope{}, fmt.Errorf("trace was not produced by Scallop")
+	}
+
+	expectedPartitions := make(map[scallop.RangeKey]int32, len(t.Start))
+	rangeLoads := make(map[scallop.RangeKey]float64, len(t.Start))
+	for _, entry := range t.Start {
+		key := scallop.RangeKey{TenantID: entry.TenantID, Range: entry.Range}
+		if _, duplicate := expectedPartitions[key]; duplicate {
+			return scallop.ReplaySnapshotEnvelope{}, fmt.Errorf(
+				"start assignment repeats tenant %q range [%d,%d]",
+				entry.TenantID, entry.Range.Lo, entry.Range.Hi,
+			)
+		}
+		expectedPartitions[key] = entry.PartitionID
+		// A successful production adapter treats a missing observation from an
+		// authoritative warm partition as an observed zero.
+		rangeLoads[key] = 0
+	}
+
+	seenLoads := make(map[scallop.RangeKey]struct{}, len(t.Rates))
+	for _, rate := range t.Rates {
+		key := scallop.RangeKey{
+			TenantID: rate.TenantID,
+			Range:    assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
+		}
+		partitionID, expected := expectedPartitions[key]
+		if !expected || partitionID != rate.PartitionID {
+			continue
+		}
+		if _, duplicate := seenLoads[key]; duplicate {
+			return scallop.ReplaySnapshotEnvelope{}, fmt.Errorf(
+				"rates repeat tenant %q range [%d,%d]",
+				rate.TenantID, rate.Lo, rate.Hi,
+			)
+		}
+		seenLoads[key] = struct{}{}
+		rangeLoads[key] = rate.SampleRate
+	}
+
+	snapshot := scallop.Snapshot{
+		At:               t.Now,
+		Assignment:       &assignment.Assignment{Entries: append([]assignment.Entry(nil), t.Start...)},
+		RangeLoads:       rangeLoads,
+		ActivePartitions: append([]int32(nil), t.ActivePartitions...),
+		PartitionOwners:  cloneTracePartitionOwners(t.Scallop.InputPartitionOwners),
+		ActiveReplicas:   append([]string(nil), t.Scallop.ActiveReplicas...),
+		LastHostedAt:     cloneTraceLocality(t.Scallop.LastHostedAt),
+	}
+	return scallop.NewReplaySnapshotEnvelope(snapshot, t.Scallop.Policy), nil
+}
+
+func cloneTracePartitionOwners(in map[int32]string) map[int32]string {
+	out := make(map[int32]string, len(in))
+	for partitionID, owner := range in {
+		out[partitionID] = owner
+	}
+	return out
+}
+
+func cloneTraceLocality(in map[string]map[string]time.Time) map[string]map[string]time.Time {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]map[string]time.Time, len(in))
+	for tenantID, byReplica := range in {
+		out[tenantID] = make(map[string]time.Time, len(byReplica))
+		for replicaID, hostedAt := range byReplica {
+			out[tenantID][replicaID] = hostedAt
+		}
+	}
+	return out
 }
 
 // FormatHashRangeKey encodes a HashRange into the "lo:hi" decimal

@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 )
 
 // metrics holds the Prometheus collectors for the rebalancer. Phase 1
@@ -76,6 +77,12 @@ type metrics struct {
 	// fire / not fire" without re-reading logs.
 	tier2RoundDecisions *prometheus.CounterVec
 
+	// plannerRounds records the selected engine's bounded outcome and reason.
+	plannerRounds *prometheus.CounterVec
+
+	// plannerActions records selected primitive actions by planner and kind.
+	plannerActions *prometheus.CounterVec
+
 	// Watch-stream observability. Snapshot messages carry the full
 	// retention-bounded log (sent on connect and, for legacy
 	// subscribers, on every mutating round); delta messages carry
@@ -134,6 +141,14 @@ func newMetrics(r prometheus.Registerer) *metrics {
 			Name: "cortex_nautilus_rebalancer_tier2_round_decisions_total",
 			Help: "Count of tier-2 (readcache slicer) gate decisions partitioned by outcome (fire vs skip) and reason. Lets dashboards show why tier-2 chose to fire or wait, without re-reading logs.",
 		}, []string{"outcome", "reason"}),
+		plannerRounds: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_planner_rounds_total",
+			Help: "Rebalance round outcomes by selected planner and bounded reason.",
+		}, []string{"planner", "outcome", "reason"}),
+		plannerActions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_planner_actions_total",
+			Help: "Primitive actions selected by each planner, partitioned by action kind.",
+		}, []string{"planner", "kind"}),
 		watchStreamsActive: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_watch_streams_active",
 			Help: "Number of currently-connected assignment watch streams, by stream type (hash = range->partition log, readcache = partition->instance log).",
@@ -156,6 +171,24 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		}, []string{"stream", "kind"}),
 	}
 	return m
+}
+
+// recordPlannerRound records one bounded-cardinality planner outcome.
+func (m *metrics) recordPlannerRound(planner, outcome, reason string) {
+	if m == nil {
+		return
+	}
+	m.plannerRounds.WithLabelValues(planner, outcome, reason).Inc()
+}
+
+// recordPlannerActions records selected Scallop action kinds.
+func (m *metrics) recordPlannerActions(planner string, actions []scallop.Action) {
+	if m == nil {
+		return
+	}
+	for _, action := range actions {
+		m.plannerActions.WithLabelValues(planner, string(action.Kind)).Inc()
+	}
 }
 
 // watchStreamStarted records a new watch stream and returns a done

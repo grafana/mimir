@@ -13,7 +13,7 @@ import (
 // ratePrediction records that the slicer moved (or reassigned) a hash
 // range with a known sample rate to a destination partition at a
 // specific wall-clock moment. Until the destination readcache's
-// per-partition EWMA has had time to accumulate that load (~1 minute
+// per-partition EWMA has had time to accumulate that load (15 seconds
 // for one half-life), the rebalancer's view of the destination's
 // load is systematically understated. predictions let the rebalancer
 // compensate by adding the unobserved-but-expected load to the
@@ -80,8 +80,8 @@ type predictionStore struct {
 }
 
 // predictionFloor is the decay fraction below which we discard a
-// prediction. At alpha=0.1591 and tick=15s, decay = 0.05 happens at
-// ~4.3 minutes after commit (just over 4 half-lives), which is
+// prediction. At alpha=0.5 and tick=15s, decay = 0.05 happens after
+// about 65 seconds (just over 4 half-lives), which is
 // plenty of time for the destination EWMA to have settled to within
 // ~5% of the true rate.
 const predictionFloor = 0.05

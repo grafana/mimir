@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/scallop"
 )
 
 func TestFormatHashRangeKey_RoundTrip(t *testing.T) {
@@ -355,12 +356,96 @@ func TestServeHTTP_RoundsJSON_ListAndDetail(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
+	t.Run("legacy round has no Scallop replay envelope", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/nautilus/rebalancer/rounds/0/replay.json", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
 	t.Run("unknown sub-path 404", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/nautilus/rebalancer/whatever", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
+}
+
+func TestScallopReplayEndpointReconstructsPlannerInput(t *testing.T) {
+	now := time.Unix(1_000_000, 0).UTC()
+	current := assignment.EvenSplitForTenant("tenant-a", []int32{0, 1})
+	loads := []float64{100, 0}
+	rangeLoads := make(map[scallop.RangeKey]float64, len(current.Entries))
+	rates := make([]RangeRate, 0, len(current.Entries))
+	for i, entry := range current.Entries {
+		rangeLoads[scallop.RangeKey{TenantID: entry.TenantID, Range: entry.Range}] = loads[i]
+		if loads[i] == 0 {
+			continue
+		}
+		rates = append(rates, RangeRate{
+			TenantID:    entry.TenantID,
+			Lo:          entry.Range.Lo,
+			Hi:          entry.Range.Hi,
+			SampleRate:  loads[i],
+			PartitionID: entry.PartitionID,
+		})
+	}
+	snapshot := scallop.Snapshot{
+		At:               now,
+		Assignment:       current,
+		RangeLoads:       rangeLoads,
+		ActivePartitions: []int32{0, 1},
+		PartitionOwners:  map[int32]string{0: "rc-a", 1: "rc-b"},
+		ActiveReplicas:   []string{"rc-a", "rc-b"},
+		LastHostedAt: map[string]map[string]time.Time{
+			"tenant-a": {"rc-a": now, "rc-b": now},
+		},
+	}
+	policy := scallop.DefaultPolicy()
+	expected, err := scallop.Plan(snapshot, policy)
+	require.NoError(t, err)
+
+	r := &Rebalancer{}
+	r.admin.addTrace(Trace{
+		SlicerVersion:    SlicerVersion,
+		Planner:          plannerScallop,
+		Now:              now,
+		Start:            append([]assignment.Entry(nil), current.Entries...),
+		Rates:            rates,
+		ActivePartitions: append([]int32(nil), snapshot.ActivePartitions...),
+		Scallop: &ScallopTrace{
+			Policy:               policy,
+			InputPartitionOwners: cloneTracePartitionOwners(snapshot.PartitionOwners),
+			ActiveReplicas:       append([]string(nil), snapshot.ActiveReplicas...),
+			LastHostedAt:         cloneTraceLocality(snapshot.LastHostedAt),
+			PartitionOwners:      expected.PartitionOwners,
+			InitialCost:          expected.InitialCost,
+			FinalCost:            expected.FinalCost,
+			CandidateSearch:      expected.CandidateSearch,
+		},
+		End: append([]assignment.Entry(nil), expected.Assignment.Entries...),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/nautilus/rebalancer/rounds/0/replay.json", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Header().Get("Content-Type"), "application/json")
+
+	var envelope scallop.ReplaySnapshotEnvelope
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	assert.Equal(t, scallop.ReplaySnapshotVersion, envelope.Version)
+	assert.Equal(t, snapshot, envelope.Snapshot)
+	assert.Equal(t, policy, envelope.Policy)
+
+	replayed, err := scallop.Plan(envelope.Snapshot, envelope.Policy)
+	require.NoError(t, err)
+	assert.Equal(t, expected.Actions, replayed.Actions)
+	assert.Equal(t, expected.Assignment, replayed.Assignment)
+	assert.Equal(t, expected.PartitionOwners, replayed.PartitionOwners)
+	assert.Equal(t, expected.InitialCost, replayed.InitialCost)
+	assert.Equal(t, expected.FinalCost, replayed.FinalCost)
+	assert.Equal(t, expected.CandidateSearch, replayed.CandidateSearch)
 }
 
 // TestAdminState_TraceAt confirms the display-index → trace mapping

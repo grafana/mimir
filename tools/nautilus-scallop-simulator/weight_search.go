@@ -31,6 +31,8 @@ type PolicyEvaluation struct {
 	Generation       int                `json:"generation"`
 	Policy           scallop.Policy     `json:"policy"`
 	Fixtures         []SimulationResult `json:"fixtures"`
+	Eligible         bool               `json:"eligible"`
+	ConstraintErrors []string           `json:"constraint_errors,omitempty"`
 	MeanUtility      float64            `json:"mean_utility"`
 	WorstUtility     float64            `json:"worst_utility"`
 	AggregateUtility float64            `json:"aggregate_utility"`
@@ -95,6 +97,9 @@ func runWeightSearch(fixtures []Fixture, seed scallop.Policy, config SearchConfi
 	sortPolicyEvaluations(ranked)
 	if len(ranked) < config.MinimumPolicies {
 		return SearchResult{}, fmt.Errorf("weight search evaluated %d policies, want at least %d", len(ranked), config.MinimumPolicies)
+	}
+	if !ranked[0].Eligible {
+		return SearchResult{}, fmt.Errorf("weight search found no policy satisfying explicit fixture constraints")
 	}
 	return SearchResult{
 		Config:            config,
@@ -162,6 +167,7 @@ func evaluatePolicy(fixtures []Fixture, policy scallop.Policy, generation int) (
 		Generation: generation,
 		Policy:     policy,
 		Fixtures:   make([]SimulationResult, 0, len(fixtures)),
+		Eligible:   true,
 	}
 	for _, fixture := range fixtures {
 		result, err := simulateFixture(fixture, policy)
@@ -171,6 +177,15 @@ func evaluatePolicy(fixtures []Fixture, policy scallop.Policy, generation int) (
 		out.Fixtures = append(out.Fixtures, result)
 		out.MeanUtility += result.Utility
 		out.WorstUtility = math.Max(out.WorstUtility, result.Utility)
+		if fixture.SettledRanges > 0 && result.Evaluation.StructuralFootprint.UnsettledTenants > 0 {
+			out.Eligible = false
+			out.ConstraintErrors = append(out.ConstraintErrors, fmt.Sprintf(
+				"%s: %d tenants did not reach the explicit %d-range settlement target",
+				fixture.Name,
+				result.Evaluation.StructuralFootprint.UnsettledTenants,
+				fixture.SettledRanges,
+			))
+		}
 	}
 	out.MeanUtility /= float64(len(fixtures))
 	out.AggregateUtility = out.MeanUtility + out.WorstUtility
@@ -273,6 +288,9 @@ func policyKey(policy scallop.Policy) string {
 // sortPolicyEvaluations orders policies by external utility and then deterministic weight key.
 func sortPolicyEvaluations(results []PolicyEvaluation) {
 	sort.Slice(results, func(i, j int) bool {
+		if results[i].Eligible != results[j].Eligible {
+			return results[i].Eligible
+		}
 		if math.Abs(results[i].AggregateUtility-results[j].AggregateUtility) > 1e-12 {
 			return results[i].AggregateUtility < results[j].AggregateUtility
 		}
