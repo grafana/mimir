@@ -459,6 +459,97 @@ func TestConfig_Validate_floatChunkEncoding(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
+func TestOverridesExporter_histogramChunkEncoding(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-histogram-st": {HistogramChunkEncoding: "histogram_st"},
+		"tenant-histogram":    {HistogramChunkEncoding: "histogram"}, // Equals the default, so it is not exported as an override.
+	}
+
+	// histogram_chunk_encoding is opt-in: it must be explicitly enabled.
+	exporter, err := NewOverridesExporter(
+		Config{EnabledMetrics: []string{histogramChunkEncoding}},
+		&validation.Limits{}, // Default HistogramChunkEncoding "" maps to histogram (5).
+		validation.NewMockTenantLimits(tenantLimits),
+		log.NewNopLogger(), nil,
+	)
+	require.NoError(t, err)
+
+	expectedOverrides := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="histogram_chunk_encoding",user="tenant-histogram-st"} 8
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedOverrides), "cortex_limits_overrides"))
+
+	expectedDefaults := `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="histogram_chunk_encoding"} 5
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
+}
+
+// TestHistogramChunkEncodingMetricValue asserts the numeric values the metric reports, which are a
+// contract with dashboards. An encoding added to the limit without a value here reports as histogram.
+func TestHistogramChunkEncodingMetricValue(t *testing.T) {
+	assert.Equal(t, float64(5), histogramChunkEncodingMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram"}))
+	assert.Equal(t, float64(8), histogramChunkEncodingMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram_st"}))
+	assert.Len(t, validation.HistogramChunkEncodingValues, 2, "an encoding was added to the limit, give it a metric value")
+}
+
+func TestConfig_Validate_histogramChunkEncoding(t *testing.T) {
+	// histogram_chunk_encoding is a string limit, but it is exportable through a dedicated getter.
+	cfg := Config{EnabledMetrics: []string{histogramChunkEncoding}}
+	cfg.Ring.Enabled = false
+	require.NoError(t, cfg.Validate())
+}
+
+func TestOverridesExporter_histogramChunkEncodingFloatHistograms(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-histogram-st": {HistogramChunkEncoding: "histogram_st"},
+		"tenant-histogram":    {HistogramChunkEncoding: "histogram"}, // Equals the default, so it is not exported as an override.
+	}
+
+	// histogram_chunk_encoding_float_histograms is opt-in: it must be explicitly enabled.
+	exporter, err := NewOverridesExporter(
+		Config{EnabledMetrics: []string{histogramChunkEncodingFloatHistograms}},
+		&validation.Limits{}, // Default HistogramChunkEncoding "" maps to histogram (6).
+		validation.NewMockTenantLimits(tenantLimits),
+		log.NewNopLogger(), nil,
+	)
+	require.NoError(t, err)
+
+	expectedOverrides := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="histogram_chunk_encoding_float_histograms",user="tenant-histogram-st"} 9
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedOverrides), "cortex_limits_overrides"))
+
+	expectedDefaults := `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="histogram_chunk_encoding_float_histograms"} 6
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
+}
+
+// TestHistogramChunkEncodingFloatHistogramsMetricValue asserts the numeric values the metric
+// reports, which are a contract with dashboards. An encoding added to the limit without a value
+// here reports as the float histogram counterpart of histogram (6).
+func TestHistogramChunkEncodingFloatHistogramsMetricValue(t *testing.T) {
+	assert.Equal(t, float64(6), histogramChunkEncodingFloatHistogramsMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram"}))
+	assert.Equal(t, float64(9), histogramChunkEncodingFloatHistogramsMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram_st"}))
+	assert.Len(t, validation.HistogramChunkEncodingValues, 2, "an encoding was added to the limit, give it a metric value")
+}
+
+func TestConfig_Validate_histogramChunkEncodingFloatHistograms(t *testing.T) {
+	// histogram_chunk_encoding_float_histograms is not a yaml tag, but it is a valid companion metric name.
+	cfg := Config{EnabledMetrics: []string{histogramChunkEncodingFloatHistograms}}
+	cfg.Ring.Enabled = false
+	require.NoError(t, cfg.Validate())
+}
+
 func TestOverridesExporter_blockedAndLimitedQueryRuleExpiry(t *testing.T) {
 	earlier := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	later := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
