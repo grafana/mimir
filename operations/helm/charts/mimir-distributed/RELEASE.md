@@ -82,7 +82,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      For example, `2.6.0`.
 
-   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgading the chart's version of Mimir.
+   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgrading the chart's version of Mimir.
 
    - Create or update the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory.
 
