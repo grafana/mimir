@@ -1,0 +1,10 @@
+apiVersion: 1
+apps:
+  - type: grafana-adaptive-metrics-app
+    jsonData:
+      # The freshness recommender serves the Adaptive Metrics API subset the Metrics tab uses, and its flags.
+      baseUrl: http://host.docker.internal:8099
+      featureFlagAPIURL: http://host.docker.internal:8099
+      instance: delayed
+    secureJsonData:
+      token: local

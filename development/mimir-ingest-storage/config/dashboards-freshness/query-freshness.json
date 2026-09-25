@@ -6,7 +6,7 @@
     "query-freshness"
   ],
   "timezone": "browser",
-  "refresh": "10s",
+  "refresh": "1m",
   "time": {
     "from": "now-30m",
     "to": "now"
@@ -749,7 +749,7 @@
             "type": "prometheus",
             "uid": "mimir-standard"
           },
-          "expr": "sum(rate(grafana_http_request_duration_seconds_count[1m]))\n# freshness-ab-dashboard",
+          "expr": "sum(rate(grafana_http_request_duration_seconds_count{freshness_ab_dashboard=\"\"}[1m]))",
           "legendFormat": "standard",
           "refId": "A"
         }
@@ -857,7 +857,7 @@
             "type": "prometheus",
             "uid": "mimir-delayed"
           },
-          "expr": "sum(rate(grafana_http_request_duration_seconds_count[1m]))\n# freshness-ab-dashboard",
+          "expr": "sum(rate(grafana_http_request_duration_seconds_count{freshness_ab_dashboard=\"\"}[1m]))",
           "legendFormat": "delayed",
           "refId": "A"
         }
@@ -965,7 +965,7 @@
             "type": "prometheus",
             "uid": "mimir-standard"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(grafana_http_request_duration_seconds_bucket{cluster=\"prod-00\"}[1m])))\n# freshness-ab-dashboard",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(grafana_http_request_duration_seconds_bucket{freshness_ab_dashboard=\"\", cluster=\"prod-00\"}[1m])))",
           "legendFormat": "standard",
           "refId": "A"
         },
@@ -974,7 +974,7 @@
             "type": "prometheus",
             "uid": "mimir-delayed"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(grafana_http_request_duration_seconds_bucket{cluster=\"prod-00\"}[1m])))\n# freshness-ab-dashboard",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(grafana_http_request_duration_seconds_bucket{freshness_ab_dashboard=\"\", cluster=\"prod-00\"}[1m])))",
           "legendFormat": "delayed",
           "refId": "B"
         }
@@ -1069,8 +1069,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Histogram bucket series returned, both tenants",
-      "description": "Equal once published. At the newest timestamps the delayed tenant only returns the excepted (hot) clusters.",
+      "title": "Series returned for a delayed metric, both tenants",
+      "description": "grafana_http_request_duration_seconds_count is fully delayed: equal once published, missing at the newest timestamps on the delayed tenant.",
       "datasource": {
         "type": "datasource",
         "uid": "-- Mixed --"
@@ -1081,7 +1081,7 @@
             "type": "prometheus",
             "uid": "mimir-standard"
           },
-          "expr": "count(grafana_http_request_duration_seconds_bucket)\n# freshness-ab-dashboard",
+          "expr": "count(grafana_http_request_duration_seconds_count{freshness_ab_dashboard=\"\"})",
           "legendFormat": "standard",
           "refId": "A"
         },
@@ -1090,7 +1090,7 @@
             "type": "prometheus",
             "uid": "mimir-delayed"
           },
-          "expr": "count(grafana_http_request_duration_seconds_bucket)\n# freshness-ab-dashboard",
+          "expr": "count(grafana_http_request_duration_seconds_count{freshness_ab_dashboard=\"\"})",
           "legendFormat": "delayed",
           "refId": "B"
         }

@@ -128,12 +128,18 @@
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
-    "image": "grafana/grafana:10.4.3"
+      - "GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-adaptive-metrics-app"
+      - "GF_DEFAULT_APP_MODE=development"
+    "extra_hosts":
+      - "host.docker.internal:host-gateway"
+    "image": "grafana/grafana:13.2.2"
     "ports":
       - "3000:3000"
     "volumes":
       - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml"
+      - "./config/grafana-plugins.yaml:/etc/grafana/provisioning/plugins/adaptive-metrics.yaml"
+      - "${AM_APP_DIST:-../../../grafana-adaptive-metrics-app/dist}:/var/lib/grafana/plugins/grafana-adaptive-metrics-app"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
       - "./config/dashboards-freshness:/var/lib/grafana/dashboards-freshness"
   "grafana-alloy":

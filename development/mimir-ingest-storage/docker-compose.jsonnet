@@ -316,14 +316,21 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      // Grafana 12.3+ is required by the Adaptive Metrics app, built locally from grafana-adaptive-metrics-app
+      // with the Delay recommendation. Its API calls go to the freshness recommender on the host.
+      image: 'grafana/grafana:13.2.2',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+        'GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-adaptive-metrics-app',
+        'GF_DEFAULT_APP_MODE=development',
       ],
+      extra_hosts: ['host.docker.internal:host-gateway'],
       volumes: [
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml',
+        './config/grafana-plugins.yaml:/etc/grafana/provisioning/plugins/adaptive-metrics.yaml',
+        '${AM_APP_DIST:-../../../grafana-adaptive-metrics-app/dist}:/var/lib/grafana/plugins/grafana-adaptive-metrics-app',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
         './config/dashboards-freshness:/var/lib/grafana/dashboards-freshness',
       ],
