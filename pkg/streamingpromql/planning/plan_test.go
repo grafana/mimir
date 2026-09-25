@@ -69,6 +69,8 @@ type testNode struct {
 	children                   []Node
 	description                string
 	minimumRequiredPlanVersion QueryPlanVersion
+	minimumVersionCalls        int
+	childrenTimeRange          *types.QueryTimeRange
 }
 
 func (t *testNode) Describe() string {
@@ -123,6 +125,9 @@ func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
 func (t *testNode) MergeHints(_ Node) error { panic("not supported") }
 
 func (t *testNode) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	if t.childrenTimeRange != nil {
+		return *t.childrenTimeRange
+	}
 	return timeRange
 }
 
@@ -139,6 +144,7 @@ func (t *testNode) ExpressionPosition() (posrange.PositionRange, error) {
 }
 
 func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (QueryPlanVersion, error) {
+	t.minimumVersionCalls++
 	return t.minimumRequiredPlanVersion, nil
 }
 
@@ -224,6 +230,113 @@ func TestQueryPlanVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMinimumRequiredPlanVersionMemoizesSharedDAG(t *testing.T) {
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	t.Run("shared nodes with the same time range", func(t *testing.T) {
+		sharedNodes := []*testNode{{minimumRequiredPlanVersion: QueryPlanV20}}
+		shared := Node(sharedNodes[0])
+		for range 20 {
+			parent := &testNode{children: []Node{shared, shared}}
+			sharedNodes = append(sharedNodes, parent)
+			shared = parent
+		}
+
+		roots := []*testNode{
+			{children: []Node{shared}},
+			{children: []Node{shared}},
+		}
+		validator := newMinimumRequiredPlanVersionValidator(-1)
+		for _, root := range roots {
+			version, err := validator.minimumRequiredPlanVersion(root, timeRange)
+			require.NoError(t, err)
+			require.Equal(t, QueryPlanV20, version)
+		}
+
+		for _, node := range sharedNodes {
+			require.Equal(t, 1, node.minimumVersionCalls)
+		}
+	})
+
+	t.Run("shared nodes with different time ranges", func(t *testing.T) {
+		firstChildTimeRange := timeRange
+		secondChildTimeRange := timeRange
+		secondChildTimeRange.StartT++
+		secondChildTimeRange.EndT++
+		shared := &testNode{minimumRequiredPlanVersion: QueryPlanV20}
+		roots := []*testNode{
+			{children: []Node{shared}, childrenTimeRange: &firstChildTimeRange},
+			{children: []Node{shared}, childrenTimeRange: &secondChildTimeRange},
+		}
+		validator := newMinimumRequiredPlanVersionValidator(-1)
+		for _, root := range roots {
+			version, err := validator.minimumRequiredPlanVersion(root, timeRange)
+			require.NoError(t, err)
+			require.Equal(t, QueryPlanV20, version)
+		}
+		require.Equal(t, 2, shared.minimumVersionCalls)
+	})
+}
+
+func TestMinimumRequiredPlanVersionBoundsStates(t *testing.T) {
+	validator := newMinimumRequiredPlanVersionValidator(1)
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	_, err := validator.minimumRequiredPlanVersion(&testNode{}, timeRange)
+	require.NoError(t, err)
+
+	_, err = validator.minimumRequiredPlanVersion(&testNode{}, timeRange)
+	require.EqualError(t, err, "minimum plan version validation exceeded the 1-state limit")
+}
+
+func TestMinimumVersionValidationStateLimit(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	testCases := map[string]struct {
+		nodeCount     int
+		rootCount     int
+		expected      int
+		expectedError string
+	}{
+		"empty plan": {
+			expected: maxAdditionalMinimumVersionValidationStates,
+		},
+		"structural states": {
+			nodeCount: 6,
+			rootCount: 1,
+			expected:  6 + 1 + maxAdditionalMinimumVersionValidationStates,
+		},
+		"additional states saturate": {
+			nodeCount: maxInt - 1,
+			rootCount: 1,
+			expected:  maxInt,
+		},
+		"structural states overflow": {
+			nodeCount:     maxInt,
+			rootCount:     1,
+			expectedError: fmt.Sprintf("node count %d and root count 1 overflow the state limit", maxInt),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual, err := minimumVersionValidationStateLimit(testCase.nodeCount, testCase.rootCount)
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestDecodeEncodedQueryTimeRangePreservesZeroValue(t *testing.T) {
+	decoded, err := decodeEncodedQueryTimeRange(types.EncodedQueryTimeRange{})
+	require.NoError(t, err)
+	require.Equal(t, types.QueryTimeRange{}, decoded)
 }
 
 func TestQueriedTimeRange_Union(t *testing.T) {

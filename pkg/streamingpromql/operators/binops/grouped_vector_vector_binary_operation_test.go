@@ -972,6 +972,80 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 	}
 }
 
+func TestGroupedVectorVectorBinaryOperation_IgnoresMatchersWithFill(t *testing.T) {
+	testCases := map[string]struct {
+		card     parser.VectorMatchCardinality
+		fillLeft bool
+	}{
+		"group_left fill_left": {
+			card:     parser.CardManyToOne,
+			fillLeft: true,
+		},
+		"group_left fill_right": {
+			card: parser.CardManyToOne,
+		},
+		"group_right fill_left": {
+			card:     parser.CardOneToMany,
+			fillLeft: true,
+		},
+		"group_right fill_right": {
+			card: parser.CardOneToMany,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("env", "prod")},
+				Data:                     make([]types.InstantVectorSeriesData, 1),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			right := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("env", "prod")},
+				Data:                     make([]types.InstantVectorSeriesData, 1),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			fillValue := 0.0
+			fillValues := parser.VectorMatchFillValues{RHS: &fillValue}
+			if testCase.fillLeft {
+				fillValues = parser.VectorMatchFillValues{LHS: &fillValue}
+			}
+
+			o, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"env"},
+					Include:        []string{"region"},
+					FillValues:     fillValues,
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.QueryTimeRange{},
+				&Hints{Include: []string{"env"}},
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			outerMatchers := types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+				{Type: labels.MatchEqual, Name: "service", Value: "api"},
+			}
+			_, err = o.SeriesMetadata(ctx, outerMatchers)
+			require.NoError(t, err)
+			require.Nil(t, left.MatchersProvided)
+			require.Nil(t, right.MatchersProvided)
+		})
+	}
+}
+
 func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
 	// Verifies that exclude-style matchers are forwarded to the many side via explicit
 	// exclude hints (set by an up-to-date query-frontend). When hints are nil (old
