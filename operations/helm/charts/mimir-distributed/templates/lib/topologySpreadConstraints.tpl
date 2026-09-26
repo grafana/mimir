@@ -1,6 +1,12 @@
+{{/*
+Params:
+  ctx = . context
+  component = name of the component
+  topologySpreadConstraints = (optional) constraints to render instead of the component section's topologySpreadConstraints
+*/}}
 {{- define "mimir.lib.topologySpreadConstraints" -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
-{{- $topologySpreadConstraintsSection := $componentSection.topologySpreadConstraints -}}
+{{- $topologySpreadConstraintsSection := .topologySpreadConstraints | default $componentSection.topologySpreadConstraints -}}
 {{- $selectorLabels := include "mimir.selectorLabels" . -}}
 {{- if $topologySpreadConstraintsSection -}}
 {{- $constraints := kindIs "slice" $topologySpreadConstraintsSection | ternary $topologySpreadConstraintsSection (list $topologySpreadConstraintsSection) -}}
