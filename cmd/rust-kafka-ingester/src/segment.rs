@@ -18,6 +18,7 @@ const FILE_FORMAT_VERSION: u32 = 2;
 const CHECKPOINT_VERSION: u32 = 1;
 const FILE_HEADER_LEN: usize = 28;
 const FRAME_HEADER_LEN: usize = 8;
+const FRAME_PREFIX_LEN: usize = 24;
 const HOUR_MS: i64 = 60 * 60 * 1000;
 
 pub struct RecoveredRecord {
@@ -425,7 +426,9 @@ fn read_segment(
         }
         let length = u32::from_le_bytes(frame_header[..4].try_into().unwrap()) as usize;
         let checksum = u32::from_le_bytes(frame_header[4..].try_into().unwrap());
-        if length > 128 * 1024 * 1024 {
+        // A crash can leave a zero-filled tail up to the next block; its length 0 and CRC 0 would
+        // otherwise pass the checksum because crc32 of an empty body is 0.
+        if length < FRAME_PREFIX_LEN || length > 128 * 1024 * 1024 {
             replay_batch(
                 &decode_pool,
                 version,
@@ -1244,6 +1247,64 @@ mod tests {
         let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
         assert_eq!(recovered.len(), 1);
         assert_eq!(fs::metadata(open_path).unwrap().len(), valid_len);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn truncates_zero_filled_open_tail_and_resumes() {
+        let root = temporary_directory("zero-tail");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.append(1, 100, "tenant", &request()).unwrap();
+        log.append(2, 101, "tenant", &request()).unwrap();
+        let open_path = segment_paths(&log.directory)
+            .unwrap()
+            .into_iter()
+            .find(|path| path.extension().is_some_and(|value| value == "open"))
+            .unwrap();
+        drop(log);
+        let valid_len = fs::metadata(&open_path).unwrap().len();
+        let mut file = OpenOptions::new().append(true).open(&open_path).unwrap();
+        file.write_all(&[0; 1458]).unwrap();
+        drop(file);
+
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 2);
+        assert_eq!(log.last_offset(), Some(2));
+        assert_eq!(fs::metadata(&open_path).unwrap().len(), valid_len);
+        log.append(3, 102, "tenant", &request()).unwrap();
+        drop(log);
+
+        let (log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        drop(log);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_zero_filled_sealed_tail() {
+        let root = temporary_directory("zero-tail-sealed");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let frame = log
+            .prepare_at(1, 100, "tenant", &request(), HOUR_MS)
+            .unwrap();
+        log.append_prepared(frame).unwrap();
+        log.seal_current().unwrap();
+        let sealed = log.directory.join(segment_name(HOUR_MS, "segment"));
+        drop(log);
+        let mut file = OpenOptions::new().append(true).open(&sealed).unwrap();
+        file.write_all(&[0; 64]).unwrap();
+        drop(file);
+
+        let error = SegmentLog::open(&root, 0, "topic", 0, None)
+            .err()
+            .expect("sealed zero tail must fail");
+        assert!(error.to_string().contains("is corrupt"), "{error}");
         fs::remove_dir_all(root).unwrap();
     }
 
