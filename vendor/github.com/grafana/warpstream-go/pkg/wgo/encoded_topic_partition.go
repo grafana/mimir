@@ -7,19 +7,21 @@ import (
 )
 
 // encodedTopicPartitionRecords is the serialised RecordBatch to produce for one
-// Kafka partition: the encoded bytes plus that batch's producer-state counts.
+// Kafka partition: the encoded bytes plus that batch's producer-state counts and
+// compression type.
 type encodedTopicPartitionRecords struct {
-	topic        string
-	partition    int32
-	encoded      []byte
-	encodedStats produceRequestStats
+	topic           string
+	partition       int32
+	encoded         []byte
+	encodedStats    produceRequestStats
+	compressionType uint8
 }
 
 // newEncodedTopicPartitionRecords encodes records into a single RecordBatch for
-// (topic, partition), capturing that batch's producer-state counts. records must
-// be non-empty.
+// (topic, partition), capturing that batch's producer-state counts and
+// compression type. records must be non-empty.
 func newEncodedTopicPartitionRecords(topic string, partition int32, records []*kgo.Record) encodedTopicPartitionRecords {
-	batch, uncompressed, compressed := encodeBatch(records)
+	batch, uncompressed, compressed, compressionType := encodeBatch(records)
 	return encodedTopicPartitionRecords{
 		topic:     topic,
 		partition: partition,
@@ -30,6 +32,7 @@ func newEncodedTopicPartitionRecords(topic string, partition int32, records []*k
 			uncompressedBytes: int64(uncompressed),
 			compressedBytes:   int64(compressed),
 		},
+		compressionType: compressionType,
 	}
 }
 
