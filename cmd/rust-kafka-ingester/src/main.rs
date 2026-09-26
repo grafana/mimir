@@ -17,9 +17,16 @@ use mimir_rust_kafka_ingester::record::{DecodedRequest, decode_record};
 use mimir_rust_kafka_ingester::segment::SegmentLog;
 mod profiling;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc", feature = "mimalloc"))]
+compile_error!("enable only one of the jemalloc and mimalloc features");
+
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(all(target_os = "linux", feature = "mimalloc"))]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
 use mimir_rust_kafka_ingester::store::Store;
