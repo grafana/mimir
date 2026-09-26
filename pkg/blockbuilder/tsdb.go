@@ -651,7 +651,7 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string,
 	return nil
 }
 
-// prepareSparseIndexHeader builds a sparse index-header for a single block.
+// buildSparseIndexHeader builds a sparse index-header for a single block.
 func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, blockID ulid.ULID) (err error) {
 	ll := log.With(b.logger, "id", blockID)
 	start := time.Now()
