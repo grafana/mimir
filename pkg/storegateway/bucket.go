@@ -1980,6 +1980,11 @@ type bucketBlock struct {
 
 	partitioners blockPartitioners
 
+	// lookupPlanner decides which matchers to apply during index lookup vs. post-retrieval filtering.
+	// Defaults to noopLookupPlanner (all matchers go to the index). When per-block statistics are
+	// available, this will be replaced with a cost-based planner.
+	lookupPlanner index.LookupPlanner
+
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	blockLabels labels.Labels
@@ -2015,6 +2020,7 @@ func newBucketBlock(
 		partitioners:      p,
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
+		lookupPlanner:     noopLookupPlanner{},
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}
