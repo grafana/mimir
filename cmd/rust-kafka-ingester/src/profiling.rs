@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,13 +11,13 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use pprof::protos::Message;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 use pprof::protos::{Function, Line, Profile};
 use serde::Deserialize;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -33,7 +33,7 @@ pub async fn start(address: &str) -> Result<()> {
     let app = Router::new()
         .route("/debug/pprof/profile", get(cpu_profile))
         .with_state(Arc::new(Mutex::new(())));
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "jemalloc"))]
     let app = app
         .route("/debug/pprof/allocs", get(heap_profile))
         .route("/debug/pprof/heap", get(heap_profile))
@@ -47,7 +47,7 @@ pub async fn start(address: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 async fn heap_profile() -> Response {
     let Some(control) = jemalloc_pprof::PROF_CTL.as_ref() else {
         return (
@@ -93,7 +93,7 @@ async fn heap_profile() -> Response {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 fn normalize_heap_pprof(compressed: Vec<u8>) -> Result<Vec<u8>> {
     let mut decoded = Vec::new();
     GzDecoder::new(compressed.as_slice()).read_to_end(&mut decoded)?;
@@ -134,7 +134,7 @@ fn normalize_heap_pprof(compressed: Vec<u8>) -> Result<Vec<u8>> {
     Ok(encoder.finish()?)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 #[derive(Serialize)]
 struct AllocatorStats {
     allocated_bytes: usize,
@@ -145,7 +145,7 @@ struct AllocatorStats {
     retained_bytes: usize,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "jemalloc"))]
 async fn allocator_stats() -> Response {
     use tikv_jemalloc_ctl::{epoch, stats};
 

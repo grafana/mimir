@@ -17,7 +17,8 @@ COPY cmd/rust-kafka-ingester/build.rs ./
 COPY cmd/rust-kafka-ingester/proto ./proto
 COPY cmd/rust-kafka-ingester/src ./src
 COPY cmd/rust-kafka-ingester/benches ./benches
-RUN cargo build --locked --release --target x86_64-unknown-linux-gnu --bin mimir-rust-kafka-ingester
+ARG ALLOCATOR=jemalloc
+RUN cargo build --locked --release --target x86_64-unknown-linux-gnu --no-default-features --features "$ALLOCATOR" --bin mimir-rust-kafka-ingester
 
 FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d AS go-builder
 WORKDIR /src
