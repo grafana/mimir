@@ -220,6 +220,27 @@ fn high_cardinality_multi_tenant_memory() {
         update_seconds,
         query_after_update_seconds,
     );
+    let started = Instant::now();
+    store.write_snapshot(&[]).unwrap();
+    let snapshot_write_seconds = started.elapsed().as_secs_f64();
+    let snapshot_bytes = std::fs::metadata(chunk_dir.join("snapshot")).unwrap().len();
     drop(store);
+    let started = Instant::now();
+    let restored = Store::restore(20 * 60 * 1000, Some(RETENTION_MS), &chunk_dir)
+        .unwrap()
+        .expect("snapshot restored");
+    let snapshot_restore_seconds = started.elapsed().as_secs_f64();
+    assert_eq!(
+        restored
+            .store
+            .select_chunks("tenant-0", end - RETENTION_MS, end, &[])
+            .unwrap()
+            .len(),
+        SERIES_PER_TENANT
+    );
+    println!(
+        "snapshot_bytes={snapshot_bytes} snapshot_write_wall_s={snapshot_write_seconds:.3} snapshot_restore_wall_s={snapshot_restore_seconds:.3}"
+    );
+    drop(restored);
     std::fs::remove_dir_all(chunk_dir).unwrap();
 }
