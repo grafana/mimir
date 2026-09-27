@@ -2,10 +2,18 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use memmap2::MmapMut;
 
 const FILE_SIZE: usize = 128 * 1024 * 1024;
+
+/// Written length and newest chunk time of one chunk file, as recorded in a head snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileState {
+    pub sequence: u32,
+    pub written: u64,
+    pub max_time: i64,
+}
 
 /// Location of a completed chunk: file sequence in the high 32 bits, byte offset in the low 32 bits.
 pub type ChunkRef = u64;
@@ -40,6 +48,78 @@ impl ChunkDiskMapper {
             files: BTreeMap::new(),
             next_sequence: 0,
         })
+    }
+
+    /// Maps the files described by a head snapshot and removes anything else in `directory`.
+    pub fn reopen(directory: PathBuf, files: &[FileState], next_sequence: u32) -> Result<Self> {
+        let mut mapped = BTreeMap::new();
+        for state in files {
+            let path = directory.join(file_name(state.sequence));
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .with_context(|| format!("open chunk file {}", path.display()))?;
+            if file.metadata()?.len() != FILE_SIZE as u64 || state.written > FILE_SIZE as u64 {
+                bail!(
+                    "chunk file {} does not match the head snapshot",
+                    path.display()
+                );
+            }
+            // SAFETY: the file is private to this process and only accessed through this mapping.
+            let map = unsafe { MmapMut::map_mut(&file) }
+                .with_context(|| format!("map chunk file {}", path.display()))?;
+            mapped.insert(
+                state.sequence,
+                ChunkFile {
+                    map,
+                    written: state.written as usize,
+                    max_time: state.max_time,
+                },
+            );
+        }
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            let known = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.parse::<u32>().ok())
+                .is_some_and(|sequence| mapped.contains_key(&sequence));
+            if !known {
+                fs::remove_file(&path)
+                    .with_context(|| format!("remove stale chunk file {}", path.display()))?;
+            }
+        }
+        Ok(Self {
+            directory: Some(directory),
+            files: mapped,
+            next_sequence,
+        })
+    }
+
+    pub fn directory(&self) -> Option<&PathBuf> {
+        self.directory.as_ref()
+    }
+
+    pub fn state(&self) -> (Vec<FileState>, u32) {
+        let files = self
+            .files
+            .iter()
+            .map(|(sequence, file)| FileState {
+                sequence: *sequence,
+                written: file.written as u64,
+                max_time: file.max_time,
+            })
+            .collect();
+        (files, self.next_sequence)
+    }
+
+    /// Writes dirty mapped pages so a head snapshot never references chunk bytes that are not on disk.
+    pub fn sync(&self) -> Result<()> {
+        for file in self.files.values() {
+            file.map.flush().context("sync chunk file")?;
+        }
+        Ok(())
     }
 
     pub fn write(&mut self, data: &[u8], max_time: i64) -> Result<ChunkRef> {

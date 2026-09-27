@@ -151,6 +151,43 @@ impl Appender {
         &self.out.bytes
     }
 
+    pub fn write_state(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        writer.write_all(&self.count.to_le_bytes())?;
+        writer.write_all(&self.previous_time.to_le_bytes())?;
+        writer.write_all(&self.previous_delta.to_le_bytes())?;
+        writer.write_all(&self.previous_value.to_bits().to_le_bytes())?;
+        writer.write_all(&[self.leading, self.trailing, self.out.free])?;
+        writer.write_all(&(self.out.bytes.len() as u32).to_le_bytes())?;
+        writer.write_all(&self.out.bytes)
+    }
+
+    pub fn read_state(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+        let mut fixed = [0; 2 + 8 + 8 + 8 + 3 + 4];
+        reader.read_exact(&mut fixed)?;
+        let u64_at = |at: usize| u64::from_le_bytes(fixed[at..at + 8].try_into().expect("length"));
+        let len = u32::from_le_bytes(fixed[29..33].try_into().expect("length")) as usize;
+        if len < 2 || len > 64 * 1024 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid XOR appender length",
+            ));
+        }
+        let mut bytes = vec![0; len];
+        reader.read_exact(&mut bytes)?;
+        Ok(Self {
+            out: BitWriter {
+                bytes,
+                free: fixed[28],
+            },
+            count: u16::from_le_bytes([fixed[0], fixed[1]]),
+            previous_time: u64_at(2) as i64,
+            previous_delta: u64_at(10),
+            previous_value: f64::from_bits(u64_at(18)),
+            leading: fixed[26],
+            trailing: fixed[27],
+        })
+    }
+
     pub fn into_bytes(self) -> Vec<u8> {
         self.out.bytes
     }
@@ -312,8 +349,14 @@ mod tests {
         }
         assert_eq!(appender.last_timestamp(), Some(1_000_015));
         assert_eq!(appender.bytes(), encode(&samples).as_slice());
+        let mut state = Vec::new();
+        appender.write_state(&mut state).unwrap();
+        let mut restored = Appender::read_state(&mut state.as_slice()).unwrap();
+        restored.append(1_000_030, 2.0);
+        appender.append(1_000_030, 2.0);
+        assert_eq!(restored.bytes(), appender.bytes());
         let decoded = decode(appender.bytes());
-        assert_eq!(decoded.len(), samples.len());
+        let decoded = &decoded[..samples.len()];
         for ((time, value), (expected_time, expected_value)) in decoded.iter().zip(samples) {
             assert_eq!(*time, expected_time);
             assert_eq!(value.to_bits(), expected_value.to_bits());
