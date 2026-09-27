@@ -102,6 +102,8 @@ impl PartitionClient {
         sasl_password: Option<&str>,
         sasl_mechanism: &str,
     ) -> Result<Arc<Self>> {
+        let fetch_max_bytes =
+            std::env::var("MIMIR_KAFKA_FETCH_MAX_BYTES").unwrap_or_else(|_| "8388608".to_owned());
         let mut config = ClientConfig::new();
         config
             .set("bootstrap.servers", brokers)
@@ -116,7 +118,10 @@ impl PartitionClient {
             .set("enable.partition.eof", "false")
             .set("auto.offset.reset", "error")
             .set("isolation.level", "read_uncommitted")
-            .set("fetch.max.bytes", "8388608")
+            .set("fetch.max.bytes", &fetch_max_bytes)
+            // librdkafka's 1 MiB per-partition default otherwise caps each single-partition fetch
+            // at a few records, making catch-up bound by broker round trips.
+            .set("fetch.message.max.bytes", &fetch_max_bytes)
             .set("queued.max.messages.kbytes", "32768")
             .set("fetch.wait.max.ms", "500");
         match (sasl_username, sasl_password) {
