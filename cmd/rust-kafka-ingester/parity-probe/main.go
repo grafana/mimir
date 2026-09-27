@@ -49,6 +49,8 @@ type result struct {
 	series   map[string][]string
 	counts   map[string]int
 	bytes    int
+	chunks   int
+	spanMs   int64
 	duration time.Duration
 }
 
@@ -176,6 +178,8 @@ func decode(ctx context.Context, api client.IngesterClient, request *client.Quer
 			key := keys[group.SeriesIndex]
 			for _, wire := range group.Chunks {
 				out.bytes += len(wire.Data)
+				out.chunks++
+				out.spanMs += wire.EndTimestampMs - wire.StartTimestampMs
 				out.series[key] = append(out.series[key], samples(wire, request, out.counts)...)
 			}
 		}
@@ -320,8 +324,12 @@ func summarize(results []result) string {
 	for i, res := range results {
 		durations[i] = res.duration.Round(10 * time.Millisecond).String()
 	}
-	return fmt.Sprintf("series=%d float=%d histogram=%d float_histogram=%d chunk_bytes=%d durations=%s",
-		len(r.series), r.counts["float"], r.counts["histogram"], r.counts["float_histogram"], r.bytes, strings.Join(durations, "/"))
+	var meanSpan time.Duration
+	if r.chunks > 0 {
+		meanSpan = time.Duration(r.spanMs/int64(r.chunks)) * time.Millisecond
+	}
+	return fmt.Sprintf("series=%d float=%d histogram=%d float_histogram=%d stale=%d chunks=%d mean_chunk_span=%s chunk_bytes=%d durations=%s",
+		len(r.series), r.counts["float"], r.counts["histogram"], r.counts["float_histogram"], r.counts["stale"], r.chunks, meanSpan.Round(time.Second), r.bytes, strings.Join(durations, "/"))
 }
 
 func check(err error) {
