@@ -1096,6 +1096,10 @@ fn encode_series_labels(labels: &[StoredLabel]) -> Bytes {
     .into()
 }
 
+#[path = "head_snapshot.rs"]
+mod head_snapshot;
+pub use head_snapshot::{Restored, SnapshotOffset};
+
 #[cfg(test)]
 #[path = "store_memory_benchmark.rs"]
 mod memory_benchmark;

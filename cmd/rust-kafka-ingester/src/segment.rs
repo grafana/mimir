@@ -144,6 +144,40 @@ impl SegmentLog {
         Ok(log)
     }
 
+    /// Opens the log without replaying it when its checkpoint equals `expected`, which a head
+    /// snapshot written after the final flush guarantees; otherwise returns `None`.
+    pub fn open_at_checkpoint(
+        root: &Path,
+        cluster: usize,
+        topic: &str,
+        partition: i32,
+        retention_ms: Option<i64>,
+        expected: Option<i64>,
+    ) -> Result<Option<Self>> {
+        let cluster = u32::try_from(cluster).context("Kafka cluster index exceeds u32")?;
+        let directory = root.join(format!(
+            "cluster-{cluster}-partition-{partition}-topic-{}",
+            hex(topic.as_bytes())
+        ));
+        fs::create_dir_all(&directory)
+            .with_context(|| format!("create segment directory {}", directory.display()))?;
+        let checkpoint = read_checkpoint(&directory)?;
+        if checkpoint != expected {
+            return Ok(None);
+        }
+        let log = Self {
+            directory,
+            cluster,
+            partition,
+            retention_ms,
+            current: None,
+            last_offset: checkpoint,
+            pending_offset: None,
+        };
+        log.remove_expired()?;
+        Ok(Some(log))
+    }
+
     pub fn last_offset(&self) -> Option<i64> {
         self.last_offset
     }
@@ -1305,6 +1339,36 @@ mod tests {
             .err()
             .expect("sealed zero tail must fail");
         assert!(error.to_string().contains("is corrupt"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opens_at_matching_checkpoint_without_replay() {
+        let root = temporary_directory("checkpoint-open");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.append(5, 100, "tenant", &request()).unwrap();
+        drop(log);
+        assert!(
+            SegmentLog::open_at_checkpoint(&root, 0, "topic", 0, None, Some(4))
+                .unwrap()
+                .is_none()
+        );
+        let mut log = SegmentLog::open_at_checkpoint(&root, 0, "topic", 0, None, Some(5))
+            .unwrap()
+            .unwrap();
+        assert_eq!(log.last_offset(), Some(5));
+        log.append(6, 101, "tenant", &request()).unwrap();
+        drop(log);
+        let (log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(log.last_offset(), Some(6));
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            vec![5, 6]
+        );
+        drop(log);
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -439,11 +439,14 @@ func TestRustIngesterRestartsFromSavedOffset(t *testing.T) {
 		offset, ok := checkpointOffset()
 		return ok && offset == firstOffset
 	}, 10*time.Second, 10*time.Millisecond)
+	snapshotPath := filepath.Join(dataDir, "chunks_head", "snapshot")
+	require.FileExists(t, snapshotPath, "a clean shutdown writes a head snapshot")
 
 	secondOffset := produce(2000, 2.5)
 	require.Greater(t, secondOffset, firstOffset)
 	process, connection = startRustIngesterAndWait(t, address, topic, dataDir, secondOffset,
 		"--segment-sync-interval-ms", "10", "--start-offset", "latest")
+	require.NoFileExists(t, snapshotPath, "startup consumes the head snapshot")
 	require.Eventually(t, func() bool {
 		offset, ok := checkpointOffset()
 		return ok && offset == secondOffset
@@ -458,9 +461,11 @@ func TestRustIngesterRestartsFromSavedOffset(t *testing.T) {
 	}
 	require.Equal(t, expected, actual)
 	require.NoError(t, connection.Close())
+	// Killing the process skips the head snapshot, so the next start rebuilds from segments.
 	stopRustIngester(t, process)
 	process = nil
 	connection = nil
+	require.NoFileExists(t, snapshotPath)
 
 	process, connection = startRustIngesterAndWait(t, address, topic, dataDir, secondOffset,
 		"--segment-sync-interval-ms", "10", "--start-offset", "latest")
