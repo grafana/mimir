@@ -29,7 +29,7 @@ static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemall
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
-use mimir_rust_kafka_ingester::store::Store;
+use mimir_rust_kafka_ingester::store::{SnapshotOffset, Store};
 use mimir_rust_kafka_ingester::xor;
 
 #[derive(Parser)]
@@ -254,11 +254,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
     if segment_sync_interval_ms == 0 {
         bail!("segment sync interval must be greater than zero");
     }
-    let store = Arc::new(Store::new(
-        active_window_seconds.saturating_mul(1000),
-        retention_seconds.map(|seconds| seconds.saturating_mul(1000)),
-        Some(data_dir.join("chunks_head")),
-    )?);
     let configured_start_offset = match start_offset.as_str() {
         "earliest" => StartOffset::Earliest,
         "latest" => StartOffset::Latest,
@@ -271,6 +266,56 @@ async fn serve(args: ServeArgs) -> Result<()> {
             .context("additional Kafka cluster must be TOPIC=BROKER[,BROKER...]")?;
         sources.push((topic.to_owned(), brokers.to_owned()));
     }
+    let active_window_ms = active_window_seconds.saturating_mul(1000);
+    let retention_ms = retention_seconds.map(|seconds| seconds.saturating_mul(1000));
+    let chunk_dir = data_dir.join("chunks_head");
+    let snapshot_started = Instant::now();
+    let mut resumed = None;
+    let store = match Store::restore(active_window_ms, retention_ms, &chunk_dir)? {
+        Some(restored) if restored.offsets.len() == sources.len() => {
+            let logs = sources
+                .iter()
+                .enumerate()
+                .map(|(cluster, (topic, _))| {
+                    SegmentLog::open_at_checkpoint(
+                        &data_dir,
+                        cluster,
+                        topic,
+                        partition,
+                        retention_ms,
+                        restored.offsets[cluster].offset,
+                    )
+                })
+                .collect::<Result<Option<Vec<_>>>>()?;
+            match logs {
+                Some(logs) => {
+                    eprintln!(
+                        "phase=head_snapshot_restored partition={partition} duration_ms={}",
+                        snapshot_started.elapsed().as_millis()
+                    );
+                    resumed = Some(
+                        logs.into_iter()
+                            .zip(restored.offsets)
+                            .collect::<Vec<_>>()
+                            .into_iter(),
+                    );
+                    restored.store
+                }
+                None => {
+                    eprintln!(
+                        "phase=head_snapshot_stale partition={partition} reason=segment_checkpoint_mismatch"
+                    );
+                    Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?
+                }
+            }
+        }
+        Some(_) => {
+            eprintln!("phase=head_snapshot_stale partition={partition} reason=kafka_cluster_count");
+            Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?
+        }
+        None => Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?,
+    };
+    let store = Arc::new(store);
     let consistency = Arc::new(Consistency::new(
         partition,
         read_compartment,
@@ -309,38 +354,46 @@ async fn serve(args: ServeArgs) -> Result<()> {
         let mut recovered_timestamp = 0;
         let mut recovered_count = 0_u64;
         let mut last_recovery_log = Instant::now();
-        let recovered_log = SegmentLog::open_replaying(
-            &data_dir,
-            cluster,
-            &topic,
-            partition,
-            retention_seconds.map(|seconds| seconds.saturating_mul(1000)),
-            |record| {
-                if shutdown_requested.load(Ordering::Relaxed) {
-                    bail!("shutdown requested during segment recovery");
-                }
-                recovered_count += 1;
-                if last_recovery_log.elapsed() >= Duration::from_secs(30) {
-                    eprintln!(
-                        "phase=disk_recovery_progress cluster={cluster} partition={partition} records={recovered_count} offset={}",
-                        record.offset
-                    );
-                    last_recovery_log = Instant::now();
-                }
-                recovered_timestamp = recovered_timestamp.max(record.kafka_timestamp_ms);
-                if has_data(&record.request) {
-                    store
-                        .ingest_recovered(&record.tenant, record.request, record.ingested_ms)
-                        .with_context(|| {
-                            format!(
-                                "restore Kafka cluster {cluster} offset {} from disk",
-                                record.offset
-                            )
-                        })?;
-                }
-                Ok(())
-            },
-        );
+        let resumed_log = resumed
+            .as_mut()
+            .map(|logs| logs.next().expect("one log per cluster"));
+        let recovered_log = if let Some((log, offset)) = resumed_log {
+            recovered_timestamp = offset.timestamp_ms;
+            Ok(log)
+        } else {
+            SegmentLog::open_replaying(
+                &data_dir,
+                cluster,
+                &topic,
+                partition,
+                retention_seconds.map(|seconds| seconds.saturating_mul(1000)),
+                |record| {
+                    if shutdown_requested.load(Ordering::Relaxed) {
+                        bail!("shutdown requested during segment recovery");
+                    }
+                    recovered_count += 1;
+                    if last_recovery_log.elapsed() >= Duration::from_secs(30) {
+                        eprintln!(
+                            "phase=disk_recovery_progress cluster={cluster} partition={partition} records={recovered_count} offset={}",
+                            record.offset
+                        );
+                        last_recovery_log = Instant::now();
+                    }
+                    recovered_timestamp = recovered_timestamp.max(record.kafka_timestamp_ms);
+                    if has_data(&record.request) {
+                        store
+                            .ingest_recovered(&record.tenant, record.request, record.ingested_ms)
+                            .with_context(|| {
+                                format!(
+                                    "restore Kafka cluster {cluster} offset {} from disk",
+                                    record.offset
+                                )
+                            })?;
+                    }
+                    Ok(())
+                },
+            )
+        };
         let mut segment_log = match recovered_log {
             Ok(log) => log,
             Err(_) if shutdown_requested.load(Ordering::Relaxed) => {
@@ -431,6 +484,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             let mut watermark_interval = tokio::time::interval(Duration::from_secs(30));
             watermark_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut ready_tx = Some(ready_tx);
+            let mut last_timestamp_ms = recovered_timestamp;
             if replay_complete {
                 eprintln!(
                     "phase=kafka_replay_complete cluster={cluster} partition={partition} latest_offset={latest_offset}"
@@ -438,7 +492,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 let _ = ready_tx.take().expect("replay signal available").send(());
                 tokio::select! {
                     _ = warmup_rx.changed() => {}
-                    _ = shutdown_rx.changed() => return,
+                    _ = shutdown_rx.changed() => return snapshot_offset(&mut segment_log, last_timestamp_ms, cluster, &fatal_tx),
                 }
             }
             loop {
@@ -554,6 +608,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     break;
                 }
                 ingest_consistency.consumed(cluster, message.offset, high_watermark, timestamp_ms);
+                last_timestamp_ms = last_timestamp_ms.max(timestamp_ms);
                 next_offset = message.offset.saturating_add(1);
                 last_fetch_progress = Instant::now();
                 if !logged_first_consume || last_consume_log.elapsed() >= Duration::from_secs(60) {
@@ -587,10 +642,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     }
                 }
             }
-            if let Err(error) = segment_log.flush() {
-                eprintln!("Kafka cluster {cluster} final persistence sync failed: {error:#}");
-                let _ = fatal_tx.send(true);
-            }
+            snapshot_offset(&mut segment_log, last_timestamp_ms, cluster, &fatal_tx)
         }));
     }
 
@@ -598,15 +650,13 @@ async fn serve(args: ServeArgs) -> Result<()> {
         tokio::select! {
             result = ready => result.context("Kafka consumer stopped before initial replay")?,
             _ = startup_shutdown_rx.changed() => {
-                stop_workers(&shutdown_tx, workers).await?;
-                return Ok(());
+                return shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_rx, partition).await;
             }
         }
     }
     store.prune_expired()?;
     if shutdown_requested.load(Ordering::Relaxed) {
-        stop_workers(&shutdown_tx, workers).await?;
-        return Ok(());
+        return shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_rx, partition).await;
     }
     let _ = warmup_tx.send(true);
 
@@ -622,8 +672,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
         (None, None) => {}
         _ => anyhow::bail!("both gRPC TLS certificate and key are required"),
     }
-    let service = IngesterServer::new(IngesterService::with_consistency(store, consistency))
-        .accept_compressed(CompressionEncoding::Gzip);
+    let service = IngesterServer::new(IngesterService::with_consistency(
+        Arc::clone(&store),
+        consistency,
+    ))
+    .accept_compressed(CompressionEncoding::Gzip);
     let fatal_state = fatal_rx.clone();
     let shutdown_sender = shutdown_tx.clone();
     let mut serve_shutdown_rx = shutdown_tx.subscribe();
@@ -638,7 +691,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             let _ = shutdown_sender.send(true);
         })
         .await;
-    stop_workers(&shutdown_tx, workers).await?;
+    shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_state, partition).await?;
     serve_result?;
     if *fatal_state.borrow() {
         bail!("Kafka ingester stopped after a fatal consumer error");
@@ -649,13 +702,55 @@ async fn serve(args: ServeArgs) -> Result<()> {
 
 async fn stop_workers(
     shutdown_tx: &tokio::sync::watch::Sender<bool>,
-    workers: Vec<tokio::task::JoinHandle<()>>,
-) -> Result<()> {
+    workers: Vec<tokio::task::JoinHandle<SnapshotOffset>>,
+) -> Result<Vec<SnapshotOffset>> {
     let _ = shutdown_tx.send(true);
+    let mut offsets = Vec::with_capacity(workers.len());
     for worker in workers {
-        worker.await.context("join Kafka consumer")?;
+        offsets.push(worker.await.context("join Kafka consumer")?);
     }
+    Ok(offsets)
+}
+
+// Called only once every Kafka cluster finished recovery, so the store covers each log's last offset.
+async fn shutdown_with_snapshot(
+    store: &Arc<Store>,
+    shutdown_tx: &tokio::sync::watch::Sender<bool>,
+    workers: Vec<tokio::task::JoinHandle<SnapshotOffset>>,
+    fatal_rx: &tokio::sync::watch::Receiver<bool>,
+    partition: i32,
+) -> Result<()> {
+    let offsets = stop_workers(shutdown_tx, workers).await?;
+    if *fatal_rx.borrow() {
+        eprintln!("phase=head_snapshot_skipped partition={partition} reason=fatal_error");
+        return Ok(());
+    }
+    let started = Instant::now();
+    let snapshot_store = Arc::clone(store);
+    tokio::task::spawn_blocking(move || snapshot_store.write_snapshot(&offsets))
+        .await
+        .context("join head snapshot")??;
+    eprintln!(
+        "phase=head_snapshot_written partition={partition} duration_ms={}",
+        started.elapsed().as_millis()
+    );
     Ok(())
+}
+
+fn snapshot_offset(
+    segment_log: &mut SegmentLog,
+    timestamp_ms: i64,
+    cluster: usize,
+    fatal_tx: &tokio::sync::watch::Sender<bool>,
+) -> SnapshotOffset {
+    if let Err(error) = segment_log.flush() {
+        eprintln!("Kafka cluster {cluster} final persistence sync failed: {error:#}");
+        let _ = fatal_tx.send(true);
+    }
+    SnapshotOffset {
+        offset: segment_log.last_offset(),
+        timestamp_ms,
+    }
 }
 
 async fn connect_partition(
