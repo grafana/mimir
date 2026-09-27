@@ -957,6 +957,7 @@ dependencies = [
  "jemalloc_pprof",
  "libc",
  "lz4_flex",
+ "memmap2",
  "mimalloc",
  "pprof",
  "prost 0.14.4",

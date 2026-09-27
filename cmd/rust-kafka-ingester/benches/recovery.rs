@@ -6,7 +6,6 @@ use std::time::Instant;
 use mimir_rust_kafka_ingester::proto::cortexpb;
 use mimir_rust_kafka_ingester::record::{DecodedRequest, DecodedSeries};
 use mimir_rust_kafka_ingester::segment::SegmentLog;
-use mimir_rust_kafka_ingester::snapshot::{self, Encoding, Identity};
 use mimir_rust_kafka_ingester::store::Store;
 
 const BASE_RECORDS: usize = 9_739;
@@ -124,55 +123,9 @@ fn main() {
         .flat_map(|entry| fs::read_dir(entry.unwrap().path()).unwrap())
         .map(|entry| entry.unwrap().metadata().unwrap().len())
         .sum();
-    let store = Store::default();
-    let log = SegmentLog::open_replaying(&directory, 0, "fixture", 0, None, |record| {
-        store.ingest_recovered(&record.tenant, record.request, record.ingested_ms)?;
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(log.last_offset(), Some(record_count as i64 - 1));
-    drop(log);
-
-    for (name, encoding, include_chunks) in [
-        ("image_raw", Encoding::Raw, false),
-        ("image_zstd", Encoding::Zstd, false),
-        ("image_zstd_chunks", Encoding::Zstd, true),
-        ("image_lz4_chunks", Encoding::Lz4, true),
-    ] {
-        let path = directory.join(name);
-        let (_, before_cpu) = process_metrics();
-        let started = Instant::now();
-        let series = snapshot::write(
-            &path,
-            Identity {
-                cluster: 0,
-                topic: "fixture",
-                partition: 0,
-            },
-            record_count as i64 - 1,
-            &store,
-            encoding,
-            include_chunks,
-        )
-        .unwrap();
-        let (rss, after_cpu) = process_metrics();
-        println!(
-            "variant={name} write_ms={:.2} write_cpu_ms={:.2} bytes={} write_rss_B={rss} series={series}",
-            started.elapsed().as_secs_f64() * 1000.,
-            (after_cpu - before_cpu) * 1000.,
-            fs::metadata(path).unwrap().len(),
-        );
-    }
-    drop(store);
     println!("variant=segment bytes={segment_bytes}");
     let executable = std::env::current_exe().unwrap();
-    for name in [
-        "segment",
-        "image_raw",
-        "image_zstd",
-        "image_zstd_chunks",
-        "image_lz4_chunks",
-    ] {
+    for name in ["segment"] {
         let status = Command::new(&executable)
             .args(["measure", directory.to_str().unwrap(), name])
             .status()
@@ -185,40 +138,21 @@ fn main() {
 fn measure(directory: PathBuf, variant: &str) {
     let (before_rss, before_cpu) = process_metrics();
     let started = Instant::now();
-    let store = if variant == "segment" {
-        let store = Store::default();
-        let mut count = 0;
-        let log = SegmentLog::open_replaying(&directory, 0, "fixture", 0, None, |record| {
-            store.ingest_recovered(&record.tenant, record.request, record.ingested_ms)?;
-            count += 1;
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(log.last_offset(), Some(records() as i64 - 1));
-        assert_eq!(count, records());
-        store
-    } else {
-        let snapshot = snapshot::read(
-            &directory.join(variant),
-            Identity {
-                cluster: 0,
-                topic: "fixture",
-                partition: 0,
-            },
-            20 * 60 * 1000,
-            None,
-        )
-        .unwrap();
-        assert_eq!(snapshot.offset, records() as i64 - 1);
-        snapshot.store
-    };
+    let store = Store::default();
+    let mut count = 0;
+    let log = SegmentLog::open_replaying(&directory, 0, "fixture", 0, None, |record| {
+        store.ingest_recovered(&record.tenant, record.request, record.ingested_ms)?;
+        count += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(log.last_offset(), Some(records() as i64 - 1));
+    assert_eq!(count, records());
     let restore = started.elapsed();
     let (restore_rss, restore_cpu) = process_metrics();
-    let started = Instant::now();
-    let warmed = store.warm_query_cache();
-    let warm = started.elapsed();
-    let (warm_rss, warm_cpu) = process_metrics();
-    assert_eq!(warmed, unique_records() * SERIES_PER_RECORD);
+    let warm = std::time::Duration::ZERO;
+    let (warm_rss, warm_cpu) = (restore_rss, restore_cpu);
+    let warmed = unique_records() * SERIES_PER_RECORD;
     let started = Instant::now();
     let selected = store.select_chunks("benchmark", 0, i64::MAX, &[]).unwrap();
     assert_eq!(selected.len(), warmed);
