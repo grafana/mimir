@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -34,6 +34,16 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
+var clusterLabel string
+
+func outgoing(tenant string) context.Context {
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-scope-orgid", tenant)
+	if clusterLabel != "" {
+		ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, clusterLabel)
+	}
+	return ctx
+}
+
 type result struct {
 	series   map[string][]string
 	counts   map[string]int
@@ -51,6 +61,7 @@ func main() {
 	window := flag.Duration("window", time.Minute, "query window length")
 	settle := flag.Duration("settle", 2*time.Minute, "gap between the window end and now so both ingesters have consumed it")
 	repeat := flag.Int("repeat", 1, "serial queries per ingester; timings are reported for each")
+	flag.StringVar(&clusterLabel, "cluster-label", "", "cluster validation label expected by the ingesters, such as the namespace")
 	flag.Parse()
 	if *rustAddr == "" || len(goAddrs) == 0 {
 		fmt.Fprintln(os.Stderr, "-rust and at least one -go are required")
@@ -100,7 +111,8 @@ func dial(addr string) client.IngesterClient {
 }
 
 func discoverTenants(api client.IngesterClient, n int) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	// The ingester auth interceptor rejects calls without an org ID, even though AllUserStats spans all tenants.
+	ctx, cancel := context.WithTimeout(outgoing("parity-probe"), time.Minute)
 	defer cancel()
 	stats, err := api.AllUserStats(ctx, &client.UserStatsRequest{})
 	check(err)
@@ -127,7 +139,7 @@ func buildRequest(selector string, start, end time.Time) *client.QueryRequest {
 func query(api client.IngesterClient, tenant string, request *client.QueryRequest, repeat int) []result {
 	results := make([]result, repeat)
 	for i := range results {
-		ctx, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(context.Background(), "x-scope-orgid", tenant), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(outgoing(tenant), 5*time.Minute)
 		started := time.Now()
 		results[i] = decode(ctx, api, request)
 		results[i].duration = time.Since(started)
@@ -139,35 +151,32 @@ func query(api client.IngesterClient, tenant string, request *client.QueryReques
 func decode(ctx context.Context, api client.IngesterClient, request *client.QueryRequest) result {
 	stream, err := api.QueryStream(ctx, request)
 	check(err)
-	var series []client.QueryStreamSeries
-	var groups []client.QueryStreamSeriesChunks
+	out := result{series: map[string][]string{}, counts: map[string]int{}}
+	var keys []string
+	// Responses may alias a reused receive buffer, so everything is copied out before the next Recv.
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		check(err)
-		response = proto.Clone(response).(*client.QueryStreamResponse)
-		series = append(series, response.StreamingSeries...)
-		groups = append(groups, response.StreamingSeriesChunks...)
-	}
-	out := result{series: map[string][]string{}, counts: map[string]int{}}
-	keys := make([]string, len(series))
-	for i, s := range series {
-		keys[i] = mimirpb.FromLabelAdaptersToLabels(s.Labels).String()
-		if _, ok := out.series[keys[i]]; ok {
-			fail("duplicate series %s", keys[i])
+		for _, s := range response.StreamingSeries {
+			key := mimirpb.FromLabelAdaptersToLabels(s.Labels).String()
+			if _, ok := out.series[key]; ok {
+				fail("duplicate series %s", key)
+			}
+			out.series[key] = nil
+			keys = append(keys, key)
 		}
-		out.series[keys[i]] = nil
-	}
-	for _, group := range groups {
-		if group.SeriesIndex >= uint64(len(keys)) {
-			fail("chunk group references series %d of %d", group.SeriesIndex, len(keys))
-		}
-		key := keys[group.SeriesIndex]
-		for _, wire := range group.Chunks {
-			out.bytes += len(wire.Data)
-			out.series[key] = append(out.series[key], samples(wire, request, out.counts)...)
+		for _, group := range response.StreamingSeriesChunks {
+			if group.SeriesIndex >= uint64(len(keys)) {
+				fail("chunk group references series %d of %d", group.SeriesIndex, len(keys))
+			}
+			key := keys[group.SeriesIndex]
+			for _, wire := range group.Chunks {
+				out.bytes += len(wire.Data)
+				out.series[key] = append(out.series[key], samples(wire, request, out.counts)...)
+			}
 		}
 	}
 	for key, values := range out.series {
@@ -211,11 +220,15 @@ func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]
 			var h *histogram.Histogram
 			ts, h = it.AtHistogram(nil)
 			h.CounterResetHint = histogram.UnknownCounterReset
+			// Go re-codes appended histograms into a widened bucket layout with explicit zero buckets; compacting
+			// both sides compares bucket counts rather than layout.
+			h.Compact(0)
 			kind, value = "histogram", fmt.Sprintf("h:%#v", *h)
 		case chunkenc.ValFloatHistogram:
 			var h *histogram.FloatHistogram
 			ts, h = it.AtFloatHistogram(nil)
 			h.CounterResetHint = histogram.UnknownCounterReset
+			h.Compact(0)
 			kind, value = "float_histogram", fmt.Sprintf("fh:%#v", *h)
 		default:
 			fail("unexpected chunk value type %v", typ)
@@ -243,7 +256,8 @@ func compare(rust, golang map[string][]string) int {
 		case !ok:
 			report("only in rust: %s (%d samples)", key, len(r))
 		case strings.Join(r, "\n") != strings.Join(g, "\n"):
-			report("samples differ: %s rust=%d go=%d", key, len(r), len(g))
+			rv, gv := firstDifference(r, g)
+			report("samples differ: %s rust=%d go=%d\n    rust: %s\n    go:   %s", key, len(r), len(g), rv, gv)
 		}
 	}
 	for key, g := range golang {
@@ -252,6 +266,22 @@ func compare(rust, golang map[string][]string) int {
 		}
 	}
 	return mismatched
+}
+
+func firstDifference(rust, golang []string) (string, string) {
+	for i := 0; i < len(rust) || i < len(golang); i++ {
+		var r, g string
+		if i < len(rust) {
+			r = rust[i]
+		}
+		if i < len(golang) {
+			g = golang[i]
+		}
+		if r != g {
+			return r, g
+		}
+	}
+	return "", ""
 }
 
 func summarize(results []result) string {
