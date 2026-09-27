@@ -351,7 +351,12 @@ impl Store {
                 continue;
             }
             let chunks = cached_chunks(series);
-            let chunk_start = chunks.partition_point(|chunk| chunk.end_timestamp_ms < start);
+            // Chunks are sorted by start, but a float chunk can span later histogram chunks, so end
+            // timestamps are not monotonic and cannot be binary searched.
+            let chunk_start = chunks
+                .iter()
+                .position(|chunk| chunk.end_timestamp_ms >= start)
+                .unwrap_or(chunks.len());
             let chunk_end = chunks.partition_point(|chunk| chunk.start_timestamp_ms <= end);
             selected.push(QuerySeriesView {
                 encoded_labels: series
@@ -1318,6 +1323,60 @@ mod tests {
             assert!(series.chunks.get().is_none());
         }
         assert_eq!(store.warm_query_cache(), 1);
+    }
+
+    #[test]
+    fn selects_float_chunk_spanning_histogram_chunks() {
+        let store = Store::default();
+        let stale = f64::from_bits(0x7ff0_0000_0000_0002);
+        let request = DecodedRequest {
+            source: 0,
+            series: vec![DecodedSeries {
+                labels: vec![("__name__".into(), "metric".into())],
+                samples: [1005, 3995]
+                    .into_iter()
+                    .map(|timestamp_ms| cortexpb::Sample {
+                        timestamp_ms,
+                        value: stale,
+                    })
+                    .collect(),
+                histograms: (1000..4000)
+                    .step_by(10)
+                    .map(|timestamp| cortexpb::Histogram {
+                        timestamp,
+                        count: Some(cortexpb::histogram::Count::CountInt(1)),
+                        positive_spans: vec![cortexpb::BucketSpan {
+                            offset: 0,
+                            length: 1,
+                        }],
+                        positive_deltas: vec![1],
+                        ..Default::default()
+                    })
+                    .collect(),
+                exemplars: Vec::new(),
+                created_timestamp: 0,
+            }],
+            metadata: Vec::new(),
+        };
+        store.ingest("tenant", request).unwrap();
+        for (start, end) in [(3500, 3999), (2500, 3999), (1100, 1200), (3995, 3995)] {
+            let selected = store.select_chunks("tenant", start, end, &[]).unwrap();
+            let view = &selected[0];
+            let chunks = &view.chunks[view.chunk_start..view.chunk_end];
+            for chunk in view.chunks.iter() {
+                let overlaps = chunk.start_timestamp_ms <= end && chunk.end_timestamp_ms >= start;
+                assert!(
+                    !overlaps
+                        || chunks.iter().any(|selected| {
+                            selected.start_timestamp_ms == chunk.start_timestamp_ms
+                                && selected.end_timestamp_ms == chunk.end_timestamp_ms
+                        }),
+                    "window {start}..{end} skipped chunk {}..{}",
+                    chunk.start_timestamp_ms,
+                    chunk.end_timestamp_ms
+                );
+            }
+        }
     }
 
     #[test]
