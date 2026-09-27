@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	promvalue "github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"google.golang.org/grpc"
@@ -216,20 +217,33 @@ func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]
 			var v float64
 			ts, v = it.At()
 			kind, value = "float", fmt.Sprintf("f:%016x", math.Float64bits(v))
+			if promvalue.IsStaleNaN(v) {
+				kind, value = "stale", "stale"
+			}
 		case chunkenc.ValHistogram:
 			var h *histogram.Histogram
 			ts, h = it.AtHistogram(nil)
+			// The returned histogram shares slices with the iterator, so compact a copy.
+			h = h.Copy()
 			h.CounterResetHint = histogram.UnknownCounterReset
 			// Go re-codes appended histograms into a widened bucket layout with explicit zero buckets; compacting
 			// both sides compares bucket counts rather than layout.
 			h.Compact(0)
 			kind, value = "histogram", fmt.Sprintf("h:%#v", *h)
+			// Go writes a histogram stale marker for histogram series; Rust writes a float one. PromQL treats both as stale.
+			if promvalue.IsStaleNaN(h.Sum) {
+				kind, value = "stale", "stale"
+			}
 		case chunkenc.ValFloatHistogram:
 			var h *histogram.FloatHistogram
 			ts, h = it.AtFloatHistogram(nil)
+			h = h.Copy()
 			h.CounterResetHint = histogram.UnknownCounterReset
 			h.Compact(0)
 			kind, value = "float_histogram", fmt.Sprintf("fh:%#v", *h)
+			if promvalue.IsStaleNaN(h.Sum) {
+				kind, value = "stale", "stale"
+			}
 		default:
 			fail("unexpected chunk value type %v", typ)
 		}
