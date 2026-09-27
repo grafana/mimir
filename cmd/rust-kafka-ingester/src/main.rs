@@ -257,7 +257,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let store = Arc::new(Store::new(
         active_window_seconds.saturating_mul(1000),
         retention_seconds.map(|seconds| seconds.saturating_mul(1000)),
-    ));
+        Some(data_dir.join("chunks_head")),
+    )?);
     let configured_start_offset = match start_offset.as_str() {
         "earliest" => StartOffset::Earliest,
         "latest" => StartOffset::Latest,
@@ -495,7 +496,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
                             break;
                         }
                         if cluster == 0 {
-                            ingest_store.prune_expired();
+                            if let Err(error) = ingest_store.prune_expired() {
+                                eprintln!("retention pruning failed: {error:#}");
+                                let _ = fatal_tx.send(true);
+                                break;
+                            }
                         }
                         continue;
                     },
@@ -598,19 +603,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
             }
         }
     }
-    store.prune_expired();
-    let warm_store = Arc::clone(&store);
-    let warm_shutdown = Arc::clone(&shutdown_requested);
-    eprintln!("phase=cache_warm_start partition={partition}");
-    let warmed =
-        tokio::task::spawn_blocking(move || warm_store.warm_query_cache_until(&warm_shutdown))
-            .await
-            .context("warm query cache")?;
+    store.prune_expired()?;
     if shutdown_requested.load(Ordering::Relaxed) {
         stop_workers(&shutdown_tx, workers).await?;
         return Ok(());
     }
-    eprintln!("phase=cache_warm_complete partition={partition} series={warmed}");
     let _ = warmup_tx.send(true);
 
     let address = listen.parse().context("parse listen address")?;

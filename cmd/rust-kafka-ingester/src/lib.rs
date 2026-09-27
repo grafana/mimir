@@ -1,12 +1,11 @@
+pub mod chunk_disk;
 pub mod consistency;
 pub mod histogram;
 pub mod kafka;
 pub mod proto;
 pub mod record;
-pub mod sample_store;
 pub mod segment;
 pub mod service;
-pub mod snapshot;
 pub mod store;
 pub mod wire;
 pub mod xor;

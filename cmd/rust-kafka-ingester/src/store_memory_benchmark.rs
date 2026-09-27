@@ -33,7 +33,8 @@ fn high_cardinality_multi_tenant_memory() {
         .map(|value| value.parse::<usize>().expect("histogram frequency"))
         .unwrap_or(10);
     let is_histogram = |id: usize| histogram_every != 0 && id % histogram_every == 0;
-    let store = Store::new(20 * 60 * 1000, Some(RETENTION_MS));
+    let chunk_dir = std::env::temp_dir().join(format!("mimir-rust-memory-{}", std::process::id()));
+    let store = Store::new(20 * 60 * 1000, Some(RETENTION_MS), Some(chunk_dir.clone())).unwrap();
     let baseline = rss_bytes();
     let started = Instant::now();
     let end = now_ms();
@@ -219,4 +220,6 @@ fn high_cardinality_multi_tenant_memory() {
         update_seconds,
         query_after_update_seconds,
     );
+    drop(store);
+    std::fs::remove_dir_all(chunk_dir).unwrap();
 }

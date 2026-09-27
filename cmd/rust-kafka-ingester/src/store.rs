@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
@@ -10,9 +9,9 @@ use prost::Message;
 use prost::bytes::Bytes;
 use regex::Regex;
 
+use crate::chunk_disk::{ChunkDiskMapper, ChunkRef};
 use crate::proto::{cortex, cortexpb};
 use crate::record::{DecodedRequest, DecodedSeries};
-use crate::sample_store::SampleStore;
 use crate::{histogram, xor};
 
 type StoredLabel = (Arc<str>, CompactString);
@@ -20,23 +19,39 @@ type StoredLabels = Vec<StoredLabel>;
 // Compare the fingerprint first so ingest does not compare every label at each tree level.
 type SeriesKey = (u64, Arc<StoredLabels>);
 
-#[derive(Debug, Default)]
-struct Series {
-    samples: SampleStore,
-    histograms: Vec<cortexpb::Histogram>,
-    chunks: OnceLock<Arc<Vec<EncodedChunk>>>,
-    reusable_chunks: Mutex<Option<ReusableChunks>>,
-    encoded_labels: OnceLock<Bytes>,
-    exemplars: Vec<cortexpb::Exemplar>,
-    last_ingested_ms: i64,
+const XOR_ENCODING: u8 = 4;
+const SAMPLES_PER_CHUNK: usize = 120;
+const CHUNK_RANGE_MS: i64 = 2 * 60 * 60 * 1000;
+const OUT_OF_ORDER_CAPACITY: usize = 32;
+
+/// A completed chunk in the chunk disk mapper, like Prometheus's `mmappedChunk`.
+#[derive(Clone, Copy, Debug)]
+struct ChunkMeta {
+    reference: ChunkRef,
+    min_time: i64,
+    max_time: i64,
+    len: u32,
+    encoding: u8,
 }
 
 #[derive(Debug)]
-struct ReusableChunks {
-    chunks: Arc<Vec<EncodedChunk>>,
-    histogram_count: usize,
-    float_count: usize,
-    float_range: Option<(i64, i64)>,
+struct FloatHead {
+    appender: xor::Appender,
+    min_time: i64,
+    next_at: i64,
+}
+
+// Only open chunks live on the heap; completed chunks are referenced in the chunk disk mapper.
+#[derive(Debug, Default)]
+struct Series {
+    chunks: Vec<ChunkMeta>,
+    float_head: Option<FloatHead>,
+    histogram_head: Vec<cortexpb::Histogram>,
+    histogram_next_at: i64,
+    out_of_order: Vec<(i64, f64)>,
+    exemplars: Vec<cortexpb::Exemplar>,
+    last_ingested_ms: i64,
+    last_bucket_count: u32,
 }
 
 #[derive(Default)]
@@ -47,8 +62,13 @@ struct Tenant {
     ingested: VecDeque<(Instant, i32, u64)>,
 }
 
+struct State {
+    tenants: HashMap<String, Tenant>,
+    disk: ChunkDiskMapper,
+}
+
 pub struct Store {
-    tenants: RwLock<HashMap<String, Tenant>>,
+    state: RwLock<State>,
     active_window_ms: i64,
     retention_ms: Option<i64>,
 }
@@ -90,17 +110,25 @@ pub struct UserStatsView {
 
 impl Default for Store {
     fn default() -> Self {
-        Self::new(20 * 60 * 1000, None)
+        Self::new(20 * 60 * 1000, None, None).expect("create in-memory store")
     }
 }
 
 impl Store {
-    pub fn new(active_window_ms: i64, retention_ms: Option<i64>) -> Self {
-        Self {
-            tenants: RwLock::new(HashMap::new()),
+    /// Completed chunks go to `chunk_dir`, which is cleared first; without one they use anonymous memory.
+    pub fn new(
+        active_window_ms: i64,
+        retention_ms: Option<i64>,
+        chunk_dir: Option<PathBuf>,
+    ) -> Result<Self> {
+        Ok(Self {
+            state: RwLock::new(State {
+                tenants: HashMap::new(),
+                disk: ChunkDiskMapper::open(chunk_dir)?,
+            }),
             active_window_ms,
             retention_ms,
-        }
+        })
     }
 
     pub fn ingest(&self, tenant_id: &str, request: DecodedRequest) -> Result<()> {
@@ -116,178 +144,21 @@ impl Store {
         self.ingest_at(tenant_id, request, ingested_ms, false)
     }
 
-    pub fn prune_expired(&self) {
+    pub fn prune_expired(&self) -> Result<()> {
         let Some(retention_ms) = self.retention_ms else {
-            return;
+            return Ok(());
         };
-        let cutoff = now_ms().saturating_sub(retention_ms);
-        let mut tenants = self.tenants.write().expect("store lock poisoned");
-        for tenant in tenants.values_mut() {
-            prune_tenant(tenant, cutoff);
-        }
+        self.prune_before(now_ms().saturating_sub(retention_ms))
     }
 
-    pub fn warm_query_cache(&self) -> usize {
-        self.warm_query_cache_until(&AtomicBool::new(false))
-    }
-
-    pub fn warm_query_cache_until(&self, stopped: &AtomicBool) -> usize {
-        let tenants = self.tenants.read().expect("store lock poisoned");
-        let mut warmed = 0;
-        for tenant in tenants.values() {
-            for ((_, labels), series) in &tenant.series {
-                if stopped.load(Ordering::Relaxed) {
-                    return warmed;
-                }
-                cached_chunks(series);
-                series
-                    .encoded_labels
-                    .get_or_init(|| encode_series_labels(labels));
-                warmed += 1;
-            }
+    fn prune_before(&self, cutoff: i64) -> Result<()> {
+        let mut state = self.state.write().expect("store lock poisoned");
+        for tenant in state.tenants.values_mut() {
+            tenant
+                .series
+                .retain(|_, series| prune_series(series, cutoff));
         }
-        warmed
-    }
-
-    pub fn write_image(&self, writer: &mut impl Write, include_chunks: bool) -> Result<usize> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
-        image_len(writer, tenants.len())?;
-        let mut count = 0;
-        for (tenant_id, tenant) in tenants.iter() {
-            image_bytes(writer, tenant_id.as_bytes())?;
-            image_len(writer, tenant.metadata.len())?;
-            for metadata in tenant.metadata.values() {
-                image_bytes(writer, &metadata.encode_to_vec())?;
-            }
-            image_len(writer, tenant.series.len())?;
-            for ((_, labels), series) in &tenant.series {
-                image_len(writer, labels.len())?;
-                for (name, value) in labels.iter() {
-                    image_bytes(writer, name.as_bytes())?;
-                    image_bytes(writer, value.as_bytes())?;
-                }
-                writer.write_all(&series.last_ingested_ms.to_le_bytes())?;
-                image_len(writer, series.samples.len())?;
-                for (timestamp, value) in series.samples.iter() {
-                    writer.write_all(&timestamp.to_le_bytes())?;
-                    writer.write_all(&value.to_bits().to_le_bytes())?;
-                }
-                image_len(writer, series.histograms.len())?;
-                for histogram in &series.histograms {
-                    image_bytes(writer, &histogram.encode_to_vec())?;
-                }
-                image_len(writer, series.exemplars.len())?;
-                for exemplar in &series.exemplars {
-                    image_bytes(writer, &exemplar.encode_to_vec())?;
-                }
-                if include_chunks {
-                    let chunks = cached_chunks(series);
-                    image_len(writer, chunks.len())?;
-                    for chunk in chunks.iter() {
-                        writer.write_all(&chunk.start_timestamp_ms.to_le_bytes())?;
-                        writer.write_all(&chunk.end_timestamp_ms.to_le_bytes())?;
-                        image_bytes(writer, &chunk.wire)?;
-                    }
-                    let encoded_labels = series
-                        .encoded_labels
-                        .get_or_init(|| encode_series_labels(labels));
-                    image_bytes(writer, encoded_labels)?;
-                }
-                count += 1;
-            }
-        }
-        Ok(count)
-    }
-
-    pub fn from_image(
-        reader: &mut impl Read,
-        active_window_ms: i64,
-        retention_ms: Option<i64>,
-        include_chunks: bool,
-    ) -> Result<Self> {
-        let mut tenants = HashMap::new();
-        for _ in 0..image_count(reader, 100_000)? {
-            let tenant_id = image_string(reader)?;
-            let mut tenant = Tenant::default();
-            for _ in 0..image_count(reader, 1_000_000)? {
-                let metadata =
-                    cortexpb::MetricMetadata::decode(image_bytes_read(reader)?.as_slice())?;
-                let key = (
-                    metadata.metric_family_name.clone(),
-                    metadata.r#type,
-                    metadata.help.clone(),
-                    metadata.unit.clone(),
-                );
-                tenant.metadata.insert(key, metadata);
-            }
-            for _ in 0..image_count(reader, 10_000_000)? {
-                let mut labels = Vec::new();
-                for _ in 0..image_count(reader, 1_000)? {
-                    let name = image_string(reader)?;
-                    let name = if let Some(stored) = tenant.label_names.get(name.as_str()) {
-                        Arc::clone(stored)
-                    } else {
-                        let stored: Arc<str> = name.into();
-                        tenant.label_names.insert(Arc::clone(&stored));
-                        stored
-                    };
-                    labels.push((name, image_string(reader)?.into()));
-                }
-                let last_ingested_ms = image_i64(reader)?;
-                let mut samples = SampleStore::default();
-                for _ in 0..image_count(reader, 2_000_000)? {
-                    let timestamp = image_i64(reader)?;
-                    let value = f64::from_bits(image_u64(reader)?);
-                    samples.insert(samples.len(), timestamp, value);
-                }
-                let histograms = (0..image_count(reader, 2_000_000)?)
-                    .map(|_| {
-                        Ok(cortexpb::Histogram::decode(
-                            image_bytes_read(reader)?.as_slice(),
-                        )?)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let exemplars = (0..image_count(reader, 2_000_000)?)
-                    .map(|_| {
-                        Ok(cortexpb::Exemplar::decode(
-                            image_bytes_read(reader)?.as_slice(),
-                        )?)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let series = Series {
-                    samples,
-                    histograms,
-                    exemplars,
-                    last_ingested_ms,
-                    ..Series::default()
-                };
-                if include_chunks {
-                    let chunks = (0..image_count(reader, 2_000_000)?)
-                        .map(|_| {
-                            Ok(EncodedChunk {
-                                start_timestamp_ms: image_i64(reader)?,
-                                end_timestamp_ms: image_i64(reader)?,
-                                wire: image_bytes_read(reader)?.into(),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    let _ = series.chunks.set(Arc::new(chunks));
-                    let _ = series.encoded_labels.set(image_bytes_read(reader)?.into());
-                }
-                let key = series_key(labels);
-                if tenant.series.insert(key, series).is_some() {
-                    bail!("duplicate series in recovery image");
-                }
-            }
-            if tenants.insert(tenant_id, tenant).is_some() {
-                bail!("duplicate tenant in recovery image");
-            }
-        }
-        Ok(Self {
-            tenants: RwLock::new(tenants),
-            active_window_ms,
-            retention_ms,
-        })
+        state.disk.truncate_before(cutoff)
     }
 
     fn ingest_at(
@@ -297,7 +168,8 @@ impl Store {
         ingested_ms: i64,
         track_rate: bool,
     ) -> Result<()> {
-        let mut tenants = self.tenants.write().expect("store lock poisoned");
+        let mut guard = self.state.write().expect("store lock poisoned");
+        let State { tenants, disk } = &mut *guard;
         let tenant = tenants.entry(tenant_id.to_owned()).or_default();
         let source = request.source;
         for metadata in request.metadata {
@@ -312,7 +184,7 @@ impl Store {
         let mut sample_count = 0;
         for decoded in request.series {
             sample_count += (decoded.samples.len() + decoded.histograms.len()) as u64;
-            ingest_series(tenant, decoded, ingested_ms)?;
+            ingest_series(tenant, disk, decoded, ingested_ms)?;
         }
         if track_rate {
             let instant = Instant::now();
@@ -335,37 +207,25 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<QuerySeriesView>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
-        let Some(tenant) = tenants.get(tenant_id) else {
+        let state = self.state.read().expect("store lock poisoned");
+        let Some(tenant) = state.tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
         let compiled = compile_matchers(matchers)?;
         let mut selected = Vec::new();
         for ((_, labels), series) in &tenant.series {
-            if !matches(labels, &compiled) {
+            if !matches_time_range(series, start, end) || !matches(labels, &compiled) {
                 continue;
             }
-            let has_samples = samples_overlap(&series.samples, start, end);
-            let has_histograms = histograms_overlap(&series.histograms, start, end);
-            if !has_samples && !has_histograms {
+            let chunks = query_chunks(series, &state.disk, start, end);
+            if chunks.is_empty() {
                 continue;
             }
-            let chunks = cached_chunks(series);
-            // Chunks are sorted by start, but a float chunk can span later histogram chunks, so end
-            // timestamps are not monotonic and cannot be binary searched.
-            let chunk_start = chunks
-                .iter()
-                .position(|chunk| chunk.end_timestamp_ms >= start)
-                .unwrap_or(chunks.len());
-            let chunk_end = chunks.partition_point(|chunk| chunk.start_timestamp_ms <= end);
             selected.push(QuerySeriesView {
-                encoded_labels: series
-                    .encoded_labels
-                    .get_or_init(|| encode_series_labels(labels))
-                    .clone(),
-                chunks: Arc::clone(chunks),
-                chunk_start,
-                chunk_end,
+                encoded_labels: encode_series_labels(labels),
+                chunk_start: 0,
+                chunk_end: chunks.len(),
+                chunks: Arc::new(chunks),
             });
         }
         Ok(selected)
@@ -378,7 +238,8 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<SeriesView>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
@@ -409,7 +270,8 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<Vec<(String, String)>>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
@@ -431,7 +293,8 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
@@ -453,7 +316,8 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
@@ -470,9 +334,10 @@ impl Store {
     }
 
     pub fn num_series(&self, tenant_id: &str) -> u64 {
-        self.tenants
+        self.state
             .read()
             .expect("store lock poisoned")
+            .tenants
             .get(tenant_id)
             .map_or(0, |tenant| tenant.series.len() as u64)
     }
@@ -483,7 +348,8 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         histograms_only: bool,
     ) -> Result<Vec<ActiveSeriesView>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(Vec::new());
         };
@@ -496,11 +362,7 @@ impl Store {
                 series.last_ingested_ms >= cutoff && matches(labels, &compiled)
             })
             .filter_map(|((_, labels), series)| {
-                let bucket_count = series
-                    .histograms
-                    .last()
-                    .map(histogram_bucket_count)
-                    .unwrap_or(0);
+                let bucket_count = u64::from(series.last_bucket_count);
                 (!histograms_only || bucket_count > 0).then(|| ActiveSeriesView {
                     labels: owned_labels(labels),
                     bucket_count,
@@ -510,7 +372,8 @@ impl Store {
     }
 
     pub fn user_stats(&self, tenant_id: &str, active: bool) -> UserStatsView {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         tenants
             .get(tenant_id)
             .map_or_else(UserStatsView::default, |tenant| {
@@ -519,7 +382,8 @@ impl Store {
     }
 
     pub fn all_user_stats(&self, active: bool) -> Vec<(String, UserStatsView)> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         let mut result = tenants
             .iter()
@@ -535,7 +399,8 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         active: bool,
     ) -> Result<BTreeMap<String, BTreeSet<String>>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(BTreeMap::new());
         };
@@ -562,7 +427,8 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         active: bool,
     ) -> Result<BTreeMap<String, BTreeMap<String, u64>>> {
-        let tenants = self.tenants.read().expect("store lock poisoned");
+        let state = self.state.read().expect("store lock poisoned");
+        let tenants = &state.tenants;
         let Some(tenant) = tenants.get(tenant_id) else {
             return Ok(BTreeMap::new());
         };
@@ -590,9 +456,10 @@ impl Store {
     }
 
     pub fn metadata(&self, tenant_id: &str) -> Vec<cortexpb::MetricMetadata> {
-        self.tenants
+        self.state
             .read()
             .expect("store lock poisoned")
+            .tenants
             .get(tenant_id)
             .map_or_else(Vec::new, |tenant| {
                 tenant.metadata.values().cloned().collect()
@@ -635,7 +502,12 @@ fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64) -> UserStatsView 
     }
 }
 
-fn ingest_series(tenant: &mut Tenant, mut decoded: DecodedSeries, now: i64) -> Result<()> {
+fn ingest_series(
+    tenant: &mut Tenant,
+    disk: &mut ChunkDiskMapper,
+    mut decoded: DecodedSeries,
+    now: i64,
+) -> Result<()> {
     decoded.labels.sort();
     for labels in decoded.labels.windows(2) {
         if labels[0].0 == labels[1].0 {
@@ -656,12 +528,6 @@ fn ingest_series(tenant: &mut Tenant, mut decoded: DecodedSeries, now: i64) -> R
         })
         .collect();
     let series = tenant.series.entry(series_key(labels)).or_default();
-    let previous_histogram_count = series.histograms.len();
-    let previous_float_count = series.samples.len();
-    let previous_float_range = float_tail_range(&series.samples);
-    let mut chunks_changed = false;
-    let mut histogram_out_of_order = false;
-    let mut float_out_of_order = false;
     if decoded.created_timestamp != 0 {
         let first_timestamp = decoded
             .samples
@@ -674,264 +540,355 @@ fn ingest_series(tenant: &mut Tenant, mut decoded: DecodedSeries, now: i64) -> R
                     .map(|histogram| histogram.timestamp),
             )
             .min();
-        if let Some(first_timestamp) = first_timestamp {
-            if decoded.created_timestamp < first_timestamp {
-                if let Err(index) = series.samples.binary_search(decoded.created_timestamp) {
-                    float_out_of_order |= index != series.samples.len();
-                    series.samples.insert(index, decoded.created_timestamp, 0.0);
-                    chunks_changed = true;
-                }
-            }
+        if first_timestamp.is_some_and(|first| decoded.created_timestamp < first) {
+            append_float(series, disk, decoded.created_timestamp, 0.0)?;
         }
     }
     for sample in decoded.samples {
-        if series
-            .histograms
-            .binary_search_by_key(&sample.timestamp_ms, |histogram| histogram.timestamp)
-            .is_ok()
-        {
-            continue;
-        }
-        match series.samples.binary_search(sample.timestamp_ms) {
-            Ok(index)
-                if series.samples.get(index).expect("found sample").1.to_bits()
-                    != sample.value.to_bits() =>
-            {
-                continue;
-            }
-            Ok(_) => continue,
-            Err(index) => {
-                float_out_of_order |= index != series.samples.len();
-                series
-                    .samples
-                    .insert(index, sample.timestamp_ms, sample.value);
-                chunks_changed = true;
-            }
-        }
+        append_float(series, disk, sample.timestamp_ms, sample.value)?;
     }
     for histogram in decoded.histograms {
-        if series.samples.binary_search(histogram.timestamp).is_ok() {
-            continue;
-        }
-        match series
-            .histograms
-            .binary_search_by_key(&histogram.timestamp, |item| item.timestamp)
-        {
-            Ok(index) if series.histograms[index] != histogram => continue,
-            Ok(_) => continue,
-            Err(index) => {
-                histogram_out_of_order |= index != series.histograms.len();
-                series.histograms.insert(index, histogram);
-                chunks_changed = true;
-            }
-        }
+        append_histogram(series, disk, histogram)?;
     }
     series.exemplars.extend(decoded.exemplars);
     series
         .exemplars
         .sort_by_key(|exemplar| exemplar.timestamp_ms);
     series.last_ingested_ms = now;
-    if chunks_changed {
-        let cached = series.chunks.take();
-        if histogram_out_of_order || float_out_of_order || cached.is_some() {
-            let mut reusable = series
-                .reusable_chunks
-                .lock()
-                .expect("query cache lock poisoned");
-            if histogram_out_of_order || float_out_of_order {
-                reusable.take();
-            } else if reusable.is_none() {
-                *reusable = cached.map(|chunks| ReusableChunks {
-                    chunks,
-                    histogram_count: previous_histogram_count,
-                    float_count: previous_float_count,
-                    float_range: previous_float_range,
-                });
-            }
-        }
-    }
     Ok(())
 }
 
-fn matches_time_range(series: &Series, start: i64, end: i64) -> bool {
-    samples_overlap(&series.samples, start, end)
-        || histograms_overlap(&series.histograms, start, end)
-}
-
-fn samples_overlap(samples: &SampleStore, start: i64, end: i64) -> bool {
-    let index = samples.binary_search(start).unwrap_or_else(|index| index);
-    samples
-        .get(index)
-        .is_some_and(|(timestamp, _)| timestamp <= end)
-}
-
-fn histograms_overlap(histograms: &[cortexpb::Histogram], start: i64, end: i64) -> bool {
-    let index = histograms.partition_point(|histogram| histogram.timestamp < start);
-    histograms
-        .get(index)
-        .is_some_and(|histogram| histogram.timestamp <= end)
-}
-
-fn float_tail_start(count: usize) -> usize {
-    count.saturating_sub(1) / MAX_FLOAT_CHUNK_SAMPLES * MAX_FLOAT_CHUNK_SAMPLES
-}
-
-fn float_tail_range(samples: &SampleStore) -> Option<(i64, i64)> {
-    Some((
-        samples.get(float_tail_start(samples.len()))?.0,
-        samples.last()?.0,
-    ))
-}
-
-fn cached_chunks(series: &Series) -> &Arc<Vec<EncodedChunk>> {
-    series.chunks.get_or_init(|| {
-        let reusable = series
-            .reusable_chunks
-            .lock()
-            .expect("query cache lock poisoned")
-            .take();
-        Arc::new(reusable.map_or_else(
-            || encode_chunks(series),
-            |previous| encode_chunks_reusing(series, previous),
-        ))
-    })
-}
-
-fn encode_chunks(series: &Series) -> Vec<EncodedChunk> {
-    let mut chunks = Vec::with_capacity(series.histograms.len() / 120 + 2);
-    chunks.extend(encode_float_chunks(&series.samples, 0));
-    chunks.extend(encode_histogram_chunks(&series.histograms));
-    chunks.sort_by_key(|chunk| chunk.start_timestamp_ms);
-    chunks
-}
-
-fn encode_chunks_reusing(series: &Series, previous: ReusableChunks) -> Vec<EncodedChunk> {
-    if previous.histogram_count > series.histograms.len()
-        || previous.float_count > series.samples.len()
+// Follows the Prometheus head appender: in-order samples extend the open chunk, a repeated
+// timestamp keeps the first value, and older samples go to a separate out-of-order chunk.
+fn append_float(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    timestamp: i64,
+    value: f64,
+) -> Result<()> {
+    if series
+        .histogram_head
+        .binary_search_by_key(&timestamp, |histogram| histogram.timestamp)
+        .is_ok()
     {
-        return encode_chunks(series);
+        return Ok(());
     }
-    let mut chunks = Arc::unwrap_or_clone(previous.chunks);
-    if series.samples.len() > previous.float_count {
-        if let Some(float_range) = previous.float_range {
-            chunks
-                .retain(|chunk| (chunk.start_timestamp_ms, chunk.end_timestamp_ms) != float_range);
+    let last = series
+        .float_head
+        .as_ref()
+        .and_then(|head| head.appender.last_timestamp());
+    if last.is_some_and(|last| timestamp <= last) {
+        if last == Some(timestamp) || has_float_at(series, disk, timestamp) {
+            return Ok(());
         }
-        chunks.extend(encode_float_chunks(
-            &series.samples,
-            float_tail_start(previous.float_count),
-        ));
+        if let Err(index) = series
+            .out_of_order
+            .binary_search_by_key(&timestamp, |(timestamp, _)| *timestamp)
+        {
+            series.out_of_order.insert(index, (timestamp, value));
+        }
+        if series.out_of_order.len() >= OUT_OF_ORDER_CAPACITY {
+            flush_out_of_order(series, disk)?;
+        }
+        return Ok(());
     }
-    let old_tail_start = histogram_tail_start(&series.histograms[..previous.histogram_count]);
-    if let Some(start) = old_tail_start {
-        let end = series.histograms[previous.histogram_count - 1].timestamp;
-        chunks.retain(|chunk| (chunk.start_timestamp_ms, chunk.end_timestamp_ms) != (start, end));
+    if let Some(head) = &mut series.float_head {
+        let samples = head.appender.len();
+        if samples == SAMPLES_PER_CHUNK / 4 {
+            head.next_at = compute_chunk_end_time(
+                head.min_time,
+                head.appender.last_timestamp().expect("head has samples"),
+                head.next_at,
+                4.0,
+            );
+        }
+        if timestamp >= head.next_at || samples >= SAMPLES_PER_CHUNK * 2 {
+            cut_float_head(series, disk)?;
+        }
     }
-    let start_index = old_tail_start.map_or(previous.histogram_count, |start| {
-        series
-            .histograms
-            .partition_point(|histogram| histogram.timestamp < start)
+    let head = series.float_head.get_or_insert_with(|| FloatHead {
+        appender: xor::Appender::default(),
+        min_time: timestamp,
+        next_at: range_end(timestamp),
     });
-    chunks.extend(encode_histogram_chunks(&series.histograms[start_index..]));
+    head.appender.append(timestamp, value);
+    Ok(())
+}
+
+// Only used for out-of-order samples, so decoding the overlapping chunks is acceptable.
+fn has_float_at(series: &Series, disk: &ChunkDiskMapper, timestamp: i64) -> bool {
+    let contains = |data: &[u8]| {
+        xor::decode(data)
+            .binary_search_by_key(&timestamp, |(time, _)| *time)
+            .is_ok()
+    };
+    series
+        .float_head
+        .as_ref()
+        .is_some_and(|head| head.min_time <= timestamp && contains(head.appender.bytes()))
+        || series.chunks.iter().any(|chunk| {
+            chunk.encoding == XOR_ENCODING
+                && chunk.min_time <= timestamp
+                && timestamp <= chunk.max_time
+                && contains(disk.read(chunk.reference, chunk.len))
+        })
+}
+
+fn append_histogram(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    histogram: cortexpb::Histogram,
+) -> Result<()> {
+    if series
+        .float_head
+        .as_ref()
+        .and_then(|head| head.appender.last_timestamp())
+        == Some(histogram.timestamp)
+    {
+        return Ok(());
+    }
+    series.last_bucket_count = histogram_bucket_count(&histogram) as u32;
+    if let Some(last) = series.histogram_head.last() {
+        if histogram.timestamp <= last.timestamp {
+            if histogram.timestamp != last.timestamp
+                && series
+                    .histogram_head
+                    .binary_search_by_key(&histogram.timestamp, |item| item.timestamp)
+                    .is_err()
+            {
+                write_chunk(
+                    series,
+                    disk,
+                    histogram::encode(&histogram),
+                    histogram.timestamp,
+                    histogram.timestamp,
+                )?;
+            }
+            return Ok(());
+        }
+        if series.histogram_head.len() >= SAMPLES_PER_CHUNK
+            || histogram.timestamp >= series.histogram_next_at
+            || !histogram::compatible(last, &histogram)
+        {
+            cut_histogram_head(series, disk)?;
+        }
+    }
+    if series.histogram_head.is_empty() {
+        series.histogram_next_at = range_end(histogram.timestamp);
+    }
+    series.histogram_head.push(histogram);
+    Ok(())
+}
+
+fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
+    let Some(head) = series.float_head.take() else {
+        return Ok(());
+    };
+    let max_time = head.appender.last_timestamp().expect("head has samples");
+    let data = head.appender.into_bytes();
+    write_chunk(
+        series,
+        disk,
+        histogram::EncodedHistogram {
+            encoding: i32::from(XOR_ENCODING),
+            data,
+        },
+        head.min_time,
+        max_time,
+    )
+}
+
+fn cut_histogram_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
+    if series.histogram_head.is_empty() {
+        return Ok(());
+    }
+    let head = std::mem::take(&mut series.histogram_head);
+    write_chunk(
+        series,
+        disk,
+        histogram::encode_sequence(&head),
+        head[0].timestamp,
+        head[head.len() - 1].timestamp,
+    )
+}
+
+fn flush_out_of_order(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
+    if series.out_of_order.is_empty() {
+        return Ok(());
+    }
+    let samples = std::mem::take(&mut series.out_of_order);
+    write_chunk(
+        series,
+        disk,
+        histogram::EncodedHistogram {
+            encoding: i32::from(XOR_ENCODING),
+            data: xor::encode(&samples),
+        },
+        samples[0].0,
+        samples[samples.len() - 1].0,
+    )
+}
+
+fn write_chunk(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    encoded: histogram::EncodedHistogram,
+    min_time: i64,
+    max_time: i64,
+) -> Result<()> {
+    let reference = disk.write(&encoded.data, max_time)?;
+    series.chunks.push(ChunkMeta {
+        reference,
+        min_time,
+        max_time,
+        len: u32::try_from(encoded.data.len()).context("chunk exceeds u32")?,
+        encoding: u8::try_from(encoded.encoding).context("chunk encoding exceeds u8")?,
+    });
+    Ok(())
+}
+
+fn range_end(timestamp: i64) -> i64 {
+    (timestamp.div_euclid(CHUNK_RANGE_MS) + 1) * CHUNK_RANGE_MS
+}
+
+// Port of Prometheus computeChunkEndTime: spread the remaining range evenly over chunks of the
+// observed sample rate so chunk boundaries align with block ranges.
+fn compute_chunk_end_time(start: i64, current: i64, max: i64, ratio_to_full: f64) -> i64 {
+    let n = (max - start) as f64 / ((current - start + 1) as f64 * ratio_to_full);
+    if n <= 1.0 {
+        return max;
+    }
+    (start as f64 + (max - start) as f64 / n.floor()) as i64
+}
+
+fn series_bounds(series: &Series) -> impl Iterator<Item = (i64, i64)> + '_ {
+    let float_head = series.float_head.as_ref().map(|head| {
+        (
+            head.min_time,
+            head.appender.last_timestamp().expect("head has samples"),
+        )
+    });
+    let histogram_head = series
+        .histogram_head
+        .first()
+        .zip(series.histogram_head.last())
+        .map(|(first, last)| (first.timestamp, last.timestamp));
+    let out_of_order = series
+        .out_of_order
+        .first()
+        .zip(series.out_of_order.last())
+        .map(|(first, last)| (first.0, last.0));
+    series
+        .chunks
+        .iter()
+        .map(|chunk| (chunk.min_time, chunk.max_time))
+        .chain(float_head)
+        .chain(histogram_head)
+        .chain(out_of_order)
+}
+
+fn matches_time_range(series: &Series, start: i64, end: i64) -> bool {
+    series_bounds(series).any(|(min, max)| min <= end && max >= start)
+}
+
+fn query_chunks(
+    series: &Series,
+    disk: &ChunkDiskMapper,
+    start: i64,
+    end: i64,
+) -> Vec<EncodedChunk> {
+    let overlaps = |min: i64, max: i64| min <= end && max >= start;
+    let mut chunks = Vec::new();
+    for chunk in &series.chunks {
+        if overlaps(chunk.min_time, chunk.max_time) {
+            chunks.push(wire_chunk(
+                chunk.min_time,
+                chunk.max_time,
+                i32::from(chunk.encoding),
+                disk.read(chunk.reference, chunk.len),
+            ));
+        }
+    }
+    if let Some(head) = &series.float_head {
+        let max = head.appender.last_timestamp().expect("head has samples");
+        if overlaps(head.min_time, max) {
+            chunks.push(wire_chunk(
+                head.min_time,
+                max,
+                i32::from(XOR_ENCODING),
+                head.appender.bytes(),
+            ));
+        }
+    }
+    if let (Some(first), Some(last)) = (series.histogram_head.first(), series.histogram_head.last())
+    {
+        if overlaps(first.timestamp, last.timestamp) {
+            let encoded = histogram::encode_sequence(&series.histogram_head);
+            chunks.push(wire_chunk(
+                first.timestamp,
+                last.timestamp,
+                encoded.encoding,
+                &encoded.data,
+            ));
+        }
+    }
+    if let (Some(first), Some(last)) = (series.out_of_order.first(), series.out_of_order.last()) {
+        if overlaps(first.0, last.0) {
+            chunks.push(wire_chunk(
+                first.0,
+                last.0,
+                i32::from(XOR_ENCODING),
+                &xor::encode(&series.out_of_order),
+            ));
+        }
+    }
     chunks.sort_by_key(|chunk| chunk.start_timestamp_ms);
     chunks
 }
 
-const MAX_FLOAT_CHUNK_SAMPLES: usize = 120;
-
-fn encode_float_chunks(samples: &SampleStore, start_index: usize) -> Vec<EncodedChunk> {
-    let mut chunks =
-        Vec::with_capacity((samples.len() - start_index) / MAX_FLOAT_CHUNK_SAMPLES + 1);
-    for start_index in (start_index..samples.len()).step_by(MAX_FLOAT_CHUNK_SAMPLES) {
-        let count = (samples.len() - start_index).min(MAX_FLOAT_CHUNK_SAMPLES);
-        let start = samples.get(start_index).expect("float chunk start").0;
-        let end = samples
-            .get(start_index + count - 1)
-            .expect("float chunk end")
-            .0;
-        let chunk = cortex::Chunk {
-            start_timestamp_ms: start,
-            end_timestamp_ms: end,
-            encoding: 4,
-            data: xor::encode_iter(count, samples.iter_from(start_index).take(count)).into(),
-        };
-        chunks.push(EncodedChunk {
-            start_timestamp_ms: start,
-            end_timestamp_ms: end,
-            wire: chunk.encode_to_vec().into(),
-        });
-    }
-    chunks
-}
-
-const MAX_HISTOGRAM_CHUNK_SAMPLES: usize = 120;
-
-fn histogram_tail_start(histograms: &[cortexpb::Histogram]) -> Option<i64> {
-    let mut start = 0;
-    histograms.first()?;
-    for index in 1..histograms.len() {
-        if index - start == MAX_HISTOGRAM_CHUNK_SAMPLES
-            || !histogram::compatible(&histograms[index - 1], &histograms[index])
-        {
-            start = index;
-        }
-    }
-    Some(histograms[start].timestamp)
-}
-
-fn encode_histogram_chunks(histograms: &[cortexpb::Histogram]) -> Vec<EncodedChunk> {
-    let mut chunks = Vec::with_capacity(histograms.len() / MAX_HISTOGRAM_CHUNK_SAMPLES + 1);
-    let mut start = 0;
-    while start < histograms.len() {
-        let mut end = start + 1;
-        while end < histograms.len()
-            && end - start < MAX_HISTOGRAM_CHUNK_SAMPLES
-            && histogram::compatible(&histograms[end - 1], &histograms[end])
-        {
-            end += 1;
-        }
-        chunks.push(encode_histogram_chunk(&histograms[start..end]));
-        start = end;
-    }
-    chunks
-}
-
-fn encode_histogram_chunk(items: &[cortexpb::Histogram]) -> EncodedChunk {
-    let encoded = histogram::encode_sequence(items);
-    let chunk = cortex::Chunk {
-        start_timestamp_ms: items[0].timestamp,
-        end_timestamp_ms: items[items.len() - 1].timestamp,
-        encoding: encoded.encoding,
-        data: encoded.data.into(),
-    };
+fn wire_chunk(min_time: i64, max_time: i64, encoding: i32, data: &[u8]) -> EncodedChunk {
     EncodedChunk {
-        start_timestamp_ms: items[0].timestamp,
-        end_timestamp_ms: items[items.len() - 1].timestamp,
-        wire: chunk.encode_to_vec().into(),
+        start_timestamp_ms: min_time,
+        end_timestamp_ms: max_time,
+        wire: cortex::Chunk {
+            start_timestamp_ms: min_time,
+            end_timestamp_ms: max_time,
+            encoding,
+            data: Bytes::copy_from_slice(data),
+        }
+        .encode_to_vec()
+        .into(),
     }
 }
 
-fn prune_tenant(tenant: &mut Tenant, cutoff: i64) {
-    tenant.series.retain(|_, series| {
-        let samples_before = series.samples.len();
-        let histograms_before = series.histograms.len();
-        series.samples.retain_since(cutoff);
-        series
-            .histograms
-            .retain(|histogram| histogram.timestamp >= cutoff);
-        series
-            .exemplars
-            .retain(|exemplar| exemplar.timestamp_ms >= cutoff);
-        if series.samples.len() != samples_before || series.histograms.len() != histograms_before {
-            series.chunks.take();
-            series
-                .reusable_chunks
-                .get_mut()
-                .expect("query cache lock poisoned")
-                .take();
-        }
-        !series.samples.is_empty() || !series.histograms.is_empty() || !series.exemplars.is_empty()
-    });
+// Like head truncation, retention drops whole chunks, so a chunk that straddles the cutoff stays.
+fn prune_series(series: &mut Series, cutoff: i64) -> bool {
+    series.chunks.retain(|chunk| chunk.max_time >= cutoff);
+    if series
+        .float_head
+        .as_ref()
+        .is_some_and(|head| head.appender.last_timestamp().expect("head has samples") < cutoff)
+    {
+        series.float_head = None;
+    }
+    if series
+        .histogram_head
+        .last()
+        .is_some_and(|last| last.timestamp < cutoff)
+    {
+        series.histogram_head.clear();
+    }
+    series
+        .out_of_order
+        .retain(|(timestamp, _)| *timestamp >= cutoff);
+    series
+        .exemplars
+        .retain(|exemplar| exemplar.timestamp_ms >= cutoff);
+    !series.chunks.is_empty()
+        || series.float_head.is_some()
+        || !series.histogram_head.is_empty()
+        || !series.out_of_order.is_empty()
+        || !series.exemplars.is_empty()
 }
 
 fn histogram_bucket_count(histogram: &cortexpb::Histogram) -> u64 {
@@ -947,56 +904,6 @@ fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as i64)
-}
-
-fn image_len(writer: &mut impl Write, len: usize) -> Result<()> {
-    writer.write_all(
-        &u32::try_from(len)
-            .context("recovery image field exceeds u32")?
-            .to_le_bytes(),
-    )?;
-    Ok(())
-}
-
-fn image_bytes(writer: &mut impl Write, bytes: &[u8]) -> Result<()> {
-    image_len(writer, bytes.len())?;
-    writer.write_all(bytes)?;
-    Ok(())
-}
-
-fn image_u32(reader: &mut impl Read) -> Result<u32> {
-    let mut bytes = [0; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(u32::from_le_bytes(bytes))
-}
-
-fn image_u64(reader: &mut impl Read) -> Result<u64> {
-    let mut bytes = [0; 8];
-    reader.read_exact(&mut bytes)?;
-    Ok(u64::from_le_bytes(bytes))
-}
-
-fn image_i64(reader: &mut impl Read) -> Result<i64> {
-    Ok(image_u64(reader)? as i64)
-}
-
-fn image_count(reader: &mut impl Read, maximum: u32) -> Result<usize> {
-    let count = image_u32(reader)?;
-    if count > maximum {
-        bail!("recovery image collection exceeds {maximum} entries");
-    }
-    Ok(count as usize)
-}
-
-fn image_bytes_read(reader: &mut impl Read) -> Result<Vec<u8>> {
-    let len = image_count(reader, 64 * 1024 * 1024)?;
-    let mut bytes = vec![0; len];
-    reader.read_exact(&mut bytes)?;
-    Ok(bytes)
-}
-
-fn image_string(reader: &mut impl Read) -> Result<String> {
-    Ok(String::from_utf8(image_bytes_read(reader)?)?)
 }
 
 enum CompiledMatcher {
@@ -1195,6 +1102,8 @@ mod memory_benchmark;
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
@@ -1244,10 +1153,8 @@ mod tests {
         store.ingest("tenant", request(1, 2.0)).unwrap();
         store.ingest("tenant", request(2, 3.0)).unwrap();
 
-        let tenants = store.tenants.read().unwrap();
-        let series = tenants["tenant"].series.values().next().unwrap();
         assert_eq!(
-            series.samples.iter().collect::<Vec<_>>(),
+            float_samples(&store, i64::MIN, i64::MAX),
             vec![(1, 1.0), (2, 3.0)]
         );
     }
@@ -1284,105 +1191,8 @@ mod tests {
         assert_eq!(store.num_series("tenant"), 1);
     }
 
-    #[test]
-    fn warms_query_chunks_and_labels_after_ingest() {
-        let store = Store::default();
-        let request = |timestamp_ms, value| DecodedRequest {
-            source: 0,
-            series: vec![DecodedSeries {
-                labels: vec![("__name__".into(), "metric".into())],
-                samples: vec![cortexpb::Sample {
-                    timestamp_ms,
-                    value,
-                }],
-                histograms: Vec::new(),
-                exemplars: Vec::new(),
-                created_timestamp: 0,
-            }],
-            metadata: Vec::new(),
-        };
-        store.ingest("tenant", request(1, 1.0)).unwrap();
-        {
-            let tenants = store.tenants.read().unwrap();
-            let series = tenants["tenant"].series.values().next().unwrap();
-            assert!(series.chunks.get().is_none());
-            assert!(series.encoded_labels.get().is_none());
-        }
-        assert_eq!(store.warm_query_cache_until(&AtomicBool::new(true)), 0);
-        assert_eq!(store.warm_query_cache(), 1);
-        {
-            let tenants = store.tenants.read().unwrap();
-            let series = tenants["tenant"].series.values().next().unwrap();
-            assert_eq!(series.chunks.get().unwrap().len(), 1);
-            assert!(series.encoded_labels.get().is_some());
-        }
-        store.ingest("tenant", request(2, 2.0)).unwrap();
-        {
-            let tenants = store.tenants.read().unwrap();
-            let series = tenants["tenant"].series.values().next().unwrap();
-            assert!(series.chunks.get().is_none());
-        }
-        assert_eq!(store.warm_query_cache(), 1);
-    }
-
-    #[test]
-    fn selects_float_chunk_spanning_histogram_chunks() {
-        let store = Store::default();
-        let stale = f64::from_bits(0x7ff0_0000_0000_0002);
-        let request = DecodedRequest {
-            source: 0,
-            series: vec![DecodedSeries {
-                labels: vec![("__name__".into(), "metric".into())],
-                samples: [1005, 3995]
-                    .into_iter()
-                    .map(|timestamp_ms| cortexpb::Sample {
-                        timestamp_ms,
-                        value: stale,
-                    })
-                    .collect(),
-                histograms: (1000..4000)
-                    .step_by(10)
-                    .map(|timestamp| cortexpb::Histogram {
-                        timestamp,
-                        count: Some(cortexpb::histogram::Count::CountInt(1)),
-                        positive_spans: vec![cortexpb::BucketSpan {
-                            offset: 0,
-                            length: 1,
-                        }],
-                        positive_deltas: vec![1],
-                        ..Default::default()
-                    })
-                    .collect(),
-                exemplars: Vec::new(),
-                created_timestamp: 0,
-            }],
-            metadata: Vec::new(),
-        };
-        store.ingest("tenant", request).unwrap();
-        for (start, end) in [(3500, 3999), (2500, 3999), (1100, 1200), (3995, 3995)] {
-            let selected = store.select_chunks("tenant", start, end, &[]).unwrap();
-            let view = &selected[0];
-            let chunks = &view.chunks[view.chunk_start..view.chunk_end];
-            for chunk in view.chunks.iter() {
-                let overlaps = chunk.start_timestamp_ms <= end && chunk.end_timestamp_ms >= start;
-                assert!(
-                    !overlaps
-                        || chunks.iter().any(|selected| {
-                            selected.start_timestamp_ms == chunk.start_timestamp_ms
-                                && selected.end_timestamp_ms == chunk.end_timestamp_ms
-                        }),
-                    "window {start}..{end} skipped chunk {}..{}",
-                    chunk.start_timestamp_ms,
-                    chunk.end_timestamp_ms
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn reuses_encoded_histograms_without_changing_query_chunks() {
-        let store = Store::default();
-        let request = |samples: Vec<(i64, f64)>, timestamps: Vec<i64>| DecodedRequest {
+    fn float_request(samples: impl IntoIterator<Item = (i64, f64)>) -> DecodedRequest {
+        DecodedRequest {
             source: 0,
             series: vec![DecodedSeries {
                 labels: vec![("__name__".into(), "metric".into())],
@@ -1393,106 +1203,238 @@ mod tests {
                         value,
                     })
                     .collect(),
-                histograms: timestamps
-                    .into_iter()
-                    .map(|timestamp| cortexpb::Histogram {
-                        timestamp,
-                        count: Some(cortexpb::histogram::Count::CountInt(50)),
-                        positive_spans: vec![cortexpb::BucketSpan {
-                            offset: 0,
-                            length: 50,
-                        }],
-                        positive_deltas: vec![1; 50],
-                        ..Default::default()
-                    })
-                    .collect(),
+                histograms: Vec::new(),
+                exemplars: Vec::new(),
+                created_timestamp: 0,
+            }],
+            metadata: Vec::new(),
+        }
+    }
+
+    fn histogram_at(timestamp: i64, buckets: u32) -> cortexpb::Histogram {
+        cortexpb::Histogram {
+            timestamp,
+            count: Some(cortexpb::histogram::Count::CountInt(u64::from(buckets))),
+            positive_spans: vec![cortexpb::BucketSpan {
+                offset: 0,
+                length: buckets,
+            }],
+            positive_deltas: vec![1; buckets as usize],
+            ..Default::default()
+        }
+    }
+
+    fn query(store: &Store, start: i64, end: i64) -> Vec<cortex::Chunk> {
+        store
+            .select_chunks("tenant", start, end, &[])
+            .unwrap()
+            .iter()
+            .flat_map(|view| view.chunks[view.chunk_start..view.chunk_end].to_vec())
+            .map(|chunk| cortex::Chunk::decode(chunk.wire.as_ref()).unwrap())
+            .collect()
+    }
+
+    fn float_samples(store: &Store, start: i64, end: i64) -> Vec<(i64, f64)> {
+        let mut samples = query(store, start, end)
+            .iter()
+            .filter(|chunk| chunk.encoding == i32::from(XOR_ENCODING))
+            .flat_map(|chunk| xor::decode(&chunk.data))
+            .collect::<Vec<_>>();
+        samples.sort_by_key(|(timestamp, _)| *timestamp);
+        samples
+    }
+
+    fn with_series<T>(store: &Store, check: impl FnOnce(&Series) -> T) -> T {
+        let state = store.state.read().unwrap();
+        check(state.tenants["tenant"].series.values().next().unwrap())
+    }
+
+    #[test]
+    fn moves_completed_float_chunks_to_disk_at_range_boundaries() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-store-chunks-{}", std::process::id()));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let samples = (0..2_000)
+            .map(|index| (CHUNK_RANGE_MS - 3_600_000 + index * 15_000, index as f64))
+            .collect::<Vec<_>>();
+        for batch in samples.chunks(100) {
+            store
+                .ingest("tenant", float_request(batch.to_vec()))
+                .unwrap();
+        }
+        with_series(&store, |series| {
+            assert!(series.chunks.len() >= 8, "chunks={}", series.chunks.len());
+            let head = series.float_head.as_ref().unwrap();
+            assert!(head.appender.len() <= SAMPLES_PER_CHUNK * 2);
+            for chunk in &series.chunks {
+                assert_eq!(
+                    range_end(chunk.min_time),
+                    range_end(chunk.max_time),
+                    "chunk {}..{} crosses a range boundary",
+                    chunk.min_time,
+                    chunk.max_time
+                );
+            }
+        });
+        assert!(fs::read_dir(&directory).unwrap().count() > 0);
+        assert_eq!(float_samples(&store, i64::MIN, i64::MAX), samples);
+        let recent = float_samples(&store, samples[1_990].0, i64::MAX)
+            .into_iter()
+            .filter(|(timestamp, _)| *timestamp >= samples[1_990].0)
+            .collect::<Vec<_>>();
+        assert_eq!(recent, samples[1_990..]);
+        assert!(query(&store, samples[1_990].0, i64::MAX).len() <= 2);
+        drop(store);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn returns_out_of_order_samples_with_in_order_ones() {
+        let store = Store::default();
+        store
+            .ingest(
+                "tenant",
+                float_request((10..20).map(|t| (t * 1000, t as f64))),
+            )
+            .unwrap();
+        store
+            .ingest(
+                "tenant",
+                float_request([(5_000, 5.0), (3_000, 3.0), (5_000, 50.0)]),
+            )
+            .unwrap();
+        store
+            .ingest("tenant", float_request([(19_000, 190.0), (21_000, 21.0)]))
+            .unwrap();
+        let mut expected = vec![(3_000, 3.0), (5_000, 5.0)];
+        expected.extend((10..20).map(|t| (t * 1000, t as f64)));
+        expected.push((21_000, 21.0));
+        assert_eq!(float_samples(&store, i64::MIN, i64::MAX), expected);
+
+        store
+            .ingest(
+                "tenant",
+                float_request((0..OUT_OF_ORDER_CAPACITY as i64).map(|t| (100 + t, 0.0))),
+            )
+            .unwrap();
+        with_series(&store, |series| {
+            assert_eq!(series.chunks.len(), 1);
+            assert_eq!(series.out_of_order.len(), 2);
+        });
+        assert_eq!(
+            float_samples(&store, i64::MIN, i64::MAX).len(),
+            expected.len() + OUT_OF_ORDER_CAPACITY
+        );
+    }
+
+    #[test]
+    fn cuts_histogram_chunks_on_size_and_layout_changes() {
+        let store = Store::default();
+        let request = |histograms: Vec<cortexpb::Histogram>| DecodedRequest {
+            source: 0,
+            series: vec![DecodedSeries {
+                labels: vec![("__name__".into(), "metric".into())],
+                samples: Vec::new(),
+                histograms,
                 exemplars: Vec::new(),
                 created_timestamp: 0,
             }],
             metadata: Vec::new(),
         };
-        let check = |store: &Store| {
-            let selected = store
-                .select_chunks("tenant", i64::MIN, i64::MAX, &[])
-                .unwrap();
-            assert_eq!(selected.len(), 1);
-            let tenants = store.tenants.read().unwrap();
-            let series = tenants["tenant"].series.values().next().unwrap();
-            let expected = encode_chunks(series);
-            assert_eq!(selected[0].chunks.len(), expected.len());
-            for (actual, expected) in selected[0].chunks.iter().zip(expected) {
-                assert_eq!(actual.start_timestamp_ms, expected.start_timestamp_ms);
-                assert_eq!(actual.end_timestamp_ms, expected.end_timestamp_ms);
-                assert_eq!(actual.wire, expected.wire);
-            }
-            Arc::clone(&selected[0].chunks)
-        };
-
-        store
-            .ingest("tenant", request(vec![(200, 2.0)], vec![100, 300]))
-            .unwrap();
-        check(&store);
-        store
-            .ingest("tenant", request(vec![(500, 5.0)], vec![400]))
-            .unwrap();
-        check(&store);
-        store.ingest("tenant", request(vec![], vec![250])).unwrap();
-        let previous = check(&store);
-        store.ingest("tenant", request(vec![], vec![400])).unwrap();
-        assert!(Arc::ptr_eq(&previous, &check(&store)));
-        store.ingest("tenant", request(vec![], vec![600])).unwrap();
-        check(&store);
-        {
-            let mut tenants = store.tenants.write().unwrap();
-            prune_tenant(tenants.get_mut("tenant").unwrap(), 300);
-        }
-        check(&store);
-        store
-            .ingest("tenant", request(vec![], (700..950).collect()))
-            .unwrap();
-        check(&store);
-        store.ingest("tenant", request(vec![], vec![950])).unwrap();
-        check(&store);
         store
             .ingest(
                 "tenant",
-                request(
-                    (1000..1250).map(|time| (time, time as f64)).collect(),
-                    vec![],
-                ),
+                request((0..300).map(|t| histogram_at(1_000 + t * 10, 5)).collect()),
             )
             .unwrap();
-        check(&store);
         store
-            .ingest("tenant", request(vec![(1250, 1250.0)], vec![]))
+            .ingest(
+                "tenant",
+                request(vec![histogram_at(10_000, 7), histogram_at(500, 5)]),
+            )
             .unwrap();
-        check(&store);
-        store
-            .ingest("tenant", request(vec![(975, 975.0)], vec![]))
-            .unwrap();
-        check(&store);
+        with_series(&store, |series| {
+            let spans = series
+                .chunks
+                .iter()
+                .map(|chunk| (chunk.min_time, chunk.max_time))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                spans,
+                vec![(1_000, 2_190), (2_200, 3_390), (3_400, 3_990), (500, 500)]
+            );
+            assert_eq!(series.histogram_head.len(), 1);
+            assert_eq!(series.last_bucket_count, 5);
+        });
+        let chunks = query(&store, 3_500, 10_000);
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|chunk| (chunk.start_timestamp_ms, chunk.end_timestamp_ms))
+                .collect::<Vec<_>>(),
+            vec![(3_400, 3_990), (10_000, 10_000)]
+        );
     }
 
     #[test]
-    fn prunes_expired_series_without_new_ingestion() {
-        let store = Store::new(20 * 60 * 1000, Some(1_000));
-        let mut tenant = Tenant::default();
-        let mut samples = SampleStore::default();
-        samples.insert(0, now_ms() - 2_000, 1.0);
-        tenant.series.insert(
-            series_key(vec![(Arc::from("__name__"), "expired".into())]),
-            Series {
-                samples,
-                ..Default::default()
-            },
-        );
+    fn selects_float_chunk_spanning_histogram_chunks() {
+        let store = Store::default();
+        let stale = f64::from_bits(0x7ff0_0000_0000_0002);
         store
-            .tenants
-            .write()
-            .unwrap()
-            .insert("tenant".into(), tenant);
+            .ingest(
+                "tenant",
+                DecodedRequest {
+                    source: 0,
+                    series: vec![DecodedSeries {
+                        labels: vec![("__name__".into(), "metric".into())],
+                        samples: [1005, 3995]
+                            .into_iter()
+                            .map(|timestamp_ms| cortexpb::Sample {
+                                timestamp_ms,
+                                value: stale,
+                            })
+                            .collect(),
+                        histograms: (1000..4000)
+                            .step_by(10)
+                            .map(|t| histogram_at(t, 1))
+                            .collect(),
+                        exemplars: Vec::new(),
+                        created_timestamp: 0,
+                    }],
+                    metadata: Vec::new(),
+                },
+            )
+            .unwrap();
+        for (start, end) in [(3500, 3999), (2500, 3999), (1100, 1200), (3995, 3995)] {
+            let samples = float_samples(&store, start, end);
+            assert!(
+                samples.iter().any(|(timestamp, _)| *timestamp == 3995),
+                "window {start}..{end} missed the stale marker"
+            );
+        }
+    }
 
-        store.prune_expired();
+    #[test]
+    fn prunes_whole_expired_chunks_and_series() {
+        let store = Store::default();
+        let now = now_ms();
+        store
+            .ingest(
+                "tenant",
+                float_request(
+                    (0..300).map(|index| (now - 3 * CHUNK_RANGE_MS + index * 15_000, 1.0)),
+                ),
+            )
+            .unwrap();
+        store.ingest("tenant", float_request([(now, 2.0)])).unwrap();
+        with_series(&store, |series| assert!(!series.chunks.is_empty()));
+        store.prune_before(now - 1_000).unwrap();
+        with_series(&store, |series| {
+            assert!(series.chunks.is_empty());
+            assert!(series.float_head.is_some());
+        });
+        assert_eq!(float_samples(&store, i64::MIN, i64::MAX), vec![(now, 2.0)]);
+        store.prune_before(now + 1).unwrap();
         assert_eq!(store.num_series("tenant"), 0);
     }
 }
