@@ -229,6 +229,7 @@ func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]
 			// Go re-codes appended histograms into a widened bucket layout with explicit zero buckets; compacting
 			// both sides compares bucket counts rather than layout.
 			h.Compact(0)
+			normalizeEmpty(&h.PositiveSpans, &h.NegativeSpans, &h.PositiveBuckets, &h.NegativeBuckets)
 			kind, value = "histogram", fmt.Sprintf("h:%#v", *h)
 			// Go writes a histogram stale marker for histogram series; Rust writes a float one. PromQL treats both as stale.
 			if promvalue.IsStaleNaN(h.Sum) {
@@ -240,6 +241,7 @@ func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]
 			h = h.Copy()
 			h.CounterResetHint = histogram.UnknownCounterReset
 			h.Compact(0)
+			normalizeEmpty(&h.PositiveSpans, &h.NegativeSpans, &h.PositiveBuckets, &h.NegativeBuckets)
 			kind, value = "float_histogram", fmt.Sprintf("fh:%#v", *h)
 			if promvalue.IsStaleNaN(h.Sum) {
 				kind, value = "stale", "stale"
@@ -254,6 +256,20 @@ func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]
 	}
 	check(it.Err())
 	return values
+}
+
+// Compact leaves an empty, non-nil slice where the input had one; nil and empty are the same histogram.
+func normalizeEmpty[B any](positiveSpans, negativeSpans *[]histogram.Span, positiveBuckets, negativeBuckets *[]B) {
+	for _, spans := range []*[]histogram.Span{positiveSpans, negativeSpans} {
+		if len(*spans) == 0 {
+			*spans = nil
+		}
+	}
+	for _, buckets := range []*[]B{positiveBuckets, negativeBuckets} {
+		if len(*buckets) == 0 {
+			*buckets = nil
+		}
+	}
 }
 
 func compare(rust, golang map[string][]string) int {
