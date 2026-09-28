@@ -26,7 +26,9 @@ COPY go.mod go.sum ./
 COPY vendor ./vendor
 COPY pkg ./pkg
 COPY cmd/rust-kafka-ingester/ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+COPY cmd/rust-kafka-ingester/query-load ./cmd/rust-kafka-ingester/query-load
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -o /out/rust-ingester-ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -o /out/query-load ./cmd/rust-kafka-ingester/query-load
 
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS certs
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -35,5 +37,6 @@ FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2
 COPY --from=certs /etc/ssl/certs /etc/ssl/certs
 COPY --from=rust-builder /src/target/x86_64-unknown-linux-gnu/release/mimir-rust-kafka-ingester /usr/local/bin/mimir-rust-kafka-ingester
 COPY --from=go-builder /out/rust-ingester-ring-sidecar /usr/local/bin/rust-ingester-ring-sidecar
+COPY --from=go-builder /out/query-load /usr/local/bin/query-load
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/mimir-rust-kafka-ingester"]
