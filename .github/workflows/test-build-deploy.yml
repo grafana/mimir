@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       # Only the Makefile is needed to run `make print-build-image`, so we use
       # sparse checkout to avoid fetching the entire repository.
@@ -52,7 +52,7 @@ jobs:
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
 
   goversion:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs: prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
@@ -70,7 +70,7 @@ jobs:
       version: ${{ steps.go-version.outputs.version }}
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -117,7 +117,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml
 
   lint-jsonnet:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
     container:
@@ -149,7 +149,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
 
   lint-helm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
     container:
@@ -190,7 +190,7 @@ jobs:
   # unrelated to the Go toolchain. Safe: Go keys cache entries by compiler build ID.
   warmup-go-build-cache-integration-tests:
     needs: [goversion, prepare]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       # Sparse checkout of go.sum only, to compute the cache key without fetching the full repo.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -231,7 +231,7 @@ jobs:
   # entries) and run inside a container.
   warmup-go-build-cache-unit-tests:
     needs: [prepare]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -271,7 +271,7 @@ jobs:
   # CGO_ENABLED=0 (no race) with -tags netgo,stringlabels.
   warmup-go-build-cache-image-and-lint:
     needs: [prepare]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -308,7 +308,7 @@ jobs:
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
@@ -371,7 +371,7 @@ jobs:
 
   notify-streamingpromql-failures:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     # Only runs on PRs labeled for the vendored mimir-prometheus update flow, and only when test failed.
     if: failure() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
     permissions:
@@ -417,7 +417,7 @@ jobs:
     uses: ./.github/workflows/test-docs.yml
 
   build-metaconvert-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -443,7 +443,7 @@ jobs:
           target: "./cmd/metaconvert/.uptodate"
 
   build-mimir-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -469,7 +469,7 @@ jobs:
           target: "./cmd/mimir/.uptodate"
 
   build-query-tee-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -495,7 +495,7 @@ jobs:
           target: "./cmd/query-tee/.uptodate"
 
   build-mimirtool-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -521,7 +521,7 @@ jobs:
           target: "./cmd/mimirtool/.uptodate"
 
   build-copyblocks-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-image-and-lint
@@ -547,7 +547,7 @@ jobs:
           target: "./tools/copyblocks/.uptodate"
 
   build-dist:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     name: build-dist (${{ matrix.os }}, ${{ matrix.arch }})
     needs:
       - prepare
@@ -585,9 +585,9 @@ jobs:
 
   # Build the DEB/RPM packages that get attached to the GitHub release.
   build-packages:
-    # Runs on ubuntu-latest (not inside the build container) because nfpm.sh needs
+    # Runs on ubuntu-x64 (not inside the build container) because nfpm.sh needs
     # Docker to run the jsonnet, envsubst, and nfpm helper containers.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - build-dist
     steps:
@@ -623,7 +623,7 @@ jobs:
   # as we have to specify each required passing job there. This job won't be considered successful unless
   # all the jobs it needs have succeeded.
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - build-metaconvert-image
       - build-mimir-image
@@ -636,7 +636,7 @@ jobs:
       - run: echo "All dependencies succeeded!"
 
   build-race-enabled-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - warmup-go-build-cache-unit-tests
@@ -685,7 +685,7 @@ jobs:
 
   integration:
     needs: [goversion, build-mimirtool-image, build-race-enabled-image, prepare, warmup-go-build-cache-integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -767,7 +767,7 @@ jobs:
       - integration
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: needs.prepare.outputs.is_deploy == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     permissions:
@@ -815,7 +815,7 @@ jobs:
       - build-dist
       - build-packages
     if: startsWith(github.ref, 'refs/tags/mimir-') && github.event_name == 'push' && github.repository == 'grafana/mimir'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     permissions:
       contents: write
     steps:
@@ -871,7 +871,7 @@ jobs:
       - build-race-enabled-image
       - integration
       - deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     if: always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
     permissions:
       id-token: write

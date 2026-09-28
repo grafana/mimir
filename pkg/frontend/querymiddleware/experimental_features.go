@@ -22,20 +22,19 @@ const (
 type experimentalFeatureType string
 
 const (
-	functionType                      = experimentalFeatureType("function")
-	aggregationType                   = experimentalFeatureType("aggregation")
-	extendedRangeSelectorModifierType = experimentalFeatureType("extended range selector modifier")
-	binopFillModifierType             = experimentalFeatureType("binary operation fill modifier")
+	functionType          = experimentalFeatureType("function")
+	aggregationType       = experimentalFeatureType("aggregation")
+	binopFillModifierType = experimentalFeatureType("binary operation fill modifier")
 )
 
-// experimentalFeaturesMiddleware manages the per-tenant access to experimental functions, aggregations and extended range selector modifiers.
+// experimentalFeaturesMiddleware manages the per-tenant access to experimental functions, aggregations and binary operation fill modifiers.
 type experimentalFeaturesMiddleware struct {
 	next   MetricsQueryHandler
 	limits Limits
 	logger log.Logger
 }
 
-// newExperimentalFeaturesMiddleware creates a middleware that blocks queries that contain PromQL experimental functions, aggregates or range selector modifiers
+// newExperimentalFeaturesMiddleware creates a middleware that blocks queries that contain PromQL experimental functions, aggregates or binary operation fill modifiers
 // that are not enabled for the active tenant(s), allowing us to enable specific features only for selected tenants.
 func newExperimentalFeaturesMiddleware(limits Limits, logger log.Logger) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
@@ -64,16 +63,6 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 		}
 	}
 
-	enabledExtendedRangeSelectors := make(map[string][]string, len(tenantIDs))
-	allExtendedRangeSelectorsEnabled := true
-	for _, tenantID := range tenantIDs {
-		enabled := m.limits.EnabledPromQLExtendedRangeSelectors(tenantID)
-		enabledExtendedRangeSelectors[tenantID] = enabled
-		if len(enabled) == 0 || enabled[0] != allExperimentalFeatures {
-			allExtendedRangeSelectorsEnabled = false
-		}
-	}
-
 	enabledBinopFillModifiers := make(map[string][]string, len(tenantIDs))
 	allBinopFillModifiersEnabled := true
 	for _, tenantID := range tenantIDs {
@@ -84,7 +73,7 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 		}
 	}
 
-	if allExperimentalFunctionsEnabled && allExtendedRangeSelectorsEnabled && allBinopFillModifiersEnabled {
+	if allExperimentalFunctionsEnabled && allBinopFillModifiersEnabled {
 		// If all experimental features are enabled for all tenants here, we don't need to check the query
 		// for those features and can skip this middleware.
 		return m.next.Do(ctx, req)
@@ -107,8 +96,6 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 		switch featureType {
 		case functionType, aggregationType:
 			tenantMap = enabledExperimentalFunctions
-		case extendedRangeSelectorModifierType:
-			tenantMap = enabledExtendedRangeSelectors
 		case binopFillModifierType:
 			tenantMap = enabledBinopFillModifiers
 		}
@@ -134,8 +121,8 @@ func createExperimentalFeatureError(featureType experimentalFeatureType, feature
 	return apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 }
 
-// containedExperimentalFeatures returns any PromQL experimental functions, aggregations, range
-// selector modifiers, or binary operation fill modifiers used in the query.
+// containedExperimentalFeatures returns any PromQL experimental functions, aggregations,
+// or binary operation fill modifiers used in the query.
 func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeatureType {
 	expFuncNames := map[string]experimentalFeatureType{}
 	_ = inspect(expr, func(node parser.Node) error {
@@ -147,17 +134,6 @@ func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeat
 		case *parser.AggregateExpr:
 			if n.Op.IsExperimentalAggregator() {
 				expFuncNames[n.Op.String()] = aggregationType
-			}
-		case *parser.MatrixSelector:
-			vs, ok := n.VectorSelector.(*parser.VectorSelector)
-			if ok && vs.Anchored {
-				expFuncNames["anchored"] = extendedRangeSelectorModifierType
-			} else if ok && vs.Smoothed {
-				expFuncNames["smoothed"] = extendedRangeSelectorModifierType
-			}
-		case *parser.VectorSelector:
-			if n.Smoothed {
-				expFuncNames["smoothed"] = extendedRangeSelectorModifierType
 			}
 		case *parser.BinaryExpr:
 			if n.VectorMatching != nil {

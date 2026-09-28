@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -1678,6 +1679,31 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.Equal(t, originalPlan.Parameters, encoded.DecodeParameters())
 		})
 	}
+}
+
+func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
+	// Cache-Control: no-store must be captured into the plan parameters and survive encoding and the wire
+	// round-trip, so the querier's splitting/caching passes can honour it.
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
+	plan, err := planner.NewQueryPlan(ctx, "some_metric", types.NewInstantQueryTimeRange(timestamp.Time(1000)), 5*time.Minute, false, NoopPlanningObserver{})
+	require.NoError(t, err)
+	require.True(t, plan.Parameters.CacheDisabled)
+
+	encoded, _, err := plan.ToEncodedPlan(false, true)
+	require.NoError(t, err)
+	require.True(t, encoded.CacheDisabled)
+
+	// Round-trip through the wire, as remote execution does.
+	marshalled, err := proto.Marshal(encoded)
+	require.NoError(t, err)
+	var decoded planning.EncodedQueryPlan
+	require.NoError(t, decoded.Unmarshal(marshalled))
+	require.True(t, decoded.CacheDisabled)
+	require.True(t, decoded.DecodeParameters().CacheDisabled)
 }
 
 func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {

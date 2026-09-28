@@ -277,26 +277,7 @@ func (m *FunctionOverRangeVectorSplit[T]) getCachedResults(ctx context.Context) 
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(ctx context.Context, start int64, end int64, step int64) (types.RangeVectorOperator, error) {
-	subRange := time.Duration(step) * time.Millisecond
-
-	overrideTimeParams := planning.RangeParams{
-		IsSet: true,
-
-		Range: subRange,
-		// The offset and timestamp are cleared
-		Offset:       0,
-		HasTimestamp: false,
-	}
-
-	var splitTimeRange types.QueryTimeRange
-
-	if start+step == end {
-		// Only a single range, create an instant query.
-		splitTimeRange = types.NewInstantQueryTimeRange(promts.Time(end))
-	} else {
-		// Multiple ranges, create a range query with steps at the end timestamp of each range.
-		splitTimeRange = types.NewRangeQueryTimeRange(promts.Time(start).Add(subRange), promts.Time(end), subRange)
-	}
+	splitTimeRange, overrideTimeParams := queryTimeRangeForSplit(start, end, step)
 
 	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(ctx, m.innerNode, splitTimeRange, overrideTimeParams)
 	if err != nil {

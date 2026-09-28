@@ -111,9 +111,6 @@ type Limits interface {
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 
-	// EnabledPromQLExtendedRangeSelectors returns the names of PromQL experimental extended range selectors modifiers allowed for the tenant. ie smoothed and anchored
-	EnabledPromQLExtendedRangeSelectors(userID string) []string
-
 	// EnabledPromQLBinopFillModifiers returns the names of PromQL binary operation fill modifiers allowed for the tenant (i.e., fill, fill_left, fill_right).
 	EnabledPromQLBinopFillModifiers(userID string) []string
 

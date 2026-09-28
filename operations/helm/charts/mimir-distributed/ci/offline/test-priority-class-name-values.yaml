@@ -1,0 +1,55 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+alertmanager:
+  priorityClassName: alertmanager-priority
+
+compactor:
+  priorityClassName: compactor-priority
+
+continuous_test:
+  enabled: true
+  priorityClassName: continuous-test-priority
+
+distributor:
+  priorityClassName: distributor-priority
+
+ingester:
+  priorityClassName: ingester-priority
+
+overrides_exporter:
+  priorityClassName: overrides-exporter-priority
+
+querier:
+  priorityClassName: querier-priority
+
+query_frontend:
+  priorityClassName: query-frontend-priority
+
+query_scheduler:
+  priorityClassName: query-scheduler-priority
+
+ruler_querier:
+  priorityClassName: ruler-querier-priority
+
+ruler_query_frontend:
+  priorityClassName: ruler-query-frontend-priority
+
+ruler_query_scheduler:
+  priorityClassName: ruler-query-scheduler-priority
+
+ruler:
+  remoteEvaluationDedicatedQueryPath: true
+  priorityClassName: ruler-priority
+
+smoke_test:
+  priorityClassName: smoke-test-priority
+
+store_gateway:
+  priorityClassName: store-gateway-priority
+
+# Reduce scope:
+minio:
+  enabled: false
+rollout_operator:
+  enabled: false

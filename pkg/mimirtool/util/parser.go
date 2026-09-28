@@ -6,9 +6,7 @@ import "github.com/prometheus/prometheus/promql/parser"
 
 func CreatePromQLParser(enableExperimentalFunctions bool) parser.Parser {
 	return parser.NewParser(parser.Options{
-		EnableExperimentalFunctions:  enableExperimentalFunctions,
-		EnableExtendedRangeSelectors: false,
-		EnableBinopFillModifiers:     false,
-		ExperimentalDurationExpr:     true,
+		EnableExperimentalFunctions: enableExperimentalFunctions,
+		EnableBinopFillModifiers:    false,
 	})
 }

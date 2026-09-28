@@ -1525,7 +1525,7 @@ eval instant at 6m avg_over_time(histogram_sum_over_time_4[7m:1m])
 # These tests don't work, see the load section above for reasoning.
 # eval instant at 6m sum_over_time(histogram_sum_over_time_5[7m:1m])
 #     {} {{schema:0 count:28 sum:8.3}}
-# 
+#
 # eval instant at 6m avg_over_time(histogram_sum_over_time_5[7m:1m])
 #     {} {{schema:0 count:4 sum:1.1857142857142857}}
 
@@ -1556,7 +1556,7 @@ eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
 # These tests don't work, see the load section above for reasoning.
 # eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_5[7m:1m])
 #     {} {{schema:0 count:Inf sum:6.3}}
-# 
+#
 # eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_5[7m:1m])
 #     {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}
 
@@ -1726,7 +1726,7 @@ clear
 load 5m
   metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
   metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
-  
+
 # Unary minus turns counters into gauges.
 eval instant at 5m -metric
   expect no_warn
@@ -1945,7 +1945,7 @@ clear
 
 load 1m
     reset{timing="late"} {{schema:0 sum:1 count:0 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}}
-    reset{timing="early"} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}} 
+    reset{timing="early"} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}
 
 # Trigger an annotation about conflicting counter resets by going through the
 # HistogramStatsIterator, which creates counter reset hints on the fly.

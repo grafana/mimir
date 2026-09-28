@@ -790,3 +790,57 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestMatrixSelector_QueriedTimeRangeWithSubRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	originalTimestamp := timestamp.Time(0).Add(5 * time.Hour)
+	originalRange := 7 * time.Minute
+	originalOffset := 3 * time.Minute
+	rng := 11 * time.Minute
+	offset := -2 * time.Minute
+	ts := timestamp.Time(0).Add(6 * time.Hour)
+	lookback := 100 * time.Minute
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	selector := &MatrixSelector{
+		MatrixSelectorDetails: &MatrixSelectorDetails{
+			Range:     originalRange,
+			Offset:    originalOffset,
+			Timestamp: &originalTimestamp,
+		},
+	}
+
+	testCases := map[string]struct {
+		override planning.RangeParams
+		expected planning.QueriedTimeRange
+	}{
+		"range and offset override": {
+			override: planning.RangeParams{
+				IsSet:  true,
+				Range:  rng,
+				Offset: offset,
+			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
+		},
+		"range, offset and timestamp override": {
+			override: planning.RangeParams{
+				IsSet:        true,
+				Range:        rng,
+				Offset:       offset,
+				HasTimestamp: true,
+				Timestamp:    ts,
+			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			timeRange, err := selector.QueriedTimeRangeWithSubRange(queryTimeRange, testCase.override, lookback)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
+		})
+	}
+}

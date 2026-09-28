@@ -299,10 +299,14 @@ std.manifestYamlDoc({
     local buckets = ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
                     ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
-      image: 'quay.io/minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // MinIO's community edition is end-of-life: image publishing stopped in Oct 2025 and the
+      // Docker Hub community repos were deleted in Sep 2026. pgsty/silo is a community fork that
+      // keeps the same S3 API, MINIO_* env vars and /minio/* routes; only the server binary name
+      // changes to `silo`. See development/README.md.
+      image: 'pgsty/silo:RELEASE.2026-09-03T13-18-01Z',
+      // Silo serves each top-level directory under /data as a bucket. The data dir is gitignored and
       // starts empty, so create the buckets the dev cluster needs before starting the server.
-      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec silo server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',

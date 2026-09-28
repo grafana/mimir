@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -31,6 +34,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	frontendsubqueryspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -38,7 +42,9 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -46,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2448,7 +2455,7 @@ func runProtobufResponseBenchmark(b *testing.B, seriesCount int, pointCount int,
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	}
 
-	frontend, _ := setupFrontendWithConcurrencyAndServerOptions(b, nil, scheduler, testFrontendWorkerConcurrency, log.NewNopLogger())
+	frontend, _ := setupFrontendWithConcurrencyAndServerOptions(b, nil, scheduler, testFrontendWorkerConcurrency, log.NewNopLogger(), nil)
 
 	ctx := user.InjectOrgID(context.Background(), "the-user")
 	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
@@ -2556,3 +2563,156 @@ func createDummyNode() planning.Node {
 		NumberLiteralDetails: &core.NumberLiteralDetails{},
 	}
 }
+
+func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	const queryRange = 72 * time.Hour
+	const splitInterval = 24 * time.Hour
+
+	subRequestCounts := map[string]int{}
+
+	for name, testCase := range map[string]struct {
+		expr string
+		// instant selects an instant query. Splitting applies per evaluation root, so an instant
+		// query with a spun-off subquery exercises splitting too.
+		instant        bool
+		splitEnabled   bool
+		spinOffEnabled bool
+	}{
+		"sharding only": {
+			expr: "sum(foo)",
+		},
+		"sharding and splitting": {
+			expr:         "sum(foo)",
+			splitEnabled: true,
+		},
+		"sharding and subquery spin-off": {
+			// The spun-off subquery contains a shardable aggregation, so spin-off and sharding both
+			// contribute legs.
+			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
+			instant:        true,
+			spinOffEnabled: true,
+		},
+		"sharding, subquery spin-off and splitting": {
+			// Splitting applies beneath each spun-off subquery's evaluation root, so an instant query
+			// does exercise splitting. The 48h subquery range spans more than the split interval, so
+			// this adds legs on top of spin-off and sharding.
+			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
+			instant:        true,
+			spinOffEnabled: true,
+			splitEnabled:   true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "the-user")
+			ctx = rootqueryid.ContextWithID(ctx, rootQueryID)
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(256))
+			ctx, cancel := context.WithTimeoutCause(ctx, 60*time.Second, errors.New("test timed out: this may indicate a deadlock somewhere"))
+			defer cancel()
+
+			codec := newTestCodec()
+			logger := log.NewNopLogger()
+			limits := &mockLimitedParallelismLimits{maxQueryParallelism: 4}
+			reg := prometheus.NewPedanticRegistry()
+
+			opts := streamingpromql.NewTestEngineOpts()
+			opts.RangeQuerySplittingAndCaching.SplitEnabled = testCase.splitEnabled
+
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			// Registration order matters, and mirrors pkg/mimir/modules.go. Spin-off runs before
+			// sharding so each spun-off subquery is sharded independently. Split-and-cache is a plan
+			// pass registered before remote execution.
+			if testCase.spinOffEnabled {
+				planner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(mockSubquerySpinOffLimits{}, func(int64) int64 { return 1000 }, frontendsubqueryspinoff.Options{}, reg, logger))
+			}
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, nil, logger))
+
+			if testCase.splitEnabled {
+				planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, splitInterval, false, streamingpromql.NewStaticQueryLimitsProvider(), nil, logger))
+			}
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			var (
+				enqueuedMx  sync.Mutex
+				enqueuedIDs []string
+			)
+
+			frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type != schedulerpb.ENQUEUE {
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("scheduler received unexpected message type: %v", msg.Type)}
+				}
+
+				enqueuedMx.Lock()
+				enqueuedIDs = append(enqueuedIDs, msg.RootQueryID)
+				enqueuedMx.Unlock()
+
+				nodeIdx := requestedNodeIndex(t, msg)
+
+				go func() {
+					err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil))
+					require.NoError(t, err)
+				}()
+
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			cfg := Config{LookBackDelta: 7 * time.Minute}
+			require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
+
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testCase.expr)
+			require.NoError(t, err)
+
+			end := time.Now()
+			var request querymiddleware.MetricsQueryRequest
+			if testCase.instant {
+				request = querymiddleware.NewPrometheusInstantQueryRequest("/api/v1/query", nil, timestamp.FromTime(end), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+			} else {
+				request = querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(end.Add(-queryRange)), timestamp.FromTime(end), time.Hour.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+			}
+
+			// Do is called with ctx directly, so the root query ID reaches the engine the same way it
+			// does in production, where the transport handler puts it in the request context.
+			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+			_, err = handler.Do(ctx, request)
+			require.NoError(t, err)
+
+			if testCase.spinOffEnabled {
+				// Guards against the expression silently ceasing to qualify for spin-off, which would
+				// leave this case testing sharding alone.
+				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
+					# TYPE cortex_frontend_subquery_spinoff_successes_total counter
+					cortex_frontend_subquery_spinoff_successes_total 1
+				`), "cortex_frontend_subquery_spinoff_successes_total"))
+			}
+
+			enqueuedMx.Lock()
+			defer enqueuedMx.Unlock()
+
+			t.Logf("MQE fanned the query out into %d sub-requests", len(enqueuedIDs))
+			require.Greater(t, len(enqueuedIDs), 1, "expected MQE to fan the query out into more than one sub-request, otherwise this test proves nothing")
+			for i, id := range enqueuedIDs {
+				require.Equal(t, rootQueryID, id, "sub-request %d of %d reported a different root query ID", i+1, len(enqueuedIDs))
+			}
+
+			subRequestCounts[name] = len(enqueuedIDs)
+		})
+	}
+
+	// Guards against splitting being configured but inert: if the split pass stopped taking effect,
+	// the paired cases would produce the same legs and still agree on the ID.
+	require.Greater(t, subRequestCounts["sharding and splitting"], subRequestCounts["sharding only"],
+		"splitting should add sub-requests on top of sharding (got %v)", subRequestCounts)
+	require.Greater(t, subRequestCounts["sharding, subquery spin-off and splitting"], subRequestCounts["sharding and subquery spin-off"],
+		"splitting should add sub-requests on top of spin-off and sharding (got %v)", subRequestCounts)
+}
+
+type mockSubquerySpinOffLimits struct{}
+
+func (mockSubquerySpinOffLimits) SubquerySpinOffEnabled(string) bool { return true }

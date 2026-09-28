@@ -28,14 +28,6 @@ func NewPromQLParserOptions() parser.Options {
 		// is controlled by an experimental functions query-frontend middleware that reads per-tenant settings.
 		EnableExperimentalFunctions: true,
 
-		// This enables the anchored and smoothed selector modifiers.
-		EnableExtendedRangeSelectors: true,
-
-		// Duration arithmetic in offset and range specifications. Upstream made this opt-in
-		// again via the `promql-duration-expr` feature in prometheus/prometheus#18684; Mimir
-		// keeps it on globally for parity with the prior always-on behaviour. See #11344.
-		ExperimentalDurationExpr: true,
-
 		// Enabled globally. Access is controlled by the experimental features middleware
 		// via the per-tenant query-frontend.enabled-promql-binop-fill-modifiers setting.
 		EnableBinopFillModifiers: true,

@@ -30,6 +30,10 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 		ch.Encoding = int32(chunk.PrometheusHistogramChunk)
 	case chunkenc.EncFloatHistogram:
 		ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
+	case chunkenc.EncHistogramST:
+		ch.Encoding = int32(chunk.PrometheusHistogramSTChunk)
+	case chunkenc.EncFloatHistogramST:
+		ch.Encoding = int32(chunk.PrometheusFloatHistogramSTChunk)
 	default:
 		return Chunk{}, fmt.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 	}

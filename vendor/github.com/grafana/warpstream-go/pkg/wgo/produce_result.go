@@ -15,7 +15,8 @@ import (
 const kerrNoError int16 = 0
 
 var (
-	errEmptyProduceResult = errors.New("empty ProduceResult: both resp and err are nil")
+	errEmptyProduceResult        = errors.New("empty ProduceResult: both resp and err are nil")
+	errIncompleteProduceResponse = errors.New("produce response omits requested partitions")
 )
 
 // ProduceResult carries the outcome of a produce request.
@@ -332,4 +333,22 @@ func selectProduceResult(primary, fallback ProduceResult) ProduceResult {
 		return fallback
 	}
 	return primary
+}
+
+func firstMissingProducePartition(resp *kmsg.ProduceResponse, requested []encodedTopicPartitionRecords) (topicPartition, bool) {
+	seen := make(map[topicPartition]struct{})
+	if resp != nil {
+		for _, t := range resp.Topics {
+			for _, p := range t.Partitions {
+				seen[topicPartition{topic: t.Topic, partition: p.Partition}] = struct{}{}
+			}
+		}
+	}
+	for _, r := range requested {
+		tp := topicPartition{topic: r.topic, partition: r.partition}
+		if _, ok := seen[tp]; !ok {
+			return tp, true
+		}
+	}
+	return topicPartition{}, false
 }

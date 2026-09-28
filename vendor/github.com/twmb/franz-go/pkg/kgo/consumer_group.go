@@ -65,6 +65,10 @@ type groupConsumer struct {
 	lastAssigned map[string][]int32
 	nowAssigned  amtps
 
+	// Set when a join downgrades the group from cooperative to eager;
+	// the next session revokes everything before consuming.
+	protocolDowngraded bool
+
 	// Fetching ensures we continue fetching offsets across cooperative
 	// rebalance if an offset fetch returns early due to an immediate
 	// rebalance. See the large comment on adjustCooperativeFetchOffsets
@@ -264,6 +268,11 @@ func (cl *Client) LeaveGroup() {
 //
 // LeaveGroupContext is a no-op for direct (non-group) consumers.
 //
+// Leaving does not wake a concurrent PollFetches or PollRecords parked on
+// another goroutine: a parked poll returns only for buffered data, its own
+// context, or client close. To unblock a poll loop when leaving, cancel the
+// context you poll with (or Close the client).
+//
 // Do not call this function with a non-nil context synchronously from
 // within an OnPartitions callback: the leave waits for the group
 // management loop to finish, and the loop is waiting for your callback to
@@ -394,9 +403,9 @@ func (c *consumer) initGroup() {
 			default:
 			}
 			if ctxExpired {
-				cl.cfg.logger.Log(LogLevelDebug, "entering "+name, "with", m, "context_expired", ctxExpired)
+				cl.cfg.logger.Log(LogLevelDebug, "entering "+name, "with", mtps(m), "context_expired", ctxExpired)
 			} else {
-				cl.cfg.logger.Log(LogLevelDebug, "entering "+name, "with", m)
+				cl.cfg.logger.Log(LogLevelDebug, "entering "+name, "with", mtps(m))
 			}
 			if user != nil {
 				dup := make(map[string][]int32)
@@ -742,9 +751,9 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 		g.c.mu.Unlock()
 
 		if !g.cooperative.Load() {
-			g.cfg.logger.Log(LogLevelInfo, "eager consumer revoking prior assigned partitions", "group", g.cfg.group, "revoking", g.nowAssigned.read())
+			g.cfg.logger.Log(LogLevelInfo, "eager consumer revoking prior assigned partitions", "group", g.cfg.group, "revoking", mtps(g.nowAssigned.read()))
 		} else {
-			g.cfg.logger.Log(LogLevelInfo, "cooperative consumer revoking prior assigned partitions because leaving group", "group", g.cfg.group, "revoking", g.nowAssigned.read())
+			g.cfg.logger.Log(LogLevelInfo, "cooperative consumer revoking prior assigned partitions because leaving group", "group", g.cfg.group, "revoking", mtps(g.nowAssigned.read()))
 		}
 		g.cfg.onRevoked(g.cl.ctx, g.cl, g.nowAssigned.read())
 		g.nowAssigned.store(nil)
@@ -775,8 +784,26 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 		// which causes a new metadata request -- in short, this could
 		// be concurrent with a metadata findNewAssignments, so we
 		// lock.
+		//
+		// For 848 the server owns assignment: nowAssigned only holds
+		// what the server currently wants us to own (handleResp already
+		// dropped anything the server revoked), while g.using is filled
+		// asynchronously by the metadata regex evaluation. When a new
+		// regex-matched topic is created, the server can assign it via
+		// heartbeat before our metadata loop has added it to g.using:
+		// the heartbeat exits this session with the topic in nowAssigned
+		// but the metadata goroutine has not yet run findNewAssignments.
+		// Self-revoking on (nowAssigned - g.using) here would then drop
+		// that just-assigned topic, and because the server still
+		// believes we own it (we echoed its topic id), it never re-sends
+		// -- stranding the topic permanently. Skip the self-revoke for
+		// 848 and let the server drive all revocation through heartbeats.
 		g.nowAssigned.write(func(nowAssigned map[string][]int32) {
 			g.mu.Lock()
+			defer g.mu.Unlock()
+			if g.is848 {
+				return
+			}
 			for topic, partitions := range nowAssigned {
 				if _, exists := g.using[topic]; !exists {
 					if lost == nil {
@@ -786,7 +813,6 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 					delete(nowAssigned, topic)
 				}
 			}
-			g.mu.Unlock()
 		})
 	}
 
@@ -821,7 +847,7 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 		if len(lost) == 0 {
 			g.cfg.logger.Log(LogLevelInfo, "consumer calling onRevoke at the end of a session; consumer did not change any client-side subscription", "group", g.cfg.group)
 		} else {
-			g.cfg.logger.Log(LogLevelInfo, "calling onRevoke at the end of a session", "group", g.cfg.group, "lost", lost, "stage", stage)
+			g.cfg.logger.Log(LogLevelInfo, "calling onRevoke at the end of a session", "group", g.cfg.group, "lost", mtps(lost), "stage", stage)
 		}
 		g.cfg.onRevoked(g.cl.ctx, g.cl, lost)
 	}
@@ -1009,6 +1035,33 @@ func (s *assignRevokeSession) revoke(g *groupConsumer, leaving bool) <-chan stru
 //   - fetching is complete
 //   - heartbeating is complete
 func (g *groupConsumer) setupAssignedAndHeartbeat(initialHb time.Duration, hbfn func() (time.Duration, error)) (string, error) {
+	if g.protocolDowngraded {
+		g.protocolDowngraded = false
+		// Our prior cooperative session ended without revoking
+		// anything, but diffAssigned below short-circuits for eager
+		// consumers and returns the entire assignment as newly added.
+		// fetchOffsets would then set offsets on cursors that are
+		// still actively fetching, and the offset load's completion
+		// races any concurrent poll's cursor update (#1365). Instead,
+		// first revoke everything, as an eager session would have
+		// before rejoining: stop fetching everything, let the user
+		// commit final work in onRevoked, and clear commit state
+		// before everything is re-fetched from committed offsets.
+		g.c.waitAndAddRebalance()
+		prior := g.lastAssigned
+		g.c.mu.Lock()
+		g.c.assignPartitions(nil, assignInvalidateAll, nil, "revoking all assignments; group protocol downgraded from cooperative to eager")
+		g.c.mu.Unlock()
+		if len(prior) > 0 {
+			g.cfg.onRevoked(g.cl.ctx, g.cl, prior)
+		}
+		g.mu.Lock()
+		g.uncommitted = nil
+		g.mu.Unlock()
+		g.fetching = nil
+		g.c.unaddRebalance()
+	}
+
 	type hbquit struct {
 		rejoinWhy string
 		err       error
@@ -1545,7 +1598,14 @@ func (g *groupConsumer) handleJoinResp(resp *kmsg.JoinGroupResponse) (restart bo
 		if protocol == balancer.ProtocolName() {
 			cooperative := balancer.IsCooperative()
 			if !cooperative && g.cooperative.Load() {
-				g.cfg.logger.Log(LogLevelWarn, "downgrading from cooperative group to eager group, this is not supported per KIP-429!")
+				g.cfg.logger.Log(LogLevelInfo, "group protocol downgraded from cooperative to eager; all partitions will be revoked before consuming resumes from committed offsets")
+				g.protocolDowngraded = true
+			} else if cooperative {
+				// A join can restart (e.g. MemberIDRequired) or an
+				// earlier downgrade join's sync can fail; if the
+				// group is (back) on cooperative by the time a join
+				// succeeds, no downgrade materialized.
+				g.protocolDowngraded = false
 			}
 			g.cooperative.Store(cooperative)
 			break
@@ -2141,8 +2201,48 @@ start:
 	// groupTopics was already loaded above to populate reqTopic.TopicID;
 	// reuse that snapshot so we validate against the same view that
 	// built the request.
+	//
+	// wanted reports whether a topic in the response is one we actually
+	// want to assign. Normally this is our subscription snapshot
+	// (groupTopics). `added` (what we built the request from) can diverge
+	// from that snapshot, but the meaning of the divergence differs by
+	// protocol, so we only trust `added` for 848:
+	//
+	//   - Classic: the client drives its own subscription (g.using feeds
+	//     JoinGroup, and g.using never leads g.tps because g.tps is stored
+	//     before findNewAssignments runs), so an assigned topic stays in
+	//     g.tps -- unless it is purged after assignment. That purge is
+	//     either an explicit PurgeTopicsFromConsuming/PurgeTopicsFromClient
+	//     call (e.g. #1355, where it overlapped AddConsumeTopics) or the
+	//     automatic regex missing-topic purge. In every case the topic is
+	//     being removed, so dropping it is correct; the nil guard above
+	//     just stops #1355's crash, and the drop here is the right result.
+	//
+	//   - 848: the server resolves the regex itself and can assign a live,
+	//     newly-created topic via heartbeat before our metadata loop has
+	//     added it to g.tps. Dropping it leaves the partition without a
+	//     cursor while the server believes we own it (we echoed its id
+	//     back), so it never re-sends -- stranding the topic. It is in
+	//     `added` (we requested it), so we keep it.
+	//
+	// `added` is precisely "what we requested", so a topic a buggy broker
+	// invents (neither subscribed nor requested) is still dropped -- the
+	// #1271 protection.
+	g.mu.Lock()
+	is848 := g.is848
+	g.mu.Unlock()
+	wanted := func(topic string) bool {
+		if groupTopics.hasTopic(topic) {
+			return true
+		}
+		if is848 {
+			_, ok := added[topic]
+			return ok
+		}
+		return false
+	}
 	for fetchedTopic, topicOffsets := range offsets {
-		if !groupTopics.hasTopic(fetchedTopic) {
+		if !wanted(fetchedTopic) {
 			delete(offsets, fetchedTopic)
 			g.cfg.logger.Log(LogLevelWarn, "member was assigned topic that we did not ask for in ConsumeTopics! skipping assigning this topic!", "group", g.cfg.group, "topic", fetchedTopic)
 			continue
@@ -2181,7 +2281,7 @@ start:
 	// above.
 	var omitted mtmps
 	for topic, partitions := range added {
-		if !groupTopics.hasTopic(topic) {
+		if !wanted(topic) {
 			continue // already warned and skipped above
 		}
 		topicOffsets := offsets[topic]
@@ -2920,6 +3020,10 @@ var txnCommitContextFn = func() *string { s := "txn_commit_ctx"; return &s }()
 // default internal metadata is the client's current member ID). If fn returns
 // an error, the commit is not attempted. This context can be used in either
 // GroupTransactSession.End or in Client.EndTransaction.
+//
+// fn runs while the client's internal transaction lock is held: it must not
+// block and must not re-enter transaction functions (Begin/End/Abort), which
+// would self-deadlock. Its purpose is pure request mutation.
 func PreTxnCommitFnContext(ctx context.Context, fn func(*kmsg.TxnOffsetCommitRequest) error) context.Context {
 	return context.WithValue(ctx, txnCommitContextFn, fn)
 }
@@ -3300,6 +3404,11 @@ func (g *groupConsumer) commitOffsetsSync(
 // CommitOffsetsSync. If you commit async, the rebalance will proceed before
 // this function executes, and you will commit offsets for partitions that have
 // moved to a different consumer.
+//
+// Do not commit from within onDone: onDone runs while this commit is still
+// ordered against all other commits, so a commit issued inside onDone can
+// deadlock permanently (it always does if any sync commit is waiting). To
+// retry a failed commit, signal out of onDone and commit after it returns.
 func (cl *Client) CommitOffsets(
 	ctx context.Context,
 	uncommitted map[string]map[int32]EpochOffset,

@@ -70,26 +70,32 @@ type Config struct {
 	// background. Each refresh updates the partition assignment strategy and
 	// purges agent-stats entries for agents that have left the cluster.
 	MetadataRefreshInterval time.Duration
+
+	// OnDemandMetadataRefreshInterval is the minimum time between the start of
+	// Metadata refreshes triggered by routing misses. Must be > 0 and no
+	// greater than MetadataRefreshInterval.
+	OnDemandMetadataRefreshInterval time.Duration
 }
 
 // Default values applied by DefaultConfig and the functional options. They are
 // exported so callers (e.g. a CLI) can reuse them as their own flag defaults.
 const (
-	DefaultDialTimeout                         = 500 * time.Millisecond
-	DefaultWriteTimeout                        = 4 * time.Second
-	DefaultLinger                              = 50 * time.Millisecond
-	DefaultBatchMaxBytes                 int32 = 16_000_000
-	DefaultProduceRequestTimeoutOverhead       = 2 * time.Second
-	DefaultProduceRequestTimeout               = DefaultWriteTimeout - DefaultProduceRequestTimeoutOverhead
-	DefaultHealthCheckSlowMultiplier           = 2.0
-	DefaultHealthCheckMaxSlowFraction          = 0.3
-	DefaultHealthCheckFaultyThreshold          = 0.2
-	DefaultHealthCheckMaxFaultyFraction        = 0.3
-	DefaultHedgerMinHedgeDelay                 = 500 * time.Millisecond
-	DefaultHedgerMaxHedgeAgents                = 3
-	DefaultDemoterProbeInterval                = time.Second
-	DefaultClusterStatsTTL                     = time.Second
-	DefaultMetadataRefreshInterval             = 10 * time.Second
+	DefaultDialTimeout                           = 500 * time.Millisecond
+	DefaultWriteTimeout                          = 4 * time.Second
+	DefaultLinger                                = 50 * time.Millisecond
+	DefaultBatchMaxBytes                   int32 = 16_000_000
+	DefaultProduceRequestTimeoutOverhead         = 2 * time.Second
+	DefaultProduceRequestTimeout                 = DefaultWriteTimeout - DefaultProduceRequestTimeoutOverhead
+	DefaultHealthCheckSlowMultiplier             = 2.0
+	DefaultHealthCheckMaxSlowFraction            = 0.3
+	DefaultHealthCheckFaultyThreshold            = 0.2
+	DefaultHealthCheckMaxFaultyFraction          = 0.3
+	DefaultHedgerMinHedgeDelay                   = 500 * time.Millisecond
+	DefaultHedgerMaxHedgeAgents                  = 3
+	DefaultDemoterProbeInterval                  = time.Second
+	DefaultClusterStatsTTL                       = time.Second
+	DefaultMetadataRefreshInterval               = 10 * time.Second
+	DefaultOnDemandMetadataRefreshInterval       = time.Second
 )
 
 // DefaultConfig returns a Config populated with the default values. Address and
@@ -97,12 +103,13 @@ const (
 // config passes Validate.
 func DefaultConfig() Config {
 	return Config{
-		DialTimeout:             DefaultDialTimeout,
-		WriteTimeout:            DefaultWriteTimeout,
-		Linger:                  DefaultLinger,
-		BatchMaxBytes:           DefaultBatchMaxBytes,
-		ClusterStatsTTL:         DefaultClusterStatsTTL,
-		MetadataRefreshInterval: DefaultMetadataRefreshInterval,
+		DialTimeout:                     DefaultDialTimeout,
+		WriteTimeout:                    DefaultWriteTimeout,
+		Linger:                          DefaultLinger,
+		BatchMaxBytes:                   DefaultBatchMaxBytes,
+		ClusterStatsTTL:                 DefaultClusterStatsTTL,
+		MetadataRefreshInterval:         DefaultMetadataRefreshInterval,
+		OnDemandMetadataRefreshInterval: DefaultOnDemandMetadataRefreshInterval,
 		DirectProducer: KafkaDirectProducerConfig{
 			ProduceRequestTimeout:         DefaultProduceRequestTimeout,
 			ProduceRequestTimeoutOverhead: DefaultProduceRequestTimeoutOverhead,
@@ -176,6 +183,12 @@ func (c *Config) Validate() error {
 	}
 	if c.MetadataRefreshInterval <= 0 {
 		return errors.New("metadata refresh interval must be positive")
+	}
+	if c.OnDemandMetadataRefreshInterval <= 0 {
+		return errors.New("on-demand metadata refresh interval must be positive")
+	}
+	if c.OnDemandMetadataRefreshInterval > c.MetadataRefreshInterval {
+		return errors.New("on-demand metadata refresh interval must not exceed metadata refresh interval")
 	}
 	if err := c.DirectProducer.Validate(); err != nil {
 		return fmt.Errorf("direct producer: %w", err)
@@ -320,6 +333,13 @@ func WithClusterStatsTTL(d time.Duration) Opt {
 // background.
 func WithMetadataRefreshInterval(d time.Duration) Opt {
 	return opt{func(c *Config) { c.MetadataRefreshInterval = d }}
+}
+
+// WithOnDemandMetadataRefreshInterval sets the minimum time between the start
+// of Metadata refreshes triggered by routing misses. It must be no greater
+// than the background MetadataRefreshInterval.
+func WithOnDemandMetadataRefreshInterval(d time.Duration) Opt {
+	return opt{func(c *Config) { c.OnDemandMetadataRefreshInterval = d }}
 }
 
 // WithDialer sets a custom dialer used to establish broker connections.

@@ -56,6 +56,11 @@ type GroupTransactSession struct {
 // occurs at any time before ending a transaction with a commit, this will
 // abort the transaction.
 //
+// Do not call End synchronously from within an OnPartitionsRevoked or
+// OnPartitionsLost callback: the session's internal callback wrappers hold
+// the same lock End needs, deadlocking permanently. (The plain client's
+// documented Close/LeaveGroup-from-callback restriction applies here too.)
+//
 // This leaves the risk that ending the transaction itself exceeds the
 // rebalance timeout, but this is just one request with no cpu logic. With a
 // proper rebalance timeout, this single request will not fail and the commit
@@ -355,25 +360,54 @@ func (s *GroupTransactSession) End(ctx context.Context, commit TransactionEndTry
 	// We should not be booted from the group if we receive an ok
 	// heartbeat, meaning that, as mentioned, we should be able to end the
 	// transaction safely.
+	//
+	// If the commit carried no offsets (the user produced but polled
+	// nothing), we skip the heartbeat: its only purpose is to secure the
+	// rebalance-timeout window so a rebalance cannot hand our committed
+	// offsets to another consumer before our EndTxn writes the markers.
+	// With nothing committed, membership is irrelevant to the transaction
+	// and an empty end is always safe. Skipping also matters for liveness:
+	// the force below is received only by a running heartbeat loop, and
+	// the manage loop that runs it starts only once a metadata update
+	// discovers a topic to consume. Walkthrough of the hang this avoids:
+	// the session consumes a topic that does not exist yet, the user
+	// begins, produces, and ends -- the group never joined, so nothing
+	// receives heartbeatForceCh, and no revoke or lost callback can ever
+	// fire to close revokedCh/lostCh; every select arm below blocks
+	// forever and End never returns.
+	//
+	// The ctx arms bound the remaining offsets-committed case: a
+	// first-ever join can legally block for the full rebalance timeout
+	// with the heartbeat loop not yet running, and the group could also
+	// never complete a join at all. Cancellation leaves okHeartbeat false
+	// and falls into the abort path below, same as a failed heartbeat.
 	var okHeartbeat bool
 	var heartbeatRebalance bool
 	if g != nil && commitErr == nil {
-		waitHeartbeat := make(chan struct{})
-		var heartbeatErr error
-		select {
-		case g.heartbeatForceCh <- func(err error) {
-			defer close(waitHeartbeat)
-			heartbeatErr = err
-		}:
+		if len(postcommit) == 0 {
+			okHeartbeat = true
+		} else {
+			waitHeartbeat := make(chan struct{})
+			var heartbeatErr error
 			select {
-			case <-waitHeartbeat:
-				okHeartbeat = heartbeatErr == nil
-				heartbeatRebalance = errors.Is(heartbeatErr, kerr.RebalanceInProgress)
+			case g.heartbeatForceCh <- func(err error) {
+				defer close(waitHeartbeat)
+				heartbeatErr = err
+			}:
+				select {
+				case <-waitHeartbeat:
+					okHeartbeat = heartbeatErr == nil
+					heartbeatRebalance = errors.Is(heartbeatErr, kerr.RebalanceInProgress)
+				case <-s.revokedCh:
+				case <-s.lostCh:
+				case <-ctx.Done():
+				case <-s.cl.ctx.Done():
+				}
 			case <-s.revokedCh:
 			case <-s.lostCh:
+			case <-ctx.Done():
+			case <-s.cl.ctx.Done():
 			}
-		case <-s.revokedCh:
-		case <-s.lostCh:
 		}
 	}
 
@@ -663,8 +697,13 @@ func (cl *Client) UnsafeAbortBufferedRecords() {
 // If the producer ID has an error and you are trying to commit, this will
 // return with kerr.OperationNotAttempted. If this happened, retry
 // EndTransaction with TryAbort. If this returns kerr.TransactionAbortable, you
-// can retry with TryAbort. You should not retry this function on any other
-// error.
+// can retry with TryAbort. If a commit attempt's outcome is unconfirmed (a
+// transport error, or the broker replied UNKNOWN_SERVER_ERROR), the error is
+// returned and you should also retry with TryAbort: the retry aborts by
+// reloading the producer ID, which bumps the epoch and fence-aborts anything
+// still ongoing broker-side; retrying with TryCommit instead is refused, since
+// the prior outcome is unknowable. You should not retry this function on any
+// other error.
 //
 // It may be possible for the client to recover in a new transaction via
 // BeginTransaction if an error is returned from this function:
@@ -687,6 +726,13 @@ func (cl *Client) EndTransaction(ctx context.Context, commit TransactionEndTry) 
 		return nil
 	}
 	cl.producer.inTxn = false
+
+	// If a prior EndTxn attempt's outcome was unconfirmed, this call is the
+	// documented TryAbort retry (state was restored so we could get here).
+	// Remember and clear; restored again below if this attempt also fails
+	// before confirming anything.
+	unconfirmed := cl.producer.endUnconfirmed
+	cl.producer.endUnconfirmed = false
 
 	cl.producer.producingTxn.Store(false) // forbid any new produces while ending txn
 
@@ -778,6 +824,7 @@ func (cl *Client) EndTransaction(ctx context.Context, commit TransactionEndTry) 
 				g.offsetsAddedToTxn = true
 			}
 			cl.producer.inTxn = true
+			cl.producer.endUnconfirmed = unconfirmed
 			return kerr.OperationNotAttempted
 		}
 
@@ -789,6 +836,28 @@ func (cl *Client) EndTransaction(ctx context.Context, commit TransactionEndTry) 
 		if didRecover {
 			return nil
 		}
+	}
+
+	// This is the retry after an unconfirmed EndTxn outcome, and the
+	// producerID call above succeeded -- which, with the ID failed as
+	// errReloadProducerID, means it re-ran InitProducerID at our prior
+	// id/epoch: the broker bumped the epoch and fence-aborted anything
+	// still ongoing from the unconfirmed attempt. That reload IS the
+	// abort; issuing EndTxn now would end an empty transaction at the
+	// fresh epoch, which pre-KIP-890p2 brokers reject with
+	// INVALID_TXN_STATE. A commit retry is refused: the prior outcome is
+	// unknowable and the reload above may have just aborted it, so
+	// "success" here would lie to the caller.
+	if unconfirmed {
+		if commit {
+			return errors.New("cannot retry a commit whose outcome is unconfirmed: the transaction may already be aborted; retry with TryAbort")
+		}
+		cl.cfg.logger.Log(LogLevelInfo, "aborting an unconfirmed transaction via producer id reload; the epoch bump fence-aborted anything still ongoing",
+			"transactional_id", *cl.cfg.txnID,
+			"id", id,
+			"epoch", epoch,
+		)
+		return nil
 	}
 
 	cl.cfg.logger.Log(LogLevelInfo, "ending transaction",
@@ -852,17 +921,64 @@ func (cl *Client) EndTransaction(ctx context.Context, commit TransactionEndTry) 
 		return nil
 	})
 
-	// If the returned error is still a Kafka error, this is fatal and we
-	// need to fail our producer ID we loaded above.
+	// Any error after an attempted EndTxn must fail the producer ID.
+	// Walkthrough of what a healthy-PID + consumed-state combination
+	// would otherwise allow: EndTxn(commit) dies on a
+	// transport error the request may never have reached the broker, so
+	// the broker transaction is still ongoing; the documented TryAbort
+	// retry returns nil at the !inTxn guard above without sending
+	// anything; the next BeginTransaction succeeds (PID error-free) and
+	// produces run at the SAME id/epoch (nothing ever bumped it), so
+	// under KIP-890p2 they implicitly join the still-ongoing transaction;
+	// the next commit then commits the prior "failed" transaction's
+	// records too -- records the caller already rewound and reprocessed.
 	//
-	// UNKNOWN_SERVER_ERROR can theoretically be returned (not all brokers
-	// do). This technically is fatal, but we do not really know whether it
-	// is. We can just return this error and let the caller decide to
-	// continue, if the caller does continue, we will try something and
-	// eventually then receive our proper transactional error, if any.
-	var ke *kerr.Error
-	if errors.As(err, &ke) && !ke.Retriable && ke.Code != kerr.UnknownServerError.Code {
-		cl.failProducerID(id, epoch, err)
+	// How we fail the PID depends on what we know:
+	//
+	//   - A non-retriable Kafka error (fenced, invalid mapping, etc.) is a
+	//     definitive broker answer: fail with that error so recovery flows
+	//     through maybeRecoverProducerID's classification.
+	//
+	//   - Everything else -- a transport error, a retriable error that
+	//     outlived retries, or UNKNOWN_SERVER_ERROR (which some brokers
+	//     return where the outcome is unknowable) -- leaves the commit or
+	//     abort UNCONFIRMED. Fail with errReloadProducerID: the next
+	//     produce or BeginTransaction re-runs InitProducerID at our
+	//     current id/epoch, which bumps the epoch and fence-aborts any
+	//     transaction still ongoing broker-side (the same KIP-360 heal
+	//     maybeRecoverProducerID relies on). If the EndTxn actually did
+	//     complete, the re-init is harmless. Either way the caller saw an
+	//     error and reprocesses: at-least-once, never a silent join.
+	//
+	// failProducerID only swaps over an error-free PID, so this cannot
+	// clobber an already-fatal producer state.
+	//
+	// We also restore everything this call consumed and mark the outcome
+	// unconfirmed, so the documented TryAbort retry heals NOW instead of
+	// at the next transaction: the retry re-enters with transaction state
+	// intact, its producerID call reloads the failed ID (the epoch bump
+	// fence-aborts anything still ongoing broker-side), and the retry
+	// returns nil above without sending an EndTxn. For a definitively
+	// failed ID (fenced, invalid mapping), the retry instead flows
+	// through maybeRecoverProducerID's classification, same as an abort
+	// after a pre-attempt producerID failure. producingTxn stays false:
+	// produces between the failure and the retry fail fast rather than
+	// buffering against a failed producer ID.
+	if err != nil {
+		var ke *kerr.Error
+		if errors.As(err, &ke) && !ke.Retriable && ke.Code != kerr.UnknownServerError.Code {
+			cl.failProducerID(id, epoch, err)
+		} else {
+			cl.failProducerID(id, epoch, errReloadProducerID)
+		}
+		for _, rb := range addedSwapped {
+			rb.addedToTxn.Store(true)
+		}
+		if offsetsWereAdded {
+			g.offsetsAddedToTxn = true
+		}
+		cl.producer.inTxn = true
+		cl.producer.endUnconfirmed = true
 	}
 
 	return err

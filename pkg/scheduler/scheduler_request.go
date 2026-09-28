@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 type RequestKey struct {
@@ -30,9 +31,12 @@ func NewSchedulerRequestKey(frontendAddr string, queryID uint64) RequestKey {
 }
 
 type SchedulerRequest struct {
-	FrontendAddr              string
-	UserID                    string
-	QueryID                   uint64
+	FrontendAddr string
+	UserID       string
+	QueryID      uint64
+	// RootQueryID identifies the user query this request is a sub-request of, as reported by the
+	// frontend. It is a random UUID, so it is globally unique. Empty means unknown.
+	RootQueryID               string
 	HttpRequest               *httpgrpc.HTTPRequest
 	ProtobufRequest           *schedulerpb.ProtobufRequest
 	StatsEnabled              bool
@@ -54,6 +58,18 @@ func (sr *SchedulerRequest) Key() RequestKey {
 		frontendAddr: sr.FrontendAddr,
 		queryID:      sr.QueryID,
 	}
+}
+
+// LogFields returns the fields that identify this request, for inclusion in request-scoped log
+// lines.
+func (sr *SchedulerRequest) LogFields() []any {
+	return requestLogFields(sr.UserID, sr.QueryID, sr.RootQueryID)
+}
+
+// requestLogFields returns the fields that identify a request, for inclusion in request-scoped log
+// lines. rootQueryID is omitted when it is empty.
+func requestLogFields(userID string, queryID uint64, rootQueryID string) []any {
+	return rootqueryid.AppendLogFields([]any{"user", userID, "query_id", queryID}, rootQueryID)
 }
 
 // ExpectedQueryComponentName parses the expected query component from annotations by the frontend.

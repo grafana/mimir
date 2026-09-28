@@ -228,7 +228,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 	}
 
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.NewPrometheusQueryOpts(false, 0, nil)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -279,6 +279,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		originalExpression:       plan.Parameters.OriginalExpression,
 		topLevelQueryTimeRange:   plan.Parameters.TimeRange,
 		topLevelValueType:        topLevelValueType,
+		enableDelayedNameRemoval: plan.Parameters.EnableDelayedNameRemoval,
 	}, nil
 }
 

@@ -210,6 +210,21 @@ type (
 	// offset; duplicates would be rejected with INVALID_RECORD_STATE.
 	// The sc.pendingAcks counter still increments once per appended
 	// entry; subtraction at callback time uses the entry count.
+	//
+	// KNOWN WINDOW (2026-07 audit, deliberately unfixed): the
+	// offset-dedupe only covers duplicates within one build. If a
+	// drain snapshots a renew entry and the user's terminal ack
+	// lands between the drain and the build's status read, the CAS
+	// re-appends the pointer to the (new) pending list while the
+	// drained copy also reads the terminal status: two requests
+	// carry the same terminal ack, and the broker rejects the
+	// second with INVALID_RECORD_STATE at partition granularity,
+	// erroring innocent co-batched acks (they redeliver via the
+	// acquisition-lock timeout; at-least-once holds and the error
+	// is surfaced via the ack callback). Closing this needs
+	// per-state sent tracking (+8 bytes per acquired record) or a
+	// synchronized consume point; the microsecond window and
+	// loud+recoverable outcome did not justify either.
 	shareAckState struct {
 		status        atomic.Int32  // CAS target for ack transitions
 		deliveryCount int32         // broker's delivery count for this record (>= 1)
@@ -433,6 +448,7 @@ func (sc *shareConsumer) poll(ctx context.Context, maxPollRecords int) Fetches {
 
 	fill()
 	sc.c.mu.Unlock()
+	sc.c.runDeferredFetchHooks()
 	if len(fetches) > 0 || ctx == nil {
 		return fetches
 	}
@@ -466,6 +482,7 @@ func (sc *shareConsumer) poll(ctx context.Context, maxPollRecords int) Fetches {
 		sc.c.mu.Lock()
 		fill()
 		sc.c.mu.Unlock()
+		sc.c.runDeferredFetchHooks()
 	}
 
 	return fetches
@@ -986,9 +1003,18 @@ func (sc *shareConsumer) manage() {
 			return
 
 		case errors.Is(err, kerr.UnknownMemberID),
-			errors.Is(err, kerr.FencedMemberEpoch):
+			errors.Is(err, kerr.FencedMemberEpoch),
+			errors.Is(err, kerr.GroupIDNotFound):
 			// Keep the same UUID (matches the Java client) and reset
 			// to epoch 0 so the next heartbeat re-joins.
+			//
+			// GroupIDNotFound resets for liveness: the broker creates a
+			// share group only on a memberEpoch 0 heartbeat, so if group
+			// state vanished under a live member (coordinator state
+			// loss), retrying at our current epoch returns
+			// GROUP_ID_NOT_FOUND forever; only rejoining at epoch 0
+			// recreates the group. Classic and 848 groups self-heal the
+			// same way via their rejoin paths.
 			member, gen := sc.memberGen.load()
 			sc.memberGen.storeGeneration(0)
 			sc.cfg.logger.Log(LogLevelInfo, "share group heartbeat lost membership, resetting epoch",
@@ -1592,7 +1618,7 @@ func (s *sourceShare) takeBuffered(paused pausedTopics) Fetch {
 	close(s.s.sem)
 
 	f := b.fetch
-	s.s.hook(&f, false, true) // unbuffered, polled
+	s.s.hookDeferUnbuffered(&f, true) // unbuffered, polled; capture precedes the strip below
 
 	// Strip paused partitions from the returned fetch and release
 	// their records back to the broker for redelivery.
@@ -1698,9 +1724,9 @@ func (s *sourceShare) takeNBuffered(paused pausedTopics, n int) (Fetch, int, boo
 	}
 
 	if len(rstrip.Topics) > 0 {
-		s.s.hook(&rstrip, false, true)
+		s.s.hookDeferUnbuffered(&rstrip, true)
 	}
-	s.s.hook(&r, false, true) // unbuffered, polled
+	s.s.hookDeferUnbuffered(&r, true) // unbuffered, polled
 
 	drained := len(bf.Topics) == 0
 	if drained {
@@ -1738,8 +1764,27 @@ func (s *source) shareAck(predrained []cursorAckDrain) {
 	nAcks, nStaleAcks, staleResults := filterStaleEntries(s, epoch, drains)
 
 	sc.enqueueCallback(staleResults, nStaleAcks)
+	// nAcks counts only user ack entries; gap/release ranges are filtered
+	// separately and can survive as live with zero live user entries (a
+	// partition whose acquired ranges covered only compaction holes, or
+	// whose batch failed decode and was released, buffers no records for
+	// the user to ack). The drain above already removed those gaps from
+	// the cursors, so returning here would drop them permanently: never
+	// sent, never requeued, no callback -- the broker's acquisition locks
+	// for those offsets then sit occupied until the lock timeout, which
+	// is exactly what immediate gap acking exists to avoid. Return only
+	// when nothing live at all survived the stale filter.
 	if nAcks == 0 {
-		return // everything was stale
+		var liveGaps bool
+		for i := range drains {
+			if len(drains[i].gaps) > 0 {
+				liveGaps = true
+				break
+			}
+		}
+		if !liveGaps {
+			return // everything was stale
+		}
 	}
 
 	if epoch == 0 {
@@ -2506,7 +2551,7 @@ func (s *source) shareFetch(doneFetch chan<- bool) (fetched bool) {
 			doneFetch: doneFetch,
 		}
 		s.sem = make(chan struct{})
-		s.hook(&res.fetch, true, false)
+		s.hookBuffered(&res.fetch)
 		sc.c.addSourceReadyForDraining(s)
 	} else if res.allErrsStripped {
 		backoff("empty share fetch response due to all partitions having retryable errors")

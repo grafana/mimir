@@ -49,10 +49,6 @@ func (m *ExpectedMetrics) Add(name, labelSet string, count int) {
 	m.AddMultiple(name, map[string]int{labelSet: count})
 }
 
-func (m *ExpectedMetrics) AddEmpty(name string) {
-	m.AddMultiple(name, map[string]int{})
-}
-
 func (m *ExpectedMetrics) GetOutput() io.Reader {
 	return strings.NewReader(strings.Join(m.Output, "\n\n") + "\n")
 }

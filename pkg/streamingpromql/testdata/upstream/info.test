@@ -484,12 +484,11 @@ load 1m
 	target_info{job="worker", instance="b", pair_data="worker-b"} 1 1 1
 	target_info{job="api", instance="b", cross_pair="ignored"} 1 1 1
 
-# Unsupported by streaming engine.
-# eval range from 0m to 2m step 1m info(metric)
-#	metric{job="api", job_data="job-only"} 1 2 3
-#	metric{instance="standalone", instance_data="instance-only"} 4 5 6
-#	metric{job="api", instance="a", pair_data="api-a"} 7 8 9
-#	metric{job="worker", instance="b", pair_data="worker-b"} 10 11 12
+eval range from 0m to 2m step 1m info(metric)
+	metric{job="api", job_data="job-only"} 1 2 3
+	metric{instance="standalone", instance_data="instance-only"} 4 5 6
+	metric{job="api", instance="a", pair_data="api-a"} 7 8 9
+	metric{job="worker", instance="b", pair_data="worker-b"} 10 11 12
 
 clear
 

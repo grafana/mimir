@@ -147,7 +147,7 @@
             )
           ||| % $._config,
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: '%(product)s Compactor in %(alert_aggregation_variables)s has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).' % $._config,

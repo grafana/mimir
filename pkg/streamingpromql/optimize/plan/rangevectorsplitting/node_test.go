@@ -13,7 +13,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -113,6 +112,11 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 			params:              &planning.QueryParameters{OriginalExpression: "some_query"},
 			expectSameKeyAsBase: true,
 		},
+		"CacheDisabled does not affect the cache key": {
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{CacheDisabled: true},
+			expectSameKeyAsBase: true,
+		},
 	}
 
 	for name, tc := range testCases {
@@ -167,6 +171,16 @@ func TestMaterializer_computeRanges(t *testing.T) {
 		return NewMaterializer(true, 2*time.Hour, true, staticLimits{oooWindow: oooWindow}, func() time.Time { return fixedNow }, nil, nil, nil)
 	}
 
+	subqueryWithInnerSelector := func(selectorDetails *core.VectorSelectorDetails) *core.Subquery {
+		return &core.Subquery{
+			SubqueryDetails: &core.SubqueryDetails{
+				Range: 5 * time.Hour,
+				Step:  time.Hour,
+			},
+			Inner: &core.VectorSelector{VectorSelectorDetails: selectorDetails},
+		}
+	}
+
 	// inner builds an inner matrix selector with the given range and offset.
 	inner := func(rng, offset time.Duration) *core.MatrixSelector {
 		return &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
@@ -181,7 +195,7 @@ func TestMaterializer_computeRanges(t *testing.T) {
 
 	t.Run("splits a 5h range into cacheable blocks", func(t *testing.T) {
 		m := newMaterializer(0)
-		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs), 0, false)
 		require.NoError(t, err)
 		require.Empty(t, notApplied)
 		require.Equal(t, []Range{
@@ -196,7 +210,7 @@ func TestMaterializer_computeRanges(t *testing.T) {
 		m := newMaterializer(0)
 		// Query at 4h30m with 3h range and 31m offset -> data-time (59m, 3h59m]. First aligned boundary is 2h, and
 		// 2h + 2h = 4h > 3h59m, so no complete block fits.
-		ranges, notApplied, err := m.computeRanges(context.Background(), inner(3*time.Hour, 31*time.Minute), instantAt(4*hourInMs+30*minuteInMs))
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(3*time.Hour, 31*time.Minute), instantAt(4*hourInMs+30*minuteInMs), 0, false)
 		require.NoError(t, err)
 		require.Equal(t, "no_complete_cache_block", notApplied)
 		require.Nil(t, ranges)
@@ -206,7 +220,7 @@ func TestMaterializer_computeRanges(t *testing.T) {
 		// With now=100h, a 99h out-of-order window puts the threshold at 1h, before the first aligned block boundary
 		// (2h-1ms), so no block can be cached.
 		m := newMaterializer(99 * time.Hour)
-		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs), 0, false)
 		require.NoError(t, err)
 		require.Equal(t, "no_cacheable_blocks_after_ooo_filter", notApplied)
 		require.Nil(t, ranges)
@@ -214,13 +228,63 @@ func TestMaterializer_computeRanges(t *testing.T) {
 
 	t.Run("marks all ranges uncacheable when caching is disabled", func(t *testing.T) {
 		m := newMaterializer(0)
-		ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
-		ranges, notApplied, err := m.computeRanges(ctx, inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs), 0, true)
 		require.NoError(t, err)
 		require.Empty(t, notApplied)
 		require.NotEmpty(t, ranges)
 		for _, r := range ranges {
 			require.False(t, r.Cacheable, "expected all ranges to be uncacheable when caching is disabled")
 		}
+	})
+
+	t.Run("negative offset moves subquery data past now", func(t *testing.T) {
+		m := newMaterializer(0)
+		subquery := subqueryWithInnerSelector(&core.VectorSelectorDetails{Offset: -100 * time.Hour})
+
+		ranges, notApplied, err := m.computeRanges(context.Background(), subquery, instantAt(6*hourInMs), 0, false)
+		require.NoError(t, err)
+		require.Equal(t, "no_cacheable_blocks_after_subquery_range_filter", notApplied)
+		require.Nil(t, ranges)
+	})
+
+	t.Run("negative offset moves subquery data into the ooo window", func(t *testing.T) {
+		m := newMaterializer(95 * time.Hour)
+		subquery := subqueryWithInnerSelector(&core.VectorSelectorDetails{Offset: -2 * time.Hour})
+
+		ranges, notApplied, err := m.computeRanges(context.Background(), subquery, instantAt(6*hourInMs), 0, false)
+		require.NoError(t, err)
+		require.Equal(t, "no_cacheable_blocks_after_subquery_range_filter", notApplied)
+		require.Nil(t, ranges)
+	})
+
+	t.Run("positive offset moves subquery data outside the ooo window", func(t *testing.T) {
+		m := newMaterializer(95 * time.Hour)
+		subquery := subqueryWithInnerSelector(&core.VectorSelectorDetails{Offset: 2 * time.Hour})
+
+		ranges, notApplied, err := m.computeRanges(context.Background(), subquery, instantAt(6*hourInMs), 0, false)
+		require.NoError(t, err)
+		require.Empty(t, notApplied)
+		require.Equal(t, []Range{
+			{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
+			{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
+			{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true},
+			{Start: 6*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+		}, ranges)
+	})
+
+	t.Run("@ modifier pins subquery data outside the ooo window", func(t *testing.T) {
+		m := newMaterializer(95 * time.Hour)
+		selectorTimestamp := timestamp.Time(2 * hourInMs)
+		subquery := subqueryWithInnerSelector(&core.VectorSelectorDetails{Timestamp: &selectorTimestamp})
+
+		ranges, notApplied, err := m.computeRanges(context.Background(), subquery, instantAt(6*hourInMs), 0, false)
+		require.Empty(t, notApplied)
+		require.NoError(t, err)
+		require.Equal(t, []Range{
+			{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
+			{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
+			{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true},
+			{Start: 6*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+		}, ranges)
 	})
 }

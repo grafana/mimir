@@ -68,9 +68,16 @@ type producer struct {
 	// production.
 	onBatchPromiseBroadcast func(moreQueued bool)
 
-	txnMu   xsync.Mutex
-	inTxn   bool
-	tx890p2 atomic.Bool
+	txnMu xsync.Mutex
+	inTxn bool
+	// endUnconfirmed, guarded by txnMu, is set when an attempted EndTxn
+	// outcome is unconfirmed (transport error, retries exhausted, or
+	// UNKNOWN_SERVER_ERROR). EndTransaction restores the transaction
+	// state it consumed so the documented TryAbort retry can heal via
+	// producer id reload; this flag tells the retry that the reload is
+	// the abort and no EndTxn should be sent.
+	endUnconfirmed bool
+	tx890p2        atomic.Bool
 
 	// producedInTxn is set when a record is buffered within the current
 	// transaction and reset by BeginTransaction. EndTransaction consults

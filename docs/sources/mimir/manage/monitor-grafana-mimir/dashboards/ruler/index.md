@@ -16,8 +16,8 @@ The Ruler dashboard shows health and activity metrics for the ruler and object s
 Use this dashboard for the following use cases:
 
 - Monitor rule evaluation performance.
-- Track the operational status of the ruler component.
 - Monitor the ruler's interactions with object storage.
+- Diagnose rule group resharding between ruler replicas.
 - Track the operational status of the ruler component, ensuring it's functioning correctly and evaluating rules as expected.
 
 ## Example
@@ -27,9 +27,9 @@ The following example shows a Ruler dashboard from a demo cluster.
 ![Grafana Mimir ruler dashboard](mimir-ruler.png)
 
 {{< admonition type="note" >}}
-Even while operating in [Remote ruler mode](../../../../references/architecture/components/ruler/#remote) there are still values for the `Read from ingesters - QPS`.
+Even while operating in [Remote ruler mode](../../../../references/architecture/components/ruler/#remote) you still see values for `Reads from ingesters - RPS`.
+
+This is because the metrics are inclusive of intermediate services and show the requests that ultimately reach the ingesters.
 {{< /admonition >}}
 
-This is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.
-
-For a more detailed view of the read path when using remote ruler mode, see the [Remote ruler reads](../remote-ruler-reads-resources/) dashboard.
+For a more detailed view of the read path when using remote ruler mode, see the [Remote ruler reads](../remote-ruler-reads/) dashboard.
