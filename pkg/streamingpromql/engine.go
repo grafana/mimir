@@ -289,6 +289,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		originalExpression:       plan.Parameters.OriginalExpression,
 		topLevelQueryTimeRange:   plan.Parameters.TimeRange,
 		topLevelValueType:        topLevelValueType,
+		enableDelayedNameRemoval: plan.Parameters.EnableDelayedNameRemoval,
 	}, nil
 }
 

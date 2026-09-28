@@ -110,6 +110,137 @@ local filename = 'mimir-ruler.json';
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
+    .addRow(
+      $.row('Rule group sync')
+      .addPanel(
+        $.timeseriesPanel('Ruler ring members') +
+        $.queryPanel(
+          // Every replica reports its own view of its cell's ring.
+          // Take the maximum within each cell, then sum across the selected cells.
+          // Group by cluster and namespace, not job.
+          // Zone-aware rulers share one ring across several jobs.
+          'sum by (state) (max by (%s, state) (cortex_ring_members{name="ruler", %s}))' % [std.join(', ', $._config.cluster_labels), $.jobMatcher($._config.job_names.ruler)],
+          '{{ state }}'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } } +
+        $.panelDescription(
+          'Ruler ring members',
+          |||
+            Ruler ring members by state. Every replica reports its own view of its cell's ring, so this takes the maximum within each ring and then sums across the selected cells.
+
+            `ACTIVE` is the set rule groups are evaluated over. A replica's first sync after startup shards over `ACTIVE` and `JOINING`, which is why a rollout briefly raises the rule group total.
+
+            Ring membership can change within a scrape interval, so this panel may miss `JOINING` and `LEAVING` states. It can also overcount by one while replicas disagree, because the maximum is taken for each state separately. The `ring-change` series in the Syncs panel is the reliable record that the ring changed.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Syncs') +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_ruler_sync_rules_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler),
+          '{{ reason }}'
+        ) +
+        $.panelDescription(
+          'Syncs',
+          |||
+            Rate of rule group sync operations, split by what triggered them.
+
+            - `periodic`: the `-ruler.poll-interval` timer, 10m by default.
+            - `ring-change`: the ruler saw the ruler ring change and resynced. Watch this to spot rule group resharding.
+            - `api-change`: a tenant changed its rule configuration.
+            - `initial`: the sync at startup, before the ruler starts to evaluate rules.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Sync duration') +
+        $.ncLatencyPanel('cortex_ruler_sync_rules_duration_seconds', '%s' % $.jobMatcher($._config.job_names.ruler)) +
+        $.panelDescription(
+          'Sync duration',
+          |||
+            Time for a ruler replica to sync the rule groups it owns.
+
+            This includes the time to list and load the rule groups from object storage, filter them, and apply them to the rule managers. For the object storage operations alone, see the ruler configuration object store row.
+
+            The metric covers both full and partial syncs, and is not split by what triggered the sync.
+          |||
+        ),
+      )
+    )
+    .addRow(
+      $.row('Rule group ownership')
+      .addPanel(
+        $.timeseriesPanel('Rule groups per replica') +
+        $.queryPanel(
+          'count by (%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
+          '{{ %s }}' % $._config.per_instance_label
+        ) +
+        // Stack to read the total the selected cells evaluate.
+        // Stacking also avoids misreading a per-replica drop caused by a ruler scale out.
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'short', custom+: { fillOpacity: 20, lineWidth: 1 } } } } +
+        $.panelDescription(
+          'Rule groups per replica',
+          |||
+            Number of rule groups owned by each ruler replica, stacked.
+
+            Each rule group is owned by one replica at a time, so in steady state the stack total is the number of rule groups the selected cells evaluate. A band shrinking while another grows is resharding.
+
+            The total rises during a rollout. A replica loads its rule groups while joining the ring, before it starts evaluating them, so joining and leaving replicas are counted alongside the ones they replace.
+
+            A lasting imbalance in band heights means the rule groups are not spread evenly over the ruler ring tokens.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Tenants per replica') +
+        $.queryPanel(
+          'max by (%s) (cortex_ruler_managers_total{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
+          '{{ %s }}' % $._config.per_instance_label
+        ) +
+        // Stack to compare replicas.
+        // Stacking also avoids misreading a per-replica drop caused by a ruler scale out.
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'short', custom+: { fillOpacity: 20, lineWidth: 1 } } } } +
+        $.panelDescription(
+          'Tenants per replica',
+          |||
+            Number of tenants with a rule manager on each ruler replica, stacked.
+
+            A replica keeps a rule manager for a tenant while it owns at least one of that tenant's rule groups. A tenant is therefore counted once per replica holding its rule groups, so the stack total is higher than the number of tenants in the cell.
+
+            Many rule groups can move between replicas without this changing, so read it as ownership context rather than as a measure of resharding.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Rule configuration updates') +
+        $.queryPanel(
+          'sum(rate(cortex_ruler_config_updates_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler),
+          'updates'
+        ) +
+        $.panelDescription(
+          'Rule configuration updates',
+          |||
+            Rate of tenants whose rule set on a replica changed during a sync.
+
+            This counts both a tenant editing its rules and rule groups moving between replicas. Read it with the Syncs panel: a rise next to `ring-change` syncs is resharding, a rise next to `api-change` syncs is a tenant edit.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Ring check errors') +
+        $.failurePanel('sum(rate(cortex_ruler_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), 'Errors / sec') +
+        $.panelDescription(
+          'Ring check errors',
+          |||
+            Rate of failures to read the ruler ring while working out which rule groups a replica owns.
+
+            Rule groups can be missed while this is not zero.
+          |||
+        ),
+      )
+    )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Configuration API (gateway)')

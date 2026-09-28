@@ -35296,6 +35296,438 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Ruler ring members\nRuler ring members by state. Every replica reports its own view of its cell's ring, so this takes the maximum within each ring and then sums across the selected cells.\n\n`ACTIVE` is the set rule groups are evaluated over. A replica's first sync after startup shards over `ACTIVE` and `JOINING`, which is why a rollout briefly raises the rule group total.\n\nRing membership can change within a scrape interval, so this panel may miss `JOINING` and `LEAVING` states. It can also overcount by one while replicas disagree, because the maximum is taken for each state separately. The `ring-change` series in the Syncs panel is the reliable record that the ring changed.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 7,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (state) (max by (cluster, namespace, state) (cortex_ring_members{name=\"ruler\", cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))",
+                            "format": "time_series",
+                            "legendFormat": "{{ state }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ruler ring members",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Syncs\nRate of rule group sync operations, split by what triggered them.\n\n- `periodic`: the `-ruler.poll-interval` timer, 10m by default.\n- `ring-change`: the ruler saw the ruler ring change and resynced. Watch this to spot rule group resharding.\n- `api-change`: a tenant changed its rule configuration.\n- `initial`: the sync at startup, before the ruler starts to evaluate rules.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (reason) (rate(cortex_ruler_sync_rules_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{ reason }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Syncs",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Sync duration\nTime for a ruler replica to sync the rule groups it owns.\n\nThis includes the time to list and load the rule groups from object storage, filter them, and apply them to the rule managers. For the object storage operations alone, see the ruler configuration object store row.\n\nThe metric covers both full and partial syncs, and is not split by what triggered the sync.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 10,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 9,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(sum(histogram_sum(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C"
+                         },
+                         {
+                            "expr": "(sum(rate(cortex_ruler_sync_rules_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ruler_sync_rules_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
+                         }
+                      ],
+                      "title": "Sync duration",
+                      "type": "timeseries",
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group sync",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule groups per replica\nNumber of rule groups owned by each ruler replica, stacked.\n\nEach rule group is owned by one replica at a time, so in steady state the stack total is the number of rule groups the selected cells evaluate. A band shrinking while another grows is resharding.\n\nThe total rises during a rollout. A replica loads its rule groups while joining the ring, before it starts evaluating them, so joining and leaving replicas are counted alongside the ones they replace.\n\nA lasting imbalance in band heights means the rule groups are not spread evenly over the ruler ring tokens.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 10,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "count by (pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule groups per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Tenants per replica\nNumber of tenants with a rule manager on each ruler replica, stacked.\n\nA replica keeps a rule manager for a tenant while it owns at least one of that tenant's rule groups. A tenant is therefore counted once per replica holding its rule groups, so the stack total is higher than the number of tenants in the cell.\n\nMany rule groups can move between replicas without this changing, so read it as ownership context rather than as a measure of resharding.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 11,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (pod) (cortex_ruler_managers_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Tenants per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule configuration updates\nRate of tenants whose rule set on a replica changed during a sync.\n\nThis counts both a tenant editing its rules and rule groups moving between replicas. Read it with the Syncs panel: a rise next to `ring-change` syncs is resharding, a rise next to `api-change` syncs is a tenant edit.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_config_updates_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "updates",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule configuration updates",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Ring check errors\nRate of failures to read the ruler ring while working out which rule groups a replica owns.\n\nRule groups can be missed while this is not zero.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Errors / sec"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_ring_check_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Errors / sec",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ring check errors",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group ownership",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -35470,7 +35902,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35524,7 +35956,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35650,7 +36082,7 @@ data:
                             }
                          ]
                       },
-                      "id": 9,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35705,7 +36137,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 10,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35934,7 +36366,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35988,7 +36420,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36148,7 +36580,7 @@ data:
                             }
                          ]
                       },
-                      "id": 13,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36286,7 +36718,7 @@ data:
                             }
                          ]
                       },
-                      "id": 14,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36352,7 +36784,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36451,7 +36883,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36674,7 +37106,7 @@ data:
                             }
                          ]
                       },
-                      "id": 17,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36728,7 +37160,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36837,7 +37269,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36934,7 +37366,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37049,7 +37481,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37110,7 +37542,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37172,7 +37604,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37227,7 +37659,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37287,7 +37719,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37335,7 +37767,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37383,7 +37815,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37443,7 +37875,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37503,7 +37935,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37536,7 +37968,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 30,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37584,7 +38016,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37681,7 +38113,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37778,7 +38210,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 40,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37875,7 +38307,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37972,7 +38404,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -38069,7 +38501,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 43,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
