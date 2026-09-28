@@ -27,7 +27,7 @@ use mimir_rust_kafka_ingester::ring_client::{
     poll_active_partitions, poll_owned_ranges, wait_active_partitions,
 };
 use mimir_rust_kafka_ingester::runtime_config::{RuntimeConfig, RuntimeConfigArgs};
-use mimir_rust_kafka_ingester::segment::{CompressedFrame, SegmentLog};
+use mimir_rust_kafka_ingester::segment::{self, SegmentLog, SeriesKey};
 mod profiling;
 
 #[cfg(all(target_os = "linux", feature = "jemalloc", feature = "mimalloc"))]
@@ -1426,18 +1426,20 @@ fn spawn_orderer(
 const APPLY_BATCH: usize = 64;
 
 fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
-    let request = record
-        .decode()
+    let decoded = record
+        .decode_with_label_spans()
         .transpose()
         .with_context(|| format!("decode offset {}", record.offset))?;
-    let frame = SegmentLog::frame(
-        record.offset,
-        record.timestamp_ms,
-        &record.tenant,
-        request.as_ref().unwrap_or(&empty_request()),
-    )
-    .and_then(|frame| frame.compress())
-    .with_context(|| format!("prepare offset {}", record.offset))?;
+    // Hashing the series for the segment log runs here, in parallel, and the ordered applier only
+    // looks the keys up.
+    let (request, keys) = match (decoded, &record.payload) {
+        (Some((request, spans)), Some(payload)) => {
+            let keys =
+                segment::series_keys_with_label_bytes(&record.tenant, &request, payload, &spans);
+            (Some(request), keys)
+        }
+        _ => (None, Vec::new()),
+    };
     Ok(Apply::Record {
         offset: record.offset,
         timestamp_ms: record.timestamp_ms,
@@ -1445,7 +1447,7 @@ fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
         bytes: record.payload.as_ref().map_or(0, Bytes::len),
         tenant: record.tenant,
         request,
-        frame,
+        keys,
     })
 }
 
@@ -1457,7 +1459,7 @@ enum Apply {
         bytes: usize,
         tenant: String,
         request: Option<DecodedRequest>,
-        frame: CompressedFrame,
+        keys: Vec<SeriesKey>,
     },
     Maintain,
 }
@@ -1482,7 +1484,7 @@ struct PendingRecord {
     timestamp_ms: i64,
     high_watermark: i64,
     bytes: usize,
-    frame: CompressedFrame,
+    keys: Vec<SeriesKey>,
 }
 
 impl Applier {
@@ -1498,14 +1500,14 @@ impl Applier {
                     bytes,
                     tenant,
                     request,
-                    frame,
+                    keys,
                 } => records.push((
                     PendingRecord {
                         offset,
                         timestamp_ms,
                         high_watermark,
                         bytes,
-                        frame,
+                        keys,
                     },
                     tenant,
                     request,
@@ -1542,21 +1544,34 @@ impl Applier {
             }
             previous = Some(record.offset);
         }
+        let ingested_ms = now_ms();
+        self.segment_log.begin_batch(ingested_ms)?;
         let mut pending = Vec::with_capacity(records.len());
-        let batch = records
-            .into_iter()
-            .filter_map(|(record, tenant, request)| {
-                let bytes = record.bytes;
-                pending.push(record);
-                request.map(|request| IngestRecord {
+        let mut batch = Vec::with_capacity(records.len());
+        for (record, tenant, request) in records {
+            let frame = self
+                .segment_log
+                .encode(
+                    record.offset,
+                    record.timestamp_ms,
+                    ingested_ms,
+                    &tenant,
+                    request.as_ref().unwrap_or(&empty_request()),
+                    &record.keys,
+                )
+                .with_context(|| format!("encode offset {}", record.offset))?;
+            let bytes = record.bytes;
+            pending.push((record, frame));
+            if let Some(request) = request {
+                batch.push(IngestRecord {
                     tenant,
                     request,
-                    ingested_ms: now_ms(),
+                    ingested_ms,
                     track_rate: true,
                     bytes,
-                })
-            })
-            .collect();
+                });
+            }
+        }
         // Like the Go ingester, whose pusher retries records while its push circuit breaker is
         // open, and counts each head append.
         let permit = match &self.push_circuit_breaker {
@@ -1575,8 +1590,8 @@ impl Applier {
         if let Some((breaker, permit)) = permit {
             breaker.finish_all(permit, flushes as usize);
         }
-        for record in pending {
-            self.segment_log.append_compressed(record.frame)?;
+        for (record, frame) in pending {
+            self.segment_log.append_compressed(frame)?;
             self.consistency.consumed(
                 self.cluster,
                 record.offset,
@@ -1852,12 +1867,8 @@ mod tests {
             metadata: Vec::new(),
         };
         let store = Store::with_shards(1000, None, Some(chunk_dir.clone()), 4, 2).unwrap();
-        let frame = SegmentLog::frame(5, 1, "tenant", &request)
-            .unwrap()
-            .compress()
-            .unwrap();
+        log.append(5, 1, "tenant", &request).unwrap();
         store.ingest("tenant", request).unwrap();
-        log.append_compressed(frame).unwrap();
         log.flush().unwrap();
         drop(log);
         let offsets = [SnapshotOffset {
@@ -1915,14 +1926,13 @@ mod tests {
                 .send(tokio::task::spawn_blocking(move || {
                     // Earlier records finish last.
                     std::thread::sleep(Duration::from_millis(50 - offset as u64 * 10));
-                    let request = empty_request();
                     Ok(Apply::Record {
                         offset,
                         timestamp_ms: offset,
                         high_watermark: offset + 1,
                         bytes: 0,
                         tenant: String::new(),
-                        frame: SegmentLog::frame(offset, offset, "", &request)?.compress()?,
+                        keys: Vec::new(),
                         request: None,
                     })
                 }))
@@ -1982,10 +1992,7 @@ mod tests {
                 high_watermark: offset + 1,
                 bytes: 0,
                 tenant: "tenant".into(),
-                frame: SegmentLog::frame(offset, offset, "tenant", &request)
-                    .unwrap()
-                    .compress()
-                    .unwrap(),
+                keys: segment::series_keys("tenant", &request),
                 request: Some(request),
             }
         };

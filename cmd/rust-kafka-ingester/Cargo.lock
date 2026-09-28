@@ -1005,6 +1005,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tower",
+ "twox-hash",
  "zstd",
 ]
 

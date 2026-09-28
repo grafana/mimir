@@ -32,6 +32,7 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 bytes = "1.12.1"
+twox-hash = { version = "2.1", default-features = false, features = ["std", "xxhash3_128"] }
 tower = "0.5"
 http = "1"
 http-body = "1"
@@ -73,10 +74,6 @@ harness = false
 
 [[bench]]
 name = "recovery"
-harness = false
-
-[[bench]]
-name = "compression"
 harness = false
 
 [[bench]]

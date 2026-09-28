@@ -1,20 +1,26 @@
 use std::fs::{self, File, OpenOptions};
+use std::hash::BuildHasher;
 use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use bytes::Bytes;
 use prost::Message;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 
 use crate::proto::cortexpb;
-use crate::record::{DecodedRequest, DecodedSeries};
+use crate::record::{DecodedRequest, DecodedSeries, LabelStr};
 
 const FILE_MAGIC: &[u8; 8] = b"MIMIRH01";
 const CHECKPOINT_MAGIC: &[u8; 8] = b"MIMIRCP1";
 const LEGACY_FILE_VERSION: u32 = 1;
-const FILE_FORMAT_VERSION: u32 = 2;
+// Every frame holds its series' labels.
+const COMPRESSED_FILE_VERSION: u32 = 2;
+// Like the Prometheus WAL, a file holds a series' labels once and refers to them afterwards.
+const FILE_FORMAT_VERSION: u32 = 3;
 const CHECKPOINT_VERSION: u32 = 1;
 const FILE_HEADER_LEN: usize = 28;
 const FRAME_HEADER_LEN: usize = 8;
@@ -31,7 +37,101 @@ pub struct RecoveredRecord {
 
 struct CurrentFile {
     hour: i64,
+    sequence: u32,
     file: File,
+    // Which log instance's file this is, so a frame is only written to the file it was encoded
+    // for.
+    id: u64,
+    // The id of each series the file holds, by `SeriesKey`, in the order the file defined them.
+    series: hashbrown::HashMap<SeriesKey, u32, std::hash::BuildHasherDefault<KeyHasher>>,
+}
+
+/// A series' identity within a segment file: its tenant and labels, hashed with a seed chosen by
+/// the process, so crafted labels cannot make two series share an id. Files are only written by
+/// the process that created them, so keys never outlive their seed.
+pub type SeriesKey = u128;
+
+// Keys are already uniform hashes.
+#[derive(Default)]
+struct KeyHasher(u64);
+
+impl std::hash::Hasher for KeyHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.0 ^= u64::from_le_bytes(word);
+        }
+    }
+
+    fn write_u128(&mut self, value: u128) {
+        self.0 = value as u64;
+    }
+}
+
+fn key_seed() -> u64 {
+    static SEED: OnceLock<u64> = OnceLock::new();
+    *SEED.get_or_init(|| std::hash::RandomState::new().hash_one("segment series keys"))
+}
+
+/// The `SeriesKey` of each series of `request`.
+pub fn series_keys(tenant: &str, request: &DecodedRequest) -> Vec<SeriesKey> {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    BUFFER.with_borrow_mut(|buffer| {
+        request
+            .series
+            .iter()
+            .map(|series| {
+                buffer.clear();
+                put_key_part(buffer, tenant.as_bytes());
+                for (name, value) in &series.labels {
+                    put_key_part(buffer, name.as_bytes());
+                    put_key_part(buffer, value.as_bytes());
+                }
+                twox_hash::XxHash3_128::oneshot_with_seed(key_seed(), buffer)
+            })
+            .collect()
+    })
+}
+
+/// Like `series_keys`, hashing a series' encoded labels in `record` where `label_spans` has them,
+/// rather than copying its labels. Those keys differ from `series_keys`', so a series whose
+/// labels come either way is defined twice in a file, which only costs its labels.
+pub fn series_keys_with_label_bytes(
+    tenant: &str,
+    request: &DecodedRequest,
+    record: &[u8],
+    label_spans: &[Option<std::ops::Range<usize>>],
+) -> Vec<SeriesKey> {
+    let fallback = || series_keys(tenant, request);
+    if label_spans.len() != request.series.len() || label_spans.iter().any(Option::is_none) {
+        return fallback();
+    }
+    // The tenant picks the seed, so series of different tenants never share a key.
+    let seed =
+        twox_hash::XxHash3_128::oneshot_with_seed(key_seed() ^ ENCODED_LABELS, tenant.as_bytes())
+            as u64;
+    label_spans
+        .iter()
+        .map(|span| {
+            let span = span.clone().expect("checked");
+            twox_hash::XxHash3_128::oneshot_with_seed(seed, &record[span])
+        })
+        .collect()
+}
+
+// Keeps keys of encoded labels apart from keys of copied labels.
+const ENCODED_LABELS: u64 = 0x9e37_79b9_7f4a_7c15;
+
+fn put_key_part(buffer: &mut Vec<u8>, bytes: &[u8]) {
+    buffer.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    buffer.extend_from_slice(bytes);
 }
 
 pub struct SegmentLog {
@@ -40,61 +140,29 @@ pub struct SegmentLog {
     partition: i32,
     retention_ms: Option<i64>,
     current: Option<CurrentFile>,
+    next_file_id: u64,
     last_offset: Option<i64>,
     pending_offset: Option<i64>,
-}
-
-pub struct PreparedFrame {
-    offset: i64,
-    ingested_ms: i64,
-    body: Vec<u8>,
+    payload: Vec<u8>,
 }
 
 thread_local! {
-    // Frames hold one Kafka record of a few KiB, so setting up a context per frame cost more
-    // than compressing it.
+    // Frames hold one Kafka record, so setting up a context per frame cost more than compressing
+    // it.
     static COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> =
         std::cell::RefCell::new(zstd::bulk::Compressor::new(1).expect("zstd compressor"));
 }
 
-/// A frame whose payload is already zstd-compressed, so compression can run off the thread that
-/// owns the log.
+/// A record encoded for the current segment file, written once the store has applied it.
 pub struct CompressedFrame {
     offset: i64,
-    ingested_ms: i64,
+    file: u64,
     body: Vec<u8>,
 }
 
 impl CompressedFrame {
     pub fn offset(&self) -> i64 {
         self.offset
-    }
-}
-
-impl PreparedFrame {
-    pub fn uncompressed_body(&self) -> &[u8] {
-        &self.body
-    }
-
-    pub fn compress(self) -> Result<CompressedFrame> {
-        let raw = self.body;
-        if raw.len() < 24 || raw.len() > 128 * 1024 * 1024 {
-            bail!("segment frame has invalid uncompressed size");
-        }
-        let compressed = COMPRESSOR
-            .with_borrow_mut(|compressor| compressor.compress(&raw[24..]))
-            .context("compress segment frame")?;
-        let mut body = Vec::with_capacity(24 + compressed.len());
-        body.extend_from_slice(&raw[..24]);
-        body.extend_from_slice(&compressed);
-        if body.len() > 128 * 1024 * 1024 {
-            bail!("compressed segment frame exceeds 128 MiB");
-        }
-        Ok(CompressedFrame {
-            offset: self.offset,
-            ingested_ms: self.ingested_ms,
-            body,
-        })
     }
 }
 
@@ -139,7 +207,7 @@ impl SegmentLog {
                 Some("segment") => 1,
                 _ => 2,
             };
-            (segment_hour(path), order)
+            (segment_id(path), order)
         });
         let mut segment_offset = None;
         let mut replayed_offset = None;
@@ -182,8 +250,10 @@ impl SegmentLog {
             partition,
             retention_ms,
             current: None,
+            next_file_id: 0,
             last_offset,
             pending_offset: None,
+            payload: Vec::new(),
         };
         log.remove_expired()?;
         Ok(log)
@@ -216,8 +286,10 @@ impl SegmentLog {
             partition,
             retention_ms,
             current: None,
+            next_file_id: 0,
             last_offset: checkpoint,
             pending_offset: None,
+            payload: Vec::new(),
         };
         log.remove_expired()?;
         Ok(Some(log))
@@ -234,59 +306,85 @@ impl SegmentLog {
         tenant: &str,
         request: &DecodedRequest,
     ) -> Result<()> {
-        let frame = self.prepare_at(offset, timestamp_ms, tenant, request, now_ms())?;
-        self.append_prepared(frame)
+        self.append_at(offset, timestamp_ms, tenant, request, now_ms())
     }
 
-    fn prepare_at(
-        &self,
+    fn append_at(
+        &mut self,
         offset: i64,
         timestamp_ms: i64,
         tenant: &str,
         request: &DecodedRequest,
         ingested_ms: i64,
-    ) -> Result<PreparedFrame> {
-        if self.last_offset.is_some_and(|last| offset <= last) {
-            bail!(
-                "Kafka offset {offset} is not after persisted offset {:?}",
-                self.last_offset
-            );
+    ) -> Result<()> {
+        self.check_offset(offset)?;
+        self.begin_batch(ingested_ms)?;
+        let keys = series_keys(tenant, request);
+        let frame = self.encode(offset, timestamp_ms, ingested_ms, tenant, request, &keys)?;
+        self.append_compressed(frame)
+    }
+
+    /// Starts the frames of one batch: they all go to the file of `ingested_ms`'s hour, since a
+    /// frame refers to series its file defined before it.
+    pub fn begin_batch(&mut self, ingested_ms: i64) -> Result<()> {
+        self.rotate(hour_start(ingested_ms))
+    }
+
+    /// Encodes a record for the current file, with a series' labels the first time the file has
+    /// it and its id in the file afterwards. `keys` are the `series_keys` of `request`.
+    pub fn encode(
+        &mut self,
+        offset: i64,
+        timestamp_ms: i64,
+        ingested_ms: i64,
+        tenant: &str,
+        request: &DecodedRequest,
+        keys: &[SeriesKey],
+    ) -> Result<CompressedFrame> {
+        if keys.len() != request.series.len() {
+            bail!("segment frame needs one key per series");
         }
-        Self::encode_frame(offset, timestamp_ms, tenant, request, ingested_ms)
-    }
-
-    /// Encodes a frame without access to the log; `append_compressed` checks its offset.
-    pub fn frame(
-        offset: i64,
-        timestamp_ms: i64,
-        tenant: &str,
-        request: &DecodedRequest,
-    ) -> Result<PreparedFrame> {
-        Self::encode_frame(offset, timestamp_ms, tenant, request, now_ms())
-    }
-
-    fn encode_frame(
-        offset: i64,
-        timestamp_ms: i64,
-        tenant: &str,
-        request: &DecodedRequest,
-        ingested_ms: i64,
-    ) -> Result<PreparedFrame> {
-        let mut body = Vec::new();
+        let current = self.current.as_mut().context("segment file is not open")?;
+        let payload = &mut self.payload;
+        payload.clear();
+        put_string(payload, tenant)?;
+        put_i32(payload, request.source);
+        put_metadata(payload, &request.metadata)?;
+        put_len(payload, request.series.len())?;
+        for (series, key) in request.series.iter().zip(keys) {
+            let defined = current.series.len() as u32;
+            match current.series.entry(*key) {
+                hashbrown::hash_map::Entry::Occupied(entry) => {
+                    put_varint(payload, u64::from(*entry.get()) + 1);
+                }
+                hashbrown::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(defined);
+                    put_varint(payload, 0);
+                    put_len(payload, series.labels.len())?;
+                    for (name, value) in &series.labels {
+                        put_string(payload, name)?;
+                        put_string(payload, value)?;
+                    }
+                }
+            }
+            put_series_data(payload, series)?;
+        }
+        let compressed = COMPRESSOR
+            .with_borrow_mut(|compressor| compressor.compress(payload))
+            .context("compress segment frame")?;
+        let mut body = Vec::with_capacity(FRAME_PREFIX_LEN + compressed.len());
         put_i64(&mut body, offset);
         put_i64(&mut body, timestamp_ms);
         put_i64(&mut body, ingested_ms);
-        put_string(&mut body, tenant)?;
-        encode_request(&mut body, request)?;
-        Ok(PreparedFrame {
+        body.extend_from_slice(&compressed);
+        if body.len() > 128 * 1024 * 1024 {
+            bail!("compressed segment frame exceeds 128 MiB");
+        }
+        Ok(CompressedFrame {
             offset,
-            ingested_ms,
+            file: current.id,
             body,
         })
-    }
-
-    pub fn append_prepared(&mut self, frame: PreparedFrame) -> Result<()> {
-        self.append_compressed(frame.compress()?)
     }
 
     pub fn check_offset(&self, offset: i64) -> Result<()> {
@@ -301,12 +399,13 @@ impl SegmentLog {
 
     pub fn append_compressed(&mut self, frame: CompressedFrame) -> Result<()> {
         self.check_offset(frame.offset)?;
-        let hour = hour_start(frame.ingested_ms);
-        self.rotate(hour)?;
         let body = frame.body;
         let length = u32::try_from(body.len()).context("segment frame exceeds 4 GiB")?;
         let checksum = crc32fast::hash(&body);
         let current = self.current.as_mut().context("segment file is not open")?;
+        if current.id != frame.file {
+            bail!("segment frame was encoded for another file");
+        }
         current.file.write_all(&length.to_le_bytes())?;
         current.file.write_all(&checksum.to_le_bytes())?;
         current.file.write_all(&body)?;
@@ -351,55 +450,55 @@ impl SegmentLog {
         }
         self.flush()?;
         self.seal_current()?;
-        let mut recovered_current = None;
+        // A file left open by an earlier process is sealed rather than appended to: the series
+        // ids it defined went with that process.
+        let mut sequence = 0;
         for path in segment_paths(&self.directory)? {
+            let Some((path_hour, path_sequence)) = segment_id(&path) else {
+                continue;
+            };
+            if path_hour == hour {
+                sequence = sequence.max(path_sequence + 1);
+            }
             if path.extension().is_some_and(|value| value == "open") {
-                if segment_hour(&path) == Some(hour) {
-                    if read_file_version(&path)? == LEGACY_FILE_VERSION {
-                        let legacy = path.with_extension("legacy");
-                        if legacy.exists() {
-                            bail!("refusing to overwrite legacy segment {}", legacy.display());
-                        }
-                        fs::rename(&path, &legacy)
-                            .with_context(|| format!("seal legacy segment {}", path.display()))?;
-                        sync_directory(&self.directory)?;
-                    } else {
-                        recovered_current = Some(path);
-                    }
-                    continue;
-                }
                 let to = path.with_extension("segment");
                 if to.exists() {
                     bail!("refusing to overwrite sealed segment {}", to.display());
                 }
                 fs::rename(&path, &to)
                     .with_context(|| format!("seal recovered segment {}", path.display()))?;
+                sync_directory(&self.directory)?;
             }
         }
         self.remove_expired()?;
-        let path =
-            recovered_current.unwrap_or_else(|| self.directory.join(segment_name(hour, "open")));
-        let new_file = !path.exists();
+        let path = self.directory.join(segment_name(hour, sequence, "open"));
         let mut file = OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .append(true)
             .read(true)
             .open(&path)
             .with_context(|| format!("open segment {}", path.display()))?;
-        if new_file {
-            write_file_header(&mut file, self.cluster, self.partition, hour)?;
-            file.sync_all()?;
-            sync_directory(&self.directory)?;
-        }
-        self.current = Some(CurrentFile { hour, file });
+        write_file_header(&mut file, self.cluster, self.partition, hour)?;
+        file.sync_all()?;
+        sync_directory(&self.directory)?;
+        self.current = Some(CurrentFile {
+            hour,
+            sequence,
+            file,
+            id: self.next_file_id,
+            series: Default::default(),
+        });
+        self.next_file_id += 1;
         Ok(())
     }
 
     fn seal_current(&mut self) -> Result<()> {
         if let Some(current) = self.current.take() {
             current.file.sync_all()?;
-            let from = self.directory.join(segment_name(current.hour, "open"));
-            let to = self.directory.join(segment_name(current.hour, "segment"));
+            let from = self
+                .directory
+                .join(segment_name(current.hour, current.sequence, "open"));
+            let to = from.with_extension("segment");
             fs::rename(&from, &to).with_context(|| format!("seal segment {}", from.display()))?;
             sync_directory(&self.directory)?;
         }
@@ -413,7 +512,7 @@ impl SegmentLog {
         let cutoff = now_ms().saturating_sub(retention_ms);
         let current_hour = self.current.as_ref().map(|current| current.hour);
         for path in segment_paths(&self.directory)? {
-            let Some(hour) = segment_hour(&path) else {
+            let Some((hour, _)) = segment_id(&path) else {
                 continue;
             };
             if Some(hour) != current_hour && hour.saturating_add(HOUR_MS) < cutoff {
@@ -455,14 +554,14 @@ fn read_segment(
         bail!("segment {} has invalid magic", path.display());
     }
     let version = cursor.u32()?;
-    if version != LEGACY_FILE_VERSION && version != FILE_FORMAT_VERSION {
+    if !(LEGACY_FILE_VERSION..=FILE_FORMAT_VERSION).contains(&version) {
         bail!("segment {} has unsupported format version", path.display());
     }
     if cursor.u32()? != expected_cluster || cursor.i32()? != expected_partition {
         bail!("segment {} belongs to another Kafka source", path.display());
     }
     let header_hour = cursor.i64()?;
-    if segment_hour(path) != Some(header_hour) {
+    if segment_id(path).map(|(hour, _)| hour) != Some(header_hour) {
         bail!(
             "segment {} hour does not match its filename",
             path.display()
@@ -479,6 +578,11 @@ fn read_segment(
     let mut frames = Vec::new();
     let mut spare = Vec::new();
     let mut batch_decoded_bytes = 0_u64;
+    let mut replay_state = ReplayState {
+        version,
+        cutoff: replay_cutoff,
+        series: Vec::new(),
+    };
     loop {
         let mut frame_header = [0; FRAME_HEADER_LEN];
         match reader.read(&mut frame_header[..1]) {
@@ -487,7 +591,7 @@ fn read_segment(
             Err(error) => {
                 replay_batch(
                     &decode_pool,
-                    version,
+                    &mut replay_state,
                     path,
                     &mut frames,
                     &mut spare,
@@ -500,7 +604,7 @@ fn read_segment(
         if let Err(error) = reader.read_exact(&mut frame_header[1..]) {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -519,7 +623,7 @@ fn read_segment(
         if length < FRAME_PREFIX_LEN || length > 128 * 1024 * 1024 {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -533,7 +637,7 @@ fn read_segment(
         if let Err(error) = reader.read_exact(&mut body) {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -548,7 +652,7 @@ fn read_segment(
         if crc32fast::hash(&body) != checksum {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -557,13 +661,14 @@ fn read_segment(
             )?;
             return finish_torn(path, reader, mutable, last_offset, valid_len);
         }
-        if let Some(cutoff) = replay_cutoff {
+        // Expired frames of a file with series ids still define series that later frames use.
+        if let Some(cutoff) = replay_cutoff.filter(|_| version < FILE_FORMAT_VERSION) {
             if body.len() >= 24 {
                 let ingested_ms = i64::from_le_bytes(body[16..24].try_into().unwrap());
                 if ingested_ms < cutoff {
                     replay_batch(
                         &decode_pool,
-                        version,
+                        &mut replay_state,
                         path,
                         &mut frames,
                         &mut spare,
@@ -578,7 +683,7 @@ fn read_segment(
                 }
             }
         }
-        let decoded_size = if version == FILE_FORMAT_VERSION {
+        let decoded_size = if version >= COMPRESSED_FILE_VERSION {
             body.get(24..)
                 .and_then(|compressed| zstd::zstd_safe::get_frame_content_size(compressed).ok())
                 .flatten()
@@ -590,7 +695,7 @@ fn read_segment(
         {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -606,7 +711,7 @@ fn read_segment(
         if frames.len() >= 32 || batch_decoded_bytes >= 16 * 1024 * 1024 {
             replay_batch(
                 &decode_pool,
-                version,
+                &mut replay_state,
                 path,
                 &mut frames,
                 &mut spare,
@@ -618,7 +723,7 @@ fn read_segment(
     }
     replay_batch(
         &decode_pool,
-        version,
+        &mut replay_state,
         path,
         &mut frames,
         &mut spare,
@@ -628,46 +733,80 @@ fn read_segment(
     Ok(last_offset)
 }
 
+// What replaying a file carries from one batch of frames to the next.
+struct ReplayState {
+    version: u32,
+    cutoff: Option<i64>,
+    // The labels of the series the file defined, by id.
+    series: Vec<DefinedLabels>,
+}
+
+enum DecodedFrame {
+    Record(RecoveredRecord),
+    // Its series refer to the file's series by id.
+    WithSeriesIds(FrameWithSeriesIds),
+}
+
 fn replay_batch(
     decode_pool: &rayon::ThreadPool,
-    version: u32,
+    state: &mut ReplayState,
     path: &Path,
     frames: &mut Vec<(u64, Vec<u8>)>,
     spare: &mut Vec<Vec<u8>>,
     replay: &mut impl FnMut(RecoveredRecord) -> Result<()>,
     last_offset: &mut Option<i64>,
 ) -> Result<()> {
+    let version = state.version;
     let decoded: Vec<_> = decode_pool.install(|| {
         frames
             .par_iter()
             .map(|(at, body)| {
-                let decoded;
-                let bytes = if version == FILE_FORMAT_VERSION {
-                    if body.len() < 24 {
-                        bail!(
-                            "compressed segment frame is too short in {}",
-                            path.display()
-                        );
-                    }
-                    let payload = zstd::bulk::decompress(&body[24..], 128 * 1024 * 1024)
-                        .with_context(|| {
-                            format!("decompress segment frame in {}", path.display())
-                        })?;
-                    decoded = [&body[..24], &payload].concat();
-                    decoded.as_slice()
-                } else {
-                    body.as_slice()
-                };
-                decode_frame(bytes).with_context(|| {
-                    format!("decode segment frame at byte {at} in {}", path.display())
-                })
+                let context = || format!("decode segment frame at byte {at} in {}", path.display());
+                if version == LEGACY_FILE_VERSION {
+                    return decode_frame(body)
+                        .map(DecodedFrame::Record)
+                        .with_context(context);
+                }
+                if body.len() < FRAME_PREFIX_LEN {
+                    bail!(
+                        "compressed segment frame is too short in {}",
+                        path.display()
+                    );
+                }
+                let payload = zstd::bulk::decompress(&body[FRAME_PREFIX_LEN..], 128 * 1024 * 1024)
+                    .with_context(|| format!("decompress segment frame in {}", path.display()))?;
+                if version == COMPRESSED_FILE_VERSION {
+                    let decoded = [&body[..FRAME_PREFIX_LEN], &payload].concat();
+                    return decode_frame(&decoded)
+                        .map(DecodedFrame::Record)
+                        .with_context(context);
+                }
+                decode_frame_with_series_ids(&body[..FRAME_PREFIX_LEN], payload.into())
+                    .map(DecodedFrame::WithSeriesIds)
+                    .with_context(context)
             })
             .collect()
     });
-    // Replaying in file order preserves offset and duplicate handling across batches.
-    for ((_, body), record) in frames.drain(..).zip(decoded) {
+    // Replaying in file order preserves offset and duplicate handling across batches, and defines
+    // series before frames use them.
+    for ((_, body), frame) in frames.drain(..).zip(decoded) {
         spare.push(body);
-        let record = record?;
+        let record = match frame? {
+            DecodedFrame::Record(record) => record,
+            DecodedFrame::WithSeriesIds(frame) => {
+                let expired = state
+                    .cutoff
+                    .is_some_and(|cutoff| frame.ingested_ms < cutoff);
+                let record = frame
+                    .resolve(&mut state.series)
+                    .with_context(|| format!("resolve series in {}", path.display()))?;
+                if expired {
+                    *last_offset = Some(record.offset);
+                    continue;
+                }
+                record
+            }
+        };
         *last_offset = Some(record.offset);
         replay(record)?;
     }
@@ -710,15 +849,179 @@ fn decode_frame(bytes: &[u8]) -> Result<RecoveredRecord> {
     })
 }
 
-fn encode_request(bytes: &mut Vec<u8>, request: &DecodedRequest) -> Result<()> {
-    put_i32(bytes, request.source);
-    put_len(bytes, request.metadata.len())?;
-    for metadata in &request.metadata {
+/// A series a file defined, while replaying it: an hour's file defines every series it holds, so
+/// they are kept as interned names and values, without the frames that defined them.
+struct DefinedLabels(Bytes);
+
+impl DefinedLabels {
+    fn new(labels: &[(LabelStr, LabelStr)]) -> Self {
+        let mut bytes = Vec::new();
+        for (name, value) in labels {
+            crate::labels::put_varint(&mut bytes, u64::from(crate::labels::names::intern(name)));
+            crate::labels::put_varint(&mut bytes, value.len() as u64);
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        // Without the spare capacity a growing vector leaves.
+        Self(bytes.into_boxed_slice().into())
+    }
+
+    fn labels(&self) -> Vec<(LabelStr, LabelStr)> {
+        let names = crate::labels::names::snapshot();
+        let mut labels = Vec::new();
+        let mut bytes = &self.0[..];
+        while !bytes.is_empty() {
+            let name = names.name(crate::labels::take_varint(&mut bytes) as u32);
+            let length = crate::labels::take_varint(&mut bytes) as usize;
+            let (value, rest) = bytes.split_at(length);
+            bytes = rest;
+            let value = if value.is_empty() {
+                LabelStr::default()
+            } else {
+                LabelStr::from_utf8_lossy(self.0.slice_ref(value))
+            };
+            labels.push((LabelStr::from_static(name), value));
+        }
+        labels
+    }
+}
+
+struct FrameWithSeriesIds {
+    offset: i64,
+    kafka_timestamp_ms: i64,
+    ingested_ms: i64,
+    tenant: String,
+    source: i32,
+    metadata: Vec<cortexpb::MetricMetadata>,
+    series: Vec<(FrameLabels, DecodedSeries)>,
+}
+
+// A series' labels when the frame defines it, or its id.
+type FrameLabels = Result<Vec<(LabelStr, LabelStr)>, u32>;
+
+impl FrameWithSeriesIds {
+    fn resolve(self, defined: &mut Vec<DefinedLabels>) -> Result<RecoveredRecord> {
+        let series = self
+            .series
+            .into_iter()
+            .map(|(labels, mut series)| {
+                series.labels = match labels {
+                    Ok(labels) => {
+                        defined.push(DefinedLabels::new(&labels));
+                        labels
+                    }
+                    Err(id) => defined
+                        .get(id as usize)
+                        .with_context(|| format!("series {id} is not defined before its use"))?
+                        .labels(),
+                };
+                Ok(series)
+            })
+            .collect::<Result<_>>()?;
+        Ok(RecoveredRecord {
+            offset: self.offset,
+            kafka_timestamp_ms: self.kafka_timestamp_ms,
+            ingested_ms: self.ingested_ms,
+            tenant: self.tenant,
+            request: DecodedRequest {
+                source: self.source,
+                series,
+                metadata: self.metadata,
+            },
+        })
+    }
+}
+
+fn decode_frame_with_series_ids(prefix: &[u8], payload: Bytes) -> Result<FrameWithSeriesIds> {
+    let mut cursor = Cursor::new(prefix);
+    let offset = cursor.i64()?;
+    let kafka_timestamp_ms = cursor.i64()?;
+    let ingested_ms = cursor.i64()?;
+    let mut cursor = Cursor::new(&payload);
+    let tenant = cursor.string()?;
+    let source = cursor.i32()?;
+    let metadata = decode_metadata(&mut cursor)?;
+    let series = cursor.items(|cursor| {
+        let labels = match cursor.varint()? {
+            0 => Ok(cursor.items(|cursor| Ok((cursor.label(&payload)?, cursor.label(&payload)?)))?),
+            id => Err(u32::try_from(id - 1).context("series id exceeds u32")?),
+        };
+        Ok((labels, decode_series_data(cursor, Vec::new())?))
+    })?;
+    if cursor.remaining() != 0 {
+        bail!("trailing bytes in segment frame");
+    }
+    Ok(FrameWithSeriesIds {
+        offset,
+        kafka_timestamp_ms,
+        ingested_ms,
+        tenant,
+        source,
+        metadata,
+        series,
+    })
+}
+
+fn put_metadata(bytes: &mut Vec<u8>, metadata: &[cortexpb::MetricMetadata]) -> Result<()> {
+    put_len(bytes, metadata.len())?;
+    for metadata in metadata {
         put_i32(bytes, metadata.r#type);
         put_string(bytes, &metadata.metric_family_name)?;
         put_string(bytes, &metadata.help)?;
         put_string(bytes, &metadata.unit)?;
     }
+    Ok(())
+}
+
+fn decode_metadata(cursor: &mut Cursor<'_>) -> Result<Vec<cortexpb::MetricMetadata>> {
+    cursor.items(|cursor| {
+        Ok(cortexpb::MetricMetadata {
+            r#type: cursor.i32()?,
+            metric_family_name: cursor.string()?,
+            help: cursor.string()?,
+            unit: cursor.string()?,
+        })
+    })
+}
+
+// Everything of a series but its labels.
+fn put_series_data(bytes: &mut Vec<u8>, series: &DecodedSeries) -> Result<()> {
+    put_i64(bytes, series.created_timestamp);
+    put_len(bytes, series.samples.len())?;
+    for sample in &series.samples {
+        put_i64(bytes, sample.timestamp_ms);
+        put_u64(bytes, sample.value.to_bits());
+    }
+    put_messages(bytes, &series.histograms)?;
+    put_messages(bytes, &series.exemplars)
+}
+
+fn decode_series_data(
+    cursor: &mut Cursor<'_>,
+    labels: Vec<(LabelStr, LabelStr)>,
+) -> Result<DecodedSeries> {
+    let created_timestamp = cursor.i64()?;
+    let samples = cursor.items(|cursor| {
+        Ok(cortexpb::Sample {
+            timestamp_ms: cursor.i64()?,
+            value: f64::from_bits(cursor.u64()?),
+        })
+    })?;
+    let histograms = cursor.messages::<cortexpb::Histogram>()?;
+    let exemplars = cursor.messages::<cortexpb::Exemplar>()?;
+    Ok(DecodedSeries {
+        labels,
+        samples,
+        histograms,
+        exemplars,
+        created_timestamp,
+    })
+}
+
+// Version 1 and 2 frames, where every series has its labels.
+#[cfg(test)]
+fn encode_request(bytes: &mut Vec<u8>, request: &DecodedRequest) -> Result<()> {
+    put_i32(bytes, request.source);
+    put_metadata(bytes, &request.metadata)?;
     put_len(bytes, request.series.len())?;
     for series in &request.series {
         put_len(bytes, series.labels.len())?;
@@ -726,47 +1029,18 @@ fn encode_request(bytes: &mut Vec<u8>, request: &DecodedRequest) -> Result<()> {
             put_string(bytes, name)?;
             put_string(bytes, value)?;
         }
-        put_i64(bytes, series.created_timestamp);
-        put_len(bytes, series.samples.len())?;
-        for sample in &series.samples {
-            put_i64(bytes, sample.timestamp_ms);
-            put_u64(bytes, sample.value.to_bits());
-        }
-        put_messages(bytes, &series.histograms)?;
-        put_messages(bytes, &series.exemplars)?;
+        put_series_data(bytes, series)?;
     }
     Ok(())
 }
 
 fn decode_request(cursor: &mut Cursor<'_>) -> Result<DecodedRequest> {
     let source = cursor.i32()?;
-    let metadata = cursor.items(|cursor| {
-        Ok(cortexpb::MetricMetadata {
-            r#type: cursor.i32()?,
-            metric_family_name: cursor.string()?,
-            help: cursor.string()?,
-            unit: cursor.string()?,
-        })
-    })?;
+    let metadata = decode_metadata(cursor)?;
     let series = cursor.items(|cursor| {
         let labels =
             cursor.items(|cursor| Ok((cursor.string()?.into(), cursor.string()?.into())))?;
-        let created_timestamp = cursor.i64()?;
-        let samples = cursor.items(|cursor| {
-            Ok(cortexpb::Sample {
-                timestamp_ms: cursor.i64()?,
-                value: f64::from_bits(cursor.u64()?),
-            })
-        })?;
-        let histograms = cursor.messages::<cortexpb::Histogram>()?;
-        let exemplars = cursor.messages::<cortexpb::Exemplar>()?;
-        Ok(DecodedSeries {
-            labels,
-            samples,
-            histograms,
-            exemplars,
-            created_timestamp,
-        })
+        decode_series_data(cursor, labels)
     })?;
     Ok(DecodedRequest {
         source,
@@ -790,15 +1064,6 @@ fn write_file_header(file: &mut File, cluster: u32, partition: i32, hour: i64) -
     file.write_all(&partition.to_le_bytes())?;
     file.write_all(&hour.to_le_bytes())?;
     Ok(())
-}
-
-fn read_file_version(path: &Path) -> Result<u32> {
-    let mut header = [0; 12];
-    File::open(path)?.read_exact(&mut header)?;
-    if &header[..8] != FILE_MAGIC {
-        bail!("segment {} has invalid magic", path.display());
-    }
-    Ok(u32::from_le_bytes(header[8..12].try_into().unwrap()))
 }
 
 fn write_checkpoint(directory: &Path, offset: i64) -> Result<()> {
@@ -850,12 +1115,18 @@ fn segment_paths(directory: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-fn segment_name(hour: i64, extension: &str) -> String {
-    format!("{hour:020}.{extension}")
+fn segment_name(hour: i64, sequence: u32, extension: &str) -> String {
+    format!("{hour:020}-{sequence:04}.{extension}")
 }
 
-fn segment_hour(path: &Path) -> Option<i64> {
-    path.file_stem()?.to_str()?.parse().ok()
+/// The hour and sequence of a segment file; files from before sequences are the first of their
+/// hour.
+fn segment_id(path: &Path) -> Option<(i64, u32)> {
+    let stem = path.file_stem()?.to_str()?;
+    match stem.split_once('-') {
+        Some((hour, sequence)) => Some((hour.parse().ok()?, sequence.parse().ok()?)),
+        None => Some((stem.parse().ok()?, 0)),
+    }
 }
 
 fn sync_directory(directory: &Path) -> Result<()> {
@@ -904,6 +1175,14 @@ fn put_bytes(bytes: &mut Vec<u8>, value: &[u8]) -> Result<()> {
 
 fn put_string(bytes: &mut Vec<u8>, value: &str) -> Result<()> {
     put_bytes(bytes, value.as_bytes())
+}
+
+fn put_varint(bytes: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        bytes.push(value as u8 | 0x80);
+        value >>= 7;
+    }
+    bytes.push(value as u8);
 }
 
 fn put_i32(bytes: &mut Vec<u8>, value: i32) {
@@ -969,6 +1248,28 @@ impl<'a> Cursor<'a> {
         ))
     }
 
+    fn varint(&mut self) -> Result<u64> {
+        let mut value = 0_u64;
+        for shift in (0..64).step_by(7) {
+            let byte = self.take(1)?[0];
+            value |= u64::from(byte & 0x7f) << shift;
+            if byte < 0x80 {
+                return Ok(value);
+            }
+        }
+        bail!("segment varint overflows u64")
+    }
+
+    /// A string of `payload`, which this cursor reads, sharing its buffer.
+    fn label(&mut self, payload: &Bytes) -> Result<LabelStr> {
+        let length = self.u32()? as usize;
+        let bytes = self.take(length)?;
+        if bytes.is_empty() {
+            return Ok(LabelStr::default());
+        }
+        Ok(LabelStr::from_utf8_lossy(payload.slice_ref(bytes)))
+    }
+
     fn string(&mut self) -> Result<String> {
         let length = self.u32()? as usize;
         Ok(std::str::from_utf8(self.take(length)?)?.to_owned())
@@ -994,21 +1295,201 @@ mod tests {
     use std::time::Instant;
 
     #[test]
-    fn frames_compressed_on_one_thread_record_their_size_and_decode() {
-        // Recovery batches frames by the size each one records.
-        for _ in 0..3 {
-            let frame = SegmentLog::frame(7, 1, "tenant", &request()).unwrap();
-            let raw = frame.uncompressed_body()[24..].to_vec();
-            let compressed = frame.compress().unwrap();
+    fn frames_record_their_size_and_define_each_series_once_per_file() {
+        let root = temporary_directory("series-ids");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let now = now_ms();
+        log.begin_batch(now).unwrap();
+        let mut other_tenant = request();
+        other_tenant.series[0].samples[0].timestamp_ms = 200;
+        let mut sizes = Vec::new();
+        for (offset, tenant, request) in [
+            (1, "tenant", request()),
+            (2, "tenant", request()),
+            (3, "other", other_tenant),
+        ] {
+            let keys = series_keys(tenant, &request);
+            let frame = log.encode(offset, 1, now, tenant, &request, &keys).unwrap();
+            // Recovery batches frames by the size each one records.
+            let size = zstd::zstd_safe::get_frame_content_size(&frame.body[FRAME_PREFIX_LEN..])
+                .unwrap()
+                .unwrap();
+            sizes.push(size);
+            log.append_compressed(frame).unwrap();
+        }
+        // The second frame refers to the series the first defined; another tenant's series with
+        // the same labels is its own.
+        assert!(sizes[1] < sizes[0], "{sizes:?}");
+        assert_eq!(
+            sizes[2] + "tenant".len() as u64,
+            sizes[0] + "other".len() as u64,
+            "{sizes:?}"
+        );
+        // A new file defines its series again.
+        log.begin_batch(now + HOUR_MS).unwrap();
+        let keys = series_keys("tenant", &request());
+        let frame = log
+            .encode(4, 1, now + HOUR_MS, "tenant", &request(), &keys)
+            .unwrap();
+        log.append_compressed(frame).unwrap();
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 4);
+        for record in &recovered {
+            let expected = request();
+            assert_eq!(record.request.series[0].labels, expected.series[0].labels);
             assert_eq!(
-                zstd::zstd_safe::get_frame_content_size(&compressed.body[24..]).unwrap(),
-                Some(raw.len() as u64)
-            );
-            assert_eq!(
-                zstd::bulk::decompress(&compressed.body[24..], raw.len()).unwrap(),
-                raw
+                record.request.series[0].exemplars,
+                expected.series[0].exemplars
             );
         }
+        assert_eq!(recovered[2].tenant, "other");
+        assert_eq!(recovered[2].request.series[0].samples[0].timestamp_ms, 200);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn keys_of_encoded_labels_follow_the_labels_and_the_tenant() {
+        let record = |value: &str, timestamp_ms: i64| -> Bytes {
+            cortexpb::WriteRequest {
+                timeseries: vec![cortexpb::TimeSeries {
+                    labels: vec![cortexpb::LabelPair {
+                        name: b"job".to_vec().into(),
+                        value: value.as_bytes().to_vec().into(),
+                    }],
+                    samples: vec![cortexpb::Sample {
+                        timestamp_ms,
+                        value: 1.0,
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+            .encode_to_vec()
+            .into()
+        };
+        let key = |tenant: &str, record: Bytes| {
+            let (request, spans) =
+                crate::record::decode_record_with_label_spans(1, record.clone()).unwrap();
+            assert!(spans[0].is_some());
+            series_keys_with_label_bytes(tenant, &request, &record, &spans)[0]
+        };
+        let api = key("tenant", record("api", 1));
+        assert_eq!(
+            key("tenant", record("api", 2)),
+            api,
+            "samples are not labels"
+        );
+        assert_ne!(key("other", record("api", 1)), api);
+        assert_ne!(key("tenant", record("apj", 1)), api);
+    }
+
+    #[test]
+    fn frames_are_only_written_to_the_file_they_were_encoded_for() {
+        let root = temporary_directory("frame-file");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.begin_batch(HOUR_MS).unwrap();
+        let keys = series_keys("tenant", &request());
+        let frame = log
+            .encode(1, 1, HOUR_MS, "tenant", &request(), &keys)
+            .unwrap();
+        log.begin_batch(2 * HOUR_MS).unwrap();
+        assert!(log.append_compressed(frame).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn expired_frames_still_define_the_series_later_frames_use() {
+        let root = temporary_directory("expired-definitions");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let hour = hour_start(now_ms());
+        // Both frames go to the current hour's file, the first ingested before the retention.
+        log.begin_batch(hour).unwrap();
+        for (offset, ingested_ms) in [(1, hour - 2 * HOUR_MS), (2, now_ms())] {
+            let keys = series_keys("tenant", &request());
+            let frame = log
+                .encode(offset, 1, ingested_ms, "tenant", &request(), &keys)
+                .unwrap();
+            log.append_compressed(frame).unwrap();
+        }
+        drop(log);
+        let mut recovered = Vec::new();
+        let log = SegmentLog::open_replaying(&root, 0, "topic", 0, Some(HOUR_MS), 2, |record| {
+            recovered.push(record);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(log.last_offset(), Some(2));
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            recovered[0].request.series[0].labels,
+            request().series[0].labels
+        );
+        drop(log);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reads_files_where_every_frame_has_its_labels() {
+        let root = temporary_directory("version-2");
+        let (log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let hour = hour_start(now_ms());
+        let path = log.directory.join(format!("{hour:020}.segment"));
+        let mut file = File::create(&path).unwrap();
+        file.write_all(FILE_MAGIC).unwrap();
+        file.write_all(&COMPRESSED_FILE_VERSION.to_le_bytes())
+            .unwrap();
+        file.write_all(&0_u32.to_le_bytes()).unwrap();
+        file.write_all(&0_i32.to_le_bytes()).unwrap();
+        file.write_all(&hour.to_le_bytes()).unwrap();
+        for offset in [1, 2] {
+            let body = uncompressed_frame(offset, 100, "tenant", &request(), now_ms());
+            let mut compressed = body[..FRAME_PREFIX_LEN].to_vec();
+            compressed
+                .extend_from_slice(&zstd::bulk::compress(&body[FRAME_PREFIX_LEN..], 1).unwrap());
+            file.write_all(&(compressed.len() as u32).to_le_bytes())
+                .unwrap();
+            file.write_all(&crc32fast::hash(&compressed).to_le_bytes())
+                .unwrap();
+            file.write_all(&compressed).unwrap();
+        }
+        drop(file);
+        drop(log);
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 2);
+        assert_eq!(
+            recovered[1].request.series[0].labels,
+            request().series[0].labels
+        );
+        // New frames of the same hour go to a new file.
+        log.append(3, 101, "tenant", &request()).unwrap();
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A frame of the first two versions, before compression.
+    fn uncompressed_frame(
+        offset: i64,
+        timestamp_ms: i64,
+        tenant: &str,
+        request: &DecodedRequest,
+        ingested_ms: i64,
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        put_i64(&mut body, offset);
+        put_i64(&mut body, timestamp_ms);
+        put_i64(&mut body, ingested_ms);
+        put_string(&mut body, tenant).unwrap();
+        encode_request(&mut body, request).unwrap();
+        body
     }
 
     fn request() -> DecodedRequest {
@@ -1245,14 +1726,10 @@ mod tests {
     fn skips_expired_frames_without_losing_resume_offset() {
         let root = temporary_directory("expired-recovery");
         let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
-        let expired = log
-            .prepare_at(1, 100, "tenant", &request(), now_ms() - 2 * HOUR_MS)
+        log.append_at(1, 100, "tenant", &request(), now_ms() - 2 * HOUR_MS)
             .unwrap();
-        log.append_prepared(expired).unwrap();
-        let fresh = log
-            .prepare_at(2, 200, "tenant", &request(), now_ms())
+        log.append_at(2, 200, "tenant", &request(), now_ms())
             .unwrap();
-        log.append_prepared(fresh).unwrap();
         drop(log);
 
         let mut offsets = Vec::new();
@@ -1274,27 +1751,25 @@ mod tests {
         let (log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
         let now = now_ms();
         let hour = hour_start(now);
-        let frame = log.prepare_at(1, 100, "tenant", &request(), now).unwrap();
-        let path = log.directory.join(segment_name(hour, "open"));
+        let body = uncompressed_frame(1, 100, "tenant", &request(), now);
+        let path = log.directory.join(format!("{hour:020}.open"));
         let mut file = File::create(&path).unwrap();
         file.write_all(FILE_MAGIC).unwrap();
         file.write_all(&LEGACY_FILE_VERSION.to_le_bytes()).unwrap();
         file.write_all(&0_u32.to_le_bytes()).unwrap();
         file.write_all(&0_i32.to_le_bytes()).unwrap();
         file.write_all(&hour.to_le_bytes()).unwrap();
-        file.write_all(&(frame.body.len() as u32).to_le_bytes())
+        file.write_all(&(body.len() as u32).to_le_bytes()).unwrap();
+        file.write_all(&crc32fast::hash(&body).to_le_bytes())
             .unwrap();
-        file.write_all(&crc32fast::hash(&frame.body).to_le_bytes())
-            .unwrap();
-        file.write_all(&frame.body).unwrap();
+        file.write_all(&body).unwrap();
         drop(file);
         drop(log);
 
         let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
         assert_eq!(recovered.len(), 1);
-        let second = log.prepare_at(2, 200, "tenant", &request(), now).unwrap();
-        log.append_prepared(second).unwrap();
-        assert!(log.directory.join(segment_name(hour, "legacy")).exists());
+        log.append_at(2, 200, "tenant", &request(), now).unwrap();
+        assert!(log.directory.join(format!("{hour:020}.segment")).exists());
         drop(log);
 
         let (log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
@@ -1314,21 +1789,17 @@ mod tests {
     fn seals_completed_hours() {
         let root = temporary_directory("rotate");
         let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
-        let first = log
-            .prepare_at(1, 100, "tenant", &request(), HOUR_MS)
+        log.append_at(1, 100, "tenant", &request(), HOUR_MS)
             .unwrap();
-        log.append_prepared(first).unwrap();
-        let second = log
-            .prepare_at(2, 200, "tenant", &request(), 2 * HOUR_MS)
+        log.append_at(2, 200, "tenant", &request(), 2 * HOUR_MS)
             .unwrap();
-        log.append_prepared(second).unwrap();
         let paths = segment_paths(&log.directory).unwrap();
         assert!(paths.iter().any(|path| {
-            segment_hour(path) == Some(HOUR_MS)
+            segment_id(path).map(|(hour, _)| hour) == Some(HOUR_MS)
                 && path.extension().is_some_and(|value| value == "segment")
         }));
         assert!(paths.iter().any(|path| {
-            segment_hour(path) == Some(2 * HOUR_MS)
+            segment_id(path).map(|(hour, _)| hour) == Some(2 * HOUR_MS)
                 && path.extension().is_some_and(|value| value == "open")
         }));
         drop(log);
@@ -1401,12 +1872,10 @@ mod tests {
     fn rejects_zero_filled_sealed_tail() {
         let root = temporary_directory("zero-tail-sealed");
         let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
-        let frame = log
-            .prepare_at(1, 100, "tenant", &request(), HOUR_MS)
+        log.append_at(1, 100, "tenant", &request(), HOUR_MS)
             .unwrap();
-        log.append_prepared(frame).unwrap();
         log.seal_current().unwrap();
-        let sealed = log.directory.join(segment_name(HOUR_MS, "segment"));
+        let sealed = log.directory.join(segment_name(HOUR_MS, 0, "segment"));
         drop(log);
         let mut file = OpenOptions::new().append(true).open(&sealed).unwrap();
         file.write_all(&[0; 64]).unwrap();
@@ -1453,10 +1922,8 @@ mod tests {
     fn removes_expired_segment_without_new_records() {
         let root = temporary_directory("idle-retention");
         let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, Some(HOUR_MS)).unwrap();
-        let frame = log
-            .prepare_at(1, 100, "tenant", &request(), HOUR_MS)
+        log.append_at(1, 100, "tenant", &request(), HOUR_MS)
             .unwrap();
-        log.append_prepared(frame).unwrap();
         assert_eq!(segment_paths(&log.directory).unwrap().len(), 1);
 
         log.maintain().unwrap();
