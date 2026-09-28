@@ -92,7 +92,10 @@ func PreparePartitionDownscale(w http.ResponseWriter, req *http.Request, partiti
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
-		if !change(ring.PartitionInactive) {
+		// Already INACTIVE is a no-op, like the lifecycler's change to the same state, so the
+		// rollout operator's delayed downscale of the Rust pods proceeds once the Go ingesters
+		// switched a shared ring partition.
+		if state != ring.PartitionInactive && !change(ring.PartitionInactive) {
 			return
 		}
 	case http.MethodDelete:
