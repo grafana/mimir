@@ -300,3 +300,126 @@ fn parallel_ingest_throughput() {
         );
     }
 }
+
+// Like a partition of mimir-dev-15: series with 19 labels, 15s samples over 13h of retention, of
+// which only the newest part is in the emulated Go head. Run with --release; the live heap per
+// series is what the ingester pays for every stored series.
+#[test]
+#[ignore]
+fn retained_series_heap_bytes() {
+    const SERIES: usize = 5_000;
+    const RETENTION_MS: i64 = 13 * 60 * 60 * 1000;
+    const INTERVAL_MS: i64 = 15_000;
+    let directory =
+        std::env::temp_dir().join(format!("mimir-rust-retained-{}", std::process::id()));
+    let store = Store::new(20 * 60 * 1000, Some(RETENTION_MS), Some(directory.clone())).unwrap();
+    let end = now_ms();
+    let before = crate::test_allocator::live_bytes();
+    let labels = |id: usize| -> Vec<(String, String)> {
+        let mut labels = (0..19)
+            .map(|label| {
+                if label == 0 {
+                    ("__name__".to_owned(), format!("metric_{:04}", id % 200))
+                } else if label < 12 {
+                    (
+                        format!("label_{label:02}"),
+                        format!("shared_{:04}", (id + label) % 50),
+                    )
+                } else {
+                    (
+                        format!("label_{label:02}"),
+                        format!("unique_{label:02}_{id:08}"),
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
+        labels.sort();
+        labels
+    };
+    // Written in time order across all series, like Kafka records.
+    let mut timestamp = end - RETENTION_MS;
+    while timestamp <= end {
+        for batch in (0..SERIES).collect::<Vec<_>>().chunks(1_000) {
+            let series = batch
+                .iter()
+                .map(|&id| DecodedSeries {
+                    labels: labels(id),
+                    samples: vec![cortexpb::Sample {
+                        timestamp_ms: timestamp,
+                        value: (id as f64) + (timestamp / INTERVAL_MS) as f64,
+                    }],
+                    histograms: Vec::new(),
+                    exemplars: Vec::new(),
+                    created_timestamp: 0,
+                })
+                .collect();
+            store
+                .ingest_recovered(
+                    "tenant",
+                    DecodedRequest {
+                        source: 0,
+                        series,
+                        metadata: Vec::new(),
+                    },
+                    end,
+                )
+                .unwrap();
+        }
+        timestamp += INTERVAL_MS;
+    }
+    store.head_tick(true, false);
+    let ingested = crate::test_allocator::live_bytes() - before;
+    store
+        .write_snapshot(&[SnapshotOffset {
+            offset: Some(1),
+            timestamp_ms: 1,
+        }])
+        .unwrap();
+    drop(store);
+    let before = crate::test_allocator::live_bytes();
+    let restored = Store::restore(20 * 60 * 1000, Some(RETENTION_MS), &directory, 4)
+        .unwrap()
+        .unwrap();
+    let restored_bytes = crate::test_allocator::live_bytes() - before;
+    // Where the restored bytes are, from the structures' capacities.
+    let (mut table, mut labels, mut chunks, mut heads, mut postings) = (0, 0, 0, 0, 0);
+    for shard in &restored.store.shards {
+        let state = shard.read().unwrap();
+        for tenant in state.tenants.values() {
+            for group in &tenant.series.groups {
+                table += group.capacity() * std::mem::size_of::<(SeriesKey, Series)>();
+            }
+            for ((_, key), series) in tenant.series.iter() {
+                labels += 16 + key.capacity() * std::mem::size_of::<StoredLabel>();
+                chunks += series.chunks.capacity() * std::mem::size_of::<ChunkMeta>();
+                heads += series
+                    .float_head
+                    .as_ref()
+                    .map_or(0, |head| head.appender.byte_capacity());
+            }
+            for values in tenant.series.postings.values() {
+                postings += values.capacity() * std::mem::size_of::<(CompactString, PostingList)>();
+                for list in values.values() {
+                    if let PostingList::Many(list) = list {
+                        postings += list.capacity() * 12;
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "per_series table={} labels={} chunks={} float_heads={} postings={}",
+        table / SERIES,
+        labels / SERIES,
+        chunks / SERIES,
+        heads / SERIES,
+        postings / SERIES
+    );
+    println!(
+        "retained_series_heap_bytes series={SERIES} ingested_per_series={} restored_per_series={}",
+        ingested / SERIES,
+        restored_bytes / SERIES
+    );
+    drop(restored);
+    std::fs::remove_dir_all(directory).unwrap();
+}

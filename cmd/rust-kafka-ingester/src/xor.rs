@@ -85,6 +85,11 @@ impl Appender {
         self.count as usize
     }
 
+    /// Heap bytes the open chunk holds.
+    pub fn byte_capacity(&self) -> usize {
+        self.out.bytes.capacity()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.count == 0
     }
