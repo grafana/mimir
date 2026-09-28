@@ -1099,8 +1099,8 @@ struct Accounting {
 const HEAD_COMPACTION_INTERVAL_WHILE_STARTING: Duration = Duration::from_secs(30);
 
 /// Like the Go ingester's compaction loop, compactions wait for an interval, which is shorter while
-/// it replays at startup. The head snapshot doesn't keep the head's min time, so the first check
-/// compacts: Go's head resumes from its WAL already compacted.
+/// it replays at startup. The first check compacts, so a head rebuilt from segments, which has no
+/// min time yet, is compacted before it serves, like Go's head resumed from its WAL.
 #[derive(Default)]
 struct CompactionSchedule {
     last: Option<Instant>,
