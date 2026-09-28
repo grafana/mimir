@@ -93,6 +93,10 @@ impl Appender {
         (self.count > 0).then_some(self.previous_time)
     }
 
+    pub fn last_value(&self) -> Option<f64> {
+        (self.count > 0).then_some(self.previous_value)
+    }
+
     pub fn append(&mut self, timestamp: i64, value: f64) {
         assert!(self.count < u16::MAX, "XOR chunk sample count exceeds u16");
         let out = &mut self.out;

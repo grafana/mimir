@@ -1,11 +1,17 @@
 pub mod chunk_disk;
 pub mod consistency;
+pub mod exemplars;
 pub mod histogram;
 pub mod kafka;
+pub mod limits;
+pub mod metrics;
+pub mod protection;
 pub mod proto;
 pub mod record;
+pub mod runtime_config;
 pub mod segment;
 pub mod service;
 pub mod store;
+pub mod trackers;
 pub mod wire;
 pub mod xor;

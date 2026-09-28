@@ -86,7 +86,11 @@ func startParityIngesters(tb testing.TB, produce func(testing.TB, ingest.KafkaCo
 	})
 
 	rustStarted := time.Now()
-	process, rustConn := startRustIngesterAndWait(tb, cfg.IngestStorageConfig.KafkaConfig.Address[0], cfg.IngestStorageConfig.KafkaConfig.Topic, tb.TempDir(), offset)
+	// The Rust ingester takes the same limits through Mimir's flag names.
+	process, rustConn := startRustIngesterAndWait(tb, cfg.IngestStorageConfig.KafkaConfig.Address[0], cfg.IngestStorageConfig.KafkaConfig.Topic, tb.TempDir(), offset,
+		"--ingester.out-of-order-time-window", "2h",
+		"--ingester.native-histograms-ingestion-enabled", "true",
+		"--ingester.max-global-exemplars-per-user", "100")
 	rustStartup := time.Since(rustStarted)
 	tb.Cleanup(func() {
 		_ = rustConn.Close()
