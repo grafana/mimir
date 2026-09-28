@@ -290,7 +290,9 @@ impl HistogramHead {
 // series allocates nothing.
 #[derive(Default)]
 struct SeriesByName {
-    names: HashMap<CompactString, u32>,
+    // Every appended sample looks up its metric name, and hashbrown's default hasher is several
+    // times cheaper than SipHash on short strings.
+    names: hashbrown::HashMap<CompactString, u32>,
     // Series are boxed: the tables stay between half and seven eighths full, and an empty slot
     // costs a pointer instead of a whole series.
     groups: Vec<HashTable<(SeriesKey, Box<Series>)>>,
@@ -1571,7 +1573,9 @@ impl Store {
             let mut guard = self.shards[shard].write().expect("store lock poisoned");
             let State { tenants, disk, .. } = &mut *guard;
             let mut outcome = ShardOutcome::default();
-            let mut committed = HashMap::new();
+            let mut committed = CommittedHeads::default();
+            // A record's series are consecutive, so the tenant rarely changes.
+            let mut current: Option<(usize, &mut Tenant)> = None;
             for BatchSeries {
                 index,
                 position,
@@ -1582,7 +1586,12 @@ impl Store {
                 flush,
             } in bucket
             {
-                let tenant = tenant_mut(tenants, &tenant_ids[index]);
+                if current.as_ref().is_none_or(|(current, _)| {
+                    *current != index && tenant_ids[*current] != tenant_ids[index]
+                }) {
+                    current = Some((index, tenant_mut(tenants, &tenant_ids[index])));
+                }
+                let tenant = &mut *current.as_mut().expect("tenant looked up").1;
                 let keep_exemplars = record_rules[index];
                 ingest_series(
                     tenant,
@@ -3040,6 +3049,10 @@ type PendingExemplars = (
     Vec<cortexpb::Exemplar>,
 );
 
+// Series' heads when their flush started, by (flush, series hash): the series hash already spreads
+// the keys.
+type CommittedHeads = HashMap<(u64, u64), Committed, std::hash::BuildHasherDefault<PrehashedKey>>;
+
 // `decoded` has sorted, unique labels whose hash is `hash`.
 fn ingest_series(
     tenant: &mut Tenant,
@@ -3047,7 +3060,7 @@ fn ingest_series(
     mut decoded: DecodedSeries,
     hash: u64,
     context: SeriesContext<'_>,
-    committed: &mut HashMap<(u64, u64), Committed>,
+    committed: &mut CommittedHeads,
     outcome: &mut ShardOutcome,
 ) -> Result<()> {
     let decoded_labels = std::mem::take(&mut decoded.labels);
@@ -3064,9 +3077,11 @@ fn ingest_series(
         name,
         hash,
         |stored| {
-            stored.pairs().eq(decoded_labels
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.as_str())))
+            stored.eq_pairs(
+                decoded_labels
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            )
         },
         || {
             created.set(true);
