@@ -117,6 +117,8 @@ impl Labels {
     }
 
     /// The labels as pairs with one lifetime, as functions over label pairs take them.
+    // The map shortens the names' `'static` to the values' lifetime.
+    #[allow(clippy::map_identity)]
     pub fn pairs(&self) -> impl Iterator<Item = (&str, &str)> + Clone {
         self.iter().map(|(name, value)| (name, value))
     }
