@@ -336,6 +336,7 @@ impl Store {
         let shard_count = self.shards.len();
         let mut buckets = (0..shard_count).map(|_| Vec::new()).collect::<Vec<_>>();
         let mut tenant_ids = Vec::with_capacity(records.len());
+        let mut all_series = Vec::new();
         {
             let mut home = self.shards[0].write().expect("store lock poisoned");
             for (index, record) in records.into_iter().enumerate() {
@@ -371,20 +372,36 @@ impl Store {
                         home_tenant.ingested.pop_front();
                     }
                 }
-                for mut series in request.series {
+                all_series.extend(
+                    request
+                        .series
+                        .into_iter()
+                        .map(|series| (index, series, ingested_ms)),
+                );
+                tenant_ids.push(tenant);
+            }
+        }
+        // Sorting and hashing labels is most of the per-series cost outside the shards.
+        let hashes = self.pool.install(|| {
+            all_series
+                .par_iter_mut()
+                .map(|(_, series, _)| {
                     series.labels.sort();
                     if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-                        continue;
+                        return None;
                     }
-                    let hash = hash_label_pairs(
+                    Some(hash_label_pairs(
                         series
                             .labels
                             .iter()
                             .map(|(name, value)| (name.as_str(), value.as_str())),
-                    );
-                    buckets[shard_for(hash, shard_count)].push((index, hash, series, ingested_ms));
-                }
-                tenant_ids.push(tenant);
+                    ))
+                })
+                .collect::<Vec<_>>()
+        });
+        for ((index, series, ingested_ms), hash) in all_series.into_iter().zip(hashes) {
+            if let Some(hash) = hash {
+                buckets[shard_for(hash, shard_count)].push((index, hash, series, ingested_ms));
             }
         }
         let apply = |shard: usize, bucket: Vec<(usize, u64, DecodedSeries, i64)>| -> Result<()> {
