@@ -296,16 +296,58 @@ struct SeriesByName {
     // Series are boxed: the tables stay between half and seven eighths full, and an empty slot
     // costs a pointer instead of a whole series.
     groups: Vec<HashTable<(SeriesKey, Box<Series>)>>,
-    // Label name, then the hash of a value, to the ids of every series with that label. Series ids
-    // index `refs`, the (name group, label hash) of each series. A hash collision only adds
-    // candidates, which the matchers then check.
+    // Label name, then 32 bits of a value's hash, to the ids of every series with that label, as a
+    // `Posting`. Series ids index `refs`, the (name group, label hash) of each series. A hash
+    // collision only adds candidates, which the matchers then check.
     // Hashed with hashbrown's default hasher: each new series looks up every one of its names.
     postings: hashbrown::HashMap<&'static str, ValuePostings>,
+    // The series of the values more than one series has.
+    shared_postings: Vec<Vec<u32>>,
     refs: Vec<(u32, u64)>,
     len: usize,
 }
 
-type ValuePostings = HashMap<u64, PostingList, std::hash::BuildHasherDefault<PrehashedKey>>;
+type ValuePostings = HashMap<u32, u32, std::hash::BuildHasherDefault<PrehashedKey>>;
+
+// A posting is the one series with a value or, with this bit, the index of its series in
+// `shared_postings`. Most values of high-cardinality labels belong to one series, so every
+// series pays for a few bytes per label instead of a list.
+const SHARED_POSTING: u32 = 1 << 31;
+
+#[derive(Clone, Copy)]
+enum Posting<'a> {
+    One(u32),
+    Many(&'a [u32]),
+}
+
+impl<'a> Posting<'a> {
+    fn new(shared: &'a [Vec<u32>], posting: u32) -> Self {
+        if posting & SHARED_POSTING == 0 {
+            Posting::One(posting)
+        } else {
+            Posting::Many(&shared[(posting & !SHARED_POSTING) as usize])
+        }
+    }
+
+    fn len(self) -> usize {
+        match self {
+            Posting::One(_) => 1,
+            Posting::Many(list) => list.len(),
+        }
+    }
+
+    fn ids(self) -> impl Iterator<Item = u32> + 'a {
+        let (one, many) = match self {
+            Posting::One(id) => (Some(id), [].as_slice()),
+            Posting::Many(list) => (None, list),
+        };
+        one.into_iter().chain(many.iter().copied())
+    }
+}
+
+fn posting_key(value: &str) -> u32 {
+    value_hash(value) as u32
+}
 
 // Posting keys are already hashes.
 #[derive(Default)]
@@ -324,6 +366,11 @@ impl std::hash::Hasher for PrehashedKey {
 
     fn write_u64(&mut self, value: u64) {
         self.0 = value;
+    }
+
+    // hashbrown also reads the top bits, which a 32-bit hash leaves empty.
+    fn write_u32(&mut self, value: u32) {
+        self.0 = u64::from(value).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     }
 }
 
@@ -351,6 +398,7 @@ impl SeriesByName {
         let table = &mut self.groups[group as usize];
         let len = &mut self.len;
         let postings = &mut self.postings;
+        let shared_postings = &mut self.shared_postings;
         let refs = &mut self.refs;
         match table.entry(
             hash,
@@ -364,7 +412,7 @@ impl SeriesByName {
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
                 let labels = labels();
-                add_postings(postings, refs, &labels, group, hash);
+                add_postings(postings, shared_postings, refs, &labels, group, hash);
                 let ((_, labels), series) =
                     entry.insert(((hash, labels), Box::default())).into_mut();
                 (&*labels, &mut **series)
@@ -420,7 +468,7 @@ impl SeriesByName {
             _ => None,
         };
         // The smallest posting list of an equality matcher, when smaller than the name group.
-        let mut best: Option<&PostingList> = None;
+        let mut best: Option<Posting> = None;
         for matcher in matchers {
             if let CompiledMatcher::Equal(label, value) = matcher
                 && label != "__name__"
@@ -429,7 +477,8 @@ impl SeriesByName {
                 let Some(list) = self
                     .postings
                     .get(label.as_str())
-                    .and_then(|values| values.get(&value_hash(value)))
+                    .and_then(|values| values.get(&posting_key(value)))
+                    .map(|posting| Posting::new(&self.shared_postings, *posting))
                 else {
                     return Box::new(std::iter::empty());
                 };
@@ -442,9 +491,8 @@ impl SeriesByName {
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
             (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
                 let mut refs = list
-                    .as_slice()
-                    .iter()
-                    .map(|id| self.refs[*id as usize])
+                    .ids()
+                    .map(|id| self.refs[id as usize])
                     .collect::<Vec<_>>();
                 refs.sort_unstable();
                 refs.dedup();
@@ -498,11 +546,13 @@ impl SeriesByName {
         if len != self.len {
             // Removals are rare and batched by retention, so the postings are rebuilt.
             self.postings.clear();
+            self.shared_postings.clear();
             self.refs.clear();
             for (group, table) in self.groups.iter().enumerate() {
                 for ((hash, labels), _) in table.iter() {
                     add_postings(
                         &mut self.postings,
+                        &mut self.shared_postings,
                         &mut self.refs,
                         labels,
                         group as u32,
@@ -515,46 +565,18 @@ impl SeriesByName {
     }
 }
 
-// Most label values of high-cardinality labels belong to a single series, which is kept inline;
-// the list of shared values is boxed so the unique ones stay small.
-#[derive(Debug)]
-#[allow(clippy::box_collection)]
-enum PostingList {
-    One(u32),
-    Many(Box<Vec<u32>>),
-}
-
-impl PostingList {
-    fn len(&self) -> usize {
-        match self {
-            PostingList::One(_) => 1,
-            PostingList::Many(list) => list.len(),
-        }
-    }
-
-    fn as_slice(&self) -> &[u32] {
-        match self {
-            PostingList::One(entry) => std::slice::from_ref(entry),
-            PostingList::Many(list) => list,
-        }
-    }
-
-    fn push(&mut self, entry: u32) {
-        match self {
-            PostingList::One(first) => *self = PostingList::Many(Box::new(vec![*first, entry])),
-            PostingList::Many(list) => list.push(entry),
-        }
-    }
-}
-
 fn add_postings(
     postings: &mut hashbrown::HashMap<&'static str, ValuePostings>,
+    shared_postings: &mut Vec<Vec<u32>>,
     refs: &mut Vec<(u32, u64)>,
     labels: &StoredLabels,
     group: u32,
     hash: u64,
 ) {
-    let id = u32::try_from(refs.len()).expect("fewer than 2^32 series per tenant shard");
+    let id = u32::try_from(refs.len())
+        .ok()
+        .filter(|id| id & SHARED_POSTING == 0)
+        .expect("fewer than 2^31 series per tenant shard");
     refs.push((group, hash));
     for (name, value) in labels {
         if name == "__name__" {
@@ -564,10 +586,18 @@ fn add_postings(
             Some(values) => values,
             None => postings.entry(name).or_default(),
         };
-        match values.entry(value_hash(value)) {
-            std::collections::hash_map::Entry::Occupied(mut list) => list.get_mut().push(id),
+        match values.entry(posting_key(value)) {
+            std::collections::hash_map::Entry::Occupied(mut posting) => {
+                let posting = posting.get_mut();
+                if *posting & SHARED_POSTING == 0 {
+                    shared_postings.push(vec![*posting, id]);
+                    *posting = SHARED_POSTING | (shared_postings.len() - 1) as u32;
+                } else {
+                    shared_postings[(*posting & !SHARED_POSTING) as usize].push(id);
+                }
+            }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(PostingList::One(id));
+                entry.insert(id);
             }
         }
     }
