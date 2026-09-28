@@ -183,7 +183,7 @@ func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
 		start = end
 	}
 
-	types.PutMatrix(original)
+	types.PutMatrix(original, q.memoryConsumptionTracker)
 	q.matrix = merged
 	return nil
 }
