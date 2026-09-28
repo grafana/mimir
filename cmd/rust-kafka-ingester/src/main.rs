@@ -10,6 +10,7 @@ use serde::Serialize;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 
+use bytes::Bytes;
 use mimir_rust_kafka_ingester::consistency::Consistency;
 use mimir_rust_kafka_ingester::kafka::{OffsetAt, PartitionClient, RawRecord, StartOffset};
 use mimir_rust_kafka_ingester::limits::{
@@ -1441,7 +1442,7 @@ fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
         offset: record.offset,
         timestamp_ms: record.timestamp_ms,
         high_watermark,
-        bytes: record.payload.as_ref().map_or(0, Vec::len),
+        bytes: record.payload.as_ref().map_or(0, Bytes::len),
         tenant: record.tenant,
         request,
         frame,
