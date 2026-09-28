@@ -94,6 +94,12 @@ struct ServeArgs {
     /// instead of --start-offset.
     #[arg(long)]
     bootstrap_lookback_seconds: Option<i64>,
+    /// Threads that apply records to store shards in parallel; defaults to the available CPUs.
+    #[arg(long)]
+    ingest_threads: Option<usize>,
+    /// Store shards; a restored head snapshot keeps the shard count it was written with.
+    #[arg(long, default_value_t = mimir_rust_kafka_ingester::store::DEFAULT_SHARDS)]
+    store_shards: usize,
     #[arg(long, default_value_t = 0)]
     read_compartment: i32,
     #[arg(long, default_value_t = 30)]
@@ -243,6 +249,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
         profile_listen,
         start_offset,
         bootstrap_lookback_seconds,
+        ingest_threads,
+        store_shards,
         active_window_seconds,
         retention_seconds,
         read_compartment,
@@ -289,13 +297,22 @@ async fn serve(args: ServeArgs) -> Result<()> {
         signal_requested.store(true, Ordering::Relaxed);
         let _ = signal_sender.send(true);
     });
+    let ingest_threads = ingest_threads
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |threads| threads.get()));
+    eprintln!(
+        "phase=store_config partition={partition} ingest_threads={ingest_threads} store_shards={store_shards}"
+    );
     let (store, mut resumed) = match open_store(
         &data_dir,
         &chunk_dir,
         &sources,
         partition,
-        active_window_ms,
-        retention_ms,
+        StoreConfig {
+            active_window_ms,
+            retention_ms,
+            shards: store_shards,
+            threads: ingest_threads,
+        },
         &shutdown_requested,
     )? {
         StartupStore::Resumed { store, logs } => (store, Some(logs.into_iter())),
@@ -734,24 +751,39 @@ enum StartupStore {
     Stopped,
 }
 
+#[derive(Clone, Copy)]
+struct StoreConfig {
+    active_window_ms: i64,
+    retention_ms: Option<i64>,
+    shards: usize,
+    threads: usize,
+}
+
 fn open_store(
     data_dir: &std::path::Path,
     chunk_dir: &std::path::Path,
     sources: &[(String, String)],
     partition: i32,
-    active_window_ms: i64,
-    retention_ms: Option<i64>,
+    config: StoreConfig,
     shutdown_requested: &AtomicBool,
 ) -> Result<StartupStore> {
+    let StoreConfig {
+        active_window_ms,
+        retention_ms,
+        shards,
+        threads,
+    } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
-        Ok(StartupStore::Rebuild(Store::new(
+        Ok(StartupStore::Rebuild(Store::with_shards(
             active_window_ms,
             retention_ms,
             Some(chunk_dir.to_path_buf()),
+            shards,
+            threads,
         )?))
     };
-    let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir)? else {
+    let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir, threads)? else {
         return rebuild();
     };
     if restored.offsets.len() != sources.len() {
@@ -1115,7 +1147,7 @@ mod tests {
             }],
             metadata: Vec::new(),
         };
-        let store = Store::new(1000, None, Some(chunk_dir.clone())).unwrap();
+        let store = Store::with_shards(1000, None, Some(chunk_dir.clone()), 4, 2).unwrap();
         let frame = SegmentLog::frame(5, 1, "tenant", &request)
             .unwrap()
             .compress()
@@ -1136,8 +1168,12 @@ mod tests {
                 &chunk_dir,
                 &sources,
                 0,
-                1000,
-                None,
+                StoreConfig {
+                    active_window_ms: 1000,
+                    retention_ms: None,
+                    shards: 4,
+                    threads: 2,
+                },
                 &AtomicBool::new(shutdown),
             )
             .unwrap()
