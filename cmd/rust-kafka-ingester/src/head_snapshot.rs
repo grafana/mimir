@@ -245,7 +245,7 @@ fn read_snapshot(
             series.exemplars = (0..reader.count(10_000_000)?)
                 .map(|_| Ok(cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?))
                 .collect::<Result<_>>()?;
-            if tenant.series.insert(series_key(labels), series).is_some() {
+            if !tenant.series.insert(series_key(labels), series) {
                 bail!("duplicate series in head snapshot");
             }
         }
