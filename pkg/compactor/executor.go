@@ -584,6 +584,10 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
 			return e.executeBackfillValidateJob(ctx, c, resp.Spec)
 		}
+	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_COPY && e.cfg.BackfillModeEnabled:
+		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
+			return e.executeBackfillCopyJob(ctx, c, resp.Spec)
+		}
 	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP && e.cfg.BackfillModeEnabled:
 		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
 			return e.executeBackfillCleanupJob(ctx, c, resp.Spec)
@@ -647,7 +651,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
-	case compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP, compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE:
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP, compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, compactorschedulerpb.JOB_TYPE_BACKFILL_COPY:
 		req := &compactorschedulerpb.UpdateBackfillJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdateBackfillJob(ctx, req)
 		return err
@@ -659,7 +663,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 // jobBucket returns the bucket a compaction or planning job for the tenant works on
 func (e *schedulerExecutor) jobBucket(c *MultitenantCompactor, tenant, backfillID string) objstore.Bucket {
 	if e.cfg.BackfillModeEnabled {
-		return bucket.NewPrefixedBucketClient(c.bucketClient, backfill.DataPrefix(backfillID, tenant))
+		return bucket.NewPrefixedBucketClient(backfillBucket(c), backfill.DataPrefix(backfillID, tenant))
 	}
 	return bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
 }

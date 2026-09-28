@@ -4,17 +4,21 @@ package compactor
 
 import (
 	"bytes"
+	"io"
 	"path"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -255,6 +259,69 @@ func TestSchedulerExecutor_ExecuteBackfillValidateJob(t *testing.T) {
 	}
 }
 
+func TestSchedulerExecutor_ExecuteBackfillCopyJob(t *testing.T) {
+	const (
+		tenant     = "tenant-1"
+		backfillID = "01K5ZQ3Y8V0M6T2B4C9D7E1F3G"
+		// 2025-09-25T16:00:00Z
+		minT = int64(1758816000000)
+	)
+
+	cfg := makeTestCompactorConfig(t)
+	cfg.SchedulerClientConfig.BackfillModeEnabled = true
+	cfg.SchedulerClientConfig.LastContactTimeout = 5 * time.Minute
+
+	bkt := objstore.NewInMemBucket()
+	exec := newTestSchedulerExecutor(t, cfg, nil)
+	c := prepareCompactorForExecutorTest(t, cfg, bkt, newMockConfigProvider())
+
+	// block.Upload fills in the file list, like the uploads and compactions of a backfill
+	dir := t.TempDir()
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "up", "job", "node"),
+		labels.FromStrings("__name__", "up", "job", "api"),
+		labels.FromStrings("__name__", "up", "job", "db"),
+	}
+	blockID, err := block.CreateBlock(t.Context(), dir, series, 120, minT, minT+2*time.Hour.Milliseconds(), labels.EmptyLabels())
+	require.NoError(t, err)
+	srcBkt := exec.jobBucket(c, tenant, backfillID)
+	meta, err := block.Upload(t.Context(), log.NewNopLogger(), srcBkt, filepath.Join(dir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	spec := &compactorschedulerpb.JobSpec{
+		Tenant:        tenant,
+		JobType:       compactorschedulerpb.JOB_TYPE_BACKFILL_COPY,
+		BackfillBlock: &compactorschedulerpb.BackfillBlockJob{BackfillId: backfillID, BlockId: blockID.Bytes()},
+	}
+	status, err := exec.executeBackfillCopyJob(t.Context(), c, spec)
+	require.NoError(t, err)
+	require.Equal(t, compactorschedulerpb.UPDATE_TYPE_COMPLETE, status)
+
+	read := func(bkt objstore.BucketReader, name string) []byte {
+		r, err := bkt.Get(t.Context(), name)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, r.Close()) }()
+		content, err := io.ReadAll(r)
+		require.NoError(t, err)
+		return content
+	}
+	dstBkt := bucket.NewPrefixedBucketClient(bkt, tenant)
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == block.MetaFilename {
+			continue
+		}
+		name := path.Join(blockID.String(), f.RelPath)
+		require.Equal(t, read(srcBkt, name), read(dstBkt, name), name)
+	}
+	copiedMeta, err := block.DownloadMeta(t.Context(), log.NewNopLogger(), dstBkt, blockID)
+	require.NoError(t, err)
+	require.Equal(t, *meta, copiedMeta)
+
+	copied, err := srcBkt.Exists(t.Context(), copiedMarkFilepath(blockID))
+	require.NoError(t, err)
+	require.True(t, copied)
+}
+
 // moveToUploadingMeta makes a block look like an upload that has not been validated yet
 func moveToUploadingMeta(t *testing.T, bkt objstore.Bucket, blockDir string) {
 	t.Helper()
@@ -280,6 +347,8 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 		validated  blockState = iota // has meta.json
 		uploaded                     // has uploading-meta.json
 		incomplete                   // has neither
+		copied                       // has meta.json and a copied marker
+		deleted                      // has meta.json and a deletion mark
 	)
 
 	tests := map[string]struct {
@@ -290,6 +359,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 		expectCleanupID string
 		expectValidate  bool // a validate job for each uploaded block
 		expectCompact   bool
+		expectCopy      bool // a copy job for each validated block
 		expectMarkers   map[string]string
 	}{
 		"no markers": {
@@ -340,6 +410,25 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 			expectCompact: true,
 			expectMarkers: map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID},
 		},
+		"copy with outstanding jobs": {
+			markers:         map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
+			blocks:          []blockState{validated},
+			hasOutstanding:  true,
+			expectUnchanged: true,
+			expectMarkers:   map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
+		},
+		"blocks awaiting copy": {
+			markers:       map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
+			blocks:        []blockState{validated, copied, deleted, incomplete, validated},
+			expectCopy:    true,
+			expectMarkers: map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
+		},
+		"copy finished": {
+			markers:         map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
+			blocks:          []blockState{copied, deleted},
+			expectCleanupID: backfillID,
+			expectMarkers:   map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID, backfill.PhaseCleanup: backfillID},
+		},
 	}
 
 	for name, tc := range tests {
@@ -362,12 +451,18 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 			}
 
 			dataPrefix := backfill.DataPrefix(backfillID, tenant)
-			var uploadedIDs [][]byte
+			var uploadedIDs, validatedIDs [][]byte
 			for i, state := range tc.blocks {
 				minT := rangeStart + int64(i)*time.Hour.Milliseconds()
 				id := createTSDBBlock(t, bkt, dataPrefix, minT, minT+time.Hour.Milliseconds(), 2, nil)
 				metaPath := path.Join(dataPrefix, id.String(), block.MetaFilename)
 				switch state {
+				case validated:
+					validatedIDs = append(validatedIDs, id.Bytes())
+				case copied:
+					require.NoError(t, bkt.Upload(t.Context(), path.Join(dataPrefix, copiedMarkFilepath(id)), bytes.NewReader(nil)))
+				case deleted:
+					require.NoError(t, bkt.Upload(t.Context(), path.Join(dataPrefix, block.DeletionMarkFilepath(id)), bytes.NewReader([]byte("{}"))))
 				case uploaded:
 					r, err := bkt.Get(t.Context(), metaPath)
 					require.NoError(t, err)
@@ -389,7 +484,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tc.expectUnchanged, req.Unchanged)
-			var cleanupIDs, validateBlocks [][]byte
+			var cleanupIDs, validateBlocks, copyBlocks [][]byte
 			var compactionJobs int
 			for _, j := range req.Jobs {
 				switch job := j.Job.(type) {
@@ -398,6 +493,9 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 				case *compactorschedulerpb.PlannedJob_BackfillValidate:
 					require.Equal(t, backfillID, job.BackfillValidate.BackfillId)
 					validateBlocks = append(validateBlocks, job.BackfillValidate.BlockId)
+				case *compactorschedulerpb.PlannedJob_BackfillCopy:
+					require.Equal(t, backfillID, job.BackfillCopy.BackfillId)
+					copyBlocks = append(copyBlocks, job.BackfillCopy.BlockId)
 				case *compactorschedulerpb.PlannedJob_Compaction:
 					require.Equal(t, backfillID, job.Compaction.BackfillId)
 					compactionJobs++
@@ -414,6 +512,11 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 				require.ElementsMatch(t, uploadedIDs, validateBlocks)
 			} else {
 				require.Empty(t, validateBlocks)
+			}
+			if tc.expectCopy {
+				require.ElementsMatch(t, validatedIDs, copyBlocks)
+			} else {
+				require.Empty(t, copyBlocks)
 			}
 			if tc.expectCompact {
 				require.Positive(t, compactionJobs)
