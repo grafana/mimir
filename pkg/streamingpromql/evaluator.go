@@ -99,18 +99,21 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer e.closeOperators()
 	}
 
-	// Registered last, so it is the first deferred call to run while the stack unwinds. It
-	// therefore only sees panics from the evaluation below, never panics raised by the deferred
-	// calls above. That matters most for the pool double-return guard in
-	// MemoryConsumptionTracker, which panics from Close. The guard panics before the slice
-	// reaches the pool, so it prevents the corruption rather than reports it, and it only fires
-	// when the decrement would take the per-source total negative. The variant it cannot see is
-	// the one that corrupts the shared pool, so crashing on the variant it can see keeps the
-	// only evidence that the other one exists.
+	// Registered last, so it is the first deferred call to run while the stack unwinds. That is what
+	// makes recovering safe: the handler poisons the query's memory consumption tracker before the
+	// deferred calls above close the operators, so the cleanup abandons the query's pooled memory
+	// instead of returning it to the pools shared with other queries. See
+	// MemoryConsumptionTracker.Poison.
+	//
+	// It also means the handler only sees panics from the evaluation below, never panics raised by
+	// the deferred calls above. A double-return guard panic from Close on a query that completed
+	// normally therefore escapes and crashes the process, as it must: the guard only fires when the
+	// per-source estimate would go negative, so it can be the late symptom of an earlier double
+	// return that has already put a slice in a shared pool twice.
 	//
 	// The position is also load-bearing for ctx. Arguments of a deferred call are evaluated when
 	// it is registered, so registering here passes the ctx that carries the memory consumption
-	// tracker, the cancellation and the timeout. Move this and both properties are lost.
+	// tracker, the cancellation and the timeout. Moving this loses all of these properties.
 	defer e.handleEvaluationPanic(ctx, logger, &err)
 
 	return e.runEvaluation(ctx, observer)
@@ -241,7 +244,8 @@ func classifyPanic(r any) string {
 		return "invalid_data"
 	}
 
-	if _, isRuntimeErr := rErr.(runtime.Error); isRuntimeErr {
+	var runtimeErr runtime.Error
+	if errors.As(rErr, &runtimeErr) {
 		return "runtime_error"
 	}
 

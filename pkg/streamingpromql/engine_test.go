@@ -2009,13 +2009,11 @@ func TestClassifyPanic_RuntimeError(t *testing.T) {
 	require.NotNil(t, r)
 	require.Equal(t, "runtime_error", classifyPanic(r))
 
-	// The runtime error check is a type assertion, so unlike the histogram check it does not
-	// unwrap. A wrapped runtime error is therefore unclassified. The Go runtime panics with these
-	// values directly, so nothing produces the wrapped form today. This pins the current
-	// behaviour, it is not a requirement.
+	// A wrapped runtime error is still a runtime error: if code ever recovers one, adds context and
+	// re-panics, it must still be classified as the bug it is. Like the histogram check, this unwraps.
 	rErr, isErr := r.(error)
 	require.True(t, isErr)
-	require.Equal(t, "other", classifyPanic(fmt.Errorf("while evaluating: %w", rErr)))
+	require.Equal(t, "runtime_error", classifyPanic(fmt.Errorf("while evaluating: %w", rErr)))
 }
 
 // poolAcquiringPanickingOperator takes a slice from a pool, panics, and returns the slice in Close.
