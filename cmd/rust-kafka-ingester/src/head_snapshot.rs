@@ -5,8 +5,11 @@ use std::path::Path;
 use super::*;
 use crate::chunk_disk::FileState;
 
-const MAGIC: &[u8; 8] = b"MIMIRHS3";
-// Written before limits: no head max time or metadata timestamps, exemplars kept per series.
+const MAGIC: &[u8; 8] = b"MIMIRHS4";
+// Without chunk out-of-order flags, the native histogram flag, or histograms in the open
+// out-of-order chunk.
+const V3_MAGIC: &[u8; 8] = b"MIMIRHS3";
+// Also without the head max time and metadata timestamps, and with exemplars kept per series.
 const LEGACY_MAGIC: &[u8; 8] = b"MIMIRHS2";
 const FILE_NAME: &str = "snapshot";
 
@@ -136,13 +139,14 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
             }
             writer.put_i64(series.last_ingested_ms)?;
             writer.put_u32(series.last_bucket_count)?;
+            writer.write_all(&[u8::from(series.native_histogram)])?;
             writer.put_len(series.chunks.len())?;
             for chunk in &series.chunks {
                 writer.put_u64(chunk.reference)?;
                 writer.put_i64(chunk.min_time)?;
                 writer.put_i64(chunk.max_time)?;
                 writer.put_u32(chunk.len)?;
-                writer.write_all(&[chunk.encoding])?;
+                writer.write_all(&[chunk.encoding, u8::from(chunk.out_of_order)])?;
             }
             match &series.float_head {
                 Some(head) => {
@@ -161,7 +165,16 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
             writer.put_len(series.out_of_order.len())?;
             for (timestamp, value) in &series.out_of_order {
                 writer.put_i64(*timestamp)?;
-                writer.put_u64(value.to_bits())?;
+                match value {
+                    ooo_merge::Value::Float(value) => {
+                        writer.write_all(&[0])?;
+                        writer.put_u64(value.to_bits())?;
+                    }
+                    ooo_merge::Value::Histogram(histogram) => {
+                        writer.write_all(&[1])?;
+                        writer.put_bytes(&histogram.encode_to_vec())?;
+                    }
+                }
             }
         }
     }
@@ -232,10 +245,13 @@ fn read_snapshot(
     let mut reader = Checksummed::new(BufReader::with_capacity(1 << 20, file));
     let mut magic = [0; 8];
     reader.inner.read_exact(&mut magic)?;
-    let legacy = &magic == LEGACY_MAGIC;
-    if &magic != MAGIC && !legacy {
-        bail!("head snapshot has invalid magic");
-    }
+    let version = match &magic {
+        MAGIC => 4,
+        V3_MAGIC => 3,
+        LEGACY_MAGIC => 2,
+        _ => bail!("head snapshot has invalid magic"),
+    };
+    let legacy = version == 2;
     let offsets = (0..reader.count(1_000)?)
         .map(|_| {
             let offset = reader.i64()?;
@@ -246,7 +262,7 @@ fn read_snapshot(
         })
         .collect::<Result<Vec<_>>>()?;
     let shards = (0..reader.count(4096)?)
-        .map(|_| read_shard(&mut reader, legacy))
+        .map(|_| read_shard(&mut reader, version))
         .collect::<Result<Vec<_>>>()?;
     let exemplars = if legacy {
         HashMap::new()
@@ -326,7 +342,29 @@ fn upgrade_legacy(
     storage
 }
 
-fn read_shard(reader: &mut Checksummed<BufReader<File>>, legacy: bool) -> Result<ShardImage> {
+// Older snapshots did not record which chunks hold out-of-order samples: a chunk that starts at
+// or before the in-order data written before it can only be one. The native histogram flag
+// follows the newest open chunk.
+fn infer_pre_v4_flags(series: &mut Series) {
+    let mut in_order_max = i64::MIN;
+    for chunk in &mut series.chunks {
+        chunk.out_of_order = chunk.min_time <= in_order_max;
+        if !chunk.out_of_order {
+            in_order_max = chunk.max_time;
+        }
+    }
+    let float = series
+        .float_head
+        .as_ref()
+        .and_then(|head| head.appender.last_timestamp());
+    series.native_histogram = series
+        .histogram_head
+        .last()
+        .is_some_and(|last| float.is_none_or(|float| last.timestamp > float));
+}
+
+fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<ShardImage> {
+    let legacy = version == 2;
     let next_sequence = reader.u32()?;
     let files = (0..reader.count(1_000_000)?)
         .map(|_| {
@@ -379,6 +417,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, legacy: bool) -> Result
             let mut series = Series {
                 last_ingested_ms: reader.i64()?,
                 last_bucket_count: reader.u32()?,
+                native_histogram: version >= 4 && reader.u8()? == 1,
                 ..Series::default()
             };
             series.chunks = (0..reader.count(1_000_000)?)
@@ -389,6 +428,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, legacy: bool) -> Result
                         max_time: reader.i64()?,
                         len: reader.u32()?,
                         encoding: reader.u8()?,
+                        out_of_order: version >= 4 && reader.u8()? == 1,
                     })
                 })
                 .collect::<Result<_>>()?;
@@ -408,8 +448,21 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, legacy: bool) -> Result
                 .collect::<Result<_>>()?;
             series.histogram_next_at = reader.i64()?;
             series.out_of_order = (0..reader.count(1_000_000)?)
-                .map(|_| Ok((reader.i64()?, f64::from_bits(reader.u64()?))))
+                .map(|_| {
+                    let timestamp = reader.i64()?;
+                    if version < 4 || reader.u8()? == 0 {
+                        return Ok((
+                            timestamp,
+                            ooo_merge::Value::Float(f64::from_bits(reader.u64()?)),
+                        ));
+                    }
+                    let histogram = cortexpb::Histogram::decode(reader.read_bytes()?.as_slice())?;
+                    Ok((timestamp, ooo_merge::Value::Histogram(Box::new(histogram))))
+                })
                 .collect::<Result<_>>()?;
+            if version < 4 {
+                infer_pre_v4_flags(&mut series);
+            }
             let key = series_key(labels);
             if legacy {
                 for _ in 0..reader.count(10_000_000)? {
@@ -757,6 +810,9 @@ mod tests {
                     writer.put_i64(series.histogram_next_at).unwrap();
                     writer.put_len(series.out_of_order.len()).unwrap();
                     for (timestamp, value) in &series.out_of_order {
+                        let ooo_merge::Value::Float(value) = value else {
+                            panic!("legacy snapshots hold only float out-of-order samples");
+                        };
                         writer.put_i64(*timestamp).unwrap();
                         writer.put_u64(value.to_bits()).unwrap();
                     }

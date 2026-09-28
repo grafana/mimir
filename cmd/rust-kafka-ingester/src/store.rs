@@ -15,6 +15,7 @@ use crate::chunk_disk::{ChunkDiskMapper, ChunkRef};
 use crate::exemplars::{Rejection, TenantExemplars};
 use crate::limits::{Limits, Overrides};
 use crate::metrics;
+use crate::ooo_merge;
 use crate::proto::{cortex, cortexpb};
 use crate::record::{DecodedRequest, DecodedSeries};
 use crate::trackers::OVERFLOW_VALUE;
@@ -38,6 +39,8 @@ struct ChunkMeta {
     max_time: i64,
     len: u32,
     encoding: u8,
+    // Out-of-order chunks sort after in-order ones with the same min time when merging.
+    out_of_order: bool,
 }
 
 #[derive(Debug)]
@@ -54,9 +57,13 @@ struct Series {
     float_head: Option<FloatHead>,
     histogram_head: Vec<cortexpb::Histogram>,
     histogram_next_at: i64,
-    out_of_order: Vec<(i64, f64)>,
+    // The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
+    out_of_order: Vec<(i64, ooo_merge::Value)>,
     last_ingested_ms: i64,
     last_bucket_count: u32,
+    // Whether the last request's samples ended with a native histogram, as Mimir's active series
+    // tracker records it.
+    native_histogram: bool,
     // Custom trackers this series matches, computed for one overrides generation.
     tracker_generation: u64,
     tracker_matches: Box<[u16]>,
@@ -307,6 +314,14 @@ impl AppendRules {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Appended {
+    InOrder,
+    OutOfOrder,
+    // A duplicate of a stored sample, accepted without storing it again.
+    Noop,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Append {
     InOrder,
     Duplicate,
@@ -317,6 +332,7 @@ enum Append {
 #[derive(Default)]
 struct ShardOutcome {
     accepted: HashMap<usize, u64>,
+    out_of_order: HashMap<usize, u64>,
     discarded: HashMap<(usize, DiscardReason), u64>,
     exemplars: Vec<(usize, u64, Arc<StoredLabels>, Vec<cortexpb::Exemplar>)>,
 }
@@ -1017,7 +1033,7 @@ impl Store {
                     .filter(|(_, series)| series.last_ingested_ms >= cutoff)
                     .filter_map(|((_, labels), series)| {
                         let bucket_count = u64::from(series.last_bucket_count);
-                        (!histograms_only || bucket_count > 0).then(|| ActiveSeriesView {
+                        (!histograms_only || series.native_histogram).then(|| ActiveSeriesView {
                             labels: owned_labels(labels),
                             bucket_count,
                         })
@@ -1073,7 +1089,7 @@ impl Store {
                                     series.tracker_matches = trackers.matching(labels).into();
                                     series.tracker_generation = generation;
                                 }
-                                let histogram = is_native_histogram(series);
+                                let histogram = series.native_histogram;
                                 let buckets = if histogram {
                                     u64::from(series.last_bucket_count)
                                 } else {
@@ -1438,23 +1454,6 @@ fn ingest_series(
     );
     let existed = has_samples(series);
     let rules = context.rules;
-    if decoded.created_timestamp != 0 {
-        let first_timestamp = decoded
-            .samples
-            .iter()
-            .map(|sample| sample.timestamp_ms)
-            .chain(
-                decoded
-                    .histograms
-                    .iter()
-                    .map(|histogram| histogram.timestamp),
-            )
-            .min();
-        if first_timestamp.is_some_and(|first| decoded.created_timestamp < first) {
-            // Mimir ignores a zero sample that is a duplicate or out of order.
-            let _ = append_float(series, disk, &rules, decoded.created_timestamp, 0.0)?;
-        }
-    }
     // Like Mimir's active series tracker, the bucket count comes from the request's last
     // histogram when no float follows it.
     let last_float = decoded.samples.last().map(|sample| sample.timestamp_ms);
@@ -1464,21 +1463,79 @@ fn ingest_series(
         .filter(|last| last_float.is_none_or(|float| float < last.timestamp))
         .map(|last| histogram_bucket_count(last) as u32);
     let mut accepted = 0_u64;
+    let mut out_of_order = 0_u64;
     let mut discard = |reason: DiscardReason| {
         *outcome
             .discarded
             .entry((context.index, reason))
             .or_default() += 1;
     };
+    // Like Mimir's push path, the created timestamp adds one zero sample before the first sample it
+    // precedes: a float, or a zero histogram of the same layout before a histogram.
+    let created = decoded.created_timestamp;
+    let mut created_pending = created > 0;
+    let first_histogram = decoded
+        .histograms
+        .first()
+        .map(|histogram| histogram.timestamp);
     for sample in decoded.samples {
+        if created_pending
+            && created < sample.timestamp_ms
+            && first_histogram.is_none_or(|first| first >= sample.timestamp_ms)
+        {
+            created_pending = false;
+            if let Some(reason) =
+                append_created_zero(series, disk, &rules, ooo_merge::Value::Float(0.0), created)?
+            {
+                discard(reason);
+            }
+        }
         match append_float(series, disk, &rules, sample.timestamp_ms, sample.value)? {
-            Ok(()) => accepted += 1,
+            Ok(appended) => {
+                accepted += 1;
+                out_of_order += u64::from(appended == Appended::OutOfOrder);
+            }
             Err(reason) => discard(reason),
         }
     }
     for histogram in decoded.histograms {
+        if created_pending && created < histogram.timestamp {
+            created_pending = false;
+            let zero = cortexpb::Histogram {
+                timestamp: created,
+                count: Some(match histogram.count {
+                    Some(cortexpb::histogram::Count::CountFloat(_)) => {
+                        cortexpb::histogram::Count::CountFloat(0.0)
+                    }
+                    _ => cortexpb::histogram::Count::CountInt(0),
+                }),
+                zero_count: Some(match histogram.count {
+                    Some(cortexpb::histogram::Count::CountFloat(_)) => {
+                        cortexpb::histogram::ZeroCount::ZeroCountFloat(0.0)
+                    }
+                    _ => cortexpb::histogram::ZeroCount::ZeroCountInt(0),
+                }),
+                schema: histogram.schema,
+                zero_threshold: histogram.zero_threshold,
+                custom_values: histogram.custom_values.clone(),
+                reset_hint: 1,
+                ..Default::default()
+            };
+            if let Some(reason) = append_created_zero(
+                series,
+                disk,
+                &rules,
+                ooo_merge::Value::Histogram(Box::new(zero)),
+                created,
+            )? {
+                discard(reason);
+            }
+        }
         match append_histogram(series, disk, &rules, histogram)? {
-            Ok(()) => accepted += 1,
+            Ok(appended) => {
+                accepted += 1;
+                out_of_order += u64::from(appended == Appended::OutOfOrder);
+            }
             Err(reason) => discard(reason),
         }
     }
@@ -1486,8 +1543,12 @@ fn ingest_series(
         if let Some(bucket_count) = bucket_count {
             series.last_bucket_count = bucket_count;
         }
+        series.native_histogram = bucket_count.is_some();
         series.last_ingested_ms = now;
         *outcome.accepted.entry(context.index).or_default() += accepted;
+    }
+    if out_of_order > 0 {
+        *outcome.out_of_order.entry(context.index).or_default() += out_of_order;
     }
     // Exemplars need an existing series, like `AppendExemplar`.
     if context.keep_exemplars && !decoded.exemplars.is_empty() && (existed || accepted > 0) {
@@ -1501,17 +1562,30 @@ fn ingest_series(
     Ok(())
 }
 
-// Whether the newest sample is a native histogram, like a non-negative bucket count in Mimir's
-// active series tracker.
-fn is_native_histogram(series: &Series) -> bool {
-    let float = series
-        .float_head
-        .as_ref()
-        .and_then(|head| head.appender.last_timestamp());
-    series
-        .histogram_head
-        .last()
-        .is_some_and(|last| float.is_none_or(|float| last.timestamp > float))
+// A created-timestamp zero sample is only appended in order; like Mimir, being out of order or a
+// duplicate is not an error, other rejections are counted.
+fn append_created_zero(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    rules: &AppendRules,
+    value: ooo_merge::Value,
+    timestamp: i64,
+) -> Result<Option<DiscardReason>> {
+    match rules.classify(timestamp, series_max_time(series)) {
+        Ok(Append::InOrder) => {}
+        Ok(Append::Duplicate | Append::OutOfOrder) => return Ok(None),
+        Err(DiscardReason::OutOfOrder) => return Ok(None),
+        Err(reason) => return Ok(Some(reason)),
+    }
+    match value {
+        ooo_merge::Value::Float(value) => {
+            append_float(series, disk, rules, timestamp, value)?.ok();
+        }
+        ooo_merge::Value::Histogram(histogram) => {
+            append_histogram(series, disk, rules, *histogram)?.ok();
+        }
+    }
+    Ok(None)
 }
 
 fn has_samples(series: &Series) -> bool {
@@ -1540,7 +1614,7 @@ fn append_float(
     rules: &AppendRules,
     timestamp: i64,
     value: f64,
-) -> Result<Result<(), DiscardReason>> {
+) -> Result<Result<Appended, DiscardReason>> {
     let series_max = series_max_time(series);
     match rules.classify(timestamp, series_max) {
         Err(reason) => return Ok(Err(reason)),
@@ -1551,29 +1625,13 @@ fn append_float(
                     .flatten()
             });
             return Ok(match last {
-                Some(last) if last.to_bits() == value.to_bits() => Ok(()),
+                Some(last) if last.to_bits() == value.to_bits() => Ok(Appended::Noop),
                 _ => Err(DiscardReason::NewValueForTimestamp),
             });
         }
         Ok(Append::OutOfOrder) => {
-            if series
-                .histogram_head
-                .binary_search_by_key(&timestamp, |histogram| histogram.timestamp)
-                .is_ok()
-                || has_float_at(series, disk, timestamp)
-            {
-                return Ok(Ok(()));
-            }
-            if let Err(index) = series
-                .out_of_order
-                .binary_search_by_key(&timestamp, |(timestamp, _)| *timestamp)
-            {
-                series.out_of_order.insert(index, (timestamp, value));
-            }
-            if series.out_of_order.len() >= OUT_OF_ORDER_CAPACITY {
-                flush_out_of_order(series, disk)?;
-            }
-            return Ok(Ok(()));
+            return insert_out_of_order(series, disk, timestamp, ooo_merge::Value::Float(value))
+                .map(Ok);
         }
         Ok(Append::InOrder) => {}
     }
@@ -1603,29 +1661,10 @@ fn append_float(
         .last_timestamp()
         .is_some_and(|last| timestamp <= last)
     {
-        return Ok(Ok(()));
+        return Ok(Ok(Appended::Noop));
     }
     head.appender.append(timestamp, value);
-    Ok(Ok(()))
-}
-
-// Only used for out-of-order samples, so decoding the overlapping chunks is acceptable.
-fn has_float_at(series: &Series, disk: &ChunkDiskMapper, timestamp: i64) -> bool {
-    let contains = |data: &[u8]| {
-        xor::decode(data)
-            .binary_search_by_key(&timestamp, |(time, _)| *time)
-            .is_ok()
-    };
-    series
-        .float_head
-        .as_ref()
-        .is_some_and(|head| head.min_time <= timestamp && contains(head.appender.bytes()))
-        || series.chunks.iter().any(|chunk| {
-            chunk.encoding == XOR_ENCODING
-                && chunk.min_time <= timestamp
-                && timestamp <= chunk.max_time
-                && contains(disk.read(chunk.reference, chunk.len))
-        })
+    Ok(Ok(Appended::InOrder))
 }
 
 fn append_histogram(
@@ -1633,38 +1672,33 @@ fn append_histogram(
     disk: &mut ChunkDiskMapper,
     rules: &AppendRules,
     histogram: cortexpb::Histogram,
-) -> Result<Result<(), DiscardReason>> {
+) -> Result<Result<Appended, DiscardReason>> {
     let series_max = series_max_time(series);
     match rules.classify(histogram.timestamp, series_max) {
         Err(reason) => return Ok(Err(reason)),
         Ok(Append::Duplicate) => {
             return Ok(match series.histogram_head.last() {
-                Some(last) if last.timestamp == histogram.timestamp && *last == histogram => Ok(()),
+                Some(last) if last.timestamp == histogram.timestamp && *last == histogram => {
+                    Ok(Appended::Noop)
+                }
                 _ => Err(DiscardReason::NewValueForTimestamp),
             });
         }
         Ok(Append::OutOfOrder) => {
-            if series
-                .histogram_head
-                .binary_search_by_key(&histogram.timestamp, |item| item.timestamp)
-                .is_err()
-                && !has_float_at(series, disk, histogram.timestamp)
-            {
-                write_chunk(
-                    series,
-                    disk,
-                    histogram::encode(&histogram),
-                    histogram.timestamp,
-                    histogram.timestamp,
-                )?;
-            }
-            return Ok(Ok(()));
+            let timestamp = histogram.timestamp;
+            return insert_out_of_order(
+                series,
+                disk,
+                timestamp,
+                ooo_merge::Value::Histogram(Box::new(histogram)),
+            )
+            .map(Ok);
         }
         Ok(Append::InOrder) => {}
     }
     if let Some(last) = series.histogram_head.last() {
         if histogram.timestamp <= last.timestamp {
-            return Ok(Ok(()));
+            return Ok(Ok(Appended::Noop));
         }
         if series.histogram_head.len() >= SAMPLES_PER_CHUNK
             || histogram.timestamp >= series.histogram_next_at
@@ -1677,7 +1711,7 @@ fn append_histogram(
         series.histogram_next_at = range_end(histogram.timestamp);
     }
     series.histogram_head.push(histogram);
-    Ok(Ok(()))
+    Ok(Ok(Appended::InOrder))
 }
 
 fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
@@ -1695,6 +1729,7 @@ fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()>
         },
         head.min_time,
         max_time,
+        false,
     )
 }
 
@@ -1709,7 +1744,30 @@ fn cut_histogram_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result
         histogram::encode_sequence(&head),
         head[0].timestamp,
         head[head.len() - 1].timestamp,
+        false,
     )
+}
+
+// Like the OOO head chunk's `Insert`, a timestamp already in the open out-of-order chunk is
+// dropped; once it holds `OUT_OF_ORDER_CAPACITY` samples it is written out like a memory-mapped
+// OOO chunk.
+fn insert_out_of_order(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    timestamp: i64,
+    value: ooo_merge::Value,
+) -> Result<Appended> {
+    match series
+        .out_of_order
+        .binary_search_by_key(&timestamp, |(timestamp, _)| *timestamp)
+    {
+        Ok(_) => return Ok(Appended::Noop),
+        Err(index) => series.out_of_order.insert(index, (timestamp, value)),
+    }
+    if series.out_of_order.len() >= OUT_OF_ORDER_CAPACITY {
+        flush_out_of_order(series, disk)?;
+    }
+    Ok(Appended::OutOfOrder)
 }
 
 fn flush_out_of_order(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
@@ -1717,16 +1775,20 @@ fn flush_out_of_order(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result
         return Ok(());
     }
     let samples = std::mem::take(&mut series.out_of_order);
-    write_chunk(
-        series,
-        disk,
-        histogram::EncodedHistogram {
-            encoding: i32::from(XOR_ENCODING),
-            data: xor::encode(&samples),
-        },
-        samples[0].0,
-        samples[samples.len() - 1].0,
-    )
+    for chunk in ooo_merge::encode_out_of_order(&samples) {
+        write_chunk(
+            series,
+            disk,
+            histogram::EncodedHistogram {
+                encoding: chunk.encoding,
+                data: chunk.data,
+            },
+            chunk.min_time,
+            chunk.max_time,
+            true,
+        )?;
+    }
+    Ok(())
 }
 
 fn write_chunk(
@@ -1735,6 +1797,7 @@ fn write_chunk(
     encoded: histogram::EncodedHistogram,
     min_time: i64,
     max_time: i64,
+    out_of_order: bool,
 ) -> Result<()> {
     let reference = disk.write(&encoded.data, max_time)?;
     series.chunks.push(ChunkMeta {
@@ -1743,6 +1806,7 @@ fn write_chunk(
         max_time,
         len: u32::try_from(encoded.data.len()).context("chunk exceeds u32")?,
         encoding: u8::try_from(encoded.encoding).context("chunk encoding exceeds u8")?,
+        out_of_order,
     });
     Ok(())
 }
@@ -1791,6 +1855,8 @@ fn matches_time_range(series: &Series, start: i64, end: i64) -> bool {
     series_bounds(series).any(|(min, max)| min <= end && max >= start)
 }
 
+// With out-of-order samples, overlapping chunks are merged as the Go ingester's out-of-order
+// querier does; otherwise every chunk is returned as stored.
 fn query_chunks(
     series: &Series,
     disk: &ChunkDiskMapper,
@@ -1798,52 +1864,97 @@ fn query_chunks(
     end: i64,
 ) -> Vec<EncodedChunk> {
     let overlaps = |min: i64, max: i64| min <= end && max >= start;
-    let mut chunks = Vec::new();
-    for chunk in &series.chunks {
+    let mut candidates = Vec::new();
+    let (mut in_order, mut out_of_order) = (0, 0);
+    let mut add = |chunk: ooo_merge::Chunk, ooo: bool| {
+        let counter = if ooo {
+            &mut out_of_order
+        } else {
+            &mut in_order
+        };
+        *counter += 1;
         if overlaps(chunk.min_time, chunk.max_time) {
-            chunks.push(wire_chunk(
-                chunk.min_time,
-                chunk.max_time,
-                i32::from(chunk.encoding),
-                disk.read(chunk.reference, chunk.len),
-            ));
+            candidates.push(ooo_merge::Candidate {
+                chunk,
+                order: (ooo, *counter),
+            });
+        }
+    };
+    for chunk in &series.chunks {
+        let stored = ooo_merge::Chunk {
+            min_time: chunk.min_time,
+            max_time: chunk.max_time,
+            encoding: i32::from(chunk.encoding),
+            data: Vec::new(),
+        };
+        if overlaps(chunk.min_time, chunk.max_time) {
+            add(
+                ooo_merge::Chunk {
+                    data: disk.read(chunk.reference, chunk.len).to_vec(),
+                    ..stored
+                },
+                chunk.out_of_order,
+            );
+        } else {
+            add(stored, chunk.out_of_order);
         }
     }
     if let Some(head) = &series.float_head {
-        let max = head.appender.last_timestamp().expect("head has samples");
-        if overlaps(head.min_time, max) {
-            chunks.push(wire_chunk(
-                head.min_time,
-                max,
-                i32::from(XOR_ENCODING),
-                head.appender.bytes(),
-            ));
-        }
+        add(
+            ooo_merge::Chunk {
+                min_time: head.min_time,
+                max_time: head.appender.last_timestamp().expect("head has samples"),
+                encoding: i32::from(XOR_ENCODING),
+                data: head.appender.bytes().to_vec(),
+            },
+            false,
+        );
     }
     if let (Some(first), Some(last)) = (series.histogram_head.first(), series.histogram_head.last())
+        && overlaps(first.timestamp, last.timestamp)
     {
-        if overlaps(first.timestamp, last.timestamp) {
-            let encoded = histogram::encode_sequence(&series.histogram_head);
-            chunks.push(wire_chunk(
-                first.timestamp,
-                last.timestamp,
-                encoded.encoding,
-                &encoded.data,
-            ));
+        let encoded = histogram::encode_sequence(&series.histogram_head);
+        add(
+            ooo_merge::Chunk {
+                min_time: first.timestamp,
+                max_time: last.timestamp,
+                encoding: encoded.encoding,
+                data: encoded.data,
+            },
+            false,
+        );
+    }
+    // The open out-of-order chunk shares one position, like Prometheus's OOO head chunk.
+    let ooo_head = ooo_merge::encode_out_of_order(&series.out_of_order);
+    out_of_order += 1;
+    for chunk in ooo_head {
+        if overlaps(chunk.min_time, chunk.max_time) {
+            candidates.push(ooo_merge::Candidate {
+                chunk,
+                order: (true, out_of_order),
+            });
         }
     }
-    if let (Some(first), Some(last)) = (series.out_of_order.first(), series.out_of_order.last()) {
-        if overlaps(first.0, last.0) {
-            chunks.push(wire_chunk(
-                first.0,
-                last.0,
-                i32::from(XOR_ENCODING),
-                &xor::encode(&series.out_of_order),
-            ));
+    let merged = if candidates.iter().any(|candidate| candidate.order.0) {
+        match ooo_merge::merge_overlapping(candidates) {
+            Ok(merged) => merged,
+            Err(error) => {
+                eprintln!("phase=query_merge_error error={error:#}");
+                return Vec::new();
+            }
         }
-    }
-    chunks.sort_by_key(|chunk| chunk.start_timestamp_ms);
-    chunks
+    } else {
+        let mut chunks = candidates
+            .into_iter()
+            .map(|candidate| candidate.chunk)
+            .collect::<Vec<_>>();
+        chunks.sort_by_key(|chunk| chunk.min_time);
+        chunks
+    };
+    merged
+        .into_iter()
+        .map(|chunk| wire_chunk(chunk.min_time, chunk.max_time, chunk.encoding, &chunk.data))
+        .collect()
 }
 
 fn wire_chunk(min_time: i64, max_time: i64, encoding: i32, data: &[u8]) -> EncodedChunk {
@@ -2418,10 +2529,9 @@ mod tests {
                 .iter()
                 .map(|chunk| (chunk.min_time, chunk.max_time))
                 .collect::<Vec<_>>();
-            assert_eq!(
-                spans,
-                vec![(1_000, 2_190), (2_200, 3_390), (3_400, 3_990), (500, 500)]
-            );
+            assert_eq!(spans, vec![(1_000, 2_190), (2_200, 3_390), (3_400, 3_990)]);
+            // Like Prometheus's OOO head, the out-of-order histogram waits in the open OOO chunk.
+            assert_eq!(series.out_of_order.len(), 1);
             assert_eq!(series.histogram_head.len(), 1);
             assert_eq!(series.last_bucket_count, 5);
         });

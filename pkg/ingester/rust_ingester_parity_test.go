@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func startParityIngesters(tb testing.TB, produce func(testing.TB, ingest.KafkaCo
 	cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 8
 	cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = 150
 	limits := defaultLimitsTestConfig()
-	limits.OutOfOrderTimeWindow = 2 * 60 * 60 * 1000
+	limits.OutOfOrderTimeWindow = model.Duration(2 * time.Hour)
 	limits.NativeHistogramsIngestionEnabled = true
 	limits.MaxGlobalExemplarsPerUser = 100
 	goIngester, _, _ := createTestIngesterWithIngestStorage(tb, &cfg, validation.NewOverrides(limits, nil), nil, nil, nil)
@@ -283,6 +284,22 @@ func TestGoRustIngesterParity(t *testing.T) {
 		write(2, "tenant-a", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
 			Labels: edgeLabels, Samples: []mimirpb.Sample{{TimestampMs: 3000, Value: 42}, {TimestampMs: 7000, Value: 7}},
 		}}}, Source: mimirpb.API})
+		// Out-of-order samples that collide with stored ones: a different float value, a float
+		// where a histogram is, and a histogram where a float is.
+		conflictLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "conflict_metric"}}
+		mixedLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "mixed_conflict_metric"}}
+		write(2, "tenant-a", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{Labels: conflictLabels, Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}, {TimestampMs: 2000, Value: 2}, {TimestampMs: 3000, Value: 3}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "ooo_only_conflict_metric"}}, Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}, {TimestampMs: 3000, Value: 3}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "dup_conflict_metric"}}, Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}, {TimestampMs: 2000, Value: 2}, {TimestampMs: 3000, Value: 3}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: mixedLabels, Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}}, Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, intHistogram), mimirpb.FromHistogramToHistogramProto(3000, intHistogram)}}},
+		}, Source: mimirpb.API})
+		write(2, "tenant-a", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{Labels: conflictLabels, Samples: []mimirpb.Sample{{TimestampMs: 2000, Value: 20}, {TimestampMs: 1500, Value: 15}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "ooo_only_conflict_metric"}}, Samples: []mimirpb.Sample{{TimestampMs: 2000, Value: 2}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "dup_conflict_metric"}}, Samples: []mimirpb.Sample{{TimestampMs: 2000, Value: 20}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: mixedLabels, Samples: []mimirpb.Sample{{TimestampMs: 2000, Value: 22}}, Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, intHistogram), mimirpb.FromHistogramToHistogramProto(1500, intHistogram)}}},
+		}, Source: mimirpb.API})
 		write(2, "tenant-a", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "name", Value: "a"}, {Name: "name", Value: "b"}}, Samples: []mimirpb.Sample{{TimestampMs: 9000, Value: 1}}}},
 			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "after_invalid"}}, Samples: []mimirpb.Sample{{TimestampMs: 9000, Value: 1}}}},
@@ -303,6 +320,7 @@ func TestGoRustIngesterParity(t *testing.T) {
 		{"negative-match", "tenant-a", parityRequest(0, 10000, parityMatcher(client.NOT_EQUAL, "group", "g1"), parityMatcher(client.EQUAL, "batch", "v1"))},
 		{"narrow-time", "tenant-a", parityRequest(2500, 5500, parityMatcher(client.EQUAL, "__name__", "special_metric"))},
 		{"out-of-order-and-duplicate", "tenant-a", parityRequest(0, 10_000, parityMatcher(client.EQUAL, "__name__", "edge_metric"))},
+		{"out-of-order-conflicts", "tenant-a", parityRequest(0, 10_000, parityMatcher(client.REGEX_MATCH, "__name__", "(mixed_|ooo_only_|dup_)?conflict_metric"))},
 		{"missing", "tenant-b", parityRequest(0, 10000, parityMatcher(client.EQUAL, "__name__", "special_metric"))},
 		{"packed-int", "tenant-a", parityRequest(20_000, 300_000, parityMatcher(client.EQUAL, "__name__", "packed_int_metric"))},
 		{"packed-float", "tenant-a", parityRequest(20_000, 300_000, parityMatcher(client.EQUAL, "__name__", "packed_float_metric"))},

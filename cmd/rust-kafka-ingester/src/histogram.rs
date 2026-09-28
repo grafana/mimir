@@ -474,9 +474,249 @@ impl BitWriter {
     }
 }
 
+/// Decodes a Prometheus histogram (`encoding` 5) or float histogram (6) chunk written by
+/// [`encode_sequence`] or by Prometheus. Samples after the first carry no reset hint, like the
+/// Prometheus iterator reports them.
+pub fn decode(encoding: i32, data: &[u8]) -> anyhow::Result<Vec<cortexpb::Histogram>> {
+    use anyhow::{Context, bail};
+    if data.len() < 3 {
+        bail!("histogram chunk too short");
+    }
+    let count = usize::from(u16::from_be_bytes([data[0], data[1]]));
+    let reset_hint = match data[2] & 0xc0 {
+        0x80 => 1,
+        0x40 => 2,
+        0xc0 => 3,
+        _ => 0,
+    };
+    let is_float = match encoding {
+        5 => false,
+        6 => true,
+        other => bail!("not a histogram chunk encoding: {other}"),
+    };
+    let mut reader = BitReader::new(&data[3..]);
+    let mut result = Vec::with_capacity(count);
+    if count == 0 {
+        return Ok(result);
+    }
+    let zero_threshold = reader.zero_threshold().context("zero threshold")?;
+    let schema = reader.varbit_int().context("schema")? as i32;
+    let positive_spans = reader.spans().context("positive spans")?;
+    let negative_spans = reader.spans().context("negative spans")?;
+    let custom_values = if schema == CUSTOM_BUCKETS_SCHEMA {
+        let len = reader.varbit_uint().context("custom values")? as usize;
+        (0..len)
+            .map(|_| reader.custom_bound())
+            .collect::<Option<Vec<_>>>()
+            .context("custom value")?
+    } else {
+        Vec::new()
+    };
+    let positive_len = positive_spans
+        .iter()
+        .map(|span| span.length as usize)
+        .sum::<usize>();
+    let negative_len = negative_spans
+        .iter()
+        .map(|span| span.length as usize)
+        .sum::<usize>();
+    let buckets = positive_len + negative_len;
+    let base = cortexpb::Histogram {
+        schema,
+        zero_threshold,
+        positive_spans,
+        negative_spans,
+        custom_values,
+        ..Default::default()
+    };
+    let mut timestamp = reader.varbit_int().context("timestamp")?;
+    let mut t_delta = 0_i64;
+    if is_float {
+        let mut values = (0..3 + buckets)
+            .map(|_| reader.bits(64).map(f64::from_bits))
+            .collect::<Option<Vec<_>>>()
+            .context("first float histogram")?;
+        let mut leading = vec![0xff_u8; values.len()];
+        let mut trailing = vec![0_u8; values.len()];
+        for index in 0..count {
+            if index > 0 {
+                let dod = reader.varbit_int().context("timestamp delta")?;
+                t_delta = t_delta.wrapping_add(dod);
+                timestamp = timestamp.wrapping_add(t_delta);
+                for (slot, value) in values.iter_mut().enumerate() {
+                    *value = reader
+                        .xor(*value, &mut leading[slot], &mut trailing[slot])
+                        .context("float histogram value")?;
+                }
+            }
+            let mut histogram = base.clone();
+            histogram.timestamp = timestamp;
+            histogram.reset_hint = if index == 0 { reset_hint } else { 0 };
+            histogram.count = Some(Count::CountFloat(values[0]));
+            histogram.zero_count = Some(ZeroCount::ZeroCountFloat(values[1]));
+            histogram.sum = values[2];
+            histogram.positive_counts = values[3..3 + positive_len].to_vec();
+            histogram.negative_counts = values[3 + positive_len..].to_vec();
+            result.push(histogram);
+        }
+    } else {
+        let mut count_value = reader.varbit_uint().context("count")?;
+        let mut zero = reader.varbit_uint().context("zero count")?;
+        let mut sum = f64::from_bits(reader.bits(64).context("sum")?);
+        let mut bucket_values = (0..buckets)
+            .map(|_| reader.varbit_int())
+            .collect::<Option<Vec<_>>>()
+            .context("buckets")?;
+        let (mut count_delta, mut zero_delta) = (0_i64, 0_i64);
+        let mut bucket_deltas = vec![0_i64; buckets];
+        let (mut sum_leading, mut sum_trailing) = (0xff_u8, 0_u8);
+        for index in 0..count {
+            if index > 0 {
+                t_delta = t_delta.wrapping_add(reader.varbit_int().context("timestamp delta")?);
+                timestamp = timestamp.wrapping_add(t_delta);
+                count_delta = count_delta.wrapping_add(reader.varbit_int().context("count delta")?);
+                count_value = count_value.wrapping_add(count_delta as u64);
+                zero_delta = zero_delta.wrapping_add(reader.varbit_int().context("zero delta")?);
+                zero = zero.wrapping_add(zero_delta as u64);
+                sum = reader
+                    .xor(sum, &mut sum_leading, &mut sum_trailing)
+                    .context("sum")?;
+                for (value, delta) in bucket_values.iter_mut().zip(&mut bucket_deltas) {
+                    *delta = delta.wrapping_add(reader.varbit_int().context("bucket delta")?);
+                    *value = value.wrapping_add(*delta);
+                }
+            }
+            let mut histogram = base.clone();
+            histogram.timestamp = timestamp;
+            histogram.reset_hint = if index == 0 { reset_hint } else { 0 };
+            histogram.count = Some(Count::CountInt(count_value));
+            histogram.zero_count = Some(ZeroCount::ZeroCountInt(zero));
+            histogram.sum = sum;
+            histogram.positive_deltas = bucket_values[..positive_len].to_vec();
+            histogram.negative_deltas = bucket_values[positive_len..].to_vec();
+            result.push(histogram);
+        }
+    }
+    Ok(result)
+}
+
+struct BitReader<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> BitReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn bit(&mut self) -> Option<bool> {
+        let byte = *self.bytes.get(self.position / 8)?;
+        let bit = (byte >> (7 - self.position % 8)) & 1 == 1;
+        self.position += 1;
+        Some(bit)
+    }
+
+    fn bits(&mut self, count: usize) -> Option<u64> {
+        let mut value = 0_u64;
+        for _ in 0..count {
+            value = (value << 1) | u64::from(self.bit()?);
+        }
+        Some(value)
+    }
+
+    fn varbit_prefix(&mut self) -> Option<usize> {
+        let mut ones = 0;
+        while ones < 8 && self.bit()? {
+            ones += 1;
+        }
+        Some(match ones {
+            0 => 0,
+            1 => 3,
+            2 => 6,
+            3 => 9,
+            4 => 12,
+            5 => 18,
+            6 => 25,
+            7 => 56,
+            _ => 64,
+        })
+    }
+
+    fn varbit_int(&mut self) -> Option<i64> {
+        let bits = self.varbit_prefix()?;
+        if bits == 0 {
+            return Some(0);
+        }
+        let raw = self.bits(bits)?;
+        if bits == 64 {
+            return Some(raw as i64);
+        }
+        let value = raw as i64;
+        Some(if value > 1 << (bits - 1) {
+            value - (1 << bits)
+        } else {
+            value
+        })
+    }
+
+    fn varbit_uint(&mut self) -> Option<u64> {
+        let bits = self.varbit_prefix()?;
+        if bits == 0 {
+            return Some(0);
+        }
+        self.bits(bits)
+    }
+
+    fn zero_threshold(&mut self) -> Option<f64> {
+        let byte = self.bits(8)? as u8;
+        Some(match byte {
+            0 => 0.0,
+            255 => f64::from_bits(self.bits(64)?),
+            byte => 2f64.powi(i32::from(byte) - 243 - 1),
+        })
+    }
+
+    fn spans(&mut self) -> Option<Vec<cortexpb::BucketSpan>> {
+        let len = self.varbit_uint()? as usize;
+        (0..len)
+            .map(|_| {
+                let length = self.varbit_uint()? as u32;
+                let offset = self.varbit_int()? as i32;
+                Some(cortexpb::BucketSpan { offset, length })
+            })
+            .collect()
+    }
+
+    fn custom_bound(&mut self) -> Option<f64> {
+        let value = self.varbit_uint()?;
+        if value == 0 {
+            return Some(f64::from_bits(self.bits(64)?));
+        }
+        Some((value - 1) as f64 / 1000.0)
+    }
+
+    fn xor(&mut self, previous: f64, leading: &mut u8, trailing: &mut u8) -> Option<f64> {
+        if !self.bit()? {
+            return Some(previous);
+        }
+        if self.bit()? {
+            *leading = self.bits(5)? as u8;
+            let mut significant = self.bits(6)? as u8;
+            if significant == 0 {
+                significant = 64;
+            }
+            *trailing = 64 - *leading - significant;
+        }
+        let significant = 64 - usize::from(*leading) - usize::from(*trailing);
+        let delta = self.bits(significant)? << *trailing;
+        Some(f64::from_bits(previous.to_bits() ^ delta))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BitWriter, compatible};
+    use super::{BitWriter, compatible, decode, encode_sequence};
     use crate::proto::cortexpb;
     use crate::proto::cortexpb::histogram::Count;
 
@@ -534,5 +774,75 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn int_histogram(timestamp: i64, scale: i64) -> cortexpb::Histogram {
+        cortexpb::Histogram {
+            timestamp,
+            count: Some(Count::CountInt((12 * scale) as u64)),
+            zero_count: Some(cortexpb::histogram::ZeroCount::ZeroCountInt(scale as u64)),
+            sum: 1.5 * scale as f64,
+            schema: 3,
+            zero_threshold: 1e-128,
+            positive_spans: vec![
+                cortexpb::BucketSpan {
+                    offset: -2,
+                    length: 2,
+                },
+                cortexpb::BucketSpan {
+                    offset: 5,
+                    length: 1,
+                },
+            ],
+            negative_spans: vec![cortexpb::BucketSpan {
+                offset: 1,
+                length: 1,
+            }],
+            positive_deltas: vec![scale, 3 * scale, -scale],
+            negative_deltas: vec![2 * scale],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn decodes_what_it_encodes() {
+        let mut ints = (1..40)
+            .map(|t| int_histogram(t * 15_000 + t * t, t))
+            .collect::<Vec<_>>();
+        ints[0].reset_hint = 1;
+        let encoded = encode_sequence(&ints);
+        let mut expected = ints.clone();
+        for histogram in &mut expected[1..] {
+            histogram.reset_hint = 0;
+        }
+        assert_eq!(decode(encoded.encoding, &encoded.data).unwrap(), expected);
+
+        let floats = (0..30)
+            .map(|t| cortexpb::Histogram {
+                timestamp: 1_000 + t * 60_000,
+                count: Some(Count::CountFloat(3.5 + t as f64)),
+                zero_count: Some(cortexpb::histogram::ZeroCount::ZeroCountFloat(0.25)),
+                sum: t as f64 * 1.1,
+                schema: -53,
+                custom_values: vec![0.5, 1.0, 2.5, 1e30],
+                positive_spans: vec![cortexpb::BucketSpan {
+                    offset: 0,
+                    length: 3,
+                }],
+                positive_counts: vec![1.0, t as f64 / 3.0, 2.0],
+                reset_hint: 3,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let encoded = encode_sequence(&floats);
+        let decoded = decode(encoded.encoding, &encoded.data).unwrap();
+        assert_eq!(decoded.len(), floats.len());
+        assert_eq!(decoded[0], floats[0]);
+        for (decoded, original) in decoded.iter().zip(&floats).skip(1) {
+            let mut original = original.clone();
+            original.reset_hint = 0;
+            assert_eq!(decoded, &original);
+        }
+        assert!(decode(5, &[0, 1]).is_err());
     }
 }
