@@ -21,10 +21,9 @@ use crate::record::{DecodedRequest, DecodedSeries};
 use crate::trackers::OVERFLOW_VALUE;
 use crate::{histogram, xor};
 
-type StoredLabel = (Arc<str>, CompactString);
-type StoredLabels = Vec<StoredLabel>;
+type StoredLabels = crate::labels::Labels;
 // Compare the fingerprint first so ingest does not compare every label at each tree level.
-type SeriesKey = (u64, Arc<StoredLabels>);
+type SeriesKey = (u64, StoredLabels);
 
 const XOR_ENCODING: u8 = 4;
 const SAMPLES_PER_CHUNK: usize = 120;
@@ -296,7 +295,7 @@ struct SeriesByName {
     // costs a pointer instead of a whole series.
     groups: Vec<HashTable<(SeriesKey, Box<Series>)>>,
     // Label name, then value, to the (name group, label hash) of every series with that label.
-    postings: HashMap<Arc<str>, HashMap<CompactString, PostingList>>,
+    postings: HashMap<&'static str, HashMap<CompactString, PostingList>>,
     len: usize,
 }
 
@@ -306,8 +305,8 @@ impl SeriesByName {
         name: &str,
         hash: u64,
         is_same: impl Fn(&StoredLabels) -> bool,
-        labels: impl FnOnce() -> Arc<StoredLabels>,
-    ) -> (&Arc<StoredLabels>, &mut Series) {
+        labels: impl FnOnce() -> StoredLabels,
+    ) -> (&StoredLabels, &mut Series) {
         let group = match self.names.get(name) {
             Some(group) => *group,
             None => {
@@ -347,10 +346,10 @@ impl SeriesByName {
         let (_, stored) = self.get_or_insert_with(
             metric_name(&labels),
             hash,
-            |existing| existing == labels.as_ref(),
+            |existing| *existing == labels,
             || {
                 inserted.set(true);
-                Arc::clone(&labels)
+                labels.clone()
             },
         );
         if inserted.get() {
@@ -503,32 +502,30 @@ impl PostingList {
 }
 
 fn add_postings(
-    postings: &mut HashMap<Arc<str>, HashMap<CompactString, PostingList>>,
+    postings: &mut HashMap<&'static str, HashMap<CompactString, PostingList>>,
     labels: &StoredLabels,
     group: u32,
     hash: u64,
 ) {
     for (name, value) in labels {
-        if name.as_ref() == "__name__" {
+        if name == "__name__" {
             continue;
         }
         let values = match postings.get_mut(name) {
             Some(values) => values,
-            None => postings.entry(Arc::clone(name)).or_default(),
+            None => postings.entry(name).or_default(),
         };
         match values.get_mut(value) {
             Some(list) => list.push((group, hash)),
             None => {
-                values.insert(value.clone(), PostingList::One((group, hash)));
+                values.insert(CompactString::from(value), PostingList::One((group, hash)));
             }
         }
     }
 }
 
-fn metric_name(labels: &[StoredLabel]) -> &str {
-    labels
-        .binary_search_by(|(label, _)| label.as_ref().cmp("__name__"))
-        .map_or("", |index| labels[index].1.as_str())
+fn metric_name(labels: &StoredLabels) -> &str {
+    labels.value("__name__")
 }
 
 // Metadata of one metric family, keyed by type, help and unit, with when each was last seen.
@@ -536,7 +533,6 @@ type MetricMetadataSet = BTreeMap<(i32, String, String), (cortexpb::MetricMetada
 
 struct Tenant {
     series: SeriesByName,
-    label_names: HashSet<Arc<str>>,
     // Tenant metadata, ingestion rates and the head's max time live only in shard 0.
     metadata: BTreeMap<String, MetricMetadataSet>,
     ingested: VecDeque<(Instant, i32, u64)>,
@@ -590,7 +586,6 @@ impl Default for Tenant {
     fn default() -> Self {
         Self {
             series: SeriesByName::default(),
-            label_names: HashSet::new(),
             metadata: BTreeMap::new(),
             ingested: VecDeque::new(),
             max_time: i64::MIN,
@@ -619,7 +614,7 @@ pub struct Store {
     active_window_ms: i64,
     retention_ms: Option<i64>,
     overrides: Arc<Overrides>,
-    exemplars: Mutex<HashMap<String, TenantExemplars<Arc<StoredLabels>>>>,
+    exemplars: Mutex<HashMap<String, TenantExemplars<StoredLabels>>>,
     cost_attribution: Mutex<HashMap<(String, String), CostAttributionState>>,
     // Per tenant, the token ranges of this partition in the tenant's shuffle shard (None when the
     // tenant does not use it); unknown until the ring sidecar answered.
@@ -1599,7 +1594,7 @@ impl Store {
                     continue;
                 }
                 ingested += 1;
-                match tenant_storage.add(hash, || Arc::clone(&labels), exemplar, window) {
+                match tenant_storage.add(hash, || labels.clone(), exemplar, window) {
                     Ok(true) => appended += 1,
                     Ok(false) => {}
                     // Rejected when committing, which Mimir doesn't report.
@@ -1870,7 +1865,7 @@ impl Store {
                     let chunks = query_chunks(series, disk, start, end);
                     (!chunks.is_empty()).then(|| {
                         (
-                            Arc::clone(labels),
+                            labels.clone(),
                             QuerySeriesView {
                                 encoded_labels: encode_series_labels(labels),
                                 chunk_start: 0,
@@ -1999,9 +1994,7 @@ impl Store {
                     .matching(&compiled)
                     .filter(|(_, series)| window.includes(series))
                 {
-                    if let Some((_, value)) =
-                        labels.iter().find(|(label, _)| label.as_ref() == name)
-                    {
+                    if let Some((_, value)) = labels.iter().find(|(label, _)| *label == name) {
                         values.insert(value.to_string());
                     }
                 }
@@ -2629,7 +2622,7 @@ impl Store {
                 }
             }) {
                 for (name, value) in labels.iter() {
-                    if wanted.contains(name.as_ref()) {
+                    if wanted.contains(name) {
                         *result
                             .entry(name.to_string())
                             .or_default()
@@ -2814,7 +2807,7 @@ type PendingExemplars = (
     usize,
     u64,
     u64,
-    Arc<StoredLabels>,
+    StoredLabels,
     Vec<cortexpb::Exemplar>,
 );
 
@@ -2834,7 +2827,6 @@ fn ingest_series(
         .map_or("", |index| decoded_labels[index].1.as_str());
     let Tenant {
         series: by_name,
-        label_names,
         block_ranges,
         ..
     } = tenant;
@@ -2843,30 +2835,17 @@ fn ingest_series(
         name,
         hash,
         |stored| {
-            stored.len() == decoded_labels.len()
-                && stored.iter().zip(&decoded_labels).all(
-                    |((name, value), (decoded_name, decoded_value))| {
-                        name.as_ref() == decoded_name && value.as_str() == decoded_value
-                    },
-                )
+            stored.pairs().eq(decoded_labels
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())))
         },
         || {
             created.set(true);
-            decoded_labels
-                .iter()
-                .map(|(name, value)| {
-                    let name = match label_names.get(name.as_str()) {
-                        Some(stored) => Arc::clone(stored),
-                        None => {
-                            let stored: Arc<str> = name.as_str().into();
-                            label_names.insert(Arc::clone(&stored));
-                            stored
-                        }
-                    };
-                    (name, CompactString::from(value.as_str()))
-                })
-                .collect::<StoredLabels>()
-                .into()
+            StoredLabels::from_sorted(
+                decoded_labels
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            )
         },
     );
     if created.get() {
@@ -3038,7 +3017,7 @@ fn ingest_series(
             context.position,
             context.flush,
             hash,
-            Arc::clone(key_labels),
+            key_labels.clone(),
             decoded.exemplars,
         ));
     }
@@ -3127,7 +3106,7 @@ fn ranges_include(ranges: &[u32], key: u32) -> bool {
 }
 
 /// Mimir's `ShardByAllLabels`: 32-bit FNV-1 over the tenant ID and every label name and value.
-pub(crate) fn shard_by_all_labels(tenant_id: &str, labels: &[StoredLabel]) -> u32 {
+pub(crate) fn shard_by_all_labels(tenant_id: &str, labels: &StoredLabels) -> u32 {
     let mut hash = 2_166_136_261_u32;
     let mut add = |bytes: &[u8]| {
         for byte in bytes {
@@ -3690,21 +3669,11 @@ impl CompiledMatcher {
     }
 }
 
-fn matches(labels: &[StoredLabel], matchers: &[CompiledMatcher]) -> bool {
+fn matches(labels: &StoredLabels, matchers: &[CompiledMatcher]) -> bool {
     matchers.iter().all(|matcher| match matcher {
-        CompiledMatcher::Shard(index, count) => {
-            stable_hash_pairs(
-                labels
-                    .iter()
-                    .map(|(name, value)| (name.as_ref(), value.as_str())),
-            ) % count
-                == *index
-        }
+        CompiledMatcher::Shard(index, count) => stable_hash_pairs(labels.pairs()) % count == *index,
         _ => {
-            let name = matcher.label_name().expect("label matcher");
-            let value = labels
-                .binary_search_by(|(label, _)| label.as_ref().cmp(name))
-                .map_or("", |index| labels[index].1.as_str());
+            let value = labels.value(matcher.label_name().expect("label matcher"));
             matcher.matches_value(value)
         }
     })
@@ -3723,12 +3692,8 @@ fn parse_shard(value: &str) -> Result<(u64, u64)> {
     Ok((one_based - 1, count))
 }
 
-fn labels_hash(labels: &[StoredLabel]) -> u64 {
-    hash_label_pairs(
-        labels
-            .iter()
-            .map(|(name, value)| (name.as_ref(), value.as_str())),
-    )
+fn labels_hash(labels: &StoredLabels) -> u64 {
+    hash_label_pairs(labels.pairs())
 }
 
 // Go's `labels.Hash` of stringlabels; the buffer is reused because ingest hashes every incoming
@@ -3750,7 +3715,7 @@ fn hash_label_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> u64 
 }
 
 fn series_key(labels: StoredLabels) -> SeriesKey {
-    (labels_hash(&labels), Arc::new(labels))
+    (labels_hash(&labels), labels)
 }
 
 fn encode_label_size(bytes: &mut Vec<u8>, size: usize) {
@@ -3850,14 +3815,14 @@ fn read_u32(bytes: &[u8], index: usize) -> u32 {
     u32::from_le_bytes(bytes[index..index + 4].try_into().expect("length checked"))
 }
 
-fn owned_labels(labels: &[StoredLabel]) -> Vec<(String, String)> {
+fn owned_labels(labels: &StoredLabels) -> Vec<(String, String)> {
     labels
         .iter()
         .map(|(name, value)| (name.to_string(), value.to_string()))
         .collect()
 }
 
-fn stored_label_pairs(labels: &[StoredLabel]) -> Vec<cortexpb::LabelPair> {
+fn stored_label_pairs(labels: &StoredLabels) -> Vec<cortexpb::LabelPair> {
     labels
         .iter()
         .map(|(name, value)| cortexpb::LabelPair {
@@ -3867,7 +3832,7 @@ fn stored_label_pairs(labels: &[StoredLabel]) -> Vec<cortexpb::LabelPair> {
         .collect()
 }
 
-fn encode_series_labels(labels: &[StoredLabel]) -> Bytes {
+fn encode_series_labels(labels: &StoredLabels) -> Bytes {
     cortex::QueryStreamSeries {
         labels: stored_label_pairs(labels),
         chunk_count: 0,
@@ -3892,11 +3857,8 @@ mod tests {
 
     #[test]
     fn matchers_find_sorted_labels_and_treat_missing_labels_as_empty() {
-        let labels = vec![
-            (Arc::from("__name__"), "metric".into()),
-            (Arc::from("first"), "one".into()),
-            (Arc::from("last"), "two".into()),
-        ];
+        let labels =
+            StoredLabels::from_sorted([("__name__", "metric"), ("first", "one"), ("last", "two")]);
         for (kind, name, value, expected) in [
             (0, "last", "two", true),
             (0, "last", "one", false),
@@ -4339,7 +4301,7 @@ mod tests {
                     tenant
                         .series
                         .iter()
-                        .filter(|((_, labels), _)| labels[0].1 == name)
+                        .filter(|((_, labels), _)| labels.value("__name__") == name)
                         .map(|(_, series)| series.owned_hash)
                         .collect::<Vec<_>>()
                 })
@@ -4409,10 +4371,7 @@ mod tests {
         assert_eq!(shard(&format!("{}_of_3", index + 1)), 1);
         assert_eq!(shard(&format!("{}_of_3", (index + 1) % 3 + 1)), 0);
         // mimirpb.ShardByAllLabels from Go, which owned series are counted by.
-        let labels: StoredLabels = [("__name__", "up"), ("job", "api")]
-            .into_iter()
-            .map(|(name, value)| (Arc::<str>::from(name), CompactString::from(value)))
-            .collect();
+        let labels = StoredLabels::from_sorted([("__name__", "up"), ("job", "api")]);
         assert_eq!(shard_by_all_labels("18657", &labels), 4_096_482_777);
         // Mimir's idealShardsFor.
         let pusher = PusherShards {
@@ -5319,19 +5278,22 @@ mod tests {
     #[test]
     fn postings_select_the_same_series_as_a_full_scan() {
         let mut by_name = SeriesByName::default();
-        let label = |name: &str| -> Arc<str> { name.into() };
         for id in 0..400_u64 {
-            let mut labels: StoredLabels = vec![
-                (label("__name__"), format!("metric_{}", id % 7).into()),
-                (label("job"), format!("job_{}", id % 5).into()),
-                (label("pod"), format!("pod_{id}").into()),
+            let mut labels = vec![
+                ("__name__".to_owned(), format!("metric_{}", id % 7)),
+                ("job".to_owned(), format!("job_{}", id % 5)),
+                ("pod".to_owned(), format!("pod_{id}")),
             ];
             if id % 3 == 0 {
-                labels.push((label("zone"), "a".into()));
+                labels.push(("zone".to_owned(), "a".to_owned()));
             }
             labels.sort();
             by_name.insert(
-                series_key(labels),
+                series_key(StoredLabels::from_sorted(
+                    labels
+                        .iter()
+                        .map(|(name, value)| (name.as_str(), value.as_str())),
+                )),
                 Series {
                     last_ingested_ms: id as i64,
                     ..Series::default()
