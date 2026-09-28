@@ -225,12 +225,11 @@ fn read_exemplars(
         let mut labels_by_series: HashMap<u64, Arc<StoredLabels>> = HashMap::new();
         for _ in 0..reader.count(100_000_000)? {
             let series_id = reader.u64()?;
-            let labels = (0..reader.count(10_000)?)
-                .map(|_| {
-                    let name: Arc<str> = reader.string()?.into();
-                    Ok((name, CompactString::from(reader.string()?)))
-                })
-                .collect::<Result<StoredLabels>>()?;
+            let count = reader.count(10_000)?;
+            let labels = exact(count, || {
+                let name: Arc<str> = reader.string()?.into();
+                Ok((name, CompactString::from(reader.string()?)))
+            })?;
             let labels = Arc::clone(
                 labels_by_series
                     .entry(series_id)
@@ -383,6 +382,16 @@ fn infer_pre_v4_flags(series: &mut Series) {
         .is_some_and(|last| float.is_none_or(|float| last.timestamp > float));
 }
 
+// Reads `count` items into a vector of exactly that capacity: the store keeps what it restores, so
+// the doubling growth of collecting from a fallible iterator would stay allocated.
+fn exact<T>(count: usize, mut read: impl FnMut() -> Result<T>) -> Result<Vec<T>> {
+    let mut items = Vec::with_capacity(count);
+    for _ in 0..count {
+        items.push(read()?);
+    }
+    Ok(items)
+}
+
 fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<ShardImage> {
     let legacy = version == 2;
     let next_sequence = reader.u32()?;
@@ -424,20 +433,19 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                 );
         }
         for _ in 0..reader.count(100_000_000)? {
-            let labels = (0..reader.count(10_000)?)
-                .map(|_| {
-                    let name = reader.string()?;
-                    let name = match tenant.label_names.get(name.as_str()) {
-                        Some(stored) => Arc::clone(stored),
-                        None => {
-                            let stored: Arc<str> = name.into();
-                            tenant.label_names.insert(Arc::clone(&stored));
-                            stored
-                        }
-                    };
-                    Ok((name, CompactString::from(reader.string()?)))
-                })
-                .collect::<Result<StoredLabels>>()?;
+            let count = reader.count(10_000)?;
+            let labels = exact(count, || {
+                let name = reader.string()?;
+                let name = match tenant.label_names.get(name.as_str()) {
+                    Some(stored) => Arc::clone(stored),
+                    None => {
+                        let stored: Arc<str> = name.into();
+                        tenant.label_names.insert(Arc::clone(&stored));
+                        stored
+                    }
+                };
+                Ok((name, CompactString::from(reader.string()?)))
+            })?;
             let mut series = Series {
                 last_ingested_ms: reader.i64()?,
                 last_bucket_count: reader.u32()?,
@@ -448,18 +456,17 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                 series.head_evicted = reader.u8()? == 1;
                 series.non_owned_since_s = reader.u32()?;
             }
-            series.chunks = (0..reader.count(1_000_000)?)
-                .map(|_| {
-                    Ok(ChunkMeta {
-                        reference: reader.u64()?,
-                        min_time: reader.i64()?,
-                        max_time: reader.i64()?,
-                        len: reader.u32()?,
-                        encoding: reader.u8()?,
-                        out_of_order: version >= 4 && reader.u8()? == 1,
-                    })
+            let count = reader.count(1_000_000)?;
+            series.chunks = exact(count, || {
+                Ok(ChunkMeta {
+                    reference: reader.u64()?,
+                    min_time: reader.i64()?,
+                    max_time: reader.i64()?,
+                    len: reader.u32()?,
+                    encoding: reader.u8()?,
+                    out_of_order: version >= 4 && reader.u8()? == 1,
                 })
-                .collect::<Result<_>>()?;
+            })?;
             if reader.u8()? == 1 {
                 series.float_head = Some(FloatHead {
                     min_time: reader.i64()?,
@@ -477,19 +484,18 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     .collect::<Result<_>>()?,
             );
             series.histogram_next_at = reader.i64()?;
-            series.out_of_order = (0..reader.count(1_000_000)?)
-                .map(|_| {
-                    let timestamp = reader.i64()?;
-                    if version < 4 || reader.u8()? == 0 {
-                        return Ok((
-                            timestamp,
-                            ooo_merge::Value::Float(f64::from_bits(reader.u64()?)),
-                        ));
-                    }
-                    let histogram = cortexpb::Histogram::decode(reader.read_bytes()?.as_slice())?;
-                    Ok((timestamp, ooo_merge::Value::Histogram(Box::new(histogram))))
-                })
-                .collect::<Result<_>>()?;
+            let count = reader.count(1_000_000)?;
+            series.out_of_order = exact(count, || {
+                let timestamp = reader.i64()?;
+                if version < 4 || reader.u8()? == 0 {
+                    return Ok((
+                        timestamp,
+                        ooo_merge::Value::Float(f64::from_bits(reader.u64()?)),
+                    ));
+                }
+                let histogram = cortexpb::Histogram::decode(reader.read_bytes()?.as_slice())?;
+                Ok((timestamp, ooo_merge::Value::Histogram(Box::new(histogram))))
+            })?;
             if version < 4 {
                 infer_pre_v4_flags(&mut series);
             }

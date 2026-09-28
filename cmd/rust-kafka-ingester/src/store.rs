@@ -92,9 +92,10 @@ impl Series {
     }
 }
 
-// The open histogram chunk, kept encoded like Prometheus's head chunk.
+// The open histogram chunk, kept encoded like Prometheus's head chunk. Boxed because most series
+// are floats, and every series pays for what the store keeps inline.
 #[derive(Debug, Default)]
-struct HistogramHead(Option<histogram::HistogramAppender>);
+struct HistogramHead(Option<Box<histogram::HistogramAppender>>);
 
 impl HistogramHead {
     fn is_empty(&self) -> bool {
@@ -102,12 +103,12 @@ impl HistogramHead {
     }
 
     fn last(&self) -> Option<&cortexpb::Histogram> {
-        self.0.as_ref().map(histogram::HistogramAppender::last)
+        self.0.as_deref().map(histogram::HistogramAppender::last)
     }
 
     fn first_timestamp(&self) -> Option<i64> {
         self.0
-            .as_ref()
+            .as_deref()
             .map(histogram::HistogramAppender::first_timestamp)
     }
 
@@ -123,7 +124,7 @@ impl HistogramHead {
         for sample in samples {
             appender.raw_append(sample);
         }
-        Self(Some(appender))
+        Self(Some(Box::new(appender)))
     }
 
     fn clear(&mut self) {
@@ -131,11 +132,11 @@ impl HistogramHead {
     }
 
     fn take(&mut self) -> Option<histogram::HistogramAppender> {
-        self.0.take()
+        self.0.take().map(|head| *head)
     }
 
     fn encoded(&self) -> Option<histogram::EncodedHistogram> {
-        self.0.as_ref().map(histogram::HistogramAppender::encoded)
+        self.0.as_deref().map(histogram::HistogramAppender::encoded)
     }
 
     /// The samples of the open chunk for [`HistogramHead::from_samples`].
@@ -3156,15 +3157,16 @@ fn append_histogram(
         {
             let next = histogram::HistogramAppender::new(histogram, Some(head));
             cut_histogram_head(series, disk)?;
-            series.histogram_head = HistogramHead(Some(next));
+            series.histogram_head = HistogramHead(Some(Box::new(next)));
             series.histogram_next_at = range_end(timestamp);
             series.histogram_end_computed = false;
             return Ok(Ok(Appended::InOrder { opened: true }));
         }
     }
     let Some(head) = &mut series.histogram_head.0 else {
-        series.histogram_head =
-            HistogramHead(Some(histogram::HistogramAppender::new(histogram, None)));
+        series.histogram_head = HistogramHead(Some(Box::new(histogram::HistogramAppender::new(
+            histogram, None,
+        ))));
         series.histogram_next_at = range_end(timestamp);
         series.histogram_end_computed = false;
         return Ok(Ok(Appended::InOrder { opened: true }));
@@ -3175,7 +3177,7 @@ fn append_histogram(
         }
         histogram::Appended::NewChunk(next) => {
             cut_histogram_head(series, disk)?;
-            series.histogram_head = HistogramHead(Some(*next));
+            series.histogram_head = HistogramHead(Some(next));
             series.histogram_next_at = range_end(timestamp);
             series.histogram_end_computed = false;
             Ok(Ok(Appended::InOrder { opened: true }))
@@ -4006,6 +4008,17 @@ mod tests {
         assert_eq!(
             float_samples(&store, i64::MIN, i64::MAX).len(),
             expected.len() + OUT_OF_ORDER_CAPACITY
+        );
+    }
+
+    #[test]
+    fn series_stay_small() {
+        // The store keeps every series of the retention inline in its tables, most of them floats
+        // no longer written to, so what a series holds inline is paid millions of times.
+        assert!(
+            std::mem::size_of::<Series>() <= 208,
+            "{}",
+            std::mem::size_of::<Series>()
         );
     }
 
