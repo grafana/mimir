@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -160,4 +162,85 @@ func TestShadowRingGossipsToGoMemberlistBridge(t *testing.T) {
 		_, ownerPresent := partitionValue.(*ring.PartitionRingDesc).Owners[cfg.instanceID]
 		return !instancePresent && !ownerPresent
 	}, 10*time.Second, 50*time.Millisecond)
+}
+
+func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
+	logger := log.NewNopLogger()
+	instanceClient, closeInstance := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+	defer closeInstance.Close()
+	partitionClient, closePartition := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), logger, nil)
+	defer closePartition.Close()
+
+	rustPort, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer rustPort.Close()
+	coverageFile := filepath.Join(t.TempDir(), "coverage")
+	require.NoError(t, os.WriteFile(coverageFile, []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)), 0o600))
+	cfg := config{
+		instanceID: "ingester-julien-0", podIP: "127.0.0.1", zone: "zone-c",
+		rustPort: rustPort.Addr().(*net.TCPAddr).Port, partition: 0,
+		instanceRingKey: "shared/ring", partitionRingKey: "shared-partitions",
+		pollInterval: 20 * time.Millisecond, sharedRing: true,
+		coverageFile: coverageFile, minCoverage: time.Hour,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var ready atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, logger)
+	}()
+	partitionRing := func() *ring.PartitionRingDesc {
+		value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
+		require.NoError(t, err)
+		if value == nil {
+			return ring.NewPartitionRingDesc()
+		}
+		return value.(*ring.PartitionRingDesc)
+	}
+	setPartition := func(state ring.PartitionState) {
+		require.NoError(t, partitionClient.CAS(ctx, cfg.partitionRingKey, func(in any) (any, bool, error) {
+			desc := ring.NewPartitionRingDesc()
+			if in != nil {
+				desc = in.(*ring.PartitionRingDesc)
+			}
+			if !desc.HasPartition(0) {
+				desc.AddPartition(0, state, time.Now())
+				desc.AddOrUpdateOwner("ingester-zone-a-0", ring.OwnerActive, 0, time.Now())
+			} else {
+				desc.UpdatePartitionState(0, state, time.Now())
+			}
+			return desc, true, nil
+		}))
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	require.False(t, partitionRing().HasPartition(0), "a missing partition is never created")
+
+	setPartition(ring.PartitionPending)
+	time.Sleep(200 * time.Millisecond)
+	require.NotContains(t, partitionRing().Owners, cfg.instanceID, "no registration without coverage")
+
+	require.NoError(t, os.WriteFile(coverageFile, []byte(strconv.FormatInt(time.Now().Add(-2*time.Hour).UnixMilli(), 10)), 0o600))
+	require.Eventually(t, func() bool {
+		_, owned := partitionRing().Owners[cfg.instanceID]
+		return owned
+	}, 5*time.Second, 20*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, ring.PartitionPending, partitionRing().Partitions[0].State, "a pending partition is never activated")
+	require.False(t, ready.Load())
+
+	setPartition(ring.PartitionActive)
+	require.Eventually(t, ready.Load, 5*time.Second, 20*time.Millisecond)
+
+	setPartition(ring.PartitionInactive)
+	require.Eventually(t, func() bool {
+		_, owned := partitionRing().Owners[cfg.instanceID]
+		return !owned && !ready.Load()
+	}, 5*time.Second, 20*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	_, owned := partitionRing().Owners[cfg.instanceID]
+	require.False(t, owned, "an inactive partition is not owned again")
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
 }

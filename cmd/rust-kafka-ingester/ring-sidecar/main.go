@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -48,6 +49,9 @@ type config struct {
 	partitionRingKey string
 	listen           string
 	pollInterval     time.Duration
+	sharedRing       bool
+	coverageFile     string
+	minCoverage      time.Duration
 }
 
 func main() {
@@ -64,6 +68,9 @@ func main() {
 	flag.StringVar(&cfg.instanceRingKey, "instance-ring-key", "rust-partition-ingesters/ring", "Isolated ingester ring KV key")
 	flag.StringVar(&cfg.partitionRingKey, "partition-ring-key", "rust-ingester-partitions", "Isolated partition ring KV key")
 	flag.StringVar(&cfg.listen, "listen", ":8080", "HTTP health and metrics address")
+	flag.BoolVar(&cfg.sharedRing, "shared-ring", false, "Join rings owned by Go ingesters: never create or activate partitions, and only own partitions that exist and are not inactive")
+	flag.StringVar(&cfg.coverageFile, "coverage-file", "", "File where the Rust ingester records, in Unix milliseconds, the time since which it holds complete data")
+	flag.DurationVar(&cfg.minCoverage, "min-coverage", 0, "Minimum age of complete data before registering; set it above -querier.query-ingesters-within")
 	flag.Parse()
 	if cfg.instanceID == "" || net.ParseIP(cfg.podIP) == nil || cfg.partition < 0 || cfg.join == "" || cfg.clusterLabel == "" {
 		fmt.Fprintln(os.Stderr, "instance-id, pod-ip, partition, memberlist-join and memberlist-cluster-label are required")
@@ -177,7 +184,8 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 		if !memberlistRunning() {
 			return errors.New("memberlist stopped")
 		}
-		if !reachable(rustAddress) {
+		if !reachable(rustAddress) || !hasCoverage(cfg, time.Now()) || !mayOwnPartition(ctx, cfg, partitionClient) {
+			ready.Store(false)
 			wait(ctx, cfg.pollInterval)
 			continue
 		}
@@ -197,15 +205,18 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 		}
 		partition := ring.NewPartitionInstanceLifecycler(ring.PartitionInstanceLifecyclerConfig{
 			PartitionID: int32(cfg.partition), InstanceID: cfg.instanceID,
-			WaitOwnersCountOnPending: 1, PollingInterval: cfg.pollInterval,
+			WaitOwnersCountOnPending: waitOwnersOnPending(cfg), PollingInterval: cfg.pollInterval,
 		}, "rust-ingester-partitions", cfg.partitionRingKey, partitionClient, logger, cycleRegistry)
 		partition.SetRemoveOwnerOnShutdown(true)
+		if cfg.sharedRing {
+			partition.SetCreatePartitionOnStartup(false)
+		}
 		if err := startService(ctx, partition); err != nil {
 			_ = services.StopAndAwaitTerminated(context.Background(), instance)
 			return err
 		}
 		_ = level.Info(logger).Log("msg", "Rust ingester registered", "partition", cfg.partition, "address", advertiseAddress)
-		for ctx.Err() == nil && reachable(rustAddress) && memberlistRunning() {
+		for ctx.Err() == nil && reachable(rustAddress) && memberlistRunning() && mayOwnPartition(ctx, cfg, partitionClient) {
 			state, _, err := partition.GetPartitionState(ctx)
 			ready.Store(err == nil && state == ring.PartitionActive)
 			wait(ctx, cfg.pollInterval)
@@ -216,6 +227,44 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 		_ = level.Info(logger).Log("msg", "Rust ingester withdrawn from rings", "partition", cfg.partition)
 	}
 	return ctx.Err()
+}
+
+// A shared partition ring belongs to the Go ingesters: an extra owner must never make a partition
+// ACTIVE, and must not keep an INACTIVE partition alive after Go's owners leave.
+func waitOwnersOnPending(cfg config) int {
+	if cfg.sharedRing {
+		return math.MaxInt32
+	}
+	return 1
+}
+
+func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client) bool {
+	if !cfg.sharedRing {
+		return true
+	}
+	value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
+	if err != nil || value == nil {
+		return false
+	}
+	partition, exists := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
+	return exists && partition.State != ring.PartitionInactive
+}
+
+// Queriers ask ingesters for data up to -querier.query-ingesters-within old, so joining with a
+// shorter history would silently drop samples from results.
+func hasCoverage(cfg config, now time.Time) bool {
+	if cfg.minCoverage == 0 {
+		return true
+	}
+	contents, err := os.ReadFile(cfg.coverageFile)
+	if err != nil {
+		return false
+	}
+	since, err := strconv.ParseInt(strings.TrimSpace(string(contents)), 10, 64)
+	if err != nil {
+		return false
+	}
+	return now.Sub(time.UnixMilli(since)) >= cfg.minCoverage
 }
 
 func reachable(address string) bool {
