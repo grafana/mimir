@@ -90,6 +90,10 @@ struct ServeArgs {
     active_window_seconds: i64,
     #[arg(long)]
     retention_seconds: Option<i64>,
+    /// With no persisted offset, start at the first Kafka record at most this many seconds old
+    /// instead of --start-offset.
+    #[arg(long)]
+    bootstrap_lookback_seconds: Option<i64>,
     #[arg(long, default_value_t = 0)]
     read_compartment: i32,
     #[arg(long, default_value_t = 30)]
@@ -238,6 +242,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         listen,
         profile_listen,
         start_offset,
+        bootstrap_lookback_seconds,
         active_window_seconds,
         retention_seconds,
         read_compartment,
@@ -406,14 +411,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
         eprintln!(
             "phase=disk_recovery_complete cluster={cluster} partition={partition} records={recovered_count} persisted_offset={persisted_offset:?}"
         );
-        let source_start_offset = persisted_offset
-            .map(|offset| StartOffset::At(offset.saturating_add(1)))
-            .unwrap_or(configured_start_offset);
-        let start_offset_label = match source_start_offset {
-            StartOffset::Earliest => "earliest".to_owned(),
-            StartOffset::Latest => "latest".to_owned(),
-            StartOffset::At(offset) => offset.to_string(),
-        };
         let partition_client = connect_partition(
             &brokers,
             &topic,
@@ -438,6 +435,32 @@ async fn serve(args: ServeArgs) -> Result<()> {
         .await
         .context("fetch earliest Kafka offset timed out")?
         .context("fetch earliest Kafka offset")?;
+        let source_start_offset = match (persisted_offset, bootstrap_lookback_seconds) {
+            (Some(offset), _) => StartOffset::At(offset.saturating_add(1)),
+            (None, Some(lookback)) => {
+                let since = now_ms().saturating_sub(lookback.saturating_mul(1000));
+                StartOffset::At(
+                    partition_client
+                        .offset_for_time(since)
+                        .await?
+                        .unwrap_or(latest_offset),
+                )
+            }
+            (None, None) => configured_start_offset,
+        };
+        let start_offset_label = match source_start_offset {
+            StartOffset::Earliest => "earliest".to_owned(),
+            StartOffset::Latest => "latest".to_owned(),
+            StartOffset::At(offset) => offset.to_string(),
+        };
+        // A fresh start or a gap past Kafka retention restarts the complete-data window at the first
+        // consumed record; an older window without a record is replaced conservatively by now.
+        let coverage_path = data_dir.join("coverage");
+        let mut coverage_pending =
+            persisted_offset.is_none_or(|offset| offset.saturating_add(1) < earliest_offset);
+        if !coverage_pending && !coverage_path.exists() {
+            raise_coverage(&coverage_path, now_ms())?;
+        }
         consistency.high_watermark(cluster, latest_offset);
         let replay_target = latest_offset.saturating_sub(1);
         let replay_complete =
@@ -609,6 +632,14 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 }
                 ingest_consistency.consumed(cluster, message.offset, high_watermark, timestamp_ms);
                 last_timestamp_ms = last_timestamp_ms.max(timestamp_ms);
+                if coverage_pending {
+                    if let Err(error) = raise_coverage(&coverage_path, timestamp_ms) {
+                        eprintln!("recording data coverage failed: {error:#}");
+                        let _ = fatal_tx.send(true);
+                        break;
+                    }
+                    coverage_pending = false;
+                }
                 next_offset = message.offset.saturating_add(1);
                 last_fetch_progress = Instant::now();
                 if !logged_first_consume || last_consume_log.elapsed() >= Duration::from_secs(60) {
@@ -805,6 +836,27 @@ fn ingest_and_append(
     segment_log.append_prepared(frame)
 }
 
+/// Records, in Unix milliseconds, the time since which this ingester holds complete data. It only
+/// ever moves forward so a gap is never hidden by an older value.
+fn raise_coverage(path: &std::path::Path, since_ms: i64) -> Result<()> {
+    let current = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| contents.trim().parse::<i64>().ok());
+    if current.is_some_and(|current| current >= since_ms) {
+        return Ok(());
+    }
+    let temporary = path.with_extension("tmp");
+    std::fs::write(&temporary, since_ms.to_string())
+        .with_context(|| format!("write coverage {}", temporary.display()))?;
+    std::fs::rename(&temporary, path).with_context(|| format!("record coverage {}", path.display()))
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as i64)
+}
+
 fn empty_request() -> DecodedRequest {
     DecodedRequest {
         source: 0,
@@ -883,6 +935,18 @@ mod tests {
     use mimir_rust_kafka_ingester::proto::cortexpb;
     use mimir_rust_kafka_ingester::record::DecodedSeries;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn coverage_only_moves_forward() {
+        let path = std::env::temp_dir().join(format!("mimir-rust-coverage-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        raise_coverage(&path, 100).unwrap();
+        raise_coverage(&path, 50).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "100");
+        raise_coverage(&path, 200).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "200");
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn empty_partition_is_ready_at_earliest_offset() {
