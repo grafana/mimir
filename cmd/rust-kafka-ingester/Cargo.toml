@@ -78,3 +78,7 @@ harness = false
 [[bench]]
 name = "compression"
 harness = false
+
+[[bench]]
+name = "steady_ingest"
+harness = false
