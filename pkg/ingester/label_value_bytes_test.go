@@ -86,7 +86,7 @@ func TestIngester_LabelValueBytesMetrics(t *testing.T) {
 	requireLabelNamesOverLimit(t, registry, 0)
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
 
-	// Repeating an existing value must not move the counter: values are counted once.
+	// Repeating an existing value must not move the counter.
 	pushSeriesWithLabelValues(t, i, ctx, "noisy_again", "big", values[0])
 	i.updateLimitMetrics()
 	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 1200`)

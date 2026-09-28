@@ -269,9 +269,7 @@ type labelValidationConfig struct {
 	blockedLabelNamesForLabelValueBytes blockedLabelNames
 }
 
-// blockedLabelNames is the set of label names for which series should be rejected, built once
-// per push request from the tenant's override. The __name__ label is never blocked: blocking it
-// would reject all of a tenant's data, which is never the intent of this per-label-name control.
+// blockedLabelNames is the set of label names for which series should be rejected.
 type blockedLabelNames map[string]struct{}
 
 func newBlockedLabelNames(names []string) blockedLabelNames {
