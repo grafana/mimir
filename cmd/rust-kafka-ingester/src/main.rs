@@ -201,6 +201,9 @@ struct ServeArgs {
     shared_postings_cache: bool,
     #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", default_value_t = false, action = clap::ArgAction::Set)]
     head_postings_cache_invalidation: bool,
+    /// Like Mimir's, how long a shutdown waits for in-flight requests before closing them.
+    #[arg(long = "server.graceful-shutdown-timeout", default_value = "30s")]
+    graceful_shutdown_timeout: String,
     #[arg(long = "cost-attribution.cleanup-interval", default_value = "3m")]
     cost_attribution_cleanup_interval: String,
     #[arg(long = "cost-attribution.eviction-interval", default_value = "20m")]
@@ -378,6 +381,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         block_postings_cache_force,
         shared_postings_cache,
         head_postings_cache_invalidation,
+        graceful_shutdown_timeout,
         cost_attribution_cleanup_interval,
         cost_attribution_eviction_interval,
         ingestion_concurrency_max,
@@ -932,7 +936,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
         breaker.activate();
     }
     metrics::ACTIVE_SERIES_LOADING.set(0);
-    let serve_result = server
+    let graceful_shutdown_timeout =
+        Duration::from_millis(parse_duration_ms(&graceful_shutdown_timeout)? as u64);
+    let (stopping_tx, stopping_rx) = tokio::sync::oneshot::channel();
+    let serve = server
         .layer(ProtectionLayer::new(read_protection))
         .add_service(service)
         .serve_with_shutdown(address, async move {
@@ -941,8 +948,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 _ = fatal_rx.changed() => {}
             }
             let _ = shutdown_sender.send(true);
-        })
-        .await;
+            let _ = stopping_tx.send(());
+        });
+    let serve_result =
+        bounded_graceful_shutdown(serve, stopping_rx, graceful_shutdown_timeout).await;
+    eprintln!("phase=grpc_stopped partition={partition}");
     shutdown_with_snapshot(&store, &shutdown_tx, workers, &fatal_state, partition).await?;
     serve_result?;
     if *fatal_state.borrow() {
@@ -950,6 +960,28 @@ async fn serve(args: ServeArgs) -> Result<()> {
     }
     eprintln!("phase=shutdown_complete partition={partition}");
     Ok(())
+}
+
+/// Runs `serve` until it finished its graceful shutdown, or for at most `timeout` once `stopping`
+/// fires, after which the requests still in flight are dropped.
+async fn bounded_graceful_shutdown<E>(
+    serve: impl std::future::Future<Output = Result<(), E>>,
+    stopping: tokio::sync::oneshot::Receiver<()>,
+    timeout: Duration,
+) -> Result<(), E> {
+    tokio::pin!(serve);
+    tokio::select! {
+        result = &mut serve => result,
+        () = async {
+            if stopping.await.is_err() {
+                std::future::pending::<()>().await;
+            }
+            tokio::time::sleep(timeout).await;
+        } => {
+            eprintln!("phase=grpc_shutdown_timeout timeout_ms={}", timeout.as_millis());
+            Ok(())
+        }
+    }
 }
 
 async fn stop_workers(
@@ -1200,6 +1232,7 @@ async fn shutdown_with_snapshot(
     partition: i32,
 ) -> Result<()> {
     let offsets = stop_workers(shutdown_tx, workers).await?;
+    eprintln!("phase=consumers_stopped partition={partition}");
     if *fatal_rx.borrow() {
         eprintln!("phase=head_snapshot_skipped partition={partition} reason=fatal_error");
         return Ok(());
@@ -1598,6 +1631,30 @@ fn summary(request: DecodedRequest) -> Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn graceful_shutdown_gives_up_on_stuck_requests() {
+        let (stopping_tx, stopping_rx) = tokio::sync::oneshot::channel();
+        let stuck = std::future::pending::<Result<(), ()>>();
+        stopping_tx.send(()).unwrap();
+        let started = Instant::now();
+        bounded_graceful_shutdown(stuck, stopping_rx, Duration::from_millis(50))
+            .await
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        // Before shutdown starts, serving isn't bounded.
+        let (_stopping_tx, stopping_rx) = tokio::sync::oneshot::channel::<()>();
+        let bounded = bounded_graceful_shutdown(
+            std::future::pending::<Result<(), ()>>(),
+            stopping_rx,
+            Duration::ZERO,
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), bounded)
+                .await
+                .is_err()
+        );
+    }
 
     #[test]
     fn head_compacts_more_often_while_replaying_like_the_go_ingester() {

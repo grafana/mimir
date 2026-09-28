@@ -567,3 +567,41 @@ func BenchmarkGoRustIngesterSameKafka(b *testing.B) {
 		})
 	}
 }
+
+// Like the Go server's -server.graceful-shutdown-timeout, a request that never finishes (here one
+// waiting for an offset that is never produced) doesn't keep the ingester from shutting down and
+// writing its head snapshot.
+func TestRustIngesterShutdownDoesNotWaitForStuckRequests(t *testing.T) {
+	buildRustIngester(t)
+	const topic = "mimir"
+	_, address := testkafka.CreateCluster(t, 10, topic)
+	producer, err := kgo.NewClient(kgo.SeedBrokers(address), kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	require.NoError(t, err)
+	t.Cleanup(producer.Close)
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords(topic, 0, "tenant-a", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "stuck"}}, Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
+		}}},
+	}, 1<<20)
+	require.NoError(t, err)
+	require.NoError(t, producer.ProduceSync(t.Context(), records...).FirstErr())
+	dataDir := t.TempDir()
+	process, connection := startRustIngesterAndWait(t, address, topic, dataDir, records[0].Offset, "--server.graceful-shutdown-timeout", "1s")
+	t.Cleanup(func() { _ = connection.Close() })
+	go func() {
+		_, _ = client.NewIngesterClient(connection).UserStats(parityContext("tenant-a", records[0].Offset+1000), &client.UserStatsRequest{})
+	}()
+	time.Sleep(500 * time.Millisecond)
+	require.NoError(t, process.Process.Signal(syscall.SIGTERM))
+	exited := make(chan error, 1)
+	go func() { exited <- process.Wait() }()
+	select {
+	case err := <-exited:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		_ = process.Process.Kill()
+		t.Fatal("the Rust ingester didn't exit after SIGTERM")
+	}
+	_, err = os.Stat(filepath.Join(dataDir, "chunks_head", "snapshot"))
+	require.NoError(t, err, "the head snapshot is written")
+}
