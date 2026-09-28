@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -217,7 +218,7 @@ func (e *Evaluator) handleEvaluationPanic(ctx context.Context, logger *spanlogge
 		userID = tenant.JoinTenantIDs(tenantIDs)
 	}
 
-	reason := classifyPanic(r)
+	reason := classifyPanic(r, panicOriginatedIn(prometheusLibraryPackagePrefix))
 	e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
 
 	if reason == "invalid_data" {
@@ -232,24 +233,58 @@ func (e *Evaluator) handleEvaluationPanic(ctx context.Context, logger *spanlogge
 // classifyPanic returns the reason label for cortex_mimir_query_engine_evaluation_panics_total, so
 // that data problems and likely bugs can be told apart without reading logs. Validation errors from
 // the histogram library mean invalid stored data; a Go runtime error is almost certainly an engine
-// bug; anything else is unclassified and may also be a bug.
-func classifyPanic(r any) string {
-	rErr, isErr := r.(error)
-	if !isErr {
-		return "unclassified"
+// bug. Any other panic raised inside the Prometheus library (fromPrometheusLibrary) is usually
+// invalid stored data that the library rejects without a typed error, though it can also be the
+// engine passing the library bad input. Anything else is unclassified and is most likely an engine
+// bug.
+func classifyPanic(r any, fromPrometheusLibrary bool) string {
+	if rErr, isErr := r.(error); isErr {
+		var validationErr histogram.Error
+		if errors.As(rErr, &validationErr) {
+			return "invalid_data"
+		}
+
+		var runtimeErr runtime.Error
+		if errors.As(rErr, &runtimeErr) {
+			return "runtime_error"
+		}
 	}
 
-	var validationErr histogram.Error
-	if errors.As(rErr, &validationErr) {
-		return "invalid_data"
-	}
-
-	var runtimeErr runtime.Error
-	if errors.As(rErr, &runtimeErr) {
-		return "runtime_error"
+	if fromPrometheusLibrary {
+		return "prometheus"
 	}
 
 	return "unclassified"
+}
+
+// prometheusLibraryPackagePrefix is the import path prefix of the vendored Prometheus library. Its
+// functions keep this prefix in stack traces even though go.mod replaces the module with a fork.
+const prometheusLibraryPackagePrefix = "github.com/prometheus/prometheus/"
+
+// panicOriginatedIn reports whether the panic being recovered was raised by a function whose fully
+// qualified name starts with pkgPrefix. It must be called from the deferred handler while the stack
+// is still unwinding, so the panicking frames are still present: the panic site is the first frame
+// after runtime.gopanic that is not itself in the runtime.
+func panicOriginatedIn(pkgPrefix string) bool {
+	pcs := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(1, pcs)])
+
+	seenPanic := false
+	for {
+		frame, more := frames.Next()
+
+		if seenPanic && !strings.HasPrefix(frame.Function, "runtime.") {
+			return strings.HasPrefix(frame.Function, pkgPrefix)
+		}
+
+		if frame.Function == "runtime.gopanic" {
+			seenPanic = true
+		}
+
+		if !more {
+			return false
+		}
+	}
 }
 
 // logPanicWithStack logs msg with the panic's stack trace. It must run while the stack is still

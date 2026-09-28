@@ -1837,6 +1837,13 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 			expectedErr:    "histogram has a span whose offset is negative",
 			expectedReason: "invalid_data",
 		},
+		"untyped Prometheus library panic": {
+			// Several histogram library panic sites use a plain error rather than a histogram.Error,
+			// so this can only be classified by where the panic was raised.
+			panicFn:        func() { (&histogram.FloatHistogram{Schema: 0}).CopyToSchema(1) },
+			expectedErr:    "cannot copy from schema 0 to 1",
+			expectedReason: "prometheus",
+		},
 	}
 
 	for name, source := range panicSources {
@@ -1894,7 +1901,7 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 				expectedMetrics := ""
 				if !surface {
 					expectedMetrics = fmt.Sprintf(`
-						# HELP cortex_mimir_query_engine_evaluation_panics_total Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'unclassified' for anything else, which may be invalid data or an engine bug. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.
+						# HELP cortex_mimir_query_engine_evaluation_panics_total Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'prometheus' for any other panic raised inside the Prometheus library (usually invalid data it rejects without a typed error, sometimes the engine passing it bad input), 'unclassified' for anything else, which is most likely an engine bug. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.
 						# TYPE cortex_mimir_query_engine_evaluation_panics_total counter
 						cortex_mimir_query_engine_evaluation_panics_total{reason="%s",user="test-tenant"} 1
 					`, source.expectedReason)
@@ -1959,14 +1966,22 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 // TestClassifyPanic covers the reason label directly, including the cases
 // TestEvaluator_PanicDuringEvaluation cannot reach through a single injected panic: a wrapped
 // histogram validation error, and a plain error that is neither a runtime nor a histogram error.
+// fromLibrary stands in for panicOriginatedIn, which is exercised with a real library panic in
+// TestEvaluator_PanicDuringEvaluation.
 func TestClassifyPanic(t *testing.T) {
 	testCases := map[string]struct {
-		value    any
-		expected string
+		value       any
+		fromLibrary bool
+		expected    string
 	}{
 		"string": {
 			value:    "injected panic during evaluation",
 			expected: "unclassified",
+		},
+		"string from the Prometheus library": {
+			value:       "histograms with custom buckets have no zero bucket",
+			fromLibrary: true,
+			expected:    "prometheus",
 		},
 		"non-error value": {
 			value:    42,
@@ -1979,19 +1994,26 @@ func TestClassifyPanic(t *testing.T) {
 		"wrapped histogram validation error": {
 			// The histogram library wraps its sentinels before panicking, so this is the shape the
 			// engine sees in practice: mustReduceResolution panics with the error returned by
-			// reduceResolution, which wraps ErrHistogramSpanNegativeOffset with %w.
-			value:    fmt.Errorf("span number 1 with offset -1: %w", histogram.ErrHistogramSpanNegativeOffset),
-			expected: "invalid_data",
+			// reduceResolution, which wraps ErrHistogramSpanNegativeOffset with %w. The typed error
+			// takes precedence over where the panic was raised.
+			value:       fmt.Errorf("span number 1 with offset -1: %w", histogram.ErrHistogramSpanNegativeOffset),
+			fromLibrary: true,
+			expected:    "invalid_data",
 		},
 		"plain error": {
 			value:    errors.New("something went wrong"),
 			expected: "unclassified",
 		},
+		"plain error from the Prometheus library": {
+			value:       errors.New("cannot copy from schema 0 to 1"),
+			fromLibrary: true,
+			expected:    "prometheus",
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, classifyPanic(testCase.value))
+			require.Equal(t, testCase.expected, classifyPanic(testCase.value, testCase.fromLibrary))
 		})
 	}
 }
@@ -2007,13 +2029,17 @@ func TestClassifyPanic_RuntimeError(t *testing.T) {
 	}()
 
 	require.NotNil(t, r)
-	require.Equal(t, "runtime_error", classifyPanic(r))
+	require.Equal(t, "runtime_error", classifyPanic(r, false))
+
+	// A runtime error raised inside the Prometheus library is still a runtime error: the typed check
+	// takes precedence over where the panic was raised.
+	require.Equal(t, "runtime_error", classifyPanic(r, true))
 
 	// A wrapped runtime error is still a runtime error: if code ever recovers one, adds context and
 	// re-panics, it must still be classified as the bug it is. Like the histogram check, this unwraps.
 	rErr, isErr := r.(error)
 	require.True(t, isErr)
-	require.Equal(t, "runtime_error", classifyPanic(fmt.Errorf("while evaluating: %w", rErr)))
+	require.Equal(t, "runtime_error", classifyPanic(fmt.Errorf("while evaluating: %w", rErr), false))
 }
 
 // poolAcquiringPanickingOperator takes a slice from a pool, panics, and returns the slice in Close.
