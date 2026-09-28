@@ -117,13 +117,31 @@ pub mod names {
     }
 
     pub fn name(id: u32) -> &'static str {
-        assert!(
-            id < LEN.load(AtomicOrdering::Acquire),
-            "unknown label name id {id}"
-        );
-        let (segment, offset) = position(id);
-        // SAFETY: ids below LEN were written before LEN was published, and segments never move.
-        unsafe { *SEGMENT[segment].load(AtomicOrdering::Acquire).add(offset) }
+        snapshot().name(id)
+    }
+
+    /// The table as of now. Comparing a series' labels resolves every one of its names, which
+    /// then synchronizes once rather than for each.
+    #[derive(Clone, Copy)]
+    pub struct Snapshot {
+        len: u32,
+    }
+
+    pub fn snapshot() -> Snapshot {
+        Snapshot {
+            len: LEN.load(AtomicOrdering::Acquire),
+        }
+    }
+
+    impl Snapshot {
+        #[inline]
+        pub fn name(self, id: u32) -> &'static str {
+            assert!(id < self.len, "unknown label name id {id}");
+            let (segment, offset) = position(id);
+            // SAFETY: the slots and segments below `len` were written before the load of LEN
+            // that made this snapshot, and segments never move.
+            unsafe { *SEGMENT[segment].load(AtomicOrdering::Relaxed).add(offset) }
+        }
     }
 }
 
@@ -159,7 +177,10 @@ impl Labels {
     }
 
     pub fn iter(&self) -> Iter<'_> {
-        Iter { bytes: &self.0 }
+        Iter {
+            bytes: &self.0,
+            names: names::snapshot(),
+        }
     }
 
     /// The labels as pairs with one lifetime, as functions over label pairs take them.
@@ -244,6 +265,7 @@ impl<'a> IntoIterator for &'a Labels {
 #[derive(Clone)]
 pub struct Iter<'a> {
     bytes: &'a [u8],
+    names: names::Snapshot,
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -253,7 +275,7 @@ impl<'a> Iterator for Iter<'a> {
         if self.bytes.is_empty() {
             return None;
         }
-        let name = names::name(take_varint(&mut self.bytes) as u32);
+        let name = self.names.name(take_varint(&mut self.bytes) as u32);
         let len = take_varint(&mut self.bytes) as usize;
         let (value, rest) = self.bytes.split_at(len);
         self.bytes = rest;
