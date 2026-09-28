@@ -5,7 +5,9 @@ use std::path::Path;
 use super::*;
 use crate::chunk_disk::FileState;
 
-const MAGIC: &[u8; 8] = b"MIMIRHS5";
+const MAGIC: &[u8; 8] = b"MIMIRHS6";
+// Without cold blocks.
+const V5_MAGIC: &[u8; 8] = b"MIMIRHS5";
 // Without the emulated Go head's truncations and non-owned evictions.
 const V4_MAGIC: &[u8; 8] = b"MIMIRHS4";
 // Without chunk out-of-order flags, the native histogram flag, or histograms in the open
@@ -110,8 +112,38 @@ fn write_snapshot_body(
     writer.put_len(states.len())?;
     for state in states {
         write_shard(writer, state)?;
+        // Cold blocks are already on disk; the snapshot names the ones the store keeps.
+        writer.put_u64(state.cold.next_id)?;
+        writer.put_len(state.cold.blocks.len())?;
+        for block in &state.cold.blocks {
+            writer.put_u64(block.id)?;
+        }
     }
     Ok(())
+}
+
+// Opens the cold blocks a snapshot lists and removes anything else, like the chunk files.
+fn reopen_cold(directory: PathBuf, next_id: u64, ids: &[u64]) -> Result<ColdState> {
+    let mut cold = ColdState::new(Some(directory.clone()))?;
+    cold.next_id = next_id;
+    let kept = ids
+        .iter()
+        .map(|id| cold::block_path(&directory, *id))
+        .collect::<HashSet<_>>();
+    for entry in fs::read_dir(&directory)? {
+        let path = entry?.path();
+        if !kept.contains(&path) {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove stale cold block {}", path.display()))?;
+        }
+    }
+    for id in ids {
+        cold.blocks.push(Arc::new(cold::ColdBlock::open(
+            &cold::block_path(&directory, *id),
+            *id,
+        )?));
+    }
+    Ok(cold)
 }
 
 fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Result<()> {
@@ -130,6 +162,7 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
         // A restarted Go head resumes from its WAL with its min time and evictions.
         writer.put_i64(tenant.head_min)?;
         writer.put_i64(tenant.truncated_to)?;
+        writer.put_i64(tenant.min_time)?;
         writer.put_len(tenant.metadata.values().map(BTreeMap::len).sum())?;
         for (metadata, seen) in tenant.metadata.values().flat_map(BTreeMap::values) {
             writer.put_bytes(&metadata.encode_to_vec())?;
@@ -247,7 +280,8 @@ fn read_snapshot(
     let mut magic = [0; 8];
     reader.inner.read_exact(&mut magic)?;
     let version = match &magic {
-        MAGIC => 5,
+        MAGIC => 6,
+        V5_MAGIC => 5,
         V4_MAGIC => 4,
         V3_MAGIC => 3,
         LEGACY_MAGIC => 2,
@@ -263,9 +297,22 @@ fn read_snapshot(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let shards = (0..reader.count(4096)?)
-        .map(|_| read_shard(&mut reader, version))
-        .collect::<Result<Vec<_>>>()?;
+    let (shards, colds): (Vec<_>, Vec<_>) = (0..reader.count(4096)?)
+        .map(|_| {
+            let shard = read_shard(&mut reader, version)?;
+            // The shard's cold blocks: the next id, then the ids of the blocks to keep.
+            let cold = if version >= 6 {
+                let next_id = reader.u64()?;
+                let ids = exact(reader.count(1_000_000)?, || Ok(reader.u64()?))?;
+                (next_id, ids)
+            } else {
+                (0, Vec::new())
+            };
+            Ok((shard, cold))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .unzip();
     let exemplars = if legacy {
         HashMap::new()
     } else {
@@ -288,11 +335,20 @@ fn read_snapshot(
     };
     let shards = shards
         .into_iter()
+        .zip(colds)
         .enumerate()
-        .map(|(index, (files, next_sequence, tenants, _))| {
-            let disk = ChunkDiskMapper::reopen(shard_dir(chunk_dir, index), &files, next_sequence)?;
-            Ok(RwLock::new(State { tenants, disk }))
-        })
+        .map(
+            |(index, ((files, next_sequence, tenants, _), (next_id, ids)))| {
+                let disk =
+                    ChunkDiskMapper::reopen(shard_dir(chunk_dir, index), &files, next_sequence)?;
+                let cold = reopen_cold(cold_dir(chunk_dir, index), next_id, &ids)?;
+                Ok(RwLock::new(State {
+                    tenants,
+                    disk,
+                    cold,
+                }))
+            },
+        )
         .collect::<Result<Vec<_>>>()?;
     let store = Store::from_shards(shards, threads, active_window_ms, retention_ms)?;
     *store.exemplars.lock().expect("exemplar lock poisoned") = exemplars;
@@ -417,6 +473,9 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
         if version >= 5 {
             tenant.head_min = reader.i64()?;
             tenant.truncated_to = reader.i64()?;
+        }
+        if version >= 6 {
+            tenant.min_time = reader.i64()?;
         }
         for _ in 0..reader.count(10_000_000)? {
             let metadata = cortexpb::MetricMetadata::decode(reader.read_bytes()?.as_slice())?;
