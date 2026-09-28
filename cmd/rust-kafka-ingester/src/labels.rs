@@ -132,6 +132,21 @@ pub mod names {
 pub struct Labels(Arc<[u8]>);
 
 impl Labels {
+    /// Whether these are `pairs`, in order. The store checks this for every series it appends
+    /// to, on short names and values, where calling `memcmp` for each cost more than comparing.
+    pub fn eq_pairs<'b>(&self, pairs: impl IntoIterator<Item = (&'b str, &'b str)>) -> bool {
+        let mut stored = self.iter();
+        for (name, value) in pairs {
+            match stored.next() {
+                Some((stored_name, stored_value))
+                    if short_eq(stored_name.as_bytes(), name.as_bytes())
+                        && short_eq(stored_value.as_bytes(), value.as_bytes()) => {}
+                _ => return false,
+            }
+        }
+        stored.next().is_none()
+    }
+
     /// `pairs` must be sorted by name, without duplicate names.
     pub fn from_sorted<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
         let mut bytes = Vec::new();
@@ -247,6 +262,28 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
+// Up to 16 bytes, two overlapping loads cover every byte.
+#[inline]
+fn short_eq(a: &[u8], b: &[u8]) -> bool {
+    let len = a.len();
+    if len != b.len() {
+        return false;
+    }
+    let word = |bytes: &[u8], at: usize| {
+        u64::from_le_bytes(bytes[at..at + 8].try_into().expect("8 bytes"))
+    };
+    let half = |bytes: &[u8], at: usize| {
+        u32::from_le_bytes(bytes[at..at + 4].try_into().expect("4 bytes"))
+    };
+    match len {
+        0 => true,
+        1..=3 => a[0] == b[0] && a[len / 2] == b[len / 2] && a[len - 1] == b[len - 1],
+        4..=7 => half(a, 0) == half(b, 0) && half(a, len - 4) == half(b, len - 4),
+        8..=16 => word(a, 0) == word(b, 0) && word(a, len - 8) == word(b, len - 8),
+        _ => a == b,
+    }
+}
+
 pub(crate) fn put_varint(bytes: &mut Vec<u8>, mut value: u64) {
     while value >= 0x80 {
         bytes.push(value as u8 | 0x80);
@@ -271,6 +308,25 @@ pub(crate) fn take_varint(bytes: &mut &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_comparisons_see_every_byte() {
+        for len in 0..40 {
+            let a = (0..len as u8).collect::<Vec<_>>();
+            assert!(short_eq(&a, &a.clone()));
+            assert!(!short_eq(&a, &[a.as_slice(), &[0]].concat()));
+            for position in 0..len {
+                let mut b = a.clone();
+                b[position] ^= 0x10;
+                assert!(!short_eq(&a, &b), "len {len}, position {position}");
+            }
+        }
+        let labels = Labels::from_sorted([("__name__", "up"), ("job", "api")]);
+        assert!(labels.eq_pairs([("__name__", "up"), ("job", "api")]));
+        assert!(!labels.eq_pairs([("__name__", "up")]));
+        assert!(!labels.eq_pairs([("__name__", "up"), ("job", "api"), ("x", "")]));
+        assert!(!labels.eq_pairs([("__name__", "up"), ("job", "apI")]));
+    }
 
     #[test]
     fn missing_names_do_not_lock_the_index_on_every_lookup() {
