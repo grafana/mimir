@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func pushSeriesWithLabelValues(t *testing.T, i *Ingester, ctx context.Context, m
 	t.Helper()
 
 	for _, value := range values {
-		lbls := labels.FromStrings(labels.MetricName, metric, labelName, value)
+		lbls := labels.FromStrings(model.MetricNameLabel, metric, labelName, value)
 		req := mimirpb.ToWriteRequest(
 			[][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: 1_000}},
@@ -124,7 +125,7 @@ func requireLabelValueBytes(t *testing.T, g prometheus.Gatherer, expected string
 	t.Helper()
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(`
-		# HELP cortex_ingester_label_value_bytes Total size in bytes of the distinct values held in memory for a label name, counting each distinct value once. Only reported for label names approaching or exceeding the per-label-name limit.
+		# HELP cortex_ingester_label_value_bytes Total size in bytes of the distinct values held in memory for a label name.
 		# TYPE cortex_ingester_label_value_bytes gauge
 		`+expected+`
 	`), "cortex_ingester_label_value_bytes"))
@@ -144,7 +145,7 @@ func requireLabelValueBytesOverLimit(t *testing.T, g prometheus.Gatherer, expect
 	t.Helper()
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(`
-		# HELP cortex_ingester_label_value_bytes_over_limit Set to 1 for each (user, label name) pair whose distinct label values currently exceed the local per-label-name bytes limit on this ingester. Absent otherwise.
+		# HELP cortex_ingester_label_value_bytes_over_limit Set to 1 for each (user, label name) pair whose distinct label values currently exceed the local per-label-name bytes limit on this ingester.
 		# TYPE cortex_ingester_label_value_bytes_over_limit gauge
 		`+expected+`
 	`), "cortex_ingester_label_value_bytes_over_limit"))

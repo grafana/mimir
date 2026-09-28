@@ -53,7 +53,7 @@ type ingesterMetrics struct {
 
 	labelValueBytesPerUser        *prometheus.GaugeVec
 	labelNamesOverValueBytesLimit prometheus.Gauge
-	labelValueBytesOverLimit *prometheus.GaugeVec
+	labelValueBytesOverLimit      *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
