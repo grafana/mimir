@@ -524,6 +524,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let store = Arc::new(store);
     let head_period =
         Duration::from_millis(parse_duration_ms(&owned_series_update_interval)? as u64);
+    let serving = Arc::new(AtomicBool::new(false));
     spawn_accounting(
         Arc::clone(&store),
         Accounting {
@@ -534,6 +535,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 parse_duration_ms(&head_compaction_interval)? as u64,
             ),
             owned_series: track_owned_series || use_owned_series_for_limits,
+            serving: Arc::clone(&serving),
         },
     );
     if let Some(url) = owned_token_ranges_url {
@@ -922,6 +924,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let shutdown_sender = shutdown_tx.clone();
     let mut serve_shutdown_rx = shutdown_tx.subscribe();
     eprintln!("phase=grpc_start partition={partition} address={address}");
+    serving.store(true, Ordering::Relaxed);
     for breaker in [&circuit_breaker, &push_circuit_breaker]
         .into_iter()
         .flatten()
@@ -992,6 +995,20 @@ struct Accounting {
     head_period: Duration,
     compaction_interval: Duration,
     owned_series: bool,
+    // Set once the startup replay finished, like the Go ingester leaving its Starting state.
+    serving: Arc<AtomicBool>,
+}
+
+// The Go ingester's hardcoded `HeadCompactionIntervalWhileStarting`.
+const HEAD_COMPACTION_INTERVAL_WHILE_STARTING: Duration = Duration::from_secs(30);
+
+fn compaction_due(since_last: Duration, interval: Duration, serving: bool) -> bool {
+    let interval = if serving {
+        interval
+    } else {
+        interval.min(HEAD_COMPACTION_INTERVAL_WHILE_STARTING)
+    };
+    since_last >= interval
 }
 
 // Refreshes the ingester metrics on Mimir's schedules: active series every update period, the head,
@@ -1004,6 +1021,7 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
         head_period,
         compaction_interval,
         owned_series,
+        serving,
     } = accounting;
     let report_store = Arc::clone(&store);
     tokio::spawn(async move {
@@ -1020,11 +1038,16 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
     let head_store = Arc::clone(&store);
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(head_period);
-        // Like the Go ingester's compaction loop, the first compaction waits for an interval.
+        // Like the Go ingester's compaction loop, compactions wait for an interval, which is
+        // shorter while it replays at startup.
         let mut last_compaction = Instant::now();
         loop {
             ticker.tick().await;
-            let compact = last_compaction.elapsed() >= compaction_interval;
+            let compact = compaction_due(
+                last_compaction.elapsed(),
+                compaction_interval,
+                serving.load(Ordering::Relaxed),
+            );
             if compact {
                 last_compaction = Instant::now();
             }
@@ -1575,6 +1598,20 @@ fn summary(request: DecodedRequest) -> Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn head_compacts_more_often_while_replaying_like_the_go_ingester() {
+        let interval = Duration::from_secs(15 * 60);
+        assert!(!compaction_due(Duration::from_secs(29), interval, false));
+        assert!(compaction_due(Duration::from_secs(30), interval, false));
+        assert!(!compaction_due(Duration::from_secs(30), interval, true));
+        assert!(compaction_due(interval, interval, true));
+        assert!(compaction_due(
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            false
+        ));
+    }
     use mimir_rust_kafka_ingester::proto::cortexpb;
     use mimir_rust_kafka_ingester::record::DecodedSeries;
 
