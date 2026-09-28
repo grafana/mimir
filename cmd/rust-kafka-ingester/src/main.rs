@@ -274,6 +274,21 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let active_window_ms = active_window_seconds.saturating_mul(1000);
     let retention_ms = retention_seconds.map(|seconds| seconds.saturating_mul(1000));
     let chunk_dir = data_dir.join("chunks_head");
+    // Installed before the snapshot restore: an unhandled SIGTERM would kill the process after the
+    // one-use snapshot is consumed and force a full segment replay on the next start.
+    let (shutdown_tx, _) = tokio::sync::watch::channel(false);
+    let (warmup_tx, _) = tokio::sync::watch::channel(false);
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let signal_requested = Arc::clone(&shutdown_requested);
+    let signal_sender = shutdown_tx.clone();
+    tokio::spawn(async move {
+        if let Err(error) = shutdown_signal().await {
+            eprintln!("shutdown signal handler failed: {error:#}");
+        }
+        eprintln!("phase=shutdown_signal_received");
+        signal_requested.store(true, Ordering::Relaxed);
+        let _ = signal_sender.send(true);
+    });
     let snapshot_started = Instant::now();
     let mut resumed = None;
     let store = match Store::restore(active_window_ms, retention_ms, &chunk_dir)? {
@@ -298,6 +313,13 @@ async fn serve(args: ServeArgs) -> Result<()> {
                         "phase=head_snapshot_restored partition={partition} duration_ms={}",
                         snapshot_started.elapsed().as_millis()
                     );
+                    if shutdown_requested.load(Ordering::Relaxed) {
+                        restored.store.write_snapshot(&restored.offsets)?;
+                        eprintln!(
+                            "phase=head_snapshot_written partition={partition} reason=shutdown_during_restore"
+                        );
+                        return Ok(());
+                    }
                     resumed = Some(
                         logs.into_iter()
                             .zip(restored.offsets)
@@ -328,19 +350,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
         Duration::from_secs(consistency_timeout_seconds),
     ));
     let (fatal_tx, mut fatal_rx) = tokio::sync::watch::channel(false);
-    let (shutdown_tx, _) = tokio::sync::watch::channel(false);
-    let (warmup_tx, _) = tokio::sync::watch::channel(false);
-    let shutdown_requested = Arc::new(AtomicBool::new(false));
-    let signal_requested = Arc::clone(&shutdown_requested);
-    let signal_sender = shutdown_tx.clone();
-    tokio::spawn(async move {
-        if let Err(error) = shutdown_signal().await {
-            eprintln!("shutdown signal handler failed: {error:#}");
-        }
-        eprintln!("phase=shutdown_signal_received");
-        signal_requested.store(true, Ordering::Relaxed);
-        let _ = signal_sender.send(true);
-    });
     let mut startup_shutdown_rx = shutdown_tx.subscribe();
     if let Some(address) = profile_listen {
         profiling::start(&address).await?;
