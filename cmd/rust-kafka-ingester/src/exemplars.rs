@@ -17,6 +17,43 @@ pub enum Rejection {
 
 pub const MAX_LABEL_SET_LENGTH: usize = 128;
 
+/// Prometheus's `ValidateExemplar` against a series whose newest stored exemplar is `newest`:
+/// what the head appender checks when the exemplar is appended, before the commit adds it.
+pub fn validate(
+    capacity: usize,
+    newest: Option<&cortexpb::Exemplar>,
+    exemplar: &cortexpb::Exemplar,
+    out_of_order_window_ms: i64,
+) -> Result<(), Rejection> {
+    if capacity == 0 {
+        return Err(Rejection::Disabled);
+    }
+    let label_set_len = exemplar
+        .labels
+        .iter()
+        .map(|label| rune_count(&label.name) + rune_count(&label.value))
+        .sum::<usize>();
+    if label_set_len > MAX_LABEL_SET_LENGTH {
+        return Err(Rejection::LabelLength);
+    }
+    let Some(newest) = newest else {
+        return Ok(());
+    };
+    if newest == exemplar {
+        return Ok(());
+    }
+    if (exemplar.timestamp_ms < newest.timestamp_ms
+        && exemplar.timestamp_ms <= newest.timestamp_ms - out_of_order_window_ms)
+        || (exemplar.timestamp_ms == newest.timestamp_ms && exemplar.value < newest.value)
+        || (exemplar.timestamp_ms == newest.timestamp_ms
+            && exemplar.value == newest.value
+            && label_hash(exemplar) < label_hash(newest))
+    {
+        return Err(Rejection::OutOfOrder);
+    }
+    Ok(())
+}
+
 struct SeriesExemplars<L> {
     labels: L,
     // (insertion sequence, exemplar), sorted by timestamp.
@@ -98,6 +135,13 @@ impl<L: Clone> TenantExemplars<L> {
                 self.series.remove(&series_id);
             }
         }
+    }
+
+    /// The series' newest exemplar, which later exemplars are validated against.
+    pub fn newest(&self, series_id: u64) -> Option<&cortexpb::Exemplar> {
+        self.series
+            .get(&series_id)
+            .map(|series| &series.exemplars[series.newest].1)
     }
 
     /// Adds an exemplar for the series identified by `series_id`, returning whether it was stored:

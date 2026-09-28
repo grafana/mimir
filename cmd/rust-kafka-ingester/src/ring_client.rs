@@ -8,33 +8,59 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
 use crate::limits::Overrides;
 use crate::store::Store;
 
+async fn fetch_active_partitions(
+    client: &Client<HttpConnector, Empty<bytes::Bytes>>,
+    url: &str,
+) -> Result<u64> {
+    let response = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.get(url.parse::<hyper::Uri>()?),
+    )
+    .await??;
+    if !response.status().is_success() {
+        bail!("{url} returned {}", response.status());
+    }
+    let body = response.into_body().collect().await?.to_bytes();
+    Ok(std::str::from_utf8(&body)?.trim().parse::<u64>()?)
+}
+
+/// Waits, up to `timeout`, for an active partition, so records aren't consumed while global
+/// limits have no local share and are ignored. The Go ingester only consumes once its own
+/// partition is in the ring.
+pub async fn wait_active_partitions(url: &str, overrides: &Overrides, timeout: Duration) {
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let fetched = fetch_active_partitions(&client, url).await;
+        if let Ok(partitions) = fetched {
+            overrides.set_active_partitions(partitions);
+            if partitions > 0 {
+                return;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            eprintln!("phase=active_partitions_wait_timeout last={fetched:?}");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Keeps `overrides` informed of the active partitions in the partition ring, which the ring
 /// sidecar serves as a plain number, so global limits convert to this partition's share.
 pub async fn poll_active_partitions(url: String, overrides: Arc<Overrides>, period: Duration) {
-    let client: Client<_, Empty<bytes::Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+    let client = Client::builder(TokioExecutor::new()).build_http();
     let mut ticker = tokio::time::interval(period);
     let mut last = None;
     loop {
         ticker.tick().await;
-        let fetched = async {
-            let response = tokio::time::timeout(
-                Duration::from_secs(5),
-                client.get(url.parse::<hyper::Uri>()?),
-            )
-            .await??;
-            if !response.status().is_success() {
-                bail!("{url} returned {}", response.status());
-            }
-            let body = response.into_body().collect().await?.to_bytes();
-            Ok(std::str::from_utf8(&body)?.trim().parse::<u64>()?)
-        }
-        .await;
-        match fetched {
+        match fetch_active_partitions(&client, &url).await {
             Ok(partitions) => {
                 overrides.set_active_partitions(partitions);
                 if last != Some(partitions) {

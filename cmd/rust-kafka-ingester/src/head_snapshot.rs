@@ -344,12 +344,21 @@ fn upgrade_legacy(
 }
 
 // Older snapshots did not record which chunks hold out-of-order samples: a chunk that starts at
-// or before the in-order data written before it can only be one. The native histogram flag
+// or before the in-order data written before it, or ends in an open chunk's range, can only be
+// one, since in-order chunks are only cut before the open ones. The native histogram flag
 // follows the newest open chunk.
 fn infer_pre_v4_flags(series: &mut Series) {
+    let open_min = series
+        .float_head
+        .as_ref()
+        .map(|head| head.min_time)
+        .into_iter()
+        .chain(series.histogram_head.first_timestamp())
+        .min()
+        .unwrap_or(i64::MAX);
     let mut in_order_max = i64::MIN;
     for chunk in &mut series.chunks {
-        chunk.out_of_order = chunk.min_time <= in_order_max;
+        chunk.out_of_order = chunk.min_time <= in_order_max || chunk.max_time >= open_min;
         if !chunk.out_of_order {
             in_order_max = chunk.max_time;
         }
@@ -440,11 +449,15 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     appender: xor::Appender::read_state(reader)?,
                 });
             }
-            for _ in 0..reader.count(1_000_000)? {
-                series.histogram_head.push(cortexpb::Histogram::decode(
-                    reader.read_bytes()?.as_slice(),
-                )?);
-            }
+            series.histogram_head = HistogramHead::from_samples(
+                (0..reader.count(1_000_000)?)
+                    .map(|_| {
+                        Ok(cortexpb::Histogram::decode(
+                            reader.read_bytes()?.as_slice(),
+                        )?)
+                    })
+                    .collect::<Result<_>>()?,
+            );
             series.histogram_next_at = reader.i64()?;
             series.out_of_order = (0..reader.count(1_000_000)?)
                 .map(|_| {
@@ -470,6 +483,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     legacy_exemplars.push((tenant_id.clone(), key.0, Arc::clone(&key.1), exemplar));
                 }
             }
+            tenant.mark_block_ranges(&series);
             if !tenant.series.insert(key, series) {
                 bail!("duplicate series in head snapshot");
             }
@@ -926,6 +940,204 @@ mod tests {
             )
             .unwrap();
         assert!(old.is_empty());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    // The requests `testdata/head-snapshot-v3` was written from, by the ingester that wrote v3
+    // snapshots.
+    fn v3_fixture_requests() -> [DecodedRequest; 2] {
+        let series =
+            |job: &str, samples: Vec<(i64, f64)>, histograms: Vec<(i64, u32)>| DecodedSeries {
+                labels: vec![
+                    ("__name__".into(), "metric".into()),
+                    ("job".into(), job.into()),
+                ],
+                samples: samples
+                    .into_iter()
+                    .map(|(timestamp_ms, value)| cortexpb::Sample {
+                        timestamp_ms,
+                        value,
+                    })
+                    .collect(),
+                histograms: histograms
+                    .into_iter()
+                    .map(|(timestamp, buckets)| cortexpb::Histogram {
+                        timestamp,
+                        count: Some(cortexpb::histogram::Count::CountInt(u64::from(buckets))),
+                        sum: (timestamp % 997) as f64,
+                        positive_spans: vec![cortexpb::BucketSpan {
+                            offset: 0,
+                            length: buckets,
+                        }],
+                        positive_deltas: (0..buckets)
+                            .map(|bucket| i64::from(bucket == 0))
+                            .collect(),
+                        ..Default::default()
+                    })
+                    .collect(),
+                exemplars: vec![cortexpb::Exemplar {
+                    value: 1.0,
+                    timestamp_ms: 5,
+                    ..Default::default()
+                }],
+                created_timestamp: 0,
+            };
+        let request = |series: Vec<DecodedSeries>| DecodedRequest {
+            source: 0,
+            series,
+            metadata: vec![cortexpb::MetricMetadata {
+                r#type: 1,
+                metric_family_name: "metric".into(),
+                help: "help".into(),
+                unit: String::new(),
+            }],
+        };
+        [
+            request(vec![
+                series(
+                    "floats",
+                    (0..500).map(|t| (t * 15_000, t as f64)).collect(),
+                    Vec::new(),
+                ),
+                series(
+                    "histograms",
+                    Vec::new(),
+                    (0..400)
+                        .map(|t| (t * 15_000 + 3, 3 + (t / 100) as u32))
+                        .collect(),
+                ),
+            ]),
+            request(vec![
+                series(
+                    "floats",
+                    vec![(7_000_001, 1.5), (7_000_002, 2.5)],
+                    Vec::new(),
+                ),
+                series("histograms", Vec::new(), vec![(5_900_001, 2)]),
+            ]),
+        ]
+    }
+
+    // A sample with histogram buckets as absolute counts and without its counter reset hint, since
+    // recoding a chunk for new buckets or cutting a new one store the same histogram with
+    // different spans, and a new chunk's first sample has an unknown counter reset.
+    fn normalized(value: crate::ooo_merge::Value) -> String {
+        let crate::ooo_merge::Value::Histogram(histogram) = value else {
+            return format!("{value:?}");
+        };
+        let mut buckets = Vec::new();
+        let (mut index, mut count, mut deltas) = (0, 0, histogram.positive_deltas.iter());
+        for span in &histogram.positive_spans {
+            index += span.offset;
+            for _ in 0..span.length {
+                count += deltas.next().unwrap();
+                if count != 0 {
+                    buckets.push((index, count));
+                }
+                index += 1;
+            }
+        }
+        format!(
+            "{} {:?} {:?} {buckets:?}",
+            histogram.sum, histogram.count, histogram.zero_count
+        )
+    }
+
+    fn samples_everything(store: &Store) -> Vec<(Bytes, Vec<(i64, String)>)> {
+        store
+            .select_chunks("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap()
+            .iter()
+            .map(|view| {
+                let samples = view.chunks[view.chunk_start..view.chunk_end]
+                    .iter()
+                    .flat_map(|chunk| {
+                        let chunk = cortex::Chunk::decode(chunk.wire.as_ref()).unwrap();
+                        crate::ooo_merge::decode(chunk.encoding, &chunk.data).unwrap()
+                    })
+                    .map(|(timestamp, value)| (timestamp, normalized(value)))
+                    .collect();
+                (view.encoded_labels.clone(), samples)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn restores_v3_snapshots_written_by_the_deployed_ingester() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-head-v3-{}", std::process::id()));
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/head-snapshot-v3");
+        fs::create_dir_all(&directory).unwrap();
+        fs::copy(fixture.join(FILE_NAME), directory.join(FILE_NAME)).unwrap();
+        for shard in 0..16 {
+            let name = format!("shard-{shard:03}");
+            fs::create_dir_all(directory.join(&name)).unwrap();
+            let Ok(files) = fs::read_dir(fixture.join(&name)) else {
+                continue;
+            };
+            for file in files {
+                let file = file.unwrap();
+                let target = directory.join(&name).join(file.file_name());
+                fs::copy(file.path(), &target).unwrap();
+                // The fixture keeps only the written part of the preallocated chunk files.
+                File::options()
+                    .write(true)
+                    .open(&target)
+                    .unwrap()
+                    .set_len(crate::chunk_disk::FILE_SIZE as u64)
+                    .unwrap();
+            }
+        }
+        let overrides = Arc::new(Overrides::new(crate::limits::Limits {
+            out_of_order_time_window_ms: 3_600_000,
+            max_global_exemplars_per_user: 100,
+            native_histograms_ingestion_enabled: true,
+            ..Default::default()
+        }));
+        let mut restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .expect("v3 snapshot restores");
+        restored.store = restored.store.with_overrides(Arc::clone(&overrides));
+        let fresh_directory = directory.join("fresh");
+        let fresh = Store::new(20 * 60 * 1000, None, Some(fresh_directory))
+            .unwrap()
+            .with_overrides(overrides);
+        for request in v3_fixture_requests() {
+            fresh.ingest("tenant", request).unwrap();
+        }
+        assert_eq!(
+            restored.offsets,
+            [SnapshotOffset {
+                offset: Some(41),
+                timestamp_ms: 99,
+            }]
+        );
+        assert_eq!(
+            samples_everything(&restored.store),
+            samples_everything(&fresh)
+        );
+        assert_eq!(
+            restored
+                .store
+                .select_exemplars("tenant", i64::MIN, i64::MAX, &[])
+                .unwrap()
+                .len(),
+            2
+        );
+        // Both keep appending to the restored heads alike.
+        let [mut more, _] = v3_fixture_requests();
+        more.series[0].samples = vec![cortexpb::Sample {
+            timestamp_ms: 7_500_000,
+            value: 9.0,
+        }];
+        more.series[1].histograms.truncate(1);
+        more.series[1].histograms[0].timestamp = 7_500_003;
+        restored.store.ingest("tenant", more.clone()).unwrap();
+        fresh.ingest("tenant", more).unwrap();
+        assert_eq!(
+            samples_everything(&restored.store),
+            samples_everything(&fresh)
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

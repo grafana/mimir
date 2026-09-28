@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/cmd/rust-kafka-ingester/ring-sidecar/handlers"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
@@ -333,7 +334,7 @@ func TestPrepareShutdownHandlerPersistsAMarker(t *testing.T) {
 	lifecycle := &lifecycleState{}
 	call := func(method string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
-		prepareShutdownHandler(recorder, httptest.NewRequest(method, "/ingester/prepare-shutdown", nil), cfg, lifecycle, log.NewNopLogger())
+		handlers.PrepareShutdown(recorder, httptest.NewRequest(method, "/ingester/prepare-shutdown", nil), cfg.shutdownMarkerDir, &lifecycle.prepared, log.NewNopLogger())
 		return recorder
 	}
 	require.Equal(t, "unset\n", call(http.MethodGet).Body.String())

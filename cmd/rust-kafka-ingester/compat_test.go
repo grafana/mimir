@@ -105,7 +105,8 @@ func TestRustXORChunkMatchesGo(t *testing.T) {
 
 func TestGoIngesterClientReadsRustServer(t *testing.T) {
 	intHistogram := &histogram.Histogram{
-		Count: 3, Sum: 5, Schema: 1, ZeroThreshold: 0.001, ZeroCount: 1,
+		// The zero, positive (1 and 3) and negative bucket counts, as Histogram.Validate requires.
+		Count: 6, Sum: 5, Schema: 1, ZeroThreshold: 0.001, ZeroCount: 1,
 		PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []int64{1, 2},
 		NegativeSpans: []histogram.Span{{Offset: -1, Length: 1}}, NegativeBuckets: []int64{1},
 	}
@@ -322,7 +323,7 @@ func assertReadAPIs(t *testing.T, ctx context.Context, ingesterClient client.Ing
 	require.NoError(t, err)
 	require.Equal(t, "api", searchValuesBatch.Results[0].Value)
 
-	shard := labels.FromStrings("__name__", "requests_total", "job", "api").Hash() % 4
+	shard := labels.StableHash(labels.FromStrings("__name__", "requests_total", "job", "api")) % 4
 	sharded, err := ingesterClient.QueryStream(ctx, &client.QueryRequest{
 		StartTimestampMs: 0,
 		EndTimestampMs:   2000,

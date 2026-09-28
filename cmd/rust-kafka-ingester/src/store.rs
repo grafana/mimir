@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use regex::Regex;
 
 use crate::chunk_disk::{ChunkDiskMapper, ChunkRef};
-use crate::exemplars::{Rejection, TenantExemplars};
+use crate::exemplars::{self, Rejection, TenantExemplars};
 use crate::limits::{Limits, Overrides};
 use crate::metrics;
 use crate::ooo_merge;
@@ -30,6 +30,8 @@ const XOR_ENCODING: u8 = 4;
 const SAMPLES_PER_CHUNK: usize = 120;
 const CHUNK_RANGE_MS: i64 = 2 * 60 * 60 * 1000;
 const OUT_OF_ORDER_CAPACITY: usize = 32;
+const TARGET_BYTES_PER_HISTOGRAM_CHUNK: usize = 1024;
+const MIN_SAMPLES_PER_HISTOGRAM_CHUNK: usize = 10;
 
 /// A completed chunk in the chunk disk mapper, like Prometheus's `mmappedChunk`.
 #[derive(Clone, Copy, Debug)]
@@ -57,6 +59,8 @@ struct Series {
     float_head: Option<FloatHead>,
     histogram_head: HistogramHead,
     histogram_next_at: i64,
+    // Whether `histogram_next_at` was already estimated from the chunk's fill rate.
+    histogram_end_computed: bool,
     // The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
     out_of_order: Vec<(i64, ooo_merge::Value)>,
     last_ingested_ms: i64,
@@ -66,11 +70,21 @@ struct Series {
     native_histogram: bool,
     // Whether the series is in the emulated Go head window, as of the last head tick.
     in_head: bool,
+    // Whether Mimir's owned series recompute cleared the tenant's active series (it owned no
+    // ranges) since this series' last sample. Unlike deleting one series, clearing leaves the
+    // cost attribution counts in place.
+    active_cleared: bool,
     // Mimir's `ShardByAllLabels`, which decides which partition owns the series.
     owned_hash: u32,
     // Custom trackers this series matches, computed for one overrides generation.
     tracker_generation: u64,
     tracker_matches: Box<[u16]>,
+}
+
+impl Series {
+    fn is_active(&self, cutoff: i64) -> bool {
+        !self.active_cleared && self.last_ingested_ms >= cutoff
+    }
 }
 
 // The open histogram chunk, kept encoded like Prometheus's head chunk.
@@ -80,10 +94,6 @@ struct HistogramHead(Option<histogram::HistogramAppender>);
 impl HistogramHead {
     fn is_empty(&self) -> bool {
         self.0.is_none()
-    }
-
-    fn len(&self) -> usize {
-        self.0.as_ref().map_or(0, histogram::HistogramAppender::len)
     }
 
     fn last(&self) -> Option<&cortexpb::Histogram> {
@@ -96,11 +106,19 @@ impl HistogramHead {
             .map(histogram::HistogramAppender::first_timestamp)
     }
 
-    fn push(&mut self, histogram: cortexpb::Histogram) {
-        match &mut self.0 {
-            Some(appender) => appender.append(histogram),
-            None => self.0 = Some(histogram::HistogramAppender::new(histogram)),
+    /// Rebuilds the open chunk from its samples, the first carrying the chunk header as its hint.
+    fn from_samples(samples: Vec<cortexpb::Histogram>) -> Self {
+        let Some(first) = samples.first() else {
+            return Self(None);
+        };
+        let mut appender = histogram::HistogramAppender::empty(
+            matches!(first.count, Some(cortexpb::histogram::Count::CountFloat(_))),
+            histogram::Header::from_hint(first.reset_hint),
+        );
+        for sample in samples {
+            appender.raw_append(sample);
         }
+        Self(Some(appender))
     }
 
     fn clear(&mut self) {
@@ -115,17 +133,16 @@ impl HistogramHead {
         self.0.as_ref().map(histogram::HistogramAppender::encoded)
     }
 
-    /// The samples of the open chunk, each with the chunk's reset hint, which is what they
-    /// were appended with.
+    /// The samples of the open chunk for [`HistogramHead::from_samples`].
     fn decoded(&self) -> Vec<cortexpb::Histogram> {
-        let Some(encoded) = self.encoded() else {
+        let Some(appender) = &self.0 else {
             return Vec::new();
         };
+        let encoded = appender.encoded();
         let mut histograms =
             histogram::decode(encoded.encoding, &encoded.data).expect("decode own histogram chunk");
-        let hint = histograms.first().map_or(0, |first| first.reset_hint);
-        for histogram in &mut histograms {
-            histogram.reset_hint = hint;
+        if let Some(first) = histograms.first_mut() {
+            first.reset_hint = appender.header().hint();
         }
         histograms
     }
@@ -385,6 +402,41 @@ struct Tenant {
     min_time: i64,
     // The min time of the emulated Go head, which head compaction moves in block-range steps.
     head_min: i64,
+    // The ranges the owned series were last recomputed with, and whether a head compaction asks
+    // for another recompute, which are Mimir's reasons to recompute owned series.
+    owned_ranges_seen: Option<Option<Vec<u32>>>,
+    owned_recompute: bool,
+    // By start, the block ranges this shard's series have samples in, with their oldest and newest
+    // sample: the blocks the Go ingester compacts the head into.
+    block_ranges: BTreeMap<i64, (i64, i64)>,
+}
+
+impl Tenant {
+    fn mark_block_ranges(&mut self, series: &Series) {
+        for (min, max) in series_bounds(series) {
+            let mut range = range_start(min);
+            while range <= max {
+                let upper = range.saturating_add(CHUNK_RANGE_MS - 1);
+                mark_block_range(
+                    &mut self.block_ranges,
+                    range,
+                    min.max(range),
+                    max.min(upper),
+                );
+                range = range.saturating_add(CHUNK_RANGE_MS);
+            }
+        }
+    }
+}
+
+fn mark_block_range(ranges: &mut BTreeMap<i64, (i64, i64)>, range: i64, min: i64, max: i64) {
+    ranges
+        .entry(range)
+        .and_modify(|(oldest, newest)| {
+            *oldest = (*oldest).min(min);
+            *newest = (*newest).max(max);
+        })
+        .or_insert((min, max));
 }
 
 impl Default for Tenant {
@@ -397,6 +449,9 @@ impl Default for Tenant {
             max_time: i64::MIN,
             min_time: i64::MAX,
             head_min: i64::MIN,
+            owned_ranges_seen: None,
+            owned_recompute: false,
+            block_ranges: BTreeMap::new(),
         }
     }
 }
@@ -425,6 +480,88 @@ pub struct Store {
     cost_attribution_last_cleanup: Mutex<i64>,
     // Samples ingested since startup, for the ingestion rate EWMA.
     ingested_samples: std::sync::atomic::AtomicU64,
+    // Series per ingest pusher flush, `-ingest-storage.kafka.ingestion-concurrency-batch-size`,
+    // or 0 when `-ingest-storage.kafka.ingestion-concurrency-max` is 0 and records push alone.
+    flush_series: usize,
+    pusher_shards: PusherShards,
+    postings_cache: PostingsCacheConfig,
+}
+
+/// How Mimir's ingest pusher sizes a tenant's shards for the records of one fetch:
+/// `-ingest-storage.kafka.ingestion-concurrency-max`, `-...-estimated-bytes-per-sample` and
+/// `-...-target-flushes-per-shard`.
+#[derive(Clone, Copy, Debug)]
+pub struct PusherShards {
+    pub max: usize,
+    pub bytes_per_sample: usize,
+    pub target_flushes: usize,
+}
+
+impl PusherShards {
+    fn count(&self, bytes: usize, flush_series: usize) -> usize {
+        if flush_series == 0 {
+            return 1;
+        }
+        (bytes / self.bytes_per_sample.max(1) / flush_series / self.target_flushes.max(1))
+            .min(self.max)
+            .max(1)
+    }
+}
+
+impl Default for PusherShards {
+    fn default() -> Self {
+        Self {
+            max: 8,
+            bytes_per_sample: 200,
+            target_flushes: 40,
+        }
+    }
+}
+
+/// Mimir's postings-for-matchers cache settings. A block query only records how many series its
+/// index lookup selected when it goes through the cache.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PostingsCacheConfig {
+    pub head_force: bool,
+    pub block_force: bool,
+    pub shared: bool,
+    pub head_invalidation: bool,
+}
+
+impl PostingsCacheConfig {
+    // Prometheus's PostingsForMatchersCache skips the cache for non-concurrent (unsharded) calls
+    // unless forced, and a shared cache with head invalidation needs a metric name to version.
+    fn used(&self, head: bool, sharded: bool, matchers: &[cortex::LabelMatcher]) -> bool {
+        let force = if head {
+            self.head_force
+        } else {
+            self.block_force
+        };
+        let key = !self.shared
+            || !(head && self.head_invalidation)
+            || matchers
+                .iter()
+                .any(|matcher| matcher.r#type == 0 && matcher.name == "__name__");
+        (sharded || force) && key
+    }
+}
+
+/// A block a query read, as Mimir's block querier reports it: its generation, the series its
+/// index lookup selected (0 without the postings cache) and the series it returned.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueriedBlock {
+    pub generation: String,
+    pub index_series: u64,
+    pub series: u64,
+}
+
+// The time range of a queried block, the head's ending at its max time.
+struct BlockRange {
+    lower: i64,
+    upper: i64,
+    head: bool,
+    count_index: bool,
+    generation: String,
 }
 
 /// Per-tenant state of the emulated Go head, for the memory, owned series and head metrics.
@@ -452,6 +589,7 @@ pub enum DiscardReason {
     NewValueForTimestamp,
     TooFarInFuture,
     TooFarInPast,
+    InvalidNativeHistogram,
 }
 
 impl DiscardReason {
@@ -463,12 +601,44 @@ impl DiscardReason {
             DiscardReason::NewValueForTimestamp => "new-value-for-timestamp",
             DiscardReason::TooFarInFuture => "sample-too-far-in-future",
             DiscardReason::TooFarInPast => "sample-too-far-in-past",
+            DiscardReason::InvalidNativeHistogram => "invalid-native-histogram",
         }
     }
 }
 
 // The head state a record's samples are checked against, taken before the record applies like
 // the head appender Mimir creates for each request.
+// The head appender of one of Mimir's ingest pusher flushes.
+struct FlushState {
+    id: u64,
+    series: usize,
+    rules: Option<AppendRules>,
+}
+
+// A series as committed before the current flush: Prometheus's head appender checks samples
+// against it, and only drops those that no longer fit when committing.
+#[derive(Clone, Debug, Default)]
+struct Committed {
+    max: Option<i64>,
+    last_float: Option<(i64, u64)>,
+    last_histogram: Option<cortexpb::Histogram>,
+}
+
+impl Committed {
+    fn of(series: &Series) -> Self {
+        Self {
+            max: series_max_time(series),
+            last_float: series.float_head.as_ref().and_then(|head| {
+                Some((
+                    head.appender.last_timestamp()?,
+                    head.appender.last_value()?.to_bits(),
+                ))
+            }),
+            last_histogram: series.histogram_head.last().cloned(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct AppendRules {
     head_max_time: i64,
@@ -540,7 +710,10 @@ struct ShardOutcome {
     out_of_order: HashMap<usize, u64>,
     chunks_created: HashMap<usize, u64>,
     discarded: HashMap<(usize, DiscardReason), u64>,
-    exemplars: Vec<(usize, u64, Arc<StoredLabels>, Vec<cortexpb::Exemplar>)>,
+    // By position of the series in the batch, which is the order Mimir appends exemplars in.
+    exemplars: Vec<PendingExemplars>,
+    // Exemplars of series that don't exist, which Mimir counts as failed.
+    exemplars_without_series: u64,
 }
 
 #[derive(Default)]
@@ -554,6 +727,8 @@ pub struct IngestRecord {
     pub request: DecodedRequest,
     pub ingested_ms: i64,
     pub track_rate: bool,
+    // The Kafka record's value size, from which Mimir's ingest pusher sizes a tenant's shards.
+    pub bytes: usize,
 }
 
 pub const DEFAULT_SHARDS: usize = 16;
@@ -697,12 +872,30 @@ impl Store {
             cost_attribution_intervals: (3 * 60_000, 20 * 60_000),
             cost_attribution_last_cleanup: Mutex::new(now_ms()),
             ingested_samples: std::sync::atomic::AtomicU64::new(0),
+            flush_series: 150,
+            pusher_shards: PusherShards::default(),
+            postings_cache: PostingsCacheConfig::default(),
         })
     }
 
     /// Limits come from `overrides`; without them the store uses Mimir's defaults.
     pub fn with_overrides(mut self, overrides: Arc<Overrides>) -> Self {
         self.overrides = overrides;
+        self
+    }
+
+    pub fn with_flush_series(mut self, flush_series: usize) -> Self {
+        self.flush_series = flush_series;
+        self
+    }
+
+    pub fn with_pusher_shards(mut self, pusher_shards: PusherShards) -> Self {
+        self.pusher_shards = pusher_shards;
+        self
+    }
+
+    pub fn with_postings_cache(mut self, postings_cache: PostingsCacheConfig) -> Self {
+        self.postings_cache = postings_cache;
         self
     }
 
@@ -726,6 +919,7 @@ impl Store {
             request,
             ingested_ms: now_ms(),
             track_rate: true,
+            bytes: 0,
         }])
     }
 
@@ -740,17 +934,35 @@ impl Store {
             request,
             ingested_ms,
             track_rate: false,
+            bytes: 0,
         }])
     }
 
     /// Applies records in order: each shard receives its series in record order, and shards run in
     /// parallel.
     pub fn ingest_batch(&self, records: Vec<IngestRecord>) -> Result<()> {
+        self.ingest_flushes(records).map(|_| ())
+    }
+
+    /// Like `ingest_batch`, returning how many head appends the Go ingester's pusher would make.
+    pub fn ingest_flushes(&self, records: Vec<IngestRecord>) -> Result<u64> {
         let shard_count = self.shards.len();
         let mut buckets = (0..shard_count).map(|_| Vec::new()).collect::<Vec<_>>();
         let mut tenant_ids = Vec::with_capacity(records.len());
         let mut record_rules = Vec::with_capacity(records.len());
         let mut all_series = Vec::new();
+        // Like `idealShardsFor`, a tenant's records spread over shards by their expected series.
+        let mut tenant_bytes: HashMap<&str, usize> = HashMap::new();
+        for record in &records {
+            *tenant_bytes.entry(record.tenant.as_str()).or_default() += record.bytes;
+        }
+        let pusher = self.pusher_shards;
+        let tenant_shards = tenant_bytes
+            .into_iter()
+            .map(|(tenant, bytes)| (tenant.to_owned(), pusher.count(bytes, self.flush_series)))
+            .collect::<HashMap<_, _>>();
+        let mut flushes: HashMap<(String, i32), Vec<Option<FlushState>>> = HashMap::new();
+        let mut next_flush = 0_u64;
         let mut early_discards: HashMap<(usize, DiscardReason), u64> = HashMap::new();
         let mut exemplar_failures = 0_u64;
         let wall_now = now_ms();
@@ -762,6 +974,7 @@ impl Store {
                     mut request,
                     ingested_ms,
                     track_rate,
+                    bytes: _,
                 } = record;
                 let tenant_limits = self.overrides.tenant(&tenant);
                 let limits = &tenant_limits.limits;
@@ -802,55 +1015,84 @@ impl Store {
                     }
                 };
                 let keep_exemplars = limits.max_global_exemplars_per_user > 0;
-                let rules =
-                    AppendRules::new(home_tenant.max_time, limits.out_of_order_time_window_ms);
-                let mut record_max = home_tenant.max_time;
-                // Older samples are rejected whatever the series holds.
-                let acceptable_from = if rules.out_of_order_window_ms > 0 {
-                    rules.min_valid_time.min(
-                        rules
-                            .head_max_time
-                            .saturating_sub(rules.out_of_order_window_ms),
-                    )
-                } else {
-                    rules.min_valid_time
-                };
-                let mut record_min = home_tenant.min_time;
+                let window = limits.out_of_order_time_window_ms;
+                let flush_key = (tenant.clone(), request.source);
+                let shards = tenant_shards.get(&tenant).copied().unwrap_or(1);
+                let mut series_rules = Vec::with_capacity(request.series.len());
                 for series in &mut request.series {
-                    let created = series.created_timestamp;
-                    if created > 0 && created >= acceptable_from {
-                        record_min = record_min.min(created);
+                    // Mimir's pusher routes each series to a shard by the hash of its labels.
+                    let shard = if shards > 1 {
+                        (stable_hash_pairs(
+                            series
+                                .labels
+                                .iter()
+                                .map(|(name, value)| (name.as_str(), value.as_str())),
+                        ) % shards as u64) as usize
+                    } else {
+                        0
+                    };
+                    // Mimir's fast path: without an out-of-order window, a series whose samples
+                    // are all behind the head's min valid time is rejected as a whole, before
+                    // the grace period checks.
+                    let min_append = flushes
+                        .get(&flush_key)
+                        .and_then(|flushes| flushes[shard].as_ref())
+                        .and_then(|flush| flush.rules)
+                        .map(|rules| rules.min_valid_time)
+                        .or_else(|| {
+                            (home_tenant.max_time != i64::MIN).then(|| {
+                                home_tenant
+                                    .max_time
+                                    .saturating_sub(MIN_VALID_TIME_WINDOW_MS)
+                            })
+                        });
+                    let histograms_count = limits.native_histograms_ingestion_enabled;
+                    if window <= 0
+                        && let Some(min_append) = min_append
+                        && series.exemplars.is_empty()
+                        && (!series.samples.is_empty()
+                            || (histograms_count && !series.histograms.is_empty()))
+                        && series
+                            .samples
+                            .iter()
+                            .all(|sample| sample.timestamp_ms < min_append)
+                        && (!histograms_count
+                            || series
+                                .histograms
+                                .iter()
+                                .all(|histogram| histogram.timestamp < min_append))
+                    {
+                        let rejected = series.samples.len()
+                            + if histograms_count {
+                                series.histograms.len()
+                            } else {
+                                0
+                            };
+                        *early_discards
+                            .entry((index, DiscardReason::OutOfBounds))
+                            .or_default() += rejected as u64;
+                        series.samples.clear();
+                        series.histograms.clear();
+                        series.created_timestamp = 0;
                     }
                     series
                         .samples
                         .retain(|sample| match classify(sample.timestamp_ms) {
                             Some(reason) => {
-                                *early_discards.entry((index, reason)).or_default() += 1;
+                                count_early_discard(&mut early_discards, index, reason);
                                 false
                             }
-                            None => {
-                                record_max = record_max.max(sample.timestamp_ms);
-                                if sample.timestamp_ms >= acceptable_from {
-                                    record_min = record_min.min(sample.timestamp_ms);
-                                }
-                                true
-                            }
+                            None => true,
                         });
                     if limits.native_histograms_ingestion_enabled {
                         series
                             .histograms
                             .retain(|histogram| match classify(histogram.timestamp) {
                                 Some(reason) => {
-                                    *early_discards.entry((index, reason)).or_default() += 1;
+                                    count_early_discard(&mut early_discards, index, reason);
                                     false
                                 }
-                                None => {
-                                    record_max = record_max.max(histogram.timestamp);
-                                    if histogram.timestamp >= acceptable_from {
-                                        record_min = record_min.min(histogram.timestamp);
-                                    }
-                                    true
-                                }
+                                None => true,
                             });
                     } else {
                         // Ignored without an error, like Mimir.
@@ -865,16 +1107,94 @@ impl Store {
                     } else {
                         series.exemplars.clear();
                     }
+                    let first_sample = series
+                        .samples
+                        .first()
+                        .map(|sample| sample.timestamp_ms)
+                        .or_else(|| {
+                            series
+                                .histograms
+                                .first()
+                                .map(|histogram| histogram.timestamp)
+                        });
+                    // Like Mimir's ingest pusher, each flush of up to `flush_series` series of a
+                    // tenant's shard gets its own head appender, which takes the head's max time
+                    // when created, or the first sample's for a head that has none yet.
+                    let flush = flushes
+                        .entry(flush_key.clone())
+                        .or_insert_with(|| (0..shards).map(|_| None).collect())[shard]
+                        .get_or_insert_with(|| {
+                            next_flush += 1;
+                            FlushState {
+                                id: next_flush,
+                                series: 0,
+                                rules: None,
+                            }
+                        });
+                    if self.flush_series > 0 && flush.series >= self.flush_series {
+                        next_flush += 1;
+                        *flush = FlushState {
+                            id: next_flush,
+                            series: 0,
+                            rules: None,
+                        };
+                    }
+                    if flush.rules.is_none()
+                        && let Some(first) = first_sample
+                    {
+                        let head_max = if home_tenant.max_time == i64::MIN {
+                            first
+                        } else {
+                            home_tenant.max_time
+                        };
+                        flush.rules = Some(AppendRules::new(head_max, window));
+                    }
+                    flush.series += 1;
+                    let rules = flush
+                        .rules
+                        .unwrap_or_else(|| AppendRules::new(home_tenant.max_time, window));
+                    // Older samples are rejected whatever the series holds.
+                    let acceptable_from = if window > 0 {
+                        rules
+                            .min_valid_time
+                            .min(rules.head_max_time.saturating_sub(window))
+                    } else {
+                        rules.min_valid_time
+                    };
+                    let created = series.created_timestamp;
+                    if created > 0 && created >= acceptable_from {
+                        home_tenant.min_time = home_tenant.min_time.min(created);
+                    }
+                    for timestamp in series
+                        .samples
+                        .iter()
+                        .map(|sample| sample.timestamp_ms)
+                        .chain(
+                            series
+                                .histograms
+                                .iter()
+                                .map(|histogram| histogram.timestamp),
+                        )
+                    {
+                        // Every sample above the head's max time is accepted.
+                        home_tenant.max_time = home_tenant.max_time.max(timestamp);
+                        if timestamp >= acceptable_from {
+                            home_tenant.min_time = home_tenant.min_time.min(timestamp);
+                        }
+                    }
+                    series_rules.push((rules, flush.id));
                 }
-                // Every sample above the head's max time is accepted, so the max is known now.
-                home_tenant.max_time = record_max;
-                home_tenant.min_time = record_min;
-                record_rules.push((rules, keep_exemplars));
+                if self.flush_series == 0 {
+                    // Without concurrency, Mimir pushes every record on its own.
+                    flushes.remove(&flush_key);
+                }
+                record_rules.push(keep_exemplars);
                 all_series.extend(
                     request
                         .series
                         .into_iter()
-                        .map(|series| (index, series, ingested_ms)),
+                        .zip(series_rules)
+                        .map(|(series, (rules, flush))| (index, series, ingested_ms, rules, flush)),
                 );
                 tenant_ids.push(tenant);
             }
@@ -883,7 +1203,7 @@ impl Store {
         let hashes = self.pool.install(|| {
             all_series
                 .par_iter_mut()
-                .map(|(_, series, _)| {
+                .map(|(_, series, _, _, _)| {
                     series.labels.sort();
                     if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
                         return None;
@@ -897,36 +1217,58 @@ impl Store {
                 })
                 .collect::<Vec<_>>()
         });
-        for ((index, series, ingested_ms), hash) in all_series.into_iter().zip(hashes) {
+        for (position, ((index, series, ingested_ms, rules, flush), hash)) in
+            all_series.into_iter().zip(hashes).enumerate()
+        {
             if let Some(hash) = hash {
-                buckets[shard_for(hash, shard_count)].push((index, hash, series, ingested_ms));
+                buckets[shard_for(hash, shard_count)].push(BatchSeries {
+                    index,
+                    position,
+                    hash,
+                    series,
+                    ingested_ms,
+                    rules,
+                    flush,
+                });
             }
         }
-        let apply =
-            |shard: usize, bucket: Vec<(usize, u64, DecodedSeries, i64)>| -> Result<ShardOutcome> {
-                let mut guard = self.shards[shard].write().expect("store lock poisoned");
-                let State { tenants, disk } = &mut *guard;
-                let mut outcome = ShardOutcome::default();
-                for (index, hash, series, ingested_ms) in bucket {
-                    let tenant = tenant_mut(tenants, &tenant_ids[index]);
-                    let (rules, keep_exemplars) = record_rules[index];
-                    ingest_series(
-                        tenant,
-                        disk,
-                        series,
-                        hash,
+        let apply = |shard: usize, bucket: Vec<BatchSeries>| -> Result<ShardOutcome> {
+            let mut guard = self.shards[shard].write().expect("store lock poisoned");
+            let State { tenants, disk } = &mut *guard;
+            let mut outcome = ShardOutcome::default();
+            let mut committed = HashMap::new();
+            for BatchSeries {
+                index,
+                position,
+                hash,
+                series,
+                ingested_ms,
+                rules,
+                flush,
+            } in bucket
+            {
+                let tenant = tenant_mut(tenants, &tenant_ids[index]);
+                let keep_exemplars = record_rules[index];
+                ingest_series(
+                    tenant,
+                    disk,
+                    series,
+                    hash,
+                    SeriesContext {
+                        tenant_id: &tenant_ids[index],
+                        rules,
+                        keep_exemplars,
+                        index,
+                        position,
+                        flush,
                         ingested_ms,
-                        SeriesContext {
-                            tenant_id: &tenant_ids[index],
-                            rules,
-                            keep_exemplars,
-                            index,
-                        },
-                        &mut outcome,
-                    )?;
-                }
-                Ok(outcome)
-            };
+                    },
+                    &mut committed,
+                    &mut outcome,
+                )?;
+            }
+            Ok(outcome)
+        };
         let work = buckets
             .into_iter()
             .enumerate()
@@ -944,7 +1286,7 @@ impl Store {
             })?
         };
         self.record_outcomes(&tenant_ids, early_discards, exemplar_failures, outcomes);
-        Ok(())
+        Ok(next_flush)
     }
 
     fn record_outcomes(
@@ -978,7 +1320,9 @@ impl Store {
                 *discarded.entry((&tenant_ids[index], reason)).or_default() += count;
             }
             exemplars.extend(outcome.exemplars);
+            exemplar_failures += outcome.exemplars_without_series;
         }
+        exemplars.sort_by_key(|(_, position, _, _, _, _)| *position);
         for (tenant, count) in accepted {
             metrics::INGESTED_SAMPLES
                 .with_label_values(&[tenant])
@@ -1004,9 +1348,12 @@ impl Store {
             }
             return;
         }
-        let mut stored = 0_u64;
+        let mut ingested = 0_u64;
         let mut storage = self.exemplars.lock().expect("exemplar lock poisoned");
-        for (index, hash, labels, series_exemplars) in exemplars {
+        // The newest exemplar of each series when its flush started, which Mimir's head appender
+        // validates against; the storage itself only changes when the flush commits.
+        let mut newest_at_flush: HashMap<(u64, u64), Option<cortexpb::Exemplar>> = HashMap::new();
+        for (index, _, flush, hash, labels, series_exemplars) in exemplars {
             let tenant = &tenant_ids[index];
             let tenant_limits = self.overrides.tenant(tenant);
             let capacity = self.overrides.max_exemplars(&tenant_limits.limits);
@@ -1017,27 +1364,32 @@ impl Store {
             if tenant_storage.capacity() != capacity {
                 tenant_storage.resize(capacity);
             }
+            let newest = newest_at_flush
+                .entry((flush, hash))
+                .or_insert_with(|| tenant_storage.newest(hash).cloned())
+                .clone();
             let mut appended = 0;
             for exemplar in series_exemplars {
+                if exemplars::validate(capacity, newest.as_ref(), &exemplar, window).is_err() {
+                    exemplar_failures += 1;
+                    continue;
+                }
+                ingested += 1;
                 match tenant_storage.add(hash, || Arc::clone(&labels), exemplar, window) {
                     Ok(true) => appended += 1,
-                    // Duplicates succeed without being stored again, like `AddExemplar`.
-                    Ok(false) => stored += 1,
-                    Err(Rejection::OutOfOrder) => {
-                        metrics::OUT_OF_ORDER_EXEMPLARS.inc();
-                        exemplar_failures += 1;
-                    }
-                    Err(Rejection::Disabled | Rejection::LabelLength) => exemplar_failures += 1,
+                    Ok(false) => {}
+                    // Rejected when committing, which Mimir doesn't report.
+                    Err(Rejection::OutOfOrder) => metrics::OUT_OF_ORDER_EXEMPLARS.inc(),
+                    Err(Rejection::Disabled | Rejection::LabelLength) => {}
                 }
             }
-            stored += appended;
             if appended > 0 {
                 metrics::EXEMPLARS_APPENDED
                     .with_label_values(&[tenant])
                     .inc_by(appended);
             }
         }
-        metrics::INGESTED_EXEMPLARS.inc_by(stored);
+        metrics::INGESTED_EXEMPLARS.inc_by(ingested);
         metrics::INGESTED_EXEMPLARS_FAILURES.inc_by(exemplar_failures);
     }
 
@@ -1126,6 +1478,9 @@ impl Store {
                     tenant
                         .series
                         .retain(|_, series| prune_series(series, cutoff));
+                    tenant
+                        .block_ranges
+                        .retain(|_, (_, newest)| *newest >= cutoff);
                 }
                 state.disk.truncate_before(cutoff)
             })
@@ -1159,36 +1514,171 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<QuerySeriesView>> {
+        Ok(self
+            .select_chunks_with_blocks(tenant_id, start, end, matchers)?
+            .0)
+    }
+
+    /// Like Prometheus's DB.ChunkQuerier, a query reads the head when it ends after the head's
+    /// min time, and each compacted block, emulated as a block range with samples below the
+    /// head, it overlaps.
+    fn queried_blocks(
+        &self,
+        tenant_id: &str,
+        start: i64,
+        end: i64,
+        matchers: &[cortex::LabelMatcher],
+    ) -> Vec<BlockRange> {
+        let head = self.head_view(tenant_id);
+        let head_lower = head.head_min.max(head.min_time);
+        let sharded = matchers
+            .iter()
+            .any(|matcher| matcher.r#type == 0 && matcher.name == "__query_shard__");
+        let mut blocks = Vec::new();
+        if head.max_time != i64::MIN && end >= head_lower {
+            blocks.push(BlockRange {
+                lower: head_lower,
+                upper: i64::MAX,
+                head: true,
+                count_index: self.postings_cache.used(true, sharded, matchers),
+                generation: "0".into(),
+            });
+        }
+        if head.head_min == i64::MIN {
+            return blocks;
+        }
+        let last = end.min(head.head_min.saturating_sub(CHUNK_RANGE_MS));
+        let first = range_start(start);
+        if first > last {
+            return blocks;
+        }
+        let mut ranges = BTreeMap::new();
+        for shard in self.per_shard(tenant_id, |tenant, _| {
+            tenant
+                .block_ranges
+                .range(first..=last)
+                .map(|(range, bounds)| (*range, *bounds))
+                .collect::<Vec<_>>()
+        }) {
+            for (range, (oldest, newest)) in shard {
+                mark_block_range(&mut ranges, range, oldest, newest);
+            }
+        }
+        let count_index = self.postings_cache.used(false, sharded, matchers);
+        for (lower, (oldest, newest)) in ranges {
+            // A block's time range is that of its samples.
+            if oldest > end || newest < start {
+                continue;
+            }
+            let generation = ((head_lower - oldest) / CHUNK_RANGE_MS).max(1);
+            blocks.push(BlockRange {
+                lower,
+                upper: lower + CHUNK_RANGE_MS - 1,
+                head: false,
+                count_index,
+                generation: if generation > 100 {
+                    "100+".into()
+                } else {
+                    generation.to_string()
+                },
+            });
+        }
+        blocks
+    }
+
+    /// The selected series and, per block the Go ingester would read, what it reports.
+    pub fn select_chunks_with_blocks(
+        &self,
+        tenant_id: &str,
+        start: i64,
+        end: i64,
+        matchers: &[cortex::LabelMatcher],
+    ) -> Result<(Vec<QuerySeriesView>, Vec<QueriedBlock>)> {
         let compiled = compile_matchers(matchers)?;
-        let mut selected = self
-            .per_shard(tenant_id, |tenant, disk| {
-                tenant
-                    .series
-                    .matching(&compiled)
-                    .filter(|(_, series)| matches_time_range(series, start, end))
-                    .filter_map(|((_, labels), series)| {
-                        let chunks = query_chunks(series, disk, start, end);
-                        (!chunks.is_empty()).then(|| {
-                            (
-                                Arc::clone(labels),
-                                QuerySeriesView {
-                                    encoded_labels: encode_series_labels(labels),
-                                    chunk_start: 0,
-                                    chunk_end: chunks.len(),
-                                    chunks: Arc::new(chunks),
-                                },
+        let blocks = self.queried_blocks(tenant_id, start, end, matchers);
+        // Counting what an index lookup selects needs the series of every query shard.
+        let count_index = blocks.iter().any(|block| block.count_index);
+        let (shard_matchers, index_matchers): (Vec<_>, Vec<_>) = matchers
+            .iter()
+            .cloned()
+            .partition(|matcher| matcher.r#type == 0 && matcher.name == "__query_shard__");
+        let (lookup, shard) = if count_index {
+            (
+                compile_matchers(&index_matchers)?,
+                compile_matchers(&shard_matchers)?,
+            )
+        } else {
+            (compiled, Vec::new())
+        };
+        let head = self.head_view(tenant_id);
+        let per_shard = self.per_shard(tenant_id, |tenant, disk| {
+            let mut counts = vec![[0_u64; 2]; blocks.len()];
+            let selected = tenant
+                .series
+                .matching(&lookup)
+                .filter_map(|((_, labels), series)| {
+                    let in_shard = shard.is_empty() || matches(labels, &shard);
+                    for (block, counts) in blocks.iter().zip(&mut counts) {
+                        let indexed = if block.head {
+                            head.holds(series)
+                        } else {
+                            matches_time_range(series, block.lower, block.upper)
+                        };
+                        if !indexed {
+                            continue;
+                        }
+                        counts[0] += u64::from(block.count_index);
+                        if in_shard
+                            && matches_time_range(
+                                series,
+                                start.max(block.lower),
+                                end.min(block.upper),
                             )
-                        })
+                        {
+                            counts[1] += 1;
+                        }
+                    }
+                    if !in_shard || !matches_time_range(series, start, end) {
+                        return None;
+                    }
+                    let chunks = query_chunks(series, disk, start, end);
+                    (!chunks.is_empty()).then(|| {
+                        (
+                            Arc::clone(labels),
+                            QuerySeriesView {
+                                encoded_labels: encode_series_labels(labels),
+                                chunk_start: 0,
+                                chunk_end: chunks.len(),
+                                chunks: Arc::new(chunks),
+                            },
+                        )
                     })
-                    .collect::<Vec<_>>()
-            })
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
+            (selected, counts)
+        });
+        let mut totals = vec![[0_u64; 2]; blocks.len()];
+        let mut selected = Vec::new();
+        for (series, counts) in per_shard {
+            selected.extend(series);
+            for (total, count) in totals.iter_mut().zip(counts) {
+                total[0] += count[0];
+                total[1] += count[1];
+            }
+        }
         // The distributor k-way merges each ingester's stream and requires label order, which the
         // Go ingester gets from sorted postings.
         selected.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        Ok(selected.into_iter().map(|(_, view)| view).collect())
+        let blocks = blocks
+            .into_iter()
+            .zip(totals)
+            .map(|(block, [index_series, series])| QueriedBlock {
+                generation: block.generation,
+                index_series,
+                series,
+            })
+            .collect();
+        Ok((selected.into_iter().map(|(_, view)| view).collect(), blocks))
     }
 
     pub fn select_exemplars(
@@ -1335,7 +1825,7 @@ impl Store {
                 tenant
                     .series
                     .matching(&compiled)
-                    .filter(|(_, series)| series.last_ingested_ms >= cutoff)
+                    .filter(|(_, series)| series.is_active(cutoff))
                     .filter_map(|((_, labels), series)| {
                         let bucket_count = u64::from(series.last_bucket_count);
                         (!histograms_only || series.native_histogram).then(|| ActiveSeriesView {
@@ -1367,17 +1857,33 @@ impl Store {
     /// Updates which series the Go ingester would still hold in its head, which of those this
     /// partition owns, and, when `compact`, moves each tenant's head min time like head compaction:
     /// while the head spans more than 1.5 block ranges, its oldest block range is compacted away.
-    pub fn head_tick(&self, compact: bool) -> Vec<HeadReport> {
+    ///
+    /// With `track_owned`, a recompute of a tenant's owned series (on a new tenant, changed
+    /// ranges or after head compaction) removes its non-owned series from the active series until
+    /// their next sample, like Mimir's computeOwnedSeries.
+    pub fn head_tick(&self, compact: bool, track_owned: bool) -> Vec<HeadReport> {
         let owned = self
             .owned_ranges
             .read()
             .expect("owned ranges lock poisoned")
             .clone();
         let head_bounds = {
-            let home = self.shards[0].read().expect("store lock poisoned");
+            let mut home = self.shards[0].write().expect("store lock poisoned");
             home.tenants
-                .iter()
-                .map(|(id, tenant)| (id.clone(), (tenant.head_min, tenant.max_time)))
+                .iter_mut()
+                .map(|(id, tenant)| {
+                    let current = owned.as_ref().and_then(|owned| owned.get(id));
+                    let recompute = track_owned
+                        && current.is_some_and(|current| {
+                            tenant.owned_recompute
+                                || tenant.owned_ranges_seen.as_ref() != Some(current)
+                        });
+                    if recompute {
+                        tenant.owned_ranges_seen = current.cloned();
+                        tenant.owned_recompute = false;
+                    }
+                    (id.clone(), (tenant.head_min, recompute))
+                })
                 .collect::<HashMap<_, _>>()
         };
         let per_shard = self.pool.install(|| {
@@ -1389,10 +1895,10 @@ impl Store {
                         .tenants
                         .iter_mut()
                         .map(|(tenant_id, tenant)| {
-                            let (head_min, _) = head_bounds
+                            let (head_min, recompute) = head_bounds
                                 .get(tenant_id)
                                 .copied()
-                                .unwrap_or((i64::MIN, i64::MIN));
+                                .unwrap_or((i64::MIN, false));
                             let ranges = owned.as_ref().map(|owned| owned.get(tenant_id));
                             let mut report = HeadReport {
                                 tenant: tenant_id.clone(),
@@ -1425,6 +1931,16 @@ impl Store {
                                     }
                                 };
                                 report.owned_series += u64::from(is_owned);
+                                if recompute && !is_owned {
+                                    // Mimir clears all active series when the tenant owns no
+                                    // ranges, and deletes the non-owned ones otherwise.
+                                    match ranges {
+                                        Some(Some(Some(ranges))) if !ranges.is_empty() => {
+                                            series.last_ingested_ms = i64::MIN
+                                        }
+                                        _ => series.active_cleared = true,
+                                    }
+                                }
                                 report.head_chunks += series
                                     .chunks
                                     .iter()
@@ -1470,6 +1986,7 @@ impl Store {
                     && tenant.max_time - tenant.head_min > CHUNK_RANGE_MS / 2 * 3
                 {
                     tenant.head_min = range_end(tenant.head_min);
+                    tenant.owned_recompute = true;
                 }
             }
             report.head_min_time = report.head_min_time.max(tenant.head_min);
@@ -1518,6 +2035,7 @@ impl Store {
                                 if series.last_ingested_ms < cutoff {
                                     return;
                                 }
+                                let active = !series.active_cleared;
                                 if series.tracker_generation != generation {
                                     series.tracker_matches = trackers.matching(labels).into();
                                     series.tracker_generation = generation;
@@ -1529,13 +2047,16 @@ impl Store {
                                     0
                                 };
                                 let counts = [1, u64::from(histogram), buckets];
-                                report.active += 1;
-                                report.active_native_histograms += counts[1];
-                                report.active_native_histogram_buckets += buckets;
-                                for index in series.tracker_matches.iter() {
-                                    let entry = &mut report.custom_trackers[usize::from(*index)].1;
-                                    for (total, count) in entry.iter_mut().zip(counts) {
-                                        *total += count;
+                                if active {
+                                    report.active += 1;
+                                    report.active_native_histograms += counts[1];
+                                    report.active_native_histogram_buckets += buckets;
+                                    for index in series.tracker_matches.iter() {
+                                        let entry =
+                                            &mut report.custom_trackers[usize::from(*index)].1;
+                                        for (total, count) in entry.iter_mut().zip(counts) {
+                                            *total += count;
+                                        }
                                     }
                                 }
                                 for (tracker, combinations) in
@@ -1736,7 +2257,7 @@ impl Store {
             let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
             for ((_, labels), _) in tenant.series.matching(&compiled).filter(|(_, series)| {
                 if active {
-                    series.last_ingested_ms >= cutoff
+                    series.is_active(cutoff)
                 } else {
                     head.holds(series)
                 }
@@ -1777,7 +2298,7 @@ impl Store {
             let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
             for ((_, labels), _) in tenant.series.matching(&compiled).filter(|(_, series)| {
                 if active {
-                    series.last_ingested_ms >= cutoff
+                    series.is_active(cutoff)
                 } else {
                     head.holds(series)
                 }
@@ -1873,7 +2394,7 @@ impl HeadView {
         let head_lower = self.head_min.max(self.min_time);
         let head = self.max_time != i64::MIN && start <= self.max_time && end >= head_lower;
         let blocks = (self.head_min != i64::MIN).then(|| {
-            let lower = start.div_euclid(CHUNK_RANGE_MS) * CHUNK_RANGE_MS;
+            let lower = range_start(start);
             let upper = range_end(end).min(self.head_min).saturating_sub(1);
             (lower, upper)
         });
@@ -1907,7 +2428,7 @@ fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64, head: HeadView) -
         .values()
         .filter(|series| {
             if active {
-                series.last_ingested_ms >= cutoff
+                series.is_active(cutoff)
             } else {
                 head.holds(series)
             }
@@ -1939,7 +2460,31 @@ struct SeriesContext<'a> {
     rules: AppendRules,
     keep_exemplars: bool,
     index: usize,
+    position: usize,
+    flush: u64,
+    ingested_ms: i64,
 }
+
+// A series of an `ingest_batch`, with the record it came from and its position in the batch.
+struct BatchSeries {
+    index: usize,
+    position: usize,
+    hash: u64,
+    series: DecodedSeries,
+    ingested_ms: i64,
+    rules: AppendRules,
+    flush: u64,
+}
+
+// A series' exemplars by (record index, position, flush, series hash), to add after its samples.
+type PendingExemplars = (
+    usize,
+    usize,
+    u64,
+    u64,
+    Arc<StoredLabels>,
+    Vec<cortexpb::Exemplar>,
+);
 
 // `decoded` has sorted, unique labels whose hash is `hash`.
 fn ingest_series(
@@ -1947,8 +2492,8 @@ fn ingest_series(
     disk: &mut ChunkDiskMapper,
     mut decoded: DecodedSeries,
     hash: u64,
-    now: i64,
     context: SeriesContext<'_>,
+    committed: &mut HashMap<(u64, u64), Committed>,
     outcome: &mut ShardOutcome,
 ) -> Result<()> {
     let decoded_labels = std::mem::take(&mut decoded.labels);
@@ -1958,6 +2503,7 @@ fn ingest_series(
     let Tenant {
         series: by_name,
         label_names,
+        block_ranges,
         ..
     } = tenant;
     let created = std::cell::Cell::new(false);
@@ -1996,6 +2542,10 @@ fn ingest_series(
     }
     let existed = has_samples(series);
     let rules = context.rules;
+    let committed = committed
+        .entry((context.flush, hash))
+        .or_insert_with(|| Committed::of(series))
+        .clone();
     // Like Mimir's active series tracker, the bucket count comes from the request's last
     // histogram when no float follows it.
     let last_float = decoded.samples.last().map(|sample| sample.timestamp_ms);
@@ -2007,6 +2557,23 @@ fn ingest_series(
     let mut accepted = 0_u64;
     let mut out_of_order = 0_u64;
     let mut chunks_created = 0_u64;
+    // The block range of the last accepted samples, with their oldest and newest.
+    let mut marked: Option<(i64, i64, i64)> = None;
+    let mut mark = |timestamp: i64| {
+        let range = range_start(timestamp);
+        match &mut marked {
+            Some((current, oldest, newest)) if *current == range => {
+                *oldest = (*oldest).min(timestamp);
+                *newest = (*newest).max(timestamp);
+            }
+            _ => {
+                if let Some((range, oldest, newest)) = marked {
+                    mark_block_range(block_ranges, range, oldest, newest);
+                }
+                marked = Some((range, timestamp, timestamp));
+            }
+        }
+    };
     let mut discard = |reason: DiscardReason| {
         *outcome
             .discarded
@@ -2027,15 +2594,34 @@ fn ingest_series(
             && first_histogram.is_none_or(|first| first >= sample.timestamp_ms)
         {
             created_pending = false;
-            if let Some(reason) =
-                append_created_zero(series, disk, &rules, ooo_merge::Value::Float(0.0), created)?
-            {
-                discard(reason);
+            match append_created_zero(
+                series,
+                disk,
+                &rules,
+                &committed,
+                ooo_merge::Value::Float(0.0),
+                created,
+            )? {
+                Ok(Some(appended)) => {
+                    accepted += 1;
+                    mark(created);
+                    count_appended(appended, &mut out_of_order, &mut chunks_created);
+                }
+                Ok(None) => {}
+                Err(reason) => discard(reason),
             }
         }
-        match append_float(series, disk, &rules, sample.timestamp_ms, sample.value)? {
+        match append_float(
+            series,
+            disk,
+            &rules,
+            &committed,
+            sample.timestamp_ms,
+            sample.value,
+        )? {
             Ok(appended) => {
                 accepted += 1;
+                mark(sample.timestamp_ms);
                 count_appended(appended, &mut out_of_order, &mut chunks_created);
             }
             Err(reason) => discard(reason),
@@ -2064,30 +2650,43 @@ fn ingest_series(
                 reset_hint: 1,
                 ..Default::default()
             };
-            if let Some(reason) = append_created_zero(
+            match append_created_zero(
                 series,
                 disk,
                 &rules,
+                &committed,
                 ooo_merge::Value::Histogram(Box::new(zero)),
                 created,
             )? {
-                discard(reason);
+                Ok(Some(appended)) => {
+                    accepted += 1;
+                    mark(created);
+                    count_appended(appended, &mut out_of_order, &mut chunks_created);
+                }
+                Ok(None) => {}
+                Err(reason) => discard(reason),
             }
         }
-        match append_histogram(series, disk, &rules, histogram)? {
+        let timestamp = histogram.timestamp;
+        match append_histogram(series, disk, &rules, &committed, histogram)? {
             Ok(appended) => {
                 accepted += 1;
+                mark(timestamp);
                 count_appended(appended, &mut out_of_order, &mut chunks_created);
             }
             Err(reason) => discard(reason),
         }
+    }
+    if let Some((range, oldest, newest)) = marked {
+        mark_block_range(block_ranges, range, oldest, newest);
     }
     if accepted > 0 {
         if let Some(bucket_count) = bucket_count {
             series.last_bucket_count = bucket_count;
         }
         series.native_histogram = bucket_count.is_some();
-        series.last_ingested_ms = now;
+        series.last_ingested_ms = context.ingested_ms;
+        series.active_cleared = false;
         *outcome.accepted.entry(context.index).or_default() += accepted;
     }
     if out_of_order > 0 {
@@ -2097,15 +2696,32 @@ fn ingest_series(
         *outcome.chunks_created.entry(context.index).or_default() += chunks_created;
     }
     // Exemplars need an existing series, like `AppendExemplar`.
+    if context.keep_exemplars && !decoded.exemplars.is_empty() && !existed && accepted == 0 {
+        outcome.exemplars_without_series += decoded.exemplars.len() as u64;
+    }
     if context.keep_exemplars && !decoded.exemplars.is_empty() && (existed || accepted > 0) {
         outcome.exemplars.push((
             context.index,
+            context.position,
+            context.flush,
             hash,
             Arc::clone(key_labels),
             decoded.exemplars,
         ));
     }
     Ok(())
+}
+
+// Mimir's soft error processor doesn't know `too-far-in-past`, so those samples are dropped
+// without being counted.
+fn count_early_discard(
+    discards: &mut HashMap<(usize, DiscardReason), u64>,
+    index: usize,
+    reason: DiscardReason,
+) {
+    if reason != DiscardReason::TooFarInPast {
+        *discards.entry((index, reason)).or_default() += 1;
+    }
 }
 
 fn count_appended(appended: Appended, out_of_order: &mut u64, chunks_created: &mut u64) {
@@ -2125,24 +2741,25 @@ fn append_created_zero(
     series: &mut Series,
     disk: &mut ChunkDiskMapper,
     rules: &AppendRules,
+    committed: &Committed,
     value: ooo_merge::Value,
     timestamp: i64,
-) -> Result<Option<DiscardReason>> {
-    match rules.classify(timestamp, series_max_time(series)) {
+) -> Result<Result<Option<Appended>, DiscardReason>> {
+    match rules.classify(timestamp, committed.max) {
         Ok(Append::InOrder) => {}
-        Ok(Append::Duplicate | Append::OutOfOrder) => return Ok(None),
-        Err(DiscardReason::OutOfOrder) => return Ok(None),
-        Err(reason) => return Ok(Some(reason)),
+        Ok(Append::Duplicate | Append::OutOfOrder) => return Ok(Ok(None)),
+        Err(DiscardReason::OutOfOrder) => return Ok(Ok(None)),
+        Err(reason) => return Ok(Err(reason)),
     }
-    match value {
+    // Counted as ingested when appended, like a successful `AppendSTZeroSample`.
+    Ok(Ok(match value {
         ooo_merge::Value::Float(value) => {
-            append_float(series, disk, rules, timestamp, value)?.ok();
+            append_float(series, disk, rules, committed, timestamp, value)?.ok()
         }
         ooo_merge::Value::Histogram(histogram) => {
-            append_histogram(series, disk, rules, *histogram)?.ok();
+            append_histogram(series, disk, rules, committed, *histogram)?.ok()
         }
-    }
-    Ok(None)
+    }))
 }
 
 // A series' newest and oldest samples; heads hold the newest when present.
@@ -2217,23 +2834,28 @@ fn append_float(
     series: &mut Series,
     disk: &mut ChunkDiskMapper,
     rules: &AppendRules,
+    committed: &Committed,
     timestamp: i64,
     value: f64,
 ) -> Result<Result<Appended, DiscardReason>> {
-    let series_max = series_max_time(series);
-    match rules.classify(timestamp, series_max) {
+    match rules.classify(timestamp, committed.max) {
         Err(reason) => return Ok(Err(reason)),
         Ok(Append::Duplicate) => {
-            let last = series.float_head.as_ref().and_then(|head| {
-                (head.appender.last_timestamp() == Some(timestamp))
-                    .then(|| head.appender.last_value())
-                    .flatten()
-            });
-            return Ok(match last {
-                Some(last) if last.to_bits() == value.to_bits() => Ok(Appended::Noop),
+            return Ok(match committed.last_float {
+                Some((last_timestamp, bits))
+                    if last_timestamp == timestamp && bits == value.to_bits() =>
+                {
+                    Ok(Appended::Noop)
+                }
                 _ => Err(DiscardReason::NewValueForTimestamp),
             });
         }
+        Ok(Append::OutOfOrder | Append::InOrder) => {}
+    }
+    // Like Prometheus's commit, the accepted sample is checked again against the series as this
+    // flush left it, and anything that no longer fits is dropped without an error.
+    match rules.classify(timestamp, series_max_time(series)) {
+        Err(_) | Ok(Append::Duplicate) => return Ok(Ok(Appended::Noop)),
         Ok(Append::OutOfOrder) => {
             return insert_out_of_order(series, disk, timestamp, ooo_merge::Value::Float(value))
                 .map(Ok);
@@ -2277,13 +2899,17 @@ fn append_histogram(
     series: &mut Series,
     disk: &mut ChunkDiskMapper,
     rules: &AppendRules,
+    committed: &Committed,
     histogram: cortexpb::Histogram,
 ) -> Result<Result<Appended, DiscardReason>> {
-    let series_max = series_max_time(series);
-    match rules.classify(histogram.timestamp, series_max) {
+    // Like the head appender, invalid histograms are rejected before anything else.
+    if !histogram::is_valid(&histogram) {
+        return Ok(Err(DiscardReason::InvalidNativeHistogram));
+    }
+    match rules.classify(histogram.timestamp, committed.max) {
         Err(reason) => return Ok(Err(reason)),
         Ok(Append::Duplicate) => {
-            return Ok(match series.histogram_head.last() {
+            return Ok(match &committed.last_histogram {
                 Some(last)
                     if last.timestamp == histogram.timestamp
                         && histogram::equal_values(last, &histogram) =>
@@ -2293,6 +2919,11 @@ fn append_histogram(
                 _ => Err(DiscardReason::NewValueForTimestamp),
             });
         }
+        Ok(Append::OutOfOrder | Append::InOrder) => {}
+    }
+    // Checked again when committing, like floats.
+    match rules.classify(histogram.timestamp, series_max_time(series)) {
+        Err(_) | Ok(Append::Duplicate) => return Ok(Ok(Appended::Noop)),
         Ok(Append::OutOfOrder) => {
             let timestamp = histogram.timestamp;
             return insert_out_of_order(
@@ -2305,23 +2936,56 @@ fn append_histogram(
         }
         Ok(Append::InOrder) => {}
     }
-    if let Some(last) = series.histogram_head.last() {
-        if histogram.timestamp <= last.timestamp {
-            return Ok(Ok(Appended::Noop));
+    let timestamp = histogram.timestamp;
+    // Prometheus's `histogramsAppendPreprocessor`: cut on the estimated end time or twice the
+    // target size, with at least a few samples unless a new block range starts.
+    if let Some(head) = &series.histogram_head.0 {
+        let samples = head.len();
+        let bytes = head.encoded_len();
+        let next_range_start = if series.histogram_end_computed {
+            range_end(head.first_timestamp())
+        } else {
+            series.histogram_next_at
+        };
+        if !series.histogram_end_computed && bytes >= TARGET_BYTES_PER_HISTOGRAM_CHUNK / 4 {
+            series.histogram_next_at = compute_chunk_end_time(
+                head.first_timestamp(),
+                head.last().timestamp,
+                series.histogram_next_at,
+                TARGET_BYTES_PER_HISTOGRAM_CHUNK as f64 / bytes as f64,
+            );
+            series.histogram_end_computed = true;
         }
-        if series.histogram_head.len() >= SAMPLES_PER_CHUNK
-            || histogram.timestamp >= series.histogram_next_at
-            || !histogram::compatible(last, &histogram)
+        if (timestamp >= series.histogram_next_at || bytes >= TARGET_BYTES_PER_HISTOGRAM_CHUNK * 2)
+            && (samples >= MIN_SAMPLES_PER_HISTOGRAM_CHUNK || timestamp >= next_range_start)
         {
+            let next = histogram::HistogramAppender::new(histogram, Some(head));
             cut_histogram_head(series, disk)?;
+            series.histogram_head = HistogramHead(Some(next));
+            series.histogram_next_at = range_end(timestamp);
+            series.histogram_end_computed = false;
+            return Ok(Ok(Appended::InOrder { opened: true }));
         }
     }
-    let opened = series.histogram_head.is_empty();
-    if opened {
-        series.histogram_next_at = range_end(histogram.timestamp);
+    let Some(head) = &mut series.histogram_head.0 else {
+        series.histogram_head =
+            HistogramHead(Some(histogram::HistogramAppender::new(histogram, None)));
+        series.histogram_next_at = range_end(timestamp);
+        series.histogram_end_computed = false;
+        return Ok(Ok(Appended::InOrder { opened: true }));
+    };
+    match head.append(histogram) {
+        histogram::Appended::InChunk | histogram::Appended::Recoded => {
+            Ok(Ok(Appended::InOrder { opened: false }))
+        }
+        histogram::Appended::NewChunk(next) => {
+            cut_histogram_head(series, disk)?;
+            series.histogram_head = HistogramHead(Some(*next));
+            series.histogram_next_at = range_end(timestamp);
+            series.histogram_end_computed = false;
+            Ok(Ok(Appended::InOrder { opened: true }))
+        }
     }
-    series.histogram_head.push(histogram);
-    Ok(Ok(Appended::InOrder { opened }))
 }
 
 fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
@@ -2425,8 +3089,13 @@ fn write_chunk(
     Ok(())
 }
 
+// Saturating, since lookups ask for ranges up to the ends of i64.
+fn range_start(timestamp: i64) -> i64 {
+    timestamp.saturating_sub(timestamp.rem_euclid(CHUNK_RANGE_MS))
+}
+
 fn range_end(timestamp: i64) -> i64 {
-    (timestamp.div_euclid(CHUNK_RANGE_MS) + 1) * CHUNK_RANGE_MS
+    range_start(timestamp).saturating_add(CHUNK_RANGE_MS)
 }
 
 // Port of Prometheus computeChunkEndTime: spread the remaining range evenly over chunks of the
@@ -2689,7 +3358,14 @@ impl CompiledMatcher {
 
 fn matches(labels: &[StoredLabel], matchers: &[CompiledMatcher]) -> bool {
     matchers.iter().all(|matcher| match matcher {
-        CompiledMatcher::Shard(index, count) => labels_hash(labels) % count == *index,
+        CompiledMatcher::Shard(index, count) => {
+            stable_hash_pairs(
+                labels
+                    .iter()
+                    .map(|(name, value)| (name.as_ref(), value.as_str())),
+            ) % count
+                == *index
+        }
         _ => {
             let name = matcher.label_name().expect("label matcher");
             let value = labels
@@ -2721,8 +3397,8 @@ fn labels_hash(labels: &[StoredLabel]) -> u64 {
     )
 }
 
-// Matches Go's labels hash so query sharding agrees with the Go ingesters; the buffer is reused
-// because ingest hashes every incoming series.
+// Go's `labels.Hash` of stringlabels; the buffer is reused because ingest hashes every incoming
+// series.
 fn hash_label_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> u64 {
     thread_local! {
         static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -2752,6 +3428,24 @@ fn encode_label_size(bytes: &mut Vec<u8>, size: usize) {
         bytes.push((size >> 8) as u8);
         bytes.push((size >> 16) as u8);
     }
+}
+
+/// Go's `labels.StableHash`, which the head shards queries by and Mimir's ingest pusher routes
+/// series with.
+fn stable_hash_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> u64 {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    BUFFER.with_borrow_mut(|bytes| {
+        bytes.clear();
+        for (name, value) in pairs {
+            bytes.extend_from_slice(name.as_bytes());
+            bytes.push(0xff);
+            bytes.extend_from_slice(value.as_bytes());
+            bytes.push(0xff);
+        }
+        xxhash64(bytes)
+    })
 }
 
 fn xxhash64(bytes: &[u8]) -> u64 {
@@ -3002,7 +3696,8 @@ mod tests {
                 offset: 0,
                 length: buckets,
             }],
-            positive_deltas: vec![1; buckets as usize],
+            // One observation per bucket, so the count matches like `Histogram.Validate` wants.
+            positive_deltas: (0..buckets).map(|bucket| i64::from(bucket == 0)).collect(),
             ..Default::default()
         }
     }
@@ -3120,7 +3815,136 @@ mod tests {
     }
 
     #[test]
-    fn cuts_histogram_chunks_on_size_and_layout_changes() {
+    fn keeps_every_sample_type_of_a_series() {
+        let store = Store::default();
+        let mut request = series_request("mixed", [(1_000, 12.5)]);
+        request.series[0].created_timestamp = 500;
+        let mut float = histogram_at(1_200, 1);
+        float.count = Some(cortexpb::histogram::Count::CountFloat(1.0));
+        float.positive_deltas = Vec::new();
+        float.positive_counts = vec![1.0];
+        request.series[0].histograms = vec![histogram_at(1_100, 1), float];
+        store.ingest("tenant", request).unwrap();
+        let chunks = query(&store, 0, 2_000);
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|chunk| (chunk.start_timestamp_ms, chunk.end_timestamp_ms))
+                .collect::<Vec<_>>(),
+            [(500, 1_000), (1_100, 1_100), (1_200, 1_200)]
+        );
+    }
+
+    #[test]
+    fn shards_like_the_go_ingester() {
+        // labels.StableHash values from Go.
+        let hash = |pairs: &[(&str, &str)]| stable_hash_pairs(pairs.iter().copied());
+        assert_eq!(
+            hash(&[("__name__", "up"), ("job", "api")]),
+            2_852_606_813_363_628_783
+        );
+        assert_eq!(
+            hash(&[("__name__", "sharded"), ("n", "1")]),
+            609_427_224_681_409_917
+        );
+        let store = Store::default();
+        let mut request = series_request("sharded", [(1_000, 1.0)]);
+        request.series[0].labels.push(("n".into(), "1".into()));
+        store.ingest("tenant", request).unwrap();
+        let shard = |value: &str| {
+            store
+                .select_chunks(
+                    "tenant",
+                    i64::MIN,
+                    i64::MAX,
+                    &[cortex::LabelMatcher {
+                        r#type: 0,
+                        name: "__query_shard__".into(),
+                        value: value.into(),
+                    }],
+                )
+                .unwrap()
+                .len()
+        };
+        let index = 609_427_224_681_409_917_u64 % 3;
+        assert_eq!(shard(&format!("{}_of_3", index + 1)), 1);
+        assert_eq!(shard(&format!("{}_of_3", (index + 1) % 3 + 1)), 0);
+        // Mimir's idealShardsFor.
+        let pusher = PusherShards {
+            max: 2,
+            ..PusherShards::default()
+        };
+        assert_eq!(pusher.count(2 * 200 * 150 * 40 - 1, 150), 1);
+        assert_eq!(pusher.count(2 * 200 * 150 * 40, 150), 2);
+        assert_eq!(pusher.count(usize::MAX, 150), 2);
+        assert_eq!(pusher.count(usize::MAX, 0), 1);
+    }
+
+    #[test]
+    fn lookups_over_the_whole_time_range_see_compacted_blocks() {
+        let store = Store::default();
+        let start = 10 * HOUR;
+        let mut request = series_request(
+            "long",
+            (0..=300).map(|minute| (start + minute * 60_000, 1.0)),
+        );
+        let old = series_request("old", [(start, 1.0)]).series.remove(0);
+        request.series.push(old);
+        store.ingest("tenant", request).unwrap();
+        store.head_tick(true, false);
+        let names = |start, end| {
+            store
+                .label_values("tenant", "__name__", start, end, &[])
+                .unwrap()
+        };
+        assert_eq!(names(12 * HOUR, 15 * HOUR), ["long"]);
+        assert_eq!(names(0, i64::MAX), ["long", "old"]);
+        assert_eq!(names(i64::MIN, i64::MAX), ["long", "old"]);
+        let (_, blocks) = store
+            .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap();
+        assert_eq!(
+            blocks
+                .iter()
+                .map(|block| (block.generation.as_str(), block.series))
+                .collect::<Vec<_>>(),
+            [("0", 1), ("1", 2)]
+        );
+    }
+
+    #[test]
+    fn keeps_dense_histograms_in_one_chunk_like_the_prometheus_head() {
+        let store = store_with(out_of_order_limits());
+        let base = 1_790_568_000_000;
+        let histograms = (0..300)
+            .map(|index| {
+                let timestamp = base + index * 10;
+                cortexpb::Histogram {
+                    sum: (timestamp % 997) as f64,
+                    ..histogram_at(timestamp, 5)
+                }
+            })
+            .collect();
+        let mut request = series_request("dense", []);
+        request.series[0].histograms = histograms;
+        store.ingest("tenant", request).unwrap();
+        // A Prometheus head, given the same samples, keeps them in one 918-byte chunk.
+        let chunks = query(&store, i64::MIN, i64::MAX);
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|chunk| (
+                    chunk.start_timestamp_ms - base,
+                    chunk.end_timestamp_ms - base,
+                    chunk.data.len()
+                ))
+                .collect::<Vec<_>>(),
+            [(0, 2_990, 918)]
+        );
+    }
+
+    #[test]
+    fn appends_histograms_like_the_prometheus_head() {
         let store = store_with(out_of_order_limits());
         let request = |histograms: Vec<cortexpb::Histogram>| DecodedRequest {
             source: 0,
@@ -3136,9 +3960,11 @@ mod tests {
         store
             .ingest(
                 "tenant",
-                request((0..300).map(|t| histogram_at(1_000 + t * 10, 5)).collect()),
+                request((0..20).map(|t| histogram_at(1_000 + t * 10, 5)).collect()),
             )
             .unwrap();
+        // More buckets recode the open chunk instead of cutting it; the older sample waits in the
+        // out-of-order chunk.
         store
             .ingest(
                 "tenant",
@@ -3146,15 +3972,16 @@ mod tests {
             )
             .unwrap();
         with_series(&store, |series| {
-            let spans = series
-                .chunks
-                .iter()
-                .map(|chunk| (chunk.min_time, chunk.max_time))
-                .collect::<Vec<_>>();
-            assert_eq!(spans, vec![(1_000, 2_190), (2_200, 3_390), (3_400, 3_990)]);
-            // Like Prometheus's OOO head, the out-of-order histogram waits in the open OOO chunk.
+            assert!(series.chunks.is_empty());
             assert_eq!(series.out_of_order.len(), 1);
-            assert_eq!(series.histogram_head.len(), 1);
+            assert_eq!(
+                series
+                    .histogram_head
+                    .0
+                    .as_ref()
+                    .map_or(0, |head| head.len()),
+                21
+            );
             assert_eq!(series.last_bucket_count, 5);
         });
         let chunks = query(&store, 3_500, 10_000);
@@ -3163,8 +3990,25 @@ mod tests {
                 .iter()
                 .map(|chunk| (chunk.start_timestamp_ms, chunk.end_timestamp_ms))
                 .collect::<Vec<_>>(),
-            vec![(3_400, 3_990), (10_000, 10_000)]
+            vec![(1_000, 10_000)]
         );
+        // A counter reset starts a new chunk.
+        let mut reset = histogram_at(11_000, 7);
+        reset.positive_deltas = vec![0; 7];
+        reset.count = Some(cortexpb::histogram::Count::CountInt(0));
+        store.ingest("tenant", request(vec![reset])).unwrap();
+        with_series(&store, |series| {
+            assert_eq!(
+                series
+                    .chunks
+                    .iter()
+                    .map(|chunk| (chunk.min_time, chunk.max_time))
+                    .collect::<Vec<_>>(),
+                vec![(1_000, 10_000)]
+            );
+            let head = series.histogram_head.0.as_ref().unwrap();
+            assert_eq!(head.header(), histogram::Header::CounterReset);
+        });
     }
 
     #[test]
@@ -3231,7 +4075,7 @@ mod tests {
                     series: vec![
                         series(Some("up"), "a", now),
                         series(Some("up"), "b", now),
-                        series(Some("down"), "a", now - 10 * CHUNK_RANGE_MS),
+                        series(Some("down"), "a", now - 1_000),
                         series(None, "a", now),
                     ],
                     metadata: Vec::new(),
@@ -3345,6 +4189,7 @@ mod tests {
                 },
                 ingested_ms: 0,
                 track_rate: false,
+                bytes: 0,
             })
             .collect()
     }
@@ -3419,6 +4264,7 @@ mod tests {
                 request: float_request([(timestamp, timestamp as f64)]),
                 ingested_ms: 0,
                 track_rate: false,
+                bytes: 0,
             })
             .collect();
         store.ingest_batch(batch).unwrap();
@@ -3553,15 +4399,17 @@ mod tests {
     }
 
     #[test]
-    fn head_max_time_is_per_tenant_and_taken_per_record() {
+    fn head_max_time_is_per_tenant_and_taken_per_flush() {
         let store = store_with(Limits::default());
         let record = |tenant: &str, name: &str, timestamp: i64| IngestRecord {
             tenant: tenant.into(),
             request: series_request(name, [(timestamp, 1.0)]),
             ingested_ms: 0,
             track_rate: false,
+            bytes: 0,
         };
-        // In one batch, the second record sees the first one's samples, like a new appender.
+        // An empty head takes its max time from the flush's first sample, like the head's
+        // initAppender.
         store
             .ingest_batch(vec![
                 record("per-record", "a", 10 * HOUR),
@@ -3574,7 +4422,10 @@ mod tests {
             samples_of(&store, "per-record-other", "b"),
             [(8 * HOUR, 1.0)]
         );
-        // Samples of the same record are checked against the head before it.
+        // A head with samples keeps the max time it had when the flush's appender was created.
+        store
+            .ingest_batch(vec![record("same-record", "a", 8 * HOUR)])
+            .unwrap();
         store
             .ingest_batch(vec![IngestRecord {
                 tenant: "same-record".into(),
@@ -3582,15 +4433,19 @@ mod tests {
                     source: 0,
                     series: vec![
                         series_request("a", [(10 * HOUR, 1.0)]).series.remove(0),
-                        series_request("b", [(8 * HOUR, 1.0)]).series.remove(0),
+                        series_request("b", [(7 * HOUR + 1, 1.0)]).series.remove(0),
                     ],
                     metadata: Vec::new(),
                 },
                 ingested_ms: 0,
                 track_rate: false,
+                bytes: 0,
             }])
             .unwrap();
-        assert_eq!(samples_of(&store, "same-record", "b"), [(8 * HOUR, 1.0)]);
+        assert_eq!(
+            samples_of(&store, "same-record", "b"),
+            [(7 * HOUR + 1, 1.0)]
+        );
     }
 
     #[test]
@@ -3612,7 +4467,8 @@ mod tests {
             .unwrap();
         assert_eq!(samples_of(&store, tenant, "a"), [(now, 2.0)]);
         assert_eq!(discarded(DiscardReason::TooFarInFuture, tenant), 1);
-        assert_eq!(discarded(DiscardReason::TooFarInPast, tenant), 1);
+        // Mimir's ingest pusher drops samples past the grace period without counting them.
+        assert_eq!(discarded(DiscardReason::TooFarInPast, tenant), 0);
     }
 
     #[test]
@@ -3758,6 +4614,74 @@ mod tests {
             exemplar_timestamps(&store, tenant)[1],
             ("b".into(), vec![3])
         );
+    }
+
+    #[test]
+    fn owned_series_recompute_removes_non_owned_active_series_like_mimir() {
+        let tenant = "owned";
+        let store = store_with(Limits {
+            cost_attribution_trackers: Arc::new(
+                crate::trackers::CostAttributionTrackers::from_value(&serde_json::json!({
+                    "by-name": {"labels": [{"input": "__name__"}]},
+                }))
+                .unwrap(),
+            ),
+            max_cost_attribution_cardinality: 10,
+            ..Limits::default()
+        });
+        let ingest = |name: &str| {
+            store
+                .ingest(tenant, series_request(name, [(now_ms(), 1.0)]))
+                .unwrap();
+        };
+        ingest("a");
+        ingest("b");
+        let report = || {
+            let report = store
+                .active_series_report()
+                .into_iter()
+                .find(|report| report.tenant == tenant)
+                .unwrap();
+            let attributed = report.cost_attribution[0]
+                .values
+                .iter()
+                .map(|(_, counts)| counts[0])
+                .sum::<u64>();
+            (report.active, attributed)
+        };
+        let owned = |ranges: Option<Vec<u32>>| {
+            store.set_owned_ranges(HashMap::from([(tenant.to_owned(), ranges)]));
+            store.head_tick(false, true)[0].owned_series
+        };
+        // Without tracking, owned series never change the active series.
+        store.set_owned_ranges(HashMap::from([(tenant.to_owned(), None)]));
+        store.head_tick(false, false);
+        assert_eq!(report(), (2, 2));
+        // Owning no ranges clears the active series but keeps cost attribution counting them.
+        assert_eq!(owned(None), 0);
+        assert_eq!(report(), (0, 2));
+        ingest("a");
+        assert_eq!(report(), (1, 2));
+        // Unchanged ranges don't recompute, so the new sample stays active.
+        assert_eq!(owned(None), 0);
+        assert_eq!(report(), (1, 2));
+        // Owning only a's hash deletes b, cost attribution included.
+        ingest("b");
+        assert_eq!(report(), (2, 2));
+        let hash = store
+            .per_shard(tenant, |tenant, _| {
+                tenant
+                    .series
+                    .iter()
+                    .map(|(_, series)| series.owned_hash)
+                    .collect::<Vec<_>>()
+            })
+            .into_iter()
+            .flatten()
+            .min()
+            .unwrap();
+        assert_eq!(owned(Some(vec![hash, hash])), 1);
+        assert_eq!(report().0, 1);
     }
 
     #[test]
