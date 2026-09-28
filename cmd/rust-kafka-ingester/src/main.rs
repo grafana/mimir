@@ -1034,13 +1034,29 @@ struct Accounting {
 // The Go ingester's hardcoded `HeadCompactionIntervalWhileStarting`.
 const HEAD_COMPACTION_INTERVAL_WHILE_STARTING: Duration = Duration::from_secs(30);
 
-fn compaction_due(since_last: Duration, interval: Duration, serving: bool) -> bool {
-    let interval = if serving {
-        interval
-    } else {
-        interval.min(HEAD_COMPACTION_INTERVAL_WHILE_STARTING)
-    };
-    since_last >= interval
+/// Like the Go ingester's compaction loop, compactions wait for an interval, which is shorter while
+/// it replays at startup. The head snapshot doesn't keep the head's min time, so the first check
+/// compacts: Go's head resumes from its WAL already compacted.
+#[derive(Default)]
+struct CompactionSchedule {
+    last: Option<Instant>,
+}
+
+impl CompactionSchedule {
+    fn due(&mut self, now: Instant, interval: Duration, serving: bool) -> bool {
+        let interval = if serving {
+            interval
+        } else {
+            interval.min(HEAD_COMPACTION_INTERVAL_WHILE_STARTING)
+        };
+        let due = self
+            .last
+            .is_none_or(|last| now.saturating_duration_since(last) >= interval);
+        if due {
+            self.last = Some(now);
+        }
+        due
+    }
 }
 
 // Refreshes the ingester metrics on Mimir's schedules: active series every update period, the head,
@@ -1070,19 +1086,14 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
     let head_store = Arc::clone(&store);
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(head_period);
-        // Like the Go ingester's compaction loop, compactions wait for an interval, which is
-        // shorter while it replays at startup.
-        let mut last_compaction = Instant::now();
+        let mut schedule = CompactionSchedule::default();
         loop {
             ticker.tick().await;
-            let compact = compaction_due(
-                last_compaction.elapsed(),
+            let compact = schedule.due(
+                Instant::now(),
                 compaction_interval,
                 serving.load(Ordering::Relaxed),
             );
-            if compact {
-                last_compaction = Instant::now();
-            }
             let store = Arc::clone(&head_store);
             match tokio::task::spawn_blocking(move || {
                 let reports = store.head_tick(compact, owned_series);
@@ -1631,6 +1642,8 @@ fn summary(request: DecodedRequest) -> Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mimir_rust_kafka_ingester::proto::cortexpb;
+    use mimir_rust_kafka_ingester::record::DecodedSeries;
 
     #[tokio::test]
     async fn graceful_shutdown_gives_up_on_stuck_requests() {
@@ -1657,20 +1670,16 @@ mod tests {
     }
 
     #[test]
-    fn head_compacts_more_often_while_replaying_like_the_go_ingester() {
+    fn head_compacts_at_once_then_more_often_while_replaying_like_the_go_ingester() {
         let interval = Duration::from_secs(15 * 60);
-        assert!(!compaction_due(Duration::from_secs(29), interval, false));
-        assert!(compaction_due(Duration::from_secs(30), interval, false));
-        assert!(!compaction_due(Duration::from_secs(30), interval, true));
-        assert!(compaction_due(interval, interval, true));
-        assert!(compaction_due(
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-            false
-        ));
+        let start = Instant::now();
+        let mut schedule = CompactionSchedule::default();
+        assert!(schedule.due(start, interval, false));
+        assert!(!schedule.due(start + Duration::from_secs(29), interval, false));
+        assert!(schedule.due(start + Duration::from_secs(30), interval, false));
+        assert!(!schedule.due(start + Duration::from_secs(60), interval, true));
+        assert!(schedule.due(start + Duration::from_secs(30) + interval, interval, true));
     }
-    use mimir_rust_kafka_ingester::proto::cortexpb;
-    use mimir_rust_kafka_ingester::record::DecodedSeries;
 
     #[test]
     fn coverage_only_moves_forward() {
