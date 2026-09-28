@@ -371,7 +371,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           // Two variants with distinct messages: invalid stored data fails the affected tenant's
           // queries but is not an engine defect; any other recovered panic likely indicates an
-          // engine bug.
+          // engine bug. Invalid data recurs on every evaluation over the same series, so that
+          // variant waits for a sustained rate; the other fires on a single panic.
           alert: $.alertName('QueryEngineEvaluationPanics'),
           expr: |||
             sum by (%(alert_aggregation_labels)s, reason) (
@@ -388,12 +389,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('QueryEngineEvaluationPanics'),
+          // increase() alone misses the first panic for a tenant and reason: the counter series is
+          // created with that panic already counted, and increase() needs two samples. The second
+          // clause catches a series that did not exist one interval ago.
           expr: |||
             sum by (%(alert_aggregation_labels)s, reason) (
-              rate(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[%(rate_interval)s])
+              increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[%(rate_interval)s])
+              or
+              (
+                cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}
+                unless
+                cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"} offset %(rate_interval)s
+              )
             ) > 0
           ||| % ($._config { rate_interval: $.rateInterval('5m') }),
-          'for': '15m',
           labels: {
             severity: 'warning',
           },
