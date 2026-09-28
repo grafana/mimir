@@ -13,7 +13,9 @@ use rdkafka::statistics::Statistics;
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::Timeout;
 
-use crate::record::{DecodedRequest, decode_record};
+use bytes::Bytes;
+
+use crate::record::{DecodedRequest, decode_record, decode_record_bytes};
 
 #[derive(Clone, Copy)]
 pub enum OffsetAt {
@@ -45,14 +47,14 @@ pub struct RawRecord {
     pub timestamp_ms: i64,
     pub tenant: String,
     pub version: u32,
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Bytes>,
 }
 
 impl RawRecord {
     pub fn decode(&self) -> Option<Result<DecodedRequest>> {
         self.payload
-            .as_deref()
-            .map(|payload| decode_record(self.version, payload))
+            .clone()
+            .map(|payload| decode_record_bytes(self.version, payload))
     }
 }
 
@@ -273,7 +275,7 @@ impl PartitionClient {
                 .map(|key| String::from_utf8_lossy(key).into_owned())
                 .unwrap_or_default(),
             version: record_version(message.headers()),
-            payload: message.payload().map(<[u8]>::to_vec),
+            payload: message.payload().map(Bytes::copy_from_slice),
         };
         let high_watermark = self
             .high_watermark

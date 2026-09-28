@@ -7,6 +7,7 @@ use std::ops::Deref;
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use prost::Message;
+use prost::encoding::{DecodeContext, WireType, decode_key, decode_varint, skip_field};
 
 use crate::proto::cortexpb;
 
@@ -59,10 +60,12 @@ pub struct LabelStr(Bytes);
 impl LabelStr {
     /// Invalid UTF-8 is replaced like `String::from_utf8_lossy`.
     pub fn from_utf8_lossy(bytes: Bytes) -> Self {
-        match std::str::from_utf8(&bytes) {
-            Ok(_) => Self(bytes),
-            Err(_) => Self::from(String::from_utf8_lossy(&bytes).into_owned()),
+        // Label names and values are nearly always ASCII, which is checked inline a word at a
+        // time.
+        if bytes.is_ascii() || std::str::from_utf8(&bytes).is_ok() {
+            return Self(bytes);
         }
+        Self::from(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     pub fn as_str(&self) -> &str {
@@ -188,32 +191,61 @@ pub struct DecodedRequest {
 }
 
 pub fn decode_record(version: u32, bytes: &[u8]) -> Result<DecodedRequest> {
+    decode_record_bytes(version, Bytes::copy_from_slice(bytes))
+}
+
+/// Like `decode_record`, with label fields as slices of `bytes`.
+pub fn decode_record_bytes(version: u32, bytes: Bytes) -> Result<DecodedRequest> {
     if version > 2 {
         bail!("unsupported ingest-storage record version {version}");
     }
-    // Decoding from `Bytes` makes label fields slices of one copy of the record.
-    let request = cortexpb::WriteRequest::decode(Bytes::copy_from_slice(bytes))
-        .context("decode WriteRequest")?;
     if version < 2 {
-        return decode_v1(request);
+        return decode_v1(&bytes).context("decode WriteRequest");
     }
+    let request = cortexpb::WriteRequest::decode(bytes).context("decode WriteRequest")?;
     decode_v2(request)
 }
 
-fn decode_v1(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
-    let series = request
-        .timeseries
-        .into_iter()
-        .map(|ts| DecodedSeries {
-            labels: decode_pairs(ts.labels),
-            samples: ts.samples,
-            histograms: ts.histograms,
-            exemplars: ts.exemplars,
-            created_timestamp: ts.created_timestamp,
-        })
-        .collect();
-    let metadata = request
-        .metadata
+// Records are mostly series labels, and building prost's messages for them and converting those
+// cost several times reading the fields directly. Decodes like `cortexpb::WriteRequest::decode`,
+// with the rarer messages left to prost.
+fn decode_v1(record: &Bytes) -> Result<DecodedRequest> {
+    let ctx = DecodeContext::default();
+    let mut buf = &record[..];
+    let mut source = 0;
+    let mut series = Vec::new();
+    let mut metadata = Vec::new();
+    while !buf.is_empty() {
+        let (tag, wire_type) = decode_key(&mut buf)?;
+        match tag {
+            1 => series.push(decode_series(
+                record,
+                length_delimited(wire_type, &mut buf)?,
+            )?),
+            2 => source = varint(wire_type, &mut buf)? as i32,
+            3 => metadata.push(cortexpb::MetricMetadata::decode(length_delimited(
+                wire_type, &mut buf,
+            )?)?),
+            // Remote write 2 fields, which a version 1 record does not use but prost validates.
+            4 => {
+                String::from_utf8(length_delimited(wire_type, &mut buf)?.to_vec())
+                    .context("invalid string value: data is not UTF-8 encoded")?;
+            }
+            5 => {
+                cortexpb::TimeSeriesRw2::decode(length_delimited(wire_type, &mut buf)?)?;
+            }
+            _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
+        }
+    }
+    Ok(DecodedRequest {
+        source,
+        series,
+        metadata: v1_metadata(metadata),
+    })
+}
+
+fn v1_metadata(metadata: Vec<cortexpb::MetricMetadata>) -> Vec<cortexpb::MetricMetadata> {
+    metadata
         .into_iter()
         .filter_map(|mut item| {
             item.metric_family_name =
@@ -222,12 +254,7 @@ fn decode_v1(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
                 && (item.r#type != 0 || !item.help.is_empty() || !item.unit.is_empty()))
             .then_some(item)
         })
-        .collect();
-    Ok(DecodedRequest {
-        source: request.source,
-        series,
-        metadata,
-    })
+        .collect()
 }
 
 fn normalize_metadata_name(name: &str, metric_type: i32) -> String {
@@ -333,21 +360,269 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
     })
 }
 
-fn decode_pairs(pairs: Vec<cortexpb::LabelPair>) -> Vec<(LabelStr, LabelStr)> {
-    pairs
-        .into_iter()
-        .map(|pair| {
-            (
-                LabelStr::from_utf8_lossy(pair.name),
-                LabelStr::from_utf8_lossy(pair.value),
-            )
-        })
-        .collect()
+fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<DecodedSeries> {
+    let ctx = DecodeContext::default();
+    let mut series = DecodedSeries {
+        labels: Vec::with_capacity(20),
+        samples: Vec::new(),
+        histograms: Vec::new(),
+        exemplars: Vec::new(),
+        created_timestamp: 0,
+    };
+    while !buf.is_empty() {
+        let (tag, wire_type) = decode_key(&mut buf)?;
+        match tag {
+            1 => {
+                let mut pair = length_delimited(wire_type, &mut buf)?;
+                let (mut name, mut value): (&[u8], &[u8]) = (&[], &[]);
+                while !pair.is_empty() {
+                    let (tag, wire_type) = decode_key(&mut pair)?;
+                    match tag {
+                        1 => name = length_delimited(wire_type, &mut pair)?,
+                        2 => value = length_delimited(wire_type, &mut pair)?,
+                        _ => skip_field(wire_type, tag, &mut pair, ctx.clone())?,
+                    }
+                }
+                series
+                    .labels
+                    .push((label(record, name), label(record, value)));
+            }
+            2 => {
+                let mut sample_buf = length_delimited(wire_type, &mut buf)?;
+                let mut sample = cortexpb::Sample::default();
+                while !sample_buf.is_empty() {
+                    let (tag, wire_type) = decode_key(&mut sample_buf)?;
+                    match tag {
+                        1 => {
+                            check_wire_type(WireType::SixtyFourBit, wire_type)?;
+                            let (bits, rest) = sample_buf
+                                .split_first_chunk::<8>()
+                                .context("buffer underflow")?;
+                            sample.value = f64::from_le_bytes(*bits);
+                            sample_buf = rest;
+                        }
+                        2 => sample.timestamp_ms = varint(wire_type, &mut sample_buf)? as i64,
+                        _ => skip_field(wire_type, tag, &mut sample_buf, ctx.clone())?,
+                    }
+                }
+                series.samples.push(sample);
+            }
+            3 => {
+                let exemplar = length_delimited(wire_type, &mut buf)?;
+                series
+                    .exemplars
+                    .push(cortexpb::Exemplar::decode(record.slice_ref(exemplar))?);
+            }
+            4 => series
+                .histograms
+                .push(cortexpb::Histogram::decode(length_delimited(
+                    wire_type, &mut buf,
+                )?)?),
+            6 => series.created_timestamp = varint(wire_type, &mut buf)? as i64,
+            _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
+        }
+    }
+    Ok(series)
+}
+
+fn label(record: &Bytes, bytes: &[u8]) -> LabelStr {
+    if bytes.is_empty() {
+        return LabelStr::default();
+    }
+    LabelStr::from_utf8_lossy(record.slice_ref(bytes))
+}
+
+fn check_wire_type(expected: WireType, actual: WireType) -> Result<()> {
+    if expected != actual {
+        bail!("invalid wire type: {actual:?} (expected {expected:?})");
+    }
+    Ok(())
+}
+
+fn varint(wire_type: WireType, buf: &mut &[u8]) -> Result<u64> {
+    check_wire_type(WireType::Varint, wire_type)?;
+    Ok(decode_varint(buf)?)
+}
+
+fn length_delimited<'a>(wire_type: WireType, buf: &mut &'a [u8]) -> Result<&'a [u8]> {
+    check_wire_type(WireType::LengthDelimited, wire_type)?;
+    let length = decode_varint(buf)?;
+    if length > buf.len() as u64 {
+        bail!("buffer underflow");
+    }
+    let (field, rest) = buf.split_at(length as usize);
+    *buf = rest;
+    Ok(field)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decode_pairs(pairs: Vec<cortexpb::LabelPair>) -> Vec<(LabelStr, LabelStr)> {
+        pairs
+            .into_iter()
+            .map(|pair| {
+                (
+                    LabelStr::from_utf8_lossy(pair.name),
+                    LabelStr::from_utf8_lossy(pair.value),
+                )
+            })
+            .collect()
+    }
+
+    // What `decode_v1` must match: prost's decoding, then the same conversions.
+    fn decode_v1_with_prost(record: &Bytes) -> Result<DecodedRequest> {
+        let request = cortexpb::WriteRequest::decode(record.clone())?;
+        Ok(DecodedRequest {
+            source: request.source,
+            series: request
+                .timeseries
+                .into_iter()
+                .map(|ts| DecodedSeries {
+                    labels: decode_pairs(ts.labels),
+                    samples: ts.samples,
+                    histograms: ts.histograms,
+                    exemplars: ts.exemplars,
+                    created_timestamp: ts.created_timestamp,
+                })
+                .collect(),
+            metadata: v1_metadata(request.metadata),
+        })
+    }
+
+    struct Random(u64);
+
+    impl Random {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: u64) -> u64 {
+            self.next() % bound
+        }
+
+        fn bytes(&mut self) -> Vec<u8> {
+            let alphabet: [&[u8]; 6] = [b"a", b"_", b"9", "\u{e9}".as_bytes(), b"\xff", b""];
+            (0..self.below(6))
+                .flat_map(|_| alphabet[self.below(6) as usize].to_vec())
+                .collect()
+        }
+    }
+
+    fn put_field(record: &mut Vec<u8>, tag: u32, field: &[u8]) {
+        prost::encoding::encode_key(tag, WireType::LengthDelimited, record);
+        prost::encoding::encode_varint(field.len() as u64, record);
+        record.extend_from_slice(field);
+    }
+
+    fn random_record(random: &mut Random) -> Vec<u8> {
+        let mut record = Vec::new();
+        for _ in 0..random.below(4) {
+            let series = cortexpb::TimeSeries {
+                labels: (0..random.below(5))
+                    .map(|_| cortexpb::LabelPair {
+                        name: random.bytes().into(),
+                        value: random.bytes().into(),
+                    })
+                    .collect(),
+                samples: (0..random.below(3))
+                    .map(|_| cortexpb::Sample {
+                        value: random.below(1000) as f64 - 500.5,
+                        timestamp_ms: random.next() as i64,
+                    })
+                    .collect(),
+                exemplars: (0..random.below(2))
+                    .map(|_| cortexpb::Exemplar {
+                        labels: vec![cortexpb::LabelPair {
+                            name: random.bytes().into(),
+                            value: random.bytes().into(),
+                        }],
+                        value: 1.5,
+                        timestamp_ms: random.below(100) as i64,
+                    })
+                    .collect(),
+                histograms: (0..random.below(2))
+                    .map(|_| cortexpb::Histogram {
+                        sum: 2.0,
+                        schema: 3,
+                        positive_deltas: vec![1, -1, random.below(9) as i64],
+                        timestamp: random.below(100) as i64,
+                        count: Some(cortexpb::histogram::Count::CountInt(random.below(9))),
+                        ..Default::default()
+                    })
+                    .collect(),
+                created_timestamp: random.below(3) as i64,
+            };
+            let mut encoded = series.encode_to_vec();
+            if random.below(4) == 0 {
+                // A field the decoder does not know.
+                prost::encoding::encode_key(7, WireType::Varint, &mut encoded);
+                prost::encoding::encode_varint(random.next(), &mut encoded);
+            }
+            put_field(&mut record, 1, &encoded);
+        }
+        if random.below(2) == 0 {
+            prost::encoding::encode_key(2, WireType::Varint, &mut record);
+            prost::encoding::encode_varint(random.below(3), &mut record);
+        }
+        for _ in 0..random.below(3) {
+            let metadata = cortexpb::MetricMetadata {
+                r#type: random.below(6) as i32,
+                metric_family_name: ["", "up", "rpc_count", "latency_bucket"]
+                    [random.below(4) as usize]
+                    .into(),
+                help: ["", "help"][random.below(2) as usize].into(),
+                unit: String::new(),
+            };
+            put_field(&mut record, 3, &metadata.encode_to_vec());
+        }
+        if random.below(4) == 0 {
+            put_field(&mut record, 99, b"unknown");
+        }
+        record
+    }
+
+    #[test]
+    fn version_1_records_decode_like_prost() {
+        let mut random = Random(0x9e37_79b9_7f4a_7c15);
+        let mut compared = 0;
+        for _ in 0..3_000 {
+            let record = random_record(&mut random);
+            let mut candidates = vec![record.clone()];
+            // Truncated and corrupted records must fail, or decode the same, like prost.
+            for _ in 0..3 {
+                if !record.is_empty() {
+                    candidates.push(record[..random.below(record.len() as u64) as usize].to_vec());
+                    let mut corrupted = record.clone();
+                    let position = random.below(record.len() as u64) as usize;
+                    corrupted[position] ^= 1 << random.below(8);
+                    candidates.push(corrupted);
+                }
+            }
+            for candidate in candidates {
+                let candidate = Bytes::from(candidate);
+                let expected = decode_v1_with_prost(&candidate);
+                let decoded = decode_v1(&candidate);
+                match (&expected, &decoded) {
+                    // Corrupted floats can be NaN, which only compare equal printed.
+                    (Ok(expected), Ok(decoded)) => {
+                        assert_eq!(format!("{decoded:?}"), format!("{expected:?}"))
+                    }
+                    (Err(_), Err(_)) => {}
+                    _ => panic!(
+                        "prost: {expected:?}, decode_v1: {decoded:?} for {:?}",
+                        &candidate[..]
+                    ),
+                }
+                compared += 1;
+            }
+        }
+        assert!(compared > 10_000);
+    }
 
     #[test]
     fn labels_share_one_copy_of_the_record_and_replace_invalid_utf8() {
