@@ -479,6 +479,14 @@ func convertToAPIError(err error, fallbackErrorType apierror.Type) error {
 		return apiError
 	}
 
+	if validation.IsLimitError(err) {
+		// A limit error means the request exceeded a configured limit, so it's caused by the request
+		// and not by an internal failure. Classify it as an execution error (HTTP 422) whatever
+		// fallback type the caller asked for, so that callers using apierror.TypeInternal as their
+		// fallback don't report limit errors as HTTP 500.
+		return apierror.New(apierror.TypeExec, err.Error())
+	}
+
 	t := apierror.TypeForError(err, fallbackErrorType)
 	return apierror.New(t, err.Error())
 }

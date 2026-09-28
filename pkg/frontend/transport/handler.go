@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -661,6 +662,13 @@ func writeError(w http.ResponseWriter, err error) int {
 		err = errCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		err = errDeadlineExceeded
+	case validation.IsLimitError(err):
+		// A limit error is caused by the request exceeding a configured limit, not by an internal
+		// failure, so it must not be reported as a 5xx. Middlewares are expected to wrap these in an
+		// apierror.APIError themselves; this is a backstop for any that don't, which would otherwise
+		// fall through to the HTTP 500 below. An error that is already an apierror.APIError never
+		// matches here, because apierror.APIError doesn't implement Unwrap().
+		err = apierror.New(apierror.TypeExec, err.Error())
 	default:
 		if util.IsRequestBodyTooLarge(err) {
 			err = errRequestEntityTooLarge
