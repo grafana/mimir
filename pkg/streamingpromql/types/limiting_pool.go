@@ -287,6 +287,14 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 		return
 	}
 
+	// The query panicked and was recovered, so its operators' state cannot be trusted: this slice may
+	// still be referenced elsewhere, or be returned again by another owner. Drop it for the garbage
+	// collector instead of handing it to the next query. See MemoryConsumptionTracker.Poison.
+	if tracker.IsPoisoned() {
+		*s = nil
+		return
+	}
+
 	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
 	if p.onPutHook != nil {
 		p.onPutHook(*s, tracker)

@@ -92,8 +92,8 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	assertRejectedQueriesCount(t, reg, 0)
 
 	// Test reducing memory consumption to a negative value panics
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 8 bytes when trying to return 9 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(9, FPointSlices) })
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 121 bytes when trying to return 130 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(130, HPointSlices) })
+	require.PanicsWithError(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 8 bytes when trying to return 9 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(9, FPointSlices) })
+	require.PanicsWithError(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 121 bytes when trying to return 130 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(130, HPointSlices) })
 }
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
@@ -145,8 +145,8 @@ func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	assertRejectedQueriesCount(t, reg, 1)
 
 	// Test reducing memory consumption to a negative value panics
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 3 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, FPointSlices) })
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 0 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, HPointSlices) })
+	require.PanicsWithError(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 3 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, FPointSlices) })
+	require.PanicsWithError(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 0 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, HPointSlices) })
 }
 
 func assertRejectedQueriesCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
@@ -354,7 +354,7 @@ func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *t
 
 	tracker := NewMemoryConsumptionTracker(ctx, 0, nil, "foo + bar")
 
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is 0 bytes when trying to return 10 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
+	require.PanicsWithError(t, `Estimated memory consumption of all instances of ingester chunks in this query is 0 bytes when trying to return 10 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
 		tracker.DecreaseMemoryConsumption(10, IngesterChunks)
 	})
 }
@@ -592,4 +592,50 @@ func TestInflightMemoryConsumptionTracker_MaxAge(t *testing.T) {
 		`
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), maxAgeMetric))
 	})
+}
+
+func TestMemoryConsumptionTracker_Poison(t *testing.T) {
+	t.Run("freezes the estimate and disables the double-return guard", func(t *testing.T) {
+		tracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+		require.NoError(t, tracker.IncreaseMemoryConsumption(64, FPointSlices))
+		require.False(t, tracker.IsPoisoned())
+
+		tracker.Poison()
+		require.True(t, tracker.IsPoisoned())
+
+		// Returning more than was ever taken would normally violate the accounting invariant and panic.
+		// The query's memory is being abandoned rather than pooled, so there is nothing left to protect
+		// and the decrease is ignored instead.
+		require.NotPanics(t, func() { tracker.DecreaseMemoryConsumption(1024, FPointSlices) })
+		require.Equal(t, uint64(64), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("propagates to nested trackers", func(t *testing.T) {
+		// Only managed trackers can be nested under, which is also the shape of a real query's tracker.
+		parent := NewUnlimintedInflightMemoryConsumptionTracker(nil).NewMemoryConsumptionTracker(context.Background(), 0, "")
+		nested := parent.NewNestedMemoryConsumptionTracker(context.Background(), "")
+		require.False(t, nested.IsPoisoned())
+
+		parent.Poison()
+		require.True(t, nested.IsPoisoned(), "a tracker nested under a poisoned tracker is poisoned")
+	})
+}
+
+func TestMemoryConsumptionTracker_DoubleReturnGuardPanicsWithTypedError(t *testing.T) {
+	tracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+	require.NoError(t, tracker.IncreaseMemoryConsumption(64, FPointSlices))
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		tracker.DecreaseMemoryConsumption(128, FPointSlices)
+	}()
+
+	// The value is a distinct error type so that code recovering panics can recognise a pool
+	// invariant violation and crash rather than continue.
+	rErr, isErr := recovered.(error)
+	require.True(t, isErr, "the guard must panic with an error value")
+	var invariantErr InvariantViolationError
+	require.ErrorAs(t, rErr, &invariantErr)
+	require.Contains(t, invariantErr.Error(), "returned to a pool more than once")
 }

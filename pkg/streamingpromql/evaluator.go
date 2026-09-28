@@ -190,10 +190,24 @@ func (e *Evaluator) handleEvaluationPanic(ctx context.Context, logger *spanlogge
 		*err = fmt.Errorf("panic during query evaluation: %v", r)
 	}
 
+	// A memory accounting invariant violation means a slice was returned to a pool more than once. The
+	// pools are shared between every query in the process, so the pool may already be corrupt, and the
+	// process must crash whatever the flag says: continuing would serve other tenants from it.
+	var invariantErr limiter.InvariantViolationError
+	if rErr, isErr := r.(error); isErr && errors.As(rErr, &invariantErr) {
+		logPanicWithStack(level.Error(logger), "memory accounting invariant violated while evaluating query, re-panicking to crash", r, e.originalExpression)
+		panic(r)
+	}
+
 	if e.engine.surfaceEvaluationPanics {
 		logPanicWithStack(level.Error(logger), "panic while evaluating query, re-panicking to crash", r, e.originalExpression)
 		panic(r)
 	}
+
+	// The operators' state can no longer be trusted, so make the cleanup that runs after this handler
+	// abandon this query's pooled memory instead of returning it to the shared pools. See
+	// MemoryConsumptionTracker.Poison.
+	e.MemoryConsumptionTracker.Poison()
 
 	userID := ""
 	if tenantIDs, tenantErr := tenant.TenantIDs(ctx); tenantErr == nil {

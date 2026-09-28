@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"sync"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -76,11 +75,9 @@ type countValuesSeries struct {
 	count            []int // One entry per timestamp.
 }
 
-var countValuesSeriesPool = sync.Pool{
-	New: func() interface{} {
-		return &countValuesSeries{}
-	},
-}
+var countValuesSeriesPool = types.NewObjectPool(func() *countValuesSeries {
+	return &countValuesSeries{}
+})
 
 func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := c.loadLabelName(); err != nil {
@@ -147,7 +144,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		c.series = append(c.series, points)
 
 		types.IntSlicePool.Put(&s.count, c.MemoryConsumptionTracker)
-		countValuesSeriesPool.Put(s)
+		countValuesSeriesPool.Put(s, c.MemoryConsumptionTracker)
 	}
 
 	return outputMetadata, nil
@@ -177,7 +174,7 @@ func (c *CountValues) incrementCount(seriesLabels labels.Labels, t int64, value 
 	series, exists := accumulator[string(c.labelsBytesBuffer)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 	if !exists {
-		series = countValuesSeriesPool.Get().(*countValuesSeries)
+		series = countValuesSeriesPool.Get()
 		series.labels = l
 		series.outputPointCount = 0
 

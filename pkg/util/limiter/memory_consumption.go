@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
@@ -344,6 +345,51 @@ type MemoryConsumptionTracker struct {
 	// trackers (those created via InflightMemoryConsumptionTracker.NewMemoryConsumptionTracker)
 	// and is read by InflightMemoryConsumptionTracker.Collect to compute the max in-flight age.
 	startTime time.Time
+
+	// poisoned is set once the query this tracker belongs to has panicked and been recovered. The
+	// operators' state can no longer be trusted, so pooled memory must be abandoned to the garbage
+	// collector rather than returned to the shared pools, and the memory estimate is frozen. See
+	// Poison for details.
+	poisoned atomic.Bool
+}
+
+// InvariantViolationError is the panic value raised when the memory consumption estimate would go
+// negative, which means a slice was returned to a pool more than once. It is a distinct type so that
+// callers recovering panics can recognise it: the pools are shared between all queries in the
+// process, so once this fires the pool may already be corrupt, and the process must crash rather
+// than continue serving from it.
+type InvariantViolationError struct {
+	msg string
+}
+
+func (e InvariantViolationError) Error() string {
+	return e.msg
+}
+
+// Poison marks the query this tracker belongs to as having panicked and been recovered. From then on:
+//   - pool Put calls that receive this tracker (or a tracker nested under it) drop the slice instead
+//     of returning it to the pool, so a slice the aborted query may still reference, or may return
+//     twice, can never be handed to another query;
+//   - DecreaseMemoryConsumption becomes a no-op, so cleanup of the aborted query's inconsistent
+//     state cannot trip the double-return guard for memory that is no longer being pooled anyway.
+//
+// The memory is reclaimed by the garbage collector once unreferenced, and the frozen estimate is
+// discarded when the tracker is deregistered. Panics are rare, so the lost reuse is negligible.
+func (l *MemoryConsumptionTracker) Poison() {
+	l.poisoned.Store(true)
+}
+
+// IsPoisoned returns true if Poison was called on this tracker or on any tracker it is nested under.
+func (l *MemoryConsumptionTracker) IsPoisoned() bool {
+	if l.poisoned.Load() {
+		return true
+	}
+
+	if l.parent != nil {
+		return l.parent.IsPoisoned()
+	}
+
+	return false
 }
 
 // NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
@@ -394,7 +440,14 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source Me
 }
 
 // DecreaseMemoryConsumption decreases the current memory consumption by b bytes.
+//
+// It is a no-op once the tracker is poisoned: the query has already failed, its memory is being
+// abandoned rather than pooled, and its estimate is discarded on deregistration. See Poison.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) {
+	if l.IsPoisoned() {
+		return
+	}
+
 	if l.parent != nil {
 		l.parent.DecreaseMemoryConsumption(b, source)
 	}
@@ -416,14 +469,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 			"trace_description":   traceDescription,
 		})
 
-		panic(fmt.Sprintf(
+		panic(InvariantViolationError{msg: fmt.Sprintf(
 			"Estimated memory consumption of all instances of %s in this query is %d bytes when trying to return %d bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v",
 			source,
 			l.currentEstimatedMemoryConsumptionBySource[source],
 			b,
 			l.queryDescription,
 			traceDescription,
-		))
+		)})
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b

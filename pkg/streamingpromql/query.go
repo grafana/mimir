@@ -294,7 +294,7 @@ func (q *Query) returnResultToPool() {
 			q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(s.Metric)
 		}
 
-		types.PutMatrix(q.matrix)
+		types.PutMatrix(q.matrix, q.memoryConsumptionTracker)
 
 		q.matrix = nil
 	}

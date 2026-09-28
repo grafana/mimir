@@ -294,7 +294,7 @@ func TestLimitingBucketedPool_ReturnedSliceSafety(t *testing.T) {
 	// init_test.go). Assert it so the test fails loudly rather than passing for the wrong reason.
 	require.True(t, EnableManglingReturnedSlices.Load(), "these tests rely on slice mangling being enabled")
 
-	t.Run("double return is detected, not silently corrupting the pool", func(t *testing.T) {
+	t.Run("double return that takes the estimate negative panics with a typed error", func(t *testing.T) {
 		_, metric := createRejectedMetric()
 		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "double return test")
 
@@ -311,16 +311,45 @@ func TestLimitingBucketedPool_ReturnedSliceSafety(t *testing.T) {
 		require.Nil(t, s, "reference should be cleared on Put")
 		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 
-		// Returning the slice again must be caught by the memory tracker guard, which runs before the
-		// slice reaches the pool, so the pool never hands it to two callers. It panics rather than
-		// silently under-counting memory.
+		// The accounting guard only detects a double return when it would take the per-source estimate
+		// negative, as here where nothing else is outstanding. If another slice of the same source were
+		// still held, the second Put would slip through and the pool would hold the slice twice. That is
+		// why the guard is treated as a crash signal, and why a panicked query's memory is abandoned
+		// (see the poisoned case below) rather than trusted to it.
 		var recovered any
 		func() {
 			defer func() { recovered = recover() }()
 			FPointSlicePool.Put(&staleRef, tracker)
 		}()
 		require.NotNil(t, recovered, "returning a slice twice should panic")
-		require.Contains(t, fmt.Sprint(recovered), "returned to a pool more than once")
+		rErr, isErr := recovered.(error)
+		require.True(t, isErr)
+		var invariantErr limiter.InvariantViolationError
+		require.ErrorAs(t, rErr, &invariantErr)
+	})
+
+	t.Run("poisoned query abandons its slices instead of returning them", func(t *testing.T) {
+		_, metric := createRejectedMetric()
+		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "poisoned test")
+
+		s, err := FPointSlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, promql.FPoint{T: 1, F: 1})
+		before := tracker.CurrentEstimatedMemoryConsumptionBytes()
+		staleRef := s
+
+		// The query panicked and was recovered, so its operators may still reference this slice or
+		// return it again. It must be dropped for the garbage collector, never recycled.
+		tracker.Poison()
+		FPointSlicePool.Put(&s, tracker)
+
+		require.Nil(t, s, "the reference is still cleared so the caller cannot keep using it")
+		require.Equal(t, before, tracker.CurrentEstimatedMemoryConsumptionBytes(), "the estimate is frozen, not decreased")
+		require.Equal(t, promql.FPoint{T: 1, F: 1}, staleRef[0], "the slice is not mangled because it never reached the pool")
+
+		next, err := FPointSlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		require.NotSame(t, unsafe.SliceData(staleRef), unsafe.SliceData(next), "an abandoned slice must never be handed out again")
 	})
 
 	t.Run("leaked slice is accounted and never reused by a later query", func(t *testing.T) {

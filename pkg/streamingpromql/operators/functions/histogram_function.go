@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -100,7 +99,7 @@ type seriesGroupPair struct {
 	nativeHistogramGroup  *bucketGroup // The group for the input series with all labels
 }
 
-var bucketGroupPool = zeropool.New(func() *bucketGroup {
+var bucketGroupPool = types.NewObjectPool(func() *bucketGroup {
 	return &bucketGroup{}
 })
 
@@ -497,7 +496,7 @@ func (g *histogramGrouper) releaseGroup(group *bucketGroup) {
 		types.HPointSlicePool.Put(&group.nativeHistograms, g.memoryConsumptionTracker)
 	}
 	group.remainingSeriesCount = 0
-	bucketGroupPool.Put(group)
+	bucketGroupPool.Put(group, g.memoryConsumptionTracker)
 }
 
 // appendOutputPoint appends a single output point at pointIdx to floatPoints, allocating the slice

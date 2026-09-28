@@ -2024,6 +2024,9 @@ type poolAcquiringPanickingOperator struct {
 	*operators.TestOperator
 	tracker *limiter.MemoryConsumptionTracker
 	held    []float64
+	// abandoned keeps a second reference to the same backing array, so the test can check it never
+	// comes back out of the pool after Put has cleared held.
+	abandoned []float64
 }
 
 func (o *poolAcquiringPanickingOperator) SeriesMetadata(context.Context, types.Matchers) ([]types.SeriesMetadata, error) {
@@ -2032,6 +2035,7 @@ func (o *poolAcquiringPanickingOperator) SeriesMetadata(context.Context, types.M
 		return nil, err
 	}
 	o.held = s
+	o.abandoned = s
 	panic("injected panic after acquiring pooled memory")
 }
 
@@ -2099,11 +2103,87 @@ func TestEngine_QueryAfterRecoveredPanicIsUnaffected(t *testing.T) {
 
 	require.Error(t, evaluator.Evaluate(user.InjectOrgID(context.Background(), "test-tenant"), &noopEvaluationObserver{}))
 
-	// The recovered panic must have returned the pooled memory it held, so nothing is leaked.
-	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes(), "recovered panic must return pooled memory to the pool")
+	// Recovering the panic poisons the query: its operators' state cannot be trusted, so the memory
+	// they hold is abandoned to the garbage collector rather than returned to the shared pools. The
+	// estimate is frozen at what the query held and is discarded when the tracker is deregistered.
+	require.True(t, tracker.IsPoisoned())
+	require.Nil(t, op.held, "Put still clears the operator's reference")
+	require.Equal(t, 128*types.Float64Size, tracker.CurrentEstimatedMemoryConsumptionBytes(), "abandoned memory stays in the frozen estimate")
+
+	// The abandoned slice must never be handed to another query.
+	next, err := types.Float64SlicePool.Get(128, engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, ""))
+	require.NoError(t, err)
+	require.NotSame(t, &op.abandoned[:1][0], &next[:1][0], "a poisoned query's slice must not come back out of the pool")
 
 	// A later query reusing the same pools returns the same, correct result.
 	require.Equal(t, expected, runQuery())
+}
+
+// doubleReturningOperator returns the same slice to a pool twice during evaluation, which trips the
+// memory accounting guard.
+type doubleReturningOperator struct {
+	*operators.TestOperator
+	tracker *limiter.MemoryConsumptionTracker
+}
+
+func (o *doubleReturningOperator) SeriesMetadata(context.Context, types.Matchers) ([]types.SeriesMetadata, error) {
+	s, err := types.FPointSlicePool.Get(4, o.tracker)
+	if err != nil {
+		return nil, err
+	}
+
+	stale := s
+	types.FPointSlicePool.Put(&s, o.tracker)
+	types.FPointSlicePool.Put(&stale, o.tracker)
+	return nil, nil
+}
+
+// TestEngine_PoolInvariantViolationCrashesEvenWhenRecoveringPanics checks that a slice returned to a
+// pool twice crashes the process even with surface-evaluation-panics disabled. The pools are shared
+// between every query, so once the guard fires the pool may already be corrupt, and converting that
+// into a query error would keep serving other tenants from it.
+func TestEngine_PoolInvariantViolationCrashesEvenWhenRecoveringPanics(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.SurfaceEvaluationPanics = false
+	reg := prometheus.NewPedanticRegistry()
+	opts.CommonOpts.Reg = reg
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	tracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
+	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
+		Matchers: []core.LabelMatcher{
+			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
+		},
+	}}
+	op := &doubleReturningOperator{
+		TestOperator: &operators.TestOperator{MemoryConsumptionTracker: tracker},
+		tracker:      tracker,
+	}
+	nodeRequests := []NodeEvaluationRequest{
+		{Node: node, TimeRange: types.NewInstantQueryTimeRange(timestamp.Time(0)), operator: op},
+	}
+	params := &planning.OperatorParameters{MemoryConsumptionTracker: tracker}
+	evaluator, err := NewEvaluator(nodeRequests, params, engine, "double_returning_query")
+	require.NoError(t, err)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = evaluator.Evaluate(user.InjectOrgID(context.Background(), "test-tenant"), &noopEvaluationObserver{})
+	}()
+
+	require.NotNil(t, recovered, "a pool invariant violation must escape the evaluator and crash")
+	rErr, isErr := recovered.(error)
+	require.True(t, isErr)
+	var invariantErr limiter.InvariantViolationError
+	require.ErrorAs(t, rErr, &invariantErr)
+
+	// The crash is not counted as a recovered panic.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_mimir_query_engine_evaluation_panics_total"))
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {

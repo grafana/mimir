@@ -5,7 +5,6 @@ package selectors
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -446,7 +445,7 @@ func (l *seriesList) Pop() storage.Series {
 	if l.seriesIndexInCurrentBatch == len(l.currentSeriesBatch.series) {
 		b := l.currentSeriesBatch
 		l.currentSeriesBatch = l.currentSeriesBatch.next
-		putSeriesBatch(b)
+		putSeriesBatch(b, l.memoryConsumptionTracker)
 		l.seriesIndexInCurrentBatch = 0
 	}
 
@@ -458,7 +457,7 @@ func (l *seriesList) Close() {
 	for l.currentSeriesBatch != nil {
 		b := l.currentSeriesBatch
 		l.currentSeriesBatch = l.currentSeriesBatch.next
-		putSeriesBatch(b)
+		putSeriesBatch(b, l.memoryConsumptionTracker)
 	}
 
 	l.lastSeriesBatch = nil // Should have been put back in the pool as part of the loop above.
@@ -472,21 +471,21 @@ type seriesBatch struct {
 // There's not too much science behind this number: this is based on the batch size used for chunks streaming.
 const seriesBatchSize = 256
 
-var seriesBatchPool = sync.Pool{New: func() any {
+var seriesBatchPool = types.NewObjectPool(func() *seriesBatch {
 	return &seriesBatch{
 		series: make([]storage.Series, 0, seriesBatchSize),
 		next:   nil,
 	}
-}}
+})
 
 func getSeriesBatch() *seriesBatch {
-	return seriesBatchPool.Get().(*seriesBatch)
+	return seriesBatchPool.Get()
 }
 
-func putSeriesBatch(b *seriesBatch) {
+func putSeriesBatch(b *seriesBatch, tracker *limiter.MemoryConsumptionTracker) {
 	b.series = b.series[:0]
 	b.next = nil
-	seriesBatchPool.Put(b)
+	seriesBatchPool.Put(b, tracker)
 }
 
 type skipHistogramBucketsSeries struct {

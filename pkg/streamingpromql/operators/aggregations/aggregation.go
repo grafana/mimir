@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -77,7 +76,7 @@ type group struct {
 
 var _ types.InstantVectorOperator = &Aggregation{}
 
-var groupPool = zeropool.New(func() *group {
+var groupPool = types.NewObjectPool(func() *group {
 	return &group{}
 })
 
@@ -446,7 +445,7 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 
 	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroup)
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
-	groupPool.Put(thisGroup)
+	groupPool.Put(thisGroup, a.MemoryConsumptionTracker)
 	a.remainingGroups[a.nextGroupIdx-1] = nil
 
 	return seriesData, nil
@@ -476,7 +475,7 @@ func (a *Aggregator) FinishedReading() {
 	for _, g := range a.remainingGroups[a.nextGroupIdx:] {
 		a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroup)
 		g.aggregation.Close(a.MemoryConsumptionTracker)
-		groupPool.Put(g)
+		groupPool.Put(g, a.MemoryConsumptionTracker)
 	}
 
 	groupPointerSlicePool.Put(&a.remainingGroups, a.MemoryConsumptionTracker)
