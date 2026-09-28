@@ -13,10 +13,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// indexHeaderFilenamePattern matches the on-disk index-header filename shape, for a versioned name index-header-vN,
-// or for format v1, which lacks the -vN suffix.
-var indexHeaderFilenamePattern = regexp.MustCompile(`^` + regexp.QuoteMeta(block.IndexHeaderFilename) + `(?:-v([0-9]+))?$`)
-
 func indexHeaderFilename(version int) string {
 	if version == BinaryFormatV1 {
 		return block.IndexHeaderFilename
@@ -53,6 +49,8 @@ func IndexHeadersOnDisk(blockDir string) ([]OnDiskIndexHeader, error) {
 			continue
 		}
 
+		// match the on-disk index-header filename shape, for a versioned name index-header-vN, or for format v1, which lacks the -vN suffix.
+		indexHeaderFilenamePattern := regexp.MustCompile(`^` + regexp.QuoteMeta(block.IndexHeaderFilename) + `(?:-v([0-9]+))?$`)
 		match := indexHeaderFilenamePattern.FindStringSubmatch(entry.Name())
 		if match == nil {
 			continue
@@ -81,17 +79,11 @@ func IndexHeadersOnDisk(blockDir string) ([]OnDiskIndexHeader, error) {
 	return headers, nil
 }
 
-// removeOtherIndexHeaderVersions removes every index-header file in blockDir whose version is not keepVersion.
-func removeOtherIndexHeaderVersions(blockDir string, keepVersion int) error {
-	headers, err := IndexHeadersOnDisk(blockDir)
-	if err != nil {
-		return err
-	}
-
-	keepPath := indexHeaderPath(blockDir, keepVersion)
-	for _, h := range headers {
-		if h.Path == keepPath {
-			continue
+// removeIndexHeaderVersions removes every given index-header file in blockDir.
+func removeIndexHeaderVersions(blockDir string, versionsToRemove ...OnDiskIndexHeader) error {
+	for _, h := range versionsToRemove {
+		if filepath.Dir(h.Path) != blockDir {
+			return fmt.Errorf("index-header %s is not located within block directory %s", h.Path, blockDir)
 		}
 		if err := os.Remove(h.Path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove leftover index-header %s: %w", h.Path, err)

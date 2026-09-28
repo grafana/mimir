@@ -107,9 +107,6 @@ func NewStreamBinaryReader(
 		_ = f.Close()
 	}
 
-	localIndexHeaderPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
-	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
-
 	// Attempt to load existing sparse index-header from previous write to local disk or from bucket.
 	// Track whether we loaded it with a boolean -
 	// we cannot necessarily rely on err != nil or the sparse values == nil,
@@ -125,9 +122,18 @@ func NewStreamBinaryReader(
 		sparseHeaderLoaded = true
 	}
 
+	headers, err := IndexHeadersOnDisk(localBlockDir)
+	if err != nil {
+		level.Warn(spanLog).Log(
+			"msg", "error while cleaning up index headers, disk space may not have been freed",
+			"err", "list index-headers on disk: %w",
+		)
+	}
+
 	// Ensure full index-header is downloaded to local block directory.
 	// If we did not get an existing sparse index-header from disk or bucket,
 	// we have to consume the full index-header to build the sparse header.
+	localIndexHeaderPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
 	if _, err = os.Stat(localIndexHeaderPath); err != nil {
 		level.Info(spanLog).Log(
 			"msg", "index-header not found on local disk; will create from bucket block index",
@@ -141,9 +147,8 @@ func NewStreamBinaryReader(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
-
 		// Remove any existing index-header versions not required by the current config
-		if err = removeOtherIndexHeaderVersions(localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
+		if err = removeIndexHeaderVersions(localBlockDir, headers...); err != nil {
 			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
 		}
 	}
@@ -156,6 +161,9 @@ func NewStreamBinaryReader(
 	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
 	if err != nil || ((indexHeaderVersion == BinaryFormatV2) != cfg.BucketReader.Enabled) {
+		if err = removeIndexHeaderVersions(localBlockDir, headers...); err != nil {
+			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
+		}
 		// TOC read checks CRC32; assume a failure here is either due to a file corruption.
 		level.Debug(spanLog).Log(
 			"msg", "failed to read table of contents from index-header on disk; will recreate from bucket block index",
@@ -169,10 +177,6 @@ func NewStreamBinaryReader(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
-
-		if err = removeOtherIndexHeaderVersions(localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
-			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
-		}
 
 		// filePoolDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
 		// we close it and open a new one.
@@ -254,6 +258,7 @@ func NewStreamBinaryReader(
 			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
 			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
 		}
+		localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 		if err = writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, l); err != nil {
 			// Log an error in case there are disk issues, but we can still continue.
 			level.Error(spanLog).Log(

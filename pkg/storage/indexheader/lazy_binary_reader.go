@@ -198,10 +198,11 @@ func ensureIndexHeaderOnDisk(
 		return fmt.Errorf("list index-headers on disk: %w", err)
 	}
 
-	for _, h := range headers {
+	for i, h := range headers {
 		if h.Version == requiredVersion {
-			// We already have the right header; sweep all other versions that may happen to also be on disk.
-			return removeOtherIndexHeaderVersions(localBlockDir, requiredVersion)
+			// We already have the right header; update headers to remove the correct version, and sweep the rest
+			headers = append(headers[:i], headers[i+1:]...)
+			return removeIndexHeaderVersions(localBlockDir, headers...)
 		}
 	}
 
@@ -218,7 +219,8 @@ func ensureIndexHeaderOnDisk(
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath(localBlockDir, requiredVersion), "elapsed", time.Since(start))
 
-	return removeOtherIndexHeaderVersions(localBlockDir, requiredVersion)
+	// headers was created before we built the correct index-header file, we can remove all of these
+	return removeIndexHeaderVersions(localBlockDir, headers...)
 }
 
 // Close implements Reader.

@@ -81,44 +81,86 @@ func TestIndexHeadersOnDisk(t *testing.T) {
 	})
 }
 
-func TestRemoveOtherIndexHeaderVersions(t *testing.T) {
-	t.Run("removes every other version, including unsupported ones", func(t *testing.T) {
-		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "index-header"), "v1")
-		writeFile(t, filepath.Join(dir, "index-header-v2"), "v2")
-		writeFile(t, filepath.Join(dir, "index-header-v9"), "unknown")
-		writeFile(t, filepath.Join(dir, block.SparseIndexHeaderFilename), "sparse, must survive")
+func TestRemoveIndexHeaderVersions(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		extantFiles            []string
+		filesOutsideBlockDir   []string
+		toRemove               func(blockDir, outsideDir string) []OnDiskIndexHeader
+		wantErr                bool
+		expectedRemainingFiles []string
+	}{
+		{
+			name:        "remove given headers only",
+			extantFiles: []string{"index-header", "index-header-v2", "index-header-v9", block.SparseIndexHeaderFilename},
+			toRemove: func(blockDir, _ string) []OnDiskIndexHeader {
+				return []OnDiskIndexHeader{
+					{Version: BinaryFormatV1, Path: filepath.Join(blockDir, "index-header")},
+					{Version: 9, Path: filepath.Join(blockDir, "index-header-v9")},
+				}
+			},
+			expectedRemainingFiles: []string{"index-header-v2", block.SparseIndexHeaderFilename},
+		},
+		{
+			name:        "remove nothing",
+			extantFiles: []string{"index-header-v2"},
+			toRemove: func(_, _ string) []OnDiskIndexHeader {
+				return nil
+			},
+			expectedRemainingFiles: []string{"index-header-v2"},
+		},
+		{
+			name:        "remove a header doesn't exist",
+			extantFiles: nil,
+			toRemove: func(blockDir, _ string) []OnDiskIndexHeader {
+				return []OnDiskIndexHeader{{Version: BinaryFormatV1, Path: filepath.Join(blockDir, "index-header")}}
+			},
+			expectedRemainingFiles: nil,
+		},
+		{
+			name:                 "remove a path outside of blockDir",
+			filesOutsideBlockDir: []string{"index-header-v2"},
+			toRemove: func(_, outsideDir string) []OnDiskIndexHeader {
+				return []OnDiskIndexHeader{{Version: BinaryFormatV2, Path: filepath.Join(outsideDir, "index-header-v2")}}
+			},
+			wantErr:                true,
+			expectedRemainingFiles: nil,
+		},
+	}
 
-		require.NoError(t, removeOtherIndexHeaderVersions(dir, BinaryFormatV2))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			blockDir := t.TempDir()
+			outsideDir := t.TempDir()
 
-		headers, err := IndexHeadersOnDisk(dir)
-		require.NoError(t, err)
-		require.Len(t, headers, 1)
-		require.Equal(t, BinaryFormatV2, headers[0].Version)
+			for _, f := range tc.extantFiles {
+				writeFile(t, filepath.Join(blockDir, f), "content")
+			}
+			for _, f := range tc.filesOutsideBlockDir {
+				writeFile(t, filepath.Join(outsideDir, f), "content")
+			}
 
-		_, err = os.Stat(filepath.Join(dir, block.SparseIndexHeaderFilename))
-		require.NoError(t, err, "sparse-index-header must never be touched by the index-header sweep")
-	})
+			err := removeIndexHeaderVersions(blockDir, tc.toRemove(blockDir, outsideDir)...)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 
-	t.Run("kept version stays on disk", func(t *testing.T) {
-		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "index-header-v2"), "v2")
+			entries, err := os.ReadDir(blockDir)
+			require.NoError(t, err)
+			remaining := make([]string, 0, len(entries))
+			for _, e := range entries {
+				remaining = append(remaining, e.Name())
+			}
+			require.ElementsMatch(t, tc.expectedRemainingFiles, remaining)
 
-		require.NoError(t, removeOtherIndexHeaderVersions(dir, BinaryFormatV2))
-
-		headers, err := IndexHeadersOnDisk(dir)
-		require.NoError(t, err)
-		require.Len(t, headers, 1)
-	})
-
-	t.Run("no index-header on disk", func(t *testing.T) {
-		dir := t.TempDir()
-		require.NoError(t, removeOtherIndexHeaderVersions(dir, BinaryFormatV1))
-
-		headers, err := IndexHeadersOnDisk(dir)
-		require.NoError(t, err)
-		require.Empty(t, headers)
-	})
+			for _, f := range tc.filesOutsideBlockDir {
+				_, statErr := os.Stat(filepath.Join(outsideDir, f))
+				require.NoError(t, statErr, "files outside blockDir must never be removed")
+			}
+		})
+	}
 }
 
 func writeFile(t *testing.T, path, content string) {
