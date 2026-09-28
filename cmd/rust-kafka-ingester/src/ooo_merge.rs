@@ -7,7 +7,6 @@ use anyhow::Result;
 
 use crate::histogram;
 use crate::proto::cortexpb;
-use crate::proto::cortexpb::histogram::Count;
 use crate::xor;
 
 pub const XOR_ENCODING: i32 = 4;
@@ -19,25 +18,6 @@ const MIN_SAMPLES_PER_HISTOGRAM_CHUNK: usize = 10;
 pub enum Value {
     Float(f64),
     Histogram(Box<cortexpb::Histogram>),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ValueType {
-    Float,
-    Histogram,
-    FloatHistogram,
-}
-
-impl Value {
-    fn value_type(&self) -> ValueType {
-        match self {
-            Value::Float(_) => ValueType::Float,
-            Value::Histogram(histogram) => match histogram.count {
-                Some(Count::CountFloat(_)) => ValueType::FloatHistogram,
-                _ => ValueType::Histogram,
-            },
-        }
-    }
 }
 
 /// An encoded chunk: min time, max time, wire encoding and bytes.
@@ -62,27 +42,29 @@ pub fn decode(encoding: i32, data: &[u8]) -> Result<Vec<(i64, Value)>> {
         .collect())
 }
 
-// Accumulates samples into chunks, cutting a new chunk on a value type change and when
-// `size_cut` says the current one is full; histograms also cut where the Prometheus appender
-// would start a new chunk.
+// Accumulates samples into chunks, cutting a new chunk on a value type change, when `size_cut`
+// says the current one is full, and where the Prometheus histogram appender starts a new one.
 struct Encoder {
     chunks: Vec<Chunk>,
     floats: Option<(i64, xor::Appender)>,
-    histograms: Vec<cortexpb::Histogram>,
+    histograms: Option<histogram::HistogramAppender>,
     size_cut: bool,
+    // `ToEncodedChunks` gives a chunk after a histogram chunk its counter reset header.
+    header_from_previous: bool,
 }
 
 impl Encoder {
-    fn new(size_cut: bool) -> Self {
+    fn new(size_cut: bool, header_from_previous: bool) -> Self {
         Self {
             chunks: Vec::new(),
             floats: None,
-            histograms: Vec::new(),
+            histograms: None,
             size_cut,
+            header_from_previous,
         }
     }
 
-    fn finish_current(&mut self) {
+    fn finish_floats(&mut self) {
         if let Some((min_time, appender)) = self.floats.take() {
             let max_time = appender.last_timestamp().expect("float chunk has samples");
             self.chunks.push(Chunk {
@@ -92,29 +74,29 @@ impl Encoder {
                 data: appender.into_bytes(),
             });
         }
-        if !self.histograms.is_empty() {
-            let encoded = histogram::encode_sequence(&self.histograms);
-            self.chunks.push(Chunk {
-                min_time: self.histograms[0].timestamp,
-                max_time: self.histograms[self.histograms.len() - 1].timestamp,
-                encoding: encoded.encoding,
-                data: encoded.data,
-            });
-            self.histograms.clear();
-        }
+    }
+
+    fn finish_histograms(&mut self) -> Option<histogram::HistogramAppender> {
+        let appender = self.histograms.take()?;
+        let encoded = appender.encoded();
+        self.chunks.push(Chunk {
+            min_time: appender.first_timestamp(),
+            max_time: appender.last().timestamp,
+            encoding: encoded.encoding,
+            data: encoded.data,
+        });
+        Some(appender)
     }
 
     fn push(&mut self, timestamp: i64, value: &Value) {
         match value {
             Value::Float(value) => {
-                if !self.histograms.is_empty() {
-                    self.finish_current();
-                }
+                self.finish_histograms();
                 if let Some((_, appender)) = &self.floats
                     && self.size_cut
                     && appender.bytes().len() > MAX_BYTES_PER_XOR_CHUNK_BEFORE_APPEND
                 {
-                    self.finish_current();
+                    self.finish_floats();
                 }
                 self.floats
                     .get_or_insert_with(|| (timestamp, xor::Appender::default()))
@@ -122,36 +104,46 @@ impl Encoder {
                     .append(timestamp, *value);
             }
             Value::Histogram(histogram) => {
-                if self.floats.is_some() {
-                    self.finish_current();
-                }
-                if let Some(last) = self.histograms.last() {
-                    let same_type =
-                        Value::Histogram(Box::new(last.clone())).value_type() == value.value_type();
-                    let full = self.size_cut
-                        && self.histograms.len() > MIN_SAMPLES_PER_HISTOGRAM_CHUNK
-                        && histogram::encode_sequence(&self.histograms).data.len()
-                            > TARGET_BYTES_PER_HISTOGRAM_CHUNK;
-                    if !same_type || full || !histogram::compatible(last, histogram) {
-                        self.finish_current();
-                    }
-                }
+                self.finish_floats();
                 let mut histogram = (**histogram).clone();
                 histogram.timestamp = timestamp;
-                self.histograms.push(histogram);
+                let same_type = self.histograms.as_ref().is_some_and(|appender| {
+                    appender
+                        .last()
+                        .count
+                        .map(|count| std::mem::discriminant(&count))
+                        == histogram.count.map(|count| std::mem::discriminant(&count))
+                });
+                let full = self.size_cut
+                    && self.histograms.as_ref().is_some_and(|appender| {
+                        appender.encoded_len() > TARGET_BYTES_PER_HISTOGRAM_CHUNK
+                            && appender.len() > MIN_SAMPLES_PER_HISTOGRAM_CHUNK
+                    });
+                if !same_type || full {
+                    let previous = self.finish_histograms();
+                    let previous = previous.as_ref().filter(|_| self.header_from_previous);
+                    self.histograms = Some(histogram::HistogramAppender::new(histogram, previous));
+                    return;
+                }
+                let appender = self.histograms.as_mut().expect("open histogram chunk");
+                if let histogram::Appended::NewChunk(next) = appender.append(histogram) {
+                    self.finish_histograms();
+                    self.histograms = Some(*next);
+                }
             }
         }
     }
 
     fn finish(mut self) -> Vec<Chunk> {
-        self.finish_current();
+        self.finish_floats();
+        self.finish_histograms();
         self.chunks
     }
 }
 
 /// Encodes an out-of-order head's samples, sorted by timestamp, like `OOOChunk.ToEncodedChunks`.
 pub fn encode_out_of_order(samples: &[(i64, Value)]) -> Vec<Chunk> {
-    let mut encoder = Encoder::new(false);
+    let mut encoder = Encoder::new(false, true);
     for (timestamp, value) in samples {
         encoder.push(*timestamp, value);
     }
@@ -181,7 +173,7 @@ pub fn merge_overlapping(mut candidates: Vec<Candidate>) -> Result<Vec<Chunk>> {
                     .iter()
                     .map(|chunk| decode(chunk.encoding, &chunk.data))
                     .collect::<Result<Vec<_>>>()?;
-                let mut encoder = Encoder::new(true);
+                let mut encoder = Encoder::new(true, false);
                 for (timestamp, value) in chain(iterators) {
                     encoder.push(timestamp, &value);
                 }
@@ -319,6 +311,7 @@ fn chain(iterators: Vec<Vec<(i64, Value)>>) -> Vec<(i64, Value)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::cortexpb::histogram::Count;
 
     fn floats(samples: &[(i64, f64)]) -> Chunk {
         Chunk {

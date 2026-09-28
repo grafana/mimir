@@ -167,12 +167,19 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
                 .find(|(name, _)| name == "__name__")
                 .map(|(_, value)| value.clone())
                 .unwrap_or_default();
-            metadata.push(cortexpb::MetricMetadata {
-                r#type: meta.r#type,
-                metric_family_name: metric_name,
-                help: symbol(meta.help_ref)?,
-                unit: symbol(meta.unit_ref)?,
-            });
+            let help = symbol(meta.help_ref)?;
+            let unit = symbol(meta.unit_ref)?;
+            // Like Mimir's RW2 unmarshalling, every series carries a metadata field, and only
+            // one that says something about a named metric becomes metadata.
+            if !metric_name.is_empty() && (meta.r#type != 0 || !help.is_empty() || !unit.is_empty())
+            {
+                metadata.push(cortexpb::MetricMetadata {
+                    r#type: meta.r#type,
+                    metric_family_name: metric_name,
+                    help,
+                    unit,
+                });
+            }
         }
         series.push(DecodedSeries {
             labels,

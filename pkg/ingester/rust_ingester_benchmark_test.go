@@ -23,8 +23,10 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -379,6 +381,10 @@ func startRustIngesterAndWaitObserved(
 		&client.UserStatsRequest{},
 		grpc.WaitForReady(true),
 	)
+	// An ingester that limits reads on its utilization rejects the probe once it serves.
+	if status.Code(err) == codes.Unavailable && strings.Contains(err.Error(), "too busy") {
+		err = nil
+	}
 	if err != nil {
 		_ = connection.Close()
 		stopRustIngester(tb, process)

@@ -279,6 +279,7 @@ fn parallel_ingest_throughput() {
                 },
                 ingested_ms: 0,
                 track_rate: false,
+                bytes: 0,
             })
             .collect::<Vec<_>>()
     };

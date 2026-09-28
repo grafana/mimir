@@ -452,26 +452,32 @@ pub fn export_active_series(reports: &[crate::store::ActiveSeriesReport]) {
     for report in reports {
         let tenant = report.tenant.as_str();
         metadata += report.metadata;
-        ACTIVE_SERIES
-            .with_label_values(&[tenant])
-            .set(report.active as i64);
-        ACTIVE_NATIVE_HISTOGRAM_SERIES
-            .with_label_values(&[tenant])
-            .set(report.active_native_histograms as i64);
-        ACTIVE_NATIVE_HISTOGRAM_BUCKETS
-            .with_label_values(&[tenant])
-            .set(report.active_native_histogram_buckets as i64);
+        // Like Mimir, a tenant without active series has none of these.
+        for (gauge, value) in [
+            (&*ACTIVE_SERIES, report.active),
+            (
+                &*ACTIVE_NATIVE_HISTOGRAM_SERIES,
+                report.active_native_histograms,
+            ),
+            (
+                &*ACTIVE_NATIVE_HISTOGRAM_BUCKETS,
+                report.active_native_histogram_buckets,
+            ),
+        ] {
+            if value > 0 {
+                gauge.with_label_values(&[tenant]).set(value as i64);
+            }
+        }
         exemplars += report.exemplars;
-        if report.exemplar_series > 0 {
-            SERIES_WITH_EXEMPLARS
-                .with_label_values(&[tenant])
-                .set(report.exemplar_series as i64);
-        }
-        if let Some(oldest) = report.oldest_exemplar_ms {
-            LAST_EXEMPLARS_TIMESTAMP
-                .with_label_values(&[tenant])
-                .set(oldest as f64 / 1000.0);
-        }
+        // Like the per-tenant TSDB metrics, exported for every tenant with a head.
+        SERIES_WITH_EXEMPLARS
+            .with_label_values(&[tenant])
+            .set(report.exemplar_series as i64);
+        LAST_EXEMPLARS_TIMESTAMP.with_label_values(&[tenant]).set(
+            report
+                .oldest_exemplar_ms
+                .map_or(0.0, |oldest| oldest as f64 / 1000.0),
+        );
         for (name, [active, histograms, buckets]) in &report.custom_trackers {
             if *active > 0 {
                 ACTIVE_SERIES_CUSTOM_TRACKER
@@ -532,6 +538,7 @@ pub fn export_head(
     reports: &[crate::store::HeadReport],
     local_series_limits: &[(String, usize)],
     instance: &crate::limits::InstanceLimits,
+    owned_series: bool,
 ) {
     OWNED_SERIES.reset();
     LOCAL_LIMITS.reset();
@@ -551,9 +558,11 @@ pub fn export_head(
                 .with_label_values(&[tenant])
                 .inc_by(report.series_removed);
         }
-        OWNED_SERIES
-            .with_label_values(&[tenant])
-            .set(report.owned_series as i64);
+        if owned_series {
+            OWNED_SERIES
+                .with_label_values(&[tenant])
+                .set(report.owned_series as i64);
+        }
         // Removed chunks are the created ones no longer in the head, which never decreases.
         let created = HEAD_CHUNKS_CREATED.with_label_values(&[tenant]).get();
         let removed = HEAD_CHUNKS_REMOVED.with_label_values(&[tenant]);
