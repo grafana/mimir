@@ -184,6 +184,38 @@ impl PartitionClient {
             .context("assign Kafka partition")
     }
 
+    /// Returns the first offset whose record timestamp is at or after `timestamp_ms`, or `None`
+    /// when every record is older.
+    pub async fn offset_for_time(self: &Arc<Self>, timestamp_ms: i64) -> Result<Option<i64>> {
+        let client = Arc::clone(self);
+        tokio::task::spawn_blocking(move || {
+            let mut partitions = TopicPartitionList::new();
+            partitions
+                .add_partition_offset(
+                    &client.topic,
+                    client.partition,
+                    Offset::Offset(timestamp_ms),
+                )
+                .context("set Kafka lookup timestamp")?;
+            let result = client
+                .consumer
+                .offsets_for_times(partitions, Timeout::After(Duration::from_secs(30)))
+                .context("look up Kafka offset for timestamp")?;
+            let element = result
+                .find_partition(&client.topic, client.partition)
+                .context("Kafka offset lookup returned no partition")?;
+            element
+                .error()
+                .context("Kafka offset lookup failed for partition")?;
+            Ok(match element.offset() {
+                Offset::Offset(offset) => Some(offset),
+                _ => None,
+            })
+        })
+        .await
+        .context("join Kafka offset lookup")?
+    }
+
     pub async fn get_offset(self: &Arc<Self>, at: OffsetAt) -> Result<i64> {
         let client = Arc::clone(self);
         tokio::task::spawn_blocking(move || {
