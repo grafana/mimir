@@ -256,18 +256,11 @@ func (i *Ingester) updateLimitMetrics() {
 	i.metrics.labelNamesOverValueBytesLimit.Set(float64(overLimit))
 }
 
-// labelValueBytesReportingThresholdPercentage is the share of the local limit at which a label
-// name starts being reported. Reporting below the limit keeps the metric useful for calibrating
-// the limit and for spotting tenants trending towards it, while reporting only a handful of
-// label names keeps this metric's cardinality near zero in steady state.
-const labelValueBytesReportingThresholdPercentage = 50
-
-// updateLabelValueBytesMetrics reports the label names whose distinct values take up a
-// significant share of the tenant's local per-label-name bytes limit, and returns how many of
-// them are over that limit.
+// updateLabelValueBytesMetrics reports the distinct value bytes of every label name counted by
+// the tenant's head, and returns how many of them are over the local per-label-name bytes limit.
 func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (overLimit int) {
 	// Drop the previously reported label names, as the set changes over time and stale entries
-	// would otherwise linger. This is cheap because only reported label names are held.
+	// would otherwise linger.
 	i.metrics.labelValueBytesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
 	i.metrics.labelValueBytesOverLimit.DeletePartialMatch(prometheus.Labels{"user": userID})
 
@@ -276,11 +269,9 @@ func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (ov
 		return 0
 	}
 
-	localLimit := i.limiter.maxLabelValueBytesPerLabelName(userID)
-	reportingThreshold := uint64(localLimit) / 100 * labelValueBytesReportingThresholdPercentage
-
 	for labelName, bytes := range db.Head().LabelValuesBytes() {
-		if bytes < reportingThreshold {
+		// A label name keeps its entry after its long values are gone if short ones remain.
+		if bytes == 0 {
 			continue
 		}
 		i.metrics.labelValueBytesPerUser.WithLabelValues(userID, labelName).Set(float64(bytes))

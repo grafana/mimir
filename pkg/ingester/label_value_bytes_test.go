@@ -43,8 +43,7 @@ func pushSeriesWithLabelValues(t *testing.T, i *Ingester, ctx context.Context, m
 func TestIngester_LabelValueBytesMetrics(t *testing.T) {
 	const (
 		userID = "test"
-		// With a single ingester the local limit equals the global one, so the reporting
-		// threshold is 1000 bytes and the limit itself is 2000.
+		// With a single ingester the local limit equals the global one.
 		globalLimit = 2000
 		valueLength = 200
 	)
@@ -75,14 +74,13 @@ func TestIngester_LabelValueBytesMetrics(t *testing.T) {
 	i.updateLimitMetrics()
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
 
-	// Four long values are 800 bytes, still under the 1000-byte reporting threshold.
-	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[:4]...)
+	// Long values are reported however far they are from the limit.
+	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[0])
 	i.updateLimitMetrics()
-	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
+	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 200`)
 	requireLabelNamesOverLimit(t, registry, 0)
 
-	// Two more cross the reporting threshold while staying under the limit.
-	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[4:6]...)
+	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[1:6]...)
 	i.updateLimitMetrics()
 	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 1200`)
 	requireLabelNamesOverLimit(t, registry, 0)
