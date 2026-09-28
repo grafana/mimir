@@ -119,7 +119,7 @@ fn main() {
     let (log, _) = SegmentLog::open(&directory, 0, "fixture", 0, None).unwrap();
     let frames = (0..FRAMES)
         .map(|frame| {
-            log.prepare(
+            SegmentLog::frame(
                 frame as i64,
                 frame as i64 * 1_000,
                 "benchmark",

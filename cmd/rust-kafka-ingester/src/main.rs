@@ -14,7 +14,7 @@ use mimir_rust_kafka_ingester::consistency::Consistency;
 use mimir_rust_kafka_ingester::kafka::{OffsetAt, PartitionClient, StartOffset};
 use mimir_rust_kafka_ingester::proto::cortex::ingester_server::IngesterServer;
 use mimir_rust_kafka_ingester::record::{DecodedRequest, decode_record};
-use mimir_rust_kafka_ingester::segment::SegmentLog;
+use mimir_rust_kafka_ingester::segment::{CompressedFrame, SegmentLog};
 mod profiling;
 
 #[cfg(all(target_os = "linux", feature = "jemalloc", feature = "mimalloc"))]
@@ -399,7 +399,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 },
             )
         };
-        let mut segment_log = match recovered_log {
+        let segment_log = match recovered_log {
             Ok(log) => log,
             Err(_) if shutdown_requested.load(Ordering::Relaxed) => {
                 stop_workers(&shutdown_tx, workers).await?;
@@ -456,7 +456,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         // A fresh start or a gap past Kafka retention restarts the complete-data window at the first
         // consumed record; an older window without a record is replaced conservatively by now.
         let coverage_path = data_dir.join("coverage");
-        let mut coverage_pending =
+        let coverage_pending =
             persisted_offset.is_none_or(|offset| offset.saturating_add(1) < earliest_offset);
         if !coverage_pending && !coverage_path.exists() {
             raise_coverage(&coverage_path, now_ms())?;
@@ -507,7 +507,19 @@ async fn serve(args: ServeArgs) -> Result<()> {
             let mut watermark_interval = tokio::time::interval(Duration::from_secs(30));
             watermark_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut ready_tx = Some(ready_tx);
-            let mut last_timestamp_ms = recovered_timestamp;
+            // Decoding and frame compression stay on this task while a dedicated thread applies
+            // records to the store and log in order, so replay uses two cores.
+            let (apply_tx, applier) = spawn_applier(Applier {
+                store: Arc::clone(&ingest_store),
+                consistency: Arc::clone(&ingest_consistency),
+                segment_log,
+                cluster,
+                fatal_tx: fatal_tx.clone(),
+                coverage_path,
+                coverage_pending,
+                last_timestamp_ms: recovered_timestamp,
+            });
+            let mut stopped = false;
             if replay_complete {
                 eprintln!(
                     "phase=kafka_replay_complete cluster={cluster} partition={partition} latest_offset={latest_offset}"
@@ -515,10 +527,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 let _ = ready_tx.take().expect("replay signal available").send(());
                 tokio::select! {
                     _ = warmup_rx.changed() => {}
-                    _ = shutdown_rx.changed() => return snapshot_offset(&mut segment_log, last_timestamp_ms, cluster, &fatal_tx),
+                    _ = shutdown_rx.changed() => stopped = true,
                 }
             }
-            loop {
+            while !stopped {
                 let message = tokio::select! {
                     _ = shutdown_rx.changed() => break,
                     message = tokio::time::timeout_at(tokio::time::Instant::from_std(last_fetch_progress + Duration::from_secs(30)), stream.next()) => {
@@ -567,16 +579,12 @@ async fn serve(args: ServeArgs) -> Result<()> {
                         }
                     },
                     _ = sync_interval.tick() => {
-                        if let Err(error) = segment_log.maintain() {
-                            eprintln!("Kafka cluster {cluster} persistence maintenance failed: {error:#}");
-                            let _ = fatal_tx.send(true);
+                        if apply_tx.send(Apply::Maintain).await.is_err() {
                             break;
                         }
-                        if cluster == 0 {
-                            if let Err(error) = ingest_store.prune_expired() {
-                                eprintln!("retention pruning failed: {error:#}");
-                                let _ = fatal_tx.send(true);
-                                break;
+                        if next_offset > initial_offset {
+                            if let Err(error) = partition_client.commit(next_offset) {
+                                eprintln!("phase=kafka_commit_failed cluster={cluster} partition={partition} error={error:#}");
                             }
                         }
                         continue;
@@ -614,31 +622,29 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     }
                     None => (String::new(), empty_request(), false),
                 };
-                if let Err(error) = ingest_and_append(
-                    &ingest_store,
-                    &mut segment_log,
-                    message.offset,
-                    timestamp_ms,
-                    &tenant,
-                    request,
-                    should_ingest,
-                ) {
-                    eprintln!(
-                        "Kafka cluster {cluster} offset {} failed: {error:#}",
-                        message.offset
-                    );
-                    let _ = fatal_tx.send(true);
-                    break;
-                }
-                ingest_consistency.consumed(cluster, message.offset, high_watermark, timestamp_ms);
-                last_timestamp_ms = last_timestamp_ms.max(timestamp_ms);
-                if coverage_pending {
-                    if let Err(error) = raise_coverage(&coverage_path, timestamp_ms) {
-                        eprintln!("recording data coverage failed: {error:#}");
+                let frame = match SegmentLog::frame(message.offset, timestamp_ms, &tenant, &request)
+                    .and_then(|frame| frame.compress())
+                {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        eprintln!(
+                            "Kafka cluster {cluster} offset {} failed: {error:#}",
+                            message.offset
+                        );
                         let _ = fatal_tx.send(true);
                         break;
                     }
-                    coverage_pending = false;
+                };
+                let command = Apply::Record {
+                    offset: message.offset,
+                    timestamp_ms,
+                    high_watermark,
+                    tenant,
+                    request: should_ingest.then_some(request),
+                    frame,
+                };
+                if apply_tx.send(command).await.is_err() {
+                    break;
                 }
                 next_offset = message.offset.saturating_add(1);
                 last_fetch_progress = Instant::now();
@@ -673,7 +679,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     }
                 }
             }
-            snapshot_offset(&mut segment_log, last_timestamp_ms, cluster, &fatal_tx)
+            drop(apply_tx);
+            tokio::task::spawn_blocking(move || applier.join())
+                .await
+                .expect("join applier task")
+                .expect("applier thread panicked")
         }));
     }
 
@@ -820,20 +830,103 @@ async fn shutdown_signal() -> Result<()> {
     tokio::signal::ctrl_c().await.context("wait for Ctrl-C")
 }
 
+// Rejects a duplicate or old offset before touching the store, so the store never holds data the
+// segment log does not.
 fn ingest_and_append(
     store: &Store,
     segment_log: &mut SegmentLog,
-    offset: i64,
-    timestamp_ms: i64,
     tenant: &str,
-    request: DecodedRequest,
-    should_ingest: bool,
+    request: Option<DecodedRequest>,
+    frame: CompressedFrame,
 ) -> Result<()> {
-    let frame = segment_log.prepare(offset, timestamp_ms, tenant, &request)?;
-    if should_ingest {
+    segment_log.check_offset(frame.offset())?;
+    if let Some(request) = request {
         store.ingest(tenant, request)?;
     }
-    segment_log.append_prepared(frame)
+    segment_log.append_compressed(frame)
+}
+
+enum Apply {
+    Record {
+        offset: i64,
+        timestamp_ms: i64,
+        high_watermark: i64,
+        tenant: String,
+        request: Option<DecodedRequest>,
+        frame: CompressedFrame,
+    },
+    Maintain,
+}
+
+struct Applier {
+    store: Arc<Store>,
+    consistency: Arc<Consistency>,
+    segment_log: SegmentLog,
+    cluster: usize,
+    fatal_tx: tokio::sync::watch::Sender<bool>,
+    coverage_path: PathBuf,
+    coverage_pending: bool,
+    last_timestamp_ms: i64,
+}
+
+impl Applier {
+    fn apply(&mut self, command: Apply) -> Result<()> {
+        match command {
+            Apply::Record {
+                offset,
+                timestamp_ms,
+                high_watermark,
+                tenant,
+                request,
+                frame,
+            } => {
+                ingest_and_append(&self.store, &mut self.segment_log, &tenant, request, frame)
+                    .with_context(|| format!("apply offset {offset}"))?;
+                self.consistency
+                    .consumed(self.cluster, offset, high_watermark, timestamp_ms);
+                self.last_timestamp_ms = self.last_timestamp_ms.max(timestamp_ms);
+                if self.coverage_pending {
+                    raise_coverage(&self.coverage_path, timestamp_ms)?;
+                    self.coverage_pending = false;
+                }
+            }
+            Apply::Maintain => {
+                self.segment_log.maintain()?;
+                if self.cluster == 0 {
+                    self.store.prune_expired()?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn spawn_applier(
+    mut applier: Applier,
+) -> (
+    tokio::sync::mpsc::Sender<Apply>,
+    std::thread::JoinHandle<SnapshotOffset>,
+) {
+    let (apply_tx, mut apply_rx) = tokio::sync::mpsc::channel(64);
+    let handle = std::thread::Builder::new()
+        .name(format!("apply-cluster-{}", applier.cluster))
+        .spawn(move || {
+            while let Some(command) = apply_rx.blocking_recv() {
+                if let Err(error) = applier.apply(command) {
+                    eprintln!("Kafka cluster {} failed: {error:#}", applier.cluster);
+                    let _ = applier.fatal_tx.send(true);
+                    break;
+                }
+            }
+            snapshot_offset(
+                &mut applier.segment_log,
+                applier.last_timestamp_ms,
+                applier.cluster,
+                &applier.fatal_tx,
+            )
+        })
+        .expect("spawn applier thread");
+    (apply_tx, handle)
 }
 
 /// Records, in Unix milliseconds, the time since which this ingester holds complete data. It only
@@ -977,37 +1070,39 @@ mod tests {
             exemplars: Vec::new(),
             created_timestamp: 0,
         };
+        let request = |series: DecodedSeries| DecodedRequest {
+            source: 0,
+            series: vec![series],
+            metadata: Vec::new(),
+        };
+        let frame = |offset, request: &DecodedRequest| {
+            SegmentLog::frame(offset, offset, "tenant", request)
+                .unwrap()
+                .compress()
+                .unwrap()
+        };
+        let first = request(series.clone());
         ingest_and_append(
             &store,
             &mut log,
-            1,
-            1,
             "tenant",
-            DecodedRequest {
-                source: 0,
-                series: vec![series.clone()],
-                metadata: Vec::new(),
-            },
-            true,
+            Some(first.clone()),
+            frame(1, &first),
         )
         .unwrap();
 
+        let duplicate = request(series);
         assert!(
             ingest_and_append(
                 &store,
                 &mut log,
-                1,
-                2,
                 "tenant",
-                DecodedRequest {
-                    source: 0,
-                    series: vec![series],
-                    metadata: Vec::new(),
-                },
-                true,
+                Some(duplicate.clone()),
+                frame(1, &duplicate)
             )
             .is_err()
         );
+        assert_eq!(store.num_series("tenant"), 1);
         assert_eq!(log.last_offset(), Some(1));
         drop(log);
 

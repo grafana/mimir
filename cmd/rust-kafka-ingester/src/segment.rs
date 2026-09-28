@@ -50,9 +50,42 @@ pub struct PreparedFrame {
     body: Vec<u8>,
 }
 
+/// A frame whose payload is already zstd-compressed, so compression can run off the thread that
+/// owns the log.
+pub struct CompressedFrame {
+    offset: i64,
+    ingested_ms: i64,
+    body: Vec<u8>,
+}
+
+impl CompressedFrame {
+    pub fn offset(&self) -> i64 {
+        self.offset
+    }
+}
+
 impl PreparedFrame {
     pub fn uncompressed_body(&self) -> &[u8] {
         &self.body
+    }
+
+    pub fn compress(self) -> Result<CompressedFrame> {
+        let raw = self.body;
+        if raw.len() < 24 || raw.len() > 128 * 1024 * 1024 {
+            bail!("segment frame has invalid uncompressed size");
+        }
+        let compressed = zstd::bulk::compress(&raw[24..], 1).context("compress segment frame")?;
+        let mut body = Vec::with_capacity(24 + compressed.len());
+        body.extend_from_slice(&raw[..24]);
+        body.extend_from_slice(&compressed);
+        if body.len() > 128 * 1024 * 1024 {
+            bail!("compressed segment frame exceeds 128 MiB");
+        }
+        Ok(CompressedFrame {
+            offset: self.offset,
+            ingested_ms: self.ingested_ms,
+            body,
+        })
     }
 }
 
@@ -193,16 +226,6 @@ impl SegmentLog {
         self.append_prepared(frame)
     }
 
-    pub fn prepare(
-        &self,
-        offset: i64,
-        timestamp_ms: i64,
-        tenant: &str,
-        request: &DecodedRequest,
-    ) -> Result<PreparedFrame> {
-        self.prepare_at(offset, timestamp_ms, tenant, request, now_ms())
-    }
-
     fn prepare_at(
         &self,
         offset: i64,
@@ -217,6 +240,26 @@ impl SegmentLog {
                 self.last_offset
             );
         }
+        Self::encode_frame(offset, timestamp_ms, tenant, request, ingested_ms)
+    }
+
+    /// Encodes a frame without access to the log; `append_compressed` checks its offset.
+    pub fn frame(
+        offset: i64,
+        timestamp_ms: i64,
+        tenant: &str,
+        request: &DecodedRequest,
+    ) -> Result<PreparedFrame> {
+        Self::encode_frame(offset, timestamp_ms, tenant, request, now_ms())
+    }
+
+    fn encode_frame(
+        offset: i64,
+        timestamp_ms: i64,
+        tenant: &str,
+        request: &DecodedRequest,
+        ingested_ms: i64,
+    ) -> Result<PreparedFrame> {
         let mut body = Vec::new();
         put_i64(&mut body, offset);
         put_i64(&mut body, timestamp_ms);
@@ -231,27 +274,25 @@ impl SegmentLog {
     }
 
     pub fn append_prepared(&mut self, frame: PreparedFrame) -> Result<()> {
-        if self.last_offset.is_some_and(|last| frame.offset <= last) {
+        self.append_compressed(frame.compress()?)
+    }
+
+    pub fn check_offset(&self, offset: i64) -> Result<()> {
+        if self.last_offset.is_some_and(|last| offset <= last) {
             bail!(
-                "Kafka offset {} is not after persisted offset {:?}",
-                frame.offset,
+                "Kafka offset {offset} is not after persisted offset {:?}",
                 self.last_offset
             );
         }
+        Ok(())
+    }
+
+    pub fn append_compressed(&mut self, frame: CompressedFrame) -> Result<()> {
+        self.check_offset(frame.offset)?;
         let hour = hour_start(frame.ingested_ms);
         self.rotate(hour)?;
-        let raw = frame.body;
-        if raw.len() < 24 || raw.len() > 128 * 1024 * 1024 {
-            bail!("segment frame has invalid uncompressed size");
-        }
-        let compressed = zstd::bulk::compress(&raw[24..], 1).context("compress segment frame")?;
-        let mut body = Vec::with_capacity(24 + compressed.len());
-        body.extend_from_slice(&raw[..24]);
-        body.extend_from_slice(&compressed);
+        let body = frame.body;
         let length = u32::try_from(body.len()).context("segment frame exceeds 4 GiB")?;
-        if length > 128 * 1024 * 1024 {
-            bail!("compressed segment frame exceeds 128 MiB");
-        }
         let checksum = crc32fast::hash(&body);
         let current = self.current.as_mut().context("segment file is not open")?;
         current.file.write_all(&length.to_le_bytes())?;
