@@ -337,7 +337,11 @@ fn consumer_config(brokers: &str, client_id: &str, fetch_max_bytes: &str) -> Cli
         // few records, making catch-up bound by broker round trips.
         .set("fetch.message.max.bytes", fetch_max_bytes)
         .set("queued.max.messages.kbytes", "32768")
-        .set("fetch.wait.max.ms", "500");
+        .set("fetch.wait.max.ms", "500")
+        // A full local queue otherwise postpones the next fetch by librdkafka's default second,
+        // which made a replay wait on Kafka most of the time: 69 s against 6 s for the replay
+        // benchmark's 2M series.
+        .set("fetch.queue.backoff.ms", "10");
     config
 }
 
@@ -370,6 +374,12 @@ mod tests {
         assert_eq!(config.get("fetch.max.bytes"), Some("16777216"));
         assert_eq!(config.get("fetch.message.max.bytes"), Some("16777216"));
         assert_eq!(config.get("enable.auto.commit"), Some("false"));
+    }
+
+    #[test]
+    fn a_full_fetch_queue_does_not_stall_fetching() {
+        let config = consumer_config("broker:9092", "client", "16777216");
+        assert_eq!(config.get("fetch.queue.backoff.ms"), Some("10"));
     }
 
     #[test]
