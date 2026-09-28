@@ -88,6 +88,10 @@ metric!(MEMORY_SERIES_REMOVED: IntCounterVec = IntCounterVec::new(
     Opts::new("cortex_ingester_memory_series_removed_total", "The total number of series that were removed per user."),
     &["user"],
 ).unwrap());
+metric!(EARLY_COMPACTION_NON_OWNED: IntCounterVec = IntCounterVec::new(
+    Opts::new("cortex_ingester_tsdb_early_compaction_non_owned_series_triggered_total", "Total number of triggered early head compactions of non-owned series, per tenant."),
+    &["user"],
+).unwrap());
 metric!(MEMORY_METADATA_CREATED: IntCounterVec = IntCounterVec::new(
     Opts::new("cortex_ingester_memory_metadata_created_total", "The total number of metadata that were created per user"),
     &["user"],
@@ -557,6 +561,11 @@ pub fn export_head(
             MEMORY_SERIES_REMOVED
                 .with_label_values(&[tenant])
                 .inc_by(report.series_removed);
+        }
+        if report.non_owned_evicted > 0 {
+            EARLY_COMPACTION_NON_OWNED
+                .with_label_values(&[tenant])
+                .inc();
         }
         if owned_series {
             OWNED_SERIES
