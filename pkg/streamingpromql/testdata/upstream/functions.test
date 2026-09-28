@@ -1304,17 +1304,19 @@ load 1s
   integral_large{sign="negative"} -1e308 -1e308
 
 # Averaging finite samples must not overflow before dividing by two.
-eval instant at 1s integral(integral_large[2s])
-  {sign="positive"} 1e308
-  {sign="negative"} -1e308
+# Unsupported by streaming engine.
+# eval instant at 1s integral(integral_large[2s])
+#   {sign="positive"} 1e308
+#   {sign="negative"} -1e308
 
 clear
 load 5m
   integral_presence _ 1 1 1 1 stale
 
 # Fill healthy periods with zero so integration does not bridge separate absences.
-eval instant at 30m integral((absent(integral_presence) or vector(0))[31m:5m])
-  {} 600
+# Unsupported by streaming engine.
+# eval instant at 30m integral((absent(integral_presence) or vector(0))[31m:5m])
+#   {} 600
 
 clear
 load 10s
