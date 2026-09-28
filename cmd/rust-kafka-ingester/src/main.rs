@@ -73,6 +73,8 @@ enum Command {
         offset: i64,
         #[arg(long, default_value_t = 1)]
         timestamp_ms: i64,
+        #[command(flatten)]
+        limits: LimitsArgs,
     },
 }
 
@@ -231,7 +233,9 @@ async fn main() -> Result<()> {
             restore_only,
             offset,
             timestamp_ms,
+            limits,
         } => {
+            let overrides = Arc::new(Overrides::new(limits.to_limits()?));
             serve_fixture(
                 &listen,
                 profile_listen.as_deref(),
@@ -241,6 +245,7 @@ async fn main() -> Result<()> {
                 restore_only,
                 offset,
                 timestamp_ms,
+                overrides,
             )
             .await
         }
@@ -256,8 +261,9 @@ async fn serve_fixture(
     restore_only: bool,
     offset: i64,
     timestamp_ms: i64,
+    overrides: Arc<Overrides>,
 ) -> Result<()> {
-    let store = Arc::new(Store::default());
+    let store = Arc::new(Store::default().with_overrides(overrides));
     if let Some(data_dir) = data_dir {
         let (mut log, recovered) = SegmentLog::open(data_dir, 0, "fixture", 0, None)?;
         for record in recovered {

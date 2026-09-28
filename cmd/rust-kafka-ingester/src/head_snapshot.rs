@@ -157,8 +157,9 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
                 }
                 None => writer.write_all(&[0])?,
             }
-            writer.put_len(series.histogram_head.len())?;
-            for histogram in &series.histogram_head {
+            let histogram_head = series.histogram_head.decoded();
+            writer.put_len(histogram_head.len())?;
+            for histogram in &histogram_head {
                 writer.put_bytes(&histogram.encode_to_vec())?;
             }
             writer.put_i64(series.histogram_next_at)?;
@@ -439,13 +440,11 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     appender: xor::Appender::read_state(reader)?,
                 });
             }
-            series.histogram_head = (0..reader.count(1_000_000)?)
-                .map(|_| {
-                    Ok(cortexpb::Histogram::decode(
-                        reader.read_bytes()?.as_slice(),
-                    )?)
-                })
-                .collect::<Result<_>>()?;
+            for _ in 0..reader.count(1_000_000)? {
+                series.histogram_head.push(cortexpb::Histogram::decode(
+                    reader.read_bytes()?.as_slice(),
+                )?);
+            }
             series.histogram_next_at = reader.i64()?;
             series.out_of_order = (0..reader.count(1_000_000)?)
                 .map(|_| {
@@ -804,8 +803,9 @@ mod tests {
                         }
                         None => writer.write_all(&[0]).unwrap(),
                     }
-                    writer.put_len(series.histogram_head.len()).unwrap();
-                    for histogram in &series.histogram_head {
+                    let histogram_head = series.histogram_head.decoded();
+                    writer.put_len(histogram_head.len()).unwrap();
+                    for histogram in &histogram_head {
                         writer.put_bytes(&histogram.encode_to_vec()).unwrap();
                     }
                     writer.put_i64(series.histogram_next_at).unwrap();
