@@ -390,6 +390,50 @@ func TestGoRustIngesterParity(t *testing.T) {
 			}
 			require.Equal(t, cardinality(goSide.api, goCtx), cardinality(rustSide.api, rustCtx))
 		})
+		// Label lookups over ranges that cover part of the data, none of it, or only its end.
+		for _, window := range [][2]int64{{2500, 5500}, {250_000, 260_000}, {9_000_000, 9_100_000}, {-10_000, 500}} {
+			t.Run(fmt.Sprintf("label-window-%s-%d-%d", tenant, window[0], window[1]), func(t *testing.T) {
+				goCtx := parityContext(tenant, goSide.offset)
+				rustCtx := parityContext(tenant, rustSide.offset)
+				namesRequest := &client.LabelNamesRequest{StartTimestampMs: window[0], EndTimestampMs: window[1]}
+				goNames, err := goSide.api.LabelNames(goCtx, namesRequest)
+				require.NoError(t, err)
+				rustNames, err := rustSide.api.LabelNames(rustCtx, namesRequest)
+				require.NoError(t, err)
+				sort.Strings(goNames.LabelNames)
+				sort.Strings(rustNames.LabelNames)
+				require.Equal(t, goNames.LabelNames, rustNames.LabelNames)
+				for _, matchers := range [][]*client.LabelMatcher{nil, {parityMatcher(client.EQUAL, "__name__", "special_metric")}} {
+					valuesRequest := &client.LabelValuesRequest{LabelName: "__name__", StartTimestampMs: window[0], EndTimestampMs: window[1]}
+					if matchers != nil {
+						valuesRequest.LabelName = "kind"
+						valuesRequest.Matchers = &client.LabelMatchers{Matchers: matchers}
+					}
+					goValues, err := goSide.api.LabelValues(goCtx, valuesRequest)
+					require.NoError(t, err)
+					rustValues, err := rustSide.api.LabelValues(rustCtx, valuesRequest)
+					require.NoError(t, err)
+					sort.Strings(goValues.LabelValues)
+					sort.Strings(rustValues.LabelValues)
+					require.Equal(t, goValues.LabelValues, rustValues.LabelValues, "values of %s with %v", valuesRequest.LabelName, matchers)
+				}
+				seriesRequest := &client.MetricsForLabelMatchersRequest{
+					StartTimestampMs: window[0], EndTimestampMs: window[1],
+					MatchersSet: []*client.LabelMatchers{{Matchers: []*client.LabelMatcher{parityMatcher(client.REGEX_MATCH, "__name__", ".+")}}},
+				}
+				series := func(api client.IngesterClient, ctx context.Context) []string {
+					response, err := api.MetricsForLabelMatchers(ctx, seriesRequest)
+					require.NoError(t, err)
+					result := []string{}
+					for _, metric := range response.Metric {
+						result = append(result, mimirpb.FromLabelAdaptersToLabels(metric.Labels).String())
+					}
+					sort.Strings(result)
+					return result
+				}
+				require.Equal(t, series(goSide.api, goCtx), series(rustSide.api, rustCtx))
+			})
+		}
 	}
 	t.Run("exemplars-and-metadata", func(t *testing.T) {
 		goCtx := parityContext("tenant-a", goSide.offset)
