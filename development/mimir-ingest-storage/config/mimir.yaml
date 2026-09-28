@@ -19,6 +19,8 @@ ingest_storage:
 
 ingester:
   push_grpc_method_enabled: false
+  # Covers ignore_blocks_within plus the block-builder lag.
+  delayed_series_replay_window: 20m
   track_ingester_owned_series: true
   active_series_metrics_update_period: 10s
   active_series_metrics_idle_timeout:  1m
@@ -52,7 +54,9 @@ blocks_storage:
     block_postings_for_matchers_cache_force: true
 
   bucket_store:
-    # Make block-builder blocks queryable within minutes, so delayed series are visible quickly.
+    # Prod ignores blocks whose (2h-aligned) min time is within 3h, hiding delayed data for 1-3h. Locally
+    # blocks are served right away so delayed data shows up within minutes; the replay on promotion then
+    # covers the block-builder's unpublished tail instead.
     ignore_blocks_within: 0s
     sync_interval: 1m
 

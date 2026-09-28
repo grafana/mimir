@@ -10,6 +10,16 @@ overrides:
     cardinality_analysis_enabled: true
     # Don't cache results newer than the block-builder lag: delayed series fill in after publication.
     max_cache_freshness: 30m
+    # Replayed samples of promoted series arrive after live ones.
+    out_of_order_time_window: 30m
     delayed_series:
+      - match: '{__name__="grafana_http_request_duration_seconds_bucket"}'
+        except:
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-00"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-01"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-02"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-03"}'
+          - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-04"}'
+      - match: '{__name__="grafana_http_request_duration_seconds_sum"}'
       - match: '{__name__="grafana_http_request_duration_seconds_count"}'
-        retired_at: 2026-09-25T18:06:55Z
+        retired_at: 2026-09-28T16:38:56Z
