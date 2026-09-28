@@ -5,7 +5,7 @@ use std::path::Path;
 use super::*;
 use crate::chunk_disk::FileState;
 
-const MAGIC: &[u8; 8] = b"MIMIRHS2";
+const MAGIC: &[u8; 8] = b"MIMIRHS3";
 const FILE_NAME: &str = "snapshot";
 
 /// The Kafka position a head snapshot covers for one cluster.
@@ -44,6 +44,10 @@ impl Store {
         let mut writer = Checksummed::new(BufWriter::with_capacity(1 << 20, file));
         writer.inner.write_all(MAGIC)?;
         write_snapshot_body(&mut writer, &states, offsets)?;
+        write_exemplars(
+            &mut writer,
+            &self.exemplars.lock().expect("exemplar lock poisoned"),
+        )?;
         let checksum = writer.hasher.clone().finalize();
         let mut file = writer
             .inner
@@ -115,9 +119,11 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
     writer.put_len(state.tenants.len())?;
     for (tenant_id, tenant) in &state.tenants {
         writer.put_bytes(tenant_id.as_bytes())?;
-        writer.put_len(tenant.metadata.len())?;
-        for metadata in tenant.metadata.values() {
+        writer.put_i64(tenant.max_time)?;
+        writer.put_len(tenant.metadata.values().map(BTreeMap::len).sum())?;
+        for (metadata, seen) in tenant.metadata.values().flat_map(BTreeMap::values) {
             writer.put_bytes(&metadata.encode_to_vec())?;
+            writer.put_i64(*seen)?;
         }
         writer.put_len(tenant.series.len())?;
         for ((_, labels), series) in tenant.series.iter() {
@@ -155,13 +161,63 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
                 writer.put_i64(*timestamp)?;
                 writer.put_u64(value.to_bits())?;
             }
-            writer.put_len(series.exemplars.len())?;
-            for exemplar in &series.exemplars {
-                writer.put_bytes(&exemplar.encode_to_vec())?;
-            }
         }
     }
     Ok(())
+}
+
+// Exemplars in insertion order, so a restore evicts in the same order.
+fn write_exemplars(
+    writer: &mut Checksummed<BufWriter<File>>,
+    exemplars: &HashMap<String, TenantExemplars<Arc<StoredLabels>>>,
+) -> Result<()> {
+    writer.put_len(exemplars.len())?;
+    for (tenant_id, storage) in exemplars {
+        writer.put_bytes(tenant_id.as_bytes())?;
+        writer.put_u64(storage.capacity() as u64)?;
+        let entries = storage.in_insertion_order();
+        writer.put_len(entries.len())?;
+        for (series_id, labels, exemplar) in entries {
+            writer.put_u64(series_id)?;
+            writer.put_len(labels.len())?;
+            for (name, value) in labels.iter() {
+                writer.put_bytes(name.as_bytes())?;
+                writer.put_bytes(value.as_bytes())?;
+            }
+            writer.put_bytes(&exemplar.encode_to_vec())?;
+        }
+    }
+    Ok(())
+}
+
+fn read_exemplars(
+    reader: &mut Checksummed<BufReader<File>>,
+) -> Result<HashMap<String, TenantExemplars<Arc<StoredLabels>>>> {
+    let mut exemplars = HashMap::new();
+    for _ in 0..reader.count(1_000_000)? {
+        let tenant_id = reader.string()?;
+        let mut storage = TenantExemplars::new(usize::try_from(reader.u64()?)?);
+        let mut labels_by_series: HashMap<u64, Arc<StoredLabels>> = HashMap::new();
+        for _ in 0..reader.count(100_000_000)? {
+            let series_id = reader.u64()?;
+            let labels = (0..reader.count(10_000)?)
+                .map(|_| {
+                    let name: Arc<str> = reader.string()?.into();
+                    Ok((name, CompactString::from(reader.string()?)))
+                })
+                .collect::<Result<StoredLabels>>()?;
+            let labels = Arc::clone(
+                labels_by_series
+                    .entry(series_id)
+                    .or_insert_with(|| Arc::new(labels)),
+            );
+            let exemplar = cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?;
+            // Stored exemplars were valid when added; a window this wide re-adds them all.
+            let _ = storage.add(series_id, || labels, exemplar, i64::MAX);
+        }
+        exemplars.insert(tenant_id, storage);
+    }
+    Ok(exemplars)
 }
 
 fn read_snapshot(
@@ -189,6 +245,7 @@ fn read_snapshot(
     let shards = (0..reader.count(4096)?)
         .map(|_| read_shard(&mut reader))
         .collect::<Result<Vec<_>>>()?;
+    let exemplars = read_exemplars(&mut reader)?;
     let expected = reader.hasher.clone().finalize();
     let mut checksum = [0; 4];
     reader.inner.read_exact(&mut checksum)?;
@@ -206,10 +263,9 @@ fn read_snapshot(
             Ok(RwLock::new(State { tenants, disk }))
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(Restored {
-        store: Store::from_shards(shards, threads, active_window_ms, retention_ms)?,
-        offsets,
-    })
+    let store = Store::from_shards(shards, threads, active_window_ms, retention_ms)?;
+    *store.exemplars.lock().expect("exemplar lock poisoned") = exemplars;
+    Ok(Restored { store, offsets })
 }
 
 type ShardImage = (Vec<FileState>, u32, HashMap<String, Tenant>);
@@ -228,16 +284,25 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
     let mut tenants = HashMap::new();
     for _ in 0..reader.count(1_000_000)? {
         let tenant_id = reader.string()?;
-        let mut tenant = Tenant::default();
+        let mut tenant = Tenant {
+            max_time: reader.i64()?,
+            ..Tenant::default()
+        };
         for _ in 0..reader.count(10_000_000)? {
             let metadata = cortexpb::MetricMetadata::decode(reader.read_bytes()?.as_slice())?;
-            let key = (
-                metadata.metric_family_name.clone(),
-                metadata.r#type,
-                metadata.help.clone(),
-                metadata.unit.clone(),
-            );
-            tenant.metadata.insert(key, metadata);
+            let seen = reader.i64()?;
+            tenant
+                .metadata
+                .entry(metadata.metric_family_name.clone())
+                .or_default()
+                .insert(
+                    (
+                        metadata.r#type,
+                        metadata.help.clone(),
+                        metadata.unit.clone(),
+                    ),
+                    (metadata, seen),
+                );
         }
         for _ in 0..reader.count(100_000_000)? {
             let labels = (0..reader.count(10_000)?)
@@ -287,9 +352,6 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
             series.histogram_next_at = reader.i64()?;
             series.out_of_order = (0..reader.count(1_000_000)?)
                 .map(|_| Ok((reader.i64()?, f64::from_bits(reader.u64()?))))
-                .collect::<Result<_>>()?;
-            series.exemplars = (0..reader.count(10_000_000)?)
-                .map(|_| Ok(cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?))
                 .collect::<Result<_>>()?;
             if !tenant.series.insert(series_key(labels), series) {
                 bail!("duplicate series in head snapshot");
@@ -410,7 +472,14 @@ mod tests {
     fn restores_series_heads_and_chunks_and_removes_the_snapshot() {
         let directory =
             std::env::temp_dir().join(format!("mimir-rust-head-snapshot-{}", std::process::id()));
-        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let overrides = Arc::new(Overrides::new(crate::limits::Limits {
+            out_of_order_time_window_ms: 3_600_000,
+            max_global_exemplars_per_user: 100,
+            ..Default::default()
+        }));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone()))
+            .unwrap()
+            .with_overrides(Arc::clone(&overrides));
         let request = |samples: Vec<(i64, f64)>, histograms: Vec<i64>| DecodedRequest {
             source: 0,
             series: vec![DecodedSeries {
@@ -468,6 +537,10 @@ mod tests {
             )
             .unwrap();
         let before = query_everything(&store);
+        let exemplars_before = store
+            .select_exemplars("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap();
+        assert_eq!(exemplars_before[0].exemplars.len(), 1);
         let offsets = [SnapshotOffset {
             offset: Some(41),
             timestamp_ms: 99,
@@ -475,13 +548,50 @@ mod tests {
         store.write_snapshot(&offsets).unwrap();
         drop(store);
 
-        let restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
+        let mut restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
             .unwrap()
             .unwrap();
+        restored.store = restored.store.with_overrides(overrides);
         assert_eq!(restored.offsets, offsets);
         assert!(!directory.join(FILE_NAME).exists());
         assert_eq!(query_everything(&restored.store), before);
         assert_eq!(restored.store.metadata("tenant").len(), 1);
+        assert_eq!(
+            restored
+                .store
+                .select_exemplars("tenant", i64::MIN, i64::MAX, &[])
+                .unwrap()
+                .into_iter()
+                .map(|series| (series.labels, series.exemplars))
+                .collect::<Vec<_>>(),
+            exemplars_before
+                .into_iter()
+                .map(|series| (series.labels, series.exemplars))
+                .collect::<Vec<_>>()
+        );
+        // The head's max time survives: a sample over an hour older than it is too old.
+        let mut old = request(vec![(0, 1.0)], Vec::new());
+        old.series[0].labels[1].1 = "other".into();
+        old.series[0].exemplars.clear();
+        restored.store.ingest("tenant", old).unwrap();
+        assert_eq!(restored.store.num_series("tenant"), 2);
+        assert_eq!(
+            restored
+                .store
+                .select_labels(
+                    "tenant",
+                    i64::MIN,
+                    i64::MAX,
+                    &[cortex::LabelMatcher {
+                        r#type: 0,
+                        name: "job".into(),
+                        value: "other".into(),
+                    }]
+                )
+                .unwrap()
+                .len(),
+            0
+        );
         restored
             .store
             .ingest("tenant", request(vec![(500 * 15_000, 1.0)], Vec::new()))

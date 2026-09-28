@@ -244,3 +244,12 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 }
+
+func TestActivePartitionsCountsOnlyActivePartitions(t *testing.T) {
+	desc := ring.NewPartitionRingDesc()
+	desc.AddPartition(0, ring.PartitionActive, time.Now())
+	desc.AddPartition(1, ring.PartitionActive, time.Now())
+	desc.AddPartition(2, ring.PartitionPending, time.Now())
+	desc.AddPartition(3, ring.PartitionInactive, time.Now())
+	require.Equal(t, 2, activePartitions(desc))
+}

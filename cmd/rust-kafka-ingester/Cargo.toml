@@ -21,11 +21,20 @@ regex = "1"
 rdkafka = { version = "0.38", default-features = false, features = ["tokio", "libz-static"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = "0.1"
 tonic = { version = "0.14", features = ["gzip", "tls-ring"] }
 tonic-prost = "0.14"
 zstd = "0.13"
+serde_yaml = { version = "0.9", default-features = false }
+prometheus = { version = "0.14", default-features = false }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+bytes = "1.12.1"
+tower = "0.5"
+http = "1"
+http-body = "1"
 
 [features]
 default = ["jemalloc"]

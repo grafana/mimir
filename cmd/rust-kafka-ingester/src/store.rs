@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
@@ -12,8 +12,12 @@ use rayon::prelude::*;
 use regex::Regex;
 
 use crate::chunk_disk::{ChunkDiskMapper, ChunkRef};
+use crate::exemplars::{Rejection, TenantExemplars};
+use crate::limits::{Limits, Overrides};
+use crate::metrics;
 use crate::proto::{cortex, cortexpb};
 use crate::record::{DecodedRequest, DecodedSeries};
+use crate::trackers::OVERFLOW_VALUE;
 use crate::{histogram, xor};
 
 type StoredLabel = (Arc<str>, CompactString);
@@ -51,9 +55,11 @@ struct Series {
     histogram_head: Vec<cortexpb::Histogram>,
     histogram_next_at: i64,
     out_of_order: Vec<(i64, f64)>,
-    exemplars: Vec<cortexpb::Exemplar>,
     last_ingested_ms: i64,
     last_bucket_count: u32,
+    // Custom trackers this series matches, computed for one overrides generation.
+    tracker_generation: u64,
+    tracker_matches: Box<[u16]>,
 }
 
 // Series grouped by metric name, so a `__name__` matcher only visits its own metric like a
@@ -72,7 +78,7 @@ impl SeriesByName {
         hash: u64,
         is_same: impl Fn(&StoredLabels) -> bool,
         labels: impl FnOnce() -> Arc<StoredLabels>,
-    ) -> &mut Series {
+    ) -> (&Arc<StoredLabels>, &mut Series) {
         if !self.names.contains_key(name) {
             self.names
                 .insert(CompactString::from(name), HashTable::new());
@@ -84,13 +90,16 @@ impl SeriesByName {
             |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
             |((entry_hash, _), _)| *entry_hash,
         ) {
-            hashbrown::hash_table::Entry::Occupied(entry) => &mut entry.into_mut().1,
+            hashbrown::hash_table::Entry::Occupied(entry) => {
+                let ((_, labels), series) = entry.into_mut();
+                (&*labels, series)
+            }
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
-                &mut entry
+                let ((_, labels), series) = entry
                     .insert(((hash, labels()), Series::default()))
-                    .into_mut()
-                    .1
+                    .into_mut();
+                (&*labels, series)
             }
         }
     }
@@ -99,7 +108,7 @@ impl SeriesByName {
         let (hash, labels) = key;
         let mut series = Some(series);
         let inserted = std::cell::Cell::new(false);
-        let stored = self.get_or_insert_with(
+        let (_, stored) = self.get_or_insert_with(
             metric_name(&labels),
             hash,
             |existing| existing == labels.as_ref(),
@@ -153,6 +162,14 @@ impl SeriesByName {
         Box::new(candidates.filter(move |((_, labels), _)| matches(labels, matchers)))
     }
 
+    fn for_each_mut(&mut self, mut visit: impl FnMut(&StoredLabels, &mut Series)) {
+        for table in self.names.values_mut() {
+            for ((_, labels), series) in table.iter_mut() {
+                visit(labels, series);
+            }
+        }
+    }
+
     fn retain(&mut self, mut keep: impl FnMut(&SeriesKey, &mut Series) -> bool) {
         let mut len = 0;
         self.names.retain(|_, table| {
@@ -170,13 +187,28 @@ fn metric_name(labels: &[StoredLabel]) -> &str {
         .map_or("", |index| labels[index].1.as_str())
 }
 
-#[derive(Default)]
+// Metadata of one metric family, keyed by type, help and unit, with when each was last seen.
+type MetricMetadataSet = BTreeMap<(i32, String, String), (cortexpb::MetricMetadata, i64)>;
+
 struct Tenant {
     series: SeriesByName,
     label_names: HashSet<Arc<str>>,
-    // Tenant metadata and ingestion rates live only in shard 0.
-    metadata: BTreeMap<(String, i32, String, String), cortexpb::MetricMetadata>,
+    // Tenant metadata, ingestion rates and the head's max time live only in shard 0.
+    metadata: BTreeMap<String, MetricMetadataSet>,
     ingested: VecDeque<(Instant, i32, u64)>,
+    max_time: i64,
+}
+
+impl Default for Tenant {
+    fn default() -> Self {
+        Self {
+            series: SeriesByName::default(),
+            label_names: HashSet::new(),
+            metadata: BTreeMap::new(),
+            ingested: VecDeque::new(),
+            max_time: i64::MIN,
+        }
+    }
 }
 
 struct State {
@@ -192,6 +224,106 @@ pub struct Store {
     pool: rayon::ThreadPool,
     active_window_ms: i64,
     retention_ms: Option<i64>,
+    overrides: Arc<Overrides>,
+    exemplars: Mutex<HashMap<String, TenantExemplars<Arc<StoredLabels>>>>,
+    cost_attribution: Mutex<HashMap<(String, String), CostAttributionState>>,
+}
+
+// Mimir's head appender rejects in-order samples more than half a block range behind the head.
+const MIN_VALID_TIME_WINDOW_MS: i64 = CHUNK_RANGE_MS / 2;
+
+/// Why a sample was discarded, as the `reason` of `cortex_discarded_samples_total`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DiscardReason {
+    OutOfOrder,
+    OutOfBounds,
+    TooOld,
+    NewValueForTimestamp,
+    TooFarInFuture,
+    TooFarInPast,
+}
+
+impl DiscardReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            DiscardReason::OutOfOrder => "sample-out-of-order",
+            DiscardReason::OutOfBounds => "sample-timestamp-too-old",
+            DiscardReason::TooOld => "sample-too-old",
+            DiscardReason::NewValueForTimestamp => "new-value-for-timestamp",
+            DiscardReason::TooFarInFuture => "sample-too-far-in-future",
+            DiscardReason::TooFarInPast => "sample-too-far-in-past",
+        }
+    }
+}
+
+// The head state a record's samples are checked against, taken before the record applies like
+// the head appender Mimir creates for each request.
+#[derive(Clone, Copy, Debug)]
+struct AppendRules {
+    head_max_time: i64,
+    min_valid_time: i64,
+    out_of_order_window_ms: i64,
+}
+
+impl AppendRules {
+    fn new(head_max_time: i64, out_of_order_window_ms: i64) -> Self {
+        Self {
+            head_max_time,
+            min_valid_time: if head_max_time == i64::MIN {
+                i64::MIN
+            } else {
+                head_max_time.saturating_sub(MIN_VALID_TIME_WINDOW_MS)
+            },
+            out_of_order_window_ms,
+        }
+    }
+
+    /// Prometheus's `appendable` for a sample at `timestamp` in a series whose in-order samples
+    /// end at `series_max` (None for a series without any).
+    fn classify(&self, timestamp: i64, series_max: Option<i64>) -> Result<Append, DiscardReason> {
+        match series_max {
+            Some(max) if timestamp > max && timestamp >= self.min_valid_time => {
+                return Ok(Append::InOrder);
+            }
+            Some(max) if timestamp == max => return Ok(Append::Duplicate),
+            None if timestamp >= self.min_valid_time => return Ok(Append::InOrder),
+            _ => {}
+        }
+        if self.out_of_order_window_ms > 0 {
+            if timestamp
+                >= self
+                    .head_max_time
+                    .saturating_sub(self.out_of_order_window_ms)
+            {
+                return Ok(Append::OutOfOrder);
+            }
+            return Err(DiscardReason::TooOld);
+        }
+        if timestamp < self.min_valid_time {
+            return Err(DiscardReason::OutOfBounds);
+        }
+        Err(DiscardReason::OutOfOrder)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Append {
+    InOrder,
+    Duplicate,
+    OutOfOrder,
+}
+
+// Samples a shard applied, rejected, and exemplars to store once the shards finish.
+#[derive(Default)]
+struct ShardOutcome {
+    accepted: HashMap<usize, u64>,
+    discarded: HashMap<(usize, DiscardReason), u64>,
+    exemplars: Vec<(usize, u64, Arc<StoredLabels>, Vec<cortexpb::Exemplar>)>,
+}
+
+#[derive(Default)]
+struct CostAttributionState {
+    overflow_since: Option<i64>,
 }
 
 /// A decoded Kafka record to apply to the store.
@@ -243,6 +375,32 @@ impl Default for Store {
     fn default() -> Self {
         Self::with_shards(20 * 60 * 1000, None, None, 4, 2).expect("create in-memory store")
     }
+}
+
+/// Per-tenant counts for the active series metrics.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ActiveSeriesReport {
+    pub tenant: String,
+    pub series: u64,
+    pub active: u64,
+    pub active_native_histograms: u64,
+    pub active_native_histogram_buckets: u64,
+    /// Per custom tracker name: active series, native histogram series and buckets.
+    pub custom_trackers: Vec<(String, [u64; 3])>,
+    pub cost_attribution: Vec<AttributedSeries>,
+    pub metadata: u64,
+    pub exemplars: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributedSeries {
+    pub tracker: String,
+    pub internal: bool,
+    pub output_labels: Vec<String>,
+    /// Attribution values and their active series, native histogram series and buckets. An
+    /// overflowing tracker reports a single `__overflow__` entry.
+    pub values: Vec<(Vec<String>, [u64; 3])>,
+    pub overflow: bool,
 }
 
 impl Store {
@@ -304,7 +462,20 @@ impl Store {
                 .context("create store thread pool")?,
             active_window_ms,
             retention_ms,
+            overrides: Arc::default(),
+            exemplars: Mutex::default(),
+            cost_attribution: Mutex::default(),
         })
+    }
+
+    /// Limits come from `overrides`; without them the store uses Mimir's defaults.
+    pub fn with_overrides(mut self, overrides: Arc<Overrides>) -> Self {
+        self.overrides = overrides;
+        self
+    }
+
+    pub fn overrides(&self) -> &Arc<Overrides> {
+        &self.overrides
     }
 
     pub fn ingest(&self, tenant_id: &str, request: DecodedRequest) -> Result<()> {
@@ -336,26 +507,24 @@ impl Store {
         let shard_count = self.shards.len();
         let mut buckets = (0..shard_count).map(|_| Vec::new()).collect::<Vec<_>>();
         let mut tenant_ids = Vec::with_capacity(records.len());
+        let mut record_rules = Vec::with_capacity(records.len());
         let mut all_series = Vec::new();
+        let mut early_discards: HashMap<(usize, DiscardReason), u64> = HashMap::new();
+        let mut exemplar_failures = 0_u64;
+        let wall_now = now_ms();
         {
             let mut home = self.shards[0].write().expect("store lock poisoned");
             for (index, record) in records.into_iter().enumerate() {
                 let IngestRecord {
                     tenant,
-                    request,
+                    mut request,
                     ingested_ms,
                     track_rate,
                 } = record;
+                let tenant_limits = self.overrides.tenant(&tenant);
+                let limits = &tenant_limits.limits;
                 let home_tenant = tenant_mut(&mut home.tenants, &tenant);
-                for metadata in request.metadata {
-                    let key = (
-                        metadata.metric_family_name.clone(),
-                        metadata.r#type,
-                        metadata.help.clone(),
-                        metadata.unit.clone(),
-                    );
-                    home_tenant.metadata.insert(key, metadata);
-                }
+                self.add_metadata(home_tenant, &tenant, limits, request.metadata, wall_now);
                 if track_rate {
                     let samples = request
                         .series
@@ -372,6 +541,71 @@ impl Store {
                         home_tenant.ingested.pop_front();
                     }
                 }
+                // Like the push path, check wall-clock grace periods before appending.
+                let max_timestamp = wall_now.saturating_add(limits.creation_grace_period_ms);
+                let min_timestamp = if limits.past_grace_period_ms > 0 {
+                    wall_now
+                        .saturating_sub(limits.past_grace_period_ms)
+                        .saturating_sub(limits.out_of_order_time_window_ms)
+                } else {
+                    i64::MIN
+                };
+                let classify = |timestamp: i64| {
+                    if timestamp > max_timestamp {
+                        Some(DiscardReason::TooFarInFuture)
+                    } else if timestamp < min_timestamp {
+                        Some(DiscardReason::TooFarInPast)
+                    } else {
+                        None
+                    }
+                };
+                let keep_exemplars = limits.max_global_exemplars_per_user > 0;
+                let rules =
+                    AppendRules::new(home_tenant.max_time, limits.out_of_order_time_window_ms);
+                let mut record_max = home_tenant.max_time;
+                for series in &mut request.series {
+                    series
+                        .samples
+                        .retain(|sample| match classify(sample.timestamp_ms) {
+                            Some(reason) => {
+                                *early_discards.entry((index, reason)).or_default() += 1;
+                                false
+                            }
+                            None => {
+                                record_max = record_max.max(sample.timestamp_ms);
+                                true
+                            }
+                        });
+                    if limits.native_histograms_ingestion_enabled {
+                        series
+                            .histograms
+                            .retain(|histogram| match classify(histogram.timestamp) {
+                                Some(reason) => {
+                                    *early_discards.entry((index, reason)).or_default() += 1;
+                                    false
+                                }
+                                None => {
+                                    record_max = record_max.max(histogram.timestamp);
+                                    true
+                                }
+                            });
+                    } else {
+                        // Ignored without an error, like Mimir.
+                        series.histograms.clear();
+                    }
+                    if keep_exemplars {
+                        let before = series.exemplars.len();
+                        series
+                            .exemplars
+                            .retain(|exemplar| classify(exemplar.timestamp_ms).is_none());
+                        exemplar_failures += (before - series.exemplars.len()) as u64;
+                    } else {
+                        series.exemplars.clear();
+                    }
+                }
+                // Every sample above the head's max time is accepted, so the max is known now.
+                home_tenant.max_time = record_max;
+                record_rules.push((rules, keep_exemplars));
                 all_series.extend(
                     request
                         .series
@@ -404,29 +638,177 @@ impl Store {
                 buckets[shard_for(hash, shard_count)].push((index, hash, series, ingested_ms));
             }
         }
-        let apply = |shard: usize, bucket: Vec<(usize, u64, DecodedSeries, i64)>| -> Result<()> {
-            let mut guard = self.shards[shard].write().expect("store lock poisoned");
-            let State { tenants, disk } = &mut *guard;
-            for (index, hash, series, ingested_ms) in bucket {
-                let tenant = tenant_mut(tenants, &tenant_ids[index]);
-                ingest_series(tenant, disk, series, hash, ingested_ms)?;
-            }
-            Ok(())
-        };
+        let apply =
+            |shard: usize, bucket: Vec<(usize, u64, DecodedSeries, i64)>| -> Result<ShardOutcome> {
+                let mut guard = self.shards[shard].write().expect("store lock poisoned");
+                let State { tenants, disk } = &mut *guard;
+                let mut outcome = ShardOutcome::default();
+                for (index, hash, series, ingested_ms) in bucket {
+                    let tenant = tenant_mut(tenants, &tenant_ids[index]);
+                    let (rules, keep_exemplars) = record_rules[index];
+                    ingest_series(
+                        tenant,
+                        disk,
+                        series,
+                        hash,
+                        ingested_ms,
+                        SeriesContext {
+                            rules,
+                            keep_exemplars,
+                            index,
+                        },
+                        &mut outcome,
+                    )?;
+                }
+                Ok(outcome)
+            };
         let work = buckets
             .into_iter()
             .enumerate()
             .filter(|(_, bucket)| !bucket.is_empty())
             .collect::<Vec<_>>();
-        if work.len() <= 1 {
-            return work
-                .into_iter()
-                .try_for_each(|(shard, bucket)| apply(shard, bucket));
+        let outcomes = if work.len() <= 1 {
+            work.into_iter()
+                .map(|(shard, bucket)| apply(shard, bucket))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            self.pool.install(|| {
+                work.into_par_iter()
+                    .map(|(shard, bucket)| apply(shard, bucket))
+                    .collect::<Result<Vec<_>>>()
+            })?
+        };
+        self.record_outcomes(&tenant_ids, early_discards, exemplar_failures, outcomes);
+        Ok(())
+    }
+
+    fn record_outcomes(
+        &self,
+        tenant_ids: &[String],
+        early_discards: HashMap<(usize, DiscardReason), u64>,
+        mut exemplar_failures: u64,
+        outcomes: Vec<ShardOutcome>,
+    ) {
+        let mut accepted: HashMap<&str, u64> = HashMap::new();
+        let mut discarded: HashMap<(&str, DiscardReason), u64> = HashMap::new();
+        for ((index, reason), count) in early_discards {
+            *discarded.entry((&tenant_ids[index], reason)).or_default() += count;
         }
-        self.pool.install(|| {
-            work.into_par_iter()
-                .try_for_each(|(shard, bucket)| apply(shard, bucket))
-        })
+        let mut exemplars = Vec::new();
+        for outcome in outcomes {
+            for (index, count) in outcome.accepted {
+                *accepted.entry(&tenant_ids[index]).or_default() += count;
+            }
+            for ((index, reason), count) in outcome.discarded {
+                *discarded.entry((&tenant_ids[index], reason)).or_default() += count;
+            }
+            exemplars.extend(outcome.exemplars);
+        }
+        for (tenant, count) in accepted {
+            metrics::INGESTED_SAMPLES
+                .with_label_values(&[tenant])
+                .inc_by(count);
+        }
+        let mut failures: HashMap<&str, u64> = HashMap::new();
+        for ((tenant, reason), count) in discarded {
+            metrics::DISCARDED_SAMPLES
+                .with_label_values(&[reason.label(), tenant, ""])
+                .inc_by(count);
+            *failures.entry(tenant).or_default() += count;
+        }
+        for (tenant, count) in failures {
+            metrics::INGESTED_SAMPLES_FAILURES
+                .with_label_values(&[tenant])
+                .inc_by(count);
+        }
+        if exemplars.is_empty() {
+            if exemplar_failures > 0 {
+                metrics::INGESTED_EXEMPLARS_FAILURES.inc_by(exemplar_failures);
+            }
+            return;
+        }
+        let mut stored = 0_u64;
+        let mut storage = self.exemplars.lock().expect("exemplar lock poisoned");
+        for (index, hash, labels, series_exemplars) in exemplars {
+            let tenant = &tenant_ids[index];
+            let tenant_limits = self.overrides.tenant(tenant);
+            let capacity = self.overrides.max_exemplars(&tenant_limits.limits);
+            let window = tenant_limits.limits.out_of_order_time_window_ms;
+            let tenant_storage = storage
+                .entry(tenant.clone())
+                .or_insert_with(|| TenantExemplars::new(capacity));
+            if tenant_storage.capacity() != capacity {
+                tenant_storage.resize(capacity);
+            }
+            for exemplar in series_exemplars {
+                match tenant_storage.add(hash, || Arc::clone(&labels), exemplar, window) {
+                    Ok(()) => stored += 1,
+                    Err(Rejection::Disabled | Rejection::LabelLength | Rejection::OutOfOrder) => {
+                        exemplar_failures += 1
+                    }
+                }
+            }
+        }
+        metrics::INGESTED_EXEMPLARS.inc_by(stored);
+        metrics::INGESTED_EXEMPLARS_FAILURES.inc_by(exemplar_failures);
+    }
+
+    // Mimir's `userMetricsMetadata.add`: a new metric needs room under the per-user limit, and any
+    // entry, even a known one, needs room under the per-metric limit.
+    fn add_metadata(
+        &self,
+        tenant: &mut Tenant,
+        tenant_id: &str,
+        limits: &Limits,
+        metadata: Vec<cortexpb::MetricMetadata>,
+        now: i64,
+    ) {
+        if metadata.is_empty() {
+            return;
+        }
+        let per_user = self.overrides.max_metadata_per_user(limits);
+        let per_metric = self.overrides.max_metadata_per_metric(limits);
+        for metadata in metadata {
+            if !tenant.metadata.contains_key(&metadata.metric_family_name)
+                && tenant.metadata.len() >= per_user
+            {
+                metrics::DISCARDED_METADATA
+                    .with_label_values(&["per_user_metadata_limit", tenant_id])
+                    .inc();
+                metrics::INGESTED_METADATA_FAILURES.inc();
+                continue;
+            }
+            let set = tenant
+                .metadata
+                .entry(metadata.metric_family_name.clone())
+                .or_default();
+            if set.len() >= per_metric {
+                metrics::DISCARDED_METADATA
+                    .with_label_values(&["per_metric_metadata_limit", tenant_id])
+                    .inc();
+                metrics::INGESTED_METADATA_FAILURES.inc();
+                continue;
+            }
+            let key = (
+                metadata.r#type,
+                metadata.help.clone(),
+                metadata.unit.clone(),
+            );
+            set.insert(key, (metadata, now));
+            metrics::INGESTED_METADATA.inc();
+        }
+    }
+
+    /// Drops metadata not seen for `retain_ms`, like `-ingester.metadata-retain-period`.
+    pub fn purge_metadata(&self, retain_ms: i64) {
+        let cutoff = now_ms().saturating_sub(retain_ms);
+        let mut home = self.shards[0].write().expect("store lock poisoned");
+        for tenant in home.tenants.values_mut() {
+            tenant.metadata.retain(|_, set| {
+                set.retain(|_, (_, seen)| *seen >= cutoff);
+                !set.is_empty()
+            });
+        }
     }
 
     pub fn prune_expired(&self) -> Result<()> {
@@ -517,36 +899,21 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<SeriesView>> {
         let compiled = compile_matchers(matchers)?;
-        let mut selected = self
-            .per_shard(tenant_id, |tenant, _| {
-                tenant
-                    .series
-                    .matching(&compiled)
-                    .filter_map(|((_, labels), series)| {
-                        let exemplars = series
-                            .exemplars
-                            .iter()
-                            .filter(|item| item.timestamp_ms >= start && item.timestamp_ms <= end)
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        (!exemplars.is_empty()).then(|| {
-                            (
-                                Arc::clone(labels),
-                                SeriesView {
-                                    labels: owned_labels(labels),
-                                    exemplars,
-                                },
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        let storage = self.exemplars.lock().expect("exemplar lock poisoned");
+        let Some(tenant) = storage.get(tenant_id) else {
+            return Ok(Vec::new());
+        };
+        let mut selected = tenant.select(start, end, |labels| matches(labels, &compiled));
+        drop(storage);
         // The distributor merges exemplar sets assuming they are sorted by series labels.
         selected.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        Ok(selected.into_iter().map(|(_, view)| view).collect())
+        Ok(selected
+            .into_iter()
+            .map(|(labels, exemplars)| SeriesView {
+                labels: owned_labels(&labels),
+                exemplars,
+            })
+            .collect())
     }
 
     pub fn select_labels(
@@ -662,6 +1029,178 @@ impl Store {
             .collect())
     }
 
+    /// Active series counts per tenant for the ingester's metrics, including custom trackers and
+    /// cost attribution. Tracker matches are cached per series until the overrides change.
+    pub fn active_series_report(&self) -> Vec<ActiveSeriesReport> {
+        let now = now_ms();
+        let cutoff = now.saturating_sub(self.active_window_ms);
+        let generation = self.overrides.generation();
+        type CostCounts = Vec<HashMap<Vec<String>, [u64; 3]>>;
+        let per_shard = self.pool.install(|| {
+            self.shards
+                .par_iter()
+                .map(|shard| {
+                    let mut state = shard.write().expect("store lock poisoned");
+                    state
+                        .tenants
+                        .iter_mut()
+                        .map(|(tenant_id, tenant)| {
+                            let limits = self.overrides.tenant(tenant_id);
+                            let trackers = &limits.custom_trackers;
+                            let cost = &limits.cost_attribution;
+                            let mut report = ActiveSeriesReport {
+                                tenant: tenant_id.clone(),
+                                series: tenant.series.len() as u64,
+                                metadata: tenant
+                                    .metadata
+                                    .values()
+                                    .map(|set| set.len() as u64)
+                                    .sum(),
+                                custom_trackers: trackers
+                                    .names()
+                                    .iter()
+                                    .map(|name| (name.clone(), [0; 3]))
+                                    .collect(),
+                                ..ActiveSeriesReport::default()
+                            };
+                            let mut cost_counts: CostCounts =
+                                vec![HashMap::new(); cost.trackers.len()];
+                            tenant.series.for_each_mut(|labels, series| {
+                                if series.last_ingested_ms < cutoff {
+                                    return;
+                                }
+                                if series.tracker_generation != generation {
+                                    series.tracker_matches = trackers.matching(labels).into();
+                                    series.tracker_generation = generation;
+                                }
+                                let histogram = is_native_histogram(series);
+                                let buckets = if histogram {
+                                    u64::from(series.last_bucket_count)
+                                } else {
+                                    0
+                                };
+                                let counts = [1, u64::from(histogram), buckets];
+                                report.active += 1;
+                                report.active_native_histograms += counts[1];
+                                report.active_native_histogram_buckets += buckets;
+                                for index in series.tracker_matches.iter() {
+                                    let entry = &mut report.custom_trackers[usize::from(*index)].1;
+                                    for (total, count) in entry.iter_mut().zip(counts) {
+                                        *total += count;
+                                    }
+                                }
+                                for (tracker, combinations) in
+                                    cost.trackers.iter().zip(&mut cost_counts)
+                                {
+                                    let entry =
+                                        combinations.entry(tracker.key(labels)).or_default();
+                                    for (total, count) in entry.iter_mut().zip(counts) {
+                                        *total += count;
+                                    }
+                                }
+                            });
+                            (report, cost_counts)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
+        let mut merged: BTreeMap<String, (ActiveSeriesReport, CostCounts)> = BTreeMap::new();
+        for (report, cost_counts) in per_shard.into_iter().flatten() {
+            match merged.get_mut(&report.tenant) {
+                None => {
+                    merged.insert(report.tenant.clone(), (report, cost_counts));
+                }
+                Some((total, total_cost)) => {
+                    total.series += report.series;
+                    total.active += report.active;
+                    total.active_native_histograms += report.active_native_histograms;
+                    total.active_native_histogram_buckets += report.active_native_histogram_buckets;
+                    total.metadata += report.metadata;
+                    for ((_, total), (_, counts)) in
+                        total.custom_trackers.iter_mut().zip(report.custom_trackers)
+                    {
+                        for (total, count) in total.iter_mut().zip(counts) {
+                            *total += count;
+                        }
+                    }
+                    for (total, counts) in total_cost.iter_mut().zip(cost_counts) {
+                        for (key, counts) in counts {
+                            let entry = total.entry(key).or_default();
+                            for (total, count) in entry.iter_mut().zip(counts) {
+                                *total += count;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let exemplars = self.exemplars.lock().expect("exemplar lock poisoned");
+        let mut cost_state = self
+            .cost_attribution
+            .lock()
+            .expect("cost attribution lock poisoned");
+        let mut live_trackers = HashSet::new();
+        let reports = merged
+            .into_values()
+            .map(|(mut report, cost_counts)| {
+                report.exemplars = exemplars
+                    .get(&report.tenant)
+                    .map_or(0, |storage| storage.len() as u64);
+                let limits = self.overrides.tenant(&report.tenant);
+                let max_cardinality =
+                    usize::try_from(limits.limits.max_cost_attribution_cardinality).unwrap_or(0);
+                for (tracker, combinations) in
+                    limits.cost_attribution.trackers.iter().zip(cost_counts)
+                {
+                    let key = (report.tenant.clone(), tracker.name.clone());
+                    live_trackers.insert(key.clone());
+                    let state = cost_state.entry(key).or_default();
+                    // Like Mimir's tracker: overflow once the cardinality exceeds the maximum, and
+                    // only recover after the cooldown if it went back below.
+                    let cardinality = combinations.len();
+                    match state.overflow_since {
+                        None if cardinality > max_cardinality => state.overflow_since = Some(now),
+                        Some(since)
+                            if since.saturating_add(limits.limits.cost_attribution_cooldown_ms)
+                                < now =>
+                        {
+                            state.overflow_since = (cardinality > max_cardinality).then_some(now);
+                        }
+                        _ => {}
+                    }
+                    let overflow = state.overflow_since.is_some();
+                    let mut values = if overflow {
+                        let mut total = [0; 3];
+                        for counts in combinations.values() {
+                            for (total, count) in total.iter_mut().zip(counts) {
+                                *total += count;
+                            }
+                        }
+                        vec![(vec![OVERFLOW_VALUE.to_owned(); tracker.labels.len()], total)]
+                    } else {
+                        combinations.into_iter().collect::<Vec<_>>()
+                    };
+                    values.sort();
+                    report.cost_attribution.push(AttributedSeries {
+                        tracker: tracker.name.clone(),
+                        internal: tracker.internal,
+                        output_labels: tracker
+                            .labels
+                            .iter()
+                            .map(|label| label.output.clone())
+                            .collect(),
+                        values,
+                        overflow,
+                    });
+                }
+                report
+            })
+            .collect();
+        cost_state.retain(|key, _| live_trackers.contains(key));
+        reports
+    }
+
     pub fn user_stats(&self, tenant_id: &str, active: bool) -> UserStatsView {
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         self.per_shard(tenant_id, |tenant, _| {
@@ -771,7 +1310,11 @@ impl Store {
 
     pub fn metadata(&self, tenant_id: &str) -> Vec<cortexpb::MetricMetadata> {
         self.per_shard(tenant_id, |tenant, _| {
-            tenant.metadata.values().cloned().collect::<Vec<_>>()
+            tenant
+                .metadata
+                .values()
+                .flat_map(|set| set.values().map(|(metadata, _)| metadata.clone()))
+                .collect::<Vec<_>>()
         })
         .into_iter()
         .flatten()
@@ -839,6 +1382,12 @@ fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64) -> UserStatsView 
     }
 }
 
+struct SeriesContext {
+    rules: AppendRules,
+    keep_exemplars: bool,
+    index: usize,
+}
+
 // `decoded` has sorted, unique labels whose hash is `hash`.
 fn ingest_series(
     tenant: &mut Tenant,
@@ -846,6 +1395,8 @@ fn ingest_series(
     mut decoded: DecodedSeries,
     hash: u64,
     now: i64,
+    context: SeriesContext,
+    outcome: &mut ShardOutcome,
 ) -> Result<()> {
     let decoded_labels = std::mem::take(&mut decoded.labels);
     let name = decoded_labels
@@ -856,7 +1407,7 @@ fn ingest_series(
         label_names,
         ..
     } = tenant;
-    let series = by_name.get_or_insert_with(
+    let (key_labels, series) = by_name.get_or_insert_with(
         name,
         hash,
         |stored| {
@@ -885,6 +1436,8 @@ fn ingest_series(
                 .into()
         },
     );
+    let existed = has_samples(series);
+    let rules = context.rules;
     if decoded.created_timestamp != 0 {
         let first_timestamp = decoded
             .samples
@@ -898,56 +1451,131 @@ fn ingest_series(
             )
             .min();
         if first_timestamp.is_some_and(|first| decoded.created_timestamp < first) {
-            append_float(series, disk, decoded.created_timestamp, 0.0)?;
+            // Mimir ignores a zero sample that is a duplicate or out of order.
+            let _ = append_float(series, disk, &rules, decoded.created_timestamp, 0.0)?;
         }
     }
+    // Like Mimir's active series tracker, the bucket count comes from the request's last
+    // histogram when no float follows it.
+    let last_float = decoded.samples.last().map(|sample| sample.timestamp_ms);
+    let bucket_count = decoded
+        .histograms
+        .last()
+        .filter(|last| last_float.is_none_or(|float| float < last.timestamp))
+        .map(|last| histogram_bucket_count(last) as u32);
+    let mut accepted = 0_u64;
+    let mut discard = |reason: DiscardReason| {
+        *outcome
+            .discarded
+            .entry((context.index, reason))
+            .or_default() += 1;
+    };
     for sample in decoded.samples {
-        append_float(series, disk, sample.timestamp_ms, sample.value)?;
+        match append_float(series, disk, &rules, sample.timestamp_ms, sample.value)? {
+            Ok(()) => accepted += 1,
+            Err(reason) => discard(reason),
+        }
     }
     for histogram in decoded.histograms {
-        append_histogram(series, disk, histogram)?;
+        match append_histogram(series, disk, &rules, histogram)? {
+            Ok(()) => accepted += 1,
+            Err(reason) => discard(reason),
+        }
     }
-    series.exemplars.extend(decoded.exemplars);
-    series
-        .exemplars
-        .sort_by_key(|exemplar| exemplar.timestamp_ms);
-    series.last_ingested_ms = now;
+    if accepted > 0 {
+        if let Some(bucket_count) = bucket_count {
+            series.last_bucket_count = bucket_count;
+        }
+        series.last_ingested_ms = now;
+        *outcome.accepted.entry(context.index).or_default() += accepted;
+    }
+    // Exemplars need an existing series, like `AppendExemplar`.
+    if context.keep_exemplars && !decoded.exemplars.is_empty() && (existed || accepted > 0) {
+        outcome.exemplars.push((
+            context.index,
+            hash,
+            Arc::clone(key_labels),
+            decoded.exemplars,
+        ));
+    }
     Ok(())
 }
 
-// Follows the Prometheus head appender: in-order samples extend the open chunk, a repeated
-// timestamp keeps the first value, and older samples go to a separate out-of-order chunk.
-fn append_float(
-    series: &mut Series,
-    disk: &mut ChunkDiskMapper,
-    timestamp: i64,
-    value: f64,
-) -> Result<()> {
-    if series
-        .histogram_head
-        .binary_search_by_key(&timestamp, |histogram| histogram.timestamp)
-        .is_ok()
-    {
-        return Ok(());
-    }
-    let last = series
+// Whether the newest sample is a native histogram, like a non-negative bucket count in Mimir's
+// active series tracker.
+fn is_native_histogram(series: &Series) -> bool {
+    let float = series
         .float_head
         .as_ref()
         .and_then(|head| head.appender.last_timestamp());
-    if last.is_some_and(|last| timestamp <= last) {
-        if last == Some(timestamp) || has_float_at(series, disk, timestamp) {
-            return Ok(());
+    series
+        .histogram_head
+        .last()
+        .is_some_and(|last| float.is_none_or(|float| last.timestamp > float))
+}
+
+fn has_samples(series: &Series) -> bool {
+    series.float_head.is_some()
+        || !series.histogram_head.is_empty()
+        || !series.chunks.is_empty()
+        || !series.out_of_order.is_empty()
+}
+
+// The newest in-order sample, float or histogram, like the head chunk's max time.
+fn series_max_time(series: &Series) -> Option<i64> {
+    let float = series
+        .float_head
+        .as_ref()
+        .and_then(|head| head.appender.last_timestamp());
+    let histogram = series.histogram_head.last().map(|last| last.timestamp);
+    float.max(histogram)
+}
+
+// Follows the Prometheus head appender: in-order samples extend the open chunk, a repeated
+// timestamp keeps the first value, and older samples within the out-of-order window go to a
+// separate out-of-order chunk. The outer error is a storage failure, the inner one a rejection.
+fn append_float(
+    series: &mut Series,
+    disk: &mut ChunkDiskMapper,
+    rules: &AppendRules,
+    timestamp: i64,
+    value: f64,
+) -> Result<Result<(), DiscardReason>> {
+    let series_max = series_max_time(series);
+    match rules.classify(timestamp, series_max) {
+        Err(reason) => return Ok(Err(reason)),
+        Ok(Append::Duplicate) => {
+            let last = series.float_head.as_ref().and_then(|head| {
+                (head.appender.last_timestamp() == Some(timestamp))
+                    .then(|| head.appender.last_value())
+                    .flatten()
+            });
+            return Ok(match last {
+                Some(last) if last.to_bits() == value.to_bits() => Ok(()),
+                _ => Err(DiscardReason::NewValueForTimestamp),
+            });
         }
-        if let Err(index) = series
-            .out_of_order
-            .binary_search_by_key(&timestamp, |(timestamp, _)| *timestamp)
-        {
-            series.out_of_order.insert(index, (timestamp, value));
+        Ok(Append::OutOfOrder) => {
+            if series
+                .histogram_head
+                .binary_search_by_key(&timestamp, |histogram| histogram.timestamp)
+                .is_ok()
+                || has_float_at(series, disk, timestamp)
+            {
+                return Ok(Ok(()));
+            }
+            if let Err(index) = series
+                .out_of_order
+                .binary_search_by_key(&timestamp, |(timestamp, _)| *timestamp)
+            {
+                series.out_of_order.insert(index, (timestamp, value));
+            }
+            if series.out_of_order.len() >= OUT_OF_ORDER_CAPACITY {
+                flush_out_of_order(series, disk)?;
+            }
+            return Ok(Ok(()));
         }
-        if series.out_of_order.len() >= OUT_OF_ORDER_CAPACITY {
-            flush_out_of_order(series, disk)?;
-        }
-        return Ok(());
+        Ok(Append::InOrder) => {}
     }
     if let Some(head) = &mut series.float_head {
         let samples = head.appender.len();
@@ -968,8 +1596,17 @@ fn append_float(
         min_time: timestamp,
         next_at: range_end(timestamp),
     });
+    // A float after an older float in the head can only follow a histogram at a later time,
+    // which the in-order check above rules out.
+    if head
+        .appender
+        .last_timestamp()
+        .is_some_and(|last| timestamp <= last)
+    {
+        return Ok(Ok(()));
+    }
     head.appender.append(timestamp, value);
-    Ok(())
+    Ok(Ok(()))
 }
 
 // Only used for out-of-order samples, so decoding the overlapping chunks is acceptable.
@@ -994,24 +1631,24 @@ fn has_float_at(series: &Series, disk: &ChunkDiskMapper, timestamp: i64) -> bool
 fn append_histogram(
     series: &mut Series,
     disk: &mut ChunkDiskMapper,
+    rules: &AppendRules,
     histogram: cortexpb::Histogram,
-) -> Result<()> {
-    if series
-        .float_head
-        .as_ref()
-        .and_then(|head| head.appender.last_timestamp())
-        == Some(histogram.timestamp)
-    {
-        return Ok(());
-    }
-    series.last_bucket_count = histogram_bucket_count(&histogram) as u32;
-    if let Some(last) = series.histogram_head.last() {
-        if histogram.timestamp <= last.timestamp {
-            if histogram.timestamp != last.timestamp
-                && series
-                    .histogram_head
-                    .binary_search_by_key(&histogram.timestamp, |item| item.timestamp)
-                    .is_err()
+) -> Result<Result<(), DiscardReason>> {
+    let series_max = series_max_time(series);
+    match rules.classify(histogram.timestamp, series_max) {
+        Err(reason) => return Ok(Err(reason)),
+        Ok(Append::Duplicate) => {
+            return Ok(match series.histogram_head.last() {
+                Some(last) if last.timestamp == histogram.timestamp && *last == histogram => Ok(()),
+                _ => Err(DiscardReason::NewValueForTimestamp),
+            });
+        }
+        Ok(Append::OutOfOrder) => {
+            if series
+                .histogram_head
+                .binary_search_by_key(&histogram.timestamp, |item| item.timestamp)
+                .is_err()
+                && !has_float_at(series, disk, histogram.timestamp)
             {
                 write_chunk(
                     series,
@@ -1021,7 +1658,13 @@ fn append_histogram(
                     histogram.timestamp,
                 )?;
             }
-            return Ok(());
+            return Ok(Ok(()));
+        }
+        Ok(Append::InOrder) => {}
+    }
+    if let Some(last) = series.histogram_head.last() {
+        if histogram.timestamp <= last.timestamp {
+            return Ok(Ok(()));
         }
         if series.histogram_head.len() >= SAMPLES_PER_CHUNK
             || histogram.timestamp >= series.histogram_next_at
@@ -1034,7 +1677,7 @@ fn append_histogram(
         series.histogram_next_at = range_end(histogram.timestamp);
     }
     series.histogram_head.push(histogram);
-    Ok(())
+    Ok(Ok(()))
 }
 
 fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
@@ -1238,14 +1881,7 @@ fn prune_series(series: &mut Series, cutoff: i64) -> bool {
     series
         .out_of_order
         .retain(|(timestamp, _)| *timestamp >= cutoff);
-    series
-        .exemplars
-        .retain(|exemplar| exemplar.timestamp_ms >= cutoff);
-    !series.chunks.is_empty()
-        || series.float_head.is_some()
-        || !series.histogram_head.is_empty()
-        || !series.out_of_order.is_empty()
-        || !series.exemplars.is_empty()
+    has_samples(series)
 }
 
 fn histogram_bucket_count(histogram: &cortexpb::Histogram) -> u64 {
@@ -1578,6 +2214,33 @@ mod tests {
         assert_eq!(store.num_series("tenant"), 1);
     }
 
+    fn store_with(limits: Limits) -> Store {
+        let overrides = Overrides::new(limits);
+        overrides.set_active_partitions(1);
+        Store::default().with_overrides(Arc::new(overrides))
+    }
+
+    fn out_of_order_limits() -> Limits {
+        Limits {
+            out_of_order_time_window_ms: 2 * HOUR,
+            ..Limits::default()
+        }
+    }
+
+    const HOUR: i64 = 3_600_000;
+
+    fn series_request(name: &str, samples: impl IntoIterator<Item = (i64, f64)>) -> DecodedRequest {
+        let mut request = float_request(samples);
+        request.series[0].labels[0].1 = name.into();
+        request
+    }
+
+    fn discarded(reason: DiscardReason, tenant: &str) -> u64 {
+        metrics::DISCARDED_SAMPLES
+            .with_label_values(&[reason.label(), tenant, ""])
+            .get()
+    }
+
     fn float_request(samples: impl IntoIterator<Item = (i64, f64)>) -> DecodedRequest {
         DecodedRequest {
             source: 0,
@@ -1686,7 +2349,7 @@ mod tests {
 
     #[test]
     fn returns_out_of_order_samples_with_in_order_ones() {
-        let store = Store::default();
+        let store = store_with(out_of_order_limits());
         store
             .ingest(
                 "tenant",
@@ -1725,7 +2388,7 @@ mod tests {
 
     #[test]
     fn cuts_histogram_chunks_on_size_and_layout_changes() {
-        let store = Store::default();
+        let store = store_with(out_of_order_limits());
         let request = |histograms: Vec<cortexpb::Histogram>| DecodedRequest {
             source: 0,
             series: vec![DecodedSeries {
@@ -2066,5 +2729,389 @@ mod tests {
         assert_eq!(float_samples(&store, i64::MIN, i64::MAX), vec![(now, 2.0)]);
         store.prune_before(now + 1).unwrap();
         assert_eq!(store.num_series("tenant"), 0);
+    }
+
+    fn samples_of(store: &Store, tenant: &str, name: &str) -> Vec<(i64, f64)> {
+        store
+            .select_chunks(
+                tenant,
+                i64::MIN,
+                i64::MAX,
+                &[cortex::LabelMatcher {
+                    r#type: 0,
+                    name: "__name__".into(),
+                    value: name.into(),
+                }],
+            )
+            .unwrap()
+            .into_iter()
+            .flat_map(|series| series.chunks[series.chunk_start..series.chunk_end].to_vec())
+            .flat_map(|chunk| {
+                let decoded = cortex::Chunk::decode(chunk.wire.clone()).unwrap();
+                xor::decode(&decoded.data)
+            })
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .collect()
+    }
+
+    #[test]
+    fn without_an_out_of_order_window_rejects_like_the_head_appender() {
+        let tenant = "ooo-disabled";
+        let store = store_with(Limits::default());
+        store
+            .ingest(tenant, series_request("a", [(10 * HOUR, 1.0)]))
+            .unwrap();
+        // Older than the series but within an hour of the head: out of order.
+        store
+            .ingest(tenant, series_request("a", [(10 * HOUR - 1, 2.0)]))
+            .unwrap();
+        // More than an hour behind the head: out of bounds, even for a new series.
+        store
+            .ingest(tenant, series_request("a", [(9 * HOUR - 1, 3.0)]))
+            .unwrap();
+        store
+            .ingest(tenant, series_request("b", [(9 * HOUR - 1, 3.0)]))
+            .unwrap();
+        // A new series within the hour is in order.
+        store
+            .ingest(tenant, series_request("c", [(9 * HOUR + 1, 4.0)]))
+            .unwrap();
+        // Same timestamp: the same value is a no-op, another value is rejected.
+        store
+            .ingest(
+                tenant,
+                series_request("a", [(10 * HOUR, 1.0), (10 * HOUR, 5.0)]),
+            )
+            .unwrap();
+        assert_eq!(samples_of(&store, tenant, "a"), [(10 * HOUR, 1.0)]);
+        assert!(samples_of(&store, tenant, "b").is_empty());
+        assert_eq!(samples_of(&store, tenant, "c"), [(9 * HOUR + 1, 4.0)]);
+        assert_eq!(discarded(DiscardReason::OutOfOrder, tenant), 1);
+        assert_eq!(discarded(DiscardReason::OutOfBounds, tenant), 2);
+        assert_eq!(discarded(DiscardReason::NewValueForTimestamp, tenant), 1);
+        assert_eq!(
+            metrics::INGESTED_SAMPLES.with_label_values(&[tenant]).get(),
+            3
+        );
+    }
+
+    #[test]
+    fn out_of_order_window_accepts_recent_samples_and_rejects_older_ones() {
+        let tenant = "ooo-enabled";
+        let store = store_with(out_of_order_limits());
+        store
+            .ingest(tenant, series_request("a", [(10 * HOUR, 1.0)]))
+            .unwrap();
+        store
+            .ingest(
+                tenant,
+                series_request("a", [(8 * HOUR + 1, 2.0), (8 * HOUR - 1, 3.0)]),
+            )
+            .unwrap();
+        store
+            .ingest(tenant, series_request("b", [(8 * HOUR + 2, 4.0)]))
+            .unwrap();
+        assert_eq!(
+            samples_of(&store, tenant, "a"),
+            [(8 * HOUR + 1, 2.0), (10 * HOUR, 1.0)]
+        );
+        assert_eq!(samples_of(&store, tenant, "b"), [(8 * HOUR + 2, 4.0)]);
+        assert_eq!(discarded(DiscardReason::TooOld, tenant), 1);
+    }
+
+    #[test]
+    fn head_max_time_is_per_tenant_and_taken_per_record() {
+        let store = store_with(Limits::default());
+        let record = |tenant: &str, name: &str, timestamp: i64| IngestRecord {
+            tenant: tenant.into(),
+            request: series_request(name, [(timestamp, 1.0)]),
+            ingested_ms: 0,
+            track_rate: false,
+        };
+        // In one batch, the second record sees the first one's samples, like a new appender.
+        store
+            .ingest_batch(vec![
+                record("per-record", "a", 10 * HOUR),
+                record("per-record", "b", 8 * HOUR),
+                record("per-record-other", "b", 8 * HOUR),
+            ])
+            .unwrap();
+        assert!(samples_of(&store, "per-record", "b").is_empty());
+        assert_eq!(
+            samples_of(&store, "per-record-other", "b"),
+            [(8 * HOUR, 1.0)]
+        );
+        // Samples of the same record are checked against the head before it.
+        store
+            .ingest_batch(vec![IngestRecord {
+                tenant: "same-record".into(),
+                request: DecodedRequest {
+                    source: 0,
+                    series: vec![
+                        series_request("a", [(10 * HOUR, 1.0)]).series.remove(0),
+                        series_request("b", [(8 * HOUR, 1.0)]).series.remove(0),
+                    ],
+                    metadata: Vec::new(),
+                },
+                ingested_ms: 0,
+                track_rate: false,
+            }])
+            .unwrap();
+        assert_eq!(samples_of(&store, "same-record", "b"), [(8 * HOUR, 1.0)]);
+    }
+
+    #[test]
+    fn rejects_samples_outside_the_grace_periods() {
+        let tenant = "grace";
+        let store = store_with(Limits {
+            past_grace_period_ms: HOUR,
+            ..Limits::default()
+        });
+        let now = now_ms();
+        store
+            .ingest(
+                tenant,
+                series_request(
+                    "a",
+                    [(now - 2 * HOUR, 1.0), (now, 2.0), (now + 11 * 60_000, 3.0)],
+                ),
+            )
+            .unwrap();
+        assert_eq!(samples_of(&store, tenant, "a"), [(now, 2.0)]);
+        assert_eq!(discarded(DiscardReason::TooFarInFuture, tenant), 1);
+        assert_eq!(discarded(DiscardReason::TooFarInPast, tenant), 1);
+    }
+
+    #[test]
+    fn drops_native_histograms_when_disabled() {
+        let store = store_with(Limits {
+            native_histograms_ingestion_enabled: false,
+            ..Limits::default()
+        });
+        let mut request = series_request("h", []);
+        request.series[0].histograms = vec![histogram_at(1_000, 2)];
+        store.ingest("no-histograms", request).unwrap();
+        assert_eq!(store.num_series("no-histograms"), 1);
+        assert!(query(&store, i64::MIN, i64::MAX).is_empty());
+    }
+
+    fn metadata(name: &str, help: &str) -> cortexpb::MetricMetadata {
+        cortexpb::MetricMetadata {
+            r#type: 1,
+            metric_family_name: name.into(),
+            help: help.into(),
+            unit: String::new(),
+        }
+    }
+
+    #[test]
+    fn metadata_limits_and_retention_follow_mimir() {
+        let tenant = "metadata-limits";
+        let store = store_with(Limits {
+            max_global_metadata_per_user: 2,
+            max_global_metadata_per_metric: 2,
+            ..Limits::default()
+        });
+        let ingest = |entries: Vec<cortexpb::MetricMetadata>| {
+            store
+                .ingest(
+                    tenant,
+                    DecodedRequest {
+                        source: 0,
+                        series: Vec::new(),
+                        metadata: entries,
+                    },
+                )
+                .unwrap()
+        };
+        ingest(vec![
+            metadata("a", "1"),
+            metadata("a", "2"),
+            metadata("a", "3"),
+        ]);
+        ingest(vec![metadata("b", "1"), metadata("c", "1")]);
+        // A known entry of a full metric is rejected too, as Mimir checks the set size first.
+        ingest(vec![metadata("a", "1")]);
+        let mut names = store
+            .metadata(tenant)
+            .into_iter()
+            .map(|entry| format!("{}:{}", entry.metric_family_name, entry.help))
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["a:1", "a:2", "b:1"]);
+        let discarded = |reason| {
+            metrics::DISCARDED_METADATA
+                .with_label_values(&[reason, tenant])
+                .get()
+        };
+        assert_eq!(discarded("per_metric_metadata_limit"), 2);
+        assert_eq!(discarded("per_user_metadata_limit"), 1);
+        store.purge_metadata(60_000);
+        assert_eq!(store.metadata(tenant).len(), 3);
+        store.purge_metadata(-60_000);
+        assert!(store.metadata(tenant).is_empty());
+    }
+
+    fn exemplar_request(name: &str, sample: Option<i64>, exemplars: &[i64]) -> DecodedRequest {
+        let mut request = series_request(name, sample.map(|timestamp| (timestamp, 1.0)));
+        request.series[0].exemplars = exemplars
+            .iter()
+            .map(|timestamp_ms| cortexpb::Exemplar {
+                labels: vec![cortexpb::LabelPair {
+                    name: "trace_id".into(),
+                    value: format!("{timestamp_ms}").into(),
+                }],
+                value: 1.0,
+                timestamp_ms: *timestamp_ms,
+            })
+            .collect();
+        request
+    }
+
+    fn exemplar_timestamps(store: &Store, tenant: &str) -> Vec<(String, Vec<i64>)> {
+        store
+            .select_exemplars(tenant, i64::MIN, i64::MAX, &[])
+            .unwrap()
+            .into_iter()
+            .map(|series| {
+                (
+                    series.labels[0].1.clone(),
+                    series.exemplars.iter().map(|e| e.timestamp_ms).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn exemplars_are_bounded_per_tenant_and_need_a_series() {
+        let tenant = "exemplar-limits";
+        let overrides = Arc::new(Overrides::new(Limits {
+            max_global_exemplars_per_user: 6,
+            ..Limits::default()
+        }));
+        overrides.set_active_partitions(2);
+        let store = Store::default().with_overrides(Arc::clone(&overrides));
+        // No sample and no existing series: dropped.
+        store
+            .ingest(tenant, exemplar_request("a", None, &[1]))
+            .unwrap();
+        assert!(exemplar_timestamps(&store, tenant).is_empty());
+        store
+            .ingest(tenant, exemplar_request("a", Some(10), &[1, 2]))
+            .unwrap();
+        store
+            .ingest(tenant, exemplar_request("b", Some(10), &[3]))
+            .unwrap();
+        // An existing series takes exemplars without samples; the oldest are evicted at 6 / 2 = 3.
+        store
+            .ingest(tenant, exemplar_request("a", None, &[4]))
+            .unwrap();
+        assert_eq!(
+            exemplar_timestamps(&store, tenant),
+            [("a".into(), vec![2, 4]), ("b".into(), vec![3])]
+        );
+        // Disabling exemplars stops storing new ones.
+        overrides
+            .apply_runtime_config(
+                serde_json::json!({"overrides": {tenant: {"max_global_exemplars_per_user": 0}}})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        store
+            .ingest(tenant, exemplar_request("b", Some(20), &[5]))
+            .unwrap();
+        assert_eq!(
+            exemplar_timestamps(&store, tenant)[1],
+            ("b".into(), vec![3])
+        );
+    }
+
+    #[test]
+    fn reports_active_series_custom_trackers_and_cost_attribution() {
+        let tenant = "active-report";
+        let limits = Limits {
+            active_series_custom_trackers: Arc::new(
+                crate::trackers::CustomTrackers::new(BTreeMap::from([
+                    ("api".into(), r#"{job="api"}"#.into()),
+                    ("all".into(), r#"{__name__=~".+"}"#.into()),
+                ]))
+                .unwrap(),
+            ),
+            cost_attribution_trackers: Arc::new(
+                crate::trackers::CostAttributionTrackers::from_value(&serde_json::json!({
+                    "by-team": {"labels": [{"input": "team"}]},
+                    "internal": {"internal": true, "labels": [{"input": "job", "output": "service"}]},
+                }))
+                .unwrap(),
+            ),
+            max_cost_attribution_cardinality: 3,
+            ..Limits::default()
+        };
+        let store = store_with(limits);
+        let now = now_ms();
+        let ingest = |job: &str, team: &str| {
+            let mut request = series_request("up", [(now, 1.0)]);
+            request.series[0].labels.push(("job".into(), job.into()));
+            request.series[0].labels.push(("team".into(), team.into()));
+            store.ingest(tenant, request).unwrap();
+        };
+        for (job, team) in [("api", "a"), ("api", "b"), ("web", "a")] {
+            ingest(job, team);
+        }
+        let mut histogram = series_request("h", []);
+        histogram.series[0].histograms = vec![histogram_at(now, 3)];
+        store.ingest(tenant, histogram).unwrap();
+        let report = || {
+            store
+                .active_series_report()
+                .into_iter()
+                .find(|report| report.tenant == tenant)
+                .unwrap()
+        };
+        let first = report();
+        assert_eq!(first.active, 4);
+        assert_eq!(first.active_native_histograms, 1);
+        assert_eq!(first.active_native_histogram_buckets, 3);
+        assert_eq!(
+            first.custom_trackers,
+            [("all".to_owned(), [4, 1, 3]), ("api".to_owned(), [2, 0, 0])]
+        );
+        let values = |pairs: &[(&str, [u64; 3])]| {
+            pairs
+                .iter()
+                .map(|(value, counts)| (vec![value.to_string()], *counts))
+                .collect::<Vec<_>>()
+        };
+        let by_team = &first.cost_attribution[0];
+        assert_eq!(by_team.tracker, "by-team");
+        assert!(!by_team.internal && !by_team.overflow);
+        assert_eq!(
+            by_team.values,
+            values(&[
+                ("__missing__", [1, 1, 3]),
+                ("a", [2, 0, 0]),
+                ("b", [1, 0, 0])
+            ])
+        );
+        let internal = &first.cost_attribution[1];
+        assert!(internal.internal);
+        assert_eq!(internal.output_labels, ["service"]);
+        assert_eq!(
+            internal.values,
+            values(&[
+                ("__missing__", [1, 1, 3]),
+                ("api", [2, 0, 0]),
+                ("web", [1, 0, 0])
+            ])
+        );
+        // A fourth team exceeds the cardinality: one overflow entry with every series.
+        ingest("api", "c");
+        let second = report();
+        let by_team = &second.cost_attribution[0];
+        assert!(by_team.overflow);
+        assert_eq!(by_team.values, values(&[(OVERFLOW_VALUE, [5, 1, 3])]));
+        assert!(!second.cost_attribution[1].overflow);
     }
 }

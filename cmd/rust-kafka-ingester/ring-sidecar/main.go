@@ -52,6 +52,7 @@ type config struct {
 	sharedRing       bool
 	coverageFile     string
 	minCoverage      time.Duration
+	limitsRingKey    string
 }
 
 func main() {
@@ -71,6 +72,7 @@ func main() {
 	flag.BoolVar(&cfg.sharedRing, "shared-ring", false, "Join rings owned by Go ingesters: never create or activate partitions, and only own partitions that exist and are not inactive")
 	flag.StringVar(&cfg.coverageFile, "coverage-file", "", "File where the Rust ingester records, in Unix milliseconds, the time since which it holds complete data")
 	flag.DurationVar(&cfg.minCoverage, "min-coverage", 0, "Minimum age of complete data before registering; set it above -querier.query-ingesters-within")
+	flag.StringVar(&cfg.limitsRingKey, "limits-partition-ring-key", "ingester-partitions", "Partition ring KV key whose active partitions divide global limits, read-only")
 	flag.Parse()
 	if cfg.instanceID == "" || net.ParseIP(cfg.podIP) == nil || cfg.partition < 0 || cfg.join == "" || cfg.clusterLabel == "" {
 		fmt.Fprintln(os.Stderr, "instance-id, pod-ip, partition, memberlist-join and memberlist-cluster-label are required")
@@ -143,6 +145,16 @@ func run(ctx context.Context, cfg config) error {
 			"partition_ring_key": cfg.partitionRingKey,
 			"instance_ring":      instance, "partition_ring": partition,
 		})
+	})
+	// Global per-tenant limits are divided by the active partitions of the Go ingesters' ring,
+	// whichever ring this pod registers in.
+	mux.HandleFunc("/active-partitions", func(w http.ResponseWriter, req *http.Request) {
+		value, err := partitionClient.Get(req.Context(), cfg.limitsRingKey)
+		if err != nil || value == nil {
+			http.Error(w, "partition ring unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = fmt.Fprintln(w, activePartitions(value.(*ring.PartitionRingDesc)))
 	})
 	httpServer := &http.Server{Addr: cfg.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", cfg.listen)
@@ -248,6 +260,16 @@ func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client)
 	}
 	partition, exists := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
 	return exists && partition.State != ring.PartitionInactive
+}
+
+func activePartitions(desc *ring.PartitionRingDesc) int {
+	count := 0
+	for _, partition := range desc.Partitions {
+		if partition.State == ring.PartitionActive {
+			count++
+		}
+	}
+	return count
 }
 
 // Queriers ask ingesters for data up to -querier.query-ingesters-within old, so joining with a
