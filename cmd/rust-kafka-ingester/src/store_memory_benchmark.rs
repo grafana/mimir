@@ -387,7 +387,8 @@ fn retained_series_heap_bytes() {
         let state = shard.read().unwrap();
         for tenant in state.tenants.values() {
             for group in &tenant.series.groups {
-                table += group.capacity() * std::mem::size_of::<(SeriesKey, Series)>();
+                table += group.capacity() * std::mem::size_of::<(SeriesKey, Box<Series>)>()
+                    + group.len() * std::mem::size_of::<Series>();
             }
             for ((_, key), series) in tenant.series.iter() {
                 labels += 16 + key.capacity() * std::mem::size_of::<StoredLabel>();
