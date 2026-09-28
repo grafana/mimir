@@ -1034,3 +1034,51 @@ func TestRustCompatLifecycleHandlers(t *testing.T) {
 		require.Equal(t, respond(goHandler, step.method), respond(rustHandler, step.method), "%s %s", step.method, step.endpoint)
 	}
 }
+
+// With too many series in memory, both compact the heads whose series went inactive up to the
+// idle timeout ago, and then reject older in-order samples.
+func TestRustCompatEarlyHeadCompaction(t *testing.T) {
+	now := time.Now()
+	ingesters := startCompatIngesters(t, compatSetup{
+		limits: defaultLimitsTestConfig(),
+		config: func(cfg *Config) {
+			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
+			cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 10
+			cfg.ActiveSeriesMetrics.IdleTimeout = time.Second
+		},
+		rustArgs: []string{
+			"--blocks-storage.tsdb.head-compaction-interval", "100ms",
+			"--blocks-storage.tsdb.early-head-compaction-min-in-memory-series", "10",
+			"--ingester.active-series-metrics-idle-timeout", "1s",
+		},
+	}, func(tb testing.TB, cfg ingest.KafkaConfig) int64 {
+		write, last := compatProducer(tb, cfg)
+		var series []mimirpb.PreallocTimeseries
+		for n := range 20 {
+			ts := compatSeries("metric", mimirpb.Sample{TimestampMs: ms(now.Add(-20 * time.Minute)), Value: 1}, mimirpb.Sample{TimestampMs: ms(now.Add(-time.Duration(n) * time.Minute)), Value: 2})
+			ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: "n", Value: strconv.Itoa(n)})
+			series = append(series, ts)
+		}
+		write("tenant", &mimirpb.WriteRequest{Timeseries: series})
+		return last()
+	})
+	head := []string{
+		"cortex_ingester_memory_series",
+		"cortex_ingester_memory_series_removed_total",
+		"cortex_ingester_tsdb_head_min_timestamp_seconds",
+	}
+	// The series go inactive after the idle timeout, and the next compaction drops them.
+	require.Eventually(t, func() bool {
+		return strings.Join(metricValues(ingesters.goSide.metrics(t)["cortex_ingester_memory_series"]), "") == "=0"
+	}, 30*time.Second, 100*time.Millisecond)
+	requireSameMetrics(t, ingesters, nil, false, head...)
+	ingesters.produceAndWait(t, []string{"tenant"}, func(write func(string, *mimirpb.WriteRequest)) {
+		write("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			compatSeries("late", mimirpb.Sample{TimestampMs: ms(now.Add(-10 * time.Minute)), Value: 1}),
+			compatSeries("fresh", mimirpb.Sample{TimestampMs: ms(time.Now()), Value: 1}),
+		}})
+	})
+	requireSameMetrics(t, ingesters, nil, false, append(head, "cortex_discarded_samples_total")...)
+	require.Equal(t, []string{"group=,reason=sample-timestamp-too-old,user=tenant=1"}, metricValues(ingesters.goSide.metrics(t)["cortex_discarded_samples_total"]))
+}
