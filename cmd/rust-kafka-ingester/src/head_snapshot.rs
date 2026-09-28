@@ -6,6 +6,8 @@ use super::*;
 use crate::chunk_disk::FileState;
 
 const MAGIC: &[u8; 8] = b"MIMIRHS3";
+// Written before limits: no head max time or metadata timestamps, exemplars kept per series.
+const LEGACY_MAGIC: &[u8; 8] = b"MIMIRHS2";
 const FILE_NAME: &str = "snapshot";
 
 /// The Kafka position a head snapshot covers for one cluster.
@@ -230,7 +232,8 @@ fn read_snapshot(
     let mut reader = Checksummed::new(BufReader::with_capacity(1 << 20, file));
     let mut magic = [0; 8];
     reader.inner.read_exact(&mut magic)?;
-    if &magic != MAGIC {
+    let legacy = &magic == LEGACY_MAGIC;
+    if &magic != MAGIC && !legacy {
         bail!("head snapshot has invalid magic");
     }
     let offsets = (0..reader.count(1_000)?)
@@ -243,9 +246,13 @@ fn read_snapshot(
         })
         .collect::<Result<Vec<_>>>()?;
     let shards = (0..reader.count(4096)?)
-        .map(|_| read_shard(&mut reader))
+        .map(|_| read_shard(&mut reader, legacy))
         .collect::<Result<Vec<_>>>()?;
-    let exemplars = read_exemplars(&mut reader)?;
+    let exemplars = if legacy {
+        HashMap::new()
+    } else {
+        read_exemplars(&mut reader)?
+    };
     let expected = reader.hasher.clone().finalize();
     let mut checksum = [0; 4];
     reader.inner.read_exact(&mut checksum)?;
@@ -255,10 +262,16 @@ fn read_snapshot(
     if reader.inner.read(&mut [0])? != 0 {
         bail!("trailing bytes in head snapshot");
     }
+    let mut shards = shards;
+    let exemplars = if legacy {
+        upgrade_legacy(&mut shards)
+    } else {
+        exemplars
+    };
     let shards = shards
         .into_iter()
         .enumerate()
-        .map(|(index, (files, next_sequence, tenants))| {
+        .map(|(index, (files, next_sequence, tenants, _))| {
             let disk = ChunkDiskMapper::reopen(shard_dir(chunk_dir, index), &files, next_sequence)?;
             Ok(RwLock::new(State { tenants, disk }))
         })
@@ -268,9 +281,52 @@ fn read_snapshot(
     Ok(Restored { store, offsets })
 }
 
-type ShardImage = (Vec<FileState>, u32, HashMap<String, Tenant>);
+type LegacyExemplars = Vec<(String, u64, Arc<StoredLabels>, cortexpb::Exemplar)>;
+type ShardImage = (
+    Vec<FileState>,
+    u32,
+    HashMap<String, Tenant>,
+    LegacyExemplars,
+);
 
-fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
+// Derives what legacy snapshots lack: each tenant's head max time from its series, and tenant
+// exemplar storage from the per-series exemplars in timestamp order.
+fn upgrade_legacy(
+    shards: &mut [ShardImage],
+) -> HashMap<String, TenantExemplars<Arc<StoredLabels>>> {
+    let mut max_times: HashMap<String, i64> = HashMap::new();
+    let mut all_exemplars = Vec::new();
+    for (_, _, tenants, exemplars) in shards.iter_mut() {
+        for (tenant_id, tenant) in tenants.iter() {
+            let max = tenant
+                .series
+                .values()
+                .filter_map(series_max_time)
+                .max()
+                .unwrap_or(i64::MIN);
+            let entry = max_times.entry(tenant_id.clone()).or_insert(i64::MIN);
+            *entry = (*entry).max(max);
+        }
+        all_exemplars.append(exemplars);
+    }
+    if let Some((_, _, tenants, _)) = shards.first_mut() {
+        for (tenant_id, max_time) in max_times {
+            tenant_mut(tenants, &tenant_id).max_time = max_time;
+        }
+    }
+    all_exemplars.sort_by_key(|(_, _, _, exemplar)| exemplar.timestamp_ms);
+    let mut storage: HashMap<String, TenantExemplars<Arc<StoredLabels>>> = HashMap::new();
+    for (tenant_id, series_id, labels, exemplar) in all_exemplars {
+        // Sized to fit; the first ingest resizes to the tenant's limit.
+        let _ = storage
+            .entry(tenant_id)
+            .or_insert_with(|| TenantExemplars::new(usize::MAX))
+            .add(series_id, || labels, exemplar, i64::MAX);
+    }
+    storage
+}
+
+fn read_shard(reader: &mut Checksummed<BufReader<File>>, legacy: bool) -> Result<ShardImage> {
     let next_sequence = reader.u32()?;
     let files = (0..reader.count(1_000_000)?)
         .map(|_| {
@@ -282,15 +338,16 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
         })
         .collect::<Result<Vec<_>>>()?;
     let mut tenants = HashMap::new();
+    let mut legacy_exemplars = Vec::new();
     for _ in 0..reader.count(1_000_000)? {
         let tenant_id = reader.string()?;
         let mut tenant = Tenant {
-            max_time: reader.i64()?,
+            max_time: if legacy { i64::MIN } else { reader.i64()? },
             ..Tenant::default()
         };
         for _ in 0..reader.count(10_000_000)? {
             let metadata = cortexpb::MetricMetadata::decode(reader.read_bytes()?.as_slice())?;
-            let seen = reader.i64()?;
+            let seen = if legacy { now_ms() } else { reader.i64()? };
             tenant
                 .metadata
                 .entry(metadata.metric_family_name.clone())
@@ -353,7 +410,14 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
             series.out_of_order = (0..reader.count(1_000_000)?)
                 .map(|_| Ok((reader.i64()?, f64::from_bits(reader.u64()?))))
                 .collect::<Result<_>>()?;
-            if !tenant.series.insert(series_key(labels), series) {
+            let key = series_key(labels);
+            if legacy {
+                for _ in 0..reader.count(10_000_000)? {
+                    let exemplar = cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?;
+                    legacy_exemplars.push((tenant_id.clone(), key.0, Arc::clone(&key.1), exemplar));
+                }
+            }
+            if !tenant.series.insert(key, series) {
                 bail!("duplicate series in head snapshot");
             }
         }
@@ -361,7 +425,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
             bail!("duplicate tenant in head snapshot");
         }
     }
-    Ok((files, next_sequence, tenants))
+    Ok((files, next_sequence, tenants, legacy_exemplars))
 }
 
 struct Checksummed<T> {
@@ -604,6 +668,207 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    // The MIMIRHS2 layout: no tenant max time or metadata timestamps, exemplars after each
+    // series' out-of-order samples, and no exemplar section.
+    fn write_legacy_snapshot(store: &Store, offsets: &[SnapshotOffset]) {
+        let states = store
+            .shards
+            .iter()
+            .map(|shard| shard.read().unwrap())
+            .collect::<Vec<_>>();
+        let directory = states[0]
+            .disk
+            .directory()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        for state in &states {
+            state.disk.sync().unwrap();
+        }
+        let exemplars = store.exemplars.lock().unwrap();
+        let file = File::create(directory.join(FILE_NAME)).unwrap();
+        let mut writer = Checksummed::new(BufWriter::new(file));
+        writer.inner.write_all(LEGACY_MAGIC).unwrap();
+        writer.put_len(offsets.len()).unwrap();
+        for offset in offsets {
+            writer.put_i64(offset.offset.unwrap_or(i64::MIN)).unwrap();
+            writer.put_i64(offset.timestamp_ms).unwrap();
+        }
+        writer.put_len(states.len()).unwrap();
+        for state in &states {
+            let (files, next_sequence) = state.disk.state();
+            writer.put_u32(next_sequence).unwrap();
+            writer.put_len(files.len()).unwrap();
+            for file in files {
+                writer.put_u32(file.sequence).unwrap();
+                writer.put_u64(file.written).unwrap();
+                writer.put_i64(file.max_time).unwrap();
+            }
+            writer.put_len(state.tenants.len()).unwrap();
+            for (tenant_id, tenant) in &state.tenants {
+                writer.put_bytes(tenant_id.as_bytes()).unwrap();
+                let metadata = tenant
+                    .metadata
+                    .values()
+                    .flat_map(BTreeMap::values)
+                    .collect::<Vec<_>>();
+                writer.put_len(metadata.len()).unwrap();
+                for (entry, _) in metadata {
+                    writer.put_bytes(&entry.encode_to_vec()).unwrap();
+                }
+                let series_exemplars = exemplars
+                    .get(tenant_id)
+                    .map(|storage| storage.in_insertion_order())
+                    .unwrap_or_default();
+                writer.put_len(tenant.series.len()).unwrap();
+                for ((hash, labels), series) in tenant.series.iter() {
+                    writer.put_len(labels.len()).unwrap();
+                    for (name, value) in labels.iter() {
+                        writer.put_bytes(name.as_bytes()).unwrap();
+                        writer.put_bytes(value.as_bytes()).unwrap();
+                    }
+                    writer.put_i64(series.last_ingested_ms).unwrap();
+                    writer.put_u32(series.last_bucket_count).unwrap();
+                    writer.put_len(series.chunks.len()).unwrap();
+                    for chunk in &series.chunks {
+                        writer.put_u64(chunk.reference).unwrap();
+                        writer.put_i64(chunk.min_time).unwrap();
+                        writer.put_i64(chunk.max_time).unwrap();
+                        writer.put_u32(chunk.len).unwrap();
+                        writer.write_all(&[chunk.encoding]).unwrap();
+                    }
+                    match &series.float_head {
+                        Some(head) => {
+                            writer.write_all(&[1]).unwrap();
+                            writer.put_i64(head.min_time).unwrap();
+                            writer.put_i64(head.next_at).unwrap();
+                            head.appender.write_state(&mut writer).unwrap();
+                        }
+                        None => writer.write_all(&[0]).unwrap(),
+                    }
+                    writer.put_len(series.histogram_head.len()).unwrap();
+                    for histogram in &series.histogram_head {
+                        writer.put_bytes(&histogram.encode_to_vec()).unwrap();
+                    }
+                    writer.put_i64(series.histogram_next_at).unwrap();
+                    writer.put_len(series.out_of_order.len()).unwrap();
+                    for (timestamp, value) in &series.out_of_order {
+                        writer.put_i64(*timestamp).unwrap();
+                        writer.put_u64(value.to_bits()).unwrap();
+                    }
+                    let own = series_exemplars
+                        .iter()
+                        .filter(|(id, _, _)| id == hash)
+                        .collect::<Vec<_>>();
+                    writer.put_len(own.len()).unwrap();
+                    for (_, _, exemplar) in own {
+                        writer.put_bytes(&exemplar.encode_to_vec()).unwrap();
+                    }
+                }
+            }
+        }
+        let checksum = writer.hasher.clone().finalize();
+        let mut file = writer.inner.into_inner().unwrap();
+        file.write_all(&checksum.to_le_bytes()).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    #[test]
+    fn restores_legacy_snapshots_with_their_exemplars_and_head_max_time() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-head-legacy-{}", std::process::id()));
+        let overrides = Arc::new(Overrides::new(crate::limits::Limits {
+            max_global_exemplars_per_user: 100,
+            ..Default::default()
+        }));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone()))
+            .unwrap()
+            .with_overrides(Arc::clone(&overrides));
+        let request = |job: &str, timestamp_ms: i64| DecodedRequest {
+            source: 0,
+            series: vec![DecodedSeries {
+                labels: vec![
+                    ("__name__".into(), "metric".into()),
+                    ("job".into(), job.into()),
+                ],
+                samples: vec![cortexpb::Sample {
+                    timestamp_ms,
+                    value: 1.0,
+                }],
+                histograms: Vec::new(),
+                exemplars: vec![cortexpb::Exemplar {
+                    value: 1.0,
+                    timestamp_ms,
+                    ..Default::default()
+                }],
+                created_timestamp: 0,
+            }],
+            metadata: vec![cortexpb::MetricMetadata {
+                r#type: 1,
+                metric_family_name: "metric".into(),
+                help: "help".into(),
+                unit: String::new(),
+            }],
+        };
+        let hour = 3_600_000;
+        store.ingest("tenant", request("a", 10 * hour)).unwrap();
+        store.ingest("tenant", request("b", 10 * hour - 5)).unwrap();
+        let before = query_everything(&store);
+        let exemplars_before = store
+            .select_exemplars("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap();
+        write_legacy_snapshot(
+            &store,
+            &[SnapshotOffset {
+                offset: Some(3),
+                timestamp_ms: 1,
+            }],
+        );
+        drop(store);
+
+        let mut restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .expect("legacy snapshot restores");
+        restored.store = restored.store.with_overrides(overrides);
+        assert_eq!(query_everything(&restored.store), before);
+        assert_eq!(restored.store.metadata("tenant").len(), 1);
+        let exemplars = restored
+            .store
+            .select_exemplars("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap();
+        assert_eq!(
+            exemplars
+                .iter()
+                .map(|s| (&s.labels, &s.exemplars))
+                .collect::<Vec<_>>(),
+            exemplars_before
+                .iter()
+                .map(|s| (&s.labels, &s.exemplars))
+                .collect::<Vec<_>>()
+        );
+        // The head max time is rebuilt from the series: a new series two hours back is rejected.
+        restored
+            .store
+            .ingest("tenant", request("c", 8 * hour))
+            .unwrap();
+        let old = restored
+            .store
+            .select_labels(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[cortex::LabelMatcher {
+                    r#type: 0,
+                    name: "job".into(),
+                    value: "c".into(),
+                }],
+            )
+            .unwrap();
+        assert!(old.is_empty());
         fs::remove_dir_all(directory).unwrap();
     }
 
