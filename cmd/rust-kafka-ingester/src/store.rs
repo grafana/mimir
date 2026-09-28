@@ -292,7 +292,9 @@ impl HistogramHead {
 #[derive(Default)]
 struct SeriesByName {
     names: HashMap<CompactString, u32>,
-    groups: Vec<HashTable<(SeriesKey, Series)>>,
+    // Series are boxed: the tables stay between half and seven eighths full, and an empty slot
+    // costs a pointer instead of a whole series.
+    groups: Vec<HashTable<(SeriesKey, Box<Series>)>>,
     // Label name, then value, to the (name group, label hash) of every series with that label.
     postings: HashMap<Arc<str>, HashMap<CompactString, PostingList>>,
     len: usize,
@@ -325,15 +327,15 @@ impl SeriesByName {
         ) {
             hashbrown::hash_table::Entry::Occupied(entry) => {
                 let ((_, labels), series) = entry.into_mut();
-                (&*labels, series)
+                (&*labels, &mut **series)
             }
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
                 let labels = labels();
                 add_postings(postings, &labels, group, hash);
                 let ((_, labels), series) =
-                    entry.insert(((hash, labels), Series::default())).into_mut();
-                (&*labels, series)
+                    entry.insert(((hash, labels), Box::default())).into_mut();
+                (&*labels, &mut **series)
             }
         }
     }
@@ -364,7 +366,7 @@ impl SeriesByName {
     fn iter(&self) -> impl Iterator<Item = (&SeriesKey, &Series)> {
         self.groups
             .iter()
-            .flat_map(|table| table.iter().map(|(key, series)| (key, series)))
+            .flat_map(|table| table.iter().map(|(key, series)| (key, &**series)))
     }
 
     fn values(&self) -> impl Iterator<Item = &Series> {
@@ -414,13 +416,13 @@ impl SeriesByName {
                     self.groups[group as usize]
                         .iter_hash(hash)
                         .filter(move |((entry_hash, _), _)| *entry_hash == hash)
-                        .map(|(key, series)| (key, series))
+                        .map(|(key, series)| (key, &**series))
                 }))
             }
             (_, Some(group)) => Box::new(
                 self.groups[group as usize]
                     .iter()
-                    .map(|(key, series)| (key, series)),
+                    .map(|(key, series)| (key, &**series)),
             ),
             (_, None) => match name_matcher {
                 Some(matcher) => Box::new(
@@ -430,7 +432,7 @@ impl SeriesByName {
                         .flat_map(move |(_, group)| {
                             self.groups[*group as usize]
                                 .iter()
-                                .map(|(key, series)| (key, series))
+                                .map(|(key, series)| (key, &**series))
                         }),
                 ),
                 None => Box::new(self.iter()),
@@ -451,6 +453,10 @@ impl SeriesByName {
         let mut len = 0;
         for table in &mut self.groups {
             table.retain(|(key, series)| keep(key, series));
+            // Retention removes whole hours of series at once; give back the slots.
+            if table.capacity() > 4 * table.len().max(8) {
+                table.shrink_to_fit(|((hash, _), _)| *hash);
+            }
             len += table.len();
         }
         if len != self.len {
