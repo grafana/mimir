@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
 type config struct {
@@ -53,6 +54,10 @@ type config struct {
 	coverageFile     string
 	minCoverage      time.Duration
 	limitsRingKey    string
+
+	unregisterOnShutdown       bool
+	shutdownMarkerDir          string
+	allowPartitionStateChanges bool
 }
 
 func main() {
@@ -73,6 +78,9 @@ func main() {
 	flag.StringVar(&cfg.coverageFile, "coverage-file", "", "File where the Rust ingester records, in Unix milliseconds, the time since which it holds complete data")
 	flag.DurationVar(&cfg.minCoverage, "min-coverage", 0, "Minimum age of complete data before registering; set it above -querier.query-ingesters-within")
 	flag.StringVar(&cfg.limitsRingKey, "limits-partition-ring-key", "ingester-partitions", "Partition ring KV key whose active partitions divide global limits, read-only")
+	flag.BoolVar(&cfg.unregisterOnShutdown, "ingester.ring.unregister-on-shutdown", true, "Unregister from the instance ring on shutdown, like the Go ingester flag")
+	flag.StringVar(&cfg.shutdownMarkerDir, "shutdown-marker-dir", "", "Directory of the prepare-shutdown marker, which survives restarts like the Go ingester's in its TSDB directory")
+	flag.BoolVar(&cfg.allowPartitionStateChanges, "allow-partition-state-changes", false, "In the shared ring, let prepare-partition-downscale change partition states; they belong to the Go ingesters otherwise")
 	flag.Parse()
 	if cfg.instanceID == "" || net.ParseIP(cfg.podIP) == nil || cfg.partition < 0 || cfg.join == "" || cfg.clusterLabel == "" {
 		fmt.Fprintln(os.Stderr, "instance-id, pod-ip, partition, memberlist-join and memberlist-cluster-label are required")
@@ -122,7 +130,50 @@ func run(ctx context.Context, cfg config) error {
 		}
 		return 0
 	}))
+	lifecycle := &lifecycleState{}
+	if cfg.shutdownMarkerDir != "" {
+		exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(cfg.shutdownMarkerDir))
+		if err != nil {
+			return fmt.Errorf("check prepare-shutdown marker: %w", err)
+		}
+		lifecycle.prepared.Store(exists)
+	}
+	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_ingester_prepare_shutdown_requested", Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
+	}, func() float64 {
+		if lifecycle.prepared.Load() {
+			return 1
+		}
+		return 0
+	}))
 	mux := http.NewServeMux()
+	mux.HandleFunc("/ingester/prepare-shutdown", func(w http.ResponseWriter, req *http.Request) {
+		prepareShutdownHandler(w, req, cfg, lifecycle, logger)
+	})
+	mux.HandleFunc("/ingester/prepare-partition-downscale", func(w http.ResponseWriter, req *http.Request) {
+		preparePartitionDownscaleHandler(w, req, cfg, lifecycle, logger)
+	})
+	mux.HandleFunc("/owned-token-ranges", func(w http.ResponseWriter, req *http.Request) {
+		value, err := partitionClient.Get(req.Context(), cfg.limitsRingKey)
+		if err != nil || value == nil {
+			http.Error(w, "partition ring unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		var body struct {
+			Tenants map[string]int `json:"tenants"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ranges, err := ownedTokenRanges(value.(*ring.PartitionRingDesc), int32(cfg.partition), body.Tenants)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ranges)
+	})
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
 		if !ready.Load() {
 			http.Error(w, "Rust ingester or ring unavailable", http.StatusServiceUnavailable)
@@ -164,7 +215,7 @@ func run(ctx context.Context, cfg config) error {
 	go func() { _ = httpServer.Serve(listener) }()
 	defer httpServer.Shutdown(context.Background())
 
-	return manage(ctx, cfg, instanceClient, partitionClient, func() bool { return memberlistService.State() == services.Running }, &ready, logger)
+	return manage(ctx, cfg, instanceClient, partitionClient, func() bool { return memberlistService.State() == services.Running }, &ready, lifecycle, logger)
 }
 
 func newMemberlistConfig(cfg config) memberlist.KVConfig {
@@ -186,7 +237,10 @@ func newMemberlistConfig(cfg config) memberlist.KVConfig {
 	return memberlistConfig
 }
 
-func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.Client, memberlistRunning func() bool, ready *atomic.Bool, logger log.Logger) error {
+func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.Client, memberlistRunning func() bool, ready *atomic.Bool, lifecycle *lifecycleState, logger log.Logger) error {
+	if lifecycle == nil {
+		lifecycle = &lifecycleState{}
+	}
 	if cfg.pollInterval == 0 {
 		cfg.pollInterval = 2 * time.Second
 	}
@@ -220,7 +274,7 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 			WaitOwnersCountOnPending: waitOwnersOnPending(cfg), PollingInterval: cfg.pollInterval,
 		}, "rust-ingester-partitions", cfg.partitionRingKey, partitionClient, logger, cycleRegistry)
 		partition.SetRemoveOwnerOnShutdown(true)
-		if cfg.sharedRing {
+		if cfg.sharedRing || lifecycle.prepared.Load() {
 			partition.SetCreatePartitionOnStartup(false)
 		}
 		if err := startService(ctx, partition); err != nil {
@@ -228,12 +282,20 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 			return err
 		}
 		_ = level.Info(logger).Log("msg", "Rust ingester registered", "partition", cfg.partition, "address", advertiseAddress)
+		lifecycle.partition.Store(partition)
 		for ctx.Err() == nil && reachable(rustAddress) && memberlistRunning() && mayOwnPartition(ctx, cfg, partitionClient) {
 			state, _, err := partition.GetPartitionState(ctx)
 			ready.Store(err == nil && state == ring.PartitionActive)
 			wait(ctx, cfg.pollInterval)
 		}
+		lifecycle.partition.Store(nil)
 		ready.Store(false)
+		// An outage withdraws both registrations so queriers stop asking this pod. A process
+		// shutdown keeps them like the Go ingester, unless prepare-shutdown was requested.
+		if ctx.Err() != nil && !lifecycle.prepared.Load() {
+			instance.SetKeepInstanceInTheRingOnShutdown(!cfg.unregisterOnShutdown)
+			partition.SetRemoveOwnerOnShutdown(false)
+		}
 		_ = services.StopAndAwaitTerminated(context.Background(), partition)
 		_ = services.StopAndAwaitTerminated(context.Background(), instance)
 		_ = level.Info(logger).Log("msg", "Rust ingester withdrawn from rings", "partition", cfg.partition)
@@ -260,6 +322,125 @@ func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client)
 	}
 	partition, exists := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
 	return exists && partition.State != ring.PartitionInactive
+}
+
+type lifecycleState struct {
+	prepared  atomic.Bool
+	partition atomic.Pointer[ring.PartitionInstanceLifecycler]
+}
+
+// Like the Go ingester's PrepareShutdownHandler with ingest storage: POST persists a marker so
+// that the next shutdown leaves the rings and later starts do not create the partition; the
+// preparation can't be reverted.
+func prepareShutdownHandler(w http.ResponseWriter, req *http.Request, cfg config, lifecycle *lifecycleState, logger log.Logger) {
+	markerPath := shutdownmarker.GetPath(cfg.shutdownMarkerDir)
+	switch req.Method {
+	case http.MethodGet:
+		if lifecycle.prepared.Load() {
+			_, _ = fmt.Fprint(w, "set\n")
+		} else {
+			_, _ = fmt.Fprint(w, "unset\n")
+		}
+	case http.MethodPost:
+		if cfg.shutdownMarkerDir != "" {
+			if err := shutdownmarker.Create(markerPath); err != nil {
+				_ = level.Error(logger).Log("msg", "unable to create prepare-shutdown marker file", "path", markerPath, "err", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		lifecycle.prepared.Store(true)
+		_ = level.Info(logger).Log("msg", "created prepare-shutdown marker file", "path", markerPath)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		_ = level.Error(logger).Log("msg", "the ingest storage doesn't support reverting the prepared shutdown")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// Like the Go ingester's PreparePartitionDownscaleHandler: POST switches the partition to
+// INACTIVE, DELETE back to ACTIVE, and every method returns when it became INACTIVE.
+func preparePartitionDownscaleHandler(w http.ResponseWriter, req *http.Request, cfg config, lifecycle *lifecycleState, logger log.Logger) {
+	partition := lifecycle.partition.Load()
+	if partition == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	changesAllowed := !cfg.sharedRing || cfg.allowPartitionStateChanges
+	change := func(to ring.PartitionState) bool {
+		if !changesAllowed {
+			http.Error(w, "partition states in the shared ring belong to the Go ingesters", http.StatusConflict)
+			return false
+		}
+		if err := partition.ChangePartitionState(req.Context(), to); err != nil {
+			_ = level.Error(logger).Log("msg", "failed to change partition state", "to", to, "err", err)
+			if errors.Is(err, ring.ErrPartitionStateChangeLocked) {
+				http.Error(w, err.Error(), http.StatusConflict)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return false
+		}
+		return true
+	}
+	state, _, err := partition.GetPartitionState(req.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	switch req.Method {
+	case http.MethodPost:
+		if state == ring.PartitionPending {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if !change(ring.PartitionInactive) {
+			return
+		}
+	case http.MethodDelete:
+		if state == ring.PartitionInactive && !change(ring.PartitionActive) {
+			return
+		}
+	}
+	state, stateTimestamp, err := partition.GetPartitionState(req.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if state == ring.PartitionInactive {
+		_ = json.NewEncoder(w).Encode(map[string]any{"timestamp": stateTimestamp.Unix()})
+	} else {
+		_ = json.NewEncoder(w).Encode(map[string]any{"timestamp": 0})
+	}
+}
+
+// Like the owned series service's partition ring strategy: each tenant's shuffle shard, and this
+// partition's token ranges in it, or nil when the shard skips this partition.
+func ownedTokenRanges(desc *ring.PartitionRingDesc, partitionID int32, tenants map[string]int) (map[string][]uint32, error) {
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]uint32, len(tenants))
+	for tenant, shardSize := range tenants {
+		subring, err := partitionRing.ShuffleShard(tenant, shardSize)
+		if err != nil {
+			return nil, fmt.Errorf("shuffle shard for %s: %w", tenant, err)
+		}
+		ranges, err := subring.GetTokenRangesForPartition(partitionID)
+		if errors.Is(err, ring.ErrPartitionDoesNotExist) {
+			result[tenant] = nil
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		result[tenant] = ranges
+	}
+	return result, nil
 }
 
 func activePartitions(desc *ring.PartitionRingDesc) int {
