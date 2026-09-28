@@ -61,6 +61,7 @@ pub struct Limits {
     pub max_global_metadata_per_user: i64,
     pub max_global_metadata_per_metric: i64,
     pub ingestion_partitions_tenant_shard_size: i64,
+    pub early_head_compaction_owned_series_threshold: i64,
     pub active_series_custom_trackers: Arc<CustomTrackers>,
     pub active_series_additional_custom_trackers: Arc<CustomTrackers>,
     pub max_active_series_additional_custom_trackers: i64,
@@ -83,6 +84,7 @@ impl Default for Limits {
             max_global_metadata_per_user: 0,
             max_global_metadata_per_metric: 0,
             ingestion_partitions_tenant_shard_size: 0,
+            early_head_compaction_owned_series_threshold: 0,
             active_series_custom_trackers: Arc::default(),
             active_series_additional_custom_trackers: Arc::default(),
             max_active_series_additional_custom_trackers: 0,
@@ -126,6 +128,11 @@ pub struct LimitsArgs {
         default_value_t = 0
     )]
     pub ingestion_partitions_tenant_shard_size: i64,
+    #[arg(
+        long = "ingester.early-head-compaction-owned-series-threshold",
+        default_value_t = 0
+    )]
+    pub early_head_compaction_owned_series_threshold: i64,
     /// `<name>:<matcher>[;<name>:<matcher>]*`; the flag may repeat.
     #[arg(long = "ingester.active-series-custom-trackers")]
     pub active_series_custom_trackers: Vec<String>,
@@ -168,6 +175,8 @@ impl LimitsArgs {
             max_global_metadata_per_user: self.max_global_metadata_per_user,
             max_global_metadata_per_metric: self.max_global_metadata_per_metric,
             ingestion_partitions_tenant_shard_size: self.ingestion_partitions_tenant_shard_size,
+            early_head_compaction_owned_series_threshold: self
+                .early_head_compaction_owned_series_threshold,
             active_series_custom_trackers: Arc::new(CustomTrackers::new(custom_trackers)?),
             active_series_additional_custom_trackers: Arc::default(),
             max_active_series_additional_custom_trackers: self
@@ -223,6 +232,10 @@ impl Limits {
                 }
                 "ingestion_partitions_tenant_shard_size" => {
                     limits.ingestion_partitions_tenant_shard_size =
+                        int_value(value).with_context(context)?
+                }
+                "early_head_compaction_owned_series_threshold" => {
+                    limits.early_head_compaction_owned_series_threshold =
                         int_value(value).with_context(context)?
                 }
                 "active_series_custom_trackers" => {
@@ -605,6 +618,7 @@ mod tests {
             max_global_metadata_per_user: 30_000,
             max_global_metadata_per_metric: 10,
             ingestion_partitions_tenant_shard_size: 1,
+            early_head_compaction_owned_series_threshold: 0,
             active_series_custom_trackers: vec![r#"a:{job="a"};b:{job="b"}"#.into()],
             cost_attribution_trackers: None,
             max_active_series_additional_custom_trackers: 0,
@@ -625,6 +639,7 @@ overrides:
     max_global_exemplars_per_user: 2.5e+06
     native_histograms_ingestion_enabled: true
     ingestion_partitions_tenant_shard_size: 3091
+    early_head_compaction_owned_series_threshold: 1.5e+07
     active_series_additional_custom_trackers:
       c: '{job="c"}'
   9960:
@@ -637,6 +652,10 @@ overrides:
         assert!(big.limits.native_histograms_ingestion_enabled);
         assert_eq!(big.limits.out_of_order_time_window_ms, 7_200_000);
         assert_eq!(big.limits.max_global_metadata_per_user, 30_000);
+        assert_eq!(
+            big.limits.early_head_compaction_owned_series_threshold,
+            15_000_000
+        );
         assert_eq!(big.custom_trackers.names(), ["a", "b", "c"]);
         let small = overrides.tenant("9960");
         assert_eq!(small.limits.out_of_order_time_window_ms, 30 * 60_000);
