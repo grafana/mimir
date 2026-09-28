@@ -21,7 +21,7 @@ pub enum OffsetAt {
     Latest,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StartOffset {
     Earliest,
     Latest,
