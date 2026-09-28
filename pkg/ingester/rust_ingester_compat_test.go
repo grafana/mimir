@@ -772,8 +772,12 @@ func TestRustCompatChunkLayouts(t *testing.T) {
 		send("dense", nil, dense)
 		send("dense", nil, []mimirpb.Histogram{histogramAt(base+10_000, 7, 1, histogram.UnknownCounterReset)})
 		send("dense", nil, []mimirpb.Histogram{histogramAt(base+11_000, 7, 0, histogram.UnknownCounterReset)})
-		send("growing", nil, growing)
-		send("gauge", nil, gauge)
+		// One record, so both are in one head append on each side: in separate ones, whether the
+		// later one's samples fall an hour behind the head's max time depends on batching.
+		write("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "growing"}}, Histograms: growing}},
+			{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "gauge"}}, Histograms: gauge}},
+		}})
 		stale := histogramAt(base+300*15_000, 3, 1, histogram.UnknownCounterReset)
 		stale.Sum = math.Float64frombits(value.StaleNaN)
 		send("gauge", nil, []mimirpb.Histogram{stale})
