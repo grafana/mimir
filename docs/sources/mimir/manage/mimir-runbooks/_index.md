@@ -399,9 +399,11 @@ The metric's `user` label identifies the affected tenant, and the `reason` label
 
 - `reason="invalid_data"`: the stored data for the affected series is invalid, for example a native histogram with an invalid bucket layout. The affected queries and rules keep failing until the data is remediated. Note that alerting rules that fail this way don't fire. Investigate to see if this indicates a new bug that should be addressed.
 - `reason="runtime_error"`: a Go runtime error, such as a nil pointer dereference or an index out of range. This almost certainly indicates a bug in the engine. Report the bug, including the logged panic message, stack trace, and query expression.
-- Any other reason: the panic may also indicate a bug in the engine, even though nothing crashed. As with `runtime_error`, the log message includes the stack trace of the panic. Report the bug, including the logged panic message, stack trace, and query expression.
+- `reason="unclassified"`: neither of the above. This may be invalid stored data that the histogram library reports without a typed error, or a bug in the engine. The stack trace in the log message tells them apart: if the top frames are in the Prometheus histogram library (`model/histogram`), treat it as invalid data, as for `invalid_data`. Otherwise report the bug, including the logged panic message, stack trace, and query expression.
 
 Where `-querier.mimir-query-engine.surface-evaluation-panics` is set (non-production), panics instead crash the process to surface bugs early, appearing as restarts and a stack trace in the logs rather than firing this alert.
+
+One kind of panic is never recovered, whatever the flag: a violation of the memory accounting invariant, which means a slice was returned to a memory pool more than once. The pools are shared between all queries in the process, so the process crashes rather than continue serving from a pool that may be corrupt. This is logged as `memory accounting invariant violated while evaluating query` with a stack trace, and appears as a restart, not in this metric. Report it as a bug.
 
 ### MimirRulerFailedRingCheck
 

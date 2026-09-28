@@ -1830,7 +1830,7 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 		"string panic": {
 			panicFn:        func() { panic("injected panic during evaluation") },
 			expectedErr:    "injected panic during evaluation",
-			expectedReason: "other",
+			expectedReason: "unclassified",
 		},
 		"histogram library error panic": {
 			panicFn:        func() { panic(histogram.ErrHistogramSpanNegativeOffset) },
@@ -1894,7 +1894,7 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 				expectedMetrics := ""
 				if !surface {
 					expectedMetrics = fmt.Sprintf(`
-						# HELP cortex_mimir_query_engine_evaluation_panics_total Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'other' for anything else. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.
+						# HELP cortex_mimir_query_engine_evaluation_panics_total Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'unclassified' for anything else, which may be invalid data or an engine bug. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.
 						# TYPE cortex_mimir_query_engine_evaluation_panics_total counter
 						cortex_mimir_query_engine_evaluation_panics_total{reason="%s",user="test-tenant"} 1
 					`, source.expectedReason)
@@ -1966,11 +1966,11 @@ func TestClassifyPanic(t *testing.T) {
 	}{
 		"string": {
 			value:    "injected panic during evaluation",
-			expected: "other",
+			expected: "unclassified",
 		},
 		"non-error value": {
 			value:    42,
-			expected: "other",
+			expected: "unclassified",
 		},
 		"histogram validation error": {
 			value:    histogram.ErrHistogramSpanNegativeOffset,
@@ -1985,7 +1985,7 @@ func TestClassifyPanic(t *testing.T) {
 		},
 		"plain error": {
 			value:    errors.New("something went wrong"),
-			expected: "other",
+			expected: "unclassified",
 		},
 	}
 

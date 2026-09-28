@@ -146,7 +146,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		}),
 		evaluationPanics: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_evaluation_panics_total",
-			Help: "Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'other' for anything else. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.",
+			Help: "Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'unclassified' for anything else, which may be invalid data or an engine bug. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.",
 		}, []string{"user", "reason"}),
 
 		surfaceEvaluationPanics:         opts.SurfaceEvaluationPanics,

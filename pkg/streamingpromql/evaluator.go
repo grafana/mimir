@@ -236,7 +236,7 @@ func (e *Evaluator) handleEvaluationPanic(ctx context.Context, logger *spanlogge
 func classifyPanic(r any) string {
 	rErr, isErr := r.(error)
 	if !isErr {
-		return "other"
+		return "unclassified"
 	}
 
 	var validationErr histogram.Error
@@ -249,7 +249,7 @@ func classifyPanic(r any) string {
 		return "runtime_error"
 	}
 
-	return "other"
+	return "unclassified"
 }
 
 // logPanicWithStack logs msg with the panic's stack trace. It must run while the stack is still
