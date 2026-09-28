@@ -104,7 +104,7 @@ fn write_snapshot_body(
             writer.put_bytes(&metadata.encode_to_vec())?;
         }
         writer.put_len(tenant.series.len())?;
-        for ((_, labels), series) in &tenant.series {
+        for ((_, labels), series) in tenant.series.iter() {
             writer.put_len(labels.len())?;
             for (name, value) in labels.iter() {
                 writer.put_bytes(name.as_bytes())?;
