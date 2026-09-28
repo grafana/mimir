@@ -251,6 +251,9 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	// Differences between samples (using matrix selectors)
 	case "rate", "delta", "increase", "idelta", "irate":
 		return 0, nil
+	// Integration over samples (using matrix selectors)
+	case "integral":
+		return 0, nil
 	// Histogram-related
 	case "histogram_avg", "histogram_count", "histogram_sum", "histogram_stddev", "histogram_stdvar", "histogram_quantiles":
 		return 0, nil

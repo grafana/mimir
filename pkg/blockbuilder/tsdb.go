@@ -203,19 +203,19 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		var prevHistogramStartTimestamp int64
 
 		for _, h := range ts.Histograms {
+            var (
+				ih *histogram.Histogram
+				fh *histogram.FloatHistogram
+			)
+
+			if h.IsFloatHistogram() {
+				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
+			} else {
+				ih = mimirpb.FromHistogramProtoToHistogram(&h)
+			}
+
 			if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
 				if owner, ok := stOwners[h.StartTimestamp]; !ok || owner == mimirpb.STOwnerHistogram {
-					var (
-						ih *histogram.Histogram
-						fh *histogram.FloatHistogram
-					)
-					// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
-					// just uses it to decide the type, so don't convert the input, use dummy histograms.
-					if h.IsFloatHistogram() {
-						fh = zeroFloatHistogram
-					} else {
-						ih = zeroHistogram
-					}
 					if ref != 0 {
 						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, h.StartTimestamp, ih, fh)
 					} else {
@@ -236,16 +236,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				}
 				prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
-			var (
-				ih *histogram.Histogram
-				fh *histogram.FloatHistogram
-			)
-
-			if h.IsFloatHistogram() {
-				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
-			} else {
-				ih = mimirpb.FromHistogramProtoToHistogram(&h)
-			}
+			
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
@@ -280,11 +271,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	return app.Commit()
 }
-
-var (
-	zeroHistogram      = &histogram.Histogram{}
-	zeroFloatHistogram = &histogram.FloatHistogram{}
-)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
