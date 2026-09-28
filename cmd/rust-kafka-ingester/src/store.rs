@@ -3869,6 +3869,12 @@ mod tests {
         let index = 609_427_224_681_409_917_u64 % 3;
         assert_eq!(shard(&format!("{}_of_3", index + 1)), 1);
         assert_eq!(shard(&format!("{}_of_3", (index + 1) % 3 + 1)), 0);
+        // mimirpb.ShardByAllLabels from Go, which owned series are counted by.
+        let labels: StoredLabels = [("__name__", "up"), ("job", "api")]
+            .into_iter()
+            .map(|(name, value)| (Arc::<str>::from(name), CompactString::from(value)))
+            .collect();
+        assert_eq!(shard_by_all_labels("18657", &labels), 4_096_482_777);
         // Mimir's idealShardsFor.
         let pusher = PusherShards {
             max: 2,
