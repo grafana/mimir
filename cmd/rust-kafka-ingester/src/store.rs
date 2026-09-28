@@ -296,11 +296,16 @@ impl Store {
             return Ok(Vec::new());
         };
         let compiled = compile_matchers(matchers)?;
-        let mut selected = Vec::new();
-        for ((_, labels), series) in tenant.series.matching(&compiled) {
-            if !matches_time_range(series, start, end) {
-                continue;
-            }
+        let mut matched = tenant
+            .series
+            .matching(&compiled)
+            .filter(|(_, series)| matches_time_range(series, start, end))
+            .collect::<Vec<_>>();
+        // The distributor k-way merges each ingester's stream and requires label order, which the
+        // Go ingester gets from sorted postings.
+        matched.sort_unstable_by(|((_, a), _), ((_, b), _)| a.cmp(b));
+        let mut selected = Vec::with_capacity(matched.len());
+        for ((_, labels), series) in matched {
             let chunks = query_chunks(series, &state.disk, start, end);
             if chunks.is_empty() {
                 continue;
@@ -328,9 +333,11 @@ impl Store {
             return Ok(Vec::new());
         };
         let compiled = compile_matchers(matchers)?;
-        Ok(tenant
-            .series
-            .matching(&compiled)
+        let mut matched = tenant.series.matching(&compiled).collect::<Vec<_>>();
+        // The distributor merges exemplar sets assuming they are sorted by series labels.
+        matched.sort_unstable_by(|((_, a), _), ((_, b), _)| a.cmp(b));
+        Ok(matched
+            .into_iter()
             .filter_map(|((_, labels), series)| {
                 let exemplars = series
                     .exemplars
@@ -1574,6 +1581,55 @@ mod tests {
         store.prune_before(now - 1).unwrap();
         assert_eq!(store.num_series("tenant"), 3);
         assert_eq!(count(&[(0, "__name__", "down")]), 0);
+    }
+
+    #[test]
+    fn returns_query_series_in_label_order() {
+        let store = Store::default();
+        let series = (0..200)
+            .map(|index| DecodedSeries {
+                labels: vec![
+                    ("__name__".into(), format!("metric_{}", index % 7)),
+                    ("instance".into(), format!("{:03}", (index * 37) % 200)),
+                    ("Zone".into(), format!("{}", index % 3)),
+                ],
+                samples: vec![cortexpb::Sample {
+                    timestamp_ms: 1,
+                    value: 1.0,
+                }],
+                histograms: Vec::new(),
+                exemplars: Vec::new(),
+                created_timestamp: 0,
+            })
+            .collect();
+        store
+            .ingest(
+                "tenant",
+                DecodedRequest {
+                    source: 0,
+                    series,
+                    metadata: Vec::new(),
+                },
+            )
+            .unwrap();
+        let labels = store
+            .select_chunks("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap()
+            .iter()
+            .map(|view| {
+                cortex::QueryStreamSeries::decode(view.encoded_labels.as_ref())
+                    .unwrap()
+                    .labels
+            })
+            .map(|pairs| {
+                pairs
+                    .into_iter()
+                    .map(|pair| (pair.name.to_vec(), pair.value.to_vec()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(labels.len(), 200);
+        assert!(labels.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]

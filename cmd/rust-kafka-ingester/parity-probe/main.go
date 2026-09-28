@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	promvalue "github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -51,6 +52,7 @@ type result struct {
 	bytes    int
 	chunks   int
 	spanMs   int64
+	unsorted int
 	duration time.Duration
 }
 
@@ -95,7 +97,7 @@ func main() {
 			for i, goClient := range gos {
 				goResults := query(goClient, tenant, request, *repeat)
 				diff := compare(rustResults[0].series, goResults[0].series)
-				mismatches += diff
+				mismatches += diff + rustResults[0].unsorted + goResults[0].unsorted
 				fmt.Printf("tenant=%s selector=%s go=%s rust=[%s] go=[%s] mismatched_series=%d\n",
 					tenant, selector, goAddrs[i], summarize(rustResults), summarize(goResults), diff)
 			}
@@ -156,6 +158,7 @@ func decode(ctx context.Context, api client.IngesterClient, request *client.Quer
 	check(err)
 	out := result{series: map[string][]string{}, counts: map[string]int{}}
 	var keys []string
+	var previous labels.Labels
 	// Responses may alias a reused receive buffer, so everything is copied out before the next Recv.
 	for {
 		response, err := stream.Recv()
@@ -164,7 +167,13 @@ func decode(ctx context.Context, api client.IngesterClient, request *client.Quer
 		}
 		check(err)
 		for _, s := range response.StreamingSeries {
-			key := mimirpb.FromLabelAdaptersToLabels(s.Labels).String()
+			current := mimirpb.FromLabelAdaptersToLabels(s.Labels).Copy()
+			// The distributor k-way merges ingester streams, so each one must be sorted by labels.
+			if len(keys) > 0 && labels.Compare(previous, current) >= 0 {
+				out.unsorted++
+			}
+			previous = current
+			key := current.String()
 			if _, ok := out.series[key]; ok {
 				fail("duplicate series %s", key)
 			}
@@ -328,8 +337,8 @@ func summarize(results []result) string {
 	if r.chunks > 0 {
 		meanSpan = time.Duration(r.spanMs/int64(r.chunks)) * time.Millisecond
 	}
-	return fmt.Sprintf("series=%d float=%d histogram=%d float_histogram=%d stale=%d chunks=%d mean_chunk_span=%s chunk_bytes=%d durations=%s",
-		len(r.series), r.counts["float"], r.counts["histogram"], r.counts["float_histogram"], r.counts["stale"], r.chunks, meanSpan.Round(time.Second), r.bytes, strings.Join(durations, "/"))
+	return fmt.Sprintf("series=%d unsorted=%d float=%d histogram=%d float_histogram=%d stale=%d chunks=%d mean_chunk_span=%s chunk_bytes=%d durations=%s",
+		len(r.series), r.unsorted, r.counts["float"], r.counts["histogram"], r.counts["float_histogram"], r.counts["stale"], r.chunks, meanSpan.Round(time.Second), r.bytes, strings.Join(durations, "/"))
 }
 
 func check(err error) {
