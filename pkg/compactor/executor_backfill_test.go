@@ -83,7 +83,7 @@ func TestSchedulerExecutor_ExecuteBackfillCleanupJob(t *testing.T) {
 
 			cfg := makeTestCompactorConfig(t)
 			exec := newTestSchedulerExecutor(t, cfg, nil)
-			c := &MultitenantCompactor{bucketClient: bkt}
+			c := &MultitenantCompactor{backfillBucketClient: bkt}
 			spec := &compactorschedulerpb.JobSpec{
 				Tenant:          tenant,
 				JobType:         compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP,
@@ -274,6 +274,7 @@ func TestSchedulerExecutor_ExecuteBackfillCopyJob(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	exec := newTestSchedulerExecutor(t, cfg, nil)
 	c := prepareCompactorForExecutorTest(t, cfg, bkt, newMockConfigProvider())
+	c.backfillBucketClient = objstore.NewInMemBucket()
 
 	// block.Upload fills in the file list, like the uploads and compactions of a backfill
 	dir := t.TempDir()
@@ -540,7 +541,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 func TestSchedulerExecutor_ExecuteBackfillCleanupJob_MissingBackfillID(t *testing.T) {
 	cfg := makeTestCompactorConfig(t)
 	exec := newTestSchedulerExecutor(t, cfg, nil)
-	c := &MultitenantCompactor{bucketClient: objstore.NewInMemBucket()}
+	c := &MultitenantCompactor{backfillBucketClient: objstore.NewInMemBucket()}
 	spec := &compactorschedulerpb.JobSpec{
 		Tenant:  "tenant-1",
 		JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP,

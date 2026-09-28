@@ -380,9 +380,8 @@ func isCopiedMarkFilename(name string) (ulid.ULID, bool) {
 }
 
 // backfillBucket returns the bucket holding backfill data and phase markers
-// TODO: return the backfill storage bucket from backfill.Config once it is available
 func backfillBucket(c *MultitenantCompactor) objstore.Bucket {
-	return c.bucketClient
+	return c.backfillBucketClient
 }
 
 func backfillCleanupPlan(backfillID string) *compactorschedulerpb.PlannedJobsRequest {

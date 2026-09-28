@@ -1487,7 +1487,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 
-	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
+	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Cfg.BackfillAPI, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
@@ -1510,7 +1510,7 @@ func (t *Mimir) initBackfillAPI() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactorScheduler() (serv services.Service, err error) {
 
-	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.Compactor, t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
+	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.Compactor, t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, t.Cfg.BackfillAPI, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}

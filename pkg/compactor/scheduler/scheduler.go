@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -126,6 +127,7 @@ func NewCompactorScheduler(
 	compactorCfg compactor.Config,
 	cfg Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
+	backfillCfg backfill.Config,
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
@@ -141,8 +143,11 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	// TODO: use the backfill storage bucket when backfill mode is enabled
-	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
+	bucketCfg := storageCfg.Bucket
+	if cfg.BackfillModeEnabled {
+		bucketCfg = backfillCfg.Storage
+	}
+	bkt, err := bucket.NewClient(context.Background(), bucketCfg, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}

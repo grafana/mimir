@@ -1919,7 +1919,7 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 		return func(string) Compactor { return tsdbCompactor }, tsdbPlanner, nil
 	}
 
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry

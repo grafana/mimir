@@ -170,6 +170,7 @@ func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Buck
 	t.Helper()
 	c, tsdbCompactor, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
 	c.bucketClient = bkt
+	c.backfillBucketClient = bkt
 	// These tests don't start the service, so the dependencies normally built by starting() have to
 	// be installed by hand.
 	c.blocksCompactorProvider = func(string) Compactor { return tsdbCompactor }

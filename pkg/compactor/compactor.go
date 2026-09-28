@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/blockupload"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -306,9 +307,10 @@ type MultitenantCompactor struct {
 
 	// Functions that create bucket client, grouper, planner and compactor using the context.
 	// Useful for injecting mock objects from tests.
-	bucketClientFactory    func(ctx context.Context) (objstore.Bucket, error)
-	blocksGrouperFactory   BlocksGrouperFactory
-	blocksCompactorFactory BlocksCompactorFactory
+	bucketClientFactory         func(ctx context.Context) (objstore.Bucket, error)
+	backfillBucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
+	blocksGrouperFactory        BlocksGrouperFactory
+	blocksCompactorFactory      BlocksCompactorFactory
 
 	// Blocks cleaner is responsible for hard deletion of blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
@@ -319,6 +321,9 @@ type MultitenantCompactor struct {
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
+
+	// Client used to run operations on the bucket storing backfill data and phase markers, only set in backfill mode.
+	backfillBucketClient objstore.Bucket
 
 	executor compactionExecutor
 
@@ -366,9 +371,12 @@ type MultitenantCompactor struct {
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
-func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
+func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, backfillCfg backfill.Config, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
+	}
+	backfillBucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
+		return bucket.NewClient(ctx, backfillCfg.Storage, "compactor-backfill", logger, registerer)
 	}
 
 	// Configure the compactor and grouper factories only if they weren't already set by a downstream project.
@@ -379,7 +387,7 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory
 	blocksCompactorFactory := compactorCfg.BlocksCompactorFactory
 
-	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
+	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, backfillBucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blocks compactor: %w", err)
 	}
@@ -394,6 +402,7 @@ func newMultitenantCompactor(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
+	backfillBucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
 	blocksGrouperFactory BlocksGrouperFactory,
 	blocksCompactorFactory BlocksCompactorFactory,
 ) (*MultitenantCompactor, error) {
@@ -419,9 +428,10 @@ func newMultitenantCompactor(
 		logger:                 log.With(logger, "component", "compactor"),
 		registerer:             registerer,
 		syncerMetrics:          newAggregatedSyncerMetrics(registerer),
-		bucketClientFactory:    bucketClientFactory,
-		blocksGrouperFactory:   blocksGrouperFactory,
-		blocksCompactorFactory: blocksCompactorFactory,
+		bucketClientFactory:         bucketClientFactory,
+		backfillBucketClientFactory: backfillBucketClientFactory,
+		blocksGrouperFactory:        blocksGrouperFactory,
+		blocksCompactorFactory:      blocksCompactorFactory,
 
 		compactionRunsStarted: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_runs_started_total",
@@ -572,6 +582,15 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
+
+	if c.compactorCfg.SchedulerClientConfig.Enabled && c.compactorCfg.SchedulerClientConfig.BackfillModeEnabled {
+		backfillBucketClient, err := c.backfillBucketClientFactory(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create backfill bucket client: %w", err)
+		}
+		// Backfill blocks are compacted in place, so their deletion marks need the global location too
+		c.backfillBucketClient = block.BucketWithGlobalMarkers(backfillBucketClient)
+	}
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
