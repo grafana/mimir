@@ -50,6 +50,13 @@ pub struct PreparedFrame {
     body: Vec<u8>,
 }
 
+thread_local! {
+    // Frames hold one Kafka record of a few KiB, so setting up a context per frame cost more
+    // than compressing it.
+    static COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> =
+        std::cell::RefCell::new(zstd::bulk::Compressor::new(1).expect("zstd compressor"));
+}
+
 /// A frame whose payload is already zstd-compressed, so compression can run off the thread that
 /// owns the log.
 pub struct CompressedFrame {
@@ -74,7 +81,9 @@ impl PreparedFrame {
         if raw.len() < 24 || raw.len() > 128 * 1024 * 1024 {
             bail!("segment frame has invalid uncompressed size");
         }
-        let compressed = zstd::bulk::compress(&raw[24..], 1).context("compress segment frame")?;
+        let compressed = COMPRESSOR
+            .with_borrow_mut(|compressor| compressor.compress(&raw[24..]))
+            .context("compress segment frame")?;
         let mut body = Vec::with_capacity(24 + compressed.len());
         body.extend_from_slice(&raw[..24]);
         body.extend_from_slice(&compressed);
@@ -982,6 +991,24 @@ mod tests {
     use super::*;
 
     use std::time::Instant;
+
+    #[test]
+    fn frames_compressed_on_one_thread_record_their_size_and_decode() {
+        // Recovery batches frames by the size each one records.
+        for _ in 0..3 {
+            let frame = SegmentLog::frame(7, 1, "tenant", &request()).unwrap();
+            let raw = frame.uncompressed_body()[24..].to_vec();
+            let compressed = frame.compress().unwrap();
+            assert_eq!(
+                zstd::zstd_safe::get_frame_content_size(&compressed.body[24..]).unwrap(),
+                Some(raw.len() as u64)
+            );
+            assert_eq!(
+                zstd::bulk::decompress(&compressed.body[24..], raw.len()).unwrap(),
+                raw
+            );
+        }
+    }
 
     fn request() -> DecodedRequest {
         DecodedRequest {
