@@ -294,9 +294,38 @@ struct SeriesByName {
     // Series are boxed: the tables stay between half and seven eighths full, and an empty slot
     // costs a pointer instead of a whole series.
     groups: Vec<HashTable<(SeriesKey, Box<Series>)>>,
-    // Label name, then value, to the (name group, label hash) of every series with that label.
-    postings: HashMap<&'static str, HashMap<CompactString, PostingList>>,
+    // Label name, then the hash of a value, to the ids of every series with that label. Series ids
+    // index `refs`, the (name group, label hash) of each series. A hash collision only adds
+    // candidates, which the matchers then check.
+    postings: HashMap<&'static str, ValuePostings>,
+    refs: Vec<(u32, u64)>,
     len: usize,
+}
+
+type ValuePostings = HashMap<u64, PostingList, std::hash::BuildHasherDefault<PrehashedKey>>;
+
+// Posting keys are already hashes.
+#[derive(Default)]
+struct PrehashedKey(u64);
+
+impl std::hash::Hasher for PrehashedKey {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 = self.0.rotate_left(8) ^ u64::from(*byte);
+        }
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
+
+fn value_hash(value: &str) -> u64 {
+    xxhash64(value.as_bytes())
 }
 
 impl SeriesByName {
@@ -319,6 +348,7 @@ impl SeriesByName {
         let table = &mut self.groups[group as usize];
         let len = &mut self.len;
         let postings = &mut self.postings;
+        let refs = &mut self.refs;
         match table.entry(
             hash,
             |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
@@ -331,7 +361,7 @@ impl SeriesByName {
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
                 let labels = labels();
-                add_postings(postings, &labels, group, hash);
+                add_postings(postings, refs, &labels, group, hash);
                 let ((_, labels), series) =
                     entry.insert(((hash, labels), Box::default())).into_mut();
                 (&*labels, &mut **series)
@@ -396,7 +426,7 @@ impl SeriesByName {
                 let Some(list) = self
                     .postings
                     .get(label.as_str())
-                    .and_then(|values| values.get(value.as_str()))
+                    .and_then(|values| values.get(&value_hash(value)))
                 else {
                     return Box::new(std::iter::empty());
                 };
@@ -408,7 +438,11 @@ impl SeriesByName {
         let group_len = name_group.map(|group| self.groups[group as usize].len());
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
             (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
-                let mut refs = list.as_slice().to_vec();
+                let mut refs = list
+                    .as_slice()
+                    .iter()
+                    .map(|id| self.refs[*id as usize])
+                    .collect::<Vec<_>>();
                 refs.sort_unstable();
                 refs.dedup();
                 Box::new(refs.into_iter().flat_map(move |(group, hash)| {
@@ -461,9 +495,16 @@ impl SeriesByName {
         if len != self.len {
             // Removals are rare and batched by retention, so the postings are rebuilt.
             self.postings.clear();
+            self.refs.clear();
             for (group, table) in self.groups.iter().enumerate() {
                 for ((hash, labels), _) in table.iter() {
-                    add_postings(&mut self.postings, labels, group as u32, *hash);
+                    add_postings(
+                        &mut self.postings,
+                        &mut self.refs,
+                        labels,
+                        group as u32,
+                        *hash,
+                    );
                 }
             }
         }
@@ -471,11 +512,12 @@ impl SeriesByName {
     }
 }
 
-// Most label values of high-cardinality labels belong to a single series, which is kept inline.
+// Most label values of high-cardinality labels belong to a single series, which is kept inline;
+// the list of shared values is boxed so the unique ones stay small.
 #[derive(Debug)]
 enum PostingList {
-    One((u32, u64)),
-    Many(Vec<(u32, u64)>),
+    One(u32),
+    Many(Box<Vec<u32>>),
 }
 
 impl PostingList {
@@ -486,27 +528,30 @@ impl PostingList {
         }
     }
 
-    fn as_slice(&self) -> &[(u32, u64)] {
+    fn as_slice(&self) -> &[u32] {
         match self {
             PostingList::One(entry) => std::slice::from_ref(entry),
             PostingList::Many(list) => list,
         }
     }
 
-    fn push(&mut self, entry: (u32, u64)) {
+    fn push(&mut self, entry: u32) {
         match self {
-            PostingList::One(first) => *self = PostingList::Many(vec![*first, entry]),
+            PostingList::One(first) => *self = PostingList::Many(Box::new(vec![*first, entry])),
             PostingList::Many(list) => list.push(entry),
         }
     }
 }
 
 fn add_postings(
-    postings: &mut HashMap<&'static str, HashMap<CompactString, PostingList>>,
+    postings: &mut HashMap<&'static str, ValuePostings>,
+    refs: &mut Vec<(u32, u64)>,
     labels: &StoredLabels,
     group: u32,
     hash: u64,
 ) {
+    let id = u32::try_from(refs.len()).expect("fewer than 2^32 series per tenant shard");
+    refs.push((group, hash));
     for (name, value) in labels {
         if name == "__name__" {
             continue;
@@ -515,10 +560,10 @@ fn add_postings(
             Some(values) => values,
             None => postings.entry(name).or_default(),
         };
-        match values.get_mut(value) {
-            Some(list) => list.push((group, hash)),
-            None => {
-                values.insert(CompactString::from(value), PostingList::One((group, hash)));
+        match values.entry(value_hash(value)) {
+            std::collections::hash_map::Entry::Occupied(mut list) => list.get_mut().push(id),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(PostingList::One(id));
             }
         }
     }
