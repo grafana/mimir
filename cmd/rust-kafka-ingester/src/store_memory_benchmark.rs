@@ -226,7 +226,7 @@ fn high_cardinality_multi_tenant_memory() {
     let snapshot_bytes = std::fs::metadata(chunk_dir.join("snapshot")).unwrap().len();
     drop(store);
     let started = Instant::now();
-    let restored = Store::restore(20 * 60 * 1000, Some(RETENTION_MS), &chunk_dir)
+    let restored = Store::restore(20 * 60 * 1000, Some(RETENTION_MS), &chunk_dir, 2)
         .unwrap()
         .expect("snapshot restored");
     let snapshot_restore_seconds = started.elapsed().as_secs_f64();

@@ -8,6 +8,7 @@ use compact_str::CompactString;
 use hashbrown::HashTable;
 use prost::Message;
 use prost::bytes::Bytes;
+use rayon::prelude::*;
 use regex::Regex;
 
 use crate::chunk_disk::{ChunkDiskMapper, ChunkRef};
@@ -173,6 +174,7 @@ fn metric_name(labels: &[StoredLabel]) -> &str {
 struct Tenant {
     series: SeriesByName,
     label_names: HashSet<Arc<str>>,
+    // Tenant metadata and ingestion rates live only in shard 0.
     metadata: BTreeMap<(String, i32, String, String), cortexpb::MetricMetadata>,
     ingested: VecDeque<(Instant, i32, u64)>,
 }
@@ -182,11 +184,25 @@ struct State {
     disk: ChunkDiskMapper,
 }
 
+/// Series are sharded by label hash so records apply to several shards in parallel, the way Go
+/// ingests with concurrent appenders; a series always lives in one shard, which keeps its samples
+/// in order.
 pub struct Store {
-    state: RwLock<State>,
+    shards: Vec<RwLock<State>>,
+    pool: rayon::ThreadPool,
     active_window_ms: i64,
     retention_ms: Option<i64>,
 }
+
+/// A decoded Kafka record to apply to the store.
+pub struct IngestRecord {
+    pub tenant: String,
+    pub request: DecodedRequest,
+    pub ingested_ms: i64,
+    pub track_rate: bool,
+}
+
+pub const DEFAULT_SHARDS: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct SeriesView {
@@ -225,7 +241,7 @@ pub struct UserStatsView {
 
 impl Default for Store {
     fn default() -> Self {
-        Self::new(20 * 60 * 1000, None, None).expect("create in-memory store")
+        Self::with_shards(20 * 60 * 1000, None, None, 4, 2).expect("create in-memory store")
     }
 }
 
@@ -236,18 +252,68 @@ impl Store {
         retention_ms: Option<i64>,
         chunk_dir: Option<PathBuf>,
     ) -> Result<Self> {
+        Self::with_shards(
+            active_window_ms,
+            retention_ms,
+            chunk_dir,
+            DEFAULT_SHARDS,
+            default_threads(),
+        )
+    }
+
+    pub fn with_shards(
+        active_window_ms: i64,
+        retention_ms: Option<i64>,
+        chunk_dir: Option<PathBuf>,
+        shards: usize,
+        threads: usize,
+    ) -> Result<Self> {
+        if let Some(directory) = &chunk_dir
+            && directory.exists()
+        {
+            std::fs::remove_dir_all(directory)
+                .with_context(|| format!("remove chunk directory {}", directory.display()))?;
+        }
+        let shards = (0..shards.max(1))
+            .map(|shard| {
+                Ok(RwLock::new(State {
+                    tenants: HashMap::new(),
+                    disk: ChunkDiskMapper::open(
+                        chunk_dir
+                            .as_ref()
+                            .map(|directory| shard_dir(directory, shard)),
+                    )?,
+                }))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Self::from_shards(shards, threads, active_window_ms, retention_ms)
+    }
+
+    fn from_shards(
+        shards: Vec<RwLock<State>>,
+        threads: usize,
+        active_window_ms: i64,
+        retention_ms: Option<i64>,
+    ) -> Result<Self> {
         Ok(Self {
-            state: RwLock::new(State {
-                tenants: HashMap::new(),
-                disk: ChunkDiskMapper::open(chunk_dir)?,
-            }),
+            shards,
+            pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(threads.max(1))
+                .thread_name(|index| format!("store-{index}"))
+                .build()
+                .context("create store thread pool")?,
             active_window_ms,
             retention_ms,
         })
     }
 
     pub fn ingest(&self, tenant_id: &str, request: DecodedRequest) -> Result<()> {
-        self.ingest_at(tenant_id, request, now_ms(), true)
+        self.ingest_batch(vec![IngestRecord {
+            tenant: tenant_id.to_owned(),
+            request,
+            ingested_ms: now_ms(),
+            track_rate: true,
+        }])
     }
 
     pub fn ingest_recovered(
@@ -256,7 +322,94 @@ impl Store {
         request: DecodedRequest,
         ingested_ms: i64,
     ) -> Result<()> {
-        self.ingest_at(tenant_id, request, ingested_ms, false)
+        self.ingest_batch(vec![IngestRecord {
+            tenant: tenant_id.to_owned(),
+            request,
+            ingested_ms,
+            track_rate: false,
+        }])
+    }
+
+    /// Applies records in order: each shard receives its series in record order, and shards run in
+    /// parallel.
+    pub fn ingest_batch(&self, records: Vec<IngestRecord>) -> Result<()> {
+        let shard_count = self.shards.len();
+        let mut buckets = (0..shard_count).map(|_| Vec::new()).collect::<Vec<_>>();
+        let mut tenant_ids = Vec::with_capacity(records.len());
+        {
+            let mut home = self.shards[0].write().expect("store lock poisoned");
+            for (index, record) in records.into_iter().enumerate() {
+                let IngestRecord {
+                    tenant,
+                    request,
+                    ingested_ms,
+                    track_rate,
+                } = record;
+                let home_tenant = tenant_mut(&mut home.tenants, &tenant);
+                for metadata in request.metadata {
+                    let key = (
+                        metadata.metric_family_name.clone(),
+                        metadata.r#type,
+                        metadata.help.clone(),
+                        metadata.unit.clone(),
+                    );
+                    home_tenant.metadata.insert(key, metadata);
+                }
+                if track_rate {
+                    let samples = request
+                        .series
+                        .iter()
+                        .map(|series| (series.samples.len() + series.histograms.len()) as u64)
+                        .sum();
+                    let instant = Instant::now();
+                    home_tenant
+                        .ingested
+                        .push_back((instant, request.source, samples));
+                    while home_tenant.ingested.front().is_some_and(|(at, _, _)| {
+                        instant.duration_since(*at) > Duration::from_secs(60)
+                    }) {
+                        home_tenant.ingested.pop_front();
+                    }
+                }
+                for mut series in request.series {
+                    series.labels.sort();
+                    if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+                        continue;
+                    }
+                    let hash = hash_label_pairs(
+                        series
+                            .labels
+                            .iter()
+                            .map(|(name, value)| (name.as_str(), value.as_str())),
+                    );
+                    buckets[shard_for(hash, shard_count)].push((index, hash, series, ingested_ms));
+                }
+                tenant_ids.push(tenant);
+            }
+        }
+        let apply = |shard: usize, bucket: Vec<(usize, u64, DecodedSeries, i64)>| -> Result<()> {
+            let mut guard = self.shards[shard].write().expect("store lock poisoned");
+            let State { tenants, disk } = &mut *guard;
+            for (index, hash, series, ingested_ms) in bucket {
+                let tenant = tenant_mut(tenants, &tenant_ids[index]);
+                ingest_series(tenant, disk, series, hash, ingested_ms)?;
+            }
+            Ok(())
+        };
+        let work = buckets
+            .into_iter()
+            .enumerate()
+            .filter(|(_, bucket)| !bucket.is_empty())
+            .collect::<Vec<_>>();
+        if work.len() <= 1 {
+            return work
+                .into_iter()
+                .try_for_each(|(shard, bucket)| apply(shard, bucket));
+        }
+        self.pool.install(|| {
+            work.into_par_iter()
+                .try_for_each(|(shard, bucket)| apply(shard, bucket))
+        })
     }
 
     pub fn prune_expired(&self) -> Result<()> {
@@ -267,52 +420,37 @@ impl Store {
     }
 
     fn prune_before(&self, cutoff: i64) -> Result<()> {
-        let mut state = self.state.write().expect("store lock poisoned");
-        for tenant in state.tenants.values_mut() {
-            tenant
-                .series
-                .retain(|_, series| prune_series(series, cutoff));
-        }
-        state.disk.truncate_before(cutoff)
+        self.pool.install(|| {
+            self.shards.par_iter().try_for_each(|shard| {
+                let mut state = shard.write().expect("store lock poisoned");
+                for tenant in state.tenants.values_mut() {
+                    tenant
+                        .series
+                        .retain(|_, series| prune_series(series, cutoff));
+                }
+                state.disk.truncate_before(cutoff)
+            })
+        })
     }
 
-    fn ingest_at(
+    /// Runs `query` on the tenant in every shard in parallel.
+    fn per_shard<T: Send>(
         &self,
         tenant_id: &str,
-        request: DecodedRequest,
-        ingested_ms: i64,
-        track_rate: bool,
-    ) -> Result<()> {
-        let mut guard = self.state.write().expect("store lock poisoned");
-        let State { tenants, disk } = &mut *guard;
-        let tenant = tenants.entry(tenant_id.to_owned()).or_default();
-        let source = request.source;
-        for metadata in request.metadata {
-            let key = (
-                metadata.metric_family_name.clone(),
-                metadata.r#type,
-                metadata.help.clone(),
-                metadata.unit.clone(),
-            );
-            tenant.metadata.insert(key, metadata);
-        }
-        let mut sample_count = 0;
-        for decoded in request.series {
-            sample_count += (decoded.samples.len() + decoded.histograms.len()) as u64;
-            ingest_series(tenant, disk, decoded, ingested_ms)?;
-        }
-        if track_rate {
-            let instant = Instant::now();
-            tenant.ingested.push_back((instant, source, sample_count));
-            while tenant
-                .ingested
-                .front()
-                .is_some_and(|(at, _, _)| instant.duration_since(*at) > Duration::from_secs(60))
-            {
-                tenant.ingested.pop_front();
-            }
-        }
-        Ok(())
+        query: impl Fn(&Tenant, &ChunkDiskMapper) -> T + Sync,
+    ) -> Vec<T> {
+        self.pool.install(|| {
+            self.shards
+                .par_iter()
+                .filter_map(|shard| {
+                    let state = shard.read().expect("store lock poisoned");
+                    state
+                        .tenants
+                        .get(tenant_id)
+                        .map(|tenant| query(tenant, &state.disk))
+                })
+                .collect()
+        })
     }
 
     pub fn select_chunks(
@@ -322,33 +460,36 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<QuerySeriesView>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let Some(tenant) = state.tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
-        let mut matched = tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| matches_time_range(series, start, end))
+        let mut selected = self
+            .per_shard(tenant_id, |tenant, disk| {
+                tenant
+                    .series
+                    .matching(&compiled)
+                    .filter(|(_, series)| matches_time_range(series, start, end))
+                    .filter_map(|((_, labels), series)| {
+                        let chunks = query_chunks(series, disk, start, end);
+                        (!chunks.is_empty()).then(|| {
+                            (
+                                Arc::clone(labels),
+                                QuerySeriesView {
+                                    encoded_labels: encode_series_labels(labels),
+                                    chunk_start: 0,
+                                    chunk_end: chunks.len(),
+                                    chunks: Arc::new(chunks),
+                                },
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
         // The distributor k-way merges each ingester's stream and requires label order, which the
         // Go ingester gets from sorted postings.
-        matched.sort_unstable_by(|((_, a), _), ((_, b), _)| a.cmp(b));
-        let mut selected = Vec::with_capacity(matched.len());
-        for ((_, labels), series) in matched {
-            let chunks = query_chunks(series, &state.disk, start, end);
-            if chunks.is_empty() {
-                continue;
-            }
-            selected.push(QuerySeriesView {
-                encoded_labels: encode_series_labels(labels),
-                chunk_start: 0,
-                chunk_end: chunks.len(),
-                chunks: Arc::new(chunks),
-            });
-        }
-        Ok(selected)
+        selected.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        Ok(selected.into_iter().map(|(_, view)| view).collect())
     }
 
     pub fn select_exemplars(
@@ -358,30 +499,37 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<SeriesView>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
-        let mut matched = tenant.series.matching(&compiled).collect::<Vec<_>>();
-        // The distributor merges exemplar sets assuming they are sorted by series labels.
-        matched.sort_unstable_by(|((_, a), _), ((_, b), _)| a.cmp(b));
-        Ok(matched
-            .into_iter()
-            .filter_map(|((_, labels), series)| {
-                let exemplars = series
-                    .exemplars
-                    .iter()
-                    .filter(|item| item.timestamp_ms >= start && item.timestamp_ms <= end)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                (!exemplars.is_empty()).then(|| SeriesView {
-                    labels: owned_labels(labels),
-                    exemplars,
-                })
+        let mut selected = self
+            .per_shard(tenant_id, |tenant, _| {
+                tenant
+                    .series
+                    .matching(&compiled)
+                    .filter_map(|((_, labels), series)| {
+                        let exemplars = series
+                            .exemplars
+                            .iter()
+                            .filter(|item| item.timestamp_ms >= start && item.timestamp_ms <= end)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        (!exemplars.is_empty()).then(|| {
+                            (
+                                Arc::clone(labels),
+                                SeriesView {
+                                    labels: owned_labels(labels),
+                                    exemplars,
+                                },
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
             })
-            .collect())
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        // The distributor merges exemplar sets assuming they are sorted by series labels.
+        selected.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        Ok(selected.into_iter().map(|(_, view)| view).collect())
     }
 
     pub fn select_labels(
@@ -391,17 +539,18 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<Vec<(String, String)>>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
-        Ok(tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| matches_time_range(series, start, end))
-            .map(|((_, labels), _)| owned_labels(labels))
+        Ok(self
+            .per_shard(tenant_id, |tenant, _| {
+                tenant
+                    .series
+                    .matching(&compiled)
+                    .filter(|(_, series)| matches_time_range(series, start, end))
+                    .map(|((_, labels), _)| owned_labels(labels))
+                    .collect::<Vec<_>>()
+            })
+            .into_iter()
+            .flatten()
             .collect())
     }
 
@@ -412,20 +561,22 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
-        let mut names = BTreeSet::new();
-        for ((_, labels), _) in tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| matches_time_range(series, start, end))
-        {
-            names.extend(labels.iter().map(|(name, _)| name.to_string()));
-        }
+        let names = self
+            .per_shard(tenant_id, |tenant, _| {
+                let mut names = BTreeSet::new();
+                for ((_, labels), _) in tenant
+                    .series
+                    .matching(&compiled)
+                    .filter(|(_, series)| matches_time_range(series, start, end))
+                {
+                    names.extend(labels.iter().map(|(name, _)| name.to_string()));
+                }
+                names
+            })
+            .into_iter()
+            .flatten()
+            .collect::<BTreeSet<_>>();
         Ok(names.into_iter().collect())
     }
 
@@ -437,32 +588,33 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
-        let mut values = BTreeSet::new();
-        for ((_, labels), _) in tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| matches_time_range(series, start, end))
-        {
-            if let Some((_, value)) = labels.iter().find(|(label, _)| label.as_ref() == name) {
-                values.insert(value.to_string());
-            }
-        }
+        let values = self
+            .per_shard(tenant_id, |tenant, _| {
+                let mut values = BTreeSet::new();
+                for ((_, labels), _) in tenant
+                    .series
+                    .matching(&compiled)
+                    .filter(|(_, series)| matches_time_range(series, start, end))
+                {
+                    if let Some((_, value)) =
+                        labels.iter().find(|(label, _)| label.as_ref() == name)
+                    {
+                        values.insert(value.to_string());
+                    }
+                }
+                values
+            })
+            .into_iter()
+            .flatten()
+            .collect::<BTreeSet<_>>();
         Ok(values.into_iter().collect())
     }
 
     pub fn num_series(&self, tenant_id: &str) -> u64 {
-        self.state
-            .read()
-            .expect("store lock poisoned")
-            .tenants
-            .get(tenant_id)
-            .map_or(0, |tenant| tenant.series.len() as u64)
+        self.per_shard(tenant_id, |tenant, _| tenant.series.len() as u64)
+            .into_iter()
+            .sum()
     }
 
     pub fn active_series(
@@ -471,47 +623,58 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         histograms_only: bool,
     ) -> Result<Vec<ActiveSeriesView>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(Vec::new());
-        };
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
-        Ok(tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| series.last_ingested_ms >= cutoff)
-            .filter_map(|((_, labels), series)| {
-                let bucket_count = u64::from(series.last_bucket_count);
-                (!histograms_only || bucket_count > 0).then(|| ActiveSeriesView {
-                    labels: owned_labels(labels),
-                    bucket_count,
-                })
+        Ok(self
+            .per_shard(tenant_id, |tenant, _| {
+                tenant
+                    .series
+                    .matching(&compiled)
+                    .filter(|(_, series)| series.last_ingested_ms >= cutoff)
+                    .filter_map(|((_, labels), series)| {
+                        let bucket_count = u64::from(series.last_bucket_count);
+                        (!histograms_only || bucket_count > 0).then(|| ActiveSeriesView {
+                            labels: owned_labels(labels),
+                            bucket_count,
+                        })
+                    })
+                    .collect::<Vec<_>>()
             })
+            .into_iter()
+            .flatten()
             .collect())
     }
 
     pub fn user_stats(&self, tenant_id: &str, active: bool) -> UserStatsView {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        tenants
-            .get(tenant_id)
-            .map_or_else(UserStatsView::default, |tenant| {
-                tenant_stats(tenant, active, self.active_window_ms)
-            })
+        let cutoff = now_ms().saturating_sub(self.active_window_ms);
+        self.per_shard(tenant_id, |tenant, _| {
+            tenant_stats_at(tenant, active, cutoff)
+        })
+        .into_iter()
+        .fold(UserStatsView::default(), add_stats)
     }
 
     pub fn all_user_stats(&self, active: bool) -> Vec<(String, UserStatsView)> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
-        let mut result = tenants
-            .iter()
-            .map(|(id, tenant)| (id.clone(), tenant_stats_at(tenant, active, cutoff)))
-            .collect::<Vec<_>>();
-        result.sort_by(|a, b| a.0.cmp(&b.0));
-        result
+        let per_shard = self.pool.install(|| {
+            self.shards
+                .par_iter()
+                .map(|shard| {
+                    let state = shard.read().expect("store lock poisoned");
+                    state
+                        .tenants
+                        .iter()
+                        .map(|(id, tenant)| (id.clone(), tenant_stats_at(tenant, active, cutoff)))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
+        let mut merged: BTreeMap<String, UserStatsView> = BTreeMap::new();
+        for (id, stats) in per_shard.into_iter().flatten() {
+            let entry = merged.entry(id).or_default();
+            *entry = add_stats(std::mem::take(entry), stats);
+        }
+        merged.into_iter().collect()
     }
 
     pub fn label_names_and_values(
@@ -520,24 +683,27 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         active: bool,
     ) -> Result<BTreeMap<String, BTreeSet<String>>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(BTreeMap::new());
-        };
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for ((_, labels), _) in tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
-        {
-            for (name, value) in labels.iter() {
-                result
-                    .entry(name.to_string())
-                    .or_default()
-                    .insert(value.to_string());
+        for shard in self.per_shard(tenant_id, |tenant, _| {
+            let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            for ((_, labels), _) in tenant
+                .series
+                .matching(&compiled)
+                .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
+            {
+                for (name, value) in labels.iter() {
+                    result
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(value.to_string());
+                }
+            }
+            result
+        }) {
+            for (name, values) in shard {
+                result.entry(name).or_default().extend(values);
             }
         }
         Ok(result)
@@ -550,11 +716,6 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
         active: bool,
     ) -> Result<BTreeMap<String, BTreeMap<String, u64>>> {
-        let state = self.state.read().expect("store lock poisoned");
-        let tenants = &state.tenants;
-        let Some(tenant) = tenants.get(tenant_id) else {
-            return Ok(BTreeMap::new());
-        };
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         let wanted = label_names
@@ -562,18 +723,29 @@ impl Store {
             .map(String::as_str)
             .collect::<BTreeSet<_>>();
         let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
-        for ((_, labels), _) in tenant
-            .series
-            .matching(&compiled)
-            .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
-        {
-            for (name, value) in labels.iter() {
-                if wanted.contains(name.as_ref()) {
-                    *result
-                        .entry(name.to_string())
-                        .or_default()
-                        .entry(value.to_string())
-                        .or_default() += 1;
+        for shard in self.per_shard(tenant_id, |tenant, _| {
+            let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+            for ((_, labels), _) in tenant
+                .series
+                .matching(&compiled)
+                .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
+            {
+                for (name, value) in labels.iter() {
+                    if wanted.contains(name.as_ref()) {
+                        *result
+                            .entry(name.to_string())
+                            .or_default()
+                            .entry(value.to_string())
+                            .or_default() += 1;
+                    }
+                }
+            }
+            result
+        }) {
+            for (name, values) in shard {
+                let merged = result.entry(name).or_default();
+                for (value, count) in values {
+                    *merged.entry(value).or_default() += count;
                 }
             }
         }
@@ -581,19 +753,42 @@ impl Store {
     }
 
     pub fn metadata(&self, tenant_id: &str) -> Vec<cortexpb::MetricMetadata> {
-        self.state
-            .read()
-            .expect("store lock poisoned")
-            .tenants
-            .get(tenant_id)
-            .map_or_else(Vec::new, |tenant| {
-                tenant.metadata.values().cloned().collect()
-            })
+        self.per_shard(tenant_id, |tenant, _| {
+            tenant.metadata.values().cloned().collect::<Vec<_>>()
+        })
+        .into_iter()
+        .flatten()
+        .collect()
     }
 }
 
-fn tenant_stats(tenant: &Tenant, active: bool, active_window_ms: i64) -> UserStatsView {
-    tenant_stats_at(tenant, active, now_ms().saturating_sub(active_window_ms))
+fn default_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |threads| threads.get())
+}
+
+fn shard_dir(directory: &std::path::Path, shard: usize) -> PathBuf {
+    directory.join(format!("shard-{shard:03}"))
+}
+
+// The hash table inside each shard indexes on the low bits, so shard on the high bits.
+fn shard_for(hash: u64, shards: usize) -> usize {
+    ((hash >> 32) % shards as u64) as usize
+}
+
+fn tenant_mut<'a>(tenants: &'a mut HashMap<String, Tenant>, tenant_id: &str) -> &'a mut Tenant {
+    if !tenants.contains_key(tenant_id) {
+        tenants.insert(tenant_id.to_owned(), Tenant::default());
+    }
+    tenants.get_mut(tenant_id).expect("tenant exists")
+}
+
+fn add_stats(total: UserStatsView, shard: UserStatsView) -> UserStatsView {
+    UserStatsView {
+        num_series: total.num_series + shard.num_series,
+        ingestion_rate: total.ingestion_rate + shard.ingestion_rate,
+        api_ingestion_rate: total.api_ingestion_rate + shard.api_ingestion_rate,
+        rule_ingestion_rate: total.rule_ingestion_rate + shard.rule_ingestion_rate,
+    }
 }
 
 fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64) -> UserStatsView {
@@ -627,24 +822,15 @@ fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64) -> UserStatsView 
     }
 }
 
+// `decoded` has sorted, unique labels whose hash is `hash`.
 fn ingest_series(
     tenant: &mut Tenant,
     disk: &mut ChunkDiskMapper,
     mut decoded: DecodedSeries,
+    hash: u64,
     now: i64,
 ) -> Result<()> {
-    decoded.labels.sort();
-    for labels in decoded.labels.windows(2) {
-        if labels[0].0 == labels[1].0 {
-            return Ok(());
-        }
-    }
     let decoded_labels = std::mem::take(&mut decoded.labels);
-    let hash = hash_label_pairs(
-        decoded_labels
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str())),
-    );
     let name = decoded_labels
         .binary_search_by(|(label, _)| label.as_str().cmp("__name__"))
         .map_or("", |index| decoded_labels[index].1.as_str());
@@ -1429,8 +1615,17 @@ mod tests {
     }
 
     fn with_series<T>(store: &Store, check: impl FnOnce(&Series) -> T) -> T {
-        let state = store.state.read().unwrap();
-        check(state.tenants["tenant"].series.values().next().unwrap())
+        for shard in &store.shards {
+            let state = shard.read().unwrap();
+            if let Some(series) = state
+                .tenants
+                .get("tenant")
+                .and_then(|tenant| tenant.series.values().next())
+            {
+                return check(series);
+            }
+        }
+        panic!("tenant has no series")
     }
 
     #[test]
@@ -1705,6 +1900,131 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(labels.len(), 200);
         assert!(labels.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    fn mixed_records(records: i64) -> Vec<IngestRecord> {
+        (0..records)
+            .map(|record| IngestRecord {
+                tenant: format!("tenant-{}", record % 3),
+                request: DecodedRequest {
+                    source: 0,
+                    series: (0..50)
+                        .map(|series| DecodedSeries {
+                            labels: vec![
+                                ("__name__".into(), format!("metric_{}", series % 5)),
+                                ("id".into(), series.to_string()),
+                            ],
+                            // Every seventh record repeats an older timestamp to exercise out-of-order data.
+                            samples: vec![cortexpb::Sample {
+                                timestamp_ms: if record % 7 == 6 { record - 5 } else { record }
+                                    * 1000,
+                                value: (record * series) as f64,
+                            }],
+                            histograms: if series % 10 == 0 {
+                                vec![histogram_at(record * 1000 + 1, 3)]
+                            } else {
+                                Vec::new()
+                            },
+                            exemplars: Vec::new(),
+                            created_timestamp: 0,
+                        })
+                        .collect(),
+                    metadata: Vec::new(),
+                },
+                ingested_ms: 0,
+                track_rate: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sharded_store_matches_a_single_shard() {
+        let single = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        let sharded = Store::with_shards(20 * 60 * 1000, None, None, 8, 4).unwrap();
+        let mut records = mixed_records(400).into_iter();
+        let mut records_again = mixed_records(400).into_iter();
+        loop {
+            let batch = records.by_ref().take(37).collect::<Vec<_>>();
+            if batch.is_empty() {
+                break;
+            }
+            single.ingest_batch(batch).unwrap();
+            sharded
+                .ingest_batch(records_again.by_ref().take(37).collect())
+                .unwrap();
+        }
+        for tenant in ["tenant-0", "tenant-1", "tenant-2"] {
+            let chunks = |store: &Store| {
+                store
+                    .select_chunks(tenant, i64::MIN, i64::MAX, &[])
+                    .unwrap()
+                    .into_iter()
+                    .map(|view| (view.encoded_labels, view.chunks.as_ref().clone()))
+                    .map(|(labels, chunks)| {
+                        (
+                            labels,
+                            chunks
+                                .into_iter()
+                                .map(|chunk| chunk.wire)
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let expected = chunks(&single);
+            assert_eq!(expected.len(), 50);
+            assert_eq!(chunks(&sharded), expected);
+            assert_eq!(sharded.num_series(tenant), single.num_series(tenant));
+            assert_eq!(
+                sharded
+                    .label_values(tenant, "id", i64::MIN, i64::MAX, &[])
+                    .unwrap(),
+                single
+                    .label_values(tenant, "id", i64::MIN, i64::MAX, &[])
+                    .unwrap()
+            );
+        }
+        assert_eq!(
+            sharded
+                .all_user_stats(false)
+                .into_iter()
+                .map(|(id, stats)| (id, stats.num_series))
+                .collect::<Vec<_>>(),
+            single
+                .all_user_stats(false)
+                .into_iter()
+                .map(|(id, stats)| (id, stats.num_series))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn parallel_batch_applies_each_series_in_record_order() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 8, 4).unwrap();
+        let batch = (0..200)
+            .map(|timestamp| IngestRecord {
+                tenant: "tenant".into(),
+                request: float_request([(timestamp, timestamp as f64)]),
+                ingested_ms: 0,
+                track_rate: false,
+            })
+            .collect();
+        store.ingest_batch(batch).unwrap();
+        with_series(&store, |series| {
+            assert!(series.out_of_order.is_empty());
+            assert!(
+                series
+                    .chunks
+                    .iter()
+                    .all(|chunk| chunk.min_time <= chunk.max_time)
+            );
+        });
+        assert_eq!(
+            float_samples(&store, i64::MIN, i64::MAX),
+            (0..200)
+                .map(|timestamp| (timestamp, timestamp as f64))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::path::Path;
 use super::*;
 use crate::chunk_disk::FileState;
 
-const MAGIC: &[u8; 8] = b"MIMIRHS1";
+const MAGIC: &[u8; 8] = b"MIMIRHS2";
 const FILE_NAME: &str = "snapshot";
 
 /// The Kafka position a head snapshot covers for one cluster.
@@ -24,19 +24,26 @@ impl Store {
     /// Like Prometheus's memory snapshot on shutdown: persists every series' open chunks and chunk
     /// references next to the chunk files so the next start skips segment replay.
     pub fn write_snapshot(&self, offsets: &[SnapshotOffset]) -> Result<()> {
-        let state = self.state.read().expect("store lock poisoned");
-        let directory = state
+        let states = self
+            .shards
+            .iter()
+            .map(|shard| shard.read().expect("store lock poisoned"))
+            .collect::<Vec<_>>();
+        let directory = states[0]
             .disk
             .directory()
+            .and_then(|shard| shard.parent())
             .context("head snapshots need a chunk directory")?
-            .clone();
-        state.disk.sync()?;
+            .to_path_buf();
+        for state in &states {
+            state.disk.sync()?;
+        }
         let temporary = directory.join(format!("{FILE_NAME}.tmp"));
         let file = File::create(&temporary)
             .with_context(|| format!("create head snapshot {}", temporary.display()))?;
         let mut writer = Checksummed::new(BufWriter::with_capacity(1 << 20, file));
         writer.inner.write_all(MAGIC)?;
-        write_snapshot_body(&mut writer, &state, offsets)?;
+        write_snapshot_body(&mut writer, &states, offsets)?;
         let checksum = writer.hasher.clone().finalize();
         let mut file = writer
             .inner
@@ -56,6 +63,7 @@ impl Store {
         active_window_ms: i64,
         retention_ms: Option<i64>,
         chunk_dir: &Path,
+        threads: usize,
     ) -> Result<Option<Restored>> {
         let path = chunk_dir.join(FILE_NAME);
         let file = match File::open(&path) {
@@ -68,7 +76,7 @@ impl Store {
         fs::remove_file(&path)
             .with_context(|| format!("remove head snapshot {}", path.display()))?;
         File::open(chunk_dir)?.sync_all()?;
-        match read_snapshot(file, active_window_ms, retention_ms, chunk_dir) {
+        match read_snapshot(file, active_window_ms, retention_ms, chunk_dir, threads) {
             Ok(restored) => Ok(Some(restored)),
             Err(error) => {
                 eprintln!("phase=head_snapshot_invalid error={error:#}");
@@ -80,7 +88,7 @@ impl Store {
 
 fn write_snapshot_body(
     writer: &mut Checksummed<BufWriter<File>>,
-    state: &State,
+    states: &[std::sync::RwLockReadGuard<'_, State>],
     offsets: &[SnapshotOffset],
 ) -> Result<()> {
     writer.put_len(offsets.len())?;
@@ -88,6 +96,14 @@ fn write_snapshot_body(
         writer.put_i64(offset.offset.unwrap_or(i64::MIN))?;
         writer.put_i64(offset.timestamp_ms)?;
     }
+    writer.put_len(states.len())?;
+    for state in states {
+        write_shard(writer, state)?;
+    }
+    Ok(())
+}
+
+fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Result<()> {
     let (files, next_sequence) = state.disk.state();
     writer.put_u32(next_sequence)?;
     writer.put_len(files.len())?;
@@ -153,6 +169,7 @@ fn read_snapshot(
     active_window_ms: i64,
     retention_ms: Option<i64>,
     chunk_dir: &Path,
+    threads: usize,
 ) -> Result<Restored> {
     let mut reader = Checksummed::new(BufReader::with_capacity(1 << 20, file));
     let mut magic = [0; 8];
@@ -169,6 +186,35 @@ fn read_snapshot(
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let shards = (0..reader.count(4096)?)
+        .map(|_| read_shard(&mut reader))
+        .collect::<Result<Vec<_>>>()?;
+    let expected = reader.hasher.clone().finalize();
+    let mut checksum = [0; 4];
+    reader.inner.read_exact(&mut checksum)?;
+    if u32::from_le_bytes(checksum) != expected {
+        bail!("head snapshot checksum mismatch");
+    }
+    if reader.inner.read(&mut [0])? != 0 {
+        bail!("trailing bytes in head snapshot");
+    }
+    let shards = shards
+        .into_iter()
+        .enumerate()
+        .map(|(index, (files, next_sequence, tenants))| {
+            let disk = ChunkDiskMapper::reopen(shard_dir(chunk_dir, index), &files, next_sequence)?;
+            Ok(RwLock::new(State { tenants, disk }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Restored {
+        store: Store::from_shards(shards, threads, active_window_ms, retention_ms)?,
+        offsets,
+    })
+}
+
+type ShardImage = (Vec<FileState>, u32, HashMap<String, Tenant>);
+
+fn read_shard(reader: &mut Checksummed<BufReader<File>>) -> Result<ShardImage> {
     let next_sequence = reader.u32()?;
     let files = (0..reader.count(1_000_000)?)
         .map(|_| {
@@ -228,7 +274,7 @@ fn read_snapshot(
                 series.float_head = Some(FloatHead {
                     min_time: reader.i64()?,
                     next_at: reader.i64()?,
-                    appender: xor::Appender::read_state(&mut reader)?,
+                    appender: xor::Appender::read_state(reader)?,
                 });
             }
             series.histogram_head = (0..reader.count(1_000_000)?)
@@ -253,24 +299,7 @@ fn read_snapshot(
             bail!("duplicate tenant in head snapshot");
         }
     }
-    let expected = reader.hasher.clone().finalize();
-    let mut checksum = [0; 4];
-    reader.inner.read_exact(&mut checksum)?;
-    if u32::from_le_bytes(checksum) != expected {
-        bail!("head snapshot checksum mismatch");
-    }
-    if reader.inner.read(&mut [0])? != 0 {
-        bail!("trailing bytes in head snapshot");
-    }
-    let disk = ChunkDiskMapper::reopen(chunk_dir.to_path_buf(), &files, next_sequence)?;
-    Ok(Restored {
-        store: Store {
-            state: RwLock::new(State { tenants, disk }),
-            active_window_ms,
-            retention_ms,
-        },
-        offsets,
-    })
+    Ok((files, next_sequence, tenants))
 }
 
 struct Checksummed<T> {
@@ -446,7 +475,7 @@ mod tests {
         store.write_snapshot(&offsets).unwrap();
         drop(store);
 
-        let restored = Store::restore(20 * 60 * 1000, None, &directory)
+        let restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
             .unwrap()
             .unwrap();
         assert_eq!(restored.offsets, offsets);
@@ -461,7 +490,7 @@ mod tests {
         drop(restored);
 
         assert!(
-            Store::restore(20 * 60 * 1000, None, &directory)
+            Store::restore(20 * 60 * 1000, None, &directory, 2)
                 .unwrap()
                 .is_none()
         );
@@ -481,7 +510,7 @@ mod tests {
         bytes[last] ^= 0xff;
         fs::write(&path, bytes).unwrap();
         assert!(
-            Store::restore(20 * 60 * 1000, None, &directory)
+            Store::restore(20 * 60 * 1000, None, &directory, 2)
                 .unwrap()
                 .is_none()
         );
