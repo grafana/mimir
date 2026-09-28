@@ -23,10 +23,8 @@ const (
 	// defaultProducerLinger is the producer-side batching delay.
 	defaultProducerLinger = 50 * time.Millisecond
 
-	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
-	// list and partition leaders) is refreshed. It is used for both the
-	// minimum and maximum metadata age so the metadata request frequency
-	// stays constant regardless of errors.
+	// DefaultMetadataRefreshInterval is the periodic metadata refresh interval
+	// and the default minimum metadata age. Writers can override the minimum.
 	DefaultMetadataRefreshInterval = 10 * time.Second
 )
 
@@ -34,6 +32,9 @@ const (
 // implementation based on cfg.Backend. The caller owns the lifecycle of the
 // returned producer and must call Close() when done.
 func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Logger, reg prometheus.Registerer) (*KafkaProducer, error) {
+	if err := cfg.validateKafkaWriterSettings(); err != nil {
+		return nil, err
+	}
 	var producerClient KafkaProducerClient
 
 	switch cfg.Backend {
@@ -88,6 +89,9 @@ func WithDisableDefaultTopic() KafkaWriterClientOption {
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
 func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer, opts ...KafkaWriterClientOption) (*kgo.Client, error) {
+	if err := kafkaCfg.validateKafkaWriterSettings(); err != nil {
+		return nil, err
+	}
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -154,6 +158,10 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 	)
 
 	var options kafkaWriterClientOptions
+	if kafkaCfg.ProducerMetadataMinAge != 0 {
+		kgoOpts = append(kgoOpts, kgo.MetadataMinAge(kafkaCfg.ProducerMetadataMinAge))
+	}
+
 	for _, o := range opts {
 		o(&options)
 	}

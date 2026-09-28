@@ -231,6 +231,7 @@ The following features are currently experimental:
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
+  - Kafka writer minimum metadata age (`-ingest-storage.kafka.producer-metadata-min-age`)
   - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
