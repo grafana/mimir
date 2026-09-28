@@ -33,7 +33,8 @@ mod profiling;
 #[cfg(all(target_os = "linux", feature = "jemalloc", feature = "mimalloc"))]
 compile_error!("enable only one of the jemalloc and mimalloc features");
 
-#[cfg(all(target_os = "linux", feature = "jemalloc"))]
+// On macOS too, so local benchmarks allocate like the pods do.
+#[cfg(all(any(target_os = "linux", target_os = "macos"), feature = "jemalloc"))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
@@ -665,6 +666,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                             ingested_ms: record.ingested_ms,
                             track_rate: false,
                             bytes: 0,
+                            series_hashes: None,
                         });
                         if recovered_batch.len() >= APPLY_BATCH {
                             store
@@ -810,11 +812,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 push_circuit_breaker,
                 replay_target,
             });
-            // Decoding and frame compression run on the blocking pool; this task re-sequences them so
-            // the applier still sees records in offset order.
-            let (order_tx, order_rx) =
-                tokio::sync::mpsc::channel::<tokio::task::JoinHandle<Result<Apply>>>(ingest_threads.max(2));
-            let orderer = spawn_orderer(order_rx, apply_tx.clone(), fatal_tx.clone(), cluster);
             let mut stopped = false;
             if replay_complete {
                 eprintln!(
@@ -905,8 +902,14 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     }
                 };
                 let offset = message.offset;
-                let job = tokio::task::spawn_blocking(move || prepare_record(message, high_watermark));
-                if order_tx.send(job).await.is_err() {
+                if apply_tx
+                    .send(Apply::Fetched {
+                        record: message,
+                        high_watermark,
+                    })
+                    .await
+                    .is_err()
+                {
                     break;
                 }
                 next_offset = offset.saturating_add(1);
@@ -942,8 +945,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
                     }
                 }
             }
-            drop(order_tx);
-            let _ = orderer.await;
             drop(apply_tx);
             tokio::task::spawn_blocking(move || applier.join())
                 .await
@@ -1394,36 +1395,10 @@ async fn shutdown_signal() -> Result<()> {
     tokio::signal::ctrl_c().await.context("wait for Ctrl-C")
 }
 
-/// Forwards prepared records in the order their jobs were queued, whatever order they finish in.
-fn spawn_orderer(
-    mut order_rx: tokio::sync::mpsc::Receiver<tokio::task::JoinHandle<Result<Apply>>>,
-    apply_tx: tokio::sync::mpsc::Sender<Apply>,
-    fatal_tx: tokio::sync::watch::Sender<bool>,
-    cluster: usize,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(job) = order_rx.recv().await {
-            let command = match job.await {
-                Ok(Ok(command)) => command,
-                Ok(Err(error)) => {
-                    eprintln!("Kafka cluster {cluster} failed: {error:#}");
-                    let _ = fatal_tx.send(true);
-                    break;
-                }
-                Err(error) => {
-                    eprintln!("Kafka cluster {cluster} record preparation panicked: {error}");
-                    let _ = fatal_tx.send(true);
-                    break;
-                }
-            };
-            if apply_tx.send(command).await.is_err() {
-                break;
-            }
-        }
-    })
-}
-
 const APPLY_BATCH: usize = 64;
+// About a thousand series of fetched records, below which decoding them in parallel costs more
+// than it saves.
+const PARALLEL_PREPARE_BYTES: usize = 512 * 1024;
 
 fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
     let decoded = record
@@ -1432,13 +1407,14 @@ fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
         .with_context(|| format!("decode offset {}", record.offset))?;
     // Hashing the series for the segment log runs here, in parallel, and the ordered applier only
     // looks the keys up.
-    let (request, keys) = match (decoded, &record.payload) {
-        (Some((request, spans)), Some(payload)) => {
+    let (request, keys, hashes) = match (decoded, &record.payload) {
+        (Some((mut request, spans)), Some(payload)) => {
             let keys =
                 segment::series_keys_with_label_bytes(&record.tenant, &request, payload, &spans);
-            (Some(request), keys)
+            let hashes = mimir_rust_kafka_ingester::store::series_hashes(&mut request);
+            (Some(request), keys, Some(hashes))
         }
-        _ => (None, Vec::new()),
+        _ => (None, Vec::new(), None),
     };
     Ok(Apply::Record {
         offset: record.offset,
@@ -1448,10 +1424,16 @@ fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
         tenant: record.tenant,
         request,
         keys,
+        hashes,
     })
 }
 
 enum Apply {
+    // A record as fetched, which the applier decodes.
+    Fetched {
+        record: RawRecord,
+        high_watermark: i64,
+    },
     Record {
         offset: i64,
         timestamp_ms: i64,
@@ -1460,6 +1442,7 @@ enum Apply {
         tenant: String,
         request: Option<DecodedRequest>,
         keys: Vec<SeriesKey>,
+        hashes: Option<Vec<Option<u64>>>,
     },
     Maintain,
 }
@@ -1485,11 +1468,13 @@ struct PendingRecord {
     high_watermark: i64,
     bytes: usize,
     keys: Vec<SeriesKey>,
+    hashes: Option<Vec<Option<u64>>>,
 }
 
 impl Applier {
     /// Applies queued commands in order, turning each run of records into one parallel store batch.
     fn apply_batch(&mut self, commands: Vec<Apply>) -> Result<()> {
+        let commands = self.prepare_fetched(commands)?;
         let mut records = Vec::with_capacity(commands.len());
         for command in commands {
             match command {
@@ -1501,6 +1486,7 @@ impl Applier {
                     tenant,
                     request,
                     keys,
+                    hashes,
                 } => records.push((
                     PendingRecord {
                         offset,
@@ -1508,10 +1494,12 @@ impl Applier {
                         high_watermark,
                         bytes,
                         keys,
+                        hashes,
                     },
                     tenant,
                     request,
                 )),
+                Apply::Fetched { .. } => unreachable!("fetched records are prepared first"),
                 Apply::Maintain => {
                     self.apply_records(std::mem::take(&mut records))?;
                     self.segment_log.maintain()?;
@@ -1522,6 +1510,33 @@ impl Applier {
             }
         }
         self.apply_records(records)
+    }
+
+    /// Decodes fetched records here rather than each on its own thread: once caught up, handing a
+    /// small record between threads cost more than decoding it, and a replay's full batches are
+    /// decoded with one fan-out on the store's threads.
+    fn prepare_fetched(&self, commands: Vec<Apply>) -> Result<Vec<Apply>> {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+        let fetched_bytes: usize = commands
+            .iter()
+            .map(|command| match command {
+                Apply::Fetched { record, .. } => record.payload.as_ref().map_or(0, Bytes::len),
+                _ => 0,
+            })
+            .sum();
+        let prepare = |command: Apply| match command {
+            Apply::Fetched {
+                record,
+                high_watermark,
+            } => prepare_record(record, high_watermark),
+            prepared => Ok(prepared),
+        };
+        if fetched_bytes < PARALLEL_PREPARE_BYTES {
+            return commands.into_iter().map(prepare).collect();
+        }
+        self.store
+            .parallel(|| commands.into_par_iter().map(prepare).collect())
     }
 
     fn apply_records(
@@ -1548,7 +1563,7 @@ impl Applier {
         self.segment_log.begin_batch(ingested_ms)?;
         let mut pending = Vec::with_capacity(records.len());
         let mut batch = Vec::with_capacity(records.len());
-        for (record, tenant, request) in records {
+        for (mut record, tenant, request) in records {
             let frame = self
                 .segment_log
                 .encode(
@@ -1561,6 +1576,7 @@ impl Applier {
                 )
                 .with_context(|| format!("encode offset {}", record.offset))?;
             let bytes = record.bytes;
+            let series_hashes = record.hashes.take();
             pending.push((record, frame));
             if let Some(request) = request {
                 batch.push(IngestRecord {
@@ -1569,6 +1585,7 @@ impl Applier {
                     ingested_ms,
                     track_rate: true,
                     bytes,
+                    series_hashes,
                 });
             }
         }
@@ -1915,38 +1932,97 @@ mod tests {
         std::fs::remove_dir_all(data_dir).unwrap();
     }
 
-    #[tokio::test]
-    async fn orderer_forwards_records_in_queue_order() {
-        let (order_tx, order_rx) = tokio::sync::mpsc::channel(8);
-        let (apply_tx, mut apply_rx) = tokio::sync::mpsc::channel(8);
-        let (fatal_tx, fatal_rx) = tokio::sync::watch::channel(false);
-        let orderer = spawn_orderer(order_rx, apply_tx, fatal_tx, 0);
-        for offset in 0..5_i64 {
-            order_tx
-                .send(tokio::task::spawn_blocking(move || {
-                    // Earlier records finish last.
-                    std::thread::sleep(Duration::from_millis(50 - offset as u64 * 10));
-                    Ok(Apply::Record {
-                        offset,
+    #[test]
+    fn fetched_records_are_applied_in_order_whether_decoded_inline_or_in_parallel() {
+        use prost::Message;
+        let data_dir = std::env::temp_dir().join(format!(
+            "mimir-rust-fetched-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let (log, _) = SegmentLog::open(&data_dir, 0, "topic", 0, None).unwrap();
+        let store = Arc::new(Store::default());
+        let (fatal_tx, _) = tokio::sync::watch::channel(false);
+        let mut applier = Applier {
+            store: Arc::clone(&store),
+            consistency: Arc::new(Consistency::new(0, 0, 1, Duration::from_secs(1))),
+            segment_log: log,
+            cluster: 0,
+            fatal_tx,
+            coverage_path: data_dir.join("coverage"),
+            coverage_pending: false,
+            last_timestamp_ms: 0,
+            push_circuit_breaker: None,
+            replay_target: -1,
+        };
+        // Every record writes the same series at its offset, so the order shows in its samples.
+        let fetched = |offset: i64, padding: usize| {
+            let payload = cortexpb::WriteRequest {
+                timeseries: vec![cortexpb::TimeSeries {
+                    labels: vec![
+                        cortexpb::LabelPair {
+                            name: b"__name__".to_vec().into(),
+                            value: b"up".to_vec().into(),
+                        },
+                        cortexpb::LabelPair {
+                            name: b"padding".to_vec().into(),
+                            value: vec![b'x'; padding].into(),
+                        },
+                    ],
+                    samples: vec![cortexpb::Sample {
                         timestamp_ms: offset,
-                        high_watermark: offset + 1,
-                        bytes: 0,
-                        tenant: String::new(),
-                        keys: Vec::new(),
-                        request: None,
+                        value: offset as f64,
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+            .encode_to_vec();
+            Apply::Fetched {
+                record: RawRecord {
+                    offset,
+                    timestamp_ms: offset,
+                    tenant: "tenant".into(),
+                    version: 1,
+                    payload: Some(payload.into()),
+                },
+                high_watermark: offset + 1,
+            }
+        };
+        let batches = [
+            (1..=3)
+                .map(|offset| fetched(offset, 10))
+                .collect::<Vec<_>>(),
+            (4..=12)
+                .map(|offset| fetched(offset, PARALLEL_PREPARE_BYTES / 8))
+                .collect(),
+        ];
+        for batch in batches {
+            applier.apply_batch(batch).unwrap();
+        }
+        assert_eq!(applier.segment_log.last_offset(), Some(12));
+        let samples = store
+            .select_chunks("tenant", i64::MIN, i64::MAX, &[])
+            .unwrap()
+            .into_iter()
+            .flat_map(|series| {
+                series.chunks[series.chunk_start..series.chunk_end]
+                    .iter()
+                    .flat_map(|chunk| {
+                        let chunk = mimir_rust_kafka_ingester::proto::cortex::Chunk::decode(
+                            chunk.wire.as_ref(),
+                        )
+                        .unwrap();
+                        mimir_rust_kafka_ingester::xor::decode(&chunk.data)
                     })
-                }))
-                .await
-                .unwrap();
-        }
-        drop(order_tx);
-        orderer.await.unwrap();
-        let mut offsets = Vec::new();
-        while let Some(Apply::Record { offset, .. }) = apply_rx.recv().await {
-            offsets.push(offset);
-        }
-        assert_eq!(offsets, vec![0, 1, 2, 3, 4]);
-        assert!(!*fatal_rx.borrow());
+                    .map(|(timestamp, _)| timestamp)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        // The two padding sizes are two series, each with its samples in offset order.
+        assert_eq!(samples, (1..=12).collect::<Vec<_>>());
+        drop(applier);
+        std::fs::remove_dir_all(data_dir).unwrap();
     }
 
     #[test]
@@ -1993,6 +2069,7 @@ mod tests {
                 bytes: 0,
                 tenant: "tenant".into(),
                 keys: segment::series_keys("tenant", &request),
+                hashes: None,
                 request: Some(request),
             }
         };

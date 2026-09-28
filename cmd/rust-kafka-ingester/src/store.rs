@@ -299,7 +299,8 @@ struct SeriesByName {
     // Label name, then the hash of a value, to the ids of every series with that label. Series ids
     // index `refs`, the (name group, label hash) of each series. A hash collision only adds
     // candidates, which the matchers then check.
-    postings: HashMap<&'static str, ValuePostings>,
+    // Hashed with hashbrown's default hasher: each new series looks up every one of its names.
+    postings: hashbrown::HashMap<&'static str, ValuePostings>,
     refs: Vec<(u32, u64)>,
     len: usize,
 }
@@ -547,7 +548,7 @@ impl PostingList {
 }
 
 fn add_postings(
-    postings: &mut HashMap<&'static str, ValuePostings>,
+    postings: &mut hashbrown::HashMap<&'static str, ValuePostings>,
     refs: &mut Vec<(u32, u64)>,
     labels: &StoredLabels,
     group: u32,
@@ -1036,6 +1037,28 @@ pub struct IngestRecord {
     pub track_rate: bool,
     // The Kafka record's value size, from which Mimir's ingest pusher sizes a tenant's shards.
     pub bytes: usize,
+    /// `series_hashes(&mut request)`, when computed while decoding.
+    pub series_hashes: Option<Vec<Option<u64>>>,
+}
+
+/// Sorts each series' labels and returns its hash, or `None` when it repeats a label name, which
+/// the store rejects. Done while decoding, it runs where records are decoded in parallel rather
+/// than in its own pass over a batch.
+pub fn series_hashes(request: &mut DecodedRequest) -> Vec<Option<u64>> {
+    request.series.iter_mut().map(sort_and_hash).collect()
+}
+
+fn sort_and_hash(series: &mut DecodedSeries) -> Option<u64> {
+    series.labels.sort();
+    if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return None;
+    }
+    Some(hash_label_pairs(
+        series
+            .labels
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+    ))
 }
 
 pub const DEFAULT_SHARDS: usize = 16;
@@ -1236,6 +1259,11 @@ impl Store {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Runs `work` on the store's threads, for work done in parallel alongside ingestion.
+    pub fn parallel<R: Send>(&self, work: impl FnOnce() -> R + Send) -> R {
+        self.pool.install(work)
+    }
+
     pub fn overrides(&self) -> &Arc<Overrides> {
         &self.overrides
     }
@@ -1247,6 +1275,7 @@ impl Store {
             ingested_ms: now_ms(),
             track_rate: true,
             bytes: 0,
+            series_hashes: None,
         }])
     }
 
@@ -1262,6 +1291,7 @@ impl Store {
             ingested_ms,
             track_rate: false,
             bytes: 0,
+            series_hashes: None,
         }])
     }
 
@@ -1302,7 +1332,14 @@ impl Store {
                     ingested_ms,
                     track_rate,
                     bytes: _,
+                    series_hashes,
                 } = record;
+                let series_hashes = series_hashes
+                    .filter(|hashes| hashes.len() == request.series.len())
+                    .map_or_else(
+                        || vec![None; request.series.len()],
+                        |hashes| hashes.into_iter().map(Some).collect(),
+                    );
                 let tenant_limits = self.overrides.tenant(&tenant);
                 let limits = &tenant_limits.limits;
                 let home_tenant = tenant_mut(&mut home.tenants, &tenant);
@@ -1523,7 +1560,10 @@ impl Store {
                         .series
                         .into_iter()
                         .zip(series_rules)
-                        .map(|(series, (rules, flush))| (index, series, ingested_ms, rules, flush)),
+                        .zip(series_hashes)
+                        .map(|((series, (rules, flush)), hash)| {
+                            (index, series, ingested_ms, rules, flush, hash)
+                        }),
                 );
                 tenant_ids.push(tenant);
             }
@@ -1531,30 +1571,22 @@ impl Store {
         // Once caught up, a batch is a few small records, and waking the pool's threads for them
         // cost more than the work.
         let parallel = all_series.len() >= PARALLEL_MIN_SERIES;
-        let sort_and_hash = |(_, series, _, _, _): &mut (usize, DecodedSeries, i64, _, u64)| {
-            series.labels.sort();
-            if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-                return None;
-            }
-            Some(hash_label_pairs(
-                series
-                    .labels
-                    .iter()
-                    .map(|(name, value)| (name.as_str(), value.as_str())),
-            ))
-        };
+        let hash =
+            |(_, series, _, _, _, hash): &mut (usize, DecodedSeries, i64, _, u64, Option<_>)| {
+                hash.take().unwrap_or_else(|| sort_and_hash(series))
+            };
         // Sorting and hashing labels is most of the per-series cost outside the shards.
-        let hashes = if parallel {
-            self.pool.install(|| {
-                all_series
-                    .par_iter_mut()
-                    .map(sort_and_hash)
-                    .collect::<Vec<_>>()
-            })
+        let unhashed = all_series
+            .iter()
+            .filter(|(_, _, _, _, _, hash)| hash.is_none())
+            .count();
+        let hashes = if unhashed >= PARALLEL_MIN_SERIES {
+            self.pool
+                .install(|| all_series.par_iter_mut().map(hash).collect::<Vec<_>>())
         } else {
-            all_series.iter_mut().map(sort_and_hash).collect()
+            all_series.iter_mut().map(hash).collect()
         };
-        for (position, ((index, series, ingested_ms, rules, flush), hash)) in
+        for (position, ((index, series, ingested_ms, rules, flush, _), hash)) in
             all_series.into_iter().zip(hashes).enumerate()
         {
             if let Some(hash) = hash {
@@ -5161,8 +5193,48 @@ mod tests {
                 ingested_ms: 0,
                 track_rate: false,
                 bytes: 0,
+                series_hashes: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn series_hashed_while_decoding_ingest_like_the_others() {
+        let computed = Store::with_shards(20 * 60 * 1000, None, None, 8, 4).unwrap();
+        let precomputed = Store::with_shards(20 * 60 * 1000, None, None, 8, 4).unwrap();
+        let mut records = mixed_records(40);
+        // A repeated label name is rejected either way.
+        records[0].request.series[1]
+            .labels
+            .push(("id".into(), "again".into()));
+        let mut hashed = mixed_records(40);
+        hashed[0].request.series[1]
+            .labels
+            .push(("id".into(), "again".into()));
+        for record in &mut hashed {
+            record.series_hashes = Some(series_hashes(&mut record.request));
+        }
+        assert_eq!(hashed[0].series_hashes.as_ref().unwrap()[1], None);
+        computed.ingest_batch(records).unwrap();
+        precomputed.ingest_batch(hashed).unwrap();
+        for tenant in ["tenant-0", "tenant-1", "tenant-2"] {
+            let chunks = |store: &Store| {
+                store
+                    .select_chunks(tenant, i64::MIN, i64::MAX, &[])
+                    .unwrap()
+                    .into_iter()
+                    .map(|view| {
+                        let chunks = view.chunks[view.chunk_start..view.chunk_end]
+                            .iter()
+                            .map(|chunk| chunk.wire.clone())
+                            .collect::<Vec<_>>();
+                        (view.encoded_labels, chunks)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(chunks(&precomputed), chunks(&computed));
+            assert_eq!(precomputed.num_series(tenant), computed.num_series(tenant));
+        }
     }
 
     #[test]
@@ -5244,6 +5316,7 @@ mod tests {
                 ingested_ms: 0,
                 track_rate: false,
                 bytes: 0,
+                series_hashes: None,
             })
             .collect();
         store.ingest_batch(batch).unwrap();
@@ -5386,6 +5459,7 @@ mod tests {
             ingested_ms: 0,
             track_rate: false,
             bytes: 0,
+            series_hashes: None,
         };
         // An empty head takes its max time from the flush's first sample, like the head's
         // initAppender.
@@ -5419,6 +5493,7 @@ mod tests {
                 ingested_ms: 0,
                 track_rate: false,
                 bytes: 0,
+                series_hashes: None,
             }])
             .unwrap();
         assert_eq!(
