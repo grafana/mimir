@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -1628,4 +1629,59 @@ func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, 
 
 func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	panic("not supported")
+}
+
+func TestConvertToAPIError(t *testing.T) {
+	limitErr := validation.NewLimitError("the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 100 bytes) (err-mimir-max-estimated-memory-consumption-per-query)")
+
+	testCases := map[string]struct {
+		err               error
+		fallbackType      apierror.Type
+		expectedType      apierror.Type
+		expectedStatus    int
+		expectedErrorText string
+	}{
+		"limit error with internal fallback is classified as an execution error": {
+			// engine.NewRangeQuery() failures use apierror.TypeInternal as their fallback, but a
+			// limit error is caused by the request and must not be reported as an HTTP 500.
+			err:               limitErr,
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeExec,
+			expectedStatus:    http.StatusUnprocessableEntity,
+			expectedErrorText: limitErr.Error(),
+		},
+		"wrapped limit error is classified as an execution error": {
+			err:               fmt.Errorf("failed to prepare query: %w", limitErr),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeExec,
+			expectedStatus:    http.StatusUnprocessableEntity,
+			expectedErrorText: "failed to prepare query: " + limitErr.Error(),
+		},
+		"existing API error is returned unchanged": {
+			err:               apierror.New(apierror.TypeBadData, "invalid request"),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeBadData,
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorText: "invalid request",
+		},
+		"unclassifiable error falls back to the caller's type": {
+			err:               errors.New("something went wrong"),
+			fallbackType:      apierror.TypeInternal,
+			expectedType:      apierror.TypeInternal,
+			expectedStatus:    http.StatusInternalServerError,
+			expectedErrorText: "something went wrong",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := convertToAPIError(testCase.err, testCase.fallbackType)
+
+			var apiErr *apierror.APIError
+			require.ErrorAs(t, err, &apiErr)
+			require.Equal(t, testCase.expectedType, apiErr.Type)
+			require.Equal(t, testCase.expectedStatus, apiErr.StatusCode())
+			require.Equal(t, testCase.expectedErrorText, apiErr.Message)
+		})
+	}
 }
