@@ -57,7 +57,7 @@ fn high_cardinality_multi_tenant_memory() {
                             } else {
                                 format!("unique_value_{tenant:02}_{label:02}_{id:08}")
                             };
-                            (name, value)
+                            (name.into(), value.into())
                         })
                         .collect(),
                     samples: if is_histogram(id) {
@@ -152,7 +152,7 @@ fn high_cardinality_multi_tenant_memory() {
                             } else {
                                 format!("unique_value_{tenant:02}_{label:02}_{id:08}")
                             };
-                            (name, value)
+                            (name.into(), value.into())
                         })
                         .collect(),
                     samples: if is_histogram(id) {
@@ -265,6 +265,7 @@ fn parallel_ingest_throughput() {
                                     )
                                 })
                                 .chain([("__name__".into(), format!("metric_{}", series % 40))])
+                                .map(|(name, value): (String, String)| (name.into(), value.into()))
                                 .collect(),
                             samples: vec![cortexpb::Sample {
                                 timestamp_ms: record as i64 * 1000,
@@ -343,7 +344,10 @@ fn retained_series_heap_bytes() {
             let series = batch
                 .iter()
                 .map(|&id| DecodedSeries {
-                    labels: labels(id),
+                    labels: labels(id)
+                        .into_iter()
+                        .map(|(name, value)| (name.into(), value.into()))
+                        .collect(),
                     samples: vec![cortexpb::Sample {
                         timestamp_ms: timestamp,
                         value: (id as f64) + (timestamp / INTERVAL_MS) as f64,
