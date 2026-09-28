@@ -22,4 +22,4 @@ overrides:
           - '{__name__="grafana_http_request_duration_seconds_bucket", cluster="prod-04"}'
       - match: '{__name__="grafana_http_request_duration_seconds_sum"}'
       - match: '{__name__="grafana_http_request_duration_seconds_count"}'
-        retired_at: 2026-09-28T16:38:56Z
+        retired_at: 2026-09-28T16:54:10Z

@@ -20,7 +20,7 @@ ingest_storage:
 ingester:
   push_grpc_method_enabled: false
   # Covers ignore_blocks_within plus the block-builder lag.
-  delayed_series_replay_window: 20m
+  delayed_series_replay_window: 10m
   track_ingester_owned_series: true
   active_series_metrics_update_period: 10s
   active_series_metrics_idle_timeout:  1m
@@ -176,6 +176,8 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+  # Promotions reach the ingesters within a second.
+  period: 1s
 
 server:
   log_level: info
