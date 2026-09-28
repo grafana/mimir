@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -360,6 +361,9 @@ func startRustIngesterAndWaitObserved(
 		"--consistency-timeout-seconds", "600",
 	}
 	process := exec.Command(binary, append(args, extraArgs...)...)
+	if listen := os.Getenv("MIMIR_RUST_INGESTER_PROFILE_LISTEN"); listen != "" {
+		process = exec.Command(binary, append(append(args, "--profile-listen", listen), extraArgs...)...)
+	}
 	process.Stderr = &stderr
 	require.NoError(tb, process.Start(), stderr.String())
 	if onStarted != nil {
