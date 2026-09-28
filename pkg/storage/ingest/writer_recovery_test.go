@@ -71,6 +71,33 @@ func TestKafkaWriterMetadataMinAge(t *testing.T) {
 	})
 }
 
+func TestKafkaWriter_HealthyMetadataRefreshPeriod(t *testing.T) {
+	for _, age := range []time.Duration{0, time.Second, 100 * time.Millisecond} {
+		t.Run(age.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				start := time.Now()
+				var vnet kfake.VirtualNetwork
+				cluster, addr := testkafka.CreateCluster(t, 1, "test", testkafka.WithVirtualNetwork(&vnet))
+				var requests []time.Duration
+				cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+					requests = append(requests, time.Since(start))
+					return nil, nil, false
+				})
+				cfg := createTestKafkaConfig(addr, "test")
+				cfg.Dialer = vnet.DialContext
+				cfg.ProducerMetadataMinAge = age
+				client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+				require.NoError(t, err)
+				t.Cleanup(client.Close)
+				require.NoError(t, client.ProduceSync(t.Context(), &kgo.Record{Value: []byte("healthy")}).FirstErr())
+				time.Sleep(25*time.Second - time.Since(start))
+				synctest.Wait()
+				assert.Equal(t, []time.Duration{0, 10 * time.Second, 20 * time.Second}, requests)
+			})
+		})
+	}
+}
+
 // Observe terminal callbacks without changing the producer's admission or cancellation paths.
 type recoveryTrackingClient struct {
 	KafkaProducerClient
@@ -116,6 +143,8 @@ func TestKafkaProducer_RecoveryAfterStorageError(t *testing.T) {
 					cluster, addr := testkafka.CreateCluster(t, 2, "test", testkafka.WithVirtualNetwork(&vnet), testkafka.WithNumBrokers(2), func() []kfake.Opt {
 						return []kfake.Opt{kfake.Ports(9092, 9093)}
 					})
+					// The unaffected partition shares the failed partition's broker and Produce connection.
+					require.NoError(t, cluster.MoveTopicPartition("test", 1, 0))
 					var metadataTimes []time.Duration
 					cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
 						metadataTimes = append(metadataTimes, time.Since(start))
@@ -161,7 +190,7 @@ func TestKafkaProducer_RecoveryAfterStorageError(t *testing.T) {
 					young := produce("young", 0)
 					healthy := produce("healthy", 1)
 					require.NoError(t, <-healthy)
-					assert.Less(t, time.Since(start)-errorAt, time.Second, "healthy broker must keep progressing")
+					assert.Less(t, time.Since(start)-errorAt, time.Second, "healthy partition must keep progressing on the same broker")
 					if minAge == 0 {
 						require.ErrorIs(t, <-old, context.DeadlineExceeded)
 						require.ErrorIs(t, <-young, context.DeadlineExceeded)
@@ -216,6 +245,9 @@ func TestKafkaProducer_RecoveryFailureLifecycle(t *testing.T) {
 						produces.Add(1)
 						if mode != "ownership change" {
 							cluster.KeepControl()
+						} else {
+							// Keep this request in flight across the ownership change below.
+							cluster.SleepControl(func() { time.Sleep(300 * time.Millisecond) })
 						}
 						if mode == "connection loss" {
 							return nil, errors.New("injected connection loss"), true

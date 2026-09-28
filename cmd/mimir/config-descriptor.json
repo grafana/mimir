@@ -9973,6 +9973,17 @@
             },
             {
               "kind": "field",
+              "name": "producer_diagnostic_logging_enabled",
+              "required": false,
+              "desc": "Log Kafka writer Produce, Metadata and connection transport events at debug level. Requires -log.level=debug. Each event group is limited to 100 events per second with a burst of 100, per writer; suppressed events are counted. Events do not identify individual batches or establish protocol success. Only supported with backend=kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.producer-diagnostic-logging-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "wait_strong_read_consistency_timeout",
               "required": false,
               "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",

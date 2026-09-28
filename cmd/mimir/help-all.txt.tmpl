@@ -1743,6 +1743,8 @@ Usage of ./cmd/mimir/mimir:
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
   -ingest-storage.kafka.producer-compression string
     	The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to "none" to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.
+  -ingest-storage.kafka.producer-diagnostic-logging-enabled
+    	[experimental] Log Kafka writer Produce, Metadata and connection transport events at debug level. Requires -log.level=debug. Each event group is limited to 100 events per second with a burst of 100, per writer; suppressed events are counted. Events do not identify individual batches or establish protocol success. Only supported with backend=kafka.
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int

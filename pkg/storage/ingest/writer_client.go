@@ -28,6 +28,8 @@ const (
 	DefaultMetadataRefreshInterval = 10 * time.Second
 )
 
+var kafkaWriterClientSequence atomic.Uint64
+
 // newKafkaProducerForBackend selects and constructs the producer
 // implementation based on cfg.Backend. The caller owns the lifecycle of the
 // returned producer and must call Close() when done.
@@ -92,6 +94,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 	if err := kafkaCfg.validateKafkaWriterSettings(); err != nil {
 		return nil, err
 	}
+	logger = log.With(logger, "kafka_writer_client_id", kafkaWriterClientSequence.Inc())
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -110,6 +113,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
 		// when we produce records. We expect the input prometheus.Registered to be wrapped with a prefix.
 		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
+		kgo.WithHooks(newKafkaWriterRequestMetrics(reg)),
 
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 
@@ -160,6 +164,9 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 	var options kafkaWriterClientOptions
 	if kafkaCfg.ProducerMetadataMinAge != 0 {
 		kgoOpts = append(kgoOpts, kgo.MetadataMinAge(kafkaCfg.ProducerMetadataMinAge))
+	}
+	if kafkaCfg.ProducerDiagnosticLoggingEnabled {
+		kgoOpts = append(kgoOpts, kgo.WithHooks(newKafkaWriterDiagnostics(logger, reg)))
 	}
 
 	for _, o := range opts {

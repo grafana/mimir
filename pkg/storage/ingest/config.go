@@ -196,10 +196,11 @@ type KafkaConfig struct {
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
 
-	ProducerMaxRecordSizeBytes int           `yaml:"producer_max_record_size_bytes"`
-	ProducerMaxBufferedBytes   int64         `yaml:"producer_max_buffered_bytes"`
-	ProducerCompression        string        `yaml:"producer_compression"`
-	ProducerMetadataMinAge     time.Duration `yaml:"producer_metadata_min_age" category:"experimental"`
+	ProducerMaxRecordSizeBytes       int           `yaml:"producer_max_record_size_bytes"`
+	ProducerMaxBufferedBytes         int64         `yaml:"producer_max_buffered_bytes"`
+	ProducerCompression              string        `yaml:"producer_compression"`
+	ProducerMetadataMinAge           time.Duration `yaml:"producer_metadata_min_age" category:"experimental"`
+	ProducerDiagnosticLoggingEnabled bool          `yaml:"producer_diagnostic_logging_enabled" category:"experimental"`
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
@@ -296,6 +297,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+"producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
 	f.StringVar(&cfg.ProducerCompression, prefix+"producer-compression", kafkaCompressionDefault, fmt.Sprintf("The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: %s. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to %q to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "), kafkaCompressionNone))
 	f.DurationVar(&cfg.ProducerMetadataMinAge, prefix+"producer-metadata-min-age", 0, "Minimum age of cached metadata before an ordinary Kafka writer metadata refresh. 0 uses the default of 10s; otherwise must be between 10ms and 10s. Immediate refreshes can bypass this minimum. Lower values can speed up recovery from write errors but increase metadata requests and connection churn. Does not change the 10s periodic refresh or reader clients. Only supported with backend=kafka.")
+	f.BoolVar(&cfg.ProducerDiagnosticLoggingEnabled, prefix+"producer-diagnostic-logging-enabled", false, "Log Kafka writer Produce, Metadata and connection transport events at debug level. Requires -log.level=debug. Each event group is limited to 100 events per second with a burst of 100, per writer; suppressed events are counted. Events do not identify individual batches or establish protocol success. Only supported with backend=kafka.")
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
@@ -427,6 +429,9 @@ func (cfg *KafkaConfig) validateKafkaWriterSettings() error {
 	}
 	if cfg.Backend == KafkaBackendWarpstream && cfg.ProducerMetadataMinAge != 0 {
 		return fmt.Errorf("ingest-storage.kafka.producer-metadata-min-age is only supported with backend=kafka")
+	}
+	if cfg.Backend == KafkaBackendWarpstream && cfg.ProducerDiagnosticLoggingEnabled {
+		return fmt.Errorf("ingest-storage.kafka.producer-diagnostic-logging-enabled is only supported with backend=kafka")
 	}
 	return nil
 }

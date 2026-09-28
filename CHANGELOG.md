@@ -4,8 +4,6 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.producer-metadata-min-age` to tune Kafka writer recovery after write errors. The default retains the existing 10s minimum; reader clients and the periodic refresh interval are unchanged.
-
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
 * [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544
@@ -20,6 +18,8 @@
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615
 * [FEATURE] Distributor: add experimental per-tenant limit configuration `-distributor.merge-duplicate-timeseries` to merge timeseries objects that share the same label set and created timestamp within a write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to the ingesters, where they were silently dropped without incrementing `cortex_discarded_samples_total`. Disabled by default. #15589
 * [FEATURE] Query-frontend: Add the experimental `cortex_query_frontend_max_inflight_requests` and `cortex_query_frontend_max_inflight_request_age_seconds` metrics, reporting the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Both reset on each scrape. The `type` label is `http` for requests entering the query-frontend, or `dispatched` for the sub-requests sent on to query-schedulers. Enable with `-query-frontend.max-inflight-metrics-enabled=true`. #16575
+* [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.producer-metadata-min-age` to tune Kafka writer recovery after write errors. The default retains the existing 10s minimum; reader clients and the periodic refresh interval are unchanged. #16713
+* [ENHANCEMENT] Ingest storage: Add Kafka writer request duration and write wait histograms by API and transport outcome, and experimental rate-limited transport diagnostics via `-ingest-storage.kafka.producer-diagnostic-logging-enabled`. Existing client metrics are unchanged. #16713
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311

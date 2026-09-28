@@ -6014,6 +6014,14 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-metadata-min-age
   [producer_metadata_min_age: <duration> | default = 0s]
 
+  # (experimental) Log Kafka writer Produce, Metadata and connection transport
+  # events at debug level. Requires -log.level=debug. Each event group is
+  # limited to 100 events per second with a burst of 100, per writer; suppressed
+  # events are counted. Events do not identify individual batches or establish
+  # protocol success. Only supported with backend=kafka.
+  # CLI flag: -ingest-storage.kafka.producer-diagnostic-logging-enabled
+  [producer_diagnostic_logging_enabled: <boolean> | default = false]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
