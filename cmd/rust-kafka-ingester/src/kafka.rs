@@ -111,28 +111,12 @@ impl PartitionClient {
         sasl_password: Option<&str>,
         sasl_mechanism: &str,
     ) -> Result<Arc<Self>> {
-        let fetch_max_bytes =
-            std::env::var("MIMIR_KAFKA_FETCH_MAX_BYTES").unwrap_or_else(|_| "8388608".to_owned());
-        let mut config = ClientConfig::new();
-        config
-            .set("bootstrap.servers", brokers)
-            .set(
-                "client.id",
-                std::env::var("MIMIR_KAFKA_CLIENT_ID")
-                    .unwrap_or_else(|_| "rust-kafka-ingester".to_owned()),
-            )
-            .set("group.id", "rust-kafka-ingester")
-            .set("enable.auto.commit", "false")
-            .set("enable.auto.offset.store", "false")
-            .set("enable.partition.eof", "false")
-            .set("auto.offset.reset", "error")
-            .set("isolation.level", "read_uncommitted")
-            .set("fetch.max.bytes", &fetch_max_bytes)
-            // librdkafka's 1 MiB per-partition default otherwise caps each single-partition fetch
-            // at a few records, making catch-up bound by broker round trips.
-            .set("fetch.message.max.bytes", &fetch_max_bytes)
-            .set("queued.max.messages.kbytes", "32768")
-            .set("fetch.wait.max.ms", "500");
+        let mut config = consumer_config(
+            brokers,
+            &std::env::var("MIMIR_KAFKA_CLIENT_ID")
+                .unwrap_or_else(|_| "rust-kafka-ingester".to_owned()),
+            &std::env::var("MIMIR_KAFKA_FETCH_MAX_BYTES").unwrap_or_else(|_| "8388608".to_owned()),
+        );
         match (sasl_username, sasl_password) {
             (Some(username), Some(password)) => {
                 let mechanism = match sasl_mechanism {
@@ -283,6 +267,26 @@ impl PartitionClient {
     }
 }
 
+fn consumer_config(brokers: &str, client_id: &str, fetch_max_bytes: &str) -> ClientConfig {
+    let mut config = ClientConfig::new();
+    config
+        .set("bootstrap.servers", brokers)
+        .set("client.id", client_id)
+        .set("group.id", "rust-kafka-ingester")
+        .set("enable.auto.commit", "false")
+        .set("enable.auto.offset.store", "false")
+        .set("enable.partition.eof", "false")
+        .set("auto.offset.reset", "error")
+        .set("isolation.level", "read_uncommitted")
+        .set("fetch.max.bytes", fetch_max_bytes)
+        // librdkafka's 1 MiB per-partition default otherwise caps each single-partition fetch at a
+        // few records, making catch-up bound by broker round trips.
+        .set("fetch.message.max.bytes", fetch_max_bytes)
+        .set("queued.max.messages.kbytes", "32768")
+        .set("fetch.wait.max.ms", "500");
+    config
+}
+
 fn record_version<H: Headers>(headers: Option<&H>) -> u32 {
     let Some(headers) = headers else { return 0 };
     for index in 0..headers.count() {
@@ -304,7 +308,15 @@ fn record_version<H: Headers>(headers: Option<&H>) -> u32 {
 mod tests {
     use rdkafka::message::{Header, OwnedHeaders};
 
-    use super::record_version;
+    use super::{consumer_config, record_version};
+
+    #[test]
+    fn single_partition_fetches_are_not_capped_below_the_fetch_size() {
+        let config = consumer_config("broker:9092", "client", "16777216");
+        assert_eq!(config.get("fetch.max.bytes"), Some("16777216"));
+        assert_eq!(config.get("fetch.message.max.bytes"), Some("16777216"));
+        assert_eq!(config.get("enable.auto.commit"), Some("false"));
+    }
 
     #[test]
     fn first_version_header_matches_go() {
