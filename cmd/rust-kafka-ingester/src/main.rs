@@ -12,7 +12,9 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 
 use mimir_rust_kafka_ingester::consistency::Consistency;
 use mimir_rust_kafka_ingester::kafka::{OffsetAt, PartitionClient, RawRecord, StartOffset};
-use mimir_rust_kafka_ingester::limits::{LimitsArgs, Overrides, parse_duration_ms};
+use mimir_rust_kafka_ingester::limits::{
+    InstanceLimitsArgs, LimitsArgs, Overrides, parse_duration_ms,
+};
 use mimir_rust_kafka_ingester::metrics;
 use mimir_rust_kafka_ingester::protection::{
     CircuitBreaker, ProcessScanner, ProtectionArgs, ProtectionLayer, ReadProtection,
@@ -20,9 +22,8 @@ use mimir_rust_kafka_ingester::protection::{
 };
 use mimir_rust_kafka_ingester::proto::cortex::ingester_server::IngesterServer;
 use mimir_rust_kafka_ingester::record::{DecodedRequest, decode_record};
-use mimir_rust_kafka_ingester::runtime_config::{
-    RuntimeConfig, RuntimeConfigArgs, poll_active_partitions,
-};
+use mimir_rust_kafka_ingester::ring_client::{poll_active_partitions, poll_owned_ranges};
+use mimir_rust_kafka_ingester::runtime_config::{RuntimeConfig, RuntimeConfigArgs};
 use mimir_rust_kafka_ingester::segment::{CompressedFrame, SegmentLog};
 mod profiling;
 
@@ -140,8 +141,31 @@ struct ServeArgs {
     /// Returns the number of active partitions, to convert global limits to local ones.
     #[arg(long)]
     active_partitions_url: Option<String>,
+    /// Returns this partition's token ranges per tenant, for owned series.
+    #[arg(long)]
+    owned_token_ranges_url: Option<String>,
+    /// The ring sidecar's metrics, served with the ingester's so one scrape covers the pod.
+    #[arg(long)]
+    sidecar_metrics_url: Option<String>,
+    /// Mimir's name for `--active-window-seconds`, which it replaces when set.
+    #[arg(long = "ingester.active-series-metrics-idle-timeout")]
+    active_series_idle_timeout: Option<String>,
+    #[arg(long = "ingester.owned-series-update-interval", default_value = "15s")]
+    owned_series_update_interval: String,
+    /// How often the emulated Go head compacts, which bounds the memory and owned series metrics.
+    #[arg(
+        long = "blocks-storage.tsdb.head-compaction-interval",
+        default_value = "1m"
+    )]
+    head_compaction_interval: String,
+    #[arg(long = "cost-attribution.cleanup-interval", default_value = "3m")]
+    cost_attribution_cleanup_interval: String,
+    #[arg(long = "cost-attribution.eviction-interval", default_value = "20m")]
+    cost_attribution_eviction_interval: String,
     #[command(flatten)]
     limits: LimitsArgs,
+    #[command(flatten)]
+    instance_limits: InstanceLimitsArgs,
     #[command(flatten)]
     runtime_config: RuntimeConfigArgs,
     #[command(flatten)]
@@ -296,7 +320,15 @@ async fn serve(args: ServeArgs) -> Result<()> {
         metadata_retain_period,
         active_series_update_period,
         active_partitions_url,
+        owned_token_ranges_url,
+        sidecar_metrics_url,
+        active_series_idle_timeout,
+        owned_series_update_interval,
+        head_compaction_interval,
+        cost_attribution_cleanup_interval,
+        cost_attribution_eviction_interval,
         limits,
+        instance_limits,
         runtime_config,
         protection,
     } = args;
@@ -317,7 +349,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
             .context("additional Kafka cluster must be TOPIC=BROKER[,BROKER...]")?;
         sources.push((topic.to_owned(), brokers.to_owned()));
     }
-    let active_window_ms = active_window_seconds.saturating_mul(1000);
+    let active_window_ms = match &active_series_idle_timeout {
+        Some(timeout) => parse_duration_ms(timeout)?,
+        None => active_window_seconds.saturating_mul(1000),
+    };
     let retention_ms = retention_seconds.map(|seconds| seconds.saturating_mul(1000));
     let chunk_dir = data_dir.join("chunks_head");
     // Installed before the snapshot restore: an unhandled SIGTERM would kill the process after the
@@ -336,7 +371,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
         let _ = signal_sender.send(true);
     });
     // Like Mimir, the runtime config must load before the ingester starts.
-    let overrides = Arc::new(Overrides::new(limits.to_limits()?));
+    let overrides = Arc::new(Overrides::with_instance_limits(
+        limits.to_limits()?,
+        instance_limits.to_limits(),
+    ));
     let mut runtime = RuntimeConfig::new(&runtime_config)?;
     if !runtime.is_empty() {
         runtime
@@ -356,7 +394,12 @@ async fn serve(args: ServeArgs) -> Result<()> {
     }
     metrics::ACTIVE_SERIES_LOADING.set(1);
     if let Some(address) = &metrics_listen {
-        metrics::serve(address, &cost_attribution_registry_path).await?;
+        metrics::serve(
+            address,
+            &cost_attribution_registry_path,
+            sidecar_metrics_url.clone(),
+        )
+        .await?;
     }
     let mut read_protection = ReadProtection::default();
     if protection.cpu_utilization_limit > 0.0 || protection.memory_utilization_limit > 0 {
@@ -390,6 +433,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
             shards: store_shards,
             threads: ingest_threads,
             overrides: Arc::clone(&overrides),
+            cost_attribution_intervals: (
+                parse_duration_ms(&cost_attribution_cleanup_interval)?,
+                parse_duration_ms(&cost_attribution_eviction_interval)?,
+            ),
         },
         &shutdown_requested,
     )? {
@@ -398,7 +445,22 @@ async fn serve(args: ServeArgs) -> Result<()> {
         StartupStore::Stopped => return Ok(()),
     };
     let store = Arc::new(store);
-    spawn_accounting(Arc::clone(&store), active_series_update, metadata_retain_ms);
+    let head_period =
+        Duration::from_millis(parse_duration_ms(&owned_series_update_interval)? as u64);
+    spawn_accounting(
+        Arc::clone(&store),
+        Accounting {
+            active_series_update,
+            metadata_retain_ms,
+            head_period,
+            compaction_interval: Duration::from_millis(
+                parse_duration_ms(&head_compaction_interval)? as u64,
+            ),
+        },
+    );
+    if let Some(url) = owned_token_ranges_url {
+        tokio::spawn(poll_owned_ranges(url, Arc::clone(&store), head_period));
+    }
     let consistency = Arc::new(Consistency::new(
         partition,
         read_compartment,
@@ -833,13 +895,29 @@ struct StoreConfig {
     shards: usize,
     threads: usize,
     overrides: Arc<Overrides>,
+    cost_attribution_intervals: (i64, i64),
 }
 
-// Refreshes the active series metrics and purges metadata that was not seen recently.
-fn spawn_accounting(store: Arc<Store>, update_period: Duration, metadata_retain_ms: i64) {
+struct Accounting {
+    active_series_update: Duration,
+    metadata_retain_ms: i64,
+    head_period: Duration,
+    compaction_interval: Duration,
+}
+
+// Refreshes the ingester metrics on Mimir's schedules: active series every update period, the head,
+// owned series and limit metrics every owned series interval, the ingestion rate every second, and
+// purges metadata that was not seen recently.
+fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
+    let Accounting {
+        active_series_update,
+        metadata_retain_ms,
+        head_period,
+        compaction_interval,
+    } = accounting;
     let report_store = Arc::clone(&store);
     tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(update_period);
+        let mut ticker = tokio::time::interval(active_series_update);
         loop {
             ticker.tick().await;
             let store = Arc::clone(&report_store);
@@ -847,6 +925,51 @@ fn spawn_accounting(store: Arc<Store>, update_period: Duration, metadata_retain_
                 Ok(reports) => metrics::export_active_series(&reports),
                 Err(error) => eprintln!("phase=active_series_report_error error={error}"),
             }
+        }
+    });
+    let head_store = Arc::clone(&store);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(head_period);
+        let mut last_compaction: Option<Instant> = None;
+        loop {
+            ticker.tick().await;
+            let compact = last_compaction.is_none_or(|at| at.elapsed() >= compaction_interval);
+            if compact {
+                last_compaction = Some(Instant::now());
+            }
+            let store = Arc::clone(&head_store);
+            match tokio::task::spawn_blocking(move || {
+                let reports = store.head_tick(compact);
+                let overrides = store.overrides();
+                let local_limits = reports
+                    .iter()
+                    .map(|report| {
+                        let limits = overrides.tenant(&report.tenant);
+                        (
+                            report.tenant.clone(),
+                            overrides.max_series_per_user(&limits.limits),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                (reports, local_limits, overrides.instance_limits())
+            })
+            .await
+            {
+                Ok((reports, local_limits, instance)) => {
+                    metrics::export_head(&reports, &local_limits, &instance)
+                }
+                Err(error) => eprintln!("phase=head_tick_error error={error}"),
+            }
+        }
+    });
+    let rate_store = Arc::clone(&store);
+    tokio::spawn(async move {
+        // Mimir's instance ingestion rate: an EWMA with alpha 0.2, ticked every second.
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
+        let mut rate = metrics::IngestionRate::default();
+        loop {
+            ticker.tick().await;
+            metrics::INGESTION_RATE.set(rate.tick(rate_store.ingested_samples()));
         }
     });
     tokio::spawn(async move {
@@ -875,6 +998,7 @@ fn open_store(
         shards,
         threads,
         overrides,
+        cost_attribution_intervals,
     } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
@@ -886,7 +1010,11 @@ fn open_store(
                 shards,
                 threads,
             )?
-            .with_overrides(Arc::clone(&overrides)),
+            .with_overrides(Arc::clone(&overrides))
+            .with_cost_attribution_intervals(
+                cost_attribution_intervals.0,
+                cost_attribution_intervals.1,
+            ),
         ))
     };
     let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir, threads)? else {
@@ -929,7 +1057,13 @@ fn open_store(
         return Ok(StartupStore::Stopped);
     }
     Ok(StartupStore::Resumed {
-        store: restored.store.with_overrides(overrides),
+        store: restored
+            .store
+            .with_overrides(overrides)
+            .with_cost_attribution_intervals(
+                cost_attribution_intervals.0,
+                cost_attribution_intervals.1,
+            ),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
 }
@@ -1389,6 +1523,7 @@ mod tests {
                     shards: 4,
                     threads: 2,
                     overrides: Arc::default(),
+                    cost_attribution_intervals: (180_000, 1_200_000),
                 },
                 &AtomicBool::new(shutdown),
             )

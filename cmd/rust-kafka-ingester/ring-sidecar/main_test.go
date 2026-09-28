@@ -4,7 +4,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -24,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
 func TestRegistrationFollowsRustReadiness(t *testing.T) {
@@ -48,7 +54,7 @@ func TestRegistrationFollowsRustReadiness(t *testing.T) {
 	var ready atomic.Bool
 	done := make(chan error, 1)
 	go func() {
-		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, logger)
+		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, nil, logger)
 	}()
 	time.Sleep(100 * time.Millisecond)
 	require.False(t, ready.Load())
@@ -123,6 +129,7 @@ func TestShadowRingGossipsToGoMemberlistBridge(t *testing.T) {
 		partition: 0, clusterLabel: "shadow-test", listen: "127.0.0.1:0",
 		join:            net.JoinHostPort("127.0.0.1", strconv.Itoa(bridge.GetListeningPort())),
 		instanceRingKey: "shadow/ring", partitionRingKey: "shadow-partitions",
+		unregisterOnShutdown: true,
 	}
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -159,8 +166,9 @@ func TestShadowRingGossipsToGoMemberlistBridge(t *testing.T) {
 			return false
 		}
 		_, instancePresent := instanceValue.(*ring.Desc).Ingesters[cfg.instanceID]
+		// Like Go's partition lifecycler, the owner stays unless shutdown was prepared.
 		_, ownerPresent := partitionValue.(*ring.PartitionRingDesc).Owners[cfg.instanceID]
-		return !instancePresent && !ownerPresent
+		return !instancePresent && ownerPresent
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
@@ -188,7 +196,7 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	var ready atomic.Bool
 	done := make(chan error, 1)
 	go func() {
-		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, logger)
+		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, nil, logger)
 	}()
 	partitionRing := func() *ring.PartitionRingDesc {
 		value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
@@ -252,4 +260,149 @@ func TestActivePartitionsCountsOnlyActivePartitions(t *testing.T) {
 	desc.AddPartition(2, ring.PartitionPending, time.Now())
 	desc.AddPartition(3, ring.PartitionInactive, time.Now())
 	require.Equal(t, 2, activePartitions(desc))
+}
+
+func startIsolatedSidecar(t *testing.T, cfg config, lifecycle *lifecycleState) (context.CancelFunc, chan error, kv.Client, kv.Client, *atomic.Bool) {
+	t.Helper()
+	logger := log.NewNopLogger()
+	instanceClient, closeInstance := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+	t.Cleanup(func() { _ = closeInstance.Close() })
+	partitionClient, closePartition := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), logger, nil)
+	t.Cleanup(func() { _ = closePartition.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if lifecycle.prepared.Load() {
+		// A prepared ingester never creates its partition.
+		require.NoError(t, partitionClient.CAS(ctx, cfg.partitionRingKey, func(any) (any, bool, error) {
+			desc := ring.NewPartitionRingDesc()
+			desc.AddPartition(int32(cfg.partition), ring.PartitionActive, time.Now())
+			return desc, true, nil
+		}))
+	}
+	var ready atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, lifecycle, logger)
+	}()
+	require.Eventually(t, ready.Load, 5*time.Second, 20*time.Millisecond)
+	return cancel, done, instanceClient, partitionClient, &ready
+}
+
+func rustListener(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func TestShutdownKeepsRegistrationsLikeGoUnlessPrepared(t *testing.T) {
+	for _, prepared := range []bool{false, true} {
+		t.Run(fmt.Sprintf("prepared=%v", prepared), func(t *testing.T) {
+			cfg := config{
+				instanceID: "shadow-0", podIP: "127.0.0.1", zone: "zone-c", rustPort: rustListener(t),
+				partition: 0, instanceRingKey: "shadow/ring", partitionRingKey: "shadow-partitions",
+				pollInterval: 20 * time.Millisecond, unregisterOnShutdown: false,
+			}
+			lifecycle := &lifecycleState{}
+			lifecycle.prepared.Store(prepared)
+			cancel, done, instanceClient, partitionClient, _ := startIsolatedSidecar(t, cfg, lifecycle)
+			cancel()
+			require.ErrorIs(t, <-done, context.Canceled)
+
+			value, err := instanceClient.Get(context.Background(), cfg.instanceRingKey)
+			require.NoError(t, err)
+			instance, registered := value.(*ring.Desc).Ingesters[cfg.instanceID]
+			value, err = partitionClient.Get(context.Background(), cfg.partitionRingKey)
+			require.NoError(t, err)
+			_, owner := value.(*ring.PartitionRingDesc).Owners[cfg.instanceID]
+			if prepared {
+				require.False(t, registered, "a prepared shutdown leaves the instance ring")
+				require.False(t, owner, "a prepared shutdown removes the partition owner")
+			} else {
+				require.True(t, registered, "-ingester.ring.unregister-on-shutdown=false keeps the instance")
+				require.Equal(t, ring.LEAVING, instance.State)
+				require.True(t, owner, "the partition owner stays, like Go's default")
+			}
+		})
+	}
+}
+
+func TestPrepareShutdownHandlerPersistsAMarker(t *testing.T) {
+	cfg := config{shutdownMarkerDir: t.TempDir()}
+	lifecycle := &lifecycleState{}
+	call := func(method string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		prepareShutdownHandler(recorder, httptest.NewRequest(method, "/ingester/prepare-shutdown", nil), cfg, lifecycle, log.NewNopLogger())
+		return recorder
+	}
+	require.Equal(t, "unset\n", call(http.MethodGet).Body.String())
+	require.Equal(t, http.StatusNoContent, call(http.MethodPost).Code)
+	require.Equal(t, "set\n", call(http.MethodGet).Body.String())
+	// Like Go with ingest storage, the preparation can't be reverted.
+	require.Equal(t, http.StatusMethodNotAllowed, call(http.MethodDelete).Code)
+	exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(cfg.shutdownMarkerDir))
+	require.NoError(t, err)
+	require.True(t, exists, "the marker survives a restart")
+}
+
+func TestPreparePartitionDownscaleSwitchesPartitionState(t *testing.T) {
+	cfg := config{
+		instanceID: "shadow-0", podIP: "127.0.0.1", zone: "zone-c", rustPort: rustListener(t),
+		partition: 0, instanceRingKey: "shadow/ring", partitionRingKey: "shadow-partitions",
+		pollInterval: 20 * time.Millisecond,
+	}
+	lifecycle := &lifecycleState{}
+	_, _, _, partitionClient, _ := startIsolatedSidecar(t, cfg, lifecycle)
+	call := func(cfg config, method string) (int, map[string]int64) {
+		recorder := httptest.NewRecorder()
+		preparePartitionDownscaleHandler(recorder, httptest.NewRequest(method, "/ingester/prepare-partition-downscale", nil), cfg, lifecycle, log.NewNopLogger())
+		var body map[string]int64
+		_ = json.Unmarshal(recorder.Body.Bytes(), &body)
+		return recorder.Code, body
+	}
+	state := func() ring.PartitionState {
+		value, err := partitionClient.Get(context.Background(), cfg.partitionRingKey)
+		require.NoError(t, err)
+		return value.(*ring.PartitionRingDesc).Partitions[0].State
+	}
+	code, body := call(cfg, http.MethodGet)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, int64(0), body["timestamp"])
+	code, body = call(cfg, http.MethodPost)
+	require.Equal(t, http.StatusOK, code)
+	require.Positive(t, body["timestamp"])
+	require.Equal(t, ring.PartitionInactive, state())
+	code, body = call(cfg, http.MethodDelete)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, int64(0), body["timestamp"])
+	require.Equal(t, ring.PartitionActive, state())
+	// The shared ring's partition states belong to the Go ingesters.
+	shared := cfg
+	shared.sharedRing = true
+	code, _ = call(shared, http.MethodPost)
+	require.Equal(t, http.StatusConflict, code)
+	require.Equal(t, ring.PartitionActive, state())
+}
+
+func TestOwnedTokenRangesFollowTheTenantShuffleShard(t *testing.T) {
+	desc := ring.NewPartitionRingDesc()
+	for id := int32(0); id < 3; id++ {
+		desc.AddPartition(id, ring.PartitionActive, time.Now())
+	}
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	require.NoError(t, err)
+	owners := 0
+	for id := int32(0); id < 3; id++ {
+		ranges, err := ownedTokenRanges(desc, id, map[string]int{"single": 1, "all": 0})
+		require.NoError(t, err)
+		require.NotNil(t, ranges["all"], "shard size 0 uses every partition")
+		expected, err := partitionRing.GetTokenRangesForPartition(id)
+		require.NoError(t, err)
+		require.Equal(t, []uint32(expected), ranges["all"])
+		if ranges["single"] != nil {
+			owners++
+		}
+	}
+	require.Equal(t, 1, owners, "a shard of one partition is owned by exactly one partition")
 }

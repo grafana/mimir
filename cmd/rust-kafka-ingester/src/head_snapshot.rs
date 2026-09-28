@@ -463,6 +463,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
             if version < 4 {
                 infer_pre_v4_flags(&mut series);
             }
+            series.owned_hash = shard_by_all_labels(&tenant_id, &labels);
             let key = series_key(labels);
             if legacy {
                 for _ in 0..reader.count(10_000_000)? {

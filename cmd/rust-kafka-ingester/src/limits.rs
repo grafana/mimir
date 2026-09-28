@@ -56,12 +56,14 @@ pub struct Limits {
     pub creation_grace_period_ms: i64,
     pub past_grace_period_ms: i64,
     pub native_histograms_ingestion_enabled: bool,
+    pub max_global_series_per_user: i64,
     pub max_global_exemplars_per_user: i64,
     pub max_global_metadata_per_user: i64,
     pub max_global_metadata_per_metric: i64,
     pub ingestion_partitions_tenant_shard_size: i64,
     pub active_series_custom_trackers: Arc<CustomTrackers>,
     pub active_series_additional_custom_trackers: Arc<CustomTrackers>,
+    pub max_active_series_additional_custom_trackers: i64,
     pub cost_attribution_trackers: Arc<CostAttributionTrackers>,
     pub additional_cost_attribution_trackers: Arc<CostAttributionTrackers>,
     pub max_cost_attribution_cardinality: i64,
@@ -76,12 +78,14 @@ impl Default for Limits {
             creation_grace_period_ms: 10 * 60_000,
             past_grace_period_ms: 0,
             native_histograms_ingestion_enabled: true,
+            max_global_series_per_user: 150_000,
             max_global_exemplars_per_user: 0,
             max_global_metadata_per_user: 0,
             max_global_metadata_per_metric: 0,
             ingestion_partitions_tenant_shard_size: 0,
             active_series_custom_trackers: Arc::default(),
             active_series_additional_custom_trackers: Arc::default(),
+            max_active_series_additional_custom_trackers: 0,
             cost_attribution_trackers: Arc::default(),
             additional_cost_attribution_trackers: Arc::default(),
             max_cost_attribution_cardinality: 2000,
@@ -105,6 +109,12 @@ pub struct LimitsArgs {
         action = clap::ArgAction::Set
     )]
     pub native_histograms_ingestion_enabled: bool,
+    /// Only reported in `cortex_ingester_local_limits`: series limits apply before Kafka.
+    #[arg(
+        long = "ingester.max-global-series-per-user",
+        default_value_t = 150_000
+    )]
+    pub max_global_series_per_user: i64,
     #[arg(long = "ingester.max-global-exemplars-per-user", default_value_t = 0)]
     pub max_global_exemplars_per_user: i64,
     #[arg(long = "ingester.max-global-metadata-per-user", default_value_t = 0)]
@@ -122,6 +132,11 @@ pub struct LimitsArgs {
     /// JSON map of tracker name to `{"labels": [{"input": ..., "output": ...}], "internal": ...}`.
     #[arg(long = "validation.cost-attribution-trackers")]
     pub cost_attribution_trackers: Option<String>,
+    #[arg(
+        long = "validation.max-active-series-additional-custom-trackers",
+        default_value_t = 0
+    )]
+    pub max_active_series_additional_custom_trackers: i64,
     #[arg(
         long = "validation.max-cost-attribution-cardinality",
         default_value_t = 2000
@@ -148,12 +163,15 @@ impl LimitsArgs {
             creation_grace_period_ms: parse_duration_ms(&self.creation_grace_period)?,
             past_grace_period_ms: parse_duration_ms(&self.past_grace_period)?,
             native_histograms_ingestion_enabled: self.native_histograms_ingestion_enabled,
+            max_global_series_per_user: self.max_global_series_per_user,
             max_global_exemplars_per_user: self.max_global_exemplars_per_user,
             max_global_metadata_per_user: self.max_global_metadata_per_user,
             max_global_metadata_per_metric: self.max_global_metadata_per_metric,
             ingestion_partitions_tenant_shard_size: self.ingestion_partitions_tenant_shard_size,
             active_series_custom_trackers: Arc::new(CustomTrackers::new(custom_trackers)?),
             active_series_additional_custom_trackers: Arc::default(),
+            max_active_series_additional_custom_trackers: self
+                .max_active_series_additional_custom_trackers,
             cost_attribution_trackers: Arc::new(match &self.cost_attribution_trackers {
                 Some(json) if !json.trim().is_empty() => CostAttributionTrackers::from_value(
                     &serde_json::from_str(json).context("parse cost attribution trackers")?,
@@ -190,6 +208,9 @@ impl Limits {
                     limits.native_histograms_ingestion_enabled =
                         bool_value(value).with_context(context)?
                 }
+                "max_global_series_per_user" => {
+                    limits.max_global_series_per_user = int_value(value).with_context(context)?
+                }
                 "max_global_exemplars_per_user" => {
                     limits.max_global_exemplars_per_user = int_value(value).with_context(context)?
                 }
@@ -212,6 +233,10 @@ impl Limits {
                     limits.active_series_additional_custom_trackers =
                         Arc::new(CustomTrackers::from_value(value).with_context(context)?)
                 }
+                "max_active_series_additional_custom_trackers" => {
+                    limits.max_active_series_additional_custom_trackers =
+                        int_value(value).with_context(context)?
+                }
                 "cost_attribution_trackers" => {
                     limits.cost_attribution_trackers =
                         Arc::new(CostAttributionTrackers::from_value(value).with_context(context)?)
@@ -231,7 +256,25 @@ impl Limits {
                 _ => {}
             }
         }
+        limits.validate()?;
         Ok(limits)
+    }
+
+    // Like Mimir's `Limits.Validate`, an invalid tenant fails the whole runtime config load.
+    fn validate(&self) -> Result<()> {
+        let max = self.max_active_series_additional_custom_trackers;
+        if max < 0 {
+            bail!(
+                "active_series_additional_custom_trackers validation failed: invalid max custom trackers limit: {max}"
+            );
+        }
+        let count = self.active_series_additional_custom_trackers.len();
+        if max > 0 && count as i64 > max {
+            bail!(
+                "active_series_additional_custom_trackers validation failed: the number of custom trackers [{count}] exceeds the configured limit [{max}]"
+            );
+        }
+        Ok(())
     }
 
     /// Base trackers with the additional ones on top, like `ActiveSeriesCustomTrackersConfig`.
@@ -288,6 +331,92 @@ fn duration_value(value: &Value) -> Result<i64> {
     }
 }
 
+/// Mimir's per-ingester instance limits, from `-ingester.instance-limits.*` with the runtime
+/// config's `ingester_limits` on top. Only reported, like the other admission limits.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InstanceLimits {
+    pub max_ingestion_rate: f64,
+    pub max_tenants: i64,
+    pub max_series: i64,
+    pub max_inflight_push_requests: i64,
+    pub max_inflight_push_requests_bytes: i64,
+}
+
+impl Default for InstanceLimits {
+    fn default() -> Self {
+        Self {
+            max_ingestion_rate: 0.0,
+            max_tenants: 0,
+            max_series: 0,
+            max_inflight_push_requests: 30_000,
+            max_inflight_push_requests_bytes: 0,
+        }
+    }
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct InstanceLimitsArgs {
+    #[arg(
+        long = "ingester.instance-limits.max-ingestion-rate",
+        default_value_t = 0.0
+    )]
+    pub max_ingestion_rate: f64,
+    #[arg(long = "ingester.instance-limits.max-tenants", default_value_t = 0)]
+    pub max_tenants: i64,
+    #[arg(long = "ingester.instance-limits.max-series", default_value_t = 0)]
+    pub max_series: i64,
+    #[arg(
+        long = "ingester.instance-limits.max-inflight-push-requests",
+        default_value_t = 30_000
+    )]
+    pub max_inflight_push_requests: i64,
+    #[arg(
+        long = "ingester.instance-limits.max-inflight-push-requests-bytes",
+        default_value_t = 0
+    )]
+    pub max_inflight_push_requests_bytes: i64,
+}
+
+impl InstanceLimitsArgs {
+    pub fn to_limits(&self) -> InstanceLimits {
+        InstanceLimits {
+            max_ingestion_rate: self.max_ingestion_rate,
+            max_tenants: self.max_tenants,
+            max_series: self.max_series,
+            max_inflight_push_requests: self.max_inflight_push_requests,
+            max_inflight_push_requests_bytes: self.max_inflight_push_requests_bytes,
+        }
+    }
+}
+
+impl InstanceLimits {
+    fn with_overrides(&self, overrides: &Map<String, Value>) -> Result<Self> {
+        let mut limits = self.clone();
+        for (field, value) in overrides {
+            let context = || format!("ingester_limits.{field}");
+            match field.as_str() {
+                "max_ingestion_rate" => {
+                    limits.max_ingestion_rate = match value {
+                        Value::Number(number) => number.as_f64().context("not a number")?,
+                        other => int_value(other)? as f64,
+                    }
+                }
+                "max_tenants" => limits.max_tenants = int_value(value).with_context(context)?,
+                "max_series" => limits.max_series = int_value(value).with_context(context)?,
+                "max_inflight_push_requests" => {
+                    limits.max_inflight_push_requests = int_value(value).with_context(context)?
+                }
+                "max_inflight_push_requests_bytes" => {
+                    limits.max_inflight_push_requests_bytes =
+                        int_value(value).with_context(context)?
+                }
+                _ => {}
+            }
+        }
+        Ok(limits)
+    }
+}
+
 /// A tenant's limits, resolved once per runtime config reload.
 pub struct TenantLimits {
     pub limits: Limits,
@@ -308,6 +437,8 @@ impl TenantLimits {
 /// Defaults from flags plus per-tenant overrides from the runtime config.
 pub struct Overrides {
     defaults: Limits,
+    instance_defaults: InstanceLimits,
+    instance: RwLock<InstanceLimits>,
     default_tenant: Arc<TenantLimits>,
     tenants: RwLock<Arc<HashMap<String, Arc<TenantLimits>>>>,
     // Bumped on every change, so cached per-series tracker matches know to recompute.
@@ -324,9 +455,15 @@ impl Default for Overrides {
 
 impl Overrides {
     pub fn new(defaults: Limits) -> Self {
+        Self::with_instance_limits(defaults, InstanceLimits::default())
+    }
+
+    pub fn with_instance_limits(defaults: Limits, instance: InstanceLimits) -> Self {
         Self {
             default_tenant: Arc::new(TenantLimits::new(defaults.clone())),
             defaults,
+            instance: RwLock::new(instance.clone()),
+            instance_defaults: instance,
             tenants: RwLock::new(Arc::default()),
             generation: AtomicU64::new(1),
             active_partitions: AtomicU64::new(0),
@@ -344,8 +481,20 @@ impl Overrides {
         self.generation.load(Ordering::Acquire)
     }
 
-    /// Replaces every tenant's overrides with the `overrides` map of a merged runtime config.
+    pub fn instance_limits(&self) -> InstanceLimits {
+        self.instance
+            .read()
+            .expect("overrides lock poisoned")
+            .clone()
+    }
+
+    /// Replaces every tenant's overrides with the `overrides` map of a merged runtime config, and
+    /// the instance limits with its `ingester_limits`.
     pub fn apply_runtime_config(&self, config: &Map<String, Value>) -> Result<()> {
+        let instance = match config.get("ingester_limits") {
+            Some(Value::Object(fields)) => self.instance_defaults.with_overrides(fields)?,
+            _ => self.instance_defaults.clone(),
+        };
         let mut tenants = HashMap::new();
         if let Some(overrides) = config.get("overrides") {
             let overrides = match overrides {
@@ -366,6 +515,7 @@ impl Overrides {
             }
         }
         *self.tenants.write().expect("overrides lock poisoned") = Arc::new(tenants);
+        *self.instance.write().expect("overrides lock poisoned") = instance;
         self.generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
@@ -399,6 +549,11 @@ impl Overrides {
         let local = self.local_limit(limits, global);
         let limit = if local > 0 { local } else { global };
         usize::try_from(limit).unwrap_or(0)
+    }
+
+    /// Like `Limiter.maxSeriesPerUser`, 0 meaning unlimited as `math.MaxInt32`.
+    pub fn max_series_per_user(&self, limits: &Limits) -> usize {
+        or_unlimited(self.local_limit(limits, limits.max_global_series_per_user))
     }
 
     pub fn max_metadata_per_user(&self, limits: &Limits) -> usize {
@@ -445,12 +600,14 @@ mod tests {
             creation_grace_period: "10m".into(),
             past_grace_period: "0".into(),
             native_histograms_ingestion_enabled: false,
+            max_global_series_per_user: 150_000,
             max_global_exemplars_per_user: 100_000,
             max_global_metadata_per_user: 30_000,
             max_global_metadata_per_metric: 10,
             ingestion_partitions_tenant_shard_size: 1,
             active_series_custom_trackers: vec![r#"a:{job="a"};b:{job="b"}"#.into()],
             cost_attribution_trackers: None,
+            max_active_series_additional_custom_trackers: 0,
             max_cost_attribution_cardinality: 2000,
             cost_attribution_cooldown: "0".into(),
         }
@@ -551,5 +708,46 @@ overrides:
             overrides.max_metadata_per_metric(&limits),
             i32::MAX as usize
         );
+    }
+
+    #[test]
+    fn instance_limits_come_from_flags_and_the_runtime_config() {
+        let overrides = Overrides::with_instance_limits(
+            Limits::default(),
+            InstanceLimits {
+                max_tenants: 7,
+                ..InstanceLimits::default()
+            },
+        );
+        overrides
+            .apply_runtime_config(&overrides_yaml(
+                "ingester_limits:\n  max_series: 3e+06\n  max_tenants: 500\n",
+            ))
+            .unwrap();
+        let limits = overrides.instance_limits();
+        assert_eq!(limits.max_series, 3_000_000);
+        assert_eq!(limits.max_tenants, 500);
+        assert_eq!(limits.max_inflight_push_requests, 30_000);
+        overrides.apply_runtime_config(&Map::new()).unwrap();
+        assert_eq!(overrides.instance_limits().max_tenants, 7);
+    }
+
+    #[test]
+    fn rejects_more_additional_trackers_than_allowed() {
+        let overrides = Overrides::new(Limits {
+            max_active_series_additional_custom_trackers: 1,
+            ..Limits::default()
+        });
+        let yaml = "overrides:\n  t:\n    active_series_additional_custom_trackers:\n      a: '{x=\"1\"}'\n      b: '{x=\"2\"}'\n";
+        let error = overrides
+            .apply_runtime_config(&overrides_yaml(yaml))
+            .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("exceeds the configured limit [1]"),
+            "{error:#}"
+        );
+        overrides
+            .apply_runtime_config(&overrides_yaml(&yaml.replace("      b: '{x=\"2\"}'\n", "")))
+            .unwrap();
     }
 }

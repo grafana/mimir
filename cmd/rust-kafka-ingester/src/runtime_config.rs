@@ -197,40 +197,6 @@ pub fn merge_maps(
     Ok(out)
 }
 
-/// Keeps `overrides` informed of the active partitions in the partition ring, which the ring
-/// sidecar serves as a plain number, so global limits convert to this partition's share.
-pub async fn poll_active_partitions(url: String, overrides: Arc<Overrides>, period: Duration) {
-    let client: Client<_, Empty<bytes::Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-    let mut ticker = tokio::time::interval(period);
-    let mut last = None;
-    loop {
-        ticker.tick().await;
-        let fetched = async {
-            let response = tokio::time::timeout(
-                Duration::from_secs(5),
-                client.get(url.parse::<hyper::Uri>()?),
-            )
-            .await??;
-            if !response.status().is_success() {
-                bail!("{url} returned {}", response.status());
-            }
-            let body = response.into_body().collect().await?.to_bytes();
-            Ok(std::str::from_utf8(&body)?.trim().parse::<u64>()?)
-        }
-        .await;
-        match fetched {
-            Ok(partitions) => {
-                overrides.set_active_partitions(partitions);
-                if last != Some(partitions) {
-                    eprintln!("phase=active_partitions count={partitions}");
-                    last = Some(partitions);
-                }
-            }
-            Err(error) => eprintln!("phase=active_partitions_error error={error:#}"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
