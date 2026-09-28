@@ -74,6 +74,11 @@ struct Series {
     // ranges) since this series' last sample. Unlike deleting one series, clearing leaves the
     // cost attribution counts in place.
     active_cleared: bool,
+    // Evicted from the emulated head as non-owned, like Mimir's early compaction of non-owned
+    // series, until its next sample; its data stays queryable as a compacted block's.
+    head_evicted: bool,
+    // When an owned series recompute first found it non-owned, in Unix seconds, or 0.
+    non_owned_since_s: u32,
     // Mimir's `ShardByAllLabels`, which decides which partition owns the series.
     owned_hash: u32,
     // Custom trackers this series matches, computed for one overrides generation.
@@ -406,6 +411,8 @@ struct Tenant {
     // for another recompute, which are Mimir's reasons to recompute owned series.
     owned_ranges_seen: Option<Option<Vec<u32>>>,
     owned_recompute: bool,
+    // The emulated head's series count at the last head tick.
+    head_series: u64,
     // By start, the block ranges this shard's series have samples in, with their oldest and newest
     // sample: the blocks the Go ingester compacts the head into.
     block_ranges: BTreeMap<i64, (i64, i64)>,
@@ -451,6 +458,7 @@ impl Default for Tenant {
             head_min: i64::MIN,
             owned_ranges_seen: None,
             owned_recompute: false,
+            head_series: 0,
             block_ranges: BTreeMap::new(),
         }
     }
@@ -485,6 +493,18 @@ pub struct Store {
     flush_series: usize,
     pusher_shards: PusherShards,
     postings_cache: PostingsCacheConfig,
+    non_owned_eviction: Option<NonOwnedEviction>,
+}
+
+/// Mimir's `-ingester.early-compaction-non-owned-series-*`: series found non-owned by an owned
+/// series recompute leave the head at the next compaction once non-owned for the min grace period
+/// (the tenant's head holding its local `early_head_compaction_owned_series_threshold`) or the max
+/// grace period (any tenant with a threshold), plus a per-process jitter.
+#[derive(Clone, Copy, Debug)]
+pub struct NonOwnedEviction {
+    pub min_grace_ms: i64,
+    pub max_grace_ms: i64,
+    pub jitter_ms: i64,
 }
 
 /// How Mimir's ingest pusher sizes a tenant's shards for the records of one fetch:
@@ -575,6 +595,8 @@ pub struct HeadReport {
     pub head_chunks: u64,
     pub head_min_time: i64,
     pub head_max_time: i64,
+    // Series evicted from the head as non-owned in this tick.
+    pub non_owned_evicted: u64,
 }
 
 // Mimir's head appender rejects in-order samples more than half a block range behind the head.
@@ -875,6 +897,7 @@ impl Store {
             flush_series: 150,
             pusher_shards: PusherShards::default(),
             postings_cache: PostingsCacheConfig::default(),
+            non_owned_eviction: None,
         })
     }
 
@@ -886,6 +909,11 @@ impl Store {
 
     pub fn with_flush_series(mut self, flush_series: usize) -> Self {
         self.flush_series = flush_series;
+        self
+    }
+
+    pub fn with_non_owned_eviction(mut self, eviction: Option<NonOwnedEviction>) -> Self {
+        self.non_owned_eviction = eviction;
         self
     }
 
@@ -1882,7 +1910,26 @@ impl Store {
                         tenant.owned_ranges_seen = current.cloned();
                         tenant.owned_recompute = false;
                     }
-                    (id.clone(), (tenant.head_min, recompute))
+                    let evict_before = self
+                        .non_owned_eviction
+                        .filter(|_| compact && track_owned)
+                        .and_then(|eviction| {
+                            let limits = &self.overrides.tenant(id).limits;
+                            let threshold = limits.early_head_compaction_owned_series_threshold;
+                            if threshold <= 0 {
+                                return None;
+                            }
+                            let local = self.overrides.local_limit(limits, threshold);
+                            let grace = if local > 0 && tenant.head_series >= local as u64 {
+                                eviction.min_grace_ms
+                            } else if eviction.max_grace_ms > 0 {
+                                eviction.max_grace_ms
+                            } else {
+                                return None;
+                            };
+                            Some(now_ms() - grace - eviction.jitter_ms)
+                        });
+                    (id.clone(), (tenant.head_min, recompute, evict_before))
                 })
                 .collect::<HashMap<_, _>>()
         };
@@ -1895,10 +1942,12 @@ impl Store {
                         .tenants
                         .iter_mut()
                         .map(|(tenant_id, tenant)| {
-                            let (head_min, recompute) = head_bounds
+                            let (head_min, recompute, evict_before) = head_bounds
                                 .get(tenant_id)
                                 .copied()
-                                .unwrap_or((i64::MIN, false));
+                                .unwrap_or((i64::MIN, false, None));
+                            let track_non_owned = track_owned && self.non_owned_eviction.is_some();
+                            let now_s = (now_ms() / 1000) as u32;
                             let ranges = owned.as_ref().map(|owned| owned.get(tenant_id));
                             let mut report = HeadReport {
                                 tenant: tenant_id.clone(),
@@ -1910,7 +1959,19 @@ impl Store {
                                 if let Some(oldest) = series_oldest(series) {
                                     min_time = min_time.min(oldest);
                                 }
-                                let in_head = newest.is_some_and(|newest| newest >= head_min);
+                                let mut in_head = !series.head_evicted
+                                    && newest.is_some_and(|newest| newest >= head_min);
+                                if in_head
+                                    && series.non_owned_since_s != 0
+                                    && evict_before.is_some_and(|before| {
+                                        i64::from(series.non_owned_since_s) * 1000 <= before
+                                    })
+                                {
+                                    series.head_evicted = true;
+                                    series.non_owned_since_s = 0;
+                                    report.non_owned_evicted += 1;
+                                    in_head = false;
+                                }
                                 match (series.in_head, in_head) {
                                     (false, true) => report.series_created += 1,
                                     (true, false) => report.series_removed += 1,
@@ -1931,6 +1992,15 @@ impl Store {
                                     }
                                 };
                                 report.owned_series += u64::from(is_owned);
+                                if recompute && track_non_owned {
+                                    // Like addPendingNonOwnedRefs, a series keeps the time it
+                                    // was first found non-owned while it stays so.
+                                    if is_owned {
+                                        series.non_owned_since_s = 0;
+                                    } else if series.non_owned_since_s == 0 {
+                                        series.non_owned_since_s = now_s.max(1);
+                                    }
+                                }
                                 if recompute && !is_owned {
                                     // Mimir clears all active series when the tenant owns no
                                     // ranges, and deletes the non-owned ones otherwise.
@@ -1972,11 +2042,17 @@ impl Store {
             total.series_removed += report.series_removed;
             total.owned_series += report.owned_series;
             total.head_chunks += report.head_chunks;
+            total.non_owned_evicted += report.non_owned_evicted;
             total.head_min_time = total.head_min_time.min(report.head_min_time);
         }
         let mut home = self.shards[0].write().expect("store lock poisoned");
         for report in merged.values_mut() {
             let tenant = tenant_mut(&mut home.tenants, &report.tenant);
+            tenant.head_series = report.memory_series;
+            // Like Mimir, an early compaction asks for another owned series recompute.
+            if report.non_owned_evicted > 0 {
+                tenant.owned_recompute = true;
+            }
             if compact {
                 if tenant.head_min == i64::MIN && report.head_min_time != i64::MAX {
                     tenant.head_min = report.head_min_time;
@@ -2384,6 +2460,9 @@ impl HeadView {
     };
 
     fn holds(&self, series: &Series) -> bool {
+        if series.head_evicted {
+            return false;
+        }
         series_newest(series).is_some_and(|newest| newest >= self.head_min)
     }
 
@@ -2402,6 +2481,7 @@ impl HeadView {
             head,
             head_view: *self,
             blocks: blocks.filter(|(lower, upper)| lower <= upper),
+            range: (start, end),
         }
     }
 }
@@ -2410,6 +2490,7 @@ struct LabelWindow {
     head: bool,
     head_view: HeadView,
     blocks: Option<(i64, i64)>,
+    range: (i64, i64),
 }
 
 impl LabelWindow {
@@ -2418,6 +2499,8 @@ impl LabelWindow {
             || self
                 .blocks
                 .is_some_and(|(lower, upper)| matches_time_range(series, lower, upper))
+            // Evicted series are in their own compacted block.
+            || (series.head_evicted && matches_time_range(series, self.range.0, self.range.1))
     }
 }
 
@@ -2687,6 +2770,7 @@ fn ingest_series(
         series.native_histogram = bucket_count.is_some();
         series.last_ingested_ms = context.ingested_ms;
         series.active_cleared = false;
+        series.head_evicted = false;
         *outcome.accepted.entry(context.index).or_default() += accepted;
     }
     if out_of_order > 0 {
@@ -3833,6 +3917,66 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(500, 1_000), (1_100, 1_100), (1_200, 1_200)]
         );
+    }
+
+    #[test]
+    fn evicts_non_owned_series_from_the_head_like_mimir_early_compaction() {
+        let tenant = "evict";
+        let store = store_with(Limits {
+            early_head_compaction_owned_series_threshold: 1,
+            ..Limits::default()
+        })
+        .with_non_owned_eviction(Some(NonOwnedEviction {
+            min_grace_ms: 0,
+            max_grace_ms: 0,
+            jitter_ms: 0,
+        }));
+        let ingest = |name: &str| {
+            store
+                .ingest(tenant, series_request(name, [(now_ms(), 1.0)]))
+                .unwrap();
+        };
+        ingest("a");
+        ingest("b");
+        let hash = |name: &str| {
+            store
+                .per_shard(tenant, |tenant, _| {
+                    tenant
+                        .series
+                        .iter()
+                        .filter(|((_, labels), _)| labels[0].1 == name)
+                        .map(|(_, series)| series.owned_hash)
+                        .collect::<Vec<_>>()
+                })
+                .into_iter()
+                .flatten()
+                .next()
+                .unwrap()
+        };
+        let owned = hash("a");
+        store.set_owned_ranges(HashMap::from([(
+            tenant.to_owned(),
+            Some(vec![owned, owned]),
+        )]));
+        let tick = |compact| store.head_tick(compact, true).remove(0);
+        // The recompute finds b non-owned; nothing is evicted before a compaction.
+        let first = tick(false);
+        assert_eq!((first.memory_series, first.owned_series), (2, 1));
+        let compacted = tick(true);
+        assert_eq!(compacted.non_owned_evicted, 1);
+        assert_eq!(compacted.memory_series, 1);
+        assert_eq!(compacted.series_removed, 1);
+        assert_eq!(store.user_stats(tenant, false).num_series, 1);
+        // Its data stays in a block for label lookups, and a new sample brings it back.
+        let names = || {
+            store
+                .label_values(tenant, "__name__", i64::MIN, i64::MAX, &[])
+                .unwrap()
+        };
+        assert_eq!(names(), ["a", "b"]);
+        ingest("b");
+        let back = tick(false);
+        assert_eq!((back.memory_series, back.series_created), (2, 1));
     }
 
     #[test]

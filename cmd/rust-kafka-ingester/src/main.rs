@@ -42,7 +42,7 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
 use mimir_rust_kafka_ingester::store::{
-    IngestRecord, PostingsCacheConfig, PusherShards, SnapshotOffset, Store,
+    IngestRecord, NonOwnedEviction, PostingsCacheConfig, PusherShards, SnapshotOffset, Store,
 };
 use mimir_rust_kafka_ingester::xor;
 
@@ -201,6 +201,18 @@ struct ServeArgs {
     shared_postings_cache: bool,
     #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", default_value_t = false, action = clap::ArgAction::Set)]
     head_postings_cache_invalidation: bool,
+    #[arg(long = "ingester.early-compaction-non-owned-series-enabled", default_value_t = false, action = clap::ArgAction::Set)]
+    early_compaction_non_owned_series_enabled: bool,
+    #[arg(
+        long = "ingester.early-compaction-non-owned-series-min-grace-period",
+        default_value = "30s"
+    )]
+    early_compaction_non_owned_series_min_grace_period: String,
+    #[arg(
+        long = "ingester.early-compaction-non-owned-series-max-grace-period",
+        default_value = "5m"
+    )]
+    early_compaction_non_owned_series_max_grace_period: String,
     /// Like Mimir's, how long a shutdown waits for in-flight requests before closing them.
     #[arg(long = "server.graceful-shutdown-timeout", default_value = "30s")]
     graceful_shutdown_timeout: String,
@@ -382,6 +394,9 @@ async fn serve(args: ServeArgs) -> Result<()> {
         shared_postings_cache,
         head_postings_cache_invalidation,
         graceful_shutdown_timeout,
+        early_compaction_non_owned_series_enabled,
+        early_compaction_non_owned_series_min_grace_period,
+        early_compaction_non_owned_series_max_grace_period,
         cost_attribution_cleanup_interval,
         cost_attribution_eviction_interval,
         ingestion_concurrency_max,
@@ -512,6 +527,19 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 0
             } else {
                 ingestion_concurrency_batch_size
+            },
+            non_owned_eviction: if early_compaction_non_owned_series_enabled {
+                let min_grace_ms =
+                    parse_duration_ms(&early_compaction_non_owned_series_min_grace_period)?;
+                Some(NonOwnedEviction {
+                    min_grace_ms,
+                    max_grace_ms: parse_duration_ms(
+                        &early_compaction_non_owned_series_max_grace_period,
+                    )?,
+                    jitter_ms: eviction_jitter_ms(min_grace_ms),
+                })
+            } else {
+                None
             },
             pusher_shards: PusherShards {
                 max: ingestion_concurrency_max,
@@ -962,6 +990,20 @@ async fn serve(args: ServeArgs) -> Result<()> {
     Ok(())
 }
 
+/// Like Mimir's per-process jitter on the non-owned series grace period, spread over twice the min
+/// grace period so replicas evict at different times.
+fn eviction_jitter_ms(min_grace_ms: i64) -> i64 {
+    let variance = 2 * min_grace_ms;
+    if variance <= 0 {
+        return 0;
+    }
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.subsec_nanos())
+        ^ std::process::id();
+    i64::from(seed) % variance
+}
+
 /// Runs `serve` until it finished its graceful shutdown, or for at most `timeout` once `stopping`
 /// fires, after which the requests still in flight are dropped.
 async fn bounded_graceful_shutdown<E>(
@@ -1019,6 +1061,7 @@ struct StoreConfig {
     cost_attribution_intervals: (i64, i64),
     flush_series: usize,
     pusher_shards: PusherShards,
+    non_owned_eviction: Option<NonOwnedEviction>,
 }
 
 struct Accounting {
@@ -1159,6 +1202,7 @@ fn open_store(
         cost_attribution_intervals,
         flush_series,
         pusher_shards,
+        non_owned_eviction,
     } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
@@ -1177,6 +1221,7 @@ fn open_store(
             )
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
+            .with_non_owned_eviction(non_owned_eviction)
             .with_postings_cache(postings_cache),
         ))
     };
@@ -1229,6 +1274,7 @@ fn open_store(
             )
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
+            .with_non_owned_eviction(non_owned_eviction)
             .with_postings_cache(postings_cache),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
@@ -1756,6 +1802,7 @@ mod tests {
                     cost_attribution_intervals: (180_000, 1_200_000),
                     flush_series: 150,
                     pusher_shards: PusherShards::default(),
+                    non_owned_eviction: None,
                 },
                 &AtomicBool::new(shutdown),
             )
