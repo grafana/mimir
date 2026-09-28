@@ -1024,6 +1024,9 @@ struct CostAttributionState {
 }
 
 /// A decoded Kafka record to apply to the store.
+// Below this many series, a batch is applied on the calling thread.
+const PARALLEL_MIN_SERIES: usize = 1024;
+
 pub struct IngestRecord {
     pub tenant: String,
     pub request: DecodedRequest,
@@ -1523,24 +1526,32 @@ impl Store {
                 tenant_ids.push(tenant);
             }
         }
+        // Once caught up, a batch is a few small records, and waking the pool's threads for them
+        // cost more than the work.
+        let parallel = all_series.len() >= PARALLEL_MIN_SERIES;
+        let sort_and_hash = |(_, series, _, _, _): &mut (usize, DecodedSeries, i64, _, u64)| {
+            series.labels.sort();
+            if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+                return None;
+            }
+            Some(hash_label_pairs(
+                series
+                    .labels
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            ))
+        };
         // Sorting and hashing labels is most of the per-series cost outside the shards.
-        let hashes = self.pool.install(|| {
-            all_series
-                .par_iter_mut()
-                .map(|(_, series, _, _, _)| {
-                    series.labels.sort();
-                    if series.labels.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-                        return None;
-                    }
-                    Some(hash_label_pairs(
-                        series
-                            .labels
-                            .iter()
-                            .map(|(name, value)| (name.as_str(), value.as_str())),
-                    ))
-                })
-                .collect::<Vec<_>>()
-        });
+        let hashes = if parallel {
+            self.pool.install(|| {
+                all_series
+                    .par_iter_mut()
+                    .map(sort_and_hash)
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            all_series.iter_mut().map(sort_and_hash).collect()
+        };
         for (position, ((index, series, ingested_ms, rules, flush), hash)) in
             all_series.into_iter().zip(hashes).enumerate()
         {
@@ -1598,7 +1609,7 @@ impl Store {
             .enumerate()
             .filter(|(_, bucket)| !bucket.is_empty())
             .collect::<Vec<_>>();
-        let outcomes = if work.len() <= 1 {
+        let outcomes = if work.len() <= 1 || !parallel {
             work.into_iter()
                 .map(|(shard, bucket)| apply(shard, bucket))
                 .collect::<Result<Vec<_>>>()?
@@ -5134,18 +5145,26 @@ mod tests {
 
     #[test]
     fn sharded_store_matches_a_single_shard() {
+        // 37 records of 50 series run on the pool, 3 on the calling thread.
+        const { assert!(37 * 50 >= PARALLEL_MIN_SERIES && 3 * 50 < PARALLEL_MIN_SERIES) };
+        for batch_records in [37, 3] {
+            sharded_store_matches_a_single_shard_in_batches_of(batch_records);
+        }
+    }
+
+    fn sharded_store_matches_a_single_shard_in_batches_of(batch_records: usize) {
         let single = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
         let sharded = Store::with_shards(20 * 60 * 1000, None, None, 8, 4).unwrap();
         let mut records = mixed_records(400).into_iter();
         let mut records_again = mixed_records(400).into_iter();
         loop {
-            let batch = records.by_ref().take(37).collect::<Vec<_>>();
+            let batch = records.by_ref().take(batch_records).collect::<Vec<_>>();
             if batch.is_empty() {
                 break;
             }
             single.ingest_batch(batch).unwrap();
             sharded
-                .ingest_batch(records_again.by_ref().take(37).collect())
+                .ingest_batch(records_again.by_ref().take(batch_records).collect())
                 .unwrap();
         }
         for tenant in ["tenant-0", "tenant-1", "tenant-2"] {
