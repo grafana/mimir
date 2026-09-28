@@ -405,12 +405,11 @@ fn retained_series_heap_bytes() {
             }
             postings += tenant.series.refs.capacity() * 12;
             for values in tenant.series.postings.values() {
-                postings += values.capacity() * std::mem::size_of::<(u64, PostingList)>();
-                for list in values.values() {
-                    if let PostingList::Many(list) = list {
-                        postings += 24 + list.capacity() * 4;
-                    }
-                }
+                postings += values.capacity() * std::mem::size_of::<(u32, u32)>();
+            }
+            postings += tenant.series.shared_postings.capacity() * 24;
+            for list in &tenant.series.shared_postings {
+                postings += list.capacity() * 4;
             }
         }
     }
