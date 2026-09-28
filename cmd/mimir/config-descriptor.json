@@ -4942,6 +4942,17 @@
         },
         {
           "kind": "field",
+          "name": "delayed_series_replay_window",
+          "required": false,
+          "desc": "When a delayed_series rule is retired, the ingester replays its partition over this window before the retirement and appends the rule's series, which it skipped while the rule applied. Set it to cover what store-gateways can't serve yet, and set out_of_order_time_window at least as long for the tenant. 0 disables replay. Requires ingest storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.delayed-series-replay-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "owned_series_update_interval",
           "required": false,
           "desc": "How often to check for ring changes and possibly recompute owned series as a result of detected change.",

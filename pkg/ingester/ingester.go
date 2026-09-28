@@ -182,6 +182,7 @@ type Config struct {
 	// when the replication factor and the number of zones don't match. Refer to notes in https://github.com/grafana/mimir/pull/8695 and https://github.com/grafana/mimir/pull/9496
 	UseIngesterOwnedSeriesForLimits             bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries                   bool          `yaml:"track_ingester_owned_series" category:"experimental"`
+	DelayedSeriesReplayWindow                   time.Duration `yaml:"delayed_series_replay_window" category:"experimental"`
 	OwnedSeriesUpdateInterval                   time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 	EarlyCompactionNonOwnedSeriesEnabled        bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
 	EarlyCompactionNonOwnedSeriesMinGracePeriod time.Duration `yaml:"early_compaction_non_owned_series_min_grace_period" category:"experimental"`
@@ -238,6 +239,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 10, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
+	f.DurationVar(&cfg.DelayedSeriesReplayWindow, "ingester.delayed-series-replay-window", 0, "When a delayed_series rule is retired, the ingester replays its partition over this window before the retirement and appends the rule's series, which it skipped while the rule applied. Set it to cover what store-gateways can't serve yet, and set out_of_order_time_window at least as long for the tenant. 0 disables replay. Requires ingest storage.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.EarlyCompactionNonOwnedSeriesEnabled, "ingester.early-compaction-non-owned-series-enabled", false, "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.")
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod, "ingester.early-compaction-non-owned-series-min-grace-period", 30*time.Second, "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.")
@@ -367,7 +369,8 @@ type Ingester struct {
 
 	costAttributionMgr *costattribution.Manager
 
-	delayedSeries *delayedSeriesTracker
+	delayedSeries         *delayedSeriesTracker
+	delayedSeriesReplayer *delayedSeriesReplayer
 
 	tsdbMetrics *mimir_tsdb.TSDBMetrics
 
@@ -622,6 +625,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
+			}
+
+			if cfg.DelayedSeriesReplayWindow > 0 {
+				i.delayedSeriesReplayer = newDelayedSeriesReplayer(kafkaCfg, i.ingestPartitionID, cfg.DelayedSeriesReplayWindow, limits, i.PushToStorageAndReleaseRequest, logger, registerer)
 			}
 		}
 
@@ -916,12 +923,23 @@ func (i *Ingester) ingesterRunning(ctx context.Context) error {
 	delayedSeriesPurgeTicker := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
 	defer delayedSeriesPurgeTicker.Stop()
 
+	var replayTicker <-chan time.Time
+	if i.delayedSeriesReplayer != nil {
+		go i.delayedSeriesReplayer.run(ctx)
+		// Retired rules arrive with the runtime config, which is reloaded every 10s by default.
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		replayTicker = t.C
+	}
+
 	for {
 		select {
 		case <-tsdbUpdateTicker.C:
 			i.applyTSDBSettings()
 		case now := <-delayedSeriesPurgeTicker.C:
 			i.delayedSeries.purge(now)
+		case now := <-replayTicker:
+			i.delayedSeriesReplayer.discover(i.delayedSeriesUsers(), now)
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():

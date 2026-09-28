@@ -334,6 +334,7 @@
   "ingester.read-path-cpu-utilization-limit": 0,
   "ingester.read-path-memory-utilization-limit": 0,
   "ingester.error-sample-rate": 10,
+  "ingester.delayed-series-replay-window": 0,
   "ingester.owned-series-update-interval": 15000000000,
   "ingester.early-compaction-non-owned-series-min-grace-period": 30000000000,
   "ingester.early-compaction-non-owned-series-max-grace-period": 300000000000,

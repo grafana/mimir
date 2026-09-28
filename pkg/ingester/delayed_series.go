@@ -94,3 +94,14 @@ func seriesHash(lbls []mimirpb.LabelAdapter) uint64 {
 	}
 	return h.Sum64()
 }
+
+func (t *delayedSeriesTracker) userIDs() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	out := make([]string, 0, len(t.users))
+	for userID := range t.users {
+		out = append(out, userID)
+	}
+	return out
+}

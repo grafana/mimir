@@ -62,6 +62,12 @@ func (c DelayedSeriesConfig) IsDelayed(lbls []mimirpb.LabelAdapter) bool {
 	return false
 }
 
+// Selects returns whether the series matches the rule and none of its exceptions, regardless of whether
+// the rule is retired.
+func (r *DelayedSeriesRule) Selects(lbls []mimirpb.LabelAdapter) bool {
+	return matchesAll(r.match, lbls) && !matchesAny(r.except, lbls)
+}
+
 func matchesAny(sets [][]*labels.Matcher, lbls []mimirpb.LabelAdapter) bool {
 	for _, set := range sets {
 		if matchesAll(set, lbls) {

@@ -1585,6 +1585,14 @@ instance_limits:
 # CLI flag: -ingester.track-ingester-owned-series
 [track_ingester_owned_series: <boolean> | default = false]
 
+# (experimental) When a delayed_series rule is retired, the ingester replays its
+# partition over this window before the retirement and appends the rule's
+# series, which it skipped while the rule applied. Set it to cover what
+# store-gateways can't serve yet, and set out_of_order_time_window at least as
+# long for the tenant. 0 disables replay. Requires ingest storage.
+# CLI flag: -ingester.delayed-series-replay-window
+[delayed_series_replay_window: <duration> | default = 0s]
+
 # (experimental) How often to check for ring changes and possibly recompute
 # owned series as a result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
