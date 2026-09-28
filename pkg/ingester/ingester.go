@@ -926,8 +926,8 @@ func (i *Ingester) ingesterRunning(ctx context.Context) error {
 	var replayTicker <-chan time.Time
 	if i.delayedSeriesReplayer != nil {
 		go i.delayedSeriesReplayer.run(ctx)
-		// Retired rules arrive with the runtime config, which is reloaded every 10s by default.
-		t := time.NewTicker(10 * time.Second)
+		// Checking is cheap, and the promotion's latency is this interval plus the runtime config reload period.
+		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		replayTicker = t.C
 	}
