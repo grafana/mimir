@@ -65,6 +65,52 @@ pub fn compatible(previous: &cortexpb::Histogram, next: &cortexpb::Histogram) ->
     }
 }
 
+/// Prometheus's `Histogram.Equals` and `FloatHistogram.Equals`: the same values and bucket
+/// layout, whatever the reset hint or zero-length spans.
+pub fn equal_values(a: &cortexpb::Histogram, b: &cortexpb::Histogram) -> bool {
+    let same_count = match (&a.count, &b.count) {
+        (Some(Count::CountInt(x)), Some(Count::CountInt(y))) => {
+            x == y && zero_count_int(a) == zero_count_int(b)
+        }
+        (Some(Count::CountFloat(x)), Some(Count::CountFloat(y))) => {
+            x.to_bits() == y.to_bits()
+                && zero_count_float(a).to_bits() == zero_count_float(b).to_bits()
+        }
+        _ => false,
+    };
+    same_count
+        && a.schema == b.schema
+        && a.sum.to_bits() == b.sum.to_bits()
+        && (a.schema != CUSTOM_BUCKETS_SCHEMA || a.custom_values == b.custom_values)
+        && a.zero_threshold == b.zero_threshold
+        && merged_spans(&a.positive_spans) == merged_spans(&b.positive_spans)
+        && merged_spans(&a.negative_spans) == merged_spans(&b.negative_spans)
+        && a.positive_deltas == b.positive_deltas
+        && a.negative_deltas == b.negative_deltas
+        && a.positive_counts
+            .iter()
+            .map(|value| value.to_bits())
+            .eq(b.positive_counts.iter().map(|value| value.to_bits()))
+        && a.negative_counts
+            .iter()
+            .map(|value| value.to_bits())
+            .eq(b.negative_counts.iter().map(|value| value.to_bits()))
+}
+
+// Folds zero-length spans into the next span, like `spansMatch`.
+fn merged_spans(spans: &[cortexpb::BucketSpan]) -> Vec<(i32, u32)> {
+    let mut merged = Vec::with_capacity(spans.len());
+    let mut offset = 0;
+    for span in spans {
+        offset += span.offset;
+        if span.length > 0 {
+            merged.push((offset, span.length));
+            offset = 0;
+        }
+    }
+    merged
+}
+
 fn integer_buckets_non_decreasing(previous: &[i64], next: &[i64]) -> bool {
     if previous == next {
         return true;
@@ -79,167 +125,250 @@ fn integer_buckets_non_decreasing(previous: &[i64], next: &[i64]) -> bool {
 }
 
 pub fn encode_sequence(histograms: &[cortexpb::Histogram]) -> EncodedHistogram {
-    let histogram = &histograms[0];
-    let is_float = matches!(histogram.count, Some(Count::CountFloat(_)));
-    let count = u16::try_from(histograms.len()).expect("histogram chunk sample count exceeds u16");
-    let mut writer = BitWriter::new(vec![
-        (count >> 8) as u8,
-        count as u8,
-        reset_header(histogram.reset_hint),
-    ]);
-    let stale = histogram.sum.to_bits() == STALE_NAN;
-    if stale {
-        write_layout(&mut writer, 0, 0.0, &[], &[], &[]);
-    } else {
-        write_layout(
-            &mut writer,
-            histogram.schema,
-            histogram.zero_threshold,
-            &histogram.positive_spans,
-            &histogram.negative_spans,
-            &histogram.custom_values,
-        );
+    let mut appender = HistogramAppender::new(histograms[0].clone());
+    for histogram in &histograms[1..] {
+        appender.append(histogram.clone());
     }
-    put_varbit_int(&mut writer, histogram.timestamp);
-    if is_float {
-        writer.write_bits(count_float(histogram).to_bits(), 64);
-        writer.write_bits(zero_count_float(histogram).to_bits(), 64);
-        writer.write_bits(histogram.sum.to_bits(), 64);
-        if !stale {
-            for value in histogram
-                .positive_counts
-                .iter()
-                .chain(&histogram.negative_counts)
-            {
-                writer.write_bits(value.to_bits(), 64);
-            }
+    appender.encoded()
+}
+
+// Delta state carried between samples of a chunk, like Prometheus's histogram appenders.
+#[derive(Clone, Debug)]
+enum AppendState {
+    Int {
+        t_delta: i64,
+        count: u64,
+        count_delta: i64,
+        zero: u64,
+        zero_delta: i64,
+        sum: f64,
+        sum_leading: u8,
+        sum_trailing: u8,
+        buckets: Vec<i64>,
+        bucket_deltas: Vec<i64>,
+    },
+    Float {
+        t_delta: i64,
+        values: Vec<f64>,
+        leading: Vec<u8>,
+        trailing: Vec<u8>,
+    },
+}
+
+/// An open histogram chunk appended one sample at a time, so it keeps only its encoded bytes and
+/// the last histogram. Callers only append histograms `compatible` with the last one.
+#[derive(Clone, Debug)]
+pub struct HistogramAppender {
+    writer: BitWriter,
+    count: u16,
+    first_timestamp: i64,
+    last: cortexpb::Histogram,
+    state: AppendState,
+    encoding: i32,
+}
+
+impl HistogramAppender {
+    pub fn new(histogram: cortexpb::Histogram) -> Self {
+        let is_float = matches!(histogram.count, Some(Count::CountFloat(_)));
+        let mut writer = BitWriter::new(vec![0, 1, reset_header(histogram.reset_hint)]);
+        let stale = histogram.sum.to_bits() == STALE_NAN;
+        if stale {
+            write_layout(&mut writer, 0, 0.0, &[], &[], &[]);
+        } else {
+            write_layout(
+                &mut writer,
+                histogram.schema,
+                histogram.zero_threshold,
+                &histogram.positive_spans,
+                &histogram.negative_spans,
+                &histogram.custom_values,
+            );
         }
-    } else {
-        put_varbit_uint(&mut writer, count_int(histogram));
-        put_varbit_uint(&mut writer, zero_count_int(histogram));
-        writer.write_bits(histogram.sum.to_bits(), 64);
-        if !stale {
-            for value in histogram
+        put_varbit_int(&mut writer, histogram.timestamp);
+        let state = if is_float {
+            writer.write_bits(count_float(&histogram).to_bits(), 64);
+            writer.write_bits(zero_count_float(&histogram).to_bits(), 64);
+            writer.write_bits(histogram.sum.to_bits(), 64);
+            if !stale {
+                for value in histogram
+                    .positive_counts
+                    .iter()
+                    .chain(&histogram.negative_counts)
+                {
+                    writer.write_bits(value.to_bits(), 64);
+                }
+            }
+            let values: Vec<f64> = [
+                count_float(&histogram),
+                zero_count_float(&histogram),
+                histogram.sum,
+            ]
+            .into_iter()
+            .chain(
+                histogram
+                    .positive_counts
+                    .iter()
+                    .chain(&histogram.negative_counts)
+                    .copied(),
+            )
+            .collect();
+            AppendState::Float {
+                t_delta: 0,
+                leading: vec![0xff; values.len()],
+                trailing: vec![0; values.len()],
+                values,
+            }
+        } else {
+            put_varbit_uint(&mut writer, count_int(&histogram));
+            put_varbit_uint(&mut writer, zero_count_int(&histogram));
+            writer.write_bits(histogram.sum.to_bits(), 64);
+            if !stale {
+                for value in histogram
+                    .positive_deltas
+                    .iter()
+                    .chain(&histogram.negative_deltas)
+                {
+                    put_varbit_int(&mut writer, *value);
+                }
+            }
+            let buckets: Vec<i64> = histogram
                 .positive_deltas
                 .iter()
                 .chain(&histogram.negative_deltas)
-            {
-                put_varbit_int(&mut writer, *value);
+                .copied()
+                .collect();
+            AppendState::Int {
+                t_delta: 0,
+                count: count_int(&histogram),
+                count_delta: 0,
+                zero: zero_count_int(&histogram),
+                zero_delta: 0,
+                sum: histogram.sum,
+                sum_leading: 0xff,
+                sum_trailing: 0,
+                bucket_deltas: vec![0; buckets.len()],
+                buckets,
+            }
+        };
+        Self {
+            writer,
+            count: 1,
+            first_timestamp: histogram.timestamp,
+            encoding: if is_float { 6 } else { 5 },
+            last: histogram,
+            state,
+        }
+    }
+
+    pub fn append(&mut self, histogram: cortexpb::Histogram) {
+        let writer = &mut self.writer;
+        let last_t = self.last.timestamp;
+        match &mut self.state {
+            AppendState::Int {
+                t_delta,
+                count,
+                count_delta,
+                zero,
+                zero_delta,
+                sum,
+                sum_leading,
+                sum_trailing,
+                buckets,
+                bucket_deltas,
+            } => {
+                let next_t_delta = histogram.timestamp.wrapping_sub(last_t);
+                let next_count = count_int(&histogram);
+                let next_count_delta = next_count.wrapping_sub(*count) as i64;
+                let next_zero = zero_count_int(&histogram);
+                let next_zero_delta = next_zero.wrapping_sub(*zero) as i64;
+                put_varbit_int(writer, next_t_delta.wrapping_sub(*t_delta));
+                put_varbit_int(writer, next_count_delta.wrapping_sub(*count_delta));
+                put_varbit_int(writer, next_zero_delta.wrapping_sub(*zero_delta));
+                xor_write(writer, histogram.sum, *sum, sum_leading, sum_trailing);
+                for ((current, last), last_delta) in histogram
+                    .positive_deltas
+                    .iter()
+                    .chain(&histogram.negative_deltas)
+                    .zip(buckets.iter_mut())
+                    .zip(bucket_deltas.iter_mut())
+                {
+                    let delta = current.wrapping_sub(*last);
+                    put_varbit_int(writer, delta.wrapping_sub(*last_delta));
+                    *last_delta = delta;
+                    *last = *current;
+                }
+                *t_delta = next_t_delta;
+                *count = next_count;
+                *count_delta = next_count_delta;
+                *zero = next_zero;
+                *zero_delta = next_zero_delta;
+                *sum = histogram.sum;
+            }
+            AppendState::Float {
+                t_delta,
+                values,
+                leading,
+                trailing,
+            } => {
+                let next_t_delta = histogram.timestamp.wrapping_sub(last_t);
+                put_varbit_int(writer, next_t_delta.wrapping_sub(*t_delta));
+                for (index, value) in [
+                    count_float(&histogram),
+                    zero_count_float(&histogram),
+                    histogram.sum,
+                ]
+                .into_iter()
+                .chain(
+                    histogram
+                        .positive_counts
+                        .iter()
+                        .chain(&histogram.negative_counts)
+                        .copied(),
+                )
+                .enumerate()
+                {
+                    xor_write(
+                        writer,
+                        value,
+                        values[index],
+                        &mut leading[index],
+                        &mut trailing[index],
+                    );
+                    values[index] = value;
+                }
+                *t_delta = next_t_delta;
             }
         }
+        self.count = self
+            .count
+            .checked_add(1)
+            .expect("histogram chunk sample count exceeds u16");
+        self.last = histogram;
     }
-    if is_float {
-        encode_float_following(&mut writer, histograms);
-    } else {
-        encode_int_following(&mut writer, histograms);
-    }
-    EncodedHistogram {
-        encoding: if is_float { 6 } else { 5 },
-        data: writer.bytes,
-    }
-}
 
-fn encode_int_following(writer: &mut BitWriter, histograms: &[cortexpb::Histogram]) {
-    let first = &histograms[0];
-    let mut last_t = first.timestamp;
-    let mut last_t_delta = 0_i64;
-    let mut last_count = count_int(first);
-    let mut last_count_delta = 0_i64;
-    let mut last_zero = zero_count_int(first);
-    let mut last_zero_delta = 0_i64;
-    let mut last_sum = first.sum;
-    let mut sum_leading = 0xff;
-    let mut sum_trailing = 0;
-    let mut last_buckets: Vec<i64> = first
-        .positive_deltas
-        .iter()
-        .chain(&first.negative_deltas)
-        .copied()
-        .collect();
-    let mut last_bucket_deltas = vec![0_i64; last_buckets.len()];
-    for histogram in &histograms[1..] {
-        let t_delta = histogram.timestamp.wrapping_sub(last_t);
-        let count = count_int(histogram);
-        let count_delta = count.wrapping_sub(last_count) as i64;
-        let zero = zero_count_int(histogram);
-        let zero_delta = zero.wrapping_sub(last_zero) as i64;
-        put_varbit_int(writer, t_delta.wrapping_sub(last_t_delta));
-        put_varbit_int(writer, count_delta.wrapping_sub(last_count_delta));
-        put_varbit_int(writer, zero_delta.wrapping_sub(last_zero_delta));
-        xor_write(
-            writer,
-            histogram.sum,
-            last_sum,
-            &mut sum_leading,
-            &mut sum_trailing,
-        );
-        for ((current, last), last_delta) in histogram
-            .positive_deltas
-            .iter()
-            .chain(&histogram.negative_deltas)
-            .zip(&mut last_buckets)
-            .zip(&mut last_bucket_deltas)
-        {
-            let delta = current.wrapping_sub(*last);
-            put_varbit_int(writer, delta.wrapping_sub(*last_delta));
-            *last_delta = delta;
-            *last = *current;
-        }
-        last_t = histogram.timestamp;
-        last_t_delta = t_delta;
-        last_count = count;
-        last_count_delta = count_delta;
-        last_zero = zero;
-        last_zero_delta = zero_delta;
-        last_sum = histogram.sum;
+    pub fn len(&self) -> usize {
+        usize::from(self.count)
     }
-}
 
-fn encode_float_following(writer: &mut BitWriter, histograms: &[cortexpb::Histogram]) {
-    let first = &histograms[0];
-    let mut last_t = first.timestamp;
-    let mut last_t_delta = 0_i64;
-    let mut values: Vec<f64> = [count_float(first), zero_count_float(first), first.sum]
-        .into_iter()
-        .chain(
-            first
-                .positive_counts
-                .iter()
-                .chain(&first.negative_counts)
-                .copied(),
-        )
-        .collect();
-    let mut leading = vec![0xff; values.len()];
-    let mut trailing = vec![0; values.len()];
-    for histogram in &histograms[1..] {
-        let t_delta = histogram.timestamp.wrapping_sub(last_t);
-        put_varbit_int(writer, t_delta.wrapping_sub(last_t_delta));
-        for (index, value) in [
-            count_float(histogram),
-            zero_count_float(histogram),
-            histogram.sum,
-        ]
-        .into_iter()
-        .chain(
-            histogram
-                .positive_counts
-                .iter()
-                .chain(&histogram.negative_counts)
-                .copied(),
-        )
-        .enumerate()
-        {
-            xor_write(
-                writer,
-                value,
-                values[index],
-                &mut leading[index],
-                &mut trailing[index],
-            );
-            values[index] = value;
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    pub fn first_timestamp(&self) -> i64 {
+        self.first_timestamp
+    }
+
+    pub fn last(&self) -> &cortexpb::Histogram {
+        &self.last
+    }
+
+    pub fn encoded(&self) -> EncodedHistogram {
+        let mut data = self.writer.bytes.clone();
+        data[..2].copy_from_slice(&self.count.to_be_bytes());
+        EncodedHistogram {
+            encoding: self.encoding,
+            data,
         }
-        last_t = histogram.timestamp;
-        last_t_delta = t_delta;
     }
 }
 
@@ -418,6 +547,7 @@ fn put_varbit_uint(writer: &mut BitWriter, value: u64) {
     writer.write_bits(value, 64);
 }
 
+#[derive(Clone, Debug)]
 struct BitWriter {
     bytes: Vec<u8>,
     remaining: u8,
@@ -844,5 +974,36 @@ mod tests {
             assert_eq!(decoded, &original);
         }
         assert!(decode(5, &[0, 1]).is_err());
+    }
+
+    #[test]
+    fn equal_values_ignores_reset_hints_and_empty_spans() {
+        let base = cortexpb::Histogram {
+            timestamp: 1,
+            count: Some(Count::CountInt(3)),
+            sum: 2.0,
+            positive_spans: vec![
+                cortexpb::BucketSpan {
+                    offset: 1,
+                    length: 0,
+                },
+                cortexpb::BucketSpan {
+                    offset: 2,
+                    length: 2,
+                },
+            ],
+            positive_deltas: vec![1, 1],
+            ..Default::default()
+        };
+        let mut other = base.clone();
+        other.reset_hint = 2;
+        other.zero_count = Some(cortexpb::histogram::ZeroCount::ZeroCountInt(0));
+        other.positive_spans = vec![cortexpb::BucketSpan {
+            offset: 3,
+            length: 2,
+        }];
+        assert!(super::equal_values(&base, &other));
+        other.sum = 2.5;
+        assert!(!super::equal_values(&base, &other));
     }
 }

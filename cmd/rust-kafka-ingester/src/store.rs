@@ -55,7 +55,7 @@ struct FloatHead {
 struct Series {
     chunks: Vec<ChunkMeta>,
     float_head: Option<FloatHead>,
-    histogram_head: Vec<cortexpb::Histogram>,
+    histogram_head: HistogramHead,
     histogram_next_at: i64,
     // The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
     out_of_order: Vec<(i64, ooo_merge::Value)>,
@@ -73,12 +73,74 @@ struct Series {
     tracker_matches: Box<[u16]>,
 }
 
-// Series grouped by metric name, so a `__name__` matcher only visits its own metric like a
-// postings lookup would, without duplicating series keys in a separate index. Within a name,
-// series are found by label hash so ingesting into an existing series allocates nothing.
+// The open histogram chunk, kept encoded like Prometheus's head chunk.
+#[derive(Debug, Default)]
+struct HistogramHead(Option<histogram::HistogramAppender>);
+
+impl HistogramHead {
+    fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    fn len(&self) -> usize {
+        self.0.as_ref().map_or(0, histogram::HistogramAppender::len)
+    }
+
+    fn last(&self) -> Option<&cortexpb::Histogram> {
+        self.0.as_ref().map(histogram::HistogramAppender::last)
+    }
+
+    fn first_timestamp(&self) -> Option<i64> {
+        self.0
+            .as_ref()
+            .map(histogram::HistogramAppender::first_timestamp)
+    }
+
+    fn push(&mut self, histogram: cortexpb::Histogram) {
+        match &mut self.0 {
+            Some(appender) => appender.append(histogram),
+            None => self.0 = Some(histogram::HistogramAppender::new(histogram)),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.0 = None;
+    }
+
+    fn take(&mut self) -> Option<histogram::HistogramAppender> {
+        self.0.take()
+    }
+
+    fn encoded(&self) -> Option<histogram::EncodedHistogram> {
+        self.0.as_ref().map(histogram::HistogramAppender::encoded)
+    }
+
+    /// The samples of the open chunk, each with the chunk's reset hint, which is what they
+    /// were appended with.
+    fn decoded(&self) -> Vec<cortexpb::Histogram> {
+        let Some(encoded) = self.encoded() else {
+            return Vec::new();
+        };
+        let mut histograms =
+            histogram::decode(encoded.encoding, &encoded.data).expect("decode own histogram chunk");
+        let hint = histograms.first().map_or(0, |first| first.reset_hint);
+        for histogram in &mut histograms {
+            histogram.reset_hint = hint;
+        }
+        histograms
+    }
+}
+
+// Series grouped by metric name, so a `__name__` matcher only visits its own metric, plus
+// postings for the other labels like the Go head index, so a selective equality matcher only
+// visits its series. Within a name, series are found by label hash so ingesting into an existing
+// series allocates nothing.
 #[derive(Default)]
 struct SeriesByName {
-    names: HashMap<CompactString, HashTable<(SeriesKey, Series)>>,
+    names: HashMap<CompactString, u32>,
+    groups: Vec<HashTable<(SeriesKey, Series)>>,
+    // Label name, then value, to the (name group, label hash) of every series with that label.
+    postings: HashMap<Arc<str>, HashMap<CompactString, PostingList>>,
     len: usize,
 }
 
@@ -90,12 +152,18 @@ impl SeriesByName {
         is_same: impl Fn(&StoredLabels) -> bool,
         labels: impl FnOnce() -> Arc<StoredLabels>,
     ) -> (&Arc<StoredLabels>, &mut Series) {
-        if !self.names.contains_key(name) {
-            self.names
-                .insert(CompactString::from(name), HashTable::new());
-        }
-        let table = self.names.get_mut(name).expect("name group exists");
+        let group = match self.names.get(name) {
+            Some(group) => *group,
+            None => {
+                let group = self.groups.len() as u32;
+                self.names.insert(CompactString::from(name), group);
+                self.groups.push(HashTable::new());
+                group
+            }
+        };
+        let table = &mut self.groups[group as usize];
         let len = &mut self.len;
+        let postings = &mut self.postings;
         match table.entry(
             hash,
             |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
@@ -107,9 +175,10 @@ impl SeriesByName {
             }
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
-                let ((_, labels), series) = entry
-                    .insert(((hash, labels()), Series::default()))
-                    .into_mut();
+                let labels = labels();
+                add_postings(postings, &labels, group, hash);
+                let ((_, labels), series) =
+                    entry.insert(((hash, labels), Series::default())).into_mut();
                 (&*labels, series)
             }
         }
@@ -139,8 +208,8 @@ impl SeriesByName {
     }
 
     fn iter(&self) -> impl Iterator<Item = (&SeriesKey, &Series)> {
-        self.names
-            .values()
+        self.groups
+            .iter()
             .flat_map(|table| table.iter().map(|(key, series)| (key, series)))
     }
 
@@ -155,26 +224,69 @@ impl SeriesByName {
         let name_matcher = matchers
             .iter()
             .find(|matcher| matcher.label_name() == Some("__name__"));
-        let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match name_matcher {
-            Some(CompiledMatcher::Equal(_, name)) => Box::new(
-                self.names
-                    .get(name.as_str())
-                    .into_iter()
-                    .flat_map(|table| table.iter().map(|(key, series)| (key, series))),
-            ),
-            Some(matcher) => Box::new(
-                self.names
+        let name_group = match name_matcher {
+            Some(CompiledMatcher::Equal(_, name)) => match self.names.get(name.as_str()) {
+                Some(group) => Some(*group),
+                None => return Box::new(std::iter::empty()),
+            },
+            _ => None,
+        };
+        // The smallest posting list of an equality matcher, when smaller than the name group.
+        let mut best: Option<&PostingList> = None;
+        for matcher in matchers {
+            if let CompiledMatcher::Equal(label, value) = matcher
+                && label != "__name__"
+                && !value.is_empty()
+            {
+                let Some(list) = self
+                    .postings
+                    .get(label.as_str())
+                    .and_then(|values| values.get(value.as_str()))
+                else {
+                    return Box::new(std::iter::empty());
+                };
+                if best.is_none_or(|best| list.len() < best.len()) {
+                    best = Some(list);
+                }
+            }
+        }
+        let group_len = name_group.map(|group| self.groups[group as usize].len());
+        let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
+            (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
+                let mut refs = list.as_slice().to_vec();
+                refs.sort_unstable();
+                refs.dedup();
+                Box::new(refs.into_iter().flat_map(move |(group, hash)| {
+                    self.groups[group as usize]
+                        .iter_hash(hash)
+                        .filter(move |((entry_hash, _), _)| *entry_hash == hash)
+                        .map(|(key, series)| (key, series))
+                }))
+            }
+            (_, Some(group)) => Box::new(
+                self.groups[group as usize]
                     .iter()
-                    .filter(move |(name, _)| matcher.matches_value(name))
-                    .flat_map(|(_, table)| table.iter().map(|(key, series)| (key, series))),
+                    .map(|(key, series)| (key, series)),
             ),
-            None => Box::new(self.iter()),
+            (_, None) => match name_matcher {
+                Some(matcher) => Box::new(
+                    self.names
+                        .iter()
+                        .filter(move |(name, _)| matcher.matches_value(name))
+                        .flat_map(move |(_, group)| {
+                            self.groups[*group as usize]
+                                .iter()
+                                .map(|(key, series)| (key, series))
+                        }),
+                ),
+                None => Box::new(self.iter()),
+            },
         };
         Box::new(candidates.filter(move |((_, labels), _)| matches(labels, matchers)))
     }
 
     fn for_each_mut(&mut self, mut visit: impl FnMut(&StoredLabels, &mut Series)) {
-        for table in self.names.values_mut() {
+        for table in &mut self.groups {
             for ((_, labels), series) in table.iter_mut() {
                 visit(labels, series);
             }
@@ -183,12 +295,73 @@ impl SeriesByName {
 
     fn retain(&mut self, mut keep: impl FnMut(&SeriesKey, &mut Series) -> bool) {
         let mut len = 0;
-        self.names.retain(|_, table| {
+        for table in &mut self.groups {
             table.retain(|(key, series)| keep(key, series));
             len += table.len();
-            !table.is_empty()
-        });
+        }
+        if len != self.len {
+            // Removals are rare and batched by retention, so the postings are rebuilt.
+            self.postings.clear();
+            for (group, table) in self.groups.iter().enumerate() {
+                for ((hash, labels), _) in table.iter() {
+                    add_postings(&mut self.postings, labels, group as u32, *hash);
+                }
+            }
+        }
         self.len = len;
+    }
+}
+
+// Most label values of high-cardinality labels belong to a single series, which is kept inline.
+#[derive(Debug)]
+enum PostingList {
+    One((u32, u64)),
+    Many(Vec<(u32, u64)>),
+}
+
+impl PostingList {
+    fn len(&self) -> usize {
+        match self {
+            PostingList::One(_) => 1,
+            PostingList::Many(list) => list.len(),
+        }
+    }
+
+    fn as_slice(&self) -> &[(u32, u64)] {
+        match self {
+            PostingList::One(entry) => std::slice::from_ref(entry),
+            PostingList::Many(list) => list,
+        }
+    }
+
+    fn push(&mut self, entry: (u32, u64)) {
+        match self {
+            PostingList::One(first) => *self = PostingList::Many(vec![*first, entry]),
+            PostingList::Many(list) => list.push(entry),
+        }
+    }
+}
+
+fn add_postings(
+    postings: &mut HashMap<Arc<str>, HashMap<CompactString, PostingList>>,
+    labels: &StoredLabels,
+    group: u32,
+    hash: u64,
+) {
+    for (name, value) in labels {
+        if name.as_ref() == "__name__" {
+            continue;
+        }
+        let values = match postings.get_mut(name) {
+            Some(values) => values,
+            None => postings.entry(Arc::clone(name)).or_default(),
+        };
+        match values.get_mut(value) {
+            Some(list) => list.push((group, hash)),
+            None => {
+                values.insert(value.clone(), PostingList::One((group, hash)));
+            }
+        }
     }
 }
 
@@ -1990,7 +2163,7 @@ fn series_oldest(series: &Series) -> Option<i64> {
         .iter()
         .map(|chunk| chunk.min_time)
         .chain(series.float_head.as_ref().map(|head| head.min_time))
-        .chain(series.histogram_head.first().map(|first| first.timestamp))
+        .chain(series.histogram_head.first_timestamp())
         .chain(series.out_of_order.first().map(|(timestamp, _)| *timestamp))
         .min()
 }
@@ -2111,7 +2284,10 @@ fn append_histogram(
         Err(reason) => return Ok(Err(reason)),
         Ok(Append::Duplicate) => {
             return Ok(match series.histogram_head.last() {
-                Some(last) if last.timestamp == histogram.timestamp && *last == histogram => {
+                Some(last)
+                    if last.timestamp == histogram.timestamp
+                        && histogram::equal_values(last, &histogram) =>
+                {
                     Ok(Appended::Noop)
                 }
                 _ => Err(DiscardReason::NewValueForTimestamp),
@@ -2171,13 +2347,16 @@ fn cut_histogram_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result
     if series.histogram_head.is_empty() {
         return Ok(());
     }
-    let head = std::mem::take(&mut series.histogram_head);
+    let head = series
+        .histogram_head
+        .take()
+        .expect("histogram head is open");
     write_chunk(
         series,
         disk,
-        histogram::encode_sequence(&head),
-        head[0].timestamp,
-        head[head.len() - 1].timestamp,
+        head.encoded(),
+        head.first_timestamp(),
+        head.last().timestamp,
         false,
     )
 }
@@ -2269,9 +2448,9 @@ fn series_bounds(series: &Series) -> impl Iterator<Item = (i64, i64)> + '_ {
     });
     let histogram_head = series
         .histogram_head
-        .first()
+        .first_timestamp()
         .zip(series.histogram_head.last())
-        .map(|(first, last)| (first.timestamp, last.timestamp));
+        .map(|(first, last)| (first, last.timestamp));
     let out_of_order = series
         .out_of_order
         .first()
@@ -2345,13 +2524,18 @@ fn query_chunks(
             false,
         );
     }
-    if let (Some(first), Some(last)) = (series.histogram_head.first(), series.histogram_head.last())
-        && overlaps(first.timestamp, last.timestamp)
+    if let (Some(first), Some(last)) = (
+        series.histogram_head.first_timestamp(),
+        series.histogram_head.last(),
+    ) && overlaps(first, last.timestamp)
     {
-        let encoded = histogram::encode_sequence(&series.histogram_head);
+        let encoded = series
+            .histogram_head
+            .encoded()
+            .expect("histogram head is open");
         add(
             ooo_merge::Chunk {
-                min_time: first.timestamp,
+                min_time: first,
                 max_time: last.timestamp,
                 encoding: encoded.encoding,
                 data: encoded.data,
@@ -3661,5 +3845,76 @@ mod tests {
         assert!(by_team.overflow);
         assert_eq!(by_team.values, values(&[(OVERFLOW_VALUE, [5, 1, 3])]));
         assert!(!second.cost_attribution[1].overflow);
+    }
+
+    #[test]
+    fn postings_select_the_same_series_as_a_full_scan() {
+        let mut by_name = SeriesByName::default();
+        let label = |name: &str| -> Arc<str> { name.into() };
+        for id in 0..400_u64 {
+            let mut labels: StoredLabels = vec![
+                (label("__name__"), format!("metric_{}", id % 7).into()),
+                (label("job"), format!("job_{}", id % 5).into()),
+                (label("pod"), format!("pod_{id}").into()),
+            ];
+            if id % 3 == 0 {
+                labels.push((label("zone"), "a".into()));
+            }
+            labels.sort();
+            by_name.insert(
+                series_key(labels),
+                Series {
+                    last_ingested_ms: id as i64,
+                    ..Series::default()
+                },
+            );
+            assert_eq!(by_name.len(), id as usize + 1);
+        }
+        let matcher = |kind: i32, name: &str, value: &str| cortex::LabelMatcher {
+            r#type: kind,
+            name: name.into(),
+            value: value.into(),
+        };
+        let cases = [
+            vec![matcher(0, "job", "job_2")],
+            vec![
+                matcher(0, "__name__", "metric_3"),
+                matcher(0, "job", "job_1"),
+            ],
+            vec![
+                matcher(0, "__name__", "metric_3"),
+                matcher(0, "pod", "pod_101"),
+            ],
+            vec![matcher(0, "pod", "pod_12"), matcher(0, "zone", "a")],
+            vec![matcher(0, "zone", ""), matcher(0, "job", "job_4")],
+            vec![
+                matcher(2, "__name__", "metric_[12]"),
+                matcher(0, "job", "job_0"),
+            ],
+            vec![matcher(0, "job", "missing")],
+            vec![matcher(1, "job", "job_0")],
+        ];
+        let check = |by_name: &SeriesByName| {
+            for case in &cases {
+                let compiled = compile_matchers(case).unwrap();
+                let mut expected = by_name
+                    .iter()
+                    .filter(|((_, labels), _)| matches(labels, &compiled))
+                    .map(|((hash, _), _)| *hash)
+                    .collect::<Vec<_>>();
+                let mut actual = by_name
+                    .matching(&compiled)
+                    .map(|((hash, _), _)| *hash)
+                    .collect::<Vec<_>>();
+                expected.sort_unstable();
+                actual.sort_unstable();
+                assert_eq!(actual, expected, "{case:?}");
+            }
+        };
+        check(&by_name);
+        // Retention rebuilds the postings without the removed series.
+        by_name.retain(|_, series| series.last_ingested_ms % 2 == 0);
+        assert_eq!(by_name.len(), 200);
+        check(&by_name);
     }
 }

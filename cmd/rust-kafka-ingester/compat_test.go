@@ -133,7 +133,7 @@ func TestGoIngesterClientReadsRustServer(t *testing.T) {
 	buildBinary(t)
 	dataDir := t.TempDir()
 	var stderr bytes.Buffer
-	cmd := exec.Command("./target/debug/mimir-rust-kafka-ingester", "serve-fixture", "--listen", address, "--version", "1", "--data-dir", dataDir, "--offset", "42", "--timestamp-ms", "1000")
+	cmd := exec.Command("./target/debug/mimir-rust-kafka-ingester", "serve-fixture", "--listen", address, "--version", "1", "--data-dir", dataDir, "--offset", "42", "--timestamp-ms", "1000", "--ingester.max-global-exemplars-per-user", "100")
 	cmd.Dir = "."
 	cmd.Stdin = bytes.NewReader(records[0].Value)
 	cmd.Stderr = &stderr
@@ -212,7 +212,7 @@ func TestGoIngesterClientReadsRustServer(t *testing.T) {
 	require.NoError(t, cmd.Process.Kill())
 	_ = cmd.Wait()
 	var restoredStderr bytes.Buffer
-	restored := exec.Command("./target/debug/mimir-rust-kafka-ingester", "serve-fixture", "--listen", address, "--data-dir", dataDir, "--restore-only")
+	restored := exec.Command("./target/debug/mimir-rust-kafka-ingester", "serve-fixture", "--listen", address, "--data-dir", dataDir, "--restore-only", "--ingester.max-global-exemplars-per-user", "100")
 	restored.Dir = "."
 	restored.Stderr = &restoredStderr
 	require.NoError(t, restored.Start())
