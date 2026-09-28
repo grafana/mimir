@@ -452,25 +452,36 @@ impl SegmentLog {
         self.seal_current()?;
         // A file left open by an earlier process is sealed rather than appended to: the series
         // ids it defined went with that process.
-        let mut sequence = 0;
-        for path in segment_paths(&self.directory)? {
-            let Some((path_hour, path_sequence)) = segment_id(&path) else {
+        let paths = segment_paths(&self.directory)?;
+        let mut next_sequence = std::collections::HashMap::<i64, u32>::new();
+        for (path_hour, path_sequence) in paths.iter().filter_map(|path| segment_id(path)) {
+            let next = next_sequence.entry(path_hour).or_default();
+            *next = (*next).max(path_sequence + 1);
+        }
+        for path in paths {
+            if !path.extension().is_some_and(|value| value == "open") {
                 continue;
-            };
-            if path_hour == hour {
-                sequence = sequence.max(path_sequence + 1);
             }
-            if path.extension().is_some_and(|value| value == "open") {
-                let to = path.with_extension("segment");
-                if to.exists() {
-                    bail!("refusing to overwrite sealed segment {}", to.display());
-                }
-                fs::rename(&path, &to)
-                    .with_context(|| format!("seal recovered segment {}", path.display()))?;
-                sync_directory(&self.directory)?;
+            let mut to = path.with_extension("segment");
+            if to.exists() {
+                // The log before sequences could reopen an hour it had sealed, when a record
+                // prepared before the hour ended was appended after, leaving both files.
+                let (path_hour, _) = segment_id(&path).context("segment name has no hour")?;
+                let next = next_sequence.entry(path_hour).or_default();
+                to = self
+                    .directory
+                    .join(segment_name(path_hour, *next, "segment"));
+                *next += 1;
             }
+            if to.exists() {
+                bail!("refusing to overwrite sealed segment {}", to.display());
+            }
+            fs::rename(&path, &to)
+                .with_context(|| format!("seal recovered segment {}", path.display()))?;
+            sync_directory(&self.directory)?;
         }
         self.remove_expired()?;
+        let sequence = next_sequence.get(&hour).copied().unwrap_or(0);
         let path = self.directory.join(segment_name(hour, sequence, "open"));
         let mut file = OpenOptions::new()
             .create_new(true)
@@ -1462,6 +1473,48 @@ mod tests {
             request().series[0].labels
         );
         // New frames of the same hour go to a new file.
+        log.append(3, 101, "tenant", &request()).unwrap();
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn seals_an_hour_left_both_sealed_and_open_without_losing_records() {
+        let root = temporary_directory("sealed-and-open");
+        let (log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let hour = hour_start(now_ms());
+        // Like the log before sequences, after appending a record prepared before the hour
+        // ended to the hour it had sealed.
+        for (offset, extension) in [(1, "segment"), (2, "open")] {
+            let path = log.directory.join(format!("{hour:020}.{extension}"));
+            let mut file = File::create(&path).unwrap();
+            file.write_all(FILE_MAGIC).unwrap();
+            file.write_all(&COMPRESSED_FILE_VERSION.to_le_bytes())
+                .unwrap();
+            file.write_all(&0_u32.to_le_bytes()).unwrap();
+            file.write_all(&0_i32.to_le_bytes()).unwrap();
+            file.write_all(&hour.to_le_bytes()).unwrap();
+            let body = uncompressed_frame(offset, 100, "tenant", &request(), now_ms());
+            let mut compressed = body[..FRAME_PREFIX_LEN].to_vec();
+            compressed
+                .extend_from_slice(&zstd::bulk::compress(&body[FRAME_PREFIX_LEN..], 1).unwrap());
+            file.write_all(&(compressed.len() as u32).to_le_bytes())
+                .unwrap();
+            file.write_all(&crc32fast::hash(&compressed).to_le_bytes())
+                .unwrap();
+            file.write_all(&compressed).unwrap();
+        }
+        drop(log);
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 2);
         log.append(3, 101, "tenant", &request()).unwrap();
         drop(log);
         let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
