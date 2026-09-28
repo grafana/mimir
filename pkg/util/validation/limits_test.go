@@ -3125,14 +3125,28 @@ func TestMergeLimits(t *testing.T) {
 }
 
 func TestOverrides_FloatChunkEncoding(t *testing.T) {
-	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
-		tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
-	})
+	for _, global := range []string{"", "xor", "xor2"} {
+		t.Run("global="+global, func(t *testing.T) {
+			overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
+				defaults.FloatChunkEncoding = global
+				tenantLimits["empty"] = &Limits{}
+				tenantLimits["xor"] = &Limits{FloatChunkEncoding: "xor"}
+				tenantLimits["xor2"] = &Limits{FloatChunkEncoding: "xor2"}
+			})
 
-	assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
-
-	// A tenant without an override gets the default encoding.
-	assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+			for _, tenant := range []string{"missing", "empty", "xor", "xor2"} {
+				expected := global
+				if tenant == "xor" || tenant == "xor2" {
+					expected = tenant
+				}
+				if expected == "" {
+					expected = "xor"
+				}
+				assert.Equal(t, expected, overrides.FloatChunkEncodingValue(tenant), tenant)
+				assert.Equal(t, ParseFloatChunkEncoding(expected), overrides.FloatChunkEncoding(tenant), tenant)
+			}
+		})
+	}
 }
 
 func TestFloatChunkEncodingValues(t *testing.T) {

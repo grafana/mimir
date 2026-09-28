@@ -1457,15 +1457,18 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 
 // FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
-	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+	return ParseFloatChunkEncoding(o.FloatChunkEncodingValue(userID))
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
-// -blocks-storage.tsdb.float-chunk-encoding limit, which is never empty: tsdb.DB.ApplyConfig() reads an empty
-// chunk encoding as "keep the encoding resolved at startup", so a tenant that clears the limit has
-// to be handed DefaultFloatChunkEncodingValue explicitly to fall back to it.
+// -blocks-storage.tsdb.float-chunk-encoding limit. An empty tenant value inherits the global setting.
+// The result is never empty: tsdb.DB.ApplyConfig() reads an empty chunk encoding as
+// "keep the encoding resolved at startup", which may differ from the global setting.
 func (o *Overrides) FloatChunkEncodingValue(userID string) string {
 	value := o.getOverridesForUser(userID).FloatChunkEncoding
+	if value == "" {
+		value = o.defaultLimits.FloatChunkEncoding
+	}
 	if _, ok := floatChunkEncodings[value]; ok {
 		return value
 	}

@@ -444,6 +444,29 @@ cortex_limits_defaults{limit_name="float_chunk_encoding"} 4
 	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
 }
 
+func TestOverridesExporter_floatChunkEncodingInheritsGlobal(t *testing.T) {
+	exporter, err := NewOverridesExporter(
+		Config{EnabledMetrics: []string{floatChunkEncoding}},
+		&validation.Limits{FloatChunkEncoding: "xor2"},
+		validation.NewMockTenantLimits(map[string]*validation.Limits{
+			"inherit": {},
+			"xor":     {FloatChunkEncoding: "xor"},
+		}),
+		log.NewNopLogger(), nil,
+	)
+	require.NoError(t, err)
+
+	expected := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="float_chunk_encoding",user="xor"} 4
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="float_chunk_encoding"} 7
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expected), "cortex_limits_overrides", "cortex_limits_defaults"))
+}
+
 // TestFloatChunkEncodingMetricValue asserts the numeric values the metric reports, which are a
 // contract with dashboards. An encoding added to the limit without a value here reports as xor.
 func TestFloatChunkEncodingMetricValue(t *testing.T) {
