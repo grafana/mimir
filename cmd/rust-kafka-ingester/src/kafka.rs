@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use rdkafka::ClientConfig;
 use rdkafka::client::ClientContext;
 use rdkafka::config::RDKafkaLogLevel;
-use rdkafka::consumer::{Consumer, ConsumerContext, StreamConsumer};
+use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, StreamConsumer};
 use rdkafka::error::KafkaError;
 use rdkafka::message::{Headers, Message};
 use rdkafka::statistics::Statistics;
@@ -90,7 +90,16 @@ impl ClientContext for KafkaContext {
     }
 }
 
-impl ConsumerContext for KafkaContext {}
+impl ConsumerContext for KafkaContext {
+    fn commit_callback(&self, result: rdkafka::error::KafkaResult<()>, _: &TopicPartitionList) {
+        if let Err(error) = result {
+            eprintln!(
+                "phase=kafka_commit_failed partition={} error={error}",
+                self.partition
+            );
+        }
+    }
+}
 
 impl PartitionClient {
     pub fn connect(
@@ -172,6 +181,18 @@ impl PartitionClient {
             partition,
             high_watermark: AtomicI64::new(-1),
         }))
+    }
+
+    /// Commits the next offset to consume for this partition's consumer group. It only serves lag
+    /// monitoring: restarts resume from the local segment checkpoint.
+    pub fn commit(&self, next_offset: i64) -> Result<()> {
+        let mut partitions = TopicPartitionList::new();
+        partitions
+            .add_partition_offset(&self.topic, self.partition, Offset::Offset(next_offset))
+            .context("set Kafka commit offset")?;
+        self.consumer
+            .commit(&partitions, CommitMode::Async)
+            .context("commit Kafka offset")
     }
 
     pub fn assign(&self, offset: i64) -> Result<()> {
