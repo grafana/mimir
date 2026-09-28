@@ -9,7 +9,7 @@ use bytes::Bytes;
 use mimir_rust_kafka_ingester::proto::cortexpb;
 use mimir_rust_kafka_ingester::record::decode_record_with_label_spans;
 use mimir_rust_kafka_ingester::segment::{self, SegmentLog};
-use mimir_rust_kafka_ingester::store::{IngestRecord, Store};
+use mimir_rust_kafka_ingester::store::{self, IngestRecord, Store};
 use prost::Message;
 
 // Like mimir-dev-15: 41 samples per record, 19 labels per series.
@@ -121,7 +121,9 @@ fn ingest(
                 *offset += 1;
                 let started = Instant::now();
                 // Like a fetched Kafka record, whose payload the decoded labels share.
-                let (request, spans) = decode_record_with_label_spans(1, bytes.clone()).unwrap();
+                let (mut request, spans) =
+                    decode_record_with_label_spans(1, bytes.clone()).unwrap();
+                let series_hashes = Some(store::series_hashes(&mut request));
                 let decoded = Instant::now();
                 let keys = segment::series_keys_with_label_bytes("tenant", &request, bytes, &spans);
                 let hashed = Instant::now();
@@ -138,6 +140,7 @@ fn ingest(
                     ingested_ms: now,
                     track_rate: true,
                     bytes: bytes.len(),
+                    series_hashes,
                 }
             })
             .collect();
@@ -183,14 +186,23 @@ fn main() {
         let (mut log, _) =
             SegmentLog::open(&directory.join("segments"), 0, "bench", 0, None).unwrap();
         let mut offset = 0;
-        // Creating the series is not what is measured.
-        ingest(
-            &store,
-            &mut log,
-            &records(0..series, start),
-            64,
-            &mut offset,
-            &mut Phases::default(),
+        // Creating the series, like a replay: every sample is a new series, in full batches.
+        let first = records(0..series, start);
+        let mut creation = Phases::default();
+        let (cpu_start, wall_start) = (cpu_seconds(), Instant::now());
+        ingest(&store, &mut log, &first, 64, &mut offset, &mut creation);
+        let cpu_end = cpu_seconds();
+        let per_series = |duration: Duration| duration.as_secs_f64() * 1e9 / series as f64;
+        println!(
+            "create (64-record batches): {:.0} ns CPU/series, {:.2} cores; wall: decode {:.0}, keys {:.0}, encode {:.0}, apply {:.0}, write {:.0} ns/series",
+            ((cpu_end.0 - cpu_start.0) + (cpu_end.1 - cpu_start.1)) * 1e9 / series as f64,
+            ((cpu_end.0 - cpu_start.0) + (cpu_end.1 - cpu_start.1))
+                / wall_start.elapsed().as_secs_f64(),
+            per_series(creation.decode),
+            per_series(creation.keys),
+            per_series(creation.encode),
+            per_series(creation.apply),
+            per_series(creation.write),
         );
         let mut phases = Phases::default();
         log.flush().unwrap();

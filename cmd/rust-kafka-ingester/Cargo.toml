@@ -49,6 +49,10 @@ mimalloc = { version = "0.1", features = ["override"], optional = true }
 tikv-jemalloc-ctl = { version = "0.7", features = ["stats"], optional = true }
 tikv-jemallocator = { version = "0.7", features = ["profiling", "unprefixed_malloc_on_supported_platforms"], optional = true }
 
+# Local benchmarks on macOS then allocate like the pods do.
+[target.'cfg(target_os = "macos")'.dependencies]
+tikv-jemallocator = { version = "0.7", features = ["unprefixed_malloc_on_supported_platforms"], optional = true }
+
 [profile.release]
 debug = "line-tables-only"
 

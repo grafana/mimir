@@ -34,7 +34,9 @@ pub mod names {
     const CACHE_LIMIT: usize = 16_384;
 
     thread_local! {
-        static CACHE: RefCell<HashMap<Box<str>, Cached>> = RefCell::new(HashMap::new());
+        // Every new series looks up each of its names, and SipHash cost more than the lookup.
+        static CACHE: RefCell<hashbrown::HashMap<Box<str>, Cached>> =
+            RefCell::new(hashbrown::HashMap::new());
         #[cfg(test)]
         static INDEX_LOCKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     }
