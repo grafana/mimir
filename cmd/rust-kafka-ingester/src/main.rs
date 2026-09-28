@@ -101,14 +101,16 @@ struct ServeArgs {
     listen: String,
     #[arg(long)]
     profile_listen: Option<String>,
-    #[arg(long, default_value = "earliest")]
-    start_offset: String,
+    /// With no persisted offset: `earliest`, `latest` or an offset. Without it, the pod starts
+    /// --retention-seconds back, or at the earliest offset without a retention.
+    #[arg(long)]
+    start_offset: Option<String>,
     #[arg(long, default_value_t = 1200)]
     active_window_seconds: i64,
     #[arg(long)]
     retention_seconds: Option<i64>,
-    /// With no persisted offset, start at the first Kafka record at most this many seconds old
-    /// instead of --start-offset.
+    /// With no persisted offset, start at the first Kafka record at most this many seconds old;
+    /// takes precedence over --start-offset.
     #[arg(long)]
     bootstrap_lookback_seconds: Option<i64>,
     /// Threads that apply records to store shards in parallel; defaults to the available CPUs.
@@ -426,11 +428,20 @@ async fn serve(args: ServeArgs) -> Result<()> {
     if segment_sync_interval_ms == 0 {
         bail!("segment sync interval must be greater than zero");
     }
-    let configured_start_offset = match start_offset.as_str() {
-        "earliest" => StartOffset::Earliest,
-        "latest" => StartOffset::Latest,
-        value => StartOffset::At(value.parse().context("parse start offset")?),
-    };
+    let configured_start_offset = start_offset
+        .map(|value| {
+            anyhow::Ok(match value.as_str() {
+                "earliest" => StartOffset::Earliest,
+                "latest" => StartOffset::Latest,
+                value => StartOffset::At(value.parse().context("parse start offset")?),
+            })
+        })
+        .transpose()?;
+    let bootstrap = bootstrap_start(
+        configured_start_offset,
+        bootstrap_lookback_seconds,
+        retention_seconds,
+    );
     let mut sources = vec![(topic, brokers)];
     for source in &additional_kafka_cluster {
         let (topic, brokers) = source
@@ -711,9 +722,9 @@ async fn serve(args: ServeArgs) -> Result<()> {
         .await
         .context("fetch earliest Kafka offset timed out")?
         .context("fetch earliest Kafka offset")?;
-        let source_start_offset = match (persisted_offset, bootstrap_lookback_seconds) {
+        let source_start_offset = match (persisted_offset, bootstrap) {
             (Some(offset), _) => StartOffset::At(offset.saturating_add(1)),
-            (None, Some(lookback)) => {
+            (None, Bootstrap::Lookback(lookback)) => {
                 let since = now_ms().saturating_sub(lookback.saturating_mul(1000));
                 StartOffset::At(
                     partition_client
@@ -722,7 +733,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                         .unwrap_or(latest_offset),
                 )
             }
-            (None, None) => configured_start_offset,
+            (None, Bootstrap::Offset(offset)) => offset,
         };
         let start_offset_label = match source_start_offset {
             StartOffset::Earliest => "earliest".to_owned(),
@@ -1649,6 +1660,27 @@ fn has_data(request: &DecodedRequest) -> bool {
     !request.series.is_empty() || !request.metadata.is_empty()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Bootstrap {
+    Offset(StartOffset),
+    Lookback(i64),
+}
+
+// A pod without a persisted offset (new, or with a lost disk) serves reads for the whole
+// retention like the Go ingesters of its partition, so by default it replays that much of Kafka.
+fn bootstrap_start(
+    start_offset: Option<StartOffset>,
+    lookback_seconds: Option<i64>,
+    retention_seconds: Option<i64>,
+) -> Bootstrap {
+    match (lookback_seconds, start_offset, retention_seconds) {
+        (Some(lookback), _, _) => Bootstrap::Lookback(lookback),
+        (None, Some(offset), _) => Bootstrap::Offset(offset),
+        (None, None, Some(retention)) => Bootstrap::Lookback(retention),
+        (None, None, None) => Bootstrap::Offset(StartOffset::Earliest),
+    }
+}
+
 fn initial_replay_complete(start: StartOffset, earliest_offset: i64, latest_offset: i64) -> bool {
     match start {
         StartOffset::Latest => true,
@@ -1761,6 +1793,26 @@ mod tests {
         raise_coverage(&path, 200).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "200");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_pod_without_an_offset_replays_its_retention_by_default() {
+        assert_eq!(
+            bootstrap_start(None, None, Some(13 * 3600)),
+            Bootstrap::Lookback(13 * 3600)
+        );
+        assert_eq!(
+            bootstrap_start(Some(StartOffset::Latest), None, Some(13 * 3600)),
+            Bootstrap::Offset(StartOffset::Latest)
+        );
+        assert_eq!(
+            bootstrap_start(Some(StartOffset::Latest), Some(60), Some(13 * 3600)),
+            Bootstrap::Lookback(60)
+        );
+        assert_eq!(
+            bootstrap_start(None, None, None),
+            Bootstrap::Offset(StartOffset::Earliest)
+        );
     }
 
     #[test]
