@@ -3,6 +3,7 @@ pub mod consistency;
 pub mod exemplars;
 pub mod histogram;
 pub mod kafka;
+pub mod labels;
 pub mod limits;
 pub mod metrics;
 pub mod ooo_merge;

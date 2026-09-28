@@ -194,7 +194,7 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
 // Exemplars in insertion order, so a restore evicts in the same order.
 fn write_exemplars(
     writer: &mut Checksummed<BufWriter<File>>,
-    exemplars: &HashMap<String, TenantExemplars<Arc<StoredLabels>>>,
+    exemplars: &HashMap<String, TenantExemplars<StoredLabels>>,
 ) -> Result<()> {
     writer.put_len(exemplars.len())?;
     for (tenant_id, storage) in exemplars {
@@ -217,24 +217,16 @@ fn write_exemplars(
 
 fn read_exemplars(
     reader: &mut Checksummed<BufReader<File>>,
-) -> Result<HashMap<String, TenantExemplars<Arc<StoredLabels>>>> {
+) -> Result<HashMap<String, TenantExemplars<StoredLabels>>> {
     let mut exemplars = HashMap::new();
     for _ in 0..reader.count(1_000_000)? {
         let tenant_id = reader.string()?;
         let mut storage = TenantExemplars::new(usize::try_from(reader.u64()?)?);
-        let mut labels_by_series: HashMap<u64, Arc<StoredLabels>> = HashMap::new();
+        let mut labels_by_series: HashMap<u64, StoredLabels> = HashMap::new();
         for _ in 0..reader.count(100_000_000)? {
             let series_id = reader.u64()?;
-            let count = reader.count(10_000)?;
-            let labels = exact(count, || {
-                let name: Arc<str> = reader.string()?.into();
-                Ok((name, CompactString::from(reader.string()?)))
-            })?;
-            let labels = Arc::clone(
-                labels_by_series
-                    .entry(series_id)
-                    .or_insert_with(|| Arc::new(labels)),
-            );
+            let labels = read_labels(reader)?;
+            let labels = labels_by_series.entry(series_id).or_insert(labels).clone();
             let exemplar = cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?;
             // Stored exemplars were valid when added; a window this wide re-adds them all.
             let _ = storage.add(series_id, || labels, exemplar, i64::MAX);
@@ -307,7 +299,7 @@ fn read_snapshot(
     Ok(Restored { store, offsets })
 }
 
-type LegacyExemplars = Vec<(String, u64, Arc<StoredLabels>, cortexpb::Exemplar)>;
+type LegacyExemplars = Vec<(String, u64, StoredLabels, cortexpb::Exemplar)>;
 type ShardImage = (
     Vec<FileState>,
     u32,
@@ -317,9 +309,7 @@ type ShardImage = (
 
 // Derives what legacy snapshots lack: each tenant's head max time from its series, and tenant
 // exemplar storage from the per-series exemplars in timestamp order.
-fn upgrade_legacy(
-    shards: &mut [ShardImage],
-) -> HashMap<String, TenantExemplars<Arc<StoredLabels>>> {
+fn upgrade_legacy(shards: &mut [ShardImage]) -> HashMap<String, TenantExemplars<StoredLabels>> {
     let mut max_times: HashMap<String, i64> = HashMap::new();
     let mut all_exemplars = Vec::new();
     for (_, _, tenants, exemplars) in shards.iter_mut() {
@@ -341,7 +331,7 @@ fn upgrade_legacy(
         }
     }
     all_exemplars.sort_by_key(|(_, _, _, exemplar)| exemplar.timestamp_ms);
-    let mut storage: HashMap<String, TenantExemplars<Arc<StoredLabels>>> = HashMap::new();
+    let mut storage: HashMap<String, TenantExemplars<StoredLabels>> = HashMap::new();
     for (tenant_id, series_id, labels, exemplar) in all_exemplars {
         // Sized to fit; the first ingest resizes to the tenant's limit.
         let _ = storage
@@ -394,6 +384,16 @@ fn exact<T>(count: usize, mut read: impl FnMut() -> Result<T>) -> Result<Vec<T>>
     Ok(items)
 }
 
+fn read_labels(reader: &mut Checksummed<BufReader<File>>) -> Result<StoredLabels> {
+    let count = reader.count(10_000)?;
+    let pairs = exact(count, || Ok((reader.string()?, reader.string()?)))?;
+    Ok(StoredLabels::from_sorted(
+        pairs
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+    ))
+}
+
 fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<ShardImage> {
     let legacy = version == 2;
     let next_sequence = reader.u32()?;
@@ -435,19 +435,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                 );
         }
         for _ in 0..reader.count(100_000_000)? {
-            let count = reader.count(10_000)?;
-            let labels = exact(count, || {
-                let name = reader.string()?;
-                let name = match tenant.label_names.get(name.as_str()) {
-                    Some(stored) => Arc::clone(stored),
-                    None => {
-                        let stored: Arc<str> = name.into();
-                        tenant.label_names.insert(Arc::clone(&stored));
-                        stored
-                    }
-                };
-                Ok((name, CompactString::from(reader.string()?)))
-            })?;
+            let labels = read_labels(reader)?;
             let mut series = Series {
                 last_ingested_ms: reader.i64()?,
                 last_bucket_count: reader.u32()?,
@@ -507,7 +495,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
             if legacy {
                 for _ in 0..reader.count(10_000_000)? {
                     let exemplar = cortexpb::Exemplar::decode(reader.read_bytes()?.as_slice())?;
-                    legacy_exemplars.push((tenant_id.clone(), key.0, Arc::clone(&key.1), exemplar));
+                    legacy_exemplars.push((tenant_id.clone(), key.0, key.1.clone(), exemplar));
                 }
             }
             tenant.mark_block_ranges(&series);

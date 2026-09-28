@@ -104,10 +104,51 @@ pub fn parse_matchers(input: &str) -> Result<Vec<LabelMatcher>> {
     Ok(matchers)
 }
 
-fn label_value<'a>(labels: &'a [(impl AsRef<str>, impl AsRef<str>)], name: &str) -> &'a str {
-    labels
-        .binary_search_by(|(label, _)| label.as_ref().cmp(name))
-        .map_or("", |index| labels[index].1.as_ref())
+/// A series' labels as the trackers read them.
+pub trait LabelSet {
+    /// The value of `name`, empty when absent.
+    fn value(&self, name: &str) -> &str;
+    fn for_each(&self, visit: impl FnMut(&str, &str));
+}
+
+/// Pairs sorted by name.
+impl<N: AsRef<str>, V: AsRef<str>> LabelSet for [(N, V)] {
+    fn value(&self, name: &str) -> &str {
+        self.binary_search_by(|(label, _)| label.as_ref().cmp(name))
+            .map_or("", |index| self[index].1.as_ref())
+    }
+
+    fn for_each(&self, mut visit: impl FnMut(&str, &str)) {
+        for (name, value) in self {
+            visit(name.as_ref(), value.as_ref());
+        }
+    }
+}
+
+impl<N: AsRef<str>, V: AsRef<str>> LabelSet for Vec<(N, V)> {
+    fn value(&self, name: &str) -> &str {
+        self.as_slice().value(name)
+    }
+
+    fn for_each(&self, visit: impl FnMut(&str, &str)) {
+        self.as_slice().for_each(visit)
+    }
+}
+
+impl LabelSet for crate::labels::Labels {
+    fn value(&self, name: &str) -> &str {
+        crate::labels::Labels::value(self, name)
+    }
+
+    fn for_each(&self, mut visit: impl FnMut(&str, &str)) {
+        for (name, value) in self {
+            visit(name, value);
+        }
+    }
+}
+
+fn label_value<'a, L: LabelSet + ?Sized>(labels: &'a L, name: &str) -> &'a str {
+    labels.value(name)
 }
 
 /// Custom trackers, sorted by name. A series matches a tracker when it matches all its matchers.
@@ -219,19 +260,19 @@ impl CustomTrackers {
     }
 
     /// The indices of the trackers `labels` (sorted by name) matches, in ascending order.
-    pub fn matching(&self, labels: &[(impl AsRef<str>, impl AsRef<str>)]) -> Vec<u16> {
+    pub fn matching<L: LabelSet + ?Sized>(&self, labels: &L) -> Vec<u16> {
         let mut candidates = self.unindexed.clone();
         if !self.by_value.is_empty() {
             let mut key = (String::new(), String::new());
-            for (name, value) in labels {
+            labels.for_each(|name, value| {
                 key.0.clear();
-                key.0.push_str(name.as_ref());
+                key.0.push_str(name);
                 key.1.clear();
-                key.1.push_str(value.as_ref());
+                key.1.push_str(value);
                 if let Some(indices) = self.by_value.get(&key) {
                     candidates.extend_from_slice(indices);
                 }
-            }
+            });
         }
         candidates.sort_unstable();
         candidates.dedup();
@@ -363,7 +404,7 @@ pub const OVERFLOW_VALUE: &str = "__overflow__";
 
 impl CostAttributionTracker {
     /// The attribution values of `labels` (sorted by name), `__missing__` for absent labels.
-    pub fn key(&self, labels: &[(impl AsRef<str>, impl AsRef<str>)]) -> Vec<String> {
+    pub fn key<L: LabelSet + ?Sized>(&self, labels: &L) -> Vec<String> {
         self.labels
             .iter()
             .map(|label| {
