@@ -366,12 +366,14 @@ fn infer_pre_v4_flags(series: &mut Series) {
         .min()
         .unwrap_or(i64::MAX);
     let mut in_order_max = i64::MIN;
-    for chunk in &mut series.chunks {
+    let mut chunks = series.chunks.to_vec();
+    for chunk in &mut chunks {
         chunk.out_of_order = chunk.min_time <= in_order_max || chunk.max_time >= open_min;
         if !chunk.out_of_order {
             in_order_max = chunk.max_time;
         }
     }
+    series.chunks = ChunkList::from_metas(&chunks);
     let float = series
         .float_head
         .as_ref()
@@ -457,7 +459,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                 series.non_owned_since_s = reader.u32()?;
             }
             let count = reader.count(1_000_000)?;
-            series.chunks = exact(count, || {
+            let chunks = exact(count, || {
                 Ok(ChunkMeta {
                     reference: reader.u64()?,
                     min_time: reader.i64()?,
@@ -467,6 +469,7 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     out_of_order: version >= 4 && reader.u8()? == 1,
                 })
             })?;
+            series.chunks = ChunkList::from_metas(&chunks);
             if reader.u8()? == 1 {
                 series.float_head = Some(FloatHead {
                     min_time: reader.i64()?,

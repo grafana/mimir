@@ -391,7 +391,7 @@ fn retained_series_heap_bytes() {
             }
             for ((_, key), series) in tenant.series.iter() {
                 labels += 16 + key.capacity() * std::mem::size_of::<StoredLabel>();
-                chunks += series.chunks.capacity() * std::mem::size_of::<ChunkMeta>();
+                chunks += series.chunks.0.len();
                 heads += series
                     .float_head
                     .as_ref()

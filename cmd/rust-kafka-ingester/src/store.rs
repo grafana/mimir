@@ -45,6 +45,137 @@ struct ChunkMeta {
     out_of_order: bool,
 }
 
+/// A series' completed chunks, in write order, as varint deltas: most stored series are older than
+/// the head, and their chunk references are what they keep in memory. Chunks are added about every
+/// half hour, so re-encoding on each addition costs little.
+#[derive(Debug, Default)]
+struct ChunkList(Box<[u8]>);
+
+impl ChunkList {
+    fn from_metas(metas: &[ChunkMeta]) -> Self {
+        let mut bytes = Vec::with_capacity(metas.len() * 12);
+        let (mut reference, mut min_time) = (0_i64, 0_i64);
+        for meta in metas {
+            put_varint(&mut bytes, zigzag(meta.reference as i64 - reference));
+            put_varint(&mut bytes, zigzag(meta.min_time.wrapping_sub(min_time)));
+            put_varint(&mut bytes, meta.max_time.wrapping_sub(meta.min_time) as u64);
+            put_varint(&mut bytes, u64::from(meta.len));
+            bytes.push(meta.encoding & 0x7f | u8::from(meta.out_of_order) << 7);
+            reference = meta.reference as i64;
+            min_time = meta.min_time;
+        }
+        Self(bytes.into_boxed_slice())
+    }
+
+    fn iter(&self) -> ChunkIter<'_> {
+        ChunkIter {
+            bytes: &self.0,
+            reference: 0,
+            min_time: 0,
+        }
+    }
+
+    fn to_vec(&self) -> Vec<ChunkMeta> {
+        self.iter().collect()
+    }
+
+    fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn push(&mut self, meta: ChunkMeta) {
+        let mut metas = self.to_vec();
+        metas.push(meta);
+        *self = Self::from_metas(&metas);
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&ChunkMeta) -> bool) {
+        let metas = self.to_vec();
+        if metas.iter().all(&mut keep) {
+            return;
+        }
+        let kept = metas
+            .into_iter()
+            .filter(|meta| keep(meta))
+            .collect::<Vec<_>>();
+        *self = Self::from_metas(&kept);
+    }
+}
+
+impl<'a> IntoIterator for &'a ChunkList {
+    type Item = ChunkMeta;
+    type IntoIter = ChunkIter<'a>;
+
+    fn into_iter(self) -> ChunkIter<'a> {
+        self.iter()
+    }
+}
+
+struct ChunkIter<'a> {
+    bytes: &'a [u8],
+    reference: i64,
+    min_time: i64,
+}
+
+impl Iterator for ChunkIter<'_> {
+    type Item = ChunkMeta;
+
+    fn next(&mut self) -> Option<ChunkMeta> {
+        if self.bytes.is_empty() {
+            return None;
+        }
+        self.reference += unzigzag(take_varint(&mut self.bytes));
+        self.min_time = self
+            .min_time
+            .wrapping_add(unzigzag(take_varint(&mut self.bytes)));
+        let duration = take_varint(&mut self.bytes) as i64;
+        let len = take_varint(&mut self.bytes) as u32;
+        let flags = self.bytes[0];
+        self.bytes = &self.bytes[1..];
+        Some(ChunkMeta {
+            reference: self.reference as ChunkRef,
+            min_time: self.min_time,
+            max_time: self.min_time.wrapping_add(duration),
+            len,
+            encoding: flags & 0x7f,
+            out_of_order: flags & 0x80 != 0,
+        })
+    }
+}
+
+fn zigzag(value: i64) -> u64 {
+    ((value << 1) ^ (value >> 63)) as u64
+}
+
+fn unzigzag(value: u64) -> i64 {
+    ((value >> 1) as i64) ^ -((value & 1) as i64)
+}
+
+fn put_varint(bytes: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        bytes.push(value as u8 | 0x80);
+        value >>= 7;
+    }
+    bytes.push(value as u8);
+}
+
+fn take_varint(bytes: &mut &[u8]) -> u64 {
+    let (mut value, mut shift) = (0_u64, 0);
+    loop {
+        let byte = bytes[0];
+        *bytes = &bytes[1..];
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte < 0x80 {
+            return value;
+        }
+        shift += 7;
+    }
+}
+
 #[derive(Debug)]
 struct FloatHead {
     appender: xor::Appender,
@@ -55,7 +186,7 @@ struct FloatHead {
 // Only open chunks live on the heap; completed chunks are referenced in the chunk disk mapper.
 #[derive(Debug, Default)]
 struct Series {
-    chunks: Vec<ChunkMeta>,
+    chunks: ChunkList,
     float_head: Option<FloatHead>,
     histogram_head: HistogramHead,
     histogram_next_at: i64,
@@ -3360,7 +3491,7 @@ fn query_chunks(
             });
         }
     };
-    for chunk in &series.chunks {
+    for chunk in series.chunks.iter() {
         let stored = ooo_merge::Chunk {
             min_time: chunk.min_time,
             max_time: chunk.max_time,
@@ -4008,6 +4139,61 @@ mod tests {
         assert_eq!(
             float_samples(&store, i64::MIN, i64::MAX).len(),
             expected.len() + OUT_OF_ORDER_CAPACITY
+        );
+    }
+
+    #[test]
+    fn chunk_lists_keep_every_chunk() {
+        let meta = |reference, min_time, max_time, len, encoding, out_of_order| ChunkMeta {
+            reference,
+            min_time,
+            max_time,
+            len,
+            encoding,
+            out_of_order,
+        };
+        // Out-of-order chunks go back in time, and a new chunk file restarts references low.
+        let metas = vec![
+            meta(
+                5 << 32 | 1_000,
+                1_790_000_000_000,
+                1_790_001_800_000,
+                150,
+                4,
+                false,
+            ),
+            meta(
+                5 << 32 | 90_000,
+                1_790_001_800_001,
+                1_790_003_600_000,
+                4_000,
+                5,
+                false,
+            ),
+            meta(
+                6 << 32 | 8,
+                1_789_990_000_000,
+                1_789_999_000_000,
+                90,
+                4,
+                true,
+            ),
+            meta(u64::MAX, i64::MIN + 1, i64::MAX, u32::MAX, 0x7f, true),
+        ];
+        let mut list = ChunkList::default();
+        for meta in &metas {
+            list.push(*meta);
+        }
+        let decoded = list.iter().collect::<Vec<_>>();
+        assert_eq!(format!("{decoded:?}"), format!("{metas:?}"));
+        assert_eq!(list.len(), 4);
+        list.retain(|meta| !meta.out_of_order);
+        assert_eq!(format!("{:?}", list.to_vec()), format!("{:?}", &metas[..2]));
+        // Two encoded chunks of a stored series cost well under two ChunkMeta structs.
+        assert!(
+            list.0.len() < 2 * std::mem::size_of::<ChunkMeta>() / 2,
+            "{}",
+            list.0.len()
         );
     }
 
