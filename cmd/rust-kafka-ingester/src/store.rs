@@ -413,6 +413,8 @@ struct Tenant {
     owned_recompute: bool,
     // The emulated head's series count at the last head tick.
     head_series: u64,
+    // Where the last compaction truncated the head, Prometheus's minValidTime.
+    truncated_to: i64,
     // By start, the block ranges this shard's series have samples in, with their oldest and newest
     // sample: the blocks the Go ingester compacts the head into.
     block_ranges: BTreeMap<i64, (i64, i64)>,
@@ -459,6 +461,7 @@ impl Default for Tenant {
             owned_ranges_seen: None,
             owned_recompute: false,
             head_series: 0,
+            truncated_to: i64::MIN,
             block_ranges: BTreeMap::new(),
         }
     }
@@ -494,6 +497,45 @@ pub struct Store {
     pusher_shards: PusherShards,
     postings_cache: PostingsCacheConfig,
     non_owned_eviction: Option<NonOwnedEviction>,
+    early_head_compaction: Option<EarlyHeadCompaction>,
+    // Whether the last head tick compacted, so this one checks for an early compaction with
+    // counts taken after it, like Mimir's check right after its regular compaction.
+    compacted_last_tick: std::sync::atomic::AtomicBool,
+}
+
+/// Mimir's `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` and
+/// `-...-min-estimated-series-reduction-percentage`: with that many series in memory, the
+/// tenants whose inactive series would get the count back under it, or that would drop at least
+/// the percentage, compact their head up to the active series idle timeout ago.
+#[derive(Clone, Copy, Debug)]
+pub struct EarlyHeadCompaction {
+    pub min_in_memory_series: u64,
+    pub min_reduction_percentage: u64,
+}
+
+/// Mimir's `filterUsersToCompactToReduceInMemorySeries`, from each tenant's in-memory and
+/// estimated removable series.
+fn tenants_to_compact_early(
+    memory_series: u64,
+    config: EarlyHeadCompaction,
+    estimations: &mut [(String, u64, u64)],
+) -> Vec<String> {
+    let total_reduction: u64 = estimations.iter().map(|(_, count, _)| count).sum();
+    if memory_series == 0 || total_reduction * 100 / memory_series < config.min_reduction_percentage
+    {
+        return Vec::new();
+    }
+    let target = memory_series.saturating_sub(config.min_in_memory_series);
+    estimations.sort_by_key(|estimation| std::cmp::Reverse(estimation.1));
+    let mut sum = 0;
+    let mut tenants = Vec::new();
+    for (tenant, count, percentage) in estimations.iter() {
+        if sum < target || *percentage >= config.min_reduction_percentage {
+            tenants.push(tenant.clone());
+            sum += count;
+        }
+    }
+    tenants
 }
 
 /// Mimir's `-ingester.early-compaction-non-owned-series-*`: series found non-owned by an owned
@@ -597,6 +639,9 @@ pub struct HeadReport {
     pub head_max_time: i64,
     // Series evicted from the head as non-owned in this tick.
     pub non_owned_evicted: u64,
+    pub active_series: u64,
+    // Whether a compaction truncated the head.
+    pub truncated: bool,
 }
 
 // Mimir's head appender rejects in-order samples more than half a block range behind the head.
@@ -669,13 +714,17 @@ struct AppendRules {
 }
 
 impl AppendRules {
-    fn new(head_max_time: i64, out_of_order_window_ms: i64) -> Self {
+    /// Like Prometheus's `appendableMinValidTime`: half a block range behind the head's max time,
+    /// and never before where the last compaction truncated the head.
+    fn new(head_max_time: i64, truncated_to: i64, out_of_order_window_ms: i64) -> Self {
         Self {
             head_max_time,
             min_valid_time: if head_max_time == i64::MIN {
                 i64::MIN
             } else {
-                head_max_time.saturating_sub(MIN_VALID_TIME_WINDOW_MS)
+                head_max_time
+                    .saturating_sub(MIN_VALID_TIME_WINDOW_MS)
+                    .max(truncated_to)
             },
             out_of_order_window_ms,
         }
@@ -898,6 +947,8 @@ impl Store {
             pusher_shards: PusherShards::default(),
             postings_cache: PostingsCacheConfig::default(),
             non_owned_eviction: None,
+            early_head_compaction: None,
+            compacted_last_tick: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -909,6 +960,11 @@ impl Store {
 
     pub fn with_flush_series(mut self, flush_series: usize) -> Self {
         self.flush_series = flush_series;
+        self
+    }
+
+    pub fn with_early_head_compaction(mut self, config: Option<EarlyHeadCompaction>) -> Self {
+        self.early_head_compaction = config;
         self
     }
 
@@ -1072,6 +1128,7 @@ impl Store {
                                 home_tenant
                                     .max_time
                                     .saturating_sub(MIN_VALID_TIME_WINDOW_MS)
+                                    .max(home_tenant.truncated_to)
                             })
                         });
                     let histograms_count = limits.native_histograms_ingestion_enabled;
@@ -1175,12 +1232,13 @@ impl Store {
                         } else {
                             home_tenant.max_time
                         };
-                        flush.rules = Some(AppendRules::new(head_max, window));
+                        flush.rules =
+                            Some(AppendRules::new(head_max, home_tenant.truncated_to, window));
                     }
                     flush.series += 1;
-                    let rules = flush
-                        .rules
-                        .unwrap_or_else(|| AppendRules::new(home_tenant.max_time, window));
+                    let rules = flush.rules.unwrap_or_else(|| {
+                        AppendRules::new(home_tenant.max_time, home_tenant.truncated_to, window)
+                    });
                     // Older samples are rejected whatever the series holds.
                     let acceptable_from = if window > 0 {
                         rules
@@ -1575,7 +1633,7 @@ impl Store {
         if head.head_min == i64::MIN {
             return blocks;
         }
-        let last = end.min(head.head_min.saturating_sub(CHUNK_RANGE_MS));
+        let last = end.min(head.head_min.saturating_sub(1));
         let first = range_start(start);
         if first > last {
             return blocks;
@@ -1595,13 +1653,15 @@ impl Store {
         let count_index = self.postings_cache.used(false, sharded, matchers);
         for (lower, (oldest, newest)) in ranges {
             // A block's time range is that of its samples.
-            if oldest > end || newest < start {
+            // Blocks end where the head starts, which forced compactions don't align.
+            let newest = newest.min(head.head_min.saturating_sub(1));
+            if oldest > newest || oldest > end || newest < start {
                 continue;
             }
             let generation = ((head_lower - oldest) / CHUNK_RANGE_MS).max(1);
             blocks.push(BlockRange {
                 lower,
-                upper: lower + CHUNK_RANGE_MS - 1,
+                upper: (lower + CHUNK_RANGE_MS - 1).min(head.head_min.saturating_sub(1)),
                 head: false,
                 count_index,
                 generation: if generation > 100 {
@@ -1947,6 +2007,7 @@ impl Store {
                                 .copied()
                                 .unwrap_or((i64::MIN, false, None));
                             let track_non_owned = track_owned && self.non_owned_eviction.is_some();
+                            let active_cutoff = now_ms().saturating_sub(self.active_window_ms);
                             let now_s = (now_ms() / 1000) as u32;
                             let ranges = owned.as_ref().map(|owned| owned.get(tenant_id));
                             let mut report = HeadReport {
@@ -1982,6 +2043,7 @@ impl Store {
                                     return;
                                 }
                                 report.memory_series += 1;
+                                report.active_series += u64::from(series.is_active(active_cutoff));
                                 // Unknown ranges or a tenant the ring has not been asked about
                                 // yet count as owned, like new series in Go.
                                 let is_owned = match ranges {
@@ -2043,12 +2105,59 @@ impl Store {
             total.owned_series += report.owned_series;
             total.head_chunks += report.head_chunks;
             total.non_owned_evicted += report.non_owned_evicted;
+            total.active_series += report.active_series;
             total.head_min_time = total.head_min_time.min(report.head_min_time);
         }
+        let check_early = self
+            .compacted_last_tick
+            .swap(compact, std::sync::atomic::Ordering::Relaxed);
+        let early = self
+            .early_head_compaction
+            .filter(|_| check_early)
+            .and_then(|config| {
+                let memory_series: u64 = merged.values().map(|report| report.memory_series).sum();
+                if memory_series < config.min_in_memory_series {
+                    return None;
+                }
+                let mut estimations = merged
+                    .values()
+                    .filter(|report| report.memory_series > 0)
+                    .map(|report| {
+                        let count = report.memory_series.saturating_sub(report.active_series);
+                        (
+                            report.tenant.clone(),
+                            count,
+                            count * 100 / report.memory_series,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let tenants = tenants_to_compact_early(memory_series, config, &mut estimations);
+                (!tenants.is_empty()).then(|| {
+                    eprintln!(
+                        "phase=early_head_compaction in_memory_series={memory_series} tenants={}",
+                        tenants.join(",")
+                    );
+                    tenants.into_iter().collect::<HashSet<_>>()
+                })
+            });
+        let forced_max_time = now_ms().saturating_sub(self.active_window_ms);
         let mut home = self.shards[0].write().expect("store lock poisoned");
         for report in merged.values_mut() {
             let tenant = tenant_mut(&mut home.tenants, &report.tenant);
             tenant.head_series = report.memory_series;
+            // A forced compaction up to the idle timeout ago truncates the head right after it.
+            if early
+                .as_ref()
+                .is_some_and(|tenants| tenants.contains(&report.tenant))
+                && tenant.max_time != i64::MIN
+            {
+                let truncated = forced_max_time.min(tenant.max_time).saturating_add(1);
+                if tenant.head_min == i64::MIN || truncated > tenant.head_min {
+                    tenant.head_min = truncated;
+                    tenant.truncated_to = truncated;
+                    tenant.owned_recompute = true;
+                }
+            }
             // Like Mimir, an early compaction asks for another owned series recompute.
             if report.non_owned_evicted > 0 {
                 tenant.owned_recompute = true;
@@ -2062,10 +2171,12 @@ impl Store {
                     && tenant.max_time - tenant.head_min > CHUNK_RANGE_MS / 2 * 3
                 {
                     tenant.head_min = range_end(tenant.head_min);
+                    tenant.truncated_to = tenant.head_min;
                     tenant.owned_recompute = true;
                 }
             }
             report.head_min_time = report.head_min_time.max(tenant.head_min);
+            report.truncated = tenant.truncated_to != i64::MIN;
             report.head_max_time = tenant.max_time;
         }
         merged.into_values().collect()
@@ -3917,6 +4028,85 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(500, 1_000), (1_100, 1_100), (1_200, 1_200)]
         );
+    }
+
+    #[test]
+    fn picks_tenants_to_compact_early_like_mimir() {
+        let config = EarlyHeadCompaction {
+            min_in_memory_series: 100,
+            min_reduction_percentage: 15,
+        };
+        let mut estimations = vec![
+            ("small".to_owned(), 5, 50),
+            ("big".to_owned(), 30, 10),
+            ("bigger".to_owned(), 40, 10),
+        ];
+        // 160 series: getting under 100 needs the two biggest reductions; small drops half.
+        assert_eq!(
+            tenants_to_compact_early(160, config, &mut estimations),
+            ["bigger", "big", "small"]
+        );
+        // Under 15% of reductions in total, compacting is not worth it.
+        let mut few = vec![("a".to_owned(), 10, 5)];
+        assert!(tenants_to_compact_early(1_000, config, &mut few).is_empty());
+    }
+
+    #[test]
+    fn compacts_the_head_early_to_the_idle_timeout_and_rejects_older_samples() {
+        let tenant = "early";
+        let store = Store::new(1, None, None)
+            .unwrap()
+            .with_early_head_compaction(Some(EarlyHeadCompaction {
+                min_in_memory_series: 2,
+                min_reduction_percentage: 15,
+            }));
+        let now = now_ms();
+        for (name, timestamp) in [("a", now - 20 * 60_000), ("b", now - 10 * 60_000)] {
+            store
+                .ingest(tenant, series_request(name, [(timestamp, 1.0)]))
+                .unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(5));
+        // Every series is inactive; the check runs on the tick after a compaction.
+        assert_eq!(store.head_tick(true, false)[0].memory_series, 2);
+        let checked = store.head_tick(false, false).remove(0);
+        assert_eq!(checked.head_min_time, now - 10 * 60_000 + 1);
+        assert_eq!(store.head_tick(false, false)[0].memory_series, 0);
+        // The truncation is Prometheus's min valid time for in-order samples.
+        store
+            .ingest(tenant, series_request("c", [(now - 15 * 60_000, 1.0)]))
+            .unwrap();
+        assert_eq!(discarded(DiscardReason::OutOfBounds, tenant), 1);
+    }
+
+    #[test]
+    fn evicts_non_owned_series_after_the_max_grace_period_below_the_threshold() {
+        let tenant = "evict-max";
+        let overrides = Arc::new(Overrides::new(Limits {
+            early_head_compaction_owned_series_threshold: 400_000_000,
+            ..Limits::default()
+        }));
+        overrides.set_active_partitions(12);
+        let store = Store::default()
+            .with_overrides(overrides)
+            .with_non_owned_eviction(Some(NonOwnedEviction {
+                min_grace_ms: 30_000,
+                max_grace_ms: 1,
+                jitter_ms: 0,
+            }));
+        for name in ["a", "b", "c"] {
+            store
+                .ingest(tenant, series_request(name, [(now_ms(), 1.0)]))
+                .unwrap();
+        }
+        // Owned ranges that include no series.
+        store.set_owned_ranges(HashMap::from([(tenant.to_owned(), Some(vec![0, 0]))]));
+        let first = store.head_tick(true, true).remove(0);
+        assert_eq!((first.memory_series, first.owned_series), (3, 0));
+        std::thread::sleep(Duration::from_millis(1_100));
+        let evicted = store.head_tick(true, true).remove(0);
+        assert_eq!(evicted.non_owned_evicted, 3);
+        assert_eq!(evicted.memory_series, 0);
     }
 
     #[test]

@@ -42,7 +42,8 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
 use mimir_rust_kafka_ingester::store::{
-    IngestRecord, NonOwnedEviction, PostingsCacheConfig, PusherShards, SnapshotOffset, Store,
+    EarlyHeadCompaction, IngestRecord, NonOwnedEviction, PostingsCacheConfig, PusherShards,
+    SnapshotOffset, Store,
 };
 use mimir_rust_kafka_ingester::xor;
 
@@ -201,6 +202,16 @@ struct ServeArgs {
     shared_postings_cache: bool,
     #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", default_value_t = false, action = clap::ArgAction::Set)]
     head_postings_cache_invalidation: bool,
+    #[arg(
+        long = "blocks-storage.tsdb.early-head-compaction-min-in-memory-series",
+        default_value_t = 0
+    )]
+    early_head_compaction_min_in_memory_series: u64,
+    #[arg(
+        long = "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
+        default_value_t = 15
+    )]
+    early_head_compaction_min_estimated_series_reduction_percentage: u64,
     #[arg(long = "ingester.early-compaction-non-owned-series-enabled", default_value_t = false, action = clap::ArgAction::Set)]
     early_compaction_non_owned_series_enabled: bool,
     #[arg(
@@ -394,6 +405,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
         shared_postings_cache,
         head_postings_cache_invalidation,
         graceful_shutdown_timeout,
+        early_head_compaction_min_in_memory_series,
+        early_head_compaction_min_estimated_series_reduction_percentage,
         early_compaction_non_owned_series_enabled,
         early_compaction_non_owned_series_min_grace_period,
         early_compaction_non_owned_series_max_grace_period,
@@ -528,6 +541,13 @@ async fn serve(args: ServeArgs) -> Result<()> {
             } else {
                 ingestion_concurrency_batch_size
             },
+            early_head_compaction: (early_head_compaction_min_in_memory_series > 0).then_some(
+                EarlyHeadCompaction {
+                    min_in_memory_series: early_head_compaction_min_in_memory_series,
+                    min_reduction_percentage:
+                        early_head_compaction_min_estimated_series_reduction_percentage,
+                },
+            ),
             non_owned_eviction: if early_compaction_non_owned_series_enabled {
                 let min_grace_ms =
                     parse_duration_ms(&early_compaction_non_owned_series_min_grace_period)?;
@@ -1062,6 +1082,7 @@ struct StoreConfig {
     flush_series: usize,
     pusher_shards: PusherShards,
     non_owned_eviction: Option<NonOwnedEviction>,
+    early_head_compaction: Option<EarlyHeadCompaction>,
 }
 
 struct Accounting {
@@ -1203,6 +1224,7 @@ fn open_store(
         flush_series,
         pusher_shards,
         non_owned_eviction,
+        early_head_compaction,
     } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
@@ -1222,6 +1244,7 @@ fn open_store(
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
             .with_non_owned_eviction(non_owned_eviction)
+            .with_early_head_compaction(early_head_compaction)
             .with_postings_cache(postings_cache),
         ))
     };
@@ -1275,6 +1298,7 @@ fn open_store(
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
             .with_non_owned_eviction(non_owned_eviction)
+            .with_early_head_compaction(early_head_compaction)
             .with_postings_cache(postings_cache),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
@@ -1803,6 +1827,7 @@ mod tests {
                     flush_series: 150,
                     pusher_shards: PusherShards::default(),
                     non_owned_eviction: None,
+                    early_head_compaction: None,
                 },
                 &AtomicBool::new(shutdown),
             )

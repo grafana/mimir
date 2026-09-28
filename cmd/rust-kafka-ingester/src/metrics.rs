@@ -579,7 +579,8 @@ pub fn export_head(
         if now_removed > removed.get() {
             removed.inc_by(now_removed - removed.get());
         }
-        if report.memory_series > 0 {
+        // A truncated head keeps its time range when compactions emptied it.
+        if report.memory_series > 0 || report.truncated {
             min_time = min_time.min(report.head_min_time);
             max_time = max_time.max(report.head_max_time);
         }
