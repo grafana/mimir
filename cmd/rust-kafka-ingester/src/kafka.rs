@@ -39,6 +39,23 @@ pub struct RecordAndOffset {
     pub record: Record,
 }
 
+/// A fetched record whose payload has not been decoded yet.
+pub struct RawRecord {
+    pub offset: i64,
+    pub timestamp_ms: i64,
+    pub tenant: String,
+    pub version: u32,
+    pub payload: Option<Vec<u8>>,
+}
+
+impl RawRecord {
+    pub fn decode(&self) -> Option<Result<DecodedRequest>> {
+        self.payload
+            .as_deref()
+            .map(|payload| decode_record(self.version, payload))
+    }
+}
+
 pub struct PartitionClient {
     consumer: StreamConsumer<KafkaContext>,
     topic: String,
@@ -240,6 +257,29 @@ impl PartitionClient {
         })
         .await
         .context("join Kafka watermark request")?
+    }
+
+    pub async fn next_raw(&self) -> Option<Result<(RawRecord, i64)>> {
+        let message = match self.consumer.recv().await {
+            Ok(message) => message,
+            Err(error) => return Some(Err(error.into())),
+        };
+        let offset = message.offset();
+        let record = RawRecord {
+            offset,
+            timestamp_ms: message.timestamp().to_millis().unwrap_or_default(),
+            tenant: message
+                .key()
+                .map(|key| String::from_utf8_lossy(key).into_owned())
+                .unwrap_or_default(),
+            version: record_version(message.headers()),
+            payload: message.payload().map(<[u8]>::to_vec),
+        };
+        let high_watermark = self
+            .high_watermark
+            .load(Ordering::Acquire)
+            .max(offset.saturating_add(1));
+        Some(Ok((record, high_watermark)))
     }
 
     pub async fn next(&self) -> Option<Result<(RecordAndOffset, i64)>> {

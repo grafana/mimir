@@ -98,10 +98,11 @@ impl SegmentLog {
         retention_ms: Option<i64>,
     ) -> Result<(Self, Vec<RecoveredRecord>)> {
         let mut records = Vec::new();
-        let log = Self::open_replaying(root, cluster, topic, partition, retention_ms, |record| {
-            records.push(record);
-            Ok(())
-        })?;
+        let log =
+            Self::open_replaying(root, cluster, topic, partition, retention_ms, 2, |record| {
+                records.push(record);
+                Ok(())
+            })?;
         Ok((log, records))
     }
 
@@ -111,6 +112,7 @@ impl SegmentLog {
         topic: &str,
         partition: i32,
         retention_ms: Option<i64>,
+        decode_threads: usize,
         mut replay: impl FnMut(RecoveredRecord) -> Result<()>,
     ) -> Result<Self> {
         let cluster = u32::try_from(cluster).context("Kafka cluster index exceeds u32")?;
@@ -141,6 +143,7 @@ impl SegmentLog {
                 partition,
                 mutable,
                 replay_cutoff,
+                decode_threads,
                 &mut |record| {
                     if replayed_offset.is_none_or(|last| record.offset > last) {
                         replayed_offset = Some(record.offset);
@@ -425,6 +428,7 @@ fn read_segment(
     expected_partition: i32,
     mutable: bool,
     replay_cutoff: Option<i64>,
+    decode_threads: usize,
     replay: &mut impl FnMut(RecoveredRecord) -> Result<()>,
 ) -> Result<Option<i64>> {
     let file = OpenOptions::new()
@@ -458,7 +462,7 @@ fn read_segment(
 
     // Recovery shares the process CPU budget with Store ingest and startup work.
     let decode_pool = ThreadPoolBuilder::new()
-        .num_threads(2)
+        .num_threads(decode_threads.max(1))
         .build()
         .context("create segment decode pool")?;
     let mut last_offset = None;
@@ -1195,7 +1199,7 @@ mod tests {
         drop(log);
 
         let mut offsets = Vec::new();
-        let recovered = SegmentLog::open_replaying(&root, 0, "topic", 0, None, |record| {
+        let recovered = SegmentLog::open_replaying(&root, 0, "topic", 0, None, 2, |record| {
             offsets.push(record.offset);
             Ok(())
         })
@@ -1221,11 +1225,12 @@ mod tests {
         drop(log);
 
         let mut offsets = Vec::new();
-        let recovered = SegmentLog::open_replaying(&root, 0, "topic", 0, Some(HOUR_MS), |record| {
-            offsets.push(record.offset);
-            Ok(())
-        })
-        .unwrap();
+        let recovered =
+            SegmentLog::open_replaying(&root, 0, "topic", 0, Some(HOUR_MS), 2, |record| {
+                offsets.push(record.offset);
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(offsets, vec![2]);
         assert_eq!(recovered.last_offset(), Some(2));
         drop(recovered);
