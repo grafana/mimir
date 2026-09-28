@@ -12,8 +12,17 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 
 use mimir_rust_kafka_ingester::consistency::Consistency;
 use mimir_rust_kafka_ingester::kafka::{OffsetAt, PartitionClient, RawRecord, StartOffset};
+use mimir_rust_kafka_ingester::limits::{LimitsArgs, Overrides, parse_duration_ms};
+use mimir_rust_kafka_ingester::metrics;
+use mimir_rust_kafka_ingester::protection::{
+    CircuitBreaker, ProcessScanner, ProtectionArgs, ProtectionLayer, ReadProtection,
+    UtilizationLimiter,
+};
 use mimir_rust_kafka_ingester::proto::cortex::ingester_server::IngesterServer;
 use mimir_rust_kafka_ingester::record::{DecodedRequest, decode_record};
+use mimir_rust_kafka_ingester::runtime_config::{
+    RuntimeConfig, RuntimeConfigArgs, poll_active_partitions,
+};
 use mimir_rust_kafka_ingester::segment::{CompressedFrame, SegmentLog};
 mod profiling;
 
@@ -116,6 +125,27 @@ struct ServeArgs {
     grpc_tls_cert: Option<String>,
     #[arg(long)]
     grpc_tls_key: Option<String>,
+    /// Serves Prometheus metrics on /metrics and the cost attribution registry path.
+    #[arg(long)]
+    metrics_listen: Option<String>,
+    #[arg(long = "cost-attribution.registry-path", default_value = "")]
+    cost_attribution_registry_path: String,
+    #[arg(long = "ingester.metadata-retain-period", default_value = "10m")]
+    metadata_retain_period: String,
+    #[arg(
+        long = "ingester.active-series-metrics-update-period",
+        default_value = "1m"
+    )]
+    active_series_update_period: String,
+    /// Returns the number of active partitions, to convert global limits to local ones.
+    #[arg(long)]
+    active_partitions_url: Option<String>,
+    #[command(flatten)]
+    limits: LimitsArgs,
+    #[command(flatten)]
+    runtime_config: RuntimeConfigArgs,
+    #[command(flatten)]
+    protection: ProtectionArgs,
 }
 
 #[derive(Serialize)]
@@ -261,6 +291,14 @@ async fn serve(args: ServeArgs) -> Result<()> {
         kafka_tls,
         grpc_tls_cert,
         grpc_tls_key,
+        metrics_listen,
+        cost_attribution_registry_path,
+        metadata_retain_period,
+        active_series_update_period,
+        active_partitions_url,
+        limits,
+        runtime_config,
+        protection,
     } = args;
     let sasl_username = sasl_username.or_else(|| std::env::var("MIMIR_KAFKA_SASL_USERNAME").ok());
     let sasl_password = sasl_password.or_else(|| std::env::var("MIMIR_KAFKA_SASL_PASSWORD").ok());
@@ -297,6 +335,45 @@ async fn serve(args: ServeArgs) -> Result<()> {
         signal_requested.store(true, Ordering::Relaxed);
         let _ = signal_sender.send(true);
     });
+    // Like Mimir, the runtime config must load before the ingester starts.
+    let overrides = Arc::new(Overrides::new(limits.to_limits()?));
+    let mut runtime = RuntimeConfig::new(&runtime_config)?;
+    if !runtime.is_empty() {
+        runtime
+            .load(&overrides)
+            .await
+            .context("load runtime config")?;
+        let period =
+            Duration::from_millis(parse_duration_ms(&runtime_config.reload_period)? as u64);
+        tokio::spawn(runtime.run(Arc::clone(&overrides), period));
+    }
+    if let Some(url) = active_partitions_url {
+        tokio::spawn(poll_active_partitions(
+            url,
+            Arc::clone(&overrides),
+            Duration::from_secs(10),
+        ));
+    }
+    metrics::ACTIVE_SERIES_LOADING.set(1);
+    if let Some(address) = &metrics_listen {
+        metrics::serve(address, &cost_attribution_registry_path).await?;
+    }
+    let mut read_protection = ReadProtection::default();
+    if protection.cpu_utilization_limit > 0.0 || protection.memory_utilization_limit > 0 {
+        let limiter = UtilizationLimiter::new(
+            protection.cpu_utilization_limit,
+            protection.memory_utilization_limit,
+        );
+        read_protection.limiting_reason = Some(limiter.reason_handle());
+        tokio::spawn(limiter.run(ProcessScanner));
+    }
+    let circuit_breaker = protection
+        .circuit_breaker()?
+        .map(|config| Arc::new(CircuitBreaker::new(config)));
+    read_protection.circuit_breaker = circuit_breaker.clone();
+    let metadata_retain_ms = parse_duration_ms(&metadata_retain_period)?;
+    let active_series_update =
+        Duration::from_millis(parse_duration_ms(&active_series_update_period)? as u64);
     let ingest_threads = ingest_threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |threads| threads.get()));
     eprintln!(
@@ -312,6 +389,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             retention_ms,
             shards: store_shards,
             threads: ingest_threads,
+            overrides: Arc::clone(&overrides),
         },
         &shutdown_requested,
     )? {
@@ -320,6 +398,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         StartupStore::Stopped => return Ok(()),
     };
     let store = Arc::new(store);
+    spawn_accounting(Arc::clone(&store), active_series_update, metadata_retain_ms);
     let consistency = Arc::new(Consistency::new(
         partition,
         read_compartment,
@@ -678,7 +757,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let _ = warmup_tx.send(true);
 
     let address = listen.parse().context("parse listen address")?;
-    let mut server = Server::builder();
+    let mut server =
+        Server::builder().max_concurrent_streams(Some(protection.grpc_max_concurrent_streams));
     match (grpc_tls_cert, grpc_tls_key) {
         (Some(cert), Some(key)) => {
             server = server.tls_config(ServerTlsConfig::new().identity(Identity::from_pem(
@@ -698,7 +778,12 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let shutdown_sender = shutdown_tx.clone();
     let mut serve_shutdown_rx = shutdown_tx.subscribe();
     eprintln!("phase=grpc_start partition={partition} address={address}");
+    if let Some(breaker) = &circuit_breaker {
+        breaker.activate();
+    }
+    metrics::ACTIVE_SERIES_LOADING.set(0);
     let serve_result = server
+        .layer(ProtectionLayer::new(read_protection))
         .add_service(service)
         .serve_with_shutdown(address, async move {
             tokio::select! {
@@ -741,12 +826,39 @@ enum StartupStore {
     Stopped,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct StoreConfig {
     active_window_ms: i64,
     retention_ms: Option<i64>,
     shards: usize,
     threads: usize,
+    overrides: Arc<Overrides>,
+}
+
+// Refreshes the active series metrics and purges metadata that was not seen recently.
+fn spawn_accounting(store: Arc<Store>, update_period: Duration, metadata_retain_ms: i64) {
+    let report_store = Arc::clone(&store);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(update_period);
+        loop {
+            ticker.tick().await;
+            let store = Arc::clone(&report_store);
+            match tokio::task::spawn_blocking(move || store.active_series_report()).await {
+                Ok(reports) => metrics::export_active_series(&reports),
+                Err(error) => eprintln!("phase=active_series_report_error error={error}"),
+            }
+        }
+    });
+    tokio::spawn(async move {
+        // Mimir checks for stale metadata every five minutes.
+        let mut ticker = tokio::time::interval(Duration::from_secs(5 * 60));
+        loop {
+            ticker.tick().await;
+            let store = Arc::clone(&store);
+            let _ =
+                tokio::task::spawn_blocking(move || store.purge_metadata(metadata_retain_ms)).await;
+        }
+    });
 }
 
 fn open_store(
@@ -762,16 +874,20 @@ fn open_store(
         retention_ms,
         shards,
         threads,
+        overrides,
     } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
-        Ok(StartupStore::Rebuild(Store::with_shards(
-            active_window_ms,
-            retention_ms,
-            Some(chunk_dir.to_path_buf()),
-            shards,
-            threads,
-        )?))
+        Ok(StartupStore::Rebuild(
+            Store::with_shards(
+                active_window_ms,
+                retention_ms,
+                Some(chunk_dir.to_path_buf()),
+                shards,
+                threads,
+            )?
+            .with_overrides(Arc::clone(&overrides)),
+        ))
     };
     let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir, threads)? else {
         return rebuild();
@@ -813,7 +929,7 @@ fn open_store(
         return Ok(StartupStore::Stopped);
     }
     Ok(StartupStore::Resumed {
-        store: restored.store,
+        store: restored.store.with_overrides(overrides),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
 }
@@ -1272,6 +1388,7 @@ mod tests {
                     retention_ms: None,
                     shards: 4,
                     threads: 2,
+                    overrides: Arc::default(),
                 },
                 &AtomicBool::new(shutdown),
             )
