@@ -15,7 +15,9 @@ use rdkafka::util::Timeout;
 
 use bytes::Bytes;
 
-use crate::record::{DecodedRequest, decode_record, decode_record_bytes};
+use crate::record::{
+    DecodedRequest, decode_record, decode_record_bytes, decode_record_with_label_spans,
+};
 
 #[derive(Clone, Copy)]
 pub enum OffsetAt {
@@ -55,6 +57,16 @@ impl RawRecord {
         self.payload
             .clone()
             .map(|payload| decode_record_bytes(self.version, payload))
+    }
+
+    /// Like `decode`, with where each series' labels are in the payload.
+    #[allow(clippy::type_complexity)]
+    pub fn decode_with_label_spans(
+        &self,
+    ) -> Option<Result<(DecodedRequest, Vec<Option<std::ops::Range<usize>>>)>> {
+        self.payload
+            .clone()
+            .map(|payload| decode_record_with_label_spans(self.version, payload))
     }
 }
 

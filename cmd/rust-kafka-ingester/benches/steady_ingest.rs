@@ -1,5 +1,5 @@
 //! CPU per sample on the steady-state Kafka path: small records for series the store already
-//! has, decoded, framed for the segment log and applied in small batches, like a caught-up pod.
+//! has, decoded, logged to the segment log and applied in small batches, like a caught-up pod.
 //!
 //! `cargo bench --bench steady_ingest` (`STEADY_SERIES`, `STEADY_ROUNDS` to resize).
 
@@ -7,8 +7,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use mimir_rust_kafka_ingester::proto::cortexpb;
-use mimir_rust_kafka_ingester::record::decode_record_bytes;
-use mimir_rust_kafka_ingester::segment::SegmentLog;
+use mimir_rust_kafka_ingester::record::decode_record_with_label_spans;
+use mimir_rust_kafka_ingester::segment::{self, SegmentLog};
 use mimir_rust_kafka_ingester::store::{IngestRecord, Store};
 use prost::Message;
 
@@ -92,31 +92,50 @@ fn records(series: std::ops::Range<usize>, timestamp_ms: i64) -> Vec<Bytes> {
 #[derive(Default)]
 struct Phases {
     decode: Duration,
-    frame: Duration,
-    compress: Duration,
+    keys: Duration,
+    encode: Duration,
     apply: Duration,
+    write: Duration,
 }
 
-fn ingest(store: &Store, records: &[Bytes], batch: usize, offset: &mut i64, phases: &mut Phases) {
+// Like the Kafka consumer: records are decoded and their series keys hashed first, then encoded
+// for the segment log in order, applied, and written.
+fn ingest(
+    store: &Store,
+    log: &mut SegmentLog,
+    records: &[Bytes],
+    batch: usize,
+    offset: &mut i64,
+    phases: &mut Phases,
+) {
     for group in records.chunks(batch) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        log.begin_batch(now).unwrap();
+        let mut frames = Vec::with_capacity(group.len());
         let prepared = group
             .iter()
             .map(|bytes| {
                 *offset += 1;
                 let started = Instant::now();
                 // Like a fetched Kafka record, whose payload the decoded labels share.
-                let request = decode_record_bytes(1, bytes.clone()).unwrap();
+                let (request, spans) = decode_record_with_label_spans(1, bytes.clone()).unwrap();
                 let decoded = Instant::now();
-                let frame = SegmentLog::frame(*offset, 0, "tenant", &request).unwrap();
-                let framed = Instant::now();
-                std::hint::black_box(frame.compress().unwrap());
+                let keys = segment::series_keys_with_label_bytes("tenant", &request, bytes, &spans);
+                let hashed = Instant::now();
+                frames.push(
+                    log.encode(*offset, 0, now, "tenant", &request, &keys)
+                        .unwrap(),
+                );
                 phases.decode += decoded - started;
-                phases.frame += framed - decoded;
-                phases.compress += framed.elapsed();
+                phases.keys += hashed - decoded;
+                phases.encode += hashed.elapsed();
                 IngestRecord {
                     tenant: "tenant".into(),
                     request,
-                    ingested_ms: 0,
+                    ingested_ms: now,
                     track_rate: true,
                     bytes: bytes.len(),
                 }
@@ -124,8 +143,28 @@ fn ingest(store: &Store, records: &[Bytes], batch: usize, offset: &mut i64, phas
             .collect();
         let started = Instant::now();
         store.ingest_flushes(prepared).unwrap();
-        phases.apply += started.elapsed();
+        let applied = Instant::now();
+        for frame in frames {
+            log.append_compressed(frame).unwrap();
+        }
+        phases.apply += applied - started;
+        phases.write += applied.elapsed();
     }
+}
+
+fn directory_bytes(directory: &std::path::Path) -> u64 {
+    std::fs::read_dir(directory)
+        .unwrap()
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                directory_bytes(&path)
+            } else {
+                entry.metadata().unwrap().len()
+            }
+        })
+        .sum()
 }
 
 fn main() {
@@ -141,16 +180,21 @@ fn main() {
     for batch in [1, 8] {
         let store =
             Store::with_shards(20 * 60 * 1000, None, Some(directory.clone()), 16, threads).unwrap();
+        let (mut log, _) =
+            SegmentLog::open(&directory.join("segments"), 0, "bench", 0, None).unwrap();
         let mut offset = 0;
         // Creating the series is not what is measured.
         ingest(
             &store,
+            &mut log,
             &records(0..series, start),
             64,
             &mut offset,
             &mut Phases::default(),
         );
         let mut phases = Phases::default();
+        log.flush().unwrap();
+        let initial_bytes = directory_bytes(&directory.join("segments"));
         let (mut user, mut system, mut wall) = (0.0, 0.0, 0.0);
         let group = batch * SERIES_PER_RECORD;
         for round in 1..=rounds {
@@ -163,7 +207,7 @@ fn main() {
                     start + round as i64 * SCRAPE_MS,
                 );
                 let (cpu_start, wall_start) = (cpu_seconds(), Instant::now());
-                ingest(&store, &records, batch, &mut offset, &mut phases);
+                ingest(&store, &mut log, &records, batch, &mut offset, &mut phases);
                 let cpu_end = cpu_seconds();
                 user += cpu_end.0 - cpu_start.0;
                 system += cpu_end.1 - cpu_start.1;
@@ -171,17 +215,22 @@ fn main() {
             }
         }
         let samples = (series * rounds) as f64;
+        drop(log);
+        // What the measured scrapes added, past the first one's series definitions.
+        let segment_bytes = directory_bytes(&directory.join("segments")) - initial_bytes;
         let per_sample = |duration: Duration| duration.as_secs_f64() * 1e9 / samples;
         println!(
-            "batch={batch}: {:.0} ns CPU/sample ({:.0} user, {:.0} system), {:.2} cores; wall: decode {:.0}, frame {:.0}, compress {:.0}, apply {:.0} ns/sample",
+            "batch={batch}: {:.0} ns CPU/sample ({:.0} user, {:.0} system), {:.2} cores; wall: decode {:.0}, keys {:.0}, encode {:.0}, apply {:.0}, write {:.0} ns/sample; segment log {:.1} bytes/sample",
             (user + system) * 1e9 / samples,
             user * 1e9 / samples,
             system * 1e9 / samples,
             (user + system) / wall,
             per_sample(phases.decode),
-            per_sample(phases.frame),
-            per_sample(phases.compress),
+            per_sample(phases.keys),
+            per_sample(phases.encode),
             per_sample(phases.apply),
+            per_sample(phases.write),
+            segment_bytes as f64 / samples,
         );
         drop(store);
         let _ = std::fs::remove_dir_all(&directory);

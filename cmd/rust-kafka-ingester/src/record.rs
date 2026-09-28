@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -66,6 +66,10 @@ impl LabelStr {
             return Self(bytes);
         }
         Self::from(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    pub fn from_static(value: &'static str) -> Self {
+        Self(Bytes::from_static(value.as_bytes()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -200,16 +204,35 @@ pub fn decode_record_bytes(version: u32, bytes: Bytes) -> Result<DecodedRequest>
         bail!("unsupported ingest-storage record version {version}");
     }
     if version < 2 {
-        return decode_v1(&bytes).context("decode WriteRequest");
+        return decode_v1(&bytes, None).context("decode WriteRequest");
     }
     let request = cortexpb::WriteRequest::decode(bytes).context("decode WriteRequest")?;
     decode_v2(request)
 }
 
+/// Like `decode_record_bytes`, with where each series' encoded labels are in `bytes`, when they
+/// are one run of fields. The same bytes always decode to the same labels.
+pub fn decode_record_with_label_spans(
+    version: u32,
+    bytes: Bytes,
+) -> Result<(DecodedRequest, Vec<Option<Range<usize>>>)> {
+    if version != 1 && version != 0 {
+        let request = decode_record_bytes(version, bytes)?;
+        let spans = vec![None; request.series.len()];
+        return Ok((request, spans));
+    }
+    let mut spans = Vec::new();
+    let request = decode_v1(&bytes, Some(&mut spans)).context("decode WriteRequest")?;
+    Ok((request, spans))
+}
+
 // Records are mostly series labels, and building prost's messages for them and converting those
 // cost several times reading the fields directly. Decodes like `cortexpb::WriteRequest::decode`,
 // with the rarer messages left to prost.
-fn decode_v1(record: &Bytes) -> Result<DecodedRequest> {
+fn decode_v1(
+    record: &Bytes,
+    mut label_spans: Option<&mut Vec<Option<Range<usize>>>>,
+) -> Result<DecodedRequest> {
     let ctx = DecodeContext::default();
     let mut buf = &record[..];
     let mut source = 0;
@@ -218,10 +241,14 @@ fn decode_v1(record: &Bytes) -> Result<DecodedRequest> {
     while !buf.is_empty() {
         let (tag, wire_type) = decode_key(&mut buf)?;
         match tag {
-            1 => series.push(decode_series(
-                record,
-                length_delimited(wire_type, &mut buf)?,
-            )?),
+            1 => {
+                let (decoded, span) =
+                    decode_series(record, length_delimited(wire_type, &mut buf)?)?;
+                series.push(decoded);
+                if let Some(spans) = label_spans.as_deref_mut() {
+                    spans.push(span);
+                }
+            }
             2 => source = varint(wire_type, &mut buf)? as i32,
             3 => metadata.push(cortexpb::MetricMetadata::decode(length_delimited(
                 wire_type, &mut buf,
@@ -360,8 +387,13 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
     })
 }
 
-fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<DecodedSeries> {
+fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<(DecodedSeries, Option<Range<usize>>)> {
     let ctx = DecodeContext::default();
+    let offset = |bytes: &[u8]| bytes.as_ptr() as usize - record.as_ptr() as usize;
+    // The labels' fields, while no other field came between them.
+    let mut labels_span: Option<Range<usize>> = None;
+    let mut labels_contiguous = true;
+    let mut after_labels = false;
     let mut series = DecodedSeries {
         labels: Vec::with_capacity(20),
         samples: Vec::new(),
@@ -370,10 +402,18 @@ fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<DecodedSeries> {
         created_timestamp: 0,
     };
     while !buf.is_empty() {
+        let field_start = offset(buf);
         let (tag, wire_type) = decode_key(&mut buf)?;
+        if tag == 1 {
+            labels_contiguous &= !after_labels;
+        } else if labels_span.is_some() {
+            after_labels = true;
+        }
         match tag {
             1 => {
                 let mut pair = length_delimited(wire_type, &mut buf)?;
+                let start = labels_span.as_ref().map_or(field_start, |span| span.start);
+                labels_span = Some(start..offset(buf));
                 let (mut name, mut value): (&[u8], &[u8]) = (&[], &[]);
                 while !pair.is_empty() {
                     let (tag, wire_type) = decode_key(&mut pair)?;
@@ -422,7 +462,7 @@ fn decode_series(record: &Bytes, mut buf: &[u8]) -> Result<DecodedSeries> {
             _ => skip_field(wire_type, tag, &mut buf, ctx.clone())?,
         }
     }
-    Ok(series)
+    Ok((series, labels_span.filter(|_| labels_contiguous)))
 }
 
 fn label(record: &Bytes, bytes: &[u8]) -> LabelStr {
@@ -606,7 +646,18 @@ mod tests {
             for candidate in candidates {
                 let candidate = Bytes::from(candidate);
                 let expected = decode_v1_with_prost(&candidate);
-                let decoded = decode_v1(&candidate);
+                let mut spans = Vec::new();
+                let decoded = decode_v1(&candidate, Some(&mut spans));
+                if let Ok(decoded) = &decoded {
+                    // A series' label bytes alone decode to its labels.
+                    assert_eq!(spans.len(), decoded.series.len());
+                    for (span, series) in spans.iter().zip(&decoded.series) {
+                        if let Some(span) = span {
+                            let alone = cortexpb::TimeSeries::decode(&candidate[span.clone()]);
+                            assert_eq!(decode_pairs(alone.unwrap().labels), series.labels);
+                        }
+                    }
+                }
                 match (&expected, &decoded) {
                     // Corrupted floats can be NaN, which only compare equal printed.
                     (Ok(expected), Ok(decoded)) => {
