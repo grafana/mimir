@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	uploadingMetaFilename       = "uploading-meta.json" // Name of the file that stores a block's meta file while it's being uploaded
+	UploadingMetaFilename       = "uploading-meta.json" // Name of the file that stores a block's meta file while it's being uploaded
 	validationFilename          = "validation.json"     // Name of the file that stores a heartbeat time and possibly an error message
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
@@ -233,7 +233,7 @@ func (c *BlockUploader) finishBlockUpload(w http.ResponseWriter, r *http.Request
 		})
 		level.Info(logger).Log("msg", "validation process started")
 	} else {
-		if err := c.markBlockComplete(ctx, logger, tenantID, userBkt, blockID, m); err != nil {
+		if err := c.MarkBlockComplete(ctx, logger, tenantID, userBkt, blockID, m); err != nil {
 			writeBlockUploadError(err, "can't mark block as complete", logger, w, requestID)
 			return
 		}
@@ -320,7 +320,7 @@ func (c *BlockUploader) createBlockUpload(ctx context.Context, meta *block.Meta,
 		}
 	}
 
-	return c.uploadMeta(ctx, logger, meta, blockID, uploadingMetaFilename, userBkt)
+	return c.UploadMeta(ctx, logger, meta, blockID, UploadingMetaFilename, userBkt)
 }
 
 // UploadBlockFile handles requests for uploading block files.
@@ -447,7 +447,7 @@ func (c *BlockUploader) validateAndCompleteBlockUpload(logger log.Logger, tenant
 
 	ctx := context.Background()
 
-	if err := c.markBlockComplete(ctx, logger, tenantID, userBkt, blockID, meta); err != nil {
+	if err := c.MarkBlockComplete(ctx, logger, tenantID, userBkt, blockID, meta); err != nil {
 		if err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error()); err != nil {
 			level.Error(logger).Log("msg", "error updating validation file after upload of metadata file failed", "err", err)
 		}
@@ -463,15 +463,15 @@ func (c *BlockUploader) validateAndCompleteBlockUpload(logger log.Logger, tenant
 	level.Info(logger).Log("msg", "successfully completed block upload")
 }
 
-func (c *BlockUploader) markBlockComplete(ctx context.Context, logger log.Logger, tenantID string, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
-	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
+func (c *BlockUploader) MarkBlockComplete(ctx context.Context, logger log.Logger, tenantID string, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
+	if err := c.UploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
 		level.Error(logger).Log("msg", "error uploading block metadata file", "err", err)
 		return err
 	}
 
-	if err := userBkt.Delete(ctx, path.Join(blockID.String(), uploadingMetaFilename)); err != nil {
+	if err := userBkt.Delete(ctx, path.Join(blockID.String(), UploadingMetaFilename)); err != nil {
 		// Not returning an error since the temporary meta file persisting is a harmless side effect
-		level.Warn(logger).Log("msg", fmt.Sprintf("failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
+		level.Warn(logger).Log("msg", fmt.Sprintf("failed to delete %s from block in object storage", UploadingMetaFilename), "err", err)
 	}
 
 	// Increment metrics on successful block upload
@@ -506,7 +506,7 @@ func (c *BlockUploader) sanitizeMeta(logger log.Logger, userID string, blockID u
 	return ""
 }
 
-func (c *BlockUploader) uploadMeta(ctx context.Context, logger log.Logger, meta *block.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
+func (c *BlockUploader) UploadMeta(ctx context.Context, logger log.Logger, meta *block.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
 	if meta == nil {
 		return errors.New("missing block metadata")
 	}
@@ -539,14 +539,14 @@ func (c *BlockUploader) createTemporaryBlockDirectory(logger log.Logger) (dir st
 	return blockDir, nil
 }
 
-func removeTemporaryBlockDirectory(logger log.Logger, blockDir string) {
+func RemoveTemporaryBlockDirectory(logger log.Logger, blockDir string) {
 	level.Debug(logger).Log("msg", "removing temporary block directory", "dir", blockDir)
 	if err := os.RemoveAll(blockDir); err != nil {
 		level.Warn(logger).Log("msg", "failed to remove temporary block directory", "path", blockDir, "err", err)
 	}
 }
 
-func (c *BlockUploader) prepareBlockForValidation(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) (string, error) {
+func (c *BlockUploader) PrepareBlockForValidation(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) (string, error) {
 	blockDir, err := c.createTemporaryBlockDirectory(logger)
 	if err != nil {
 		return "", err
@@ -556,15 +556,15 @@ func (c *BlockUploader) prepareBlockForValidation(ctx context.Context, logger lo
 	level.Debug(logger).Log("msg", "downloading block from bucket", "block", blockID.String())
 	err = objstore.DownloadDir(ctx, logger, userBkt, blockID.String(), blockID.String(), blockDir)
 	if err != nil {
-		removeTemporaryBlockDirectory(logger, blockDir)
+		RemoveTemporaryBlockDirectory(logger, blockDir)
 		return "", fmt.Errorf("failed to download block: %w", err)
 	}
 
 	// rename the temporary meta file name to the expected one locally so that the block can be inspected
-	err = os.Rename(filepath.Join(blockDir, uploadingMetaFilename), filepath.Join(blockDir, block.MetaFilename))
+	err = os.Rename(filepath.Join(blockDir, UploadingMetaFilename), filepath.Join(blockDir, block.MetaFilename))
 	if err != nil {
 		level.Warn(logger).Log("msg", "could not rename temporary metadata file", "block", blockID.String(), "err", err)
-		removeTemporaryBlockDirectory(logger, blockDir)
+		RemoveTemporaryBlockDirectory(logger, blockDir)
 		return "", errors.New("failed renaming while preparing block for validation")
 	}
 
@@ -582,11 +582,11 @@ func (c *BlockUploader) validateBlock(ctx context.Context, logger log.Logger, bl
 		return err
 	}
 
-	blockDir, err := c.prepareBlockForValidation(ctx, logger, userBkt, blockID)
+	blockDir, err := c.PrepareBlockForValidation(ctx, logger, userBkt, blockID)
 	if err != nil {
 		return err
 	}
-	defer removeTemporaryBlockDirectory(logger, blockDir)
+	defer RemoveTemporaryBlockDirectory(logger, blockDir)
 
 	return blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, blockMetadata, blockvalidation.CheckBlockOnDiskOptions{
 		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(userID),
@@ -726,7 +726,7 @@ func (c *BlockUploader) getBlockUploadState(ctx context.Context, userBkt objstor
 		return blockIsComplete, nil, nil, nil
 	}
 
-	meta, err := c.loadUploadingMeta(ctx, userBkt, blockID)
+	meta, err := c.LoadUploadingMeta(ctx, userBkt, blockID)
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
 	}
@@ -751,8 +751,8 @@ func (c *BlockUploader) getBlockUploadState(ctx context.Context, userBkt objstor
 	return blockValidationStale, meta, v, nil
 }
 
-func (c *BlockUploader) loadUploadingMeta(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*block.Meta, error) {
-	r, err := userBkt.Get(ctx, path.Join(blockID.String(), uploadingMetaFilename))
+func (c *BlockUploader) LoadUploadingMeta(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*block.Meta, error) {
+	r, err := userBkt.Get(ctx, path.Join(blockID.String(), UploadingMetaFilename))
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
 			return nil, nil

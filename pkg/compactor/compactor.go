@@ -421,13 +421,13 @@ func newMultitenantCompactor(
 	}
 
 	c := &MultitenantCompactor{
-		compactorCfg:           compactorCfg,
-		storageCfg:             storageCfg,
-		cfgProvider:            cfgProvider,
-		parentLogger:           logger,
-		logger:                 log.With(logger, "component", "compactor"),
-		registerer:             registerer,
-		syncerMetrics:          newAggregatedSyncerMetrics(registerer),
+		compactorCfg:                compactorCfg,
+		storageCfg:                  storageCfg,
+		cfgProvider:                 cfgProvider,
+		parentLogger:                logger,
+		logger:                      log.With(logger, "component", "compactor"),
+		registerer:                  registerer,
+		syncerMetrics:               newAggregatedSyncerMetrics(registerer),
 		bucketClientFactory:         bucketClientFactory,
 		backfillBucketClientFactory: backfillBucketClientFactory,
 		blocksGrouperFactory:        blocksGrouperFactory,

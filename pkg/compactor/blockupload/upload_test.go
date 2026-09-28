@@ -109,7 +109,7 @@ func TestBlockUploader_StartBlockUpload(t *testing.T) {
 
 	setUpPartialBlock := func(bkt *bucket.ClientMock) {
 		bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
-		setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
+		setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
 	}
 	setUpUpload := func(bkt *bucket.ClientMock) {
 		setUpPartialBlock(bkt)
@@ -787,8 +787,8 @@ func TestBlockUploader_StartBlockUpload(t *testing.T) {
 func TestBlockUploader_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	uploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
-	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	UploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
+	uploadingMetaPath := path.Join(tenantID, blockID, UploadingMetaFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 
 	chunkBodyContent := "content"
@@ -817,7 +817,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 		bkt.MockExists(metaPath, false, nil)
 
 		b, err := json.Marshal(validMeta)
-		setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+		setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), b, err)
 		setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
 
 		bkt.MockUpload(path.Join(tenantID, blockID, "chunks/000001"), nil)
@@ -903,9 +903,9 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 			name:          "attempt in-flight block metadata file",
 			tenantID:      tenantID,
 			blockID:       blockID,
-			path:          uploadingMetaFilename,
+			path:          UploadingMetaFilename,
 			body:          "content",
-			expBadRequest: fmt.Sprintf("invalid path: %q", uploadingMetaFilename),
+			expBadRequest: fmt.Sprintf("invalid path: %q", UploadingMetaFilename),
 		},
 		{
 			name:     "complete block already exists",
@@ -937,7 +937,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, fmt.Errorf("test"))
+				setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), nil, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
 		},
@@ -949,7 +949,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
+				setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
 			},
 			expNotFound: "block upload not started",
 		},
@@ -963,7 +963,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 
 				b, err := json.Marshal(validMeta)
-				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), b, err)
 				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
 
 				bkt.MockUpload(path.Join(tenantID, blockID, "chunks/000001"), fmt.Errorf("test"))
@@ -980,7 +980,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 
 				b, err := json.Marshal(validMeta)
-				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), b, err)
 				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
 			},
 			expBadRequest: "file size doesn't match meta.json",
@@ -995,7 +995,7 @@ func TestBlockUploader_UploadBlockFile(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 
 				b, err := json.Marshal(validMeta)
-				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, UploadingMetaFilename), b, err)
 				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
 			},
 			expBadRequest: "unexpected file",
@@ -1161,7 +1161,7 @@ func setUpGet(bkt *bucket.ClientMock, pth string, content []byte, err error) {
 func TestBlockUploader_FinishBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	uploadingMetaPath := path.Join(tenantID, blockID, UploadingMetaFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 	injectedError := fmt.Errorf("injected error")
 	validMeta := block.Meta{
@@ -1357,7 +1357,7 @@ func TestBlockUploader_ValidateAndComplete(t *testing.T) {
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
 
-	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	uploadingMetaPath := path.Join(tenantID, blockID, UploadingMetaFilename)
 	validationPath := path.Join(tenantID, blockID, validationFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 
@@ -1718,7 +1718,7 @@ func TestBlockUploader_ValidateBlock(t *testing.T) {
 			// only upload renamed meta file if it is not meant to be missing
 			if tc.missing&MissingMeta == 0 {
 				// rename to uploading meta file as that is what validateBlock expects
-				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), uploadingMetaFilename), &metaBody))
+				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), UploadingMetaFilename), &metaBody))
 			}
 
 			// validate the block
@@ -1858,7 +1858,7 @@ func TestBlockUploader_GetBlockUploadStateHandler(t *testing.T) {
 
 		"upload in progress": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), block.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, UploadingMetaFilename), block.Meta{})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"uploading"}`,
@@ -1866,7 +1866,7 @@ func TestBlockUploader_GetBlockUploadStateHandler(t *testing.T) {
 
 		"validating": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), block.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, UploadingMetaFilename), block.Meta{})
 				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli()})
 			},
 			expectedStatusCode: http.StatusOK,
@@ -1875,7 +1875,7 @@ func TestBlockUploader_GetBlockUploadStateHandler(t *testing.T) {
 
 		"validation failed": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), block.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, UploadingMetaFilename), block.Meta{})
 				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli(), Error: "error during validation"})
 			},
 			expectedStatusCode: http.StatusOK,
@@ -1884,7 +1884,7 @@ func TestBlockUploader_GetBlockUploadStateHandler(t *testing.T) {
 
 		"stale validation file": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), block.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, UploadingMetaFilename), block.Meta{})
 				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().Add(-10 * time.Minute).UnixMilli()})
 			},
 			expectedStatusCode: http.StatusOK,
@@ -1924,7 +1924,7 @@ func TestBlockUploader_MarkBlockComplete(t *testing.T) {
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
 
-	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	uploadingMetaPath := path.Join(tenantID, blockID, UploadingMetaFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 	testCases := []struct {
 		name          string
@@ -1979,7 +1979,7 @@ func TestBlockUploader_MarkBlockComplete(t *testing.T) {
 			marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
 
 			ctx := context.Background()
-			err := c.markBlockComplete(ctx, log.NewNopLogger(), tenantID, userBkt, ulid.MustParse(blockID), &meta)
+			err := c.MarkBlockComplete(ctx, log.NewNopLogger(), tenantID, userBkt, ulid.MustParse(blockID), &meta)
 			if tc.expectSuccess {
 				require.NoError(t, err)
 				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks.WithLabelValues(tenantID)))

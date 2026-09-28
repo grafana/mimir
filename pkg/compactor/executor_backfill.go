@@ -16,6 +16,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor/backfill"
+	"github.com/grafana/mimir/pkg/compactor/blockupload"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -84,7 +85,7 @@ func (e *schedulerExecutor) executeBackfillValidateJob(ctx context.Context, c *M
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, reason
 	}
 
-	meta, err := c.loadUploadingMeta(ctx, dataBkt, blockID)
+	meta, err := c.blockUpload.LoadUploadingMeta(ctx, dataBkt, blockID)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to read uploading meta: %w", err)
 	}
@@ -96,11 +97,11 @@ func (e *schedulerExecutor) executeBackfillValidateJob(ctx context.Context, c *M
 	if err := blockvalidation.CheckMaxBlockSize(meta.Thanos.Files, maxBlockSizeBytes); err != nil {
 		return fail(err)
 	}
-	blockDir, err := c.prepareBlockForValidation(ctx, dataBkt, blockID)
+	blockDir, err := c.blockUpload.PrepareBlockForValidation(ctx, logger, dataBkt, blockID)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
-	defer c.removeTemporaryBlockDirectory(blockDir)
+	defer blockupload.RemoveTemporaryBlockDirectory(logger, blockDir)
 	err = blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, meta, blockvalidation.CheckBlockOnDiskOptions{
 		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(tenant),
 		MaxBlockSizeBytes: maxBlockSizeBytes,
@@ -113,7 +114,7 @@ func (e *schedulerExecutor) executeBackfillValidateJob(ctx context.Context, c *M
 	}
 
 	// TODO: this counts backfilled blocks in the block upload metrics, which may not be wanted
-	if err := c.markBlockComplete(ctx, logger, tenant, dataBkt, blockID, meta); err != nil {
+	if err := c.blockUpload.MarkBlockComplete(ctx, logger, tenant, dataBkt, blockID, meta); err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 	level.Info(logger).Log("msg", "backfill block validated")
@@ -149,7 +150,7 @@ func (e *schedulerExecutor) executeBackfillCopyJob(ctx context.Context, c *Multi
 			return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 		}
 	}
-	if err := c.uploadMeta(ctx, logger, &meta, blockID, block.MetaFilename, dstBkt); err != nil {
+	if err := c.blockUpload.UploadMeta(ctx, logger, &meta, blockID, block.MetaFilename, dstBkt); err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 	if err := srcBkt.Upload(ctx, copiedMarkFilepath(blockID), bytes.NewReader(nil)); err != nil {
@@ -299,7 +300,7 @@ func planBackfillValidation(ctx context.Context, dataBkt objstore.BucketReader, 
 		if validated {
 			return nil
 		}
-		uploaded, err := dataBkt.Exists(ctx, path.Join(blockID.String(), uploadingMetaFilename))
+		uploaded, err := dataBkt.Exists(ctx, path.Join(blockID.String(), blockupload.UploadingMetaFilename))
 		if err != nil {
 			return err
 		}

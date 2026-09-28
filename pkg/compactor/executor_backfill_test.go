@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor/backfill"
+	"github.com/grafana/mimir/pkg/compactor/blockupload"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -226,7 +227,7 @@ func TestSchedulerExecutor_ExecuteBackfillValidateJob(t *testing.T) {
 				require.NoError(t, err)
 				return ok
 			}
-			hadMeta, hadUploadingMeta := exists(block.MetaFilename), exists(uploadingMetaFilename)
+			hadMeta, hadUploadingMeta := exists(block.MetaFilename), exists(blockupload.UploadingMetaFilename)
 
 			spec := &compactorschedulerpb.JobSpec{
 				Tenant:        tenant,
@@ -243,11 +244,11 @@ func TestSchedulerExecutor_ExecuteBackfillValidateJob(t *testing.T) {
 
 			if tc.expectValidated {
 				require.True(t, exists(block.MetaFilename))
-				require.False(t, exists(uploadingMetaFilename))
+				require.False(t, exists(blockupload.UploadingMetaFilename))
 			}
 			if tc.expectUnchanged {
 				require.Equal(t, hadMeta, exists(block.MetaFilename))
-				require.Equal(t, hadUploadingMeta, exists(uploadingMetaFilename))
+				require.Equal(t, hadUploadingMeta, exists(blockupload.UploadingMetaFilename))
 			}
 			m, ok, err := backfill.ReadMarker(t.Context(), bkt, backfill.PhaseCleanup, tenant)
 			require.NoError(t, err)
@@ -329,7 +330,7 @@ func moveToUploadingMeta(t *testing.T, bkt objstore.Bucket, blockDir string) {
 	metaPath := path.Join(blockDir, block.MetaFilename)
 	r, err := bkt.Get(t.Context(), metaPath)
 	require.NoError(t, err)
-	require.NoError(t, bkt.Upload(t.Context(), path.Join(blockDir, uploadingMetaFilename), r))
+	require.NoError(t, bkt.Upload(t.Context(), path.Join(blockDir, blockupload.UploadingMetaFilename), r))
 	require.NoError(t, r.Close())
 	require.NoError(t, bkt.Delete(t.Context(), metaPath))
 }
@@ -467,7 +468,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 				case uploaded:
 					r, err := bkt.Get(t.Context(), metaPath)
 					require.NoError(t, err)
-					require.NoError(t, bkt.Upload(t.Context(), path.Join(dataPrefix, id.String(), uploadingMetaFilename), r))
+					require.NoError(t, bkt.Upload(t.Context(), path.Join(dataPrefix, id.String(), blockupload.UploadingMetaFilename), r))
 					require.NoError(t, r.Close())
 					require.NoError(t, bkt.Delete(t.Context(), metaPath))
 					uploadedIDs = append(uploadedIDs, id.Bytes())
