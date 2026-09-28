@@ -140,7 +140,7 @@ fn measure(directory: PathBuf, variant: &str) {
     let started = Instant::now();
     let store = Store::default();
     let mut count = 0;
-    let log = SegmentLog::open_replaying(&directory, 0, "fixture", 0, None, |record| {
+    let log = SegmentLog::open_replaying(&directory, 0, "fixture", 0, None, 2, |record| {
         store.ingest_recovered(&record.tenant, record.request, record.ingested_ms)?;
         count += 1;
         Ok(())

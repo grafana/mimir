@@ -244,3 +244,58 @@ fn high_cardinality_multi_tenant_memory() {
     drop(restored);
     std::fs::remove_dir_all(chunk_dir).unwrap();
 }
+
+// Run explicitly: compares ingest throughput for several store thread counts.
+#[test]
+#[ignore]
+fn parallel_ingest_throughput() {
+    let records = |start: usize, count: usize| {
+        (start..start + count)
+            .map(|record| IngestRecord {
+                tenant: "tenant".into(),
+                request: DecodedRequest {
+                    source: 0,
+                    series: (0..350)
+                        .map(|series| DecodedSeries {
+                            labels: (0..12)
+                                .map(|label| {
+                                    (
+                                        format!("label_{label}"),
+                                        format!("value_{}_{series}", label % 4),
+                                    )
+                                })
+                                .chain([("__name__".into(), format!("metric_{}", series % 40))])
+                                .collect(),
+                            samples: vec![cortexpb::Sample {
+                                timestamp_ms: record as i64 * 1000,
+                                value: record as f64,
+                            }],
+                            histograms: Vec::new(),
+                            exemplars: Vec::new(),
+                            created_timestamp: 0,
+                        })
+                        .collect(),
+                    metadata: Vec::new(),
+                },
+                ingested_ms: 0,
+                track_rate: false,
+            })
+            .collect::<Vec<_>>()
+    };
+    for threads in [1, 2, 4, 8] {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 16, threads).unwrap();
+        let batches = (0..100)
+            .map(|batch| records(batch * 64, 64))
+            .collect::<Vec<_>>();
+        let started = Instant::now();
+        for batch in batches {
+            store.ingest_batch(batch).unwrap();
+        }
+        let elapsed = started.elapsed().as_secs_f64();
+        println!(
+            "threads={threads} records_per_second={:.0} series_samples_per_second={:.0}",
+            6400.0 / elapsed,
+            6400.0 * 350.0 / elapsed
+        );
+    }
+}
