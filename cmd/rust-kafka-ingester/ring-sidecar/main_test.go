@@ -384,6 +384,16 @@ func TestPreparePartitionDownscaleSwitchesPartitionState(t *testing.T) {
 	code, _ = call(shared, http.MethodPost)
 	require.Equal(t, http.StatusConflict, code)
 	require.Equal(t, ring.PartitionActive, state())
+	// Once the Go ingesters switched it to INACTIVE, the Rust pod's delayed downscale proceeds,
+	// but only the Go ingesters switch it back.
+	code, _ = call(cfg, http.MethodPost)
+	require.Equal(t, http.StatusOK, code)
+	code, body = call(shared, http.MethodPost)
+	require.Equal(t, http.StatusOK, code)
+	require.Positive(t, body["timestamp"])
+	code, _ = call(shared, http.MethodDelete)
+	require.Equal(t, http.StatusConflict, code)
+	require.Equal(t, ring.PartitionInactive, state())
 }
 
 func TestOwnedTokenRangesFollowTheTenantShuffleShard(t *testing.T) {
