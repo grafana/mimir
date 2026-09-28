@@ -54,9 +54,93 @@ struct Series {
     last_bucket_count: u32,
 }
 
+// Series grouped by metric name, so a `__name__` matcher only visits its own metric like a
+// postings lookup would, without duplicating series keys in a separate index.
+#[derive(Default)]
+struct SeriesByName {
+    names: HashMap<CompactString, BTreeMap<SeriesKey, Series>>,
+    len: usize,
+}
+
+impl SeriesByName {
+    fn entry(&mut self, key: SeriesKey) -> &mut Series {
+        let by_key = self
+            .names
+            .entry(CompactString::from(metric_name(&key.1)))
+            .or_default();
+        let len = &mut self.len;
+        by_key.entry(key).or_insert_with(|| {
+            *len += 1;
+            Series::default()
+        })
+    }
+
+    fn insert(&mut self, key: SeriesKey, series: Series) -> Option<Series> {
+        let previous = self
+            .names
+            .entry(CompactString::from(metric_name(&key.1)))
+            .or_default()
+            .insert(key, series);
+        if previous.is_none() {
+            self.len += 1;
+        }
+        previous
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&SeriesKey, &Series)> {
+        self.names.values().flat_map(|by_key| by_key.iter())
+    }
+
+    fn values(&self) -> impl Iterator<Item = &Series> {
+        self.iter().map(|(_, series)| series)
+    }
+
+    fn matching<'a>(
+        &'a self,
+        matchers: &'a [CompiledMatcher],
+    ) -> Box<dyn Iterator<Item = (&'a SeriesKey, &'a Series)> + 'a> {
+        let name_matcher = matchers
+            .iter()
+            .find(|matcher| matcher.label_name() == Some("__name__"));
+        let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match name_matcher {
+            Some(CompiledMatcher::Equal(_, name)) => {
+                Box::new(self.names.get(name.as_str()).into_iter().flatten())
+            }
+            Some(matcher) => Box::new(
+                self.names
+                    .iter()
+                    .filter(move |(name, _)| matcher.matches_value(name))
+                    .flat_map(|(_, by_key)| by_key.iter()),
+            ),
+            None => Box::new(self.iter()),
+        };
+        Box::new(candidates.filter(move |((_, labels), _)| matches(labels, matchers)))
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&SeriesKey, &mut Series) -> bool) {
+        let mut len = 0;
+        self.names.retain(|_, by_key| {
+            by_key.retain(|key, series| keep(key, series));
+            len += by_key.len();
+            !by_key.is_empty()
+        });
+        self.len = len;
+    }
+}
+
+fn metric_name(labels: &[StoredLabel]) -> &str {
+    labels
+        .binary_search_by(|(label, _)| label.as_ref().cmp("__name__"))
+        .map_or("", |index| labels[index].1.as_str())
+}
+
 #[derive(Default)]
 struct Tenant {
-    series: BTreeMap<SeriesKey, Series>,
+    series: SeriesByName,
     label_names: HashSet<Arc<str>>,
     metadata: BTreeMap<(String, i32, String, String), cortexpb::MetricMetadata>,
     ingested: VecDeque<(Instant, i32, u64)>,
@@ -213,8 +297,8 @@ impl Store {
         };
         let compiled = compile_matchers(matchers)?;
         let mut selected = Vec::new();
-        for ((_, labels), series) in &tenant.series {
-            if !matches_time_range(series, start, end) || !matches(labels, &compiled) {
+        for ((_, labels), series) in tenant.series.matching(&compiled) {
+            if !matches_time_range(series, start, end) {
                 continue;
             }
             let chunks = query_chunks(series, &state.disk, start, end);
@@ -246,8 +330,7 @@ impl Store {
         let compiled = compile_matchers(matchers)?;
         Ok(tenant
             .series
-            .iter()
-            .filter(|((_, labels), _)| matches(labels, &compiled))
+            .matching(&compiled)
             .filter_map(|((_, labels), series)| {
                 let exemplars = series
                     .exemplars
@@ -278,10 +361,8 @@ impl Store {
         let compiled = compile_matchers(matchers)?;
         Ok(tenant
             .series
-            .iter()
-            .filter(|((_, labels), series)| {
-                matches_time_range(series, start, end) && matches(labels, &compiled)
-            })
+            .matching(&compiled)
+            .filter(|(_, series)| matches_time_range(series, start, end))
             .map(|((_, labels), _)| owned_labels(labels))
             .collect())
     }
@@ -300,9 +381,11 @@ impl Store {
         };
         let compiled = compile_matchers(matchers)?;
         let mut names = BTreeSet::new();
-        for ((_, labels), _) in tenant.series.iter().filter(|((_, labels), series)| {
-            matches_time_range(series, start, end) && matches(labels, &compiled)
-        }) {
+        for ((_, labels), _) in tenant
+            .series
+            .matching(&compiled)
+            .filter(|(_, series)| matches_time_range(series, start, end))
+        {
             names.extend(labels.iter().map(|(name, _)| name.to_string()));
         }
         Ok(names.into_iter().collect())
@@ -323,9 +406,11 @@ impl Store {
         };
         let compiled = compile_matchers(matchers)?;
         let mut values = BTreeSet::new();
-        for ((_, labels), _) in tenant.series.iter().filter(|((_, labels), series)| {
-            matches_time_range(series, start, end) && matches(labels, &compiled)
-        }) {
+        for ((_, labels), _) in tenant
+            .series
+            .matching(&compiled)
+            .filter(|(_, series)| matches_time_range(series, start, end))
+        {
             if let Some((_, value)) = labels.iter().find(|(label, _)| label.as_ref() == name) {
                 values.insert(value.to_string());
             }
@@ -357,10 +442,8 @@ impl Store {
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         Ok(tenant
             .series
-            .iter()
-            .filter(|((_, labels), series)| {
-                series.last_ingested_ms >= cutoff && matches(labels, &compiled)
-            })
+            .matching(&compiled)
+            .filter(|(_, series)| series.last_ingested_ms >= cutoff)
             .filter_map(|((_, labels), series)| {
                 let bucket_count = u64::from(series.last_bucket_count);
                 (!histograms_only || bucket_count > 0).then(|| ActiveSeriesView {
@@ -407,9 +490,11 @@ impl Store {
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
         let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for ((_, labels), _) in tenant.series.iter().filter(|((_, labels), series)| {
-            (!active || series.last_ingested_ms >= cutoff) && matches(labels, &compiled)
-        }) {
+        for ((_, labels), _) in tenant
+            .series
+            .matching(&compiled)
+            .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
+        {
             for (name, value) in labels.iter() {
                 result
                     .entry(name.to_string())
@@ -439,9 +524,11 @@ impl Store {
             .map(String::as_str)
             .collect::<BTreeSet<_>>();
         let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
-        for ((_, labels), _) in tenant.series.iter().filter(|((_, labels), series)| {
-            (!active || series.last_ingested_ms >= cutoff) && matches(labels, &compiled)
-        }) {
+        for ((_, labels), _) in tenant
+            .series
+            .matching(&compiled)
+            .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
+        {
             for (name, value) in labels.iter() {
                 if wanted.contains(name.as_ref()) {
                     *result
@@ -527,7 +614,7 @@ fn ingest_series(
             (name, value.into())
         })
         .collect();
-    let series = tenant.series.entry(series_key(labels)).or_default();
+    let series = tenant.series.entry(series_key(labels));
     if decoded.created_timestamp != 0 {
         let first_timestamp = decoded
             .samples
@@ -939,26 +1026,37 @@ fn compile_matchers(matchers: &[cortex::LabelMatcher]) -> Result<Vec<CompiledMat
         .collect()
 }
 
-fn matches(labels: &[StoredLabel], matchers: &[CompiledMatcher]) -> bool {
-    matchers.iter().all(|matcher| {
-        let name = match matcher {
+impl CompiledMatcher {
+    fn label_name(&self) -> Option<&str> {
+        match self {
             CompiledMatcher::Equal(name, _)
             | CompiledMatcher::NotEqual(name, _)
             | CompiledMatcher::Regex(name, _)
-            | CompiledMatcher::NotRegex(name, _) => name,
-            CompiledMatcher::Shard(index, count) => {
-                return labels_hash(labels) % count == *index;
-            }
-        };
-        let value = labels
-            .binary_search_by(|(label, _)| label.as_ref().cmp(name))
-            .map_or("", |index| labels[index].1.as_str());
-        match matcher {
+            | CompiledMatcher::NotRegex(name, _) => Some(name),
+            CompiledMatcher::Shard(_, _) => None,
+        }
+    }
+
+    fn matches_value(&self, value: &str) -> bool {
+        match self {
             CompiledMatcher::Equal(_, expected) => value == expected,
             CompiledMatcher::NotEqual(_, expected) => value != expected,
             CompiledMatcher::Regex(_, regex) => regex.is_match(value),
             CompiledMatcher::NotRegex(_, regex) => !regex.is_match(value),
-            CompiledMatcher::Shard(_, _) => unreachable!(),
+            CompiledMatcher::Shard(_, _) => true,
+        }
+    }
+}
+
+fn matches(labels: &[StoredLabel], matchers: &[CompiledMatcher]) -> bool {
+    matchers.iter().all(|matcher| match matcher {
+        CompiledMatcher::Shard(index, count) => labels_hash(labels) % count == *index,
+        _ => {
+            let name = matcher.label_name().expect("label matcher");
+            let value = labels
+                .binary_search_by(|(label, _)| label.as_ref().cmp(name))
+                .map_or("", |index| labels[index].1.as_str());
+            matcher.matches_value(value)
         }
     })
 }
@@ -1416,6 +1514,66 @@ mod tests {
                 "window {start}..{end} missed the stale marker"
             );
         }
+    }
+
+    #[test]
+    fn selects_series_through_metric_name_groups() {
+        let store = Store::default();
+        let now = now_ms();
+        let series = |name: Option<&str>, job: &str, timestamp_ms: i64| DecodedSeries {
+            labels: name
+                .map(|name| ("__name__".to_owned(), name.to_owned()))
+                .into_iter()
+                .chain([("job".to_owned(), job.to_owned())])
+                .collect(),
+            samples: vec![cortexpb::Sample {
+                timestamp_ms,
+                value: 1.0,
+            }],
+            histograms: Vec::new(),
+            exemplars: Vec::new(),
+            created_timestamp: 0,
+        };
+        store
+            .ingest(
+                "tenant",
+                DecodedRequest {
+                    source: 0,
+                    series: vec![
+                        series(Some("up"), "a", now),
+                        series(Some("up"), "b", now),
+                        series(Some("down"), "a", now - 10 * CHUNK_RANGE_MS),
+                        series(None, "a", now),
+                    ],
+                    metadata: Vec::new(),
+                },
+            )
+            .unwrap();
+        let count = |matchers: &[(i32, &str, &str)]| {
+            let matchers = matchers
+                .iter()
+                .map(|(kind, name, value)| cortex::LabelMatcher {
+                    r#type: *kind,
+                    name: (*name).into(),
+                    value: (*value).into(),
+                })
+                .collect::<Vec<_>>();
+            store
+                .select_labels("tenant", i64::MIN, i64::MAX, &matchers)
+                .unwrap()
+                .len()
+        };
+        assert_eq!(count(&[(0, "__name__", "up")]), 2);
+        assert_eq!(count(&[(0, "__name__", "up"), (0, "job", "b")]), 1);
+        assert_eq!(count(&[(2, "__name__", "up|down")]), 3);
+        assert_eq!(count(&[(1, "__name__", "up")]), 2);
+        assert_eq!(count(&[(0, "__name__", "")]), 1);
+        assert_eq!(count(&[(0, "job", "a")]), 3);
+        assert_eq!(count(&[(0, "__name__", "missing")]), 0);
+        assert_eq!(store.num_series("tenant"), 4);
+        store.prune_before(now - 1).unwrap();
+        assert_eq!(store.num_series("tenant"), 3);
+        assert_eq!(count(&[(0, "__name__", "down")]), 0);
     }
 
     #[test]
