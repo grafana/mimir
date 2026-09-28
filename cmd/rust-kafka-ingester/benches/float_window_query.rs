@@ -43,7 +43,7 @@ async fn main() {
     let store = Arc::new(Store::default());
     let series = (0..SERIES)
         .map(|index| DecodedSeries {
-            labels: vec![("__name__".into(), format!("metric_{index}"))],
+            labels: vec![("__name__".into(), format!("metric_{index}").into())],
             samples: (0..POINTS)
                 .map(|point| cortexpb::Sample {
                     timestamp_ms: point as i64 * 2_000,
@@ -74,7 +74,7 @@ async fn main() {
     let hot = started.elapsed();
     let update = (0..SERIES)
         .map(|index| DecodedSeries {
-            labels: vec![("__name__".into(), format!("metric_{index}"))],
+            labels: vec![("__name__".into(), format!("metric_{index}").into())],
             samples: vec![cortexpb::Sample {
                 timestamp_ms: POINTS as i64 * 2_000,
                 value: index as f64,

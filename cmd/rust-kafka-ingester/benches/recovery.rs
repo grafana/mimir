@@ -58,7 +58,10 @@ fn request(frame: usize) -> DecodedRequest {
                 ));
             }
             DecodedSeries {
-                labels,
+                labels: labels
+                    .into_iter()
+                    .map(|(name, value)| (name.into(), value.into()))
+                    .collect(),
                 samples: if histogram_series {
                     Vec::new()
                 } else {

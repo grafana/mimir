@@ -1696,7 +1696,11 @@ fn summary(request: DecodedRequest) -> Summary {
             .series
             .into_iter()
             .map(|series| SeriesSummary {
-                labels: series.labels,
+                labels: series
+                    .labels
+                    .into_iter()
+                    .map(|(name, value)| (name.into(), value.into()))
+                    .collect(),
                 samples: series
                     .samples
                     .into_iter()

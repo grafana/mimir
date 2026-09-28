@@ -281,9 +281,14 @@ mod tests {
             assert_eq!(names::lookup(missing), None);
         }
         // Tests running in parallel add names, which rightly makes some lookups check again.
-        assert!(names::index_locks() - locks < 50, "missing names locked on every lookup");
+        assert!(
+            names::index_locks() - locks < 50,
+            "missing names locked on every lookup"
+        );
         // A name another thread adds later is found.
-        let id = std::thread::spawn(move || names::intern(missing)).join().unwrap();
+        let id = std::thread::spawn(move || names::intern(missing))
+            .join()
+            .unwrap();
         assert_eq!(names::lookup(missing), Some(id));
     }
 

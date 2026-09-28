@@ -24,6 +24,7 @@ fn request(frame: usize, histogram_heavy: bool) -> DecodedRequest {
                     "__name__".into(),
                     format!("metric_{series_id}"),
                 )))
+                .map(|(name, value): (String, String)| (name.into(), value.into()))
                 .collect();
             let histograms = if histogram_heavy && series_id % 10 == 0 {
                 (0..20)

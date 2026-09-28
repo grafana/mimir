@@ -749,7 +749,8 @@ fn decode_request(cursor: &mut Cursor<'_>) -> Result<DecodedRequest> {
         })
     })?;
     let series = cursor.items(|cursor| {
-        let labels = cursor.items(|cursor| Ok((cursor.string()?, cursor.string()?)))?;
+        let labels =
+            cursor.items(|cursor| Ok((cursor.string()?.into(), cursor.string()?.into())))?;
         let created_timestamp = cursor.i64()?;
         let samples = cursor.items(|cursor| {
             Ok(cortexpb::Sample {
@@ -1076,7 +1077,10 @@ mod tests {
                 ));
             }
             series.push(DecodedSeries {
-                labels,
+                labels: labels
+                    .into_iter()
+                    .map(|(name, value)| (name.into(), value.into()))
+                    .collect(),
                 samples: vec![
                     cortexpb::Sample {
                         timestamp_ms: 1_800_000_000_000 + record as i64,

@@ -72,7 +72,7 @@ async fn main() {
     let store = Arc::new(Store::default());
     let series = (0..SERIES)
         .map(|index| DecodedSeries {
-            labels: vec![("__name__".into(), format!("metric_{index}"))],
+            labels: vec![("__name__".into(), format!("metric_{index}").into())],
             samples: Vec::new(),
             histograms: (0..HISTOGRAMS_PER_SERIES)
                 .map(|sample| histogram(sample as i64 * 1000))
@@ -105,7 +105,7 @@ async fn main() {
     }
     let update = (0..SERIES)
         .map(|index| DecodedSeries {
-            labels: vec![("__name__".into(), format!("metric_{index}"))],
+            labels: vec![("__name__".into(), format!("metric_{index}").into())],
             samples: Vec::new(),
             histograms: vec![histogram(HISTOGRAMS_PER_SERIES as i64 * 1000)],
             exemplars: Vec::new(),
