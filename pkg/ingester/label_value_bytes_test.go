@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -116,6 +117,35 @@ func TestIngester_LabelValueBytesMetrics_LimitDisabled(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", labelValueOfLength("a", 5_000))
 	i.updateLimitMetrics()
+
+	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
+	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
+}
+
+// Metrics updates only visit open TSDBs, so a closed tenant's label names must be dropped on close.
+func TestIngester_LabelValueBytesMetrics_ClearedWhenTSDBIsClosed(t *testing.T) {
+	const userID = "test"
+
+	registry := prometheus.NewRegistry()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.ReplicationFactor = 1
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 0
+	limits := defaultLimitsTestConfig()
+	limits.MaxGlobalLabelValueBytesPerLabelName = 1000
+
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", labelValueOfLength("a", 600), labelValueOfLength("b", 600))
+	i.updateLimitMetrics()
+	require.Equal(t, 1, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
+	require.Equal(t, 1, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
+
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
+	i.shipBlocks(context.Background(), nil)
+	require.Equal(t, tsdbIdleClosed, i.closeAndDeleteUserTSDBIfIdle(userID))
 
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))

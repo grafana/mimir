@@ -466,6 +466,8 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	filter := prometheus.Labels{"user": userID}
 	m.discarded.DeletePartialMatch(filter)
+	m.labelValueBytesPerUser.DeletePartialMatch(filter)
+	m.labelValueBytesOverLimit.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
