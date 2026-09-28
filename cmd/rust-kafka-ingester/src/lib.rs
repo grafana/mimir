@@ -5,6 +5,7 @@ pub mod histogram;
 pub mod kafka;
 pub mod limits;
 pub mod metrics;
+pub mod ooo_merge;
 pub mod protection;
 pub mod proto;
 pub mod record;
