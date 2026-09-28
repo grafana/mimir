@@ -27,7 +27,7 @@ tonic = { version = "0.14", features = ["gzip", "tls-ring"] }
 tonic-prost = "0.14"
 zstd = "0.13"
 serde_yaml = { version = "0.9", default-features = false }
-prometheus = { version = "0.14", default-features = false }
+prometheus = { version = "0.14", default-features = false, features = ["process"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }

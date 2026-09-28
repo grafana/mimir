@@ -9,6 +9,7 @@ pub mod ooo_merge;
 pub mod protection;
 pub mod proto;
 pub mod record;
+pub mod ring_client;
 pub mod runtime_config;
 pub mod segment;
 pub mod service;

@@ -50,6 +50,21 @@ impl<L: Clone> TenantExemplars<L> {
         self.order.is_empty()
     }
 
+    pub fn series_count(&self) -> usize {
+        self.series.len()
+    }
+
+    /// The timestamp of the exemplar that will be evicted next, as Prometheus reports it.
+    pub fn oldest_timestamp(&self) -> Option<i64> {
+        let (series_id, sequence) = self.order.front()?;
+        self.series
+            .get(series_id)?
+            .exemplars
+            .iter()
+            .find(|(inserted, _)| inserted == sequence)
+            .map(|(_, exemplar)| exemplar.timestamp_ms)
+    }
+
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -85,15 +100,16 @@ impl<L: Clone> TenantExemplars<L> {
         }
     }
 
-    /// Adds an exemplar for the series identified by `series_id`; a duplicate of the series' newest
-    /// exemplar or of a stored timestamp is accepted without storing it again.
+    /// Adds an exemplar for the series identified by `series_id`, returning whether it was stored:
+    /// a duplicate of the series' newest exemplar or of a stored timestamp is accepted without
+    /// storing it again.
     pub fn add(
         &mut self,
         series_id: u64,
         labels: impl FnOnce() -> L,
         exemplar: cortexpb::Exemplar,
         out_of_order_window_ms: i64,
-    ) -> Result<(), Rejection> {
+    ) -> Result<bool, Rejection> {
         if self.capacity == 0 {
             return Err(Rejection::Disabled);
         }
@@ -108,7 +124,7 @@ impl<L: Clone> TenantExemplars<L> {
         if let Some(series) = self.series.get(&series_id) {
             let newest = &series.exemplars[series.newest].1;
             if newest == &exemplar {
-                return Ok(());
+                return Ok(false);
             }
             if (exemplar.timestamp_ms < newest.timestamp_ms
                 && exemplar.timestamp_ms <= newest.timestamp_ms - out_of_order_window_ms)
@@ -127,7 +143,7 @@ impl<L: Clone> TenantExemplars<L> {
                     .iter()
                     .any(|(_, stored)| stored.timestamp_ms == exemplar.timestamp_ms)
             {
-                return Ok(());
+                return Ok(false);
             }
         }
         if self.order.len() >= self.capacity {
@@ -155,7 +171,7 @@ impl<L: Clone> TenantExemplars<L> {
         } else if series.newest >= index {
             series.newest += 1;
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Series with exemplars in `[start, end]`, with their exemplars in timestamp order.

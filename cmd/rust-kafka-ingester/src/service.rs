@@ -73,6 +73,7 @@ impl cortex::ingester_server::Ingester for IngesterService {
         &self,
         request: Request<cortex::QueryRequest>,
     ) -> Result<Response<Self::QueryStreamStream>, Status> {
+        crate::metrics::QUERIES.inc();
         self.enforce(&request).await?;
         let tenant = tenant(&request)?;
         let request = request.into_inner();
@@ -85,6 +86,22 @@ impl cortex::ingester_server::Ingester for IngesterService {
                 &request.matchers,
             )
             .map_err(internal)?;
+        // Like Go, observed once the tenant has a head: queried as generation 0.
+        if self.store.has_tenant(&tenant) {
+            crate::metrics::QUERIED_BLOCKS
+                .with_label_values(&["0"])
+                .inc();
+            crate::metrics::QUERIED_SERIES
+                .with_label_values(&["merged_blocks"])
+                .observe(selected.len() as f64);
+            crate::metrics::QUERIED_SAMPLES.observe(
+                selected
+                    .iter()
+                    .flat_map(|series| &series.chunks[series.chunk_start..series.chunk_end])
+                    .map(|chunk| f64::from(chunk.samples))
+                    .sum(),
+            );
+        }
         let batch_size = if request.streaming_chunks_batch_size == 0 {
             1024
         } else {
@@ -151,6 +168,7 @@ impl cortex::ingester_server::Ingester for IngesterService {
         &self,
         request: Request<cortex::ExemplarQueryRequest>,
     ) -> Result<Response<cortex::ExemplarQueryResponse>, Status> {
+        crate::metrics::QUERIES.inc();
         self.enforce(&request).await?;
         let tenant = tenant(&request)?;
         let request = request.into_inner();
@@ -187,7 +205,15 @@ impl cortex::ingester_server::Ingester for IngesterService {
                     created_timestamp: 0,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if self.store.has_tenant(&tenant) {
+            crate::metrics::QUERIED_EXEMPLARS.observe(
+                timeseries
+                    .iter()
+                    .map(|series| series.exemplars.len() as f64)
+                    .sum(),
+            );
+        }
         Ok(Response::new(cortex::ExemplarQueryResponse { timeseries }))
     }
 
