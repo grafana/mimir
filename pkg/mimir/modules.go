@@ -99,7 +99,7 @@ const (
 	ActiveGroupsCleanupService       string = "active-groups-cleanup-service"
 	ActivityTracker                  string = "activity-tracker"
 	AlertManager                     string = "alertmanager"
-	Backfill                         string = "backfill"
+	BackfillAPI                      string = "backfill-api"
 	BlockBuilder                     string = "block-builder"
 	BlockBuilderScheduler            string = "block-builder-scheduler"
 	CacheKeyGenerator                string = "cache-key-generator"
@@ -1497,8 +1497,8 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	return t.Compactor, nil
 }
 
-func (t *Mimir) initBackfill() (serv services.Service, err error) {
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.Backfill.Storage, "backfill", util_log.Logger, t.Registerer)
+func (t *Mimir) initBackfillAPI() (serv services.Service, err error) {
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BackfillAPI.Storage, "backfill-api", util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -1732,7 +1732,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
 	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
-	mm.RegisterModule(Backfill, t.initBackfill)
+	mm.RegisterModule(BackfillAPI, t.initBackfillAPI)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(CacheKeyGenerator, t.initCacheKeyGenerator, modules.UserInvisibleModule)
@@ -1801,7 +1801,7 @@ func (t *Mimir) setupModuleManager() error {
 		//lint:sorted
 		API:                              {Server, ActivityTracker},
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
-		Backfill:                         {API, Overrides},
+		BackfillAPI:                      {API, Overrides},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
 		CacheKeyGenerator:                {QueryFrontendCodec},
