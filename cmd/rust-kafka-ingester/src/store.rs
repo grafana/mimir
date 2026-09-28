@@ -515,6 +515,7 @@ impl SeriesByName {
 // Most label values of high-cardinality labels belong to a single series, which is kept inline;
 // the list of shared values is boxed so the unique ones stay small.
 #[derive(Debug)]
+#[allow(clippy::box_collection)]
 enum PostingList {
     One(u32),
     Many(Box<Vec<u32>>),
@@ -648,6 +649,53 @@ impl Default for Tenant {
 struct State {
     tenants: HashMap<String, Tenant>,
     disk: ChunkDiskMapper,
+    cold: ColdState,
+}
+
+/// The cold blocks of a store shard: series that left the emulated head, like Go's blocks.
+#[derive(Default)]
+struct ColdState {
+    directory: Option<PathBuf>,
+    blocks: Vec<Arc<cold::ColdBlock>>,
+    next_id: u64,
+}
+
+impl ColdState {
+    fn new(directory: Option<PathBuf>) -> Result<Self> {
+        if let Some(directory) = &directory {
+            std::fs::create_dir_all(directory)
+                .with_context(|| format!("create cold directory {}", directory.display()))?;
+        }
+        Ok(Self {
+            directory,
+            ..Self::default()
+        })
+    }
+
+    /// The tenant's cold series that may match `matchers` with data in `[start, end]`, newer
+    /// than `pruned_before`, block by block.
+    fn matching<'a>(
+        &'a self,
+        tenant_id: &'a str,
+        matchers: &'a [CompiledMatcher],
+        start: i64,
+        end: i64,
+    ) -> impl Iterator<Item = cold::ColdSeries<'a>> + 'a {
+        self.blocks
+            .iter()
+            .filter(move |block| block.overlaps(tenant_id, start, end))
+            .flat_map(move |block| {
+                block
+                    .candidates(tenant_id, matchers)
+                    .into_iter()
+                    .map(move |index| block.series(tenant_id, index as usize))
+            })
+            .filter(move |series| series.has_data(start, end) && matches(series, matchers))
+    }
+}
+
+fn cold_dir(directory: &std::path::Path, shard: usize) -> PathBuf {
+    directory.join("cold").join(format!("shard-{shard:03}"))
 }
 
 /// Series are sharded by label hash so records apply to several shards in parallel, the way Go
@@ -676,6 +724,11 @@ pub struct Store {
     postings_cache: PostingsCacheConfig,
     non_owned_eviction: Option<NonOwnedEviction>,
     early_head_compaction: Option<EarlyHeadCompaction>,
+    // Set when the emulated head's min time moved or series were evicted, so the next head tick
+    // moves the series no longer in the head to cold blocks.
+    freeze_pending: std::sync::atomic::AtomicBool,
+    // Retention's last cutoff: cold blocks keep references to chunks it removed.
+    pruned_before: std::sync::atomic::AtomicI64,
     // Whether the last head tick compacted, so this one checks for an early compaction with
     // counts taken after it, like Mimir's check right after its regular compaction.
     compacted_last_tick: std::sync::atomic::AtomicBool,
@@ -1093,6 +1146,11 @@ impl Store {
                             .as_ref()
                             .map(|directory| shard_dir(directory, shard)),
                     )?,
+                    cold: ColdState::new(
+                        chunk_dir
+                            .as_ref()
+                            .map(|directory| cold_dir(directory, shard)),
+                    )?,
                 }))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -1126,6 +1184,8 @@ impl Store {
             postings_cache: PostingsCacheConfig::default(),
             non_owned_eviction: None,
             early_head_compaction: None,
+            freeze_pending: std::sync::atomic::AtomicBool::new(false),
+            pruned_before: std::sync::atomic::AtomicI64::new(i64::MIN),
             compacted_last_tick: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -1498,7 +1558,7 @@ impl Store {
         }
         let apply = |shard: usize, bucket: Vec<BatchSeries>| -> Result<ShardOutcome> {
             let mut guard = self.shards[shard].write().expect("store lock poisoned");
-            let State { tenants, disk } = &mut *guard;
+            let State { tenants, disk, .. } = &mut *guard;
             let mut outcome = ShardOutcome::default();
             let mut committed = HashMap::new();
             for BatchSeries {
@@ -1735,6 +1795,8 @@ impl Store {
     }
 
     fn prune_before(&self, cutoff: i64) -> Result<()> {
+        self.pruned_before
+            .fetch_max(cutoff, std::sync::atomic::Ordering::Relaxed);
         self.pool.install(|| {
             self.shards.par_iter().try_for_each(|shard| {
                 let mut state = shard.write().expect("store lock poisoned");
@@ -1746,8 +1808,41 @@ impl Store {
                         .block_ranges
                         .retain(|_, (_, newest)| *newest >= cutoff);
                 }
+                // Like Go's block retention, a cold block goes once all of it is older.
+                for block in &state.cold.blocks {
+                    if block.max_time < cutoff
+                        && let Some(path) = block.path()
+                        && let Err(error) = std::fs::remove_file(path)
+                    {
+                        eprintln!(
+                            "phase=cold_block_remove_error path={} error={error}",
+                            path.display()
+                        );
+                    }
+                }
+                state.cold.blocks.retain(|block| block.max_time >= cutoff);
                 state.disk.truncate_before(cutoff)
             })
+        })
+    }
+
+    /// Runs `query` on the tenant's series and cold blocks in every shard in parallel.
+    fn per_shard_with_cold<T: Send>(
+        &self,
+        tenant_id: &str,
+        query: impl Fn(&Tenant, &ChunkDiskMapper, &ColdState) -> T + Sync,
+    ) -> Vec<T> {
+        self.pool.install(|| {
+            self.shards
+                .par_iter()
+                .filter_map(|shard| {
+                    let state = shard.read().expect("store lock poisoned");
+                    state
+                        .tenants
+                        .get(tenant_id)
+                        .map(|tenant| query(tenant, &state.disk, &state.cold))
+                })
+                .collect()
         })
     }
 
@@ -1877,9 +1972,53 @@ impl Store {
             (compiled, Vec::new())
         };
         let head = self.head_view(tenant_id);
-        let per_shard = self.per_shard(tenant_id, |tenant, disk| {
+        let pruned_before = self
+            .pruned_before
+            .load(std::sync::atomic::Ordering::Relaxed);
+        // Cold series with data in the query range, or in the blocks it reports.
+        let (scan_start, scan_end) = blocks
+            .iter()
+            .filter(|block| !block.head)
+            .fold((start, end), |(low, high), block| {
+                (low.min(block.lower), high.max(block.upper))
+            });
+        let per_shard = self.per_shard_with_cold(tenant_id, |tenant, disk, cold| {
             let mut counts = vec![[0_u64; 2]; blocks.len()];
-            let selected = tenant
+            // Cold series, by labels: one may be in several blocks, and also back in memory.
+            let mut cold_series: HashMap<StoredLabels, Vec<ChunkMeta>> = HashMap::new();
+            for series in cold.matching(tenant_id, &lookup, scan_start, scan_end) {
+                let in_shard = shard.is_empty() || matches(&series, &shard);
+                for (block, counts) in blocks.iter().zip(&mut counts) {
+                    if block.head || !series.has_data(block.lower, block.upper) {
+                        continue;
+                    }
+                    counts[0] += u64::from(block.count_index);
+                    if in_shard && series.has_data(start.max(block.lower), end.min(block.upper)) {
+                        counts[1] += 1;
+                    }
+                }
+                if in_shard && series.has_data(start, end) {
+                    cold_series.entry(series.labels()).or_default().extend(
+                        series
+                            .chunks()
+                            .filter(|chunk| chunk.max_time >= pruned_before),
+                    );
+                }
+            }
+            let view = |labels: &StoredLabels, chunks: Vec<EncodedChunk>| {
+                (!chunks.is_empty()).then(|| {
+                    (
+                        labels.clone(),
+                        QuerySeriesView {
+                            encoded_labels: encode_series_labels(labels),
+                            chunk_start: 0,
+                            chunk_end: chunks.len(),
+                            chunks: Arc::new(chunks),
+                        },
+                    )
+                })
+            };
+            let mut selected = tenant
                 .series
                 .matching(&lookup)
                 .filter_map(|((_, labels), series)| {
@@ -1904,23 +2043,23 @@ impl Store {
                             counts[1] += 1;
                         }
                     }
-                    if !in_shard || !matches_time_range(series, start, end) {
+                    if !in_shard {
                         return None;
                     }
-                    let chunks = query_chunks(series, disk, start, end);
-                    (!chunks.is_empty()).then(|| {
-                        (
-                            labels.clone(),
-                            QuerySeriesView {
-                                encoded_labels: encode_series_labels(labels),
-                                chunk_start: 0,
-                                chunk_end: chunks.len(),
-                                chunks: Arc::new(chunks),
-                            },
-                        )
-                    })
+                    let cold_chunks = cold_series.remove(labels);
+                    if cold_chunks.is_none() && !matches_time_range(series, start, end) {
+                        return None;
+                    }
+                    let cold_chunks = cold_chunks.unwrap_or_default();
+                    view(
+                        labels,
+                        query_chunks(Some(series), &cold_chunks, disk, start, end),
+                    )
                 })
                 .collect::<Vec<_>>();
+            selected.extend(cold_series.into_iter().filter_map(|(labels, chunks)| {
+                view(&labels, query_chunks(None, &chunks, disk, start, end))
+            }));
             (selected, counts)
         });
         let mut totals = vec![[0_u64; 2]; blocks.len()];
@@ -1981,13 +2120,18 @@ impl Store {
     ) -> Result<Vec<Vec<(String, String)>>> {
         let compiled = compile_matchers(matchers)?;
         Ok(self
-            .per_shard(tenant_id, |tenant, _| {
-                tenant
+            .per_shard_with_cold(tenant_id, |tenant, _, cold| {
+                let mut selected = tenant
                     .series
                     .matching(&compiled)
                     .filter(|(_, series)| matches_time_range(series, start, end))
-                    .map(|((_, labels), _)| owned_labels(labels))
-                    .collect::<Vec<_>>()
+                    .map(|((_, labels), _)| labels.clone())
+                    .collect::<HashSet<_>>();
+                selected.extend(
+                    cold.matching(tenant_id, &compiled, start, end)
+                        .map(|series| series.labels()),
+                );
+                selected.iter().map(owned_labels).collect::<Vec<_>>()
             })
             .into_iter()
             .flatten()
@@ -2004,7 +2148,7 @@ impl Store {
         let compiled = compile_matchers(matchers)?;
         let window = self.head_view(tenant_id).label_window(start, end);
         let names = self
-            .per_shard(tenant_id, |tenant, _| {
+            .per_shard_with_cold(tenant_id, |tenant, _, cold| {
                 let mut names = BTreeSet::new();
                 for ((_, labels), _) in tenant
                     .series
@@ -2012,6 +2156,11 @@ impl Store {
                     .filter(|(_, series)| window.includes(series))
                 {
                     names.extend(labels.iter().map(|(name, _)| name.to_string()));
+                }
+                if let Some((lower, upper)) = window.blocks {
+                    for series in cold.matching(tenant_id, &compiled, lower, upper) {
+                        names.extend(series.pairs().map(|(name, _)| name.to_string()));
+                    }
                 }
                 names
             })
@@ -2032,7 +2181,7 @@ impl Store {
         let compiled = compile_matchers(matchers)?;
         let window = self.head_view(tenant_id).label_window(start, end);
         let values = self
-            .per_shard(tenant_id, |tenant, _| {
+            .per_shard_with_cold(tenant_id, |tenant, _, cold| {
                 let mut values = BTreeSet::new();
                 for ((_, labels), _) in tenant
                     .series
@@ -2041,6 +2190,13 @@ impl Store {
                 {
                     if let Some((_, value)) = labels.iter().find(|(label, _)| *label == name) {
                         values.insert(value.to_string());
+                    }
+                }
+                if let Some((lower, upper)) = window.blocks {
+                    for series in cold.matching(tenant_id, &compiled, lower, upper) {
+                        if let Some((_, value)) = series.pairs().find(|(label, _)| *label == name) {
+                            values.insert(value.to_string());
+                        }
                     }
                 }
                 values
@@ -2126,6 +2282,9 @@ impl Store {
     /// ranges or after head compaction) removes its non-owned series from the active series until
     /// their next sample, like Mimir's computeOwnedSeries.
     pub fn head_tick(&self, compact: bool, track_owned: bool) -> Vec<HeadReport> {
+        let freeze = self
+            .freeze_pending
+            .swap(false, std::sync::atomic::Ordering::Relaxed);
         let owned = self
             .owned_ranges
             .read()
@@ -2174,7 +2333,7 @@ impl Store {
                 .par_iter()
                 .map(|shard| {
                     let mut state = shard.write().expect("store lock poisoned");
-                    state
+                    let reports = state
                         .tenants
                         .iter_mut()
                         .map(|(tenant_id, tenant)| {
@@ -2262,7 +2421,11 @@ impl Store {
                             report.head_min_time = min_time;
                             report
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>();
+                    if freeze {
+                        freeze_out_of_head(&mut state);
+                    }
+                    reports
                 })
                 .collect::<Vec<_>>()
         });
@@ -2332,11 +2495,15 @@ impl Store {
                     tenant.head_min = truncated;
                     tenant.truncated_to = truncated;
                     tenant.owned_recompute = true;
+                    self.freeze_pending
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             // Like Mimir, an early compaction asks for another owned series recompute.
             if report.non_owned_evicted > 0 {
                 tenant.owned_recompute = true;
+                self.freeze_pending
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
             }
             if compact {
                 if tenant.head_min == i64::MIN && report.head_min_time != i64::MAX {
@@ -2349,9 +2516,15 @@ impl Store {
                     tenant.head_min = range_end(tenant.head_min);
                     tenant.truncated_to = tenant.head_min;
                     tenant.owned_recompute = true;
+                    self.freeze_pending
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
-            report.head_min_time = report.head_min_time.max(tenant.head_min);
+            // Like Go's head, the min time is where it was last truncated, whatever samples
+            // remain, and the oldest sample before that.
+            if tenant.head_min != i64::MIN {
+                report.head_min_time = tenant.head_min;
+            }
             report.truncated = tenant.truncated_to != i64::MIN;
             report.head_max_time = tenant.max_time;
         }
@@ -3346,6 +3519,74 @@ fn append_histogram(
     }
 }
 
+/// Moves the series the emulated head no longer holds to a new cold block, like Go's head
+/// truncation after compacting them into a block. Their open chunks are cut first, so the block
+/// has all their data; they stay in memory if the block can't be written.
+fn freeze_out_of_head(state: &mut State) {
+    let State {
+        tenants,
+        disk,
+        cold,
+    } = state;
+    let started = Instant::now();
+    let mut frozen = Vec::new();
+    for (tenant_id, tenant) in tenants.iter_mut() {
+        tenant.series.for_each_mut(|labels, series| {
+            if series.in_head {
+                return;
+            }
+            let cut = cut_float_head(series, disk)
+                .and_then(|()| cut_histogram_head(series, disk))
+                .and_then(|()| flush_out_of_order(series, disk));
+            if let Err(error) = cut {
+                eprintln!("phase=cold_freeze_error tenant={tenant_id} error={error:#}");
+                return;
+            }
+            frozen.push(cold::Frozen {
+                tenant: tenant_id.clone(),
+                labels: labels.clone(),
+                chunks: ChunkList::from_metas(&series.chunks.to_vec()),
+                native_histogram: series.native_histogram,
+            });
+        });
+    }
+    if frozen.is_empty() {
+        return;
+    }
+    let count = frozen.len();
+    let id = cold.next_id;
+    let frozen_keys = frozen
+        .iter()
+        .map(|series| (series.tenant.clone(), series.labels.clone()))
+        .collect::<HashSet<_>>();
+    // Series without any sample have nothing to keep.
+    let frozen = frozen
+        .into_iter()
+        .filter(|series| !series.chunks.is_empty())
+        .collect::<Vec<_>>();
+    if !frozen.is_empty() {
+        match cold::ColdBlock::build(cold.directory.as_deref(), id, frozen) {
+            Ok(block) => {
+                cold.next_id += 1;
+                cold.blocks.push(Arc::new(block));
+            }
+            Err(error) => {
+                eprintln!("phase=cold_block_error id={id} error={error:#}");
+                return;
+            }
+        }
+    }
+    for (tenant_id, tenant) in tenants.iter_mut() {
+        tenant.series.retain(|(_, labels), series| {
+            series.in_head || !frozen_keys.contains(&(tenant_id.clone(), labels.clone()))
+        });
+    }
+    eprintln!(
+        "phase=cold_block_written id={id} series={count} duration_ms={}",
+        started.elapsed().as_millis()
+    );
+}
+
 fn cut_float_head(series: &mut Series, disk: &mut ChunkDiskMapper) -> Result<()> {
     let Some(head) = series.float_head.take() else {
         return Ok(());
@@ -3499,11 +3740,14 @@ fn matches_time_range(series: &Series, start: i64, end: i64) -> bool {
 // With out-of-order samples, overlapping chunks are merged as the Go ingester's out-of-order
 // querier does; otherwise every chunk is returned as stored.
 fn query_chunks(
-    series: &Series,
+    series: Option<&Series>,
+    cold_chunks: &[ChunkMeta],
     disk: &ChunkDiskMapper,
     start: i64,
     end: i64,
 ) -> Vec<EncodedChunk> {
+    let empty = Series::default();
+    let series = series.unwrap_or(&empty);
     let overlaps = |min: i64, max: i64| min <= end && max >= start;
     let mut candidates = Vec::new();
     let (mut in_order, mut out_of_order) = (0, 0);
@@ -3521,7 +3765,9 @@ fn query_chunks(
             });
         }
     };
-    for chunk in series.chunks.iter() {
+    // A series' cold chunks come first: they are older than what it has in memory, like a block's
+    // before the head's.
+    for chunk in cold_chunks.iter().copied().chain(series.chunks.iter()) {
         let stored = ooo_merge::Chunk {
             min_time: chunk.min_time,
             max_time: chunk.max_time,
@@ -3714,9 +3960,12 @@ impl CompiledMatcher {
     }
 }
 
-fn matches(labels: &StoredLabels, matchers: &[CompiledMatcher]) -> bool {
+fn matches<L: crate::trackers::LabelSet + ?Sized>(
+    labels: &L,
+    matchers: &[CompiledMatcher],
+) -> bool {
     matchers.iter().all(|matcher| match matcher {
-        CompiledMatcher::Shard(index, count) => stable_hash_pairs(labels.pairs()) % count == *index,
+        CompiledMatcher::Shard(index, count) => stable_hash_set(labels) % count == *index,
         _ => {
             let value = labels.value(matcher.label_name().expect("label matcher"));
             matcher.matches_value(value)
@@ -3776,6 +4025,22 @@ fn encode_label_size(bytes: &mut Vec<u8>, size: usize) {
 
 /// Go's `labels.StableHash`, which the head shards queries by and Mimir's ingest pusher routes
 /// series with.
+fn stable_hash_set<L: crate::trackers::LabelSet + ?Sized>(labels: &L) -> u64 {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    BUFFER.with_borrow_mut(|bytes| {
+        bytes.clear();
+        labels.for_each(|name, value| {
+            bytes.extend_from_slice(name.as_bytes());
+            bytes.push(0xff);
+            bytes.extend_from_slice(value.as_bytes());
+            bytes.push(0xff);
+        });
+        xxhash64(bytes)
+    })
+}
+
 fn stable_hash_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> u64 {
     thread_local! {
         static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -3886,6 +4151,8 @@ fn encode_series_labels(labels: &StoredLabels) -> Bytes {
     .into()
 }
 
+#[path = "cold.rs"]
+mod cold;
 #[path = "head_snapshot.rs"]
 mod head_snapshot;
 pub use head_snapshot::{Restored, SnapshotOffset};
@@ -4427,6 +4694,128 @@ mod tests {
         assert_eq!(pusher.count(2 * 200 * 150 * 40, 150), 2);
         assert_eq!(pusher.count(usize::MAX, 150), 2);
         assert_eq!(pusher.count(usize::MAX, 0), 1);
+    }
+
+    #[test]
+    fn series_that_leave_the_head_move_to_cold_blocks_without_changing_reads() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-freeze-{}", std::process::id()));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let start = 10 * HOUR;
+        let mut request = series_request(
+            "long",
+            (0..=300).map(|minute| (start + minute * 60_000, minute as f64)),
+        );
+        // The head keeps the last block range of the 5 hours: 12h to 15h.
+        for (name, minutes) in [("old", 0..100), ("middle", 150..160)] {
+            request.series.push(
+                series_request(name, minutes.map(|minute| (start + minute * 60_000, 1.0)))
+                    .series
+                    .remove(0),
+            );
+        }
+        store.ingest("tenant", request).unwrap();
+        type Reads = (
+            Vec<(i64, f64)>,
+            Vec<String>,
+            Vec<String>,
+            Vec<Vec<(String, String)>>,
+            Vec<(String, u64, u64)>,
+        );
+        let reads = |store: &Store| -> Reads {
+            let (_, blocks) = store
+                .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, &[])
+                .unwrap();
+            (
+                float_samples(store, i64::MIN, i64::MAX),
+                store
+                    .label_values("tenant", "__name__", start, start + HOUR, &[])
+                    .unwrap(),
+                store
+                    .label_names("tenant", start, start + HOUR, &[])
+                    .unwrap(),
+                store
+                    .select_labels("tenant", start, start + 3 * HOUR, &[])
+                    .unwrap()
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                blocks
+                    .into_iter()
+                    .map(|block| (block.generation, block.index_series, block.series))
+                    .collect(),
+            )
+        };
+        // Compacting moves the head past "old", and the next tick moves it to a cold block.
+        store.head_tick(true, false);
+        let before = reads(&store);
+        assert_eq!(store.num_series("tenant"), 3);
+        store.head_tick(false, false);
+        assert_eq!(store.num_series("tenant"), 2, "old left memory");
+        assert_eq!(reads(&store), before);
+        let label_values = |store: &Store| {
+            store
+                .label_values("tenant", "__name__", start, start + HOUR, &[])
+                .unwrap()
+        };
+        assert_eq!(label_values(&store), ["long", "old"]);
+        // Snapshots keep the cold blocks.
+        store
+            .write_snapshot(&[SnapshotOffset {
+                offset: Some(1),
+                timestamp_ms: 1,
+            }])
+            .unwrap();
+        drop(store);
+        let store = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .unwrap()
+            .store;
+        assert_eq!(reads(&store), before);
+        // A series written to again is back in memory, and reads include what it had.
+        store
+            .ingest(
+                "tenant",
+                series_request("old", [(start + 299 * 60_000, 7.0)]),
+            )
+            .unwrap();
+        let old = store
+            .select_chunks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[cortex::LabelMatcher {
+                    r#type: 0,
+                    name: "__name__".into(),
+                    value: "old".into(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(old.len(), 1, "one series across the cold block and memory");
+        let old_samples = old[0].chunks[old[0].chunk_start..old[0].chunk_end]
+            .iter()
+            .flat_map(|chunk| {
+                let chunk = cortex::Chunk::decode(chunk.wire.as_ref()).unwrap();
+                crate::xor::decode(&chunk.data)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(old_samples.len(), 101);
+        let cold_files = || {
+            (0..DEFAULT_SHARDS)
+                .map(|shard| {
+                    std::fs::read_dir(cold_dir(&directory, shard))
+                        .map_or(0, |entries| entries.count())
+                })
+                .sum::<usize>()
+        };
+        assert_eq!(cold_files(), 1);
+        // Retention removes a cold block once all of it is older.
+        store.prune_before(start + 200 * 60_000).unwrap();
+        assert_eq!(cold_files(), 0);
+        // Chunks straddling the cutoff stay, like head truncation: those from 12h on.
+        assert!(float_samples(&store, i64::MIN, start + 119 * 60_000).is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
