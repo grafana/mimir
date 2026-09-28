@@ -289,58 +289,18 @@ async fn serve(args: ServeArgs) -> Result<()> {
         signal_requested.store(true, Ordering::Relaxed);
         let _ = signal_sender.send(true);
     });
-    let snapshot_started = Instant::now();
-    let mut resumed = None;
-    let store = match Store::restore(active_window_ms, retention_ms, &chunk_dir)? {
-        Some(restored) if restored.offsets.len() == sources.len() => {
-            let logs = sources
-                .iter()
-                .enumerate()
-                .map(|(cluster, (topic, _))| {
-                    SegmentLog::open_at_checkpoint(
-                        &data_dir,
-                        cluster,
-                        topic,
-                        partition,
-                        retention_ms,
-                        restored.offsets[cluster].offset,
-                    )
-                })
-                .collect::<Result<Option<Vec<_>>>>()?;
-            match logs {
-                Some(logs) => {
-                    eprintln!(
-                        "phase=head_snapshot_restored partition={partition} duration_ms={}",
-                        snapshot_started.elapsed().as_millis()
-                    );
-                    if shutdown_requested.load(Ordering::Relaxed) {
-                        restored.store.write_snapshot(&restored.offsets)?;
-                        eprintln!(
-                            "phase=head_snapshot_written partition={partition} reason=shutdown_during_restore"
-                        );
-                        return Ok(());
-                    }
-                    resumed = Some(
-                        logs.into_iter()
-                            .zip(restored.offsets)
-                            .collect::<Vec<_>>()
-                            .into_iter(),
-                    );
-                    restored.store
-                }
-                None => {
-                    eprintln!(
-                        "phase=head_snapshot_stale partition={partition} reason=segment_checkpoint_mismatch"
-                    );
-                    Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?
-                }
-            }
-        }
-        Some(_) => {
-            eprintln!("phase=head_snapshot_stale partition={partition} reason=kafka_cluster_count");
-            Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?
-        }
-        None => Store::new(active_window_ms, retention_ms, Some(chunk_dir.clone()))?,
+    let (store, mut resumed) = match open_store(
+        &data_dir,
+        &chunk_dir,
+        &sources,
+        partition,
+        active_window_ms,
+        retention_ms,
+        &shutdown_requested,
+    )? {
+        StartupStore::Resumed { store, logs } => (store, Some(logs.into_iter())),
+        StartupStore::Rebuild(store) => (store, None),
+        StartupStore::Stopped => return Ok(()),
     };
     let store = Arc::new(store);
     let consistency = Arc::new(Consistency::new(
@@ -762,6 +722,80 @@ async fn stop_workers(
     Ok(offsets)
 }
 
+enum StartupStore {
+    /// Restored from the head snapshot, with each cluster's log opened at its checkpoint.
+    Resumed {
+        store: Store,
+        logs: Vec<(SegmentLog, SnapshotOffset)>,
+    },
+    /// Empty store to rebuild from the segment logs.
+    Rebuild(Store),
+    /// Shutdown arrived during the restore; the snapshot was written back.
+    Stopped,
+}
+
+fn open_store(
+    data_dir: &std::path::Path,
+    chunk_dir: &std::path::Path,
+    sources: &[(String, String)],
+    partition: i32,
+    active_window_ms: i64,
+    retention_ms: Option<i64>,
+    shutdown_requested: &AtomicBool,
+) -> Result<StartupStore> {
+    let started = Instant::now();
+    let rebuild = || -> Result<StartupStore> {
+        Ok(StartupStore::Rebuild(Store::new(
+            active_window_ms,
+            retention_ms,
+            Some(chunk_dir.to_path_buf()),
+        )?))
+    };
+    let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir)? else {
+        return rebuild();
+    };
+    if restored.offsets.len() != sources.len() {
+        eprintln!("phase=head_snapshot_stale partition={partition} reason=kafka_cluster_count");
+        return rebuild();
+    }
+    let logs = sources
+        .iter()
+        .enumerate()
+        .map(|(cluster, (topic, _))| {
+            SegmentLog::open_at_checkpoint(
+                data_dir,
+                cluster,
+                topic,
+                partition,
+                retention_ms,
+                restored.offsets[cluster].offset,
+            )
+        })
+        .collect::<Result<Option<Vec<_>>>>()?;
+    let Some(logs) = logs else {
+        eprintln!(
+            "phase=head_snapshot_stale partition={partition} reason=segment_checkpoint_mismatch"
+        );
+        return rebuild();
+    };
+    eprintln!(
+        "phase=head_snapshot_restored partition={partition} duration_ms={}",
+        started.elapsed().as_millis()
+    );
+    // The snapshot is consumed on read, so a shutdown before ingestion starts must write it back.
+    if shutdown_requested.load(Ordering::Relaxed) {
+        restored.store.write_snapshot(&restored.offsets)?;
+        eprintln!(
+            "phase=head_snapshot_written partition={partition} reason=shutdown_during_restore"
+        );
+        return Ok(StartupStore::Stopped);
+    }
+    Ok(StartupStore::Resumed {
+        store: restored.store,
+        logs: logs.into_iter().zip(restored.offsets).collect(),
+    })
+}
+
 // Called only once every Kafka cluster finished recovery, so the store covers each log's last offset.
 async fn shutdown_with_snapshot(
     store: &Arc<Store>,
@@ -1055,6 +1089,71 @@ mod tests {
         assert!(initial_replay_complete(StartOffset::Earliest, 42, 42));
         assert!(!initial_replay_complete(StartOffset::Earliest, 41, 42));
         assert!(initial_replay_complete(StartOffset::At(42), 41, 42));
+    }
+
+    #[test]
+    fn shutdown_during_restore_keeps_the_head_snapshot() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "mimir-rust-restore-shutdown-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let chunk_dir = data_dir.join("chunks_head");
+        let sources = vec![("topic".to_owned(), "broker".to_owned())];
+        let (mut log, _) = SegmentLog::open(&data_dir, 0, "topic", 0, None).unwrap();
+        let request = DecodedRequest {
+            source: 0,
+            series: vec![DecodedSeries {
+                labels: vec![("__name__".into(), "metric".into())],
+                samples: vec![cortexpb::Sample {
+                    timestamp_ms: 1,
+                    value: 1.0,
+                }],
+                histograms: Vec::new(),
+                exemplars: Vec::new(),
+                created_timestamp: 0,
+            }],
+            metadata: Vec::new(),
+        };
+        let store = Store::new(1000, None, Some(chunk_dir.clone())).unwrap();
+        let frame = SegmentLog::frame(5, 1, "tenant", &request)
+            .unwrap()
+            .compress()
+            .unwrap();
+        ingest_and_append(&store, &mut log, "tenant", Some(request), frame).unwrap();
+        log.flush().unwrap();
+        drop(log);
+        let offsets = [SnapshotOffset {
+            offset: Some(5),
+            timestamp_ms: 1,
+        }];
+        store.write_snapshot(&offsets).unwrap();
+        drop(store);
+
+        let open = |shutdown: bool| {
+            open_store(
+                &data_dir,
+                &chunk_dir,
+                &sources,
+                0,
+                1000,
+                None,
+                &AtomicBool::new(shutdown),
+            )
+            .unwrap()
+        };
+        assert!(matches!(open(true), StartupStore::Stopped));
+        assert!(chunk_dir.join("snapshot").exists());
+        match open(false) {
+            StartupStore::Resumed { store, logs } => {
+                assert_eq!(store.num_series("tenant"), 1);
+                assert_eq!(logs[0].0.last_offset(), Some(5));
+                assert_eq!(logs[0].1, offsets[0]);
+            }
+            _ => panic!("expected the snapshot to resume"),
+        }
+        assert!(matches!(open(false), StartupStore::Rebuild(_)));
+        std::fs::remove_dir_all(data_dir).unwrap();
     }
 
     #[test]
