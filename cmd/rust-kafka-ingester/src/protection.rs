@@ -17,7 +17,8 @@ use crate::metrics;
 
 pub const TOO_BUSY_MESSAGE: &str =
     "ingester is currently too busy to process queries, try again later";
-const READ_REQUEST_TYPE: &str = "read";
+pub const READ_REQUEST_TYPE: &str = "read";
+pub const PUSH_REQUEST_TYPE: &str = "push";
 const ONLY_REPLICA_HEADER: &str = "__only_replica__";
 
 #[derive(clap::Args, Clone, Debug)]
@@ -54,6 +55,39 @@ pub struct ProtectionArgs {
         default_value = "30s"
     )]
     pub request_timeout: String,
+    /// The push circuit breaker, which the Go ingester applies to each head append of records.
+    #[arg(long = "ingester.push-circuit-breaker.enabled", default_value_t = false, action = clap::ArgAction::Set)]
+    pub push_circuit_breaker_enabled: bool,
+    #[arg(
+        long = "ingester.push-circuit-breaker.failure-threshold-percentage",
+        default_value_t = 10
+    )]
+    pub push_failure_threshold_percentage: u32,
+    #[arg(
+        long = "ingester.push-circuit-breaker.failure-execution-threshold",
+        default_value_t = 100
+    )]
+    pub push_failure_execution_threshold: u32,
+    #[arg(
+        long = "ingester.push-circuit-breaker.thresholding-period",
+        default_value = "1m"
+    )]
+    pub push_thresholding_period: String,
+    #[arg(
+        long = "ingester.push-circuit-breaker.cooldown-period",
+        default_value = "10s"
+    )]
+    pub push_cooldown_period: String,
+    #[arg(
+        long = "ingester.push-circuit-breaker.initial-delay",
+        default_value = "0"
+    )]
+    pub push_initial_delay: String,
+    #[arg(
+        long = "ingester.push-circuit-breaker.request-timeout",
+        default_value = "2s"
+    )]
+    pub push_request_timeout: String,
     /// CPU cores; 0 disables the CPU part of the utilization limiter.
     #[arg(
         long = "ingester.read-path-cpu-utilization-limit",
@@ -80,22 +114,56 @@ pub struct CircuitBreakerConfig {
     pub request_timeout: Duration,
 }
 
+fn breaker_config(
+    enabled: bool,
+    failure_threshold_percentage: u32,
+    failure_execution_threshold: u32,
+    periods: [&str; 4],
+) -> Result<Option<CircuitBreakerConfig>> {
+    if !enabled {
+        return Ok(None);
+    }
+    let duration = |value: &str| -> Result<Duration> {
+        Ok(Duration::from_millis(parse_duration_ms(value)? as u64))
+    };
+    let [thresholding, cooldown, initial_delay, request_timeout] = periods;
+    Ok(Some(CircuitBreakerConfig {
+        failure_threshold_percentage,
+        failure_execution_threshold,
+        thresholding_period: duration(thresholding)?,
+        cooldown_period: duration(cooldown)?,
+        initial_delay: duration(initial_delay)?,
+        request_timeout: duration(request_timeout)?,
+    }))
+}
+
 impl ProtectionArgs {
     pub fn circuit_breaker(&self) -> Result<Option<CircuitBreakerConfig>> {
-        if !self.circuit_breaker_enabled {
-            return Ok(None);
-        }
-        let duration = |value: &str| -> Result<Duration> {
-            Ok(Duration::from_millis(parse_duration_ms(value)? as u64))
-        };
-        Ok(Some(CircuitBreakerConfig {
-            failure_threshold_percentage: self.failure_threshold_percentage,
-            failure_execution_threshold: self.failure_execution_threshold,
-            thresholding_period: duration(&self.thresholding_period)?,
-            cooldown_period: duration(&self.cooldown_period)?,
-            initial_delay: duration(&self.initial_delay)?,
-            request_timeout: duration(&self.request_timeout)?,
-        }))
+        breaker_config(
+            self.circuit_breaker_enabled,
+            self.failure_threshold_percentage,
+            self.failure_execution_threshold,
+            [
+                &self.thresholding_period,
+                &self.cooldown_period,
+                &self.initial_delay,
+                &self.request_timeout,
+            ],
+        )
+    }
+
+    pub fn push_circuit_breaker(&self) -> Result<Option<CircuitBreakerConfig>> {
+        breaker_config(
+            self.push_circuit_breaker_enabled,
+            self.push_failure_threshold_percentage,
+            self.push_failure_execution_threshold,
+            [
+                &self.push_thresholding_period,
+                &self.push_cooldown_period,
+                &self.push_initial_delay,
+                &self.push_request_timeout,
+            ],
+        )
     }
 }
 
@@ -133,20 +201,21 @@ struct BreakerInner {
 /// the Go ingester: only requests that time out count as failures.
 pub struct CircuitBreaker {
     config: CircuitBreakerConfig,
+    request_type: &'static str,
     // 0 inactive, 1 pending the initial delay, 2 active.
     activation: AtomicU8,
     activated_at: Mutex<Option<Instant>>,
     inner: Mutex<BreakerInner>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Permit {
     started: Instant,
     half_open: bool,
 }
 
 impl CircuitBreaker {
-    pub fn new(config: CircuitBreakerConfig) -> Self {
+    pub fn new(config: CircuitBreakerConfig, request_type: &'static str) -> Self {
         let now = Instant::now();
         for state in [
             BreakerState::Closed,
@@ -154,16 +223,16 @@ impl CircuitBreaker {
             BreakerState::HalfOpen,
         ] {
             metrics::CIRCUIT_BREAKER_CURRENT_STATE
-                .with_label_values(&[READ_REQUEST_TYPE, state.label()])
+                .with_label_values(&[request_type, state.label()])
                 .set(i64::from(state == BreakerState::Closed));
-            metrics::CIRCUIT_BREAKER_TRANSITIONS
-                .with_label_values(&[READ_REQUEST_TYPE, state.label()]);
+            metrics::CIRCUIT_BREAKER_TRANSITIONS.with_label_values(&[request_type, state.label()]);
         }
         for result in ["success", "error", "circuit_breaker_open"] {
-            metrics::CIRCUIT_BREAKER_RESULTS.with_label_values(&[READ_REQUEST_TYPE, result]);
+            metrics::CIRCUIT_BREAKER_RESULTS.with_label_values(&[request_type, result]);
         }
         Self {
             config,
+            request_type,
             activation: AtomicU8::new(0),
             activated_at: Mutex::new(None),
             inner: Mutex::new(BreakerInner {
@@ -205,13 +274,13 @@ impl CircuitBreaker {
 
     fn transition(&self, inner: &mut BreakerInner, state: BreakerState, now: Instant) {
         metrics::CIRCUIT_BREAKER_CURRENT_STATE
-            .with_label_values(&[READ_REQUEST_TYPE, inner.state.label()])
+            .with_label_values(&[self.request_type, inner.state.label()])
             .set(0);
         metrics::CIRCUIT_BREAKER_CURRENT_STATE
-            .with_label_values(&[READ_REQUEST_TYPE, state.label()])
+            .with_label_values(&[self.request_type, state.label()])
             .set(1);
         metrics::CIRCUIT_BREAKER_TRANSITIONS
-            .with_label_values(&[READ_REQUEST_TYPE, state.label()])
+            .with_label_values(&[self.request_type, state.label()])
             .inc();
         eprintln!(
             "phase=circuit_breaker previous={} current={}",
@@ -240,7 +309,7 @@ impl CircuitBreaker {
             let elapsed = now.saturating_duration_since(inner.opened_at);
             if elapsed < self.config.cooldown_period {
                 metrics::CIRCUIT_BREAKER_RESULTS
-                    .with_label_values(&[READ_REQUEST_TYPE, "circuit_breaker_open"])
+                    .with_label_values(&[self.request_type, "circuit_breaker_open"])
                     .inc();
                 return Err(self.config.cooldown_period - elapsed);
             }
@@ -249,7 +318,7 @@ impl CircuitBreaker {
         if inner.state == BreakerState::HalfOpen {
             if inner.half_open_permits >= self.config.failure_execution_threshold.max(1) {
                 metrics::CIRCUIT_BREAKER_RESULTS
-                    .with_label_values(&[READ_REQUEST_TYPE, "circuit_breaker_open"])
+                    .with_label_values(&[self.request_type, "circuit_breaker_open"])
                     .inc();
                 return Err(Duration::ZERO);
             }
@@ -270,16 +339,25 @@ impl CircuitBreaker {
         self.finish_at(permit, deadline_exceeded, Instant::now());
     }
 
+    /// Records `executions` requests that ran together under `permit`, like the head appends of
+    /// the Go ingester's flushes for one batch of records.
+    pub fn finish_all(&self, permit: Permit, executions: usize) {
+        let now = Instant::now();
+        for _ in 0..executions.max(1) {
+            self.finish_at(permit.clone(), false, now);
+        }
+    }
+
     fn finish_at(&self, permit: Permit, deadline_exceeded: bool, now: Instant) {
         let failed = deadline_exceeded
             || now.saturating_duration_since(permit.started) > self.config.request_timeout;
         if failed {
             metrics::CIRCUIT_BREAKER_REQUEST_TIMEOUTS
-                .with_label_values(&[READ_REQUEST_TYPE])
+                .with_label_values(&[self.request_type])
                 .inc();
         }
         metrics::CIRCUIT_BREAKER_RESULTS
-            .with_label_values(&[READ_REQUEST_TYPE, if failed { "error" } else { "success" }])
+            .with_label_values(&[self.request_type, if failed { "error" } else { "success" }])
             .inc();
         let mut inner = self.inner.lock().expect("breaker lock poisoned");
         let threshold = f64::from(self.config.failure_threshold_percentage) / 100.0;
@@ -733,19 +811,46 @@ mod tests {
 
     #[test]
     fn circuit_breaker_is_inactive_until_activated() {
-        let breaker = CircuitBreaker::new(config());
+        let breaker = CircuitBreaker::new(config(), READ_REQUEST_TYPE);
         assert!(breaker.try_acquire().unwrap().is_none());
-        let delayed = CircuitBreaker::new(CircuitBreakerConfig {
-            initial_delay: Duration::from_secs(3600),
-            ..config()
-        });
+        let delayed = CircuitBreaker::new(
+            CircuitBreakerConfig {
+                initial_delay: Duration::from_secs(3600),
+                ..config()
+            },
+            READ_REQUEST_TYPE,
+        );
         delayed.activate();
         assert!(delayed.try_acquire().unwrap().is_none());
     }
 
     #[test]
+    fn push_circuit_breaker_counts_every_head_append_of_a_batch() {
+        let breaker = CircuitBreaker::new(
+            CircuitBreakerConfig {
+                request_timeout: Duration::ZERO,
+                ..config()
+            },
+            PUSH_REQUEST_TYPE,
+        );
+        breaker.activate();
+        let errors = || {
+            metrics::CIRCUIT_BREAKER_RESULTS
+                .with_label_values(&[PUSH_REQUEST_TYPE, "error"])
+                .get()
+        };
+        let before = errors();
+        let permit = breaker.try_acquire().unwrap().unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        // One slow batch of ten flushes reaches the execution threshold on its own.
+        breaker.finish_all(permit, 10);
+        assert_eq!(errors() - before, 10);
+        assert_eq!(breaker.state(), BreakerState::Open);
+    }
+
+    #[test]
     fn circuit_breaker_opens_on_timeouts_and_recovers_through_half_open() {
-        let breaker = CircuitBreaker::new(config());
+        let breaker = CircuitBreaker::new(config(), READ_REQUEST_TYPE);
         breaker.activate();
         let start = Instant::now();
         // Below the execution threshold nothing opens, even with failures.
@@ -778,7 +883,7 @@ mod tests {
 
     #[test]
     fn slow_requests_count_as_failures_and_old_ones_expire() {
-        let breaker = CircuitBreaker::new(config());
+        let breaker = CircuitBreaker::new(config(), READ_REQUEST_TYPE);
         breaker.activate();
         let start = Instant::now();
         for _ in 0..3 {
@@ -829,7 +934,7 @@ mod tests {
 
     #[test]
     fn protection_rejects_when_too_busy_and_skips_the_breaker_for_only_replica_requests() {
-        let breaker = Arc::new(CircuitBreaker::new(config()));
+        let breaker = Arc::new(CircuitBreaker::new(config(), READ_REQUEST_TYPE));
         breaker.activate();
         let reason = Arc::new(Mutex::new("cpu"));
         let protection = ReadProtection {
@@ -876,7 +981,7 @@ mod tests {
         use http_body_util::BodyExt;
         use tower::{Layer, ServiceExt};
 
-        let breaker = Arc::new(CircuitBreaker::new(config()));
+        let breaker = Arc::new(CircuitBreaker::new(config(), READ_REQUEST_TYPE));
         breaker.activate();
         let reason = Arc::new(Mutex::new("memory"));
         let layer = ProtectionLayer::new(ReadProtection {

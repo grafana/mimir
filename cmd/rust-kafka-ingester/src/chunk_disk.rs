@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use memmap2::MmapMut;
 
-const FILE_SIZE: usize = 128 * 1024 * 1024;
+pub(crate) const FILE_SIZE: usize = 128 * 1024 * 1024;
 
 /// Written length and newest chunk time of one chunk file, as recorded in a head snapshot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

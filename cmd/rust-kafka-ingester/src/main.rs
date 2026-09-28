@@ -17,12 +17,14 @@ use mimir_rust_kafka_ingester::limits::{
 };
 use mimir_rust_kafka_ingester::metrics;
 use mimir_rust_kafka_ingester::protection::{
-    CircuitBreaker, ProcessScanner, ProtectionArgs, ProtectionLayer, ReadProtection,
-    UtilizationLimiter,
+    CircuitBreaker, PUSH_REQUEST_TYPE, ProcessScanner, ProtectionArgs, ProtectionLayer,
+    READ_REQUEST_TYPE, ReadProtection, UtilizationLimiter,
 };
 use mimir_rust_kafka_ingester::proto::cortex::ingester_server::IngesterServer;
 use mimir_rust_kafka_ingester::record::{DecodedRequest, decode_record};
-use mimir_rust_kafka_ingester::ring_client::{poll_active_partitions, poll_owned_ranges};
+use mimir_rust_kafka_ingester::ring_client::{
+    poll_active_partitions, poll_owned_ranges, wait_active_partitions,
+};
 use mimir_rust_kafka_ingester::runtime_config::{RuntimeConfig, RuntimeConfigArgs};
 use mimir_rust_kafka_ingester::segment::{CompressedFrame, SegmentLog};
 mod profiling;
@@ -39,7 +41,9 @@ static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemall
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
-use mimir_rust_kafka_ingester::store::{IngestRecord, SnapshotOffset, Store};
+use mimir_rust_kafka_ingester::store::{
+    IngestRecord, PostingsCacheConfig, PusherShards, SnapshotOffset, Store,
+};
 use mimir_rust_kafka_ingester::xor;
 
 #[derive(Parser)]
@@ -154,12 +158,49 @@ struct ServeArgs {
     active_series_idle_timeout: Option<String>,
     #[arg(long = "ingester.owned-series-update-interval", default_value = "15s")]
     owned_series_update_interval: String,
+    /// Like Mimir, `cortex_ingester_owned_series` is only exported with one of these.
+    #[arg(long = "ingester.track-ingester-owned-series", default_value_t = false, action = clap::ArgAction::Set)]
+    track_owned_series: bool,
+    #[arg(long = "ingester.use-ingester-owned-series-for-limits", default_value_t = false, action = clap::ArgAction::Set)]
+    use_owned_series_for_limits: bool,
     /// How often the emulated Go head compacts, which bounds the memory and owned series metrics.
     #[arg(
         long = "blocks-storage.tsdb.head-compaction-interval",
         default_value = "1m"
     )]
     head_compaction_interval: String,
+    /// With `--ingest-storage.kafka.ingestion-concurrency-batch-size`, how Mimir groups records
+    /// into head appends, which decides the out-of-order checks.
+    #[arg(
+        long = "ingest-storage.kafka.ingestion-concurrency-max",
+        default_value_t = 8
+    )]
+    ingestion_concurrency_max: usize,
+    #[arg(
+        long = "ingest-storage.kafka.ingestion-concurrency-batch-size",
+        default_value_t = 150
+    )]
+    ingestion_concurrency_batch_size: usize,
+    #[arg(
+        long = "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
+        default_value_t = 200
+    )]
+    ingestion_concurrency_estimated_bytes_per_sample: usize,
+    #[arg(
+        long = "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard",
+        default_value_t = 40
+    )]
+    ingestion_concurrency_target_flushes_per_shard: usize,
+    /// Mimir's postings-for-matchers cache settings, which decide what queries report in
+    /// `cortex_ingester_queried_series{stage="single_block_index"}`.
+    #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-force", default_value_t = false, action = clap::ArgAction::Set)]
+    head_postings_cache_force: bool,
+    #[arg(long = "blocks-storage.tsdb.block-postings-for-matchers-cache-force", default_value_t = false, action = clap::ArgAction::Set)]
+    block_postings_cache_force: bool,
+    #[arg(long = "blocks-storage.tsdb.shared-postings-for-matchers-cache", default_value_t = false, action = clap::ArgAction::Set)]
+    shared_postings_cache: bool,
+    #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", default_value_t = false, action = clap::ArgAction::Set)]
+    head_postings_cache_invalidation: bool,
     #[arg(long = "cost-attribution.cleanup-interval", default_value = "3m")]
     cost_attribution_cleanup_interval: String,
     #[arg(long = "cost-attribution.eviction-interval", default_value = "20m")]
@@ -330,9 +371,19 @@ async fn serve(args: ServeArgs) -> Result<()> {
         sidecar_metrics_url,
         active_series_idle_timeout,
         owned_series_update_interval,
+        track_owned_series,
+        use_owned_series_for_limits,
         head_compaction_interval,
+        head_postings_cache_force,
+        block_postings_cache_force,
+        shared_postings_cache,
+        head_postings_cache_invalidation,
         cost_attribution_cleanup_interval,
         cost_attribution_eviction_interval,
+        ingestion_concurrency_max,
+        ingestion_concurrency_batch_size,
+        ingestion_concurrency_estimated_bytes_per_sample,
+        ingestion_concurrency_target_flushes_per_shard,
         limits,
         instance_limits,
         runtime_config,
@@ -392,6 +443,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         tokio::spawn(runtime.run(Arc::clone(&overrides), period));
     }
     if let Some(url) = active_partitions_url {
+        wait_active_partitions(&url, &overrides, Duration::from_secs(30)).await;
         tokio::spawn(poll_active_partitions(
             url,
             Arc::clone(&overrides),
@@ -418,7 +470,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
     }
     let circuit_breaker = protection
         .circuit_breaker()?
-        .map(|config| Arc::new(CircuitBreaker::new(config)));
+        .map(|config| Arc::new(CircuitBreaker::new(config, READ_REQUEST_TYPE)));
+    let push_circuit_breaker = protection
+        .push_circuit_breaker()?
+        .map(|config| Arc::new(CircuitBreaker::new(config, PUSH_REQUEST_TYPE)));
     read_protection.circuit_breaker = circuit_breaker.clone();
     let metadata_retain_ms = parse_duration_ms(&metadata_retain_period)?;
     let active_series_update =
@@ -439,10 +494,26 @@ async fn serve(args: ServeArgs) -> Result<()> {
             shards: store_shards,
             threads: ingest_threads,
             overrides: Arc::clone(&overrides),
+            postings_cache: PostingsCacheConfig {
+                head_force: head_postings_cache_force,
+                block_force: block_postings_cache_force,
+                shared: shared_postings_cache,
+                head_invalidation: head_postings_cache_invalidation,
+            },
             cost_attribution_intervals: (
                 parse_duration_ms(&cost_attribution_cleanup_interval)?,
                 parse_duration_ms(&cost_attribution_eviction_interval)?,
             ),
+            flush_series: if ingestion_concurrency_max == 0 {
+                0
+            } else {
+                ingestion_concurrency_batch_size
+            },
+            pusher_shards: PusherShards {
+                max: ingestion_concurrency_max,
+                bytes_per_sample: ingestion_concurrency_estimated_bytes_per_sample,
+                target_flushes: ingestion_concurrency_target_flushes_per_shard,
+            },
         },
         &shutdown_requested,
     )? {
@@ -462,6 +533,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             compaction_interval: Duration::from_millis(
                 parse_duration_ms(&head_compaction_interval)? as u64,
             ),
+            owned_series: track_owned_series || use_owned_series_for_limits,
         },
     );
     if let Some(url) = owned_token_ranges_url {
@@ -526,6 +598,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                             request: record.request,
                             ingested_ms: record.ingested_ms,
                             track_rate: false,
+                            bytes: 0,
                         });
                         if recovered_batch.len() >= APPLY_BATCH {
                             store
@@ -633,6 +706,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         };
         partition_client.assign(initial_offset)?;
         let ingest_store = Arc::clone(&store);
+        let push_circuit_breaker = push_circuit_breaker.clone();
         let ingest_consistency = Arc::clone(&consistency);
         let fatal_tx = fatal_tx.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
@@ -667,6 +741,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 coverage_path,
                 coverage_pending,
                 last_timestamp_ms: recovered_timestamp,
+                push_circuit_breaker,
+                replay_target,
             });
             // Decoding and frame compression run on the blocking pool; this task re-sequences them so
             // the applier still sees records in offset order.
@@ -846,7 +922,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let shutdown_sender = shutdown_tx.clone();
     let mut serve_shutdown_rx = shutdown_tx.subscribe();
     eprintln!("phase=grpc_start partition={partition} address={address}");
-    if let Some(breaker) = &circuit_breaker {
+    for breaker in [&circuit_breaker, &push_circuit_breaker]
+        .into_iter()
+        .flatten()
+    {
         breaker.activate();
     }
     metrics::ACTIVE_SERIES_LOADING.set(0);
@@ -901,7 +980,10 @@ struct StoreConfig {
     shards: usize,
     threads: usize,
     overrides: Arc<Overrides>,
+    postings_cache: PostingsCacheConfig,
     cost_attribution_intervals: (i64, i64),
+    flush_series: usize,
+    pusher_shards: PusherShards,
 }
 
 struct Accounting {
@@ -909,6 +991,7 @@ struct Accounting {
     metadata_retain_ms: i64,
     head_period: Duration,
     compaction_interval: Duration,
+    owned_series: bool,
 }
 
 // Refreshes the ingester metrics on Mimir's schedules: active series every update period, the head,
@@ -920,6 +1003,7 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
         metadata_retain_ms,
         head_period,
         compaction_interval,
+        owned_series,
     } = accounting;
     let report_store = Arc::clone(&store);
     tokio::spawn(async move {
@@ -936,16 +1020,17 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
     let head_store = Arc::clone(&store);
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(head_period);
-        let mut last_compaction: Option<Instant> = None;
+        // Like the Go ingester's compaction loop, the first compaction waits for an interval.
+        let mut last_compaction = Instant::now();
         loop {
             ticker.tick().await;
-            let compact = last_compaction.is_none_or(|at| at.elapsed() >= compaction_interval);
+            let compact = last_compaction.elapsed() >= compaction_interval;
             if compact {
-                last_compaction = Some(Instant::now());
+                last_compaction = Instant::now();
             }
             let store = Arc::clone(&head_store);
             match tokio::task::spawn_blocking(move || {
-                let reports = store.head_tick(compact);
+                let reports = store.head_tick(compact, owned_series);
                 let overrides = store.overrides();
                 let local_limits = reports
                     .iter()
@@ -962,7 +1047,7 @@ fn spawn_accounting(store: Arc<Store>, accounting: Accounting) {
             .await
             {
                 Ok((reports, local_limits, instance)) => {
-                    metrics::export_head(&reports, &local_limits, &instance)
+                    metrics::export_head(&reports, &local_limits, &instance, owned_series)
                 }
                 Err(error) => eprintln!("phase=head_tick_error error={error}"),
             }
@@ -1004,7 +1089,10 @@ fn open_store(
         shards,
         threads,
         overrides,
+        postings_cache,
         cost_attribution_intervals,
+        flush_series,
+        pusher_shards,
     } = config;
     let started = Instant::now();
     let rebuild = || -> Result<StartupStore> {
@@ -1020,7 +1108,10 @@ fn open_store(
             .with_cost_attribution_intervals(
                 cost_attribution_intervals.0,
                 cost_attribution_intervals.1,
-            ),
+            )
+            .with_flush_series(flush_series)
+            .with_pusher_shards(pusher_shards)
+            .with_postings_cache(postings_cache),
         ))
     };
     let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir, threads)? else {
@@ -1069,7 +1160,10 @@ fn open_store(
             .with_cost_attribution_intervals(
                 cost_attribution_intervals.0,
                 cost_attribution_intervals.1,
-            ),
+            )
+            .with_flush_series(flush_series)
+            .with_pusher_shards(pusher_shards)
+            .with_postings_cache(postings_cache),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
 }
@@ -1199,6 +1293,7 @@ fn prepare_record(record: RawRecord, high_watermark: i64) -> Result<Apply> {
         offset: record.offset,
         timestamp_ms: record.timestamp_ms,
         high_watermark,
+        bytes: record.payload.as_ref().map_or(0, Vec::len),
         tenant: record.tenant,
         request,
         frame,
@@ -1210,6 +1305,7 @@ enum Apply {
         offset: i64,
         timestamp_ms: i64,
         high_watermark: i64,
+        bytes: usize,
         tenant: String,
         request: Option<DecodedRequest>,
         frame: CompressedFrame,
@@ -1226,12 +1322,17 @@ struct Applier {
     coverage_path: PathBuf,
     coverage_pending: bool,
     last_timestamp_ms: i64,
+    push_circuit_breaker: Option<Arc<CircuitBreaker>>,
+    // The last offset of the startup replay, which the Go ingester consumes while starting, before
+    // its push circuit breaker is activated.
+    replay_target: i64,
 }
 
 struct PendingRecord {
     offset: i64,
     timestamp_ms: i64,
     high_watermark: i64,
+    bytes: usize,
     frame: CompressedFrame,
 }
 
@@ -1245,6 +1346,7 @@ impl Applier {
                     offset,
                     timestamp_ms,
                     high_watermark,
+                    bytes,
                     tenant,
                     request,
                     frame,
@@ -1253,6 +1355,7 @@ impl Applier {
                         offset,
                         timestamp_ms,
                         high_watermark,
+                        bytes,
                         frame,
                     },
                     tenant,
@@ -1294,18 +1397,35 @@ impl Applier {
         let batch = records
             .into_iter()
             .filter_map(|(record, tenant, request)| {
+                let bytes = record.bytes;
                 pending.push(record);
                 request.map(|request| IngestRecord {
                     tenant,
                     request,
                     ingested_ms: now_ms(),
                     track_rate: true,
+                    bytes,
                 })
             })
             .collect();
-        self.store
-            .ingest_batch(batch)
+        // Like the Go ingester, whose pusher retries records while its push circuit breaker is
+        // open, and counts each head append.
+        let permit = match &self.push_circuit_breaker {
+            Some(breaker) if last_offset > self.replay_target => loop {
+                match breaker.try_acquire() {
+                    Ok(permit) => break permit.map(|permit| (breaker, permit)),
+                    Err(wait) => std::thread::sleep(wait.max(Duration::from_millis(10))),
+                }
+            },
+            _ => None,
+        };
+        let flushes = self
+            .store
+            .ingest_flushes(batch)
             .with_context(|| format!("apply records through offset {last_offset}"))?;
+        if let Some((breaker, permit)) = permit {
+            breaker.finish_all(permit, flushes as usize);
+        }
         for record in pending {
             self.segment_log.append_compressed(record.frame)?;
             self.consistency.consumed(
@@ -1529,7 +1649,10 @@ mod tests {
                     shards: 4,
                     threads: 2,
                     overrides: Arc::default(),
+                    postings_cache: PostingsCacheConfig::default(),
                     cost_attribution_intervals: (180_000, 1_200_000),
+                    flush_series: 150,
+                    pusher_shards: PusherShards::default(),
                 },
                 &AtomicBool::new(shutdown),
             )
@@ -1565,6 +1688,7 @@ mod tests {
                         offset,
                         timestamp_ms: offset,
                         high_watermark: offset + 1,
+                        bytes: 0,
                         tenant: String::new(),
                         frame: SegmentLog::frame(offset, offset, "", &request)?.compress()?,
                         request: None,
@@ -1602,6 +1726,8 @@ mod tests {
             coverage_path: data_dir.join("coverage"),
             coverage_pending: false,
             last_timestamp_ms: 0,
+            push_circuit_breaker: None,
+            replay_target: -1,
         };
         let record = |offset: i64, metric: &str| {
             let request = DecodedRequest {
@@ -1622,6 +1748,7 @@ mod tests {
                 offset,
                 timestamp_ms: offset,
                 high_watermark: offset + 1,
+                bytes: 0,
                 tenant: "tenant".into(),
                 frame: SegmentLog::frame(offset, offset, "tenant", &request)
                     .unwrap()

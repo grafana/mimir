@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/grafana/mimir/cmd/rust-kafka-ingester/ring-sidecar/handlers"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
@@ -148,7 +149,7 @@ func run(ctx context.Context, cfg config) error {
 	}))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ingester/prepare-shutdown", func(w http.ResponseWriter, req *http.Request) {
-		prepareShutdownHandler(w, req, cfg, lifecycle, logger)
+		handlers.PrepareShutdown(w, req, cfg.shutdownMarkerDir, &lifecycle.prepared, logger)
 	})
 	mux.HandleFunc("/ingester/prepare-partition-downscale", func(w http.ResponseWriter, req *http.Request) {
 		preparePartitionDownscaleHandler(w, req, cfg, lifecycle, logger)
@@ -235,6 +236,15 @@ func newMemberlistConfig(cfg config) memberlist.KVConfig {
 		Enabled: true, Zone: cfg.zone, Role: cfg.memberlistRole,
 	}
 	return memberlistConfig
+}
+
+func preparePartitionDownscaleHandler(w http.ResponseWriter, req *http.Request, cfg config, lifecycle *lifecycleState, logger log.Logger) {
+	// A typed nil would not compare to nil in the handler.
+	var partition handlers.PartitionLifecycler
+	if p := lifecycle.partition.Load(); p != nil {
+		partition = p
+	}
+	handlers.PreparePartitionDownscale(w, req, partition, !cfg.sharedRing || cfg.allowPartitionStateChanges, logger)
 }
 
 func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.Client, memberlistRunning func() bool, ready *atomic.Bool, lifecycle *lifecycleState, logger log.Logger) error {
@@ -327,94 +337,6 @@ func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client)
 type lifecycleState struct {
 	prepared  atomic.Bool
 	partition atomic.Pointer[ring.PartitionInstanceLifecycler]
-}
-
-// Like the Go ingester's PrepareShutdownHandler with ingest storage: POST persists a marker so
-// that the next shutdown leaves the rings and later starts do not create the partition; the
-// preparation can't be reverted.
-func prepareShutdownHandler(w http.ResponseWriter, req *http.Request, cfg config, lifecycle *lifecycleState, logger log.Logger) {
-	markerPath := shutdownmarker.GetPath(cfg.shutdownMarkerDir)
-	switch req.Method {
-	case http.MethodGet:
-		if lifecycle.prepared.Load() {
-			_, _ = fmt.Fprint(w, "set\n")
-		} else {
-			_, _ = fmt.Fprint(w, "unset\n")
-		}
-	case http.MethodPost:
-		if cfg.shutdownMarkerDir != "" {
-			if err := shutdownmarker.Create(markerPath); err != nil {
-				_ = level.Error(logger).Log("msg", "unable to create prepare-shutdown marker file", "path", markerPath, "err", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-		lifecycle.prepared.Store(true)
-		_ = level.Info(logger).Log("msg", "created prepare-shutdown marker file", "path", markerPath)
-		w.WriteHeader(http.StatusNoContent)
-	case http.MethodDelete:
-		_ = level.Error(logger).Log("msg", "the ingest storage doesn't support reverting the prepared shutdown")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-// Like the Go ingester's PreparePartitionDownscaleHandler: POST switches the partition to
-// INACTIVE, DELETE back to ACTIVE, and every method returns when it became INACTIVE.
-func preparePartitionDownscaleHandler(w http.ResponseWriter, req *http.Request, cfg config, lifecycle *lifecycleState, logger log.Logger) {
-	partition := lifecycle.partition.Load()
-	if partition == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-	}
-	changesAllowed := !cfg.sharedRing || cfg.allowPartitionStateChanges
-	change := func(to ring.PartitionState) bool {
-		if !changesAllowed {
-			http.Error(w, "partition states in the shared ring belong to the Go ingesters", http.StatusConflict)
-			return false
-		}
-		if err := partition.ChangePartitionState(req.Context(), to); err != nil {
-			_ = level.Error(logger).Log("msg", "failed to change partition state", "to", to, "err", err)
-			if errors.Is(err, ring.ErrPartitionStateChangeLocked) {
-				http.Error(w, err.Error(), http.StatusConflict)
-			} else {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			return false
-		}
-		return true
-	}
-	state, _, err := partition.GetPartitionState(req.Context())
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	switch req.Method {
-	case http.MethodPost:
-		if state == ring.PartitionPending {
-			w.WriteHeader(http.StatusConflict)
-			return
-		}
-		if !change(ring.PartitionInactive) {
-			return
-		}
-	case http.MethodDelete:
-		if state == ring.PartitionInactive && !change(ring.PartitionActive) {
-			return
-		}
-	}
-	state, stateTimestamp, err := partition.GetPartitionState(req.Context())
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if state == ring.PartitionInactive {
-		_ = json.NewEncoder(w).Encode(map[string]any{"timestamp": stateTimestamp.Unix()})
-	} else {
-		_ = json.NewEncoder(w).Encode(map[string]any{"timestamp": 0})
-	}
 }
 
 // Like the owned series service's partition ring strategy: each tenant's shuffle shard, and this
