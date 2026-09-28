@@ -93,7 +93,10 @@ async fn main() {
                 DecodedRequest {
                     source: 0,
                     series: vec![DecodedSeries {
-                        labels,
+                        labels: labels
+                            .into_iter()
+                            .map(|(name, value)| (name.into(), value.into()))
+                            .collect(),
                         samples,
                         histograms,
                         exemplars: Vec::new(),

@@ -209,7 +209,9 @@ impl<L: Clone> TenantExemplars<L> {
             .partition_point(|(_, stored)| stored.timestamp_ms <= exemplar.timestamp_ms);
         let is_newest = series.exemplars.is_empty()
             || exemplar.timestamp_ms >= series.exemplars[series.newest].1.timestamp_ms;
-        series.exemplars.insert(index, (sequence, exemplar));
+        series
+            .exemplars
+            .insert(index, (sequence, detached(exemplar)));
         if is_newest {
             series.newest = index;
         } else if series.newest >= index {
@@ -280,9 +282,44 @@ fn label_hash(exemplar: &cortexpb::Exemplar) -> u64 {
     hasher.finish()
 }
 
+// Decoded labels share their Kafka record's buffer, which a stored exemplar would otherwise keep
+// alive for as long as it is stored.
+fn detached(mut exemplar: cortexpb::Exemplar) -> cortexpb::Exemplar {
+    for label in &mut exemplar.labels {
+        label.name = bytes::Bytes::copy_from_slice(&label.name);
+        label.value = bytes::Bytes::copy_from_slice(&label.value);
+    }
+    exemplar
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_exemplars_do_not_keep_the_record_buffer() {
+        let record = bytes::Bytes::from(b"trace_id0123456789abcdef".to_vec());
+        let mut storage = TenantExemplars::new(3);
+        let received = cortexpb::Exemplar {
+            labels: vec![cortexpb::LabelPair {
+                name: record.slice(..8),
+                value: record.slice(8..),
+            }],
+            value: 1.0,
+            timestamp_ms: 10,
+        };
+        storage.add(1, || 1, received.clone(), 0).unwrap();
+        let stored = storage
+            .select(i64::MIN, i64::MAX, |_| true)
+            .remove(0)
+            .1
+            .remove(0);
+        assert_eq!(stored, received);
+        let span = record.as_ptr_range();
+        for label in &stored.labels {
+            assert!(!span.contains(&label.name.as_ptr()) && !span.contains(&label.value.as_ptr()));
+        }
+    }
 
     fn exemplar(timestamp_ms: i64, value: f64) -> cortexpb::Exemplar {
         cortexpb::Exemplar {

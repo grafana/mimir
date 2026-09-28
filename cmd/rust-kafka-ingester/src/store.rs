@@ -4232,7 +4232,10 @@ mod tests {
     fn invalid_series_does_not_abort_other_series() {
         let store = Store::default();
         let series = |labels: Vec<(String, String)>| DecodedSeries {
-            labels,
+            labels: labels
+                .into_iter()
+                .map(|(name, value)| (name.into(), value.into()))
+                .collect(),
             samples: vec![cortexpb::Sample {
                 timestamp_ms: 1,
                 value: 1.0,
@@ -5007,6 +5010,7 @@ mod tests {
                 .map(|name| ("__name__".to_owned(), name.to_owned()))
                 .into_iter()
                 .chain([("job".to_owned(), job.to_owned())])
+                .map(|(name, value)| (name.into(), value.into()))
                 .collect(),
             samples: vec![cortexpb::Sample {
                 timestamp_ms,
@@ -5064,9 +5068,12 @@ mod tests {
         let series = (0..200)
             .map(|index| DecodedSeries {
                 labels: vec![
-                    ("__name__".into(), format!("metric_{}", index % 7)),
-                    ("instance".into(), format!("{:03}", (index * 37) % 200)),
-                    ("Zone".into(), format!("{}", index % 3)),
+                    ("__name__".into(), format!("metric_{}", index % 7).into()),
+                    (
+                        "instance".into(),
+                        format!("{:03}", (index * 37) % 200).into(),
+                    ),
+                    ("Zone".into(), format!("{}", index % 3).into()),
                 ],
                 samples: vec![cortexpb::Sample {
                     timestamp_ms: 1,
@@ -5116,8 +5123,8 @@ mod tests {
                     series: (0..50)
                         .map(|series| DecodedSeries {
                             labels: vec![
-                                ("__name__".into(), format!("metric_{}", series % 5)),
-                                ("id".into(), series.to_string()),
+                                ("__name__".into(), format!("metric_{}", series % 5).into()),
+                                ("id".into(), series.to_string().into()),
                             ],
                             // Every seventh record repeats an older timestamp to exercise out-of-order data.
                             samples: vec![cortexpb::Sample {

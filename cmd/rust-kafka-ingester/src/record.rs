@@ -1,4 +1,11 @@
+use std::borrow::Borrow;
+use std::cmp::Ordering;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+
 use anyhow::{Context, Result, bail};
+use bytes::Bytes;
 use prost::Message;
 
 use crate::proto::cortexpb;
@@ -43,9 +50,130 @@ const COMMON_SYMBOLS: &[&str] = &[
     "default/kubernetes",
 ];
 
+/// A label name or value from a record, sharing the record's buffer: records carry every label
+/// of every series, and most belong to series the store already has, so copying each one into
+/// its own allocation was most of the decoding cost.
+#[derive(Clone, Default)]
+pub struct LabelStr(Bytes);
+
+impl LabelStr {
+    /// Invalid UTF-8 is replaced like `String::from_utf8_lossy`.
+    pub fn from_utf8_lossy(bytes: Bytes) -> Self {
+        match std::str::from_utf8(&bytes) {
+            Ok(_) => Self(bytes),
+            Err(_) => Self::from(String::from_utf8_lossy(&bytes).into_owned()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        // SAFETY: built only from valid UTF-8.
+        unsafe { std::str::from_utf8_unchecked(&self.0) }
+    }
+}
+
+impl Deref for LabelStr {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Borrow<str> for LabelStr {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for LabelStr {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<String> for LabelStr {
+    fn from(value: String) -> Self {
+        Self(Bytes::from(value))
+    }
+}
+
+impl From<&str> for LabelStr {
+    fn from(value: &str) -> Self {
+        Self(Bytes::copy_from_slice(value.as_bytes()))
+    }
+}
+
+impl From<&String> for LabelStr {
+    fn from(value: &String) -> Self {
+        Self::from(value.as_str())
+    }
+}
+
+impl From<LabelStr> for String {
+    fn from(value: LabelStr) -> Self {
+        value.as_str().to_owned()
+    }
+}
+
+impl PartialEq for LabelStr {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for LabelStr {}
+
+impl PartialEq<str> for LabelStr {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for LabelStr {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<String> for LabelStr {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialOrd for LabelStr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LabelStr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl Hash for LabelStr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
+impl fmt::Debug for LabelStr {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_str(), formatter)
+    }
+}
+
+impl fmt::Display for LabelStr {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.as_str(), formatter)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedSeries {
-    pub labels: Vec<(String, String)>,
+    pub labels: Vec<(LabelStr, LabelStr)>,
     pub samples: Vec<cortexpb::Sample>,
     pub histograms: Vec<cortexpb::Histogram>,
     pub exemplars: Vec<cortexpb::Exemplar>,
@@ -63,7 +191,9 @@ pub fn decode_record(version: u32, bytes: &[u8]) -> Result<DecodedRequest> {
     if version > 2 {
         bail!("unsupported ingest-storage record version {version}");
     }
-    let request = cortexpb::WriteRequest::decode(bytes).context("decode WriteRequest")?;
+    // Decoding from `Bytes` makes label fields slices of one copy of the record.
+    let request = cortexpb::WriteRequest::decode(Bytes::copy_from_slice(bytes))
+        .context("decode WriteRequest")?;
     if version < 2 {
         return decode_v1(request);
     }
@@ -115,16 +245,23 @@ fn normalize_metadata_name(name: &str, metric_type: i32) -> String {
 }
 
 fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
-    let symbol = |reference: u32| -> Result<String> {
+    // Each symbol is converted once, and labels share it.
+    let symbols = request
+        .symbols_rw2
+        .into_iter()
+        .map(LabelStr::from)
+        .collect::<Vec<_>>();
+    let symbol = |reference: u32| -> Result<LabelStr> {
         let reference = reference as usize;
         if reference < COMMON_SYMBOLS.len() {
-            return Ok(COMMON_SYMBOLS[reference].to_owned());
+            return Ok(LabelStr(Bytes::from_static(
+                COMMON_SYMBOLS[reference].as_bytes(),
+            )));
         }
         if reference < SYMBOL_OFFSET {
             bail!("reserved RW2 symbol reference {reference}");
         }
-        request
-            .symbols_rw2
+        symbols
             .get(reference - SYMBOL_OFFSET)
             .cloned()
             .with_context(|| format!("RW2 symbol reference {reference} out of range"))
@@ -150,8 +287,8 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
                 let mut pairs = Vec::with_capacity(e.labels_refs.len() / 2);
                 for pair in e.labels_refs.as_chunks::<2>().0 {
                     pairs.push(cortexpb::LabelPair {
-                        name: symbol(pair[0])?.into_bytes().into(),
-                        value: symbol(pair[1])?.into_bytes().into(),
+                        name: symbol(pair[0])?.0,
+                        value: symbol(pair[1])?.0,
                     });
                 }
                 Ok(cortexpb::Exemplar {
@@ -165,10 +302,10 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
             let metric_name = labels
                 .iter()
                 .find(|(name, _)| name == "__name__")
-                .map(|(_, value)| value.clone())
+                .map(|(_, value)| String::from(value.clone()))
                 .unwrap_or_default();
-            let help = symbol(meta.help_ref)?;
-            let unit = symbol(meta.unit_ref)?;
+            let help = String::from(symbol(meta.help_ref)?);
+            let unit = String::from(symbol(meta.unit_ref)?);
             // Like Mimir's RW2 unmarshalling, every series carries a metadata field, and only
             // one that says something about a named metric becomes metadata.
             if !metric_name.is_empty() && (meta.r#type != 0 || !help.is_empty() || !unit.is_empty())
@@ -196,14 +333,57 @@ fn decode_v2(request: cortexpb::WriteRequest) -> Result<DecodedRequest> {
     })
 }
 
-fn decode_pairs(pairs: Vec<cortexpb::LabelPair>) -> Vec<(String, String)> {
+fn decode_pairs(pairs: Vec<cortexpb::LabelPair>) -> Vec<(LabelStr, LabelStr)> {
     pairs
         .into_iter()
         .map(|pair| {
             (
-                String::from_utf8_lossy(&pair.name).into_owned(),
-                String::from_utf8_lossy(&pair.value).into_owned(),
+                LabelStr::from_utf8_lossy(pair.name),
+                LabelStr::from_utf8_lossy(pair.value),
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn labels_share_one_copy_of_the_record_and_replace_invalid_utf8() {
+        let pair = |name: &[u8], value: &[u8]| cortexpb::LabelPair {
+            name: Bytes::copy_from_slice(name),
+            value: Bytes::copy_from_slice(value),
+        };
+        let request = cortexpb::WriteRequest {
+            timeseries: (0..20)
+                .map(|index| cortexpb::TimeSeries {
+                    labels: vec![
+                        pair(b"__name__", format!("metric_{index}").as_bytes()),
+                        pair(b"job", b"api"),
+                    ],
+                    ..Default::default()
+                })
+                .chain([cortexpb::TimeSeries {
+                    labels: vec![pair(b"bad", b"a\xffb")],
+                    ..Default::default()
+                }])
+                .collect(),
+            ..Default::default()
+        };
+        let encoded = request.encode_to_vec();
+        let decoded = decode_record(1, &encoded).unwrap();
+        assert_eq!(
+            decoded.series[3].labels[0],
+            ("__name__".into(), "metric_3".into())
+        );
+        assert_eq!(decoded.series[20].labels[0].1, "a\u{fffd}b");
+        let addresses = decoded.series[..20]
+            .iter()
+            .flat_map(|series| &series.labels)
+            .flat_map(|(name, value)| [name.as_ptr() as usize, value.as_ptr() as usize])
+            .collect::<Vec<_>>();
+        let span = addresses.iter().max().unwrap() - addresses.iter().min().unwrap();
+        assert!(span < encoded.len(), "labels were copied one by one");
+    }
 }
