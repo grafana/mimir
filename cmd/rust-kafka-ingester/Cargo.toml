@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive"] }
 compact_str = "0.10.0"
 crc32fast = "1"
 futures = "0.3"
+hashbrown = "0.15"
 lz4_flex = "0.14"
 memmap2 = "0.9"
 pprof = { version = "0.15", default-features = false, features = ["prost-codec"] }

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
+use hashbrown::HashTable;
 use prost::Message;
 use prost::bytes::Bytes;
 use regex::Regex;
@@ -55,36 +56,61 @@ struct Series {
 }
 
 // Series grouped by metric name, so a `__name__` matcher only visits its own metric like a
-// postings lookup would, without duplicating series keys in a separate index.
+// postings lookup would, without duplicating series keys in a separate index. Within a name,
+// series are found by label hash so ingesting into an existing series allocates nothing.
 #[derive(Default)]
 struct SeriesByName {
-    names: HashMap<CompactString, BTreeMap<SeriesKey, Series>>,
+    names: HashMap<CompactString, HashTable<(SeriesKey, Series)>>,
     len: usize,
 }
 
 impl SeriesByName {
-    fn entry(&mut self, key: SeriesKey) -> &mut Series {
-        let by_key = self
-            .names
-            .entry(CompactString::from(metric_name(&key.1)))
-            .or_default();
+    fn get_or_insert_with(
+        &mut self,
+        name: &str,
+        hash: u64,
+        is_same: impl Fn(&StoredLabels) -> bool,
+        labels: impl FnOnce() -> Arc<StoredLabels>,
+    ) -> &mut Series {
+        if !self.names.contains_key(name) {
+            self.names
+                .insert(CompactString::from(name), HashTable::new());
+        }
+        let table = self.names.get_mut(name).expect("name group exists");
         let len = &mut self.len;
-        by_key.entry(key).or_insert_with(|| {
-            *len += 1;
-            Series::default()
-        })
+        match table.entry(
+            hash,
+            |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
+            |((entry_hash, _), _)| *entry_hash,
+        ) {
+            hashbrown::hash_table::Entry::Occupied(entry) => &mut entry.into_mut().1,
+            hashbrown::hash_table::Entry::Vacant(entry) => {
+                *len += 1;
+                &mut entry
+                    .insert(((hash, labels()), Series::default()))
+                    .into_mut()
+                    .1
+            }
+        }
     }
 
-    fn insert(&mut self, key: SeriesKey, series: Series) -> Option<Series> {
-        let previous = self
-            .names
-            .entry(CompactString::from(metric_name(&key.1)))
-            .or_default()
-            .insert(key, series);
-        if previous.is_none() {
-            self.len += 1;
+    fn insert(&mut self, key: SeriesKey, series: Series) -> bool {
+        let (hash, labels) = key;
+        let mut series = Some(series);
+        let inserted = std::cell::Cell::new(false);
+        let stored = self.get_or_insert_with(
+            metric_name(&labels),
+            hash,
+            |existing| existing == labels.as_ref(),
+            || {
+                inserted.set(true);
+                Arc::clone(&labels)
+            },
+        );
+        if inserted.get() {
+            *stored = series.take().expect("series inserted once");
         }
-        previous
+        inserted.get()
     }
 
     fn len(&self) -> usize {
@@ -92,7 +118,9 @@ impl SeriesByName {
     }
 
     fn iter(&self) -> impl Iterator<Item = (&SeriesKey, &Series)> {
-        self.names.values().flat_map(|by_key| by_key.iter())
+        self.names
+            .values()
+            .flat_map(|table| table.iter().map(|(key, series)| (key, series)))
     }
 
     fn values(&self) -> impl Iterator<Item = &Series> {
@@ -107,14 +135,17 @@ impl SeriesByName {
             .iter()
             .find(|matcher| matcher.label_name() == Some("__name__"));
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match name_matcher {
-            Some(CompiledMatcher::Equal(_, name)) => {
-                Box::new(self.names.get(name.as_str()).into_iter().flatten())
-            }
+            Some(CompiledMatcher::Equal(_, name)) => Box::new(
+                self.names
+                    .get(name.as_str())
+                    .into_iter()
+                    .flat_map(|table| table.iter().map(|(key, series)| (key, series))),
+            ),
             Some(matcher) => Box::new(
                 self.names
                     .iter()
                     .filter(move |(name, _)| matcher.matches_value(name))
-                    .flat_map(|(_, by_key)| by_key.iter()),
+                    .flat_map(|(_, table)| table.iter().map(|(key, series)| (key, series))),
             ),
             None => Box::new(self.iter()),
         };
@@ -123,10 +154,10 @@ impl SeriesByName {
 
     fn retain(&mut self, mut keep: impl FnMut(&SeriesKey, &mut Series) -> bool) {
         let mut len = 0;
-        self.names.retain(|_, by_key| {
-            by_key.retain(|key, series| keep(key, series));
-            len += by_key.len();
-            !by_key.is_empty()
+        self.names.retain(|_, table| {
+            table.retain(|(key, series)| keep(key, series));
+            len += table.len();
+            !table.is_empty()
         });
         self.len = len;
     }
@@ -608,20 +639,49 @@ fn ingest_series(
             return Ok(());
         }
     }
-    let labels = std::mem::take(&mut decoded.labels)
-        .into_iter()
-        .map(|(name, value)| {
-            let name = if let Some(stored) = tenant.label_names.get(name.as_str()) {
-                Arc::clone(stored)
-            } else {
-                let stored: Arc<str> = name.into();
-                tenant.label_names.insert(Arc::clone(&stored));
-                stored
-            };
-            (name, value.into())
-        })
-        .collect();
-    let series = tenant.series.entry(series_key(labels));
+    let decoded_labels = std::mem::take(&mut decoded.labels);
+    let hash = hash_label_pairs(
+        decoded_labels
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+    );
+    let name = decoded_labels
+        .binary_search_by(|(label, _)| label.as_str().cmp("__name__"))
+        .map_or("", |index| decoded_labels[index].1.as_str());
+    let Tenant {
+        series: by_name,
+        label_names,
+        ..
+    } = tenant;
+    let series = by_name.get_or_insert_with(
+        name,
+        hash,
+        |stored| {
+            stored.len() == decoded_labels.len()
+                && stored.iter().zip(&decoded_labels).all(
+                    |((name, value), (decoded_name, decoded_value))| {
+                        name.as_ref() == decoded_name && value.as_str() == decoded_value
+                    },
+                )
+        },
+        || {
+            decoded_labels
+                .iter()
+                .map(|(name, value)| {
+                    let name = match label_names.get(name.as_str()) {
+                        Some(stored) => Arc::clone(stored),
+                        None => {
+                            let stored: Arc<str> = name.as_str().into();
+                            label_names.insert(Arc::clone(&stored));
+                            stored
+                        }
+                    };
+                    (name, CompactString::from(value.as_str()))
+                })
+                .collect::<StoredLabels>()
+                .into()
+        },
+    );
     if decoded.created_timestamp != 0 {
         let first_timestamp = decoded
             .samples
@@ -1082,14 +1142,29 @@ fn parse_shard(value: &str) -> Result<(u64, u64)> {
 }
 
 fn labels_hash(labels: &[StoredLabel]) -> u64 {
-    let mut bytes = Vec::new();
-    for (name, value) in labels {
-        encode_label_size(&mut bytes, name.len());
-        bytes.extend_from_slice(name.as_bytes());
-        encode_label_size(&mut bytes, value.len());
-        bytes.extend_from_slice(value.as_bytes());
+    hash_label_pairs(
+        labels
+            .iter()
+            .map(|(name, value)| (name.as_ref(), value.as_str())),
+    )
+}
+
+// Matches Go's labels hash so query sharding agrees with the Go ingesters; the buffer is reused
+// because ingest hashes every incoming series.
+fn hash_label_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> u64 {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
     }
-    xxhash64(&bytes)
+    BUFFER.with_borrow_mut(|bytes| {
+        bytes.clear();
+        for (name, value) in pairs {
+            encode_label_size(bytes, name.len());
+            bytes.extend_from_slice(name.as_bytes());
+            encode_label_size(bytes, value.len());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        xxhash64(bytes)
+    })
 }
 
 fn series_key(labels: StoredLabels) -> SeriesKey {
