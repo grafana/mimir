@@ -96,6 +96,7 @@ var (
 	errInvalidSchedulerLastContactTimeout            = errors.New("invalid compactor.scheduler-client.last-contact-timeout, must be 0 or greater than the update interval")
 	errInvalidSchedulerBackfillLastContactTimeout    = errors.New("invalid compactor.scheduler-client.last-contact-timeout, must be positive when compactor.scheduler-client.backfill-mode-enabled is true")
 	errInvalidSchedulerBackfillLanes                 = errors.New("invalid compactor.scheduler-client.lanes, must be set without the plan job type when compactor.scheduler-client.backfill-mode-enabled is true")
+	errInvalidSchedulerBackfillRingBasedCleanup      = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, must be false when compactor.scheduler-client.backfill-mode-enabled is true")
 	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
 	errInvalidSchedulerRingBasedCleanup              = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, can only be disabled when compactor.scheduler-client.enabled is true")
 )
@@ -133,7 +134,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
-	f.BoolVar(&cfg.BackfillModeEnabled, flagPrefix+"backfill-mode-enabled", false, "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.")
+	f.BoolVar(&cfg.BackfillModeEnabled, flagPrefix+"backfill-mode-enabled", false, "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell. Requires -"+flagPrefix+"enable-ring-based-cleanup to be false.")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
 	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Valid job types: plan, compact, backfill-plan, backfill-validate, backfill-copy, backfill-cleanup. When -"+flagPrefix+"backfill-mode-enabled is true, lanes must be set and must not include plan.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
@@ -174,6 +175,9 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	if cfg.BackfillModeEnabled && slices.ContainsFunc(cfg.Lanes, func(l string) bool { return slices.Contains(strings.Split(l, "+"), "plan") }) {
 		return errInvalidSchedulerBackfillLanes
 	}
+	if cfg.BackfillModeEnabled && cfg.EnableRingBasedCleanup {
+		return errInvalidSchedulerBackfillRingBasedCleanup
+	}
 	if err := cfg.MetadataCacheConfig.Validate(); err != nil {
 		return err
 	}
@@ -204,10 +208,14 @@ func (cfg *MetadataCacheConfig) Validate() error {
 }
 
 const (
-	jobTypePlan         = "plan"
-	jobTypeCompaction   = "compaction"
-	compactionTypeSplit = "split"
-	compactionTypeMerge = "merge"
+	jobTypePlan             = "plan"
+	jobTypeCompaction       = "compaction"
+	jobTypeBackfillPlan     = "backfill-plan"
+	jobTypeBackfillValidate = "backfill-validate"
+	jobTypeBackfillCopy     = "backfill-copy"
+	jobTypeBackfillCleanup  = "backfill-cleanup"
+	compactionTypeSplit     = "split"
+	compactionTypeMerge     = "merge"
 )
 
 // schedulerExecutor requests compaction jobs from an external scheduler.
@@ -561,6 +569,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	var (
 		run  func(context.Context) (compactorschedulerpb.UpdateType, error)
 		plan func(context.Context) (*compactorschedulerpb.PlannedJobsRequest, error)
+		// Compaction jobs observe their own duration, labeled with their compaction type
+		durationLabel string
 	)
 	switch {
 	case jobType == compactorschedulerpb.JOB_TYPE_COMPACTION:
@@ -569,6 +579,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			return e.executeCompactionJob(ctx, c, compactDir, userBucket, resp.Key, resp.Spec)
 		}
 	case jobType == compactorschedulerpb.JOB_TYPE_PLANNING && !e.cfg.BackfillModeEnabled:
+		durationLabel = jobTypePlan
 		plan = func(ctx context.Context) (*compactorschedulerpb.PlannedJobsRequest, error) {
 			plannedJobs, err := e.executePlanningJob(ctx, c, compactDir, e.jobBucket(c, jobTenant, ""), jobTenant, "")
 			if err != nil {
@@ -577,18 +588,22 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			return &compactorschedulerpb.PlannedJobsRequest{Jobs: plannedJobs}, nil
 		}
 	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING && e.cfg.BackfillModeEnabled:
+		durationLabel = jobTypeBackfillPlan
 		plan = func(ctx context.Context) (*compactorschedulerpb.PlannedJobsRequest, error) {
 			return e.executeBackfillPhasePlanningJob(ctx, c, compactDir, resp.Spec)
 		}
 	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE && e.cfg.BackfillModeEnabled:
+		durationLabel = jobTypeBackfillValidate
 		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
 			return e.executeBackfillValidateJob(ctx, c, resp.Spec)
 		}
 	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_COPY && e.cfg.BackfillModeEnabled:
+		durationLabel = jobTypeBackfillCopy
 		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
 			return e.executeBackfillCopyJob(ctx, c, resp.Spec)
 		}
 	case jobType == compactorschedulerpb.JOB_TYPE_BACKFILL_CLEANUP && e.cfg.BackfillModeEnabled:
+		durationLabel = jobTypeBackfillCleanup
 		run = func(ctx context.Context) (compactorschedulerpb.UpdateType, error) {
 			return e.executeBackfillCleanupJob(ctx, c, resp.Spec)
 		}
@@ -623,10 +638,11 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs.Jobs), "err", err)
 			return true, err
 		}
-		c.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
+		c.jobDuration.WithLabelValues(durationLabel, "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
 	}
 
+	runStartTime := time.Now()
 	status, err := run(jobCtx)
 	cancelJob(err)
 	wg.Wait()
@@ -636,6 +652,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		}
 		return true, err
+	}
+	if durationLabel != "" {
+		c.jobDuration.WithLabelValues(durationLabel, "").Observe(time.Since(runStartTime).Seconds())
 	}
 	e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 	return true, nil
@@ -663,7 +682,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 // jobBucket returns the bucket a compaction or planning job for the tenant works on
 func (e *schedulerExecutor) jobBucket(c *MultitenantCompactor, tenant, backfillID string) objstore.Bucket {
 	if e.cfg.BackfillModeEnabled {
-		return bucket.NewPrefixedBucketClient(backfillBucket(c), backfill.DataPrefix(backfillID, tenant))
+		return bucket.NewPrefixedBucketClient(c.backfillBucketClient, backfill.DataPrefix(backfillID, tenant))
 	}
 	return bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
 }

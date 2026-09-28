@@ -14798,7 +14798,7 @@
               "kind": "field",
               "name": "backfill_mode_enabled",
               "required": false,
-              "desc": "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.",
+              "desc": "If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell. Requires -compactor.scheduler-client.enable-ring-based-cleanup to be false.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "compactor.scheduler-client.backfill-mode-enabled",

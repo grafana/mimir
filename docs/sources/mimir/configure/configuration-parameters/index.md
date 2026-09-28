@@ -7043,7 +7043,8 @@ scheduler_client:
 
   # (experimental) If enabled, the compactor runs jobs for backfills from a
   # compactor scheduler in backfill mode instead of compaction of the tenants in
-  # a cell.
+  # a cell. Requires -compactor.scheduler-client.enable-ring-based-cleanup to be
+  # false.
   # CLI flag: -compactor.scheduler-client.backfill-mode-enabled
   [backfill_mode_enabled: <boolean> | default = false]
 ```

@@ -194,13 +194,24 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidSchedulerBackfillLanes.Error(),
 		},
-		"should pass with scheduler backfill mode enabled and backfill lanes": {
+		"should fail with scheduler backfill mode enabled and ring-based cleanup enabled": {
 			setup: func(cfg *Config) {
 				cfg.SchedulerClientConfig.Enabled = true
 				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
 				cfg.SchedulerClientConfig.BackfillModeEnabled = true
 				cfg.SchedulerClientConfig.LastContactTimeout = 5 * time.Minute
 				cfg.SchedulerClientConfig.Lanes = flagext.StringSliceCSV{"backfill-cleanup+backfill-validate+compact+backfill-plan", "backfill-plan"}
+			},
+			expected: errInvalidSchedulerBackfillRingBasedCleanup.Error(),
+		},
+		"should pass with scheduler backfill mode enabled, backfill lanes, and ring-based cleanup disabled": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.BackfillModeEnabled = true
+				cfg.SchedulerClientConfig.LastContactTimeout = 5 * time.Minute
+				cfg.SchedulerClientConfig.Lanes = flagext.StringSliceCSV{"backfill-cleanup+backfill-validate+compact+backfill-plan", "backfill-plan"}
+				cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
 			},
 			expected: "",
 		},

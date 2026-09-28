@@ -359,7 +359,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 		hasOutstanding  bool
 		expectUnchanged bool
 		expectCleanupID string
-		expectValidate  bool // a validate job for each uploaded block
+		expectValidate  bool // a validate job for each uploaded or incomplete block
 		expectCompact   bool
 		expectCopy      bool // a copy job for each validated block
 		expectMarkers   map[string]string
@@ -401,16 +401,28 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 			expectMarkers:  map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID},
 		},
 		"incomplete upload": {
-			markers:         map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID},
-			blocks:          []blockState{uploaded, incomplete},
-			expectCleanupID: backfillID,
-			expectMarkers:   map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCleanup: backfillID},
+			markers:        map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID},
+			blocks:         []blockState{uploaded, incomplete},
+			expectValidate: true,
+			expectMarkers:  map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID},
 		},
 		"validation finished": {
 			markers:       map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID},
 			blocks:        []blockState{validated, validated},
 			expectCompact: true,
 			expectMarkers: map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID},
+		},
+		"compaction with outstanding jobs": {
+			markers:        map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID},
+			blocks:         []blockState{validated},
+			hasOutstanding: true,
+			expectMarkers:  map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID},
+		},
+		"compaction finished": {
+			markers:       map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID},
+			blocks:        []blockState{validated},
+			expectCopy:    true,
+			expectMarkers: map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
 		},
 		"copy with outstanding jobs": {
 			markers:         map[string]string{backfill.PhaseBackfill: backfillID, backfill.PhaseValidate: backfillID, backfill.PhaseCompact: backfillID, backfill.PhaseCopy: backfillID},
@@ -453,7 +465,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 			}
 
 			dataPrefix := backfill.DataPrefix(backfillID, tenant)
-			var uploadedIDs, validatedIDs [][]byte
+			var unvalidatedIDs, validatedIDs [][]byte
 			for i, state := range tc.blocks {
 				minT := rangeStart + int64(i)*time.Hour.Milliseconds()
 				id := createTSDBBlock(t, bkt, dataPrefix, minT, minT+time.Hour.Milliseconds(), 2, nil)
@@ -471,9 +483,10 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 					require.NoError(t, bkt.Upload(t.Context(), path.Join(dataPrefix, id.String(), blockupload.UploadingMetaFilename), r))
 					require.NoError(t, r.Close())
 					require.NoError(t, bkt.Delete(t.Context(), metaPath))
-					uploadedIDs = append(uploadedIDs, id.Bytes())
+					unvalidatedIDs = append(unvalidatedIDs, id.Bytes())
 				case incomplete:
 					require.NoError(t, bkt.Delete(t.Context(), metaPath))
+					unvalidatedIDs = append(unvalidatedIDs, id.Bytes())
 				}
 			}
 
@@ -511,7 +524,7 @@ func TestSchedulerExecutor_ExecuteBackfillPhasePlanningJob(t *testing.T) {
 				require.Empty(t, cleanupIDs)
 			}
 			if tc.expectValidate {
-				require.ElementsMatch(t, uploadedIDs, validateBlocks)
+				require.ElementsMatch(t, unvalidatedIDs, validateBlocks)
 			} else {
 				require.Empty(t, validateBlocks)
 			}

@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
 )
 
 const copiedMarkSuffix = "-copied"
@@ -36,7 +35,7 @@ func (e *schedulerExecutor) executeBackfillCleanupJob(ctx context.Context, c *Mu
 	backfillID := spec.BackfillCleanup.BackfillId
 	tenant := spec.Tenant
 	logger := log.With(e.logger, "user", tenant, "backfill_id", backfillID)
-	bkt := backfillBucket(c)
+	bkt := c.backfillBucketClient
 
 	deleted, err := bucket.DeletePrefix(ctx, bkt, backfill.DataPrefix(backfillID, tenant), logger)
 	if err != nil {
@@ -79,7 +78,7 @@ func (e *schedulerExecutor) executeBackfillValidateJob(ctx context.Context, c *M
 
 	fail := func(reason error) (compactorschedulerpb.UpdateType, error) {
 		level.Warn(logger).Log("msg", "backfill block failed validation, cleaning up the backfill", "err", reason)
-		if err := backfill.WriteMarker(ctx, backfillBucket(c), backfill.PhaseCleanup, tenant, backfill.Marker{BackfillID: job.BackfillId}); err != nil {
+		if err := backfill.WriteMarker(ctx, c.backfillBucketClient, backfill.PhaseCleanup, tenant, backfill.Marker{BackfillID: job.BackfillId}); err != nil {
 			return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to write cleanup marker: %w", err)
 		}
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, reason
@@ -93,24 +92,11 @@ func (e *schedulerExecutor) executeBackfillValidateJob(ctx context.Context, c *M
 		return fail(errors.New("block has no uploading meta file"))
 	}
 
-	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(tenant)
-	if err := blockvalidation.CheckMaxBlockSize(meta.Thanos.Files, maxBlockSizeBytes); err != nil {
-		return fail(err)
-	}
-	blockDir, err := c.blockUpload.PrepareBlockForValidation(ctx, logger, dataBkt, blockID)
-	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
-	}
-	defer blockupload.RemoveTemporaryBlockDirectory(logger, blockDir)
-	err = blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, meta, blockvalidation.CheckBlockOnDiskOptions{
-		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(tenant),
-		MaxBlockSizeBytes: maxBlockSizeBytes,
-	})
-	if err != nil {
-		if ctx.Err() != nil {
-			return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+	if err := c.blockUpload.ValidateBlock(ctx, logger, blockID, meta, dataBkt, tenant); err != nil {
+		if errors.Is(err, blockupload.ErrInvalidBlock) {
+			return fail(err)
 		}
-		return fail(err)
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 
 	// TODO: this counts backfilled blocks in the block upload metrics, which may not be wanted
@@ -150,8 +136,12 @@ func (e *schedulerExecutor) executeBackfillCopyJob(ctx context.Context, c *Multi
 			return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 		}
 	}
-	if err := c.blockUpload.UploadMeta(ctx, logger, &meta, blockID, block.MetaFilename, dstBkt); err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+	var metaBuf bytes.Buffer
+	if err := meta.Write(&metaBuf); err != nil {
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to encode block meta: %w", err)
+	}
+	if err := dstBkt.Upload(ctx, path.Join(blockID.String(), block.MetaFilename), &metaBuf); err != nil {
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to upload block meta: %w", err)
 	}
 	if err := srcBkt.Upload(ctx, copiedMarkFilepath(blockID), bytes.NewReader(nil)); err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to upload copied marker: %w", err)
@@ -179,7 +169,7 @@ func copyBlockFile(ctx context.Context, src objstore.BucketReader, dst objstore.
 // left advances to the next phase, which is then planned in the same job.
 func (e *schedulerExecutor) executeBackfillPhasePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, spec *compactorschedulerpb.JobSpec) (*compactorschedulerpb.PlannedJobsRequest, error) {
 	tenant := spec.Tenant
-	bkt := backfillBucket(c)
+	bkt := c.backfillBucketClient
 
 	backfillMarker, hasBackfill, err := backfill.ReadMarker(ctx, bkt, backfill.PhaseBackfill, tenant)
 	if err != nil {
@@ -223,15 +213,9 @@ func (e *schedulerExecutor) executeBackfillPhasePlanningJob(ctx context.Context,
 			if hasOutstanding {
 				return &compactorschedulerpb.PlannedJobsRequest{Unchanged: true}, nil
 			}
-			jobs, incomplete, err := planBackfillValidation(ctx, dataBkt, backfillID)
+			jobs, err := planBackfillValidation(ctx, dataBkt, backfillID)
 			if err != nil {
 				return nil, err
-			}
-			if incomplete {
-				if err := advance(backfill.PhaseCleanup); err != nil {
-					return nil, err
-				}
-				return backfillCleanupPlan(backfillID), nil
 			}
 			if len(jobs) > 0 {
 				return &compactorschedulerpb.PlannedJobsRequest{Jobs: jobs}, nil
@@ -285,28 +269,18 @@ func currentBackfillPhase(ctx context.Context, bkt objstore.BucketReader, tenant
 	return backfill.PhaseBackfill, nil
 }
 
-// planBackfillValidation returns a validate job for each uploaded block that has not been validated yet. It reports
-// whether any block is incomplete, meaning it has neither an uploading nor a final meta file.
-func planBackfillValidation(ctx context.Context, dataBkt objstore.BucketReader, backfillID string) (jobs []*compactorschedulerpb.PlannedJob, incomplete bool, err error) {
-	err = dataBkt.Iter(ctx, "", func(name string) error {
+// planBackfillValidation returns a validate job for each block that has not been validated yet. A block without an
+// uploading meta file fails its validate job rather than being skipped here.
+func planBackfillValidation(ctx context.Context, dataBkt objstore.BucketReader, backfillID string) ([]*compactorschedulerpb.PlannedJob, error) {
+	var jobs []*compactorschedulerpb.PlannedJob
+	err := dataBkt.Iter(ctx, "", func(name string) error {
 		blockID, ok := block.IsBlockDir(name)
 		if !ok {
 			return nil
 		}
 		validated, err := dataBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
-		if err != nil {
+		if err != nil || validated {
 			return err
-		}
-		if validated {
-			return nil
-		}
-		uploaded, err := dataBkt.Exists(ctx, path.Join(blockID.String(), blockupload.UploadingMetaFilename))
-		if err != nil {
-			return err
-		}
-		if !uploaded {
-			incomplete = true
-			return nil
 		}
 		jobs = append(jobs, &compactorschedulerpb.PlannedJob{
 			Id: blockID.String(),
@@ -317,9 +291,9 @@ func planBackfillValidation(ctx context.Context, dataBkt objstore.BucketReader, 
 		return nil
 	})
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to list backfill blocks: %w", err)
+		return nil, fmt.Errorf("failed to list backfill blocks: %w", err)
 	}
-	return jobs, incomplete, nil
+	return jobs, nil
 }
 
 // planBackfillCopy returns a copy job for each block that has a meta.json, is not marked for deletion, and has not been
@@ -378,11 +352,6 @@ func isCopiedMarkFilename(name string) (ulid.ULID, bool) {
 	}
 	blockID, err := ulid.Parse(id)
 	return blockID, err == nil
-}
-
-// backfillBucket returns the bucket holding backfill data and phase markers
-func backfillBucket(c *MultitenantCompactor) objstore.Bucket {
-	return c.backfillBucketClient
 }
 
 func backfillCleanupPlan(backfillID string) *compactorschedulerpb.PlannedJobsRequest {

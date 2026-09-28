@@ -1290,7 +1290,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.scheduler-client.backfill-mode-enabled
-    	[experimental] If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell.
+    	[experimental] If enabled, the compactor runs jobs for backfills from a compactor scheduler in backfill mode instead of compaction of the tenants in a cell. Requires -compactor.scheduler-client.enable-ring-based-cleanup to be false.
   -compactor.scheduler-client.compaction-dir-cleanup-interval duration
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign

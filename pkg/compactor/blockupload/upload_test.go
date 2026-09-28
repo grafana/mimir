@@ -787,7 +787,6 @@ func TestBlockUploader_StartBlockUpload(t *testing.T) {
 func TestBlockUploader_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	UploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
 	uploadingMetaPath := path.Join(tenantID, blockID, UploadingMetaFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 
@@ -1522,6 +1521,7 @@ func TestBlockUploader_ValidateBlock(t *testing.T) {
 		missing          Missing
 		expectError      bool
 		expectedMsg      string
+		cannotValidate   bool // the error is not caused by the block being invalid
 	}{
 		{
 			name:             "valid block",
@@ -1548,11 +1548,12 @@ func TestBlockUploader_ValidateBlock(t *testing.T) {
 			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
-			name:        "missing meta file",
-			lbls:        validLabels,
-			missing:     MissingMeta,
-			expectError: true,
-			expectedMsg: "failed renaming while preparing block for validation",
+			name:           "missing meta file",
+			lbls:           validLabels,
+			missing:        MissingMeta,
+			expectError:    true,
+			expectedMsg:    "failed renaming while preparing block for validation",
+			cannotValidate: true,
 		},
 		{
 			name:        "missing index file",
@@ -1723,10 +1724,15 @@ func TestBlockUploader_ValidateBlock(t *testing.T) {
 
 			// validate the block
 			c.cfg.ValidationDir = t.TempDir()
-			err = c.validateBlock(ctx, log.NewNopLogger(), blockID, meta, bkt, tenantID)
+			err = c.ValidateBlock(ctx, log.NewNopLogger(), blockID, meta, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)
+				if tc.cannotValidate {
+					require.NotErrorIs(t, err, ErrInvalidBlock)
+				} else {
+					require.ErrorIs(t, err, ErrInvalidBlock)
+				}
 			} else {
 				require.NoError(t, err)
 			}

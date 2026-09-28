@@ -48,6 +48,9 @@ const (
 // var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
+// ErrInvalidBlock is matched by ValidateBlock errors caused by the block itself
+var ErrInvalidBlock = errors.New("invalid block")
+
 type Limits interface {
 	CompactorBlocksRetentionPeriod(userID string) time.Duration
 	CompactorBlockUploadValidationEnabled(tenantID string) bool
@@ -229,7 +232,7 @@ func (c *BlockUploader) finishBlockUpload(w http.ResponseWriter, r *http.Request
 		decreaseActiveValidationsInDefer = false
 		go c.validateAndCompleteBlockUpload(logger, tenantID, userBkt, blockID, m, func(ctx context.Context) error {
 			defer c.blockUploadValidations.Dec()
-			return c.validateBlock(ctx, logger, blockID, m, userBkt, tenantID)
+			return c.ValidateBlock(ctx, logger, blockID, m, userBkt, tenantID)
 		})
 		level.Info(logger).Log("msg", "validation process started")
 	} else {
@@ -320,7 +323,7 @@ func (c *BlockUploader) createBlockUpload(ctx context.Context, meta *block.Meta,
 		}
 	}
 
-	return c.UploadMeta(ctx, logger, meta, blockID, UploadingMetaFilename, userBkt)
+	return c.uploadMeta(ctx, logger, meta, blockID, UploadingMetaFilename, userBkt)
 }
 
 // UploadBlockFile handles requests for uploading block files.
@@ -464,7 +467,7 @@ func (c *BlockUploader) validateAndCompleteBlockUpload(logger log.Logger, tenant
 }
 
 func (c *BlockUploader) MarkBlockComplete(ctx context.Context, logger log.Logger, tenantID string, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
-	if err := c.UploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
+	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
 		level.Error(logger).Log("msg", "error uploading block metadata file", "err", err)
 		return err
 	}
@@ -506,7 +509,7 @@ func (c *BlockUploader) sanitizeMeta(logger log.Logger, userID string, blockID u
 	return ""
 }
 
-func (c *BlockUploader) UploadMeta(ctx context.Context, logger log.Logger, meta *block.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
+func (c *BlockUploader) uploadMeta(ctx context.Context, logger log.Logger, meta *block.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
 	if meta == nil {
 		return errors.New("missing block metadata")
 	}
@@ -539,14 +542,14 @@ func (c *BlockUploader) createTemporaryBlockDirectory(logger log.Logger) (dir st
 	return blockDir, nil
 }
 
-func RemoveTemporaryBlockDirectory(logger log.Logger, blockDir string) {
+func removeTemporaryBlockDirectory(logger log.Logger, blockDir string) {
 	level.Debug(logger).Log("msg", "removing temporary block directory", "dir", blockDir)
 	if err := os.RemoveAll(blockDir); err != nil {
 		level.Warn(logger).Log("msg", "failed to remove temporary block directory", "path", blockDir, "err", err)
 	}
 }
 
-func (c *BlockUploader) PrepareBlockForValidation(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) (string, error) {
+func (c *BlockUploader) prepareBlockForValidation(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) (string, error) {
 	blockDir, err := c.createTemporaryBlockDirectory(logger)
 	if err != nil {
 		return "", err
@@ -556,7 +559,7 @@ func (c *BlockUploader) PrepareBlockForValidation(ctx context.Context, logger lo
 	level.Debug(logger).Log("msg", "downloading block from bucket", "block", blockID.String())
 	err = objstore.DownloadDir(ctx, logger, userBkt, blockID.String(), blockID.String(), blockDir)
 	if err != nil {
-		RemoveTemporaryBlockDirectory(logger, blockDir)
+		removeTemporaryBlockDirectory(logger, blockDir)
 		return "", fmt.Errorf("failed to download block: %w", err)
 	}
 
@@ -564,14 +567,16 @@ func (c *BlockUploader) PrepareBlockForValidation(ctx context.Context, logger lo
 	err = os.Rename(filepath.Join(blockDir, UploadingMetaFilename), filepath.Join(blockDir, block.MetaFilename))
 	if err != nil {
 		level.Warn(logger).Log("msg", "could not rename temporary metadata file", "block", blockID.String(), "err", err)
-		RemoveTemporaryBlockDirectory(logger, blockDir)
+		removeTemporaryBlockDirectory(logger, blockDir)
 		return "", errors.New("failed renaming while preparing block for validation")
 	}
 
 	return blockDir, nil
 }
 
-func (c *BlockUploader) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
+// ValidateBlock validates an uploaded block against its meta. Errors caused by the block itself match ErrInvalidBlock,
+// other errors mean the block could not be validated.
+func (c *BlockUploader) ValidateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
 	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
 	if err := blockvalidation.CheckMaxBlockSize(blockMetadata.Thanos.Files, maxBlockSizeBytes); err != nil {
 		// Specifically log for oversized blocks.
@@ -579,20 +584,31 @@ func (c *BlockUploader) validateBlock(ctx context.Context, logger log.Logger, bl
 		if errors.As(err, &sizeErr) {
 			level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", sizeErr.LimitBytes, "size", sizeErr.SizeBytes)
 		}
-		return err
+		return invalidBlockError{err}
 	}
 
-	blockDir, err := c.PrepareBlockForValidation(ctx, logger, userBkt, blockID)
+	blockDir, err := c.prepareBlockForValidation(ctx, logger, userBkt, blockID)
 	if err != nil {
 		return err
 	}
-	defer RemoveTemporaryBlockDirectory(logger, blockDir)
+	defer removeTemporaryBlockDirectory(logger, blockDir)
 
-	return blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, blockMetadata, blockvalidation.CheckBlockOnDiskOptions{
+	err = blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, blockMetadata, blockvalidation.CheckBlockOnDiskOptions{
 		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(userID),
 		MaxBlockSizeBytes: maxBlockSizeBytes,
 	})
+	if err != nil && ctx.Err() == nil {
+		return invalidBlockError{err}
+	}
+	return err
 }
+
+// invalidBlockError keeps the message of the error it wraps, so validation errors reported to users are unchanged
+type invalidBlockError struct{ error }
+
+func (e invalidBlockError) Unwrap() error { return e.error }
+
+func (e invalidBlockError) Is(target error) bool { return target == ErrInvalidBlock }
 
 type httpError struct {
 	message    string
