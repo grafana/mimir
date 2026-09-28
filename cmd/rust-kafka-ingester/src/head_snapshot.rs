@@ -5,7 +5,9 @@ use std::path::Path;
 use super::*;
 use crate::chunk_disk::FileState;
 
-const MAGIC: &[u8; 8] = b"MIMIRHS4";
+const MAGIC: &[u8; 8] = b"MIMIRHS5";
+// Without the emulated Go head's truncations and non-owned evictions.
+const V4_MAGIC: &[u8; 8] = b"MIMIRHS4";
 // Without chunk out-of-order flags, the native histogram flag, or histograms in the open
 // out-of-order chunk.
 const V3_MAGIC: &[u8; 8] = b"MIMIRHS3";
@@ -125,6 +127,9 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
     for (tenant_id, tenant) in &state.tenants {
         writer.put_bytes(tenant_id.as_bytes())?;
         writer.put_i64(tenant.max_time)?;
+        // A restarted Go head resumes from its WAL with its min time and evictions.
+        writer.put_i64(tenant.head_min)?;
+        writer.put_i64(tenant.truncated_to)?;
         writer.put_len(tenant.metadata.values().map(BTreeMap::len).sum())?;
         for (metadata, seen) in tenant.metadata.values().flat_map(BTreeMap::values) {
             writer.put_bytes(&metadata.encode_to_vec())?;
@@ -139,7 +144,11 @@ fn write_shard(writer: &mut Checksummed<BufWriter<File>>, state: &State) -> Resu
             }
             writer.put_i64(series.last_ingested_ms)?;
             writer.put_u32(series.last_bucket_count)?;
-            writer.write_all(&[u8::from(series.native_histogram)])?;
+            writer.write_all(&[
+                u8::from(series.native_histogram),
+                u8::from(series.head_evicted),
+            ])?;
+            writer.put_u32(series.non_owned_since_s)?;
             writer.put_len(series.chunks.len())?;
             for chunk in &series.chunks {
                 writer.put_u64(chunk.reference)?;
@@ -247,7 +256,8 @@ fn read_snapshot(
     let mut magic = [0; 8];
     reader.inner.read_exact(&mut magic)?;
     let version = match &magic {
-        MAGIC => 4,
+        MAGIC => 5,
+        V4_MAGIC => 4,
         V3_MAGIC => 3,
         LEGACY_MAGIC => 2,
         _ => bail!("head snapshot has invalid magic"),
@@ -393,6 +403,10 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
             max_time: if legacy { i64::MIN } else { reader.i64()? },
             ..Tenant::default()
         };
+        if version >= 5 {
+            tenant.head_min = reader.i64()?;
+            tenant.truncated_to = reader.i64()?;
+        }
         for _ in 0..reader.count(10_000_000)? {
             let metadata = cortexpb::MetricMetadata::decode(reader.read_bytes()?.as_slice())?;
             let seen = if legacy { now_ms() } else { reader.i64()? };
@@ -430,6 +444,10 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                 native_histogram: version >= 4 && reader.u8()? == 1,
                 ..Series::default()
             };
+            if version >= 5 {
+                series.head_evicted = reader.u8()? == 1;
+                series.non_owned_since_s = reader.u32()?;
+            }
             series.chunks = (0..reader.count(1_000_000)?)
                 .map(|_| {
                     Ok(ChunkMeta {
@@ -943,8 +961,8 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    // The requests `testdata/head-snapshot-v3` was written from, by the ingester that wrote v3
-    // snapshots.
+    // The requests the `testdata/head-snapshot-v*` fixtures were written from, by the ingesters
+    // that wrote those versions.
     fn v3_fixture_requests() -> [DecodedRequest; 2] {
         let series =
             |job: &str, samples: Vec<(i64, f64)>, histograms: Vec<(i64, u32)>| DecodedSeries {
@@ -1064,9 +1082,21 @@ mod tests {
 
     #[test]
     fn restores_v3_snapshots_written_by_the_deployed_ingester() {
+        restores_fixture("head-snapshot-v3");
+    }
+
+    // Written by Mimir `1fbdfb2100` from the same requests.
+    #[test]
+    fn restores_v4_snapshots_written_by_the_deployed_ingester() {
+        restores_fixture("head-snapshot-v4");
+    }
+
+    fn restores_fixture(name: &str) {
         let directory =
-            std::env::temp_dir().join(format!("mimir-rust-head-v3-{}", std::process::id()));
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/head-snapshot-v3");
+            std::env::temp_dir().join(format!("mimir-rust-{name}-{}", std::process::id()));
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata")
+            .join(name);
         fs::create_dir_all(&directory).unwrap();
         fs::copy(fixture.join(FILE_NAME), directory.join(FILE_NAME)).unwrap();
         for shard in 0..16 {
@@ -1096,7 +1126,7 @@ mod tests {
         }));
         let mut restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
             .unwrap()
-            .expect("v3 snapshot restores");
+            .expect("fixture snapshot restores");
         restored.store = restored.store.with_overrides(Arc::clone(&overrides));
         let fresh_directory = directory.join("fresh");
         let fresh = Store::new(20 * 60 * 1000, None, Some(fresh_directory))
@@ -1138,6 +1168,75 @@ mod tests {
             samples_everything(&restored.store),
             samples_everything(&fresh)
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn restores_the_emulated_head_like_a_go_head_replayed_from_its_wal() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-head-state-{}", std::process::id()));
+        let overrides = Arc::new(Overrides::new(crate::limits::Limits {
+            early_head_compaction_owned_series_threshold: 1,
+            ..Default::default()
+        }));
+        overrides.set_active_partitions(1);
+        let eviction = Some(crate::store::NonOwnedEviction {
+            min_grace_ms: 0,
+            max_grace_ms: 0,
+            jitter_ms: 0,
+        });
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone()))
+            .unwrap()
+            .with_overrides(Arc::clone(&overrides))
+            .with_non_owned_eviction(eviction);
+        let hour = 3_600_000;
+        let now = now_ms();
+        for name in ["a", "b"] {
+            let mut request = DecodedRequest {
+                source: 0,
+                series: vec![DecodedSeries {
+                    labels: vec![("__name__".into(), name.into())],
+                    samples: (0..=4 * 60)
+                        .map(|minute| cortexpb::Sample {
+                            timestamp_ms: now - 4 * hour + minute * 60_000,
+                            value: 1.0,
+                        })
+                        .collect(),
+                    histograms: Vec::new(),
+                    exemplars: Vec::new(),
+                    created_timestamp: 0,
+                }],
+                metadata: Vec::new(),
+            };
+            request.series[0].labels.sort();
+            store.ingest("tenant", request).unwrap();
+        }
+        // Own nothing: both series are pending eviction; only the compaction evicts them.
+        store.set_owned_ranges(HashMap::from([("tenant".to_owned(), Some(vec![0, 0]))]));
+        store.head_tick(false, true);
+        let before = store.head_tick(true, true).remove(0);
+        assert_eq!((before.memory_series, before.non_owned_evicted), (0, 2));
+        store
+            .write_snapshot(&[SnapshotOffset {
+                offset: Some(1),
+                timestamp_ms: 1,
+            }])
+            .unwrap();
+        drop(store);
+        let restored = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .unwrap()
+            .store
+            .with_overrides(overrides)
+            .with_non_owned_eviction(eviction);
+        restored.set_owned_ranges(HashMap::from([("tenant".to_owned(), Some(vec![0, 0]))]));
+        let after = restored.head_tick(false, true).remove(0);
+        assert_eq!(
+            after.memory_series, 0,
+            "evicted series stay out of the head"
+        );
+        assert_eq!(after.head_min_time, before.head_min_time);
+        assert!(after.truncated);
         fs::remove_dir_all(directory).unwrap();
     }
 
