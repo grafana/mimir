@@ -208,6 +208,8 @@ struct Tenant {
     metadata: BTreeMap<String, MetricMetadataSet>,
     ingested: VecDeque<(Instant, i32, u64)>,
     max_time: i64,
+    // The oldest accepted sample, like the Go head's min time before its first compaction.
+    min_time: i64,
     // The min time of the emulated Go head, which head compaction moves in block-range steps.
     head_min: i64,
 }
@@ -220,6 +222,7 @@ impl Default for Tenant {
             metadata: BTreeMap::new(),
             ingested: VecDeque::new(),
             max_time: i64::MIN,
+            min_time: i64::MAX,
             head_min: i64::MIN,
         }
     }
@@ -629,7 +632,22 @@ impl Store {
                 let rules =
                     AppendRules::new(home_tenant.max_time, limits.out_of_order_time_window_ms);
                 let mut record_max = home_tenant.max_time;
+                // Older samples are rejected whatever the series holds.
+                let acceptable_from = if rules.out_of_order_window_ms > 0 {
+                    rules.min_valid_time.min(
+                        rules
+                            .head_max_time
+                            .saturating_sub(rules.out_of_order_window_ms),
+                    )
+                } else {
+                    rules.min_valid_time
+                };
+                let mut record_min = home_tenant.min_time;
                 for series in &mut request.series {
+                    let created = series.created_timestamp;
+                    if created > 0 && created >= acceptable_from {
+                        record_min = record_min.min(created);
+                    }
                     series
                         .samples
                         .retain(|sample| match classify(sample.timestamp_ms) {
@@ -639,6 +657,9 @@ impl Store {
                             }
                             None => {
                                 record_max = record_max.max(sample.timestamp_ms);
+                                if sample.timestamp_ms >= acceptable_from {
+                                    record_min = record_min.min(sample.timestamp_ms);
+                                }
                                 true
                             }
                         });
@@ -652,6 +673,9 @@ impl Store {
                                 }
                                 None => {
                                     record_max = record_max.max(histogram.timestamp);
+                                    if histogram.timestamp >= acceptable_from {
+                                        record_min = record_min.min(histogram.timestamp);
+                                    }
                                     true
                                 }
                             });
@@ -671,6 +695,7 @@ impl Store {
                 }
                 // Every sample above the head's max time is accepted, so the max is known now.
                 home_tenant.max_time = record_max;
+                home_tenant.min_time = record_min;
                 record_rules.push((rules, keep_exemplars));
                 all_series.extend(
                     request
@@ -1048,13 +1073,14 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
         let compiled = compile_matchers(matchers)?;
+        let window = self.head_view(tenant_id).label_window(start, end);
         let names = self
             .per_shard(tenant_id, |tenant, _| {
                 let mut names = BTreeSet::new();
                 for ((_, labels), _) in tenant
                     .series
                     .matching(&compiled)
-                    .filter(|(_, series)| matches_time_range(series, start, end))
+                    .filter(|(_, series)| window.includes(series))
                 {
                     names.extend(labels.iter().map(|(name, _)| name.to_string()));
                 }
@@ -1075,13 +1101,14 @@ impl Store {
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<String>> {
         let compiled = compile_matchers(matchers)?;
+        let window = self.head_view(tenant_id).label_window(start, end);
         let values = self
             .per_shard(tenant_id, |tenant, _| {
                 let mut values = BTreeSet::new();
                 for ((_, labels), _) in tenant
                     .series
                     .matching(&compiled)
-                    .filter(|(_, series)| matches_time_range(series, start, end))
+                    .filter(|(_, series)| window.includes(series))
                 {
                     if let Some((_, value)) =
                         labels.iter().find(|(label, _)| label.as_ref() == name)
@@ -1095,6 +1122,17 @@ impl Store {
             .flatten()
             .collect::<BTreeSet<_>>();
         Ok(values.into_iter().collect())
+    }
+
+    fn head_view(&self, tenant_id: &str) -> HeadView {
+        let home = self.shards[0].read().expect("store lock poisoned");
+        home.tenants
+            .get(tenant_id)
+            .map_or(HeadView::EMPTY, |tenant| HeadView {
+                head_min: tenant.head_min,
+                min_time: tenant.min_time,
+                max_time: tenant.max_time,
+            })
     }
 
     pub fn has_tenant(&self, tenant_id: &str) -> bool {
@@ -1460,8 +1498,9 @@ impl Store {
 
     pub fn user_stats(&self, tenant_id: &str, active: bool) -> UserStatsView {
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
+        let head = self.head_view(tenant_id);
         self.per_shard(tenant_id, |tenant, _| {
-            tenant_stats_at(tenant, active, cutoff)
+            tenant_stats_at(tenant, active, cutoff, head)
         })
         .into_iter()
         .fold(UserStatsView::default(), add_stats)
@@ -1469,6 +1508,22 @@ impl Store {
 
     pub fn all_user_stats(&self, active: bool) -> Vec<(String, UserStatsView)> {
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
+        let heads = {
+            let home = self.shards[0].read().expect("store lock poisoned");
+            home.tenants
+                .iter()
+                .map(|(id, tenant)| {
+                    (
+                        id.clone(),
+                        HeadView {
+                            head_min: tenant.head_min,
+                            min_time: tenant.min_time,
+                            max_time: tenant.max_time,
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        };
         let per_shard = self.pool.install(|| {
             self.shards
                 .par_iter()
@@ -1477,7 +1532,10 @@ impl Store {
                     state
                         .tenants
                         .iter()
-                        .map(|(id, tenant)| (id.clone(), tenant_stats_at(tenant, active, cutoff)))
+                        .map(|(id, tenant)| {
+                            let head = heads.get(id).copied().unwrap_or(HeadView::EMPTY);
+                            (id.clone(), tenant_stats_at(tenant, active, cutoff, head))
+                        })
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>()
@@ -1498,14 +1556,18 @@ impl Store {
     ) -> Result<BTreeMap<String, BTreeSet<String>>> {
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
+        // Like Go, these read the head index: its series, or the active ones.
+        let head = self.head_view(tenant_id);
         let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for shard in self.per_shard(tenant_id, |tenant, _| {
             let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-            for ((_, labels), _) in tenant
-                .series
-                .matching(&compiled)
-                .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
-            {
+            for ((_, labels), _) in tenant.series.matching(&compiled).filter(|(_, series)| {
+                if active {
+                    series.last_ingested_ms >= cutoff
+                } else {
+                    head.holds(series)
+                }
+            }) {
                 for (name, value) in labels.iter() {
                     result
                         .entry(name.to_string())
@@ -1531,6 +1593,8 @@ impl Store {
     ) -> Result<BTreeMap<String, BTreeMap<String, u64>>> {
         let compiled = compile_matchers(matchers)?;
         let cutoff = now_ms().saturating_sub(self.active_window_ms);
+        // Like Go, these read the head index: its series, or the active ones.
+        let head = self.head_view(tenant_id);
         let wanted = label_names
             .iter()
             .map(String::as_str)
@@ -1538,11 +1602,13 @@ impl Store {
         let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
         for shard in self.per_shard(tenant_id, |tenant, _| {
             let mut result: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
-            for ((_, labels), _) in tenant
-                .series
-                .matching(&compiled)
-                .filter(|(_, series)| !active || series.last_ingested_ms >= cutoff)
-            {
+            for ((_, labels), _) in tenant.series.matching(&compiled).filter(|(_, series)| {
+                if active {
+                    series.last_ingested_ms >= cutoff
+                } else {
+                    head.holds(series)
+                }
+            }) {
                 for (name, value) in labels.iter() {
                     if wanted.contains(name.as_ref()) {
                         *result
@@ -1608,16 +1674,72 @@ fn add_stats(total: UserStatsView, shard: UserStatsView) -> UserStatsView {
     }
 }
 
-fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64) -> UserStatsView {
-    let num_series = if active {
-        tenant
-            .series
-            .values()
-            .filter(|series| series.last_ingested_ms >= cutoff)
-            .count()
-    } else {
-        tenant.series.len()
-    } as u64;
+/// The emulated Go head of a tenant, which is all that the Go ingester's head-only APIs see.
+#[derive(Clone, Copy, Debug)]
+struct HeadView {
+    head_min: i64,
+    min_time: i64,
+    max_time: i64,
+}
+
+impl HeadView {
+    const EMPTY: Self = Self {
+        head_min: i64::MIN,
+        min_time: i64::MAX,
+        max_time: i64::MIN,
+    };
+
+    fn holds(&self, series: &Series) -> bool {
+        series_newest(series).is_some_and(|newest| newest >= self.head_min)
+    }
+
+    /// Which series a label lookup over `[start, end]` sees: like Prometheus's head index, every
+    /// head series once the range overlaps the head, and like compacted blocks, every series with
+    /// data in a block range the lookup overlaps.
+    fn label_window(&self, start: i64, end: i64) -> LabelWindow {
+        let head_lower = self.head_min.max(self.min_time);
+        let head = self.max_time != i64::MIN && start <= self.max_time && end >= head_lower;
+        let blocks = (self.head_min != i64::MIN).then(|| {
+            let lower = start.div_euclid(CHUNK_RANGE_MS) * CHUNK_RANGE_MS;
+            let upper = range_end(end).min(self.head_min).saturating_sub(1);
+            (lower, upper)
+        });
+        LabelWindow {
+            head,
+            head_view: *self,
+            blocks: blocks.filter(|(lower, upper)| lower <= upper),
+        }
+    }
+}
+
+struct LabelWindow {
+    head: bool,
+    head_view: HeadView,
+    blocks: Option<(i64, i64)>,
+}
+
+impl LabelWindow {
+    fn includes(&self, series: &Series) -> bool {
+        (self.head && self.head_view.holds(series))
+            || self
+                .blocks
+                .is_some_and(|(lower, upper)| matches_time_range(series, lower, upper))
+    }
+}
+
+fn tenant_stats_at(tenant: &Tenant, active: bool, cutoff: i64, head: HeadView) -> UserStatsView {
+    // Like `Head.NumSeries`, only series still in the head count.
+    let num_series = tenant
+        .series
+        .values()
+        .filter(|series| {
+            if active {
+                series.last_ingested_ms >= cutoff
+            } else {
+                head.holds(series)
+            }
+        })
+        .count() as u64;
     let now = Instant::now();
     let mut api = 0;
     let mut rule = 0;
