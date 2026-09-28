@@ -24,8 +24,42 @@ pub mod names {
     static LEN: AtomicU32 = AtomicU32::new(0);
     static INDEX: OnceLock<Mutex<HashMap<&'static str, u32>>> = OnceLock::new();
 
+    // A name's id, or the table length when it was not found: trackers and cost attribution
+    // look up names no series has on every sample, and the index lock is shared by every
+    // ingest thread.
+    type Cached = Result<u32, u32>;
+
+    // Names come from series and from configured or queried matchers; clearing past this bounds
+    // what arbitrary query names can add.
+    const CACHE_LIMIT: usize = 16_384;
+
     thread_local! {
-        static CACHE: RefCell<HashMap<Box<str>, u32>> = RefCell::new(HashMap::new());
+        static CACHE: RefCell<HashMap<Box<str>, Cached>> = RefCell::new(HashMap::new());
+        #[cfg(test)]
+        static INDEX_LOCKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    fn cache(name: &str, entry: Cached) {
+        CACHE.with_borrow_mut(|cache| {
+            if cache.len() >= CACHE_LIMIT {
+                cache.clear();
+            }
+            cache.insert(name.into(), entry);
+        });
+    }
+
+    fn index() -> std::sync::MutexGuard<'static, HashMap<&'static str, u32>> {
+        #[cfg(test)]
+        INDEX_LOCKS.set(INDEX_LOCKS.get() + 1);
+        INDEX
+            .get_or_init(Mutex::default)
+            .lock()
+            .expect("label names poisoned")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn index_locks() -> u64 {
+        INDEX_LOCKS.get()
     }
 
     fn position(id: u32) -> (usize, usize) {
@@ -37,14 +71,11 @@ pub mod names {
 
     /// The id of `name`, adding it to the table when new.
     pub fn intern(name: &str) -> u32 {
-        if let Some(id) = CACHE.with_borrow(|cache| cache.get(name).copied()) {
+        if let Some(Ok(id)) = CACHE.with_borrow(|cache| cache.get(name).copied()) {
             return id;
         }
         let id = {
-            let mut index = INDEX
-                .get_or_init(Mutex::default)
-                .lock()
-                .expect("label names poisoned");
+            let mut index = index();
             match index.get(name) {
                 Some(id) => *id,
                 None => {
@@ -66,23 +97,23 @@ pub mod names {
                 }
             }
         };
-        CACHE.with_borrow_mut(|cache| cache.insert(name.into(), id));
+        cache(name, Ok(id));
         id
     }
 
     /// The id of `name` when some series has it.
     pub fn lookup(name: &str) -> Option<u32> {
-        if let Some(id) = CACHE.with_borrow(|cache| cache.get(name).copied()) {
-            return Some(id);
+        match CACHE.with_borrow(|cache| cache.get(name).copied()) {
+            Some(Ok(id)) => return Some(id),
+            // Names are only added, so a miss holds until the table grows.
+            Some(Err(len)) if len == LEN.load(AtomicOrdering::Acquire) => return None,
+            _ => {}
         }
-        let id = INDEX
-            .get_or_init(Mutex::default)
-            .lock()
-            .expect("label names poisoned")
-            .get(name)
-            .copied()?;
-        CACHE.with_borrow_mut(|cache| cache.insert(name.into(), id));
-        Some(id)
+        // Read before the lookup, so a name added after it invalidates the miss.
+        let len = LEN.load(AtomicOrdering::Acquire);
+        let id = index().get(name).copied();
+        cache(name, id.ok_or(len));
+        id
     }
 
     pub fn name(id: u32) -> &'static str {
@@ -240,6 +271,21 @@ pub(crate) fn take_varint(bytes: &mut &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_names_do_not_lock_the_index_on_every_lookup() {
+        let missing = "a_name_no_series_has";
+        assert_eq!(names::lookup(missing), None);
+        let locks = names::index_locks();
+        for _ in 0..100 {
+            assert_eq!(names::lookup(missing), None);
+        }
+        // Tests running in parallel add names, which rightly makes some lookups check again.
+        assert!(names::index_locks() - locks < 50, "missing names locked on every lookup");
+        // A name another thread adds later is found.
+        let id = std::thread::spawn(move || names::intern(missing)).join().unwrap();
+        assert_eq!(names::lookup(missing), Some(id));
+    }
 
     #[test]
     fn labels_round_trip_and_compare_by_name_then_value() {
