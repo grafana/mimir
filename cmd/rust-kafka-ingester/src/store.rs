@@ -214,7 +214,7 @@ struct Series {
     // Go's `labels.StableHash`, by which sharded queries pick series. Kept like Go's head keeps
     // it: rehashing every series' labels for each query shard was a fifth of a busy ingester's CPU.
     shard_hash: u64,
-    // Custom trackers this series matches, computed for one overrides generation.
+    // Custom trackers this series matches, computed for one of its tenant's tracker generations.
     tracker_generation: u64,
     tracker_matches: Box<[u16]>,
 }
@@ -664,6 +664,11 @@ struct Tenant {
     // By start, the block ranges this shard's series have samples in, with their oldest and newest
     // sample: the blocks the Go ingester compacts the head into.
     block_ranges: BTreeMap<i64, (i64, i64)>,
+    // The custom trackers the series' cached matches are for, and their generation. Like Go, only
+    // a change to the tenant's trackers invalidates them: the runtime config reloads whenever any
+    // tenant's overrides change, and matching every series again was a tenth of an ingester's CPU.
+    trackers: Arc<crate::trackers::CustomTrackers>,
+    tracker_generation: u64,
 }
 
 impl Tenant {
@@ -708,6 +713,9 @@ impl Default for Tenant {
             head_series: 0,
             truncated_to: i64::MIN,
             block_ranges: BTreeMap::new(),
+            trackers: Arc::default(),
+            // Series start at generation 0, so they match the trackers on the first report.
+            tracker_generation: 1,
         }
     }
 }
@@ -2664,7 +2672,6 @@ impl Store {
     pub fn active_series_report(&self) -> Vec<ActiveSeriesReport> {
         let now = now_ms();
         let cutoff = now.saturating_sub(self.active_window_ms);
-        let generation = self.overrides.generation();
         type CostCounts = Vec<HashMap<Vec<String>, [u64; 3]>>;
         let per_shard = self.pool.install(|| {
             self.shards
@@ -2695,6 +2702,13 @@ impl Store {
                             };
                             let mut cost_counts: CostCounts =
                                 vec![HashMap::new(); cost.trackers.len()];
+                            if !Arc::ptr_eq(&tenant.trackers, trackers)
+                                && *tenant.trackers != **trackers
+                            {
+                                tenant.tracker_generation += 1;
+                            }
+                            tenant.trackers = Arc::clone(trackers);
+                            let generation = tenant.tracker_generation;
                             tenant.series.for_each_mut(|labels, series| {
                                 if series.last_ingested_ms < cutoff {
                                     return;
@@ -5961,6 +5975,66 @@ mod tests {
             exemplar_timestamps(&store, tenant)[1],
             ("b".into(), vec![3])
         );
+    }
+
+    #[test]
+    fn tracker_matches_survive_reloads_that_keep_the_trackers() {
+        let tenant = "trackers";
+        let overrides = Arc::new(Overrides::new(Limits::default()));
+        overrides.set_active_partitions(1);
+        let store = Store::default().with_overrides(Arc::clone(&overrides));
+        let reload = |trackers: &str, exemplars: i64| {
+            overrides
+                .apply_runtime_config(
+                    serde_json::json!({"overrides": {
+                        tenant: {"active_series_custom_trackers": {"t": trackers}},
+                        "other": {"max_global_exemplars_per_user": exemplars},
+                    }})
+                    .as_object()
+                    .unwrap(),
+                )
+                .unwrap();
+        };
+        reload(r#"{__name__="a"}"#, 1);
+        for name in ["a", "b"] {
+            store
+                .ingest(tenant, series_request(name, [(now_ms(), 1.0)]))
+                .unwrap();
+        }
+        let tracked = || {
+            store
+                .active_series_report()
+                .into_iter()
+                .find(|report| report.tenant == tenant)
+                .unwrap()
+                .custom_trackers[0]
+                .1[0]
+        };
+        let generations = || {
+            store
+                .shards
+                .iter()
+                .flat_map(|shard| {
+                    let state = shard.read().unwrap();
+                    state.tenants.get(tenant).map_or_else(Vec::new, |tenant| {
+                        tenant
+                            .series
+                            .values()
+                            .map(|series| series.tracker_generation)
+                            .collect()
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(tracked(), 1);
+        let matched = generations();
+        // Another tenant's change reloads the runtime config, but not this tenant's trackers.
+        reload(r#"{__name__="a"}"#, 2);
+        assert_eq!(tracked(), 1);
+        assert_eq!(generations(), matched, "matches kept");
+        reload(r#"{__name__=~"a|b"}"#, 2);
+        assert_eq!(tracked(), 2);
+        assert_ne!(generations(), matched);
     }
 
     #[test]

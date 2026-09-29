@@ -162,6 +162,13 @@ pub struct CustomTrackers {
     unindexed: Vec<u16>,
 }
 
+// Like Go's matcher config comparison: the same trackers, whatever else the overrides change.
+impl PartialEq for CustomTrackers {
+    fn eq(&self, other: &Self) -> bool {
+        self.names == other.names && self.sources == other.sources
+    }
+}
+
 impl CustomTrackers {
     pub fn new(sources: BTreeMap<String, String>) -> Result<Self> {
         if sources.len() > usize::from(u16::MAX) {
