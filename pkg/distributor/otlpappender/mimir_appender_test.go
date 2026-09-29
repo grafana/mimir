@@ -399,7 +399,7 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+							mimirpb.FromHistogramToHistogramProto(2000, 1000, test.GenerateTestHistogram(1)),
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
@@ -445,7 +445,7 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: 2000, Value: 42.0},
 						},
 						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)),
+							mimirpb.FromHistogramToHistogramProto(3000, 1000, test.GenerateTestHistogram(2)),
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
