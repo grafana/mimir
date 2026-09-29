@@ -72,7 +72,11 @@ func compactSnapshot(cfg Config, sourceDir, name string, opts compactorOptions) 
 		_ = cmd.Wait()
 	}()
 
-	const timeout = 20 * time.Minute
+	// 20 minutes covers the small tier with room to spare, but the medium
+	// tier's multi-day, multi-level compaction genuinely needs longer: it
+	// still had real work in flight (steady CPU, a still-changing block
+	// set, no error) at the 20-minute mark on 2026-09-29.
+	const timeout = 60 * time.Minute
 	if err := waitForCompaction(work, opts.WantSources, stableWindow, 5*time.Second, timeout); err != nil {
 		return "", fmt.Errorf("waiting for compactor to finish (see %s): %w", logPath, err)
 	}
