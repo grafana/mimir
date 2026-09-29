@@ -162,7 +162,8 @@ func nextQuery(cfg config, metric string, now time.Time) (kind, path string, par
 		queries := []string{
 			fmt.Sprintf("sum by (job) (rate(%s[5m]))", selector),
 			fmt.Sprintf("count(%s)", selector),
-			fmt.Sprintf("max_over_time(%s[10m])", selector),
+			// Aggregated so queriers answer with a few series, while ingesters still read every chunk.
+			fmt.Sprintf("max(max_over_time(%s[10m]))", selector),
 		}
 		params.Set("query", queries[rand.IntN(len(queries))])
 		params.Set("start", formatTime(now.Add(-span)))
@@ -197,14 +198,13 @@ func get(ctx context.Context, client *http.Client, cfg config, tenant, path stri
 		return err
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return err
-	}
 	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 		return fmt.Errorf("status %d: %s", response.StatusCode, truncate(string(body), 200))
 	}
-	return nil
+	// Only the load matters, and a large result would not fit in memory.
+	_, err = io.Copy(io.Discard, response.Body)
+	return err
 }
 
 // sampleMetricNames picks metric names by their series in ingesters, from the cardinality API.

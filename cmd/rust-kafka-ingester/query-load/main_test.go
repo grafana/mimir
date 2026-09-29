@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -39,5 +40,15 @@ func TestAggregatedMetricsAreNoLongerPicked(t *testing.T) {
 		name, ok := names.pick("tenant")
 		require.True(t, ok)
 		require.Equal(t, "raw", name)
+	}
+}
+
+func TestQueriesAggregateTheirSeries(t *testing.T) {
+	cfg := config{maxRange: 5 * time.Hour}
+	for range 200 {
+		_, _, params := nextQuery(cfg, "metric", time.Now())
+		if query := params.Get("query"); query != "" {
+			require.Regexp(t, `^(sum|count|max)( by \(job\) )?\(`, query)
+		}
 	}
 }
