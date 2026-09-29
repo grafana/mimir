@@ -33,6 +33,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+const statusClientClosedRequest = 499
+
 var (
 	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
 	errNoValidOrgIDFound = errors.New("no valid org id found")

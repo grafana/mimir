@@ -35,6 +35,7 @@ import (
 	"google.golang.org/api/googleapi"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -2258,26 +2259,112 @@ func TestAPIRoutesCorrectlyHandleInvalidTenantID(t *testing.T) {
 				r := prepareRuler(t, cfg, newMockRuleStore(map[string]rulespb.RuleGroupList{}), withStart())
 				a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
-				router := mux.NewRouter()
-				router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)
-				router.Path("/api/v1/alerts").Methods(http.MethodGet).HandlerFunc(a.PrometheusAlerts)
-				router.Path("/config/v1/rules").Methods(http.MethodGet).HandlerFunc(a.ListRules)
-				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodGet).HandlerFunc(a.ListRules)
-				router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
-				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
-				router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
-				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
-
 				req := requestFor(t, tc.method, "https://localhost:8080"+tc.route, nil, tenantID)
 
 				w := httptest.NewRecorder()
-				router.ServeHTTP(w, req)
+				newAPIRouter(a).ServeHTTP(w, req)
 
 				resp := w.Result()
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			})
 		}
 	}
+}
+
+func TestAPIRoutesCorrectlyHandleClientCancellation(t *testing.T) {
+	const ruleGroupPayload = `
+name: group1
+interval: 15s
+rules:
+- record: up_rule
+  expr: up
+`
+
+	tcs := []struct {
+		route  string
+		method string
+		body   string
+	}{
+		{route: "/api/v1/rules", method: http.MethodGet},
+		{route: "/api/v1/alerts", method: http.MethodGet},
+		{route: "/config/v1/rules", method: http.MethodGet},
+		{route: "/config/v1/rules/namespace1", method: http.MethodGet},
+		{route: "/config/v1/rules/namespace1/group1", method: http.MethodGet},
+		{route: "/config/v1/rules/namespace1", method: http.MethodPost, body: ruleGroupPayload},
+		{route: "/config/v1/rules/namespace1/group1", method: http.MethodDelete},
+		{route: "/config/v1/rules/namespace1", method: http.MethodDelete},
+	}
+
+	for _, tc := range tcs {
+		t.Run(fmt.Sprintf("method=%s, route=%s", tc.method, tc.route), func(t *testing.T) {
+			store := &contextAwareRuleStore{mockRuleStore: newMockRuleStore(map[string]rulespb.RuleGroupList{})}
+			r := prepareRuler(t, defaultRulerConfig(t), store, withStart(), withRulerAddrAutomaticMapping())
+			a := NewAPI(r, store, mimirtest.NewTestingLogger(t))
+
+			req := requestFor(t, tc.method, "https://localhost:8080"+tc.route, strings.NewReader(tc.body), "user1")
+			ctx, cancel := context.WithCancel(req.Context())
+			cancel()
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+			newAPIRouter(a).ServeHTTP(w, req)
+
+			require.Equal(t, statusClientClosedRequest, w.Code)
+		})
+	}
+}
+
+func newAPIRouter(a *API) *mux.Router {
+	router := mux.NewRouter()
+	router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)
+	router.Path("/api/v1/alerts").Methods(http.MethodGet).HandlerFunc(a.PrometheusAlerts)
+	router.Path("/config/v1/rules").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+	router.Path("/config/v1/rules/{namespace}").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+	router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+	router.Path("/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
+	router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
+	router.Path("/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
+	return router
+}
+
+// contextAwareRuleStore fails the rule store calls made by the API if the context is done, like a real object store client.
+type contextAwareRuleStore struct {
+	*mockRuleStore
+}
+
+func (s *contextAwareRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.mockRuleStore.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, opts...)
+}
+
+func (s *contextAwareRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.mockRuleStore.GetRuleGroup(ctx, userID, namespace, group)
+}
+
+func (s *contextAwareRuleStore) SetRuleGroup(ctx context.Context, userID, namespace string, group *rulespb.RuleGroupDesc) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mockRuleStore.SetRuleGroup(ctx, userID, namespace, group)
+}
+
+func (s *contextAwareRuleStore) DeleteRuleGroup(ctx context.Context, userID, namespace, group string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mockRuleStore.DeleteRuleGroup(ctx, userID, namespace, group)
+}
+
+func (s *contextAwareRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mockRuleStore.DeleteNamespace(ctx, userID, namespace)
 }
 
 func requestFor(t *testing.T, method string, url string, body io.Reader, userID string) *http.Request {
