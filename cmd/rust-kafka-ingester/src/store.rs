@@ -2118,28 +2118,36 @@ impl Store {
                     )
                 })
             };
+            let counts_index = blocks.iter().any(|block| block.count_index);
+            let mut bounds = Vec::new();
             let mut selected = tenant
                 .series
                 .matching(&lookup)
                 .filter_map(|((_, labels), series)| {
                     let in_shard = in_query_shard(series.shard_hash, &shard);
+                    // A series outside the query shard only counts toward index lookups.
+                    if !in_shard && !counts_index {
+                        return None;
+                    }
+                    // Decoded once: every block below checks the same chunk bounds.
+                    bounds.clear();
+                    bounds.extend(series_bounds(series));
+                    let overlaps = |lower: i64, upper: i64| {
+                        bounds
+                            .iter()
+                            .any(|(min, max)| *min <= upper && *max >= lower)
+                    };
                     for (block, counts) in blocks.iter().zip(&mut counts) {
                         let indexed = if block.head {
                             head.holds(series)
                         } else {
-                            matches_time_range(series, block.lower, block.upper)
+                            overlaps(block.lower, block.upper)
                         };
                         if !indexed {
                             continue;
                         }
                         counts[0] += u64::from(block.count_index);
-                        if in_shard
-                            && matches_time_range(
-                                series,
-                                start.max(block.lower),
-                                end.min(block.upper),
-                            )
-                        {
+                        if in_shard && overlaps(start.max(block.lower), end.min(block.upper)) {
                             counts[1] += 1;
                         }
                     }
@@ -2147,7 +2155,7 @@ impl Store {
                         return None;
                     }
                     let cold_chunks = cold_series.remove(labels);
-                    if cold_chunks.is_none() && !matches_time_range(series, start, end) {
+                    if cold_chunks.is_none() && !overlaps(start, end) {
                         return None;
                     }
                     let cold_chunks = cold_chunks.unwrap_or_default();
@@ -4267,6 +4275,8 @@ fn owned_labels(labels: &StoredLabels) -> Vec<(String, String)> {
         .collect()
 }
 
+// What `encode_series_labels` encodes, as a message.
+#[cfg(test)]
 fn stored_label_pairs(labels: &StoredLabels) -> Vec<cortexpb::LabelPair> {
     labels
         .iter()
@@ -4277,13 +4287,31 @@ fn stored_label_pairs(labels: &StoredLabels) -> Vec<cortexpb::LabelPair> {
         .collect()
 }
 
+/// The `QueryStreamSeries` of `labels`, without chunks, written directly: building a message of
+/// copied labels to encode it was an eighth of a busy ingester's query CPU.
 fn encode_series_labels(labels: &StoredLabels) -> Bytes {
-    cortex::QueryStreamSeries {
-        labels: stored_label_pairs(labels),
-        chunk_count: 0,
+    use prost::encoding::{WireType, encode_key, encode_varint, encoded_len_varint};
+    // Like prost, proto3 leaves out empty fields.
+    let field_len = |value: &str| {
+        if value.is_empty() {
+            0
+        } else {
+            1 + encoded_len_varint(value.len() as u64) + value.len()
+        }
+    };
+    let mut bytes = Vec::with_capacity(labels.len() * 32);
+    for (name, value) in labels.iter() {
+        encode_key(1, WireType::LengthDelimited, &mut bytes);
+        encode_varint((field_len(name) + field_len(value)) as u64, &mut bytes);
+        for (tag, field) in [(1, name), (2, value)] {
+            if !field.is_empty() {
+                encode_key(tag, WireType::LengthDelimited, &mut bytes);
+                encode_varint(field.len() as u64, &mut bytes);
+                bytes.extend_from_slice(field.as_bytes());
+            }
+        }
     }
-    .encode_to_vec()
-    .into()
+    bytes.into()
 }
 
 #[path = "cold.rs"]
@@ -4301,6 +4329,27 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn series_labels_encode_like_prost() {
+        for pairs in [
+            vec![("__name__", "up"), ("job", "api")],
+            vec![
+                ("__name__", "up"),
+                ("empty", ""),
+                ("long", &*"x".repeat(300)),
+            ],
+            vec![],
+        ] {
+            let labels = StoredLabels::from_sorted(pairs.iter().copied());
+            let expected = cortex::QueryStreamSeries {
+                labels: stored_label_pairs(&labels),
+                chunk_count: 0,
+            }
+            .encode_to_vec();
+            assert_eq!(encode_series_labels(&labels).as_ref(), expected.as_slice());
+        }
+    }
 
     #[test]
     fn matchers_find_sorted_labels_and_treat_missing_labels_as_empty() {
