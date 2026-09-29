@@ -52,6 +52,8 @@ struct TenantIndex {
     metric_names: std::sync::OnceLock<MetricNames>,
     // The series with each label queries asked for, from `with_label`: the block never changes.
     with_label: std::sync::Mutex<HashMap<String, std::sync::Arc<[u32]>>>,
+    // The series of the names each name matcher other than an equality accepted.
+    name_matches: std::sync::Mutex<HashMap<NameMatcherKey, std::sync::Arc<[u32]>>>,
 }
 
 // Each metric name, sorted, with the indexes of its series.
@@ -264,6 +266,7 @@ impl ColdBlock {
                 shard_hashes: std::sync::OnceLock::new(),
                 metric_names: std::sync::OnceLock::new(),
                 with_label: std::sync::Mutex::default(),
+                name_matches: std::sync::Mutex::default(),
             };
             cursor = &cursor[48..];
             min_time = min_time.min(index.min_time);
@@ -387,6 +390,43 @@ impl ColdBlock {
         series
     }
 
+    /// The tenant's series whose name `matcher`, a name matcher other than an equality, accepts,
+    /// sorted: once per block and matcher, since the block never changes.
+    fn name_matches(&self, tenant: &str, matcher: &CompiledMatcher) -> std::sync::Arc<[u32]> {
+        let Some(table) = self.tenants.get(tenant) else {
+            return std::sync::Arc::from([]);
+        };
+        let key = name_matcher_key(matcher);
+        if let Some(series) = table
+            .name_matches
+            .lock()
+            .expect("name matches lock poisoned")
+            .get(&key)
+        {
+            return std::sync::Arc::clone(series);
+        }
+        #[cfg(test)]
+        COLD_NAME_MATCHES.with(|matches| matches.set(matches.get() + 1));
+        let mut series = self
+            .metric_names(tenant)
+            .iter()
+            .filter(|(name, _)| matcher.matches_value(name))
+            .flat_map(|(_, series)| series.iter().copied())
+            .collect::<Vec<_>>();
+        series.sort_unstable();
+        let series: std::sync::Arc<[u32]> = series.into();
+        let mut cache = table
+            .name_matches
+            .lock()
+            .expect("name matches lock poisoned");
+        // Bounded, so arbitrary queries can't grow it.
+        if cache.len() >= 256 {
+            cache.clear();
+        }
+        cache.insert(key, std::sync::Arc::clone(&series));
+        series
+    }
+
     /// The tenant's metric names, sorted, each with its series.
     fn metric_names(&self, tenant: &str) -> &[(Box<str>, Box<[u32]>)] {
         let Some(table) = self.tenants.get(tenant) else {
@@ -481,13 +521,7 @@ impl ColdBlock {
                 if matcher.label_name() == Some("__name__")
                     && !matches!(matcher, CompiledMatcher::Equal(..))
                 {
-                    let mut list = self
-                        .metric_names(tenant)
-                        .iter()
-                        .filter(|(name, _)| matcher.matches_value(name))
-                        .flat_map(|(_, series)| series.iter().copied())
-                        .collect::<Vec<_>>();
-                    list.sort_unstable();
+                    let list = self.name_matches(tenant, matcher).to_vec();
                     if best.as_ref().is_none_or(|best| list.len() < best.len()) {
                         best = Some(list);
                     }

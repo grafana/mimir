@@ -313,9 +313,31 @@ struct SeriesByName {
     // The name groups each name matcher other than an equality accepted, with how many names
     // there were: a sharded query sends the same one in every request, and the names only change
     // when a metric appears.
-    name_matches: Mutex<HashMap<(u8, String), (usize, Arc<[u32]>)>>,
+    name_matches: Mutex<HashMap<NameMatcherKey, (usize, NameGroups)>>,
     len: usize,
 }
+
+// A name matcher other than an equality, by type and pattern.
+type NameMatcherKey = (u8, String);
+
+// The name groups a name matcher accepts.
+type NameGroups = Arc<[u32]>;
+
+/// The key of `matcher`, a name matcher other than an equality.
+fn name_matcher_key(matcher: &CompiledMatcher) -> NameMatcherKey {
+    match matcher {
+        CompiledMatcher::NotEqual(_, value) => (1, value.clone()),
+        CompiledMatcher::Regex(_, regex) => (2, regex.as_str().to_owned()),
+        CompiledMatcher::NotRegex(_, regex) => (3, regex.as_str().to_owned()),
+        CompiledMatcher::Equal(..) | CompiledMatcher::Shard(..) => {
+            unreachable!("key of an equality or shard matcher")
+        }
+    }
+}
+
+// Distinct values a query remembers its regex matchers' results for: labels queried by regex, like
+// job, have few values, which Go's postings match once each; beyond this, each series checks.
+const REMEMBERED_VALUES: usize = 256;
 
 type ValuePostings = HashMap<u32, u32, std::hash::BuildHasherDefault<PrehashedKey>>;
 
@@ -612,15 +634,32 @@ impl SeriesByName {
                 )
             })
             .collect::<Vec<_>>();
+        let mut remembered = vec![hashbrown::HashMap::<Box<str>, bool>::new(); resolved.len()];
         Box::new(candidates.filter(move |((hash, labels), series)| {
             resolved
                 .iter()
-                .all(|(matcher, name, with_label)| match matcher {
+                .zip(&mut remembered)
+                .all(|((matcher, name, with_label), remembered)| match matcher {
                     CompiledMatcher::Shard(..) => {
                         in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
                     }
                     // A hash collision only makes a series without the label read its labels.
                     _ if with_label.as_ref().is_some_and(|with| !with.contains(hash)) => true,
+                    CompiledMatcher::Regex(..) | CompiledMatcher::NotRegex(..) => {
+                        count_label_value_read();
+                        let value = name.map_or("", |name| labels.value_of(name));
+                        if let Some(matched) = remembered.get(value) {
+                            return *matched;
+                        }
+                        #[cfg(test)]
+                        REGEX_EVALUATIONS
+                            .with(|evaluations| evaluations.set(evaluations.get() + 1));
+                        let matched = matcher.matches_value(value);
+                        if remembered.len() < REMEMBERED_VALUES {
+                            remembered.insert(value.into(), matched);
+                        }
+                        matched
+                    }
                     _ => {
                         count_label_value_read();
                         matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
@@ -631,14 +670,7 @@ impl SeriesByName {
 
     /// The name groups whose name `matcher`, a name matcher other than an equality, accepts.
     fn name_groups(&self, matcher: &CompiledMatcher) -> Arc<[u32]> {
-        let key = match matcher {
-            CompiledMatcher::NotEqual(_, value) => (1, value.clone()),
-            CompiledMatcher::Regex(_, regex) => (2, regex.as_str().to_owned()),
-            CompiledMatcher::NotRegex(_, regex) => (3, regex.as_str().to_owned()),
-            CompiledMatcher::Equal(..) | CompiledMatcher::Shard(..) => {
-                unreachable!("name groups of an equality or shard matcher")
-            }
-        };
+        let key = name_matcher_key(matcher);
         let names = self.names.len();
         let mut cache = self
             .name_matches
@@ -2307,7 +2339,7 @@ impl Store {
             let mut cold_bounds = Vec::new();
             // Per block, for each label matcher that accepts the empty value, the series with its
             // label when few are: the others match it without reading their labels.
-            let mut block_with_label: Option<(u64, Vec<Option<Arc<[u32]>>>)> = None;
+            let mut block_with_label: Option<(u64, Vec<Option<ColdSeriesList>>)> = None;
             for (block_tenant, index, series) in
                 cold.candidates(tenant_id, &lookup, scan_start, scan_end)
             {
@@ -4363,6 +4395,9 @@ thread_local! {
     static LABEL_VALUE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+// The indexes of a cold block's series with something in common.
+type ColdSeriesList = Arc<[u32]>;
+
 fn count_label_value_read() {
     LABEL_VALUE_READS.with(|reads| reads.set(reads.get() + 1));
 }
@@ -4398,6 +4433,9 @@ thread_local! {
     // Metric names name matchers were checked against, and cold blocks' label lists computed.
     static NAME_MATCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static COLD_LABEL_LISTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static COLD_NAME_MATCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // Label values regex matchers were evaluated on.
+    static REGEX_EVALUATIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static REGEX_COMPILES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     // Cold blocks' tenants whose query shard hashes were computed.
     static COLD_SHARD_HASHINGS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -5684,6 +5722,7 @@ mod tests {
             (
                 NAME_MATCHES.with(std::cell::Cell::get),
                 COLD_LABEL_LISTS.with(std::cell::Cell::get),
+                COLD_NAME_MATCHES.with(std::cell::Cell::get),
             )
         };
         let repeated = [
@@ -5694,6 +5733,14 @@ mod tests {
         let before = counters();
         reads(&repeated);
         assert_eq!(counters(), before);
+        // A label regex is evaluated once per distinct value of the label, not per series.
+        let before = REGEX_EVALUATIONS.with(std::cell::Cell::get);
+        reads(&[matcher(0, "__name__", "hot"), matcher(2, "job", "job-[12]")]);
+        let evaluations = REGEX_EVALUATIONS.with(std::cell::Cell::get) - before;
+        assert!(
+            evaluations <= 5 * 16,
+            "{evaluations} regex evaluations for 5 values in 16 shards"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
