@@ -3854,7 +3854,12 @@ metaMonitoring:
       scrapeK8s:
         # -- When grafanaAgent.enabled and serviceMonitor.enabled, controls whether to create ServiceMonitors CRs
         # for cadvisor, kubelet, and kube-state-metrics. The scraped metrics are reduced to those pertaining to
-        # Mimir pods only.
+        # Mimir workloads and this release's gossip-ring Service endpoints.
+        # The gossip-ring endpoint alert also requires the external kube-state-metrics instance to expose
+        # kube_endpoint_address. In kube-state-metrics v2.18.0 and later, enable the deprecated endpoints
+        # resource explicitly with --resources (include endpoints alongside the other resources you need).
+        # Enabling that resource upstream and retaining the metric in this chart's scrape filter are both required;
+        # this chart does not configure the external kube-state-metrics deployment.
         enabled: true
 
         # -- Controls service discovery of kube-state-metrics.

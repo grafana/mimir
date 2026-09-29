@@ -817,12 +817,12 @@ spec:
             expr: |
               (
                 count by(cluster, namespace) (
-                  kube_endpoint_address{endpoint="gossip-ring"}
+                  kube_endpoint_address{endpoint="metamonitoring-values-mimir-gossip-ring", namespace="citestns"}
                   unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 count by(cluster, namespace) (
-                  kube_endpoint_address{endpoint="gossip-ring"}
+                  kube_endpoint_address{endpoint="metamonitoring-values-mimir-gossip-ring", namespace="citestns"}
                 )
                 * 100 > 10
               )
@@ -839,12 +839,12 @@ spec:
             expr: |
               (
                 count by(cluster, namespace) (
-                  kube_endpoint_address{endpoint="gossip-ring"}
+                  kube_endpoint_address{endpoint="metamonitoring-values-mimir-gossip-ring", namespace="citestns"}
                   unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 count by(cluster, namespace) (
-                  kube_endpoint_address{endpoint="gossip-ring"}
+                  kube_endpoint_address{endpoint="metamonitoring-values-mimir-gossip-ring", namespace="citestns"}
                 )
                 * 100 > 50
               )
