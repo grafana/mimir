@@ -20,12 +20,24 @@ const LEGACY_FILE_VERSION: u32 = 1;
 // Every frame holds its series' labels.
 const COMPRESSED_FILE_VERSION: u32 = 2;
 // Like the Prometheus WAL, a file holds a series' labels once and refers to them afterwards.
-const FILE_FORMAT_VERSION: u32 = 3;
+const SERIES_ID_FILE_VERSION: u32 = 3;
+// A file may hold a dictionary trained on its first frames, which the frames after it use.
+const FILE_FORMAT_VERSION: u32 = 4;
 const CHECKPOINT_VERSION: u32 = 1;
 const FILE_HEADER_LEN: usize = 28;
 const FRAME_HEADER_LEN: usize = 8;
 const FRAME_PREFIX_LEN: usize = 24;
 const HOUR_MS: i64 = 60 * 60 * 1000;
+// zstd's fastest regular level: with a file's dictionary, frames are still smaller than level 1
+// gives without one, and compress twice as fast.
+const COMPRESSION_LEVEL: i32 = -1;
+// A frame holds one Kafka record of a few KB, too little for zstd to learn from; a dictionary
+// trained on a file's first frames gives the rest of the file what they have in common.
+const DICTIONARY_FRAMES: usize = 2000;
+const DICTIONARY_SAMPLE_BYTES: usize = 8 << 20;
+const DICTIONARY_BYTES: usize = 112 * 1024;
+// What a dictionary frame records as its offset: no Kafka record has it.
+const DICTIONARY_OFFSET: i64 = -1;
 
 pub struct RecoveredRecord {
     pub offset: i64,
@@ -44,6 +56,91 @@ struct CurrentFile {
     id: u64,
     // The id of each series the file holds, by `SeriesKey`, in the order the file defined them.
     series: hashbrown::HashMap<SeriesKey, u32, std::hash::BuildHasherDefault<KeyHasher>>,
+    dictionary: Dictionary,
+    // Whether the dictionary frame is in the file, which it must be before a frame that uses it.
+    dictionary_written: bool,
+}
+
+/// A file's dictionary, from its first frames' payloads to the compressor of the frames after.
+enum Dictionary {
+    Sampling {
+        samples: Vec<u8>,
+        sizes: Vec<usize>,
+    },
+    // Trained on another thread, so ingestion doesn't wait.
+    Training(std::sync::mpsc::Receiver<Option<Vec<u8>>>),
+    Ready {
+        bytes: std::sync::Arc<[u8]>,
+        compressor: zstd::bulk::Compressor<'static>,
+    },
+    // Training failed, or the file started without samples to spare; frames go without one.
+    Unavailable,
+}
+
+impl Dictionary {
+    fn new() -> Self {
+        Self::Sampling {
+            samples: Vec::new(),
+            sizes: Vec::new(),
+        }
+    }
+
+    /// Takes a trained dictionary once it is there.
+    fn poll(&mut self) {
+        let Self::Training(trained) = self else {
+            return;
+        };
+        let bytes = match trained.try_recv() {
+            Ok(bytes) => bytes,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
+        };
+        *self = bytes
+            .and_then(|bytes| {
+                let compressor =
+                    zstd::bulk::Compressor::with_dictionary(COMPRESSION_LEVEL, &bytes).ok()?;
+                Some(Self::Ready {
+                    bytes: bytes.into(),
+                    compressor,
+                })
+            })
+            .unwrap_or(Self::Unavailable);
+    }
+
+    /// Keeps `payload` to train on, and starts training once there are enough.
+    fn sample(&mut self, payload: &[u8], frames: usize) {
+        let Self::Sampling { samples, sizes } = self else {
+            return;
+        };
+        samples.extend_from_slice(payload);
+        sizes.push(payload.len());
+        if sizes.len() < frames && samples.len() < DICTIONARY_SAMPLE_BYTES {
+            return;
+        }
+        let (samples, sizes) = (std::mem::take(samples), std::mem::take(sizes));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let spawned = std::thread::Builder::new()
+            .name("segment-dictionary".into())
+            .spawn(move || {
+                let _ = sender.send(train_dictionary(&samples, &sizes));
+            });
+        *self = match spawned {
+            Ok(_) => Self::Training(receiver),
+            Err(_) => Self::Unavailable,
+        };
+    }
+}
+
+/// A dictionary for the payloads in `samples`, or None when zstd can't train one from them. zstd
+/// wants samples many times the dictionary's size, and frames can only name a dictionary by id.
+fn train_dictionary(samples: &[u8], sizes: &[usize]) -> Option<Vec<u8>> {
+    let size = DICTIONARY_BYTES.min(samples.len() / 20);
+    if size < 1024 {
+        return None;
+    }
+    let dictionary = zstd::dict::from_continuous(samples, sizes, size).ok()?;
+    zstd::zstd_safe::get_dict_id_from_dict(&dictionary)?;
+    Some(dictionary)
 }
 
 /// A series' identity within a segment file: its tenant and labels, hashed with a seed chosen by
@@ -144,20 +241,26 @@ pub struct SegmentLog {
     last_offset: Option<i64>,
     pending_offset: Option<i64>,
     payload: Vec<u8>,
+    // Frames a file's dictionary is trained on.
+    dictionary_frames: usize,
 }
 
 thread_local! {
     // Frames hold one Kafka record, so setting up a context per frame cost more than compressing
     // it.
-    static COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> =
-        std::cell::RefCell::new(zstd::bulk::Compressor::new(1).expect("zstd compressor"));
+    static COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> = std::cell::RefCell::new(
+        zstd::bulk::Compressor::new(COMPRESSION_LEVEL).expect("zstd compressor"),
+    );
 }
 
 /// A record encoded for the current segment file, written once the store has applied it.
 pub struct CompressedFrame {
     offset: i64,
     file: u64,
-    body: Vec<u8>,
+    // The frame's header, filled in when written, then its body: the file gets it in one write.
+    frame: Vec<u8>,
+    // The dictionary the frame was compressed with, which the file must hold before it.
+    dictionary: Option<std::sync::Arc<[u8]>>,
 }
 
 impl CompressedFrame {
@@ -254,6 +357,7 @@ impl SegmentLog {
             last_offset,
             pending_offset: None,
             payload: Vec::new(),
+            dictionary_frames: DICTIONARY_FRAMES,
         };
         log.remove_expired()?;
         Ok(log)
@@ -290,6 +394,7 @@ impl SegmentLog {
             last_offset: checkpoint,
             pending_offset: None,
             payload: Vec::new(),
+            dictionary_frames: DICTIONARY_FRAMES,
         };
         log.remove_expired()?;
         Ok(Some(log))
@@ -369,21 +474,32 @@ impl SegmentLog {
             }
             put_series_data(payload, series)?;
         }
-        let compressed = COMPRESSOR
-            .with_borrow_mut(|compressor| compressor.compress(payload))
-            .context("compress segment frame")?;
-        let mut body = Vec::with_capacity(FRAME_PREFIX_LEN + compressed.len());
-        put_i64(&mut body, offset);
-        put_i64(&mut body, timestamp_ms);
-        put_i64(&mut body, ingested_ms);
-        body.extend_from_slice(&compressed);
-        if body.len() > 128 * 1024 * 1024 {
+        current.dictionary.poll();
+        let (compressed, dictionary) = match &mut current.dictionary {
+            Dictionary::Ready { bytes, compressor } => {
+                (compressor.compress(payload), Some(bytes.clone()))
+            }
+            _ => (
+                COMPRESSOR.with_borrow_mut(|compressor| compressor.compress(payload)),
+                None,
+            ),
+        };
+        let compressed = compressed.context("compress segment frame")?;
+        current.dictionary.sample(payload, self.dictionary_frames);
+        let mut frame = Vec::with_capacity(FRAME_HEADER_LEN + FRAME_PREFIX_LEN + compressed.len());
+        frame.resize(FRAME_HEADER_LEN, 0);
+        put_i64(&mut frame, offset);
+        put_i64(&mut frame, timestamp_ms);
+        put_i64(&mut frame, ingested_ms);
+        frame.extend_from_slice(&compressed);
+        if frame.len() - FRAME_HEADER_LEN > 128 * 1024 * 1024 {
             bail!("compressed segment frame exceeds 128 MiB");
         }
         Ok(CompressedFrame {
             offset,
             file: current.id,
-            body,
+            frame,
+            dictionary,
         })
     }
 
@@ -399,16 +515,25 @@ impl SegmentLog {
 
     pub fn append_compressed(&mut self, frame: CompressedFrame) -> Result<()> {
         self.check_offset(frame.offset)?;
-        let body = frame.body;
-        let length = u32::try_from(body.len()).context("segment frame exceeds 4 GiB")?;
-        let checksum = crc32fast::hash(&body);
+        let mut bytes = frame.frame;
+        fill_frame_header(&mut bytes)?;
         let current = self.current.as_mut().context("segment file is not open")?;
         if current.id != frame.file {
             bail!("segment frame was encoded for another file");
         }
-        current.file.write_all(&length.to_le_bytes())?;
-        current.file.write_all(&checksum.to_le_bytes())?;
-        current.file.write_all(&body)?;
+        if let Some(dictionary) = frame.dictionary.filter(|_| !current.dictionary_written) {
+            let mut dictionary_frame =
+                Vec::with_capacity(FRAME_HEADER_LEN + FRAME_PREFIX_LEN + dictionary.len());
+            dictionary_frame.resize(FRAME_HEADER_LEN, 0);
+            put_i64(&mut dictionary_frame, DICTIONARY_OFFSET);
+            put_i64(&mut dictionary_frame, 0);
+            put_i64(&mut dictionary_frame, 0);
+            dictionary_frame.extend_from_slice(&dictionary);
+            fill_frame_header(&mut dictionary_frame)?;
+            current.file.write_all(&dictionary_frame)?;
+            current.dictionary_written = true;
+        }
+        current.file.write_all(&bytes)?;
         self.last_offset = Some(frame.offset);
         self.pending_offset = Some(frame.offset);
         Ok(())
@@ -498,6 +623,8 @@ impl SegmentLog {
             file,
             id: self.next_file_id,
             series: Default::default(),
+            dictionary: Dictionary::new(),
+            dictionary_written: false,
         });
         self.next_file_id += 1;
         Ok(())
@@ -539,6 +666,15 @@ impl Drop for SegmentLog {
     fn drop(&mut self) {
         let _ = self.flush();
     }
+}
+
+/// Writes the length and checksum of the body after it into a frame's header.
+fn fill_frame_header(frame: &mut [u8]) -> Result<()> {
+    let (header, body) = frame.split_at_mut(FRAME_HEADER_LEN);
+    let length = u32::try_from(body.len()).context("segment frame exceeds 4 GiB")?;
+    header[..4].copy_from_slice(&length.to_le_bytes());
+    header[4..].copy_from_slice(&crc32fast::hash(body).to_le_bytes());
+    Ok(())
 }
 
 fn read_segment(
@@ -593,6 +729,7 @@ fn read_segment(
         version,
         cutoff: replay_cutoff,
         series: Vec::new(),
+        dictionary: None,
     };
     loop {
         let mut frame_header = [0; FRAME_HEADER_LEN];
@@ -672,8 +809,29 @@ fn read_segment(
             )?;
             return finish_torn(path, reader, mutable, last_offset, valid_len);
         }
+        // The frames after it are decoded with the file's dictionary.
+        if version >= FILE_FORMAT_VERSION
+            && i64::from_le_bytes(body[..8].try_into().unwrap()) == DICTIONARY_OFFSET
+        {
+            replay_batch(
+                &decode_pool,
+                &mut replay_state,
+                path,
+                &mut frames,
+                &mut spare,
+                replay,
+                &mut last_offset,
+            )?;
+            batch_decoded_bytes = 0;
+            replay_state.dictionary = Some(zstd::dict::DecoderDictionary::copy(
+                &body[FRAME_PREFIX_LEN..],
+            ));
+            valid_len += FRAME_HEADER_LEN as u64 + length as u64;
+            spare.push(body);
+            continue;
+        }
         // Expired frames of a file with series ids still define series that later frames use.
-        if let Some(cutoff) = replay_cutoff.filter(|_| version < FILE_FORMAT_VERSION) {
+        if let Some(cutoff) = replay_cutoff.filter(|_| version < SERIES_ID_FILE_VERSION) {
             if body.len() >= 24 {
                 let ingested_ms = i64::from_le_bytes(body[16..24].try_into().unwrap());
                 if ingested_ms < cutoff {
@@ -750,6 +908,8 @@ struct ReplayState {
     cutoff: Option<i64>,
     // The labels of the series the file defined, by id.
     series: Vec<DefinedLabels>,
+    // The file's dictionary, once replay read it.
+    dictionary: Option<zstd::dict::DecoderDictionary<'static>>,
 }
 
 enum DecodedFrame {
@@ -768,34 +928,55 @@ fn replay_batch(
     last_offset: &mut Option<i64>,
 ) -> Result<()> {
     let version = state.version;
+    let dictionary = state.dictionary.as_ref();
     let decoded: Vec<_> = decode_pool.install(|| {
         frames
             .par_iter()
-            .map(|(at, body)| {
-                let context = || format!("decode segment frame at byte {at} in {}", path.display());
-                if version == LEGACY_FILE_VERSION {
-                    return decode_frame(body)
-                        .map(DecodedFrame::Record)
-                        .with_context(context);
-                }
-                if body.len() < FRAME_PREFIX_LEN {
-                    bail!(
-                        "compressed segment frame is too short in {}",
-                        path.display()
-                    );
-                }
-                let payload = zstd::bulk::decompress(&body[FRAME_PREFIX_LEN..], 128 * 1024 * 1024)
+            .map_init(
+                || dictionary.map(zstd::bulk::Decompressor::with_prepared_dictionary),
+                |with_dictionary, (at, body)| {
+                    let context =
+                        || format!("decode segment frame at byte {at} in {}", path.display());
+                    if version == LEGACY_FILE_VERSION {
+                        return decode_frame(body)
+                            .map(DecodedFrame::Record)
+                            .with_context(context);
+                    }
+                    if body.len() < FRAME_PREFIX_LEN {
+                        bail!(
+                            "compressed segment frame is too short in {}",
+                            path.display()
+                        );
+                    }
+                    let compressed = &body[FRAME_PREFIX_LEN..];
+                    // Frames compressed with the file's dictionary name it; those before it don't.
+                    let payload = match zstd::zstd_safe::get_dict_id_from_frame(compressed) {
+                        None => zstd::bulk::decompress(compressed, 128 * 1024 * 1024),
+                        Some(_) => match with_dictionary {
+                            Some(Ok(decompressor)) => {
+                                decompressor.decompress(compressed, 128 * 1024 * 1024)
+                            }
+                            Some(Err(error)) => {
+                                bail!("load the dictionary of {}: {error}", path.display())
+                            }
+                            None => bail!(
+                                "segment frame needs a dictionary {} doesn't hold before it",
+                                path.display()
+                            ),
+                        },
+                    }
                     .with_context(|| format!("decompress segment frame in {}", path.display()))?;
-                if version == COMPRESSED_FILE_VERSION {
-                    let decoded = [&body[..FRAME_PREFIX_LEN], &payload].concat();
-                    return decode_frame(&decoded)
-                        .map(DecodedFrame::Record)
-                        .with_context(context);
-                }
-                decode_frame_with_series_ids(&body[..FRAME_PREFIX_LEN], payload.into())
-                    .map(DecodedFrame::WithSeriesIds)
-                    .with_context(context)
-            })
+                    if version == COMPRESSED_FILE_VERSION {
+                        let decoded = [&body[..FRAME_PREFIX_LEN], &payload].concat();
+                        return decode_frame(&decoded)
+                            .map(DecodedFrame::Record)
+                            .with_context(context);
+                    }
+                    decode_frame_with_series_ids(&body[..FRAME_PREFIX_LEN], payload.into())
+                        .map(DecodedFrame::WithSeriesIds)
+                        .with_context(context)
+                },
+            )
             .collect()
     });
     // Replaying in file order preserves offset and duplicate handling across batches, and defines
@@ -1322,9 +1503,11 @@ mod tests {
             let keys = series_keys(tenant, &request);
             let frame = log.encode(offset, 1, now, tenant, &request, &keys).unwrap();
             // Recovery batches frames by the size each one records.
-            let size = zstd::zstd_safe::get_frame_content_size(&frame.body[FRAME_PREFIX_LEN..])
-                .unwrap()
-                .unwrap();
+            let size = zstd::zstd_safe::get_frame_content_size(
+                &frame.frame[FRAME_HEADER_LEN + FRAME_PREFIX_LEN..],
+            )
+            .unwrap()
+            .unwrap();
             sizes.push(size);
             log.append_compressed(frame).unwrap();
         }
@@ -1703,6 +1886,396 @@ mod tests {
         }
         drop(reopened);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    // Records that vary like real ones, so zstd can train a dictionary on a few of them.
+    fn varied_request(record: i64) -> DecodedRequest {
+        DecodedRequest {
+            source: 0,
+            series: (0..20)
+                .map(|index| DecodedSeries {
+                    labels: [
+                        ("__name__", format!("metric_{}", index % 7)),
+                        ("job", format!("job-{}", (record + index) % 13)),
+                        ("pod", format!("pod-{}-{index}", record % 50)),
+                    ]
+                    .into_iter()
+                    .map(|(name, value)| (name.into(), value.into()))
+                    .collect(),
+                    samples: vec![cortexpb::Sample {
+                        timestamp_ms: 1_800_000_000_000 + record * 15_000,
+                        value: (record * 31 + index) as f64 / 7.0,
+                    }],
+                    histograms: Vec::new(),
+                    exemplars: Vec::new(),
+                    created_timestamp: 0,
+                })
+                .collect(),
+            metadata: Vec::new(),
+        }
+    }
+
+    fn request_bytes(request: &DecodedRequest) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        encode_request(&mut bytes, request).unwrap();
+        bytes
+    }
+
+    /// Each frame of a segment file: its offset and the dictionary id its payload names.
+    fn frames_of(path: &Path) -> Vec<(i64, Option<u32>)> {
+        let data = fs::read(path).unwrap();
+        let mut frames = Vec::new();
+        let mut at = FILE_HEADER_LEN;
+        while at + FRAME_HEADER_LEN <= data.len() {
+            let length = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            let body = &data[at + FRAME_HEADER_LEN..at + FRAME_HEADER_LEN + length];
+            let offset = i64::from_le_bytes(body[..8].try_into().unwrap());
+            let dictionary = (offset != DICTIONARY_OFFSET)
+                .then(|| zstd::zstd_safe::get_dict_id_from_frame(&body[FRAME_PREFIX_LEN..]))
+                .flatten()
+                .map(u32::from);
+            frames.push((offset, dictionary));
+            at += FRAME_HEADER_LEN + length;
+        }
+        frames
+    }
+
+    /// Appends varied records from `from` until the current file compresses with its dictionary,
+    /// then `after` more, and returns the next offset.
+    fn append_past_dictionary(
+        log: &mut SegmentLog,
+        from: i64,
+        after: i64,
+        ingested_ms: i64,
+    ) -> i64 {
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        let mut offset = from;
+        loop {
+            let ready = matches!(
+                log.current.as_ref().map(|current| &current.dictionary),
+                Some(Dictionary::Ready { .. })
+            );
+            if ready {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no dictionary after {offset} records"
+            );
+            log.append_at(
+                offset,
+                offset,
+                "tenant",
+                &varied_request(offset),
+                ingested_ms,
+            )
+            .unwrap();
+            offset += 1;
+        }
+        for _ in 0..after {
+            log.append_at(
+                offset,
+                offset,
+                "tenant",
+                &varied_request(offset),
+                ingested_ms,
+            )
+            .unwrap();
+            offset += 1;
+        }
+        offset
+    }
+
+    fn open_segment(directory: &Path) -> PathBuf {
+        segment_paths(directory)
+            .unwrap()
+            .into_iter()
+            .find(|path| path.extension().is_some_and(|value| value == "open"))
+            .unwrap()
+    }
+
+    #[test]
+    fn frames_after_a_files_dictionary_replay_as_written() {
+        let root = temporary_directory("dictionary");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.dictionary_frames = 50;
+        let now = now_ms();
+        let end = append_past_dictionary(&mut log, 1, 100, now);
+        let path = open_segment(&log.directory);
+        drop(log);
+        let frames = frames_of(&path);
+        // One dictionary frame, before every frame that names it, and those after all do.
+        let at = frames
+            .iter()
+            .position(|(offset, _)| *offset == DICTIONARY_OFFSET)
+            .expect("dictionary frame");
+        assert_eq!(
+            frames
+                .iter()
+                .filter(|(offset, _)| *offset == DICTIONARY_OFFSET)
+                .count(),
+            1
+        );
+        assert!(
+            frames[..at]
+                .iter()
+                .all(|(_, dictionary)| dictionary.is_none())
+        );
+        assert!(at >= 50, "trained on the first 50 frames");
+        let id = frames[at + 1]
+            .1
+            .expect("frames after it use the dictionary");
+        assert!(
+            frames[at + 1..]
+                .iter()
+                .all(|(_, dictionary)| *dictionary == Some(id))
+        );
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..end).collect::<Vec<_>>()
+        );
+        for record in &recovered {
+            assert_eq!(record.kafka_timestamp_ms, record.offset);
+            assert_eq!(
+                request_bytes(&record.request),
+                request_bytes(&varied_request(record.offset))
+            );
+        }
+        // A restart continues in a new file, which trains its own dictionary.
+        log.dictionary_frames = 50;
+        let next = append_past_dictionary(&mut log, end, 10, now);
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..next).collect::<Vec<_>>()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restarts_from_version_3_files() {
+        let root = temporary_directory("version-3");
+        let directory = root.join(format!("cluster-0-partition-0-topic-{}", hex(b"topic")));
+        fs::create_dir_all(&directory).unwrap();
+        // Written by the version 3 log: 20 records of `request()`, each with its own sample.
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/segment-v3/00000000000018000000-0000.segment");
+        fs::copy(&fixture, directory.join(fixture.file_name().unwrap())).unwrap();
+        let expected = |offset: i64| {
+            let mut request = request();
+            request.series[0].samples[0].timestamp_ms = offset * 1000;
+            request.series[0].samples[0].value = offset as f64;
+            request
+        };
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(log.last_offset(), Some(20));
+        assert_eq!(recovered.len(), 20);
+        for record in &recovered {
+            assert_eq!(record.kafka_timestamp_ms, 1000 + record.offset);
+            assert_eq!(record.ingested_ms, 5 * HOUR_MS + record.offset);
+            assert_eq!(
+                request_bytes(&record.request),
+                request_bytes(&expected(record.offset))
+            );
+        }
+        // The new log writes version 4 files next to it.
+        log.dictionary_frames = 50;
+        let end = append_past_dictionary(&mut log, 21, 5, now_ms());
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..end).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            request_bytes(&recovered[4].request),
+            request_bytes(&expected(5))
+        );
+        assert_eq!(
+            request_bytes(&recovered[30].request),
+            request_bytes(&varied_request(31))
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Where the dictionary frame starts in the file, and the offset of the frame before it.
+    fn dictionary_frame(path: &Path) -> (usize, i64) {
+        let data = fs::read(path).unwrap();
+        let (mut at, mut previous) = (FILE_HEADER_LEN, None);
+        loop {
+            let length = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            let body = at + FRAME_HEADER_LEN;
+            let offset = i64::from_le_bytes(data[body..body + 8].try_into().unwrap());
+            if offset == DICTIONARY_OFFSET {
+                return (at, previous.expect("frames before the dictionary"));
+            }
+            previous = Some(offset);
+            at = body + length;
+        }
+    }
+
+    #[test]
+    fn truncates_a_torn_dictionary_frame_and_resumes() {
+        let root = temporary_directory("torn-dictionary");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.dictionary_frames = 50;
+        let now = now_ms();
+        let end = append_past_dictionary(&mut log, 1, 3, now);
+        let path = open_segment(&log.directory);
+        drop(log);
+        // A crash in the middle of the dictionary frame loses it and every frame after, which
+        // were written after the last flush.
+        let (at, before) = dictionary_frame(&path);
+        OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(at as u64 + 100)
+            .unwrap();
+        write_checkpoint(path.parent().unwrap(), before).unwrap();
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..=before).collect::<Vec<_>>()
+        );
+        assert_eq!(fs::metadata(&path).unwrap().len(), at as u64);
+        // Consumption resumes after what the log holds.
+        assert_eq!(log.last_offset(), Some(before));
+        for offset in before + 1..end {
+            log.append_at(offset, offset, "tenant", &varied_request(offset), now)
+                .unwrap();
+        }
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..end).collect::<Vec<_>>()
+        );
+        for record in &recovered {
+            assert_eq!(
+                request_bytes(&record.request),
+                request_bytes(&varied_request(record.offset))
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_frames_whose_dictionary_the_file_lacks() {
+        let root = temporary_directory("missing-dictionary");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.dictionary_frames = 50;
+        let hour = hour_start(now_ms());
+        append_past_dictionary(&mut log, 1, 5, hour);
+        log.seal_current().unwrap();
+        drop(log);
+        let path = root
+            .join(format!("cluster-0-partition-0-topic-{}", hex(b"topic")))
+            .join(segment_name(hour, 0, "segment"));
+        let data = fs::read(&path).unwrap();
+        // Cut the dictionary frame out: the frames around it are well formed, so only its
+        // absence shows.
+        let (start, _) = dictionary_frame(&path);
+        let length = u32::from_le_bytes(data[start..start + 4].try_into().unwrap()) as usize;
+        let end = start + FRAME_HEADER_LEN + length;
+        fs::write(&path, [&data[..start], &data[end..]].concat()).unwrap();
+        let error = SegmentLog::open(&root, 0, "topic", 0, None)
+            .err()
+            .expect("frames without their dictionary must fail");
+        assert!(
+            format!("{error:#}").contains("needs a dictionary"),
+            "{error:#}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "manual benchmark of a real segment file; run with SEGMENT_FILE=<path> --ignored --nocapture"]
+    fn benchmark_real_segment() {
+        let source = PathBuf::from(std::env::var("SEGMENT_FILE").expect("SEGMENT_FILE"));
+        let input = temporary_directory("real-segment-input");
+        let directory = input.join(format!("cluster-0-partition-0-topic-{}", hex(b"ingest")));
+        fs::create_dir_all(&directory).unwrap();
+        // As an open file, a copy cut short mid-frame replays up to the cut.
+        let name = source
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .replace(".segment", ".open");
+        fs::copy(&source, directory.join(name)).unwrap();
+        let (_, records) = SegmentLog::open(&input, 0, "ingest", 0, None).unwrap();
+        let output = temporary_directory("real-segment-output");
+        let (mut log, _) = SegmentLog::open(&output, 0, "ingest", 0, None).unwrap();
+        // The applier gets keys from each record's encoded labels, on the prepare threads.
+        let keys = records
+            .iter()
+            .map(|record| series_keys(&record.tenant, &record.request))
+            .collect::<Vec<_>>();
+        let cpu = process_cpu_seconds();
+        let started = Instant::now();
+        for (record, keys) in records.iter().zip(&keys) {
+            log.begin_batch(record.ingested_ms).unwrap();
+            let frame = log
+                .encode(
+                    record.offset,
+                    record.kafka_timestamp_ms,
+                    record.ingested_ms,
+                    &record.tenant,
+                    &record.request,
+                    keys,
+                )
+                .unwrap();
+            log.append_compressed(frame).unwrap();
+        }
+        log.flush().unwrap();
+        let (write_cpu, write_wall) = (process_cpu_seconds() - cpu, started.elapsed());
+        let bytes: u64 = segment_paths(&log.directory)
+            .unwrap()
+            .iter()
+            .map(|path| fs::metadata(path).unwrap().len())
+            .sum();
+        drop(log);
+        let cpu = process_cpu_seconds();
+        let started = Instant::now();
+        let (_, replayed) = SegmentLog::open(&output, 0, "ingest", 0, None).unwrap();
+        let (replay_cpu, replay_wall) = (process_cpu_seconds() - cpu, started.elapsed());
+        assert_eq!(replayed.len(), records.len());
+        for (replayed, record) in replayed.iter().zip(&records) {
+            assert_eq!(replayed.offset, record.offset);
+            // As bytes: stale markers are NaN, which never equal themselves.
+            let bytes = |request: &DecodedRequest| {
+                let mut bytes = Vec::new();
+                encode_request(&mut bytes, request).unwrap();
+                bytes
+            };
+            assert_eq!(bytes(&replayed.request), bytes(&record.request));
+        }
+        println!(
+            "records={} bytes={bytes} write_cpu_s={write_cpu:.2} write_s={:.2} replay_cpu_s={replay_cpu:.2} replay_s={:.2}",
+            records.len(),
+            write_wall.as_secs_f64(),
+            replay_wall.as_secs_f64(),
+        );
+        fs::remove_dir_all(input).unwrap();
+        fs::remove_dir_all(output).unwrap();
     }
 
     #[test]
