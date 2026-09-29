@@ -71,6 +71,36 @@ func TestGenerate_DeterministicBlockIDs(t *testing.T) {
 	}
 }
 
+// TestGenerate_SmallProfileMatchesTruth runs the real "small" scale tier
+// end to end (skipped under -short: it writes ~50k series' worth of blocks
+// to disk and takes tens of seconds) to catch anything that only shows up
+// at that scale, such as a hash collision emptying a partition.
+func TestGenerate_SmallProfileMatchesTruth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes real block-scale fixtures; run without -short")
+	}
+
+	p, err := LoadProfile("small", 1)
+	require.NoError(t, err)
+	pop, err := model.New(p.Population)
+	require.NoError(t, err)
+
+	metas, err := Generate(pop, t.TempDir(), Config{Partitions: p.Partitions, Seed: 1})
+	require.NoError(t, err)
+
+	var totalFromBlocks int
+	for _, meta := range metas {
+		totalFromBlocks += int(meta.Stats.NumSeries)
+	}
+
+	hourMs := time.Hour.Milliseconds()
+	var totalTruth int
+	for h := pop.Config().Start.UnixMilli(); h < pop.Config().End.UnixMilli(); h += hourMs {
+		totalTruth += pop.Truth(nil, h, h+hourMs)
+	}
+	require.Equal(t, totalTruth, totalFromBlocks)
+}
+
 // TestGenerate_NoSeriesSplitWithinAnHour checks that a series live in a given
 // hour appears in exactly one of that hour's partition blocks, which is what
 // makes summing partition counts for an hour exact.
