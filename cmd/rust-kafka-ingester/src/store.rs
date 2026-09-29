@@ -5477,6 +5477,8 @@ mod tests {
         // series that move to cold blocks and series that stay in the head. The old ones come
         // first: the head rejects samples an hour behind its newest.
         for (name, minutes) in [("old", 0..100), ("hot", 150..300)] {
+            // Unrelated cold series, which a name regex for another metric must not visit.
+            let unrelated = if name == "old" { 300 } else { 0 };
             let mut request =
                 series_request("keep", minutes.clone().map(|m| (start + m * 60_000, 1.0)));
             for n in 0..120_i64 {
@@ -5496,6 +5498,14 @@ mod tests {
                         .push(("agg".into(), format!("sum-{}", n % 24).into()));
                 }
                 series.labels.sort();
+                request.series.push(series);
+            }
+            for n in 0..unrelated {
+                let mut series =
+                    series_request("gone", minutes.clone().map(|m| (start + m * 60_000, 1.0)))
+                        .series
+                        .remove(0);
+                series.labels.push(("n".into(), n.to_string().into()));
                 request.series.push(series);
             }
             store.ingest("tenant", request).unwrap();
@@ -5625,6 +5635,9 @@ mod tests {
         // from their labels. Every series checked each matcher before.
         let negated = reads(&[matcher(2, "__name__", "hot|old"), matcher(3, "agg", ".+")]);
         assert!(negated < everything.len() as u64, "{negated} label reads");
+        // A cold name regex visits the series of the names it accepts, not the other 300.
+        let cold_name = reads(&[matcher(2, "__name__", "old"), matcher(3, "agg", ".+")]);
+        assert!(cold_name < 200, "{cold_name} label reads");
         std::fs::remove_dir_all(directory).unwrap();
     }
 
