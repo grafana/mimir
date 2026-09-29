@@ -47,6 +47,9 @@ struct TenantIndex {
     // Each series' `labels.StableHash`, by which sharded queries pick series: computed on the
     // first sharded query rather than from the labels for every series of every one.
     shard_hashes: std::sync::OnceLock<Box<[u64]>>,
+    // Each metric name, sorted, with its series: built on the first query by a name matcher other
+    // than an equality, from the series' own labels, since the postings only hold values' hashes.
+    metric_names: std::sync::OnceLock<Box<[(Box<str>, Box<[u32]>)]>>,
 }
 
 /// One cold block of a store shard.
@@ -254,6 +257,7 @@ impl ColdBlock {
                 postings_table: field(4) as usize,
                 postings_count: field(5) as usize,
                 shard_hashes: std::sync::OnceLock::new(),
+                metric_names: std::sync::OnceLock::new(),
             };
             cursor = &cursor[48..];
             min_time = min_time.min(index.min_time);
@@ -363,6 +367,35 @@ impl ColdBlock {
         series
     }
 
+    /// The tenant's metric names, sorted, each with its series.
+    fn metric_names(&self, tenant: &str) -> &[(Box<str>, Box<[u32]>)] {
+        let Some(table) = self.tenants.get(tenant) else {
+            return &[];
+        };
+        table.metric_names.get_or_init(|| {
+            let mut by_name: HashMap<String, Vec<u32>> = HashMap::new();
+            for index in 0..table.series_count {
+                let series = self.series_in(table, index);
+                let mut pairs = series.pairs();
+                let name = pairs
+                    .find(|(label, _)| *label == "__name__")
+                    .map_or("", |(_, value)| value);
+                match by_name.get_mut(name) {
+                    Some(list) => list.push(index as u32),
+                    None => {
+                        by_name.insert(name.to_owned(), vec![index as u32]);
+                    }
+                }
+            }
+            let mut names = by_name
+                .into_iter()
+                .map(|(name, series)| (name.into_boxed_str(), series.into_boxed_slice()))
+                .collect::<Vec<_>>();
+            names.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            names.into_boxed_slice()
+        })
+    }
+
     /// The series with `name="value"`, or None when the name never appears here, so nothing does.
     fn posting(&self, tenant: &str, name: &str, value: &str) -> Vec<u32> {
         let (Some(table), Some(local)) = (self.tenants.get(tenant), self.local_ids.get(name))
@@ -423,8 +456,26 @@ impl ColdBlock {
             }
         }
         if best.is_none() {
+            // A name regex takes the series of the names it accepts, each name checked once.
+            for matcher in matchers {
+                if matcher.label_name() == Some("__name__")
+                    && !matches!(matcher, CompiledMatcher::Equal(..))
+                {
+                    let mut list = self
+                        .metric_names(tenant)
+                        .iter()
+                        .filter(|(name, _)| matcher.matches_value(name))
+                        .flat_map(|(_, series)| series.iter().copied())
+                        .collect::<Vec<_>>();
+                    list.sort_unstable();
+                    if best.as_ref().is_none_or(|best| list.len() < best.len()) {
+                        best = Some(list);
+                    }
+                }
+            }
             for matcher in matchers {
                 if let Some(name) = matcher.label_name()
+                    && name != "__name__"
                     && !matches!(matcher, CompiledMatcher::Equal(..))
                     && !matcher.matches_value("")
                 {
