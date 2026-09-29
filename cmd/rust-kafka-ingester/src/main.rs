@@ -811,6 +811,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 last_timestamp_ms: recovered_timestamp,
                 push_circuit_breaker,
                 replay_target,
+                behind: false,
             });
             let mut stopped = false;
             if replay_complete {
@@ -1406,6 +1407,8 @@ fn fetch_stalled(
 }
 
 const APPLY_BATCH: usize = 64;
+// Records behind the partition's high watermark from which the applier uses the store's threads.
+const BEHIND_RECORDS: i64 = 1000;
 // About a thousand series of fetched records, below which decoding them in parallel costs more
 // than it saves.
 const PARALLEL_PREPARE_BYTES: usize = 512 * 1024;
@@ -1470,6 +1473,8 @@ struct Applier {
     // The last offset of the startup replay, which the Go ingester consumes while starting, before
     // its push circuit breaker is activated.
     replay_target: i64,
+    // Whether the batch being applied is behind the partition, so worth the store's threads.
+    behind: bool,
 }
 
 struct PendingRecord {
@@ -1484,6 +1489,7 @@ struct PendingRecord {
 impl Applier {
     /// Applies queued commands in order, turning each run of records into one parallel store batch.
     fn apply_batch(&mut self, commands: Vec<Apply>) -> Result<()> {
+        self.behind = is_behind(&commands);
         let commands = self.prepare_fetched(commands)?;
         let mut records = Vec::with_capacity(commands.len());
         for command in commands {
@@ -1612,7 +1618,7 @@ impl Applier {
         };
         let flushes = self
             .store
-            .ingest_flushes(batch)
+            .ingest_flushes_on(batch, self.behind)
             .with_context(|| format!("apply records through offset {last_offset}"))?;
         if let Some((breaker, permit)) = permit {
             breaker.finish_all(permit, flushes as usize);
@@ -1633,6 +1639,28 @@ impl Applier {
         }
         Ok(())
     }
+}
+
+/// Whether a batch is behind its partition: a full batch means records waited for the applier,
+/// and a lag that it has some to catch up on. Only then is applying in parallel worth its CPU.
+fn is_behind(commands: &[Apply]) -> bool {
+    let lag = commands
+        .iter()
+        .filter_map(|command| match command {
+            Apply::Fetched {
+                record,
+                high_watermark,
+            } => Some(high_watermark - record.offset),
+            Apply::Record {
+                offset,
+                high_watermark,
+                ..
+            } => Some(high_watermark - offset),
+            Apply::Maintain => None,
+        })
+        .max()
+        .unwrap_or(0);
+    commands.len() >= APPLY_BATCH || lag > BEHIND_RECORDS
 }
 
 fn spawn_applier(
@@ -1943,6 +1971,31 @@ mod tests {
     }
 
     #[test]
+    fn applies_in_parallel_only_when_behind() {
+        let record = |offset: i64, high_watermark: i64| Apply::Fetched {
+            record: RawRecord {
+                offset,
+                timestamp_ms: offset,
+                tenant: "tenant".into(),
+                version: 1,
+                payload: None,
+            },
+            high_watermark,
+        };
+        // Caught up: a few records, up to the high watermark.
+        assert!(!is_behind(&[record(10, 11), record(11, 12)]));
+        assert!(!is_behind(&[Apply::Maintain]));
+        assert!(!is_behind(&[record(10, 10 + BEHIND_RECORDS)]));
+        // Far from the high watermark, or with records queued behind a full batch.
+        assert!(is_behind(&[record(10, 11 + BEHIND_RECORDS)]));
+        let full = (0..APPLY_BATCH as i64)
+            .map(|offset| record(offset, offset + 1))
+            .collect::<Vec<_>>();
+        assert!(is_behind(&full));
+        assert!(!is_behind(&full[1..]));
+    }
+
+    #[test]
     fn fetched_records_are_applied_in_order_whether_decoded_inline_or_in_parallel() {
         use prost::Message;
         let data_dir = std::env::temp_dir().join(format!(
@@ -1964,6 +2017,7 @@ mod tests {
             last_timestamp_ms: 0,
             push_circuit_breaker: None,
             replay_target: -1,
+            behind: false,
         };
         // Every record writes the same series at its offset, so the order shows in its samples.
         let fetched = |offset: i64, padding: usize| {
@@ -2067,6 +2121,7 @@ mod tests {
             last_timestamp_ms: 0,
             push_circuit_breaker: None,
             replay_target: -1,
+            behind: false,
         };
         let record = |offset: i64, metric: &str| {
             let request = DecodedRequest {

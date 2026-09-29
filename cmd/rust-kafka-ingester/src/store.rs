@@ -1407,6 +1407,13 @@ impl Store {
 
     /// Like `ingest_batch`, returning how many head appends the Go ingester's pusher would make.
     pub fn ingest_flushes(&self, records: Vec<IngestRecord>) -> Result<u64> {
+        self.ingest_flushes_on(records, true)
+    }
+
+    /// Like `ingest_flushes`, on the calling thread only unless `parallel`: a caught-up consumer
+    /// applies its small batches faster than records arrive, and spreading even a thousand series
+    /// over the pool's threads cost twice the CPU of applying them here.
+    pub fn ingest_flushes_on(&self, records: Vec<IngestRecord>, parallel: bool) -> Result<u64> {
         let shard_count = self.shards.len();
         let mut buckets = (0..shard_count).map(|_| Vec::new()).collect::<Vec<_>>();
         let mut tenant_ids = Vec::with_capacity(records.len());
@@ -1674,7 +1681,7 @@ impl Store {
         }
         // Once caught up, a batch is a few small records, and waking the pool's threads for them
         // cost more than the work.
-        let parallel = all_series.len() >= PARALLEL_MIN_SERIES;
+        let parallel = parallel && all_series.len() >= PARALLEL_MIN_SERIES;
         let hash =
             |(_, series, _, _, _, hash): &mut (usize, DecodedSeries, i64, _, u64, Option<_>)| {
                 hash.take().unwrap_or_else(|| sort_and_hash(series))
@@ -1684,7 +1691,7 @@ impl Store {
             .iter()
             .filter(|(_, _, _, _, _, hash)| hash.is_none())
             .count();
-        let hashes = if unhashed >= PARALLEL_MIN_SERIES {
+        let hashes = if parallel && unhashed >= PARALLEL_MIN_SERIES {
             self.pool
                 .install(|| all_series.par_iter_mut().map(hash).collect::<Vec<_>>())
         } else {
@@ -5131,6 +5138,82 @@ mod tests {
             .unwrap();
         assert_eq!(series.len(), 1);
         assert!(counters().0 > before.0);
+    }
+
+    #[test]
+    fn batches_apply_the_same_on_the_calling_thread_as_in_parallel() {
+        let now = now_ms();
+        // Past the parallel threshold, with repeated, out-of-order and too old samples, and
+        // series of several tenants.
+        let batch = |round: i64| {
+            ["a", "b"]
+                .into_iter()
+                .map(|tenant| {
+                    let mut request = series_request("m", []);
+                    request.series.clear();
+                    for n in 0..PARALLEL_MIN_SERIES as i64 {
+                        let mut series = series_request(
+                            "m",
+                            [
+                                (now - 60_000 * (2 - round) + n % 3, n as f64),
+                                (now - 60_000 * (3 - round), 1.0),
+                            ],
+                        )
+                        .series
+                        .remove(0);
+                        series
+                            .labels
+                            .push(("n".into(), (n % 700).to_string().into()));
+                        request.series.push(series);
+                    }
+                    IngestRecord {
+                        tenant: tenant.into(),
+                        request,
+                        ingested_ms: now,
+                        track_rate: true,
+                        bytes: 1000,
+                        series_hashes: None,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let stores = [true, false].map(|parallel| {
+            let store = store_with(out_of_order_limits());
+            let flushes = (0..3)
+                .map(|round| store.ingest_flushes_on(batch(round), parallel).unwrap())
+                .collect::<Vec<_>>();
+            (store, flushes)
+        });
+        assert_eq!(stores[0].1, stores[1].1, "pusher flushes");
+        let reads = |store: &Store| {
+            ["a", "b"].map(|tenant| {
+                let (series, blocks) = store
+                    .select_chunks_with_blocks(tenant, i64::MIN, i64::MAX, &[])
+                    .unwrap();
+                (
+                    store.num_series(tenant),
+                    series
+                        .iter()
+                        .map(|view| {
+                            (
+                                view.encoded_labels.to_vec(),
+                                view.chunks[view.chunk_start..view.chunk_end]
+                                    .iter()
+                                    .map(|chunk| chunk.wire.to_vec())
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    blocks
+                        .into_iter()
+                        .map(|block| (block.generation, block.index_series, block.series))
+                        .collect::<Vec<_>>(),
+                )
+            })
+        };
+        let parallel = reads(&stores[0].0);
+        assert_eq!(parallel[0].0, 700);
+        assert_eq!(parallel, reads(&stores[1].0));
     }
 
     #[test]
