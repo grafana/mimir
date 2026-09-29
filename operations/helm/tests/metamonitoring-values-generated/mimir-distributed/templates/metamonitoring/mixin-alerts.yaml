@@ -225,7 +225,7 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirqueryengineevaluationpanics
             expr: |
               sum by (cluster, namespace, reason) (
-                increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[5m])
+                (increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[5m]) > 0)
                 or
                 (
                   cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}

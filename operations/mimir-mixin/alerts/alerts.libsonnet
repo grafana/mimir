@@ -391,10 +391,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('QueryEngineEvaluationPanics'),
           // increase() alone misses the first panic for a tenant and reason: the counter series is
           // created with that panic already counted, and increase() needs two samples. The second
-          // clause catches a series that did not exist one interval ago.
+          // clause catches a series that did not exist one interval ago. The first clause must
+          // filter out zero increases before the `or`: `or` keeps a left-hand series even at zero,
+          // which would hide the second clause from the second sample onwards.
           expr: |||
             sum by (%(alert_aggregation_labels)s, reason) (
-              increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[%(rate_interval)s])
+              (increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[%(rate_interval)s]) > 0)
               or
               (
                 cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}
