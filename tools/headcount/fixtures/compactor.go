@@ -73,11 +73,8 @@ func compactSnapshot(cfg Config, sourceDir, name string, opts compactorOptions) 
 	}()
 
 	const timeout = 20 * time.Minute
-	if err := waitForStableBlockSet(work, stableWindow, 5*time.Second, timeout); err != nil {
+	if err := waitForCompaction(work, opts.WantSources, stableWindow, 5*time.Second, timeout); err != nil {
 		return "", fmt.Errorf("waiting for compactor to finish (see %s): %w", logPath, err)
-	}
-	if err := checkBlockLevels(work, opts.WantSources); err != nil {
-		return "", fmt.Errorf("%s snapshot doesn't have the expected shape (see %s): %w", name, logPath, err)
 	}
 
 	// work is scratch-only past this point, so move rather than copy it
@@ -140,12 +137,18 @@ func startCompactor(binPath, bucketDir, dataDir, logPath string, opts compactorO
 	return cmd, logFile, nil
 }
 
-// waitForStableBlockSet polls bucketDir's block set every pollEvery until it
-// hasn't changed for stable, or returns an error once timeout elapses
-// first. The first read only seeds the comparison; it is never itself
-// treated as a stable state, so a bucket that starts (and stays) empty
-// doesn't look finished before the compactor has even started.
-func waitForStableBlockSet(bucketDir string, stable, pollEvery, timeout time.Duration) error {
+// waitForCompaction polls bucketDir's block set every pollEvery until it has
+// both stopped changing for stable and reached the shape wantSources
+// describes, or returns an error once timeout elapses first.
+//
+// Stability alone is not enough: right after the compactor starts, the
+// block set is just its unchanged input, which trivially looks "stable"
+// for as long as planning, downloading or a failing compaction job takes
+// before it produces any output. Requiring the target shape too means a
+// compactor that is still working (or stuck retrying a job that keeps
+// failing) is correctly reported as not finished, rather than mistaken for
+// an instantly completed run.
+func waitForCompaction(bucketDir string, wantSources bool, stable, pollEvery, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
 	sig, err := blockSetSignature(bucketDir)
@@ -165,9 +168,12 @@ func waitForStableBlockSet(bucketDir string, stable, pollEvery, timeout time.Dur
 			sig, stableSince = next, time.Now()
 			continue
 		}
-		if time.Since(stableSince) >= stable {
+		if time.Since(stableSince) >= stable && checkBlockLevels(bucketDir, wantSources) == nil {
 			return nil
 		}
+	}
+	if err := checkBlockLevels(bucketDir, wantSources); err != nil {
+		return fmt.Errorf("timed out, and the block set still doesn't have the expected shape: %w", err)
 	}
 	return fmt.Errorf("block set still changing after %s", timeout)
 }
