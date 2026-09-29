@@ -701,3 +701,27 @@ func (m *ClientMock) Protocol() WriteProtocol {
 	args := m.Called()
 	return args.Get(0).(WriteProtocol)
 }
+
+func TestClient_Metadata_HonorsReadTimeout(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.ReadTimeout = 100 * time.Millisecond
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	_, err = c.Metadata(t.Context(), "test_metric")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
