@@ -211,7 +211,8 @@ func get(ctx context.Context, client *http.Client, cfg config, tenant, path stri
 func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, tenant string) ([]string, error) {
 	params := url.Values{}
 	params.Set("label_names[]", "__name__")
-	params.Set("limit", "5000")
+	// The API's largest limit.
+	params.Set("limit", "500")
 	var decoded struct {
 		Labels []struct {
 			Cardinality []struct {

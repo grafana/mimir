@@ -16,6 +16,7 @@ func TestSampleMetricNamesKeepsMetricsWithinTheSeriesBounds(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/prometheus/api/v1/cardinality/label_values", r.URL.Path)
 		require.Equal(t, "tenant", r.Header.Get("X-Scope-OrgID"))
+		require.Equal(t, "500", r.URL.Query().Get("limit"), "Mimir rejects larger limits")
 		_, _ = w.Write([]byte(`{"labels":[{"label_name":"__name__","cardinality":[
 			{"label_value":"huge","series_count":5000000},
 			{"label_value":"large","series_count":150000},
