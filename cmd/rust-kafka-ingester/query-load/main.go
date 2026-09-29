@@ -34,18 +34,19 @@ func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 type config struct {
-	address         string
-	tenants         stringList
-	clusterLabel    string
-	concurrency     int
-	pause           time.Duration
-	maxRange        time.Duration
-	metricsSample   int
-	minSeries       int
-	maxSeries       int
-	refreshInterval time.Duration
-	reportInterval  time.Duration
-	timeout         time.Duration
+	address            string
+	tenants            stringList
+	clusterLabel       string
+	concurrency        int
+	pause              time.Duration
+	maxRange           time.Duration
+	metricsSample      int
+	minSeries          int
+	maxSeries          int
+	maxHistogramSeries int
+	refreshInterval    time.Duration
+	reportInterval     time.Duration
+	timeout            time.Duration
 }
 
 type result struct {
@@ -65,6 +66,7 @@ func main() {
 	flag.IntVar(&cfg.metricsSample, "metrics-per-tenant", 200, "Metric names sampled per tenant")
 	flag.IntVar(&cfg.minSeries, "min-series", 1000, "Fewest series in ingesters of a queried metric")
 	flag.IntVar(&cfg.maxSeries, "max-series", 200_000, "Most series in ingesters of a queried metric, so queriers don't fetch too much")
+	flag.IntVar(&cfg.maxHistogramSeries, "max-histogram-series", 50_000, "Most series of a queried histogram, whose samples are much larger")
 	flag.DurationVar(&cfg.refreshInterval, "refresh-interval", 10*time.Minute, "How often to resample metric names")
 	flag.DurationVar(&cfg.reportInterval, "report-interval", time.Minute, "How often to print latency and error summaries")
 	flag.DurationVar(&cfg.timeout, "timeout", 2*time.Minute, "Per-request timeout")
@@ -95,7 +97,7 @@ func run(ctx context.Context, cfg config) error {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "tenant=%s metadata refresh failed: %v\n", tenant, err)
 			}
-			metrics.set(tenant, classify(sample, histograms))
+			metrics.set(tenant, classify(sample, histograms, cfg.maxHistogramSeries))
 		}
 	}
 	refresh()
@@ -143,7 +145,7 @@ func loop(ctx context.Context, client *http.Client, cfg config, metrics *metrics
 			sleep(ctx, cfg.pause)
 			continue
 		}
-		kind, path, params := nextQuery(cfg, m, metrics.jobs(tenant, m.name), time.Now())
+		kind, path, params := nextQuery(cfg, m, metrics.jobs(tenant, m.name), metrics.peers(tenant, 2), time.Now())
 		started := time.Now()
 		var err error
 		if kind == "label_values" {
@@ -181,10 +183,17 @@ type metric struct {
 	kind metricKind
 }
 
+// A metric name and its series in ingesters, from the cardinality API.
+type sampled struct {
+	name   string
+	series int
+}
+
 // nextQuery stays inside max-range of now so queriers read ingesters. Queries aggregate, so
 // queriers answer with a few series while ingesters still read every chunk. jobs are the metric's
-// job values, once a label values query found them, for label regexes.
-func nextQuery(cfg config, m metric, jobs []string, now time.Time) (kind, path string, params url.Values) {
+// job values, once a label values query found them, for label regexes, and peers other sampled
+// metrics, which a name regex selects along with it.
+func nextQuery(cfg config, m metric, jobs, peers []string, now time.Time) (kind, path string, params url.Values) {
 	params = url.Values{}
 	name := m.name
 	if m.kind == classicHistogram {
@@ -215,7 +224,7 @@ func nextQuery(cfg config, m metric, jobs []string, now time.Time) (kind, path s
 			fmt.Sprintf("topk(5, sum by (job) (increase(%s[1h])))", selector),
 		}
 	}
-	queries = append(queries, regexQueries(name, jobs)...)
+	queries = append(queries, regexQueries(name, jobs, peers)...)
 	switch rand.IntN(10) {
 	case 0, 1, 2, 3, 4:
 		span := time.Duration(30+rand.Int64N(int64(cfg.maxRange/time.Minute)-29)) * time.Minute
@@ -243,12 +252,17 @@ func nextQuery(cfg config, m metric, jobs []string, now time.Time) (kind, path s
 	}
 }
 
-// regexQueries select a metric's family by a name regex and, once its jobs are known, some of its
-// jobs by an alternation, a prefix and a negation.
-func regexQueries(name string, jobs []string) []string {
+// regexQueries select a metric and its peers by a name regex and, once its jobs are known, some of
+// its jobs by an alternation, a prefix and a negation. Names are alternated rather than matched by
+// prefix: a prefix like go_.+ selects a whole family, millions of series, which OOM queriers.
+func regexQueries(name string, jobs, peers []string) []string {
 	var queries []string
-	if family, _, ok := strings.Cut(name, "_"); ok && len(family) >= 3 {
-		queries = append(queries, fmt.Sprintf("count by (__name__) ({__name__=~%q})", regexp.QuoteMeta(family+"_")+".+"))
+	if len(peers) > 0 {
+		alternatives := []string{regexp.QuoteMeta(name)}
+		for _, peer := range peers {
+			alternatives = append(alternatives, regexp.QuoteMeta(peer))
+		}
+		queries = append(queries, fmt.Sprintf("count by (__name__) ({__name__=~%q})", strings.Join(alternatives, "|")))
 	}
 	if len(jobs) == 0 {
 		return queries
@@ -302,7 +316,7 @@ func getLabelValues(ctx context.Context, client *http.Client, cfg config, tenant
 }
 
 // sampleMetricNames picks metric names by their series in ingesters, from the cardinality API.
-func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, tenant string) ([]string, error) {
+func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, tenant string) ([]sampled, error) {
 	params := url.Values{}
 	params.Set("label_names[]", "__name__")
 	// The API's largest limit.
@@ -318,11 +332,11 @@ func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, ten
 	if err := getJSON(ctx, client, cfg, tenant, "/api/v1/cardinality/label_values?"+params.Encode(), &decoded); err != nil {
 		return nil, err
 	}
-	var names []string
+	var names []sampled
 	for _, label := range decoded.Labels {
 		for _, value := range label.Cardinality {
 			if value.SeriesCount >= cfg.minSeries && value.SeriesCount <= cfg.maxSeries {
-				names = append(names, value.LabelValue)
+				names = append(names, sampled{name: value.LabelValue, series: value.SeriesCount})
 			}
 		}
 	}
@@ -351,19 +365,22 @@ func histogramFamilies(ctx context.Context, client *http.Client, cfg config, ten
 }
 
 // classify tells histograms from other metrics: a classic histogram's family shows as its _bucket
-// series, and a native histogram's as the family name itself.
-func classify(names []string, histograms map[string]bool) []metric {
+// series, and a native histogram's as the family name itself. Histograms with more than
+// maxHistogramSeries series are left out.
+func classify(names []sampled, histograms map[string]bool, maxHistogramSeries int) []metric {
 	metrics := make([]metric, 0, len(names))
-	for _, name := range names {
-		if family, ok := strings.CutSuffix(name, "_bucket"); ok && histograms[family] {
+	for _, sample := range names {
+		family, bucket := strings.CutSuffix(sample.name, "_bucket")
+		histogram := histograms[family] && bucket || histograms[sample.name]
+		switch {
+		case histogram && sample.series > maxHistogramSeries:
+		case bucket && histograms[family]:
 			metrics = append(metrics, metric{name: family, kind: classicHistogram})
-			continue
+		case histograms[sample.name]:
+			metrics = append(metrics, metric{name: sample.name, kind: nativeHistogram})
+		default:
+			metrics = append(metrics, metric{name: sample.name})
 		}
-		if histograms[name] {
-			metrics = append(metrics, metric{name: name, kind: nativeHistogram})
-			continue
-		}
-		metrics = append(metrics, metric{name: name})
 	}
 	return metrics
 }
@@ -423,6 +440,23 @@ func (m *metrics) pick(tenant string) (metric, bool) {
 		return metric{}, false
 	}
 	return sample[rand.IntN(len(sample))], true
+}
+
+// peers are up to count other sampled plain metrics of the tenant.
+func (m *metrics) peers(tenant string, count int) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var peers []string
+	sample := m.byTenant[tenant]
+	for _, index := range rand.Perm(len(sample)) {
+		if len(peers) == count {
+			break
+		}
+		if sample[index].kind == plain {
+			peers = append(peers, sample[index].name)
+		}
+	}
+	return peers
 }
 
 func (m *metrics) setJobs(tenant, name string, jobs []string) {

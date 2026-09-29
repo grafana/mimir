@@ -31,8 +31,8 @@ func TestSampleMetricNamesKeepsMetricsWithinTheSeriesBounds(t *testing.T) {
 	cfg := config{address: server.URL + "/prometheus", metricsSample: 10, minSeries: 1000, maxSeries: 200_000}
 	names, err := sampleMetricNames(context.Background(), server.Client(), cfg, "tenant")
 	require.NoError(t, err)
-	slices.Sort(names)
-	require.Equal(t, []string{"large", "medium"}, names)
+	slices.SortFunc(names, func(a, b sampled) int { return strings.Compare(a.name, b.name) })
+	require.Equal(t, []sampled{{"large", 150000}, {"medium", 2000}}, names)
 }
 
 func TestHistogramsAreToldFromOtherMetrics(t *testing.T) {
@@ -53,7 +53,18 @@ func TestHistogramsAreToldFromOtherMetrics(t *testing.T) {
 		{name: "requests_total"},
 		// Not a histogram family's buckets.
 		{name: "queue_bucket"},
-	}, classify([]string{"http_duration_seconds_bucket", "rpc_duration_seconds", "requests_total", "queue_bucket"}, histograms))
+	}, classify([]sampled{
+		{"http_duration_seconds_bucket", 5000},
+		{"rpc_duration_seconds", 5000},
+		{"requests_total", 5000},
+		{"queue_bucket", 5000},
+	}, histograms, 10_000))
+	// Histograms too large to query are left out; other metrics aren't.
+	require.Equal(t, []metric{{name: "requests_total"}}, classify([]sampled{
+		{"http_duration_seconds_bucket", 20_000},
+		{"rpc_duration_seconds", 20_000},
+		{"requests_total", 20_000},
+	}, histograms, 10_000))
 }
 
 func TestAggregatedMetricsAreNoLongerPicked(t *testing.T) {
@@ -80,7 +91,7 @@ func TestQueriesParseAggregateAndStayWithinTheRange(t *testing.T) {
 	} {
 		for _, jobs := range [][]string{nil, jobs} {
 			for range 300 {
-				kind, _, params := nextQuery(cfg, m, jobs, now)
+				kind, _, params := nextQuery(cfg, m, jobs, []string{"up", "a.b"}, now)
 				kinds[kind] = true
 				if start := params.Get("start"); start != "" {
 					seconds, err := strconv.ParseFloat(start, 64)
@@ -107,9 +118,10 @@ func TestQueriesParseAggregateAndStayWithinTheRange(t *testing.T) {
 	require.Equal(t, map[string]bool{"range": true, "instant": true, "labels": true, "label_values": true}, kinds)
 }
 
-func TestJobRegexesMatchTheJobsTheyNameLiterally(t *testing.T) {
-	queries := regexQueries("requests_total", []string{"a|b"})
+func TestRegexesMatchTheNamesTheyAlternateLiterally(t *testing.T) {
+	queries := regexQueries("requests_total", []string{"a|b"}, []string{"up", "a.b"})
 	require.Contains(t, queries, `sum by (job) (rate({__name__="requests_total", job=~"a\\|b"}[5m]))`)
 	require.Contains(t, queries, `sum(rate({__name__="requests_total", job!~"a\\|b"}[5m]))`)
-	require.Contains(t, queries, `count by (__name__) ({__name__=~"requests_.+"})`)
+	// Only the sampled metrics, never a whole family by prefix.
+	require.Contains(t, queries, `count by (__name__) ({__name__=~"requests_total|up|a\\.b"})`)
 }
