@@ -6741,7 +6741,10 @@ func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, histograms 
 	}
 }
 
-func makeSamples(ts, st int64, value float64) []mimirpb.Sample {
+// makeSamples returns a list with a single Sample with the given values. The
+// second parameter will be Start Time, which does not yet exist on the Sample
+// type.
+func makeSamples(ts, _ int64, value float64) []mimirpb.Sample {
 	return []mimirpb.Sample{{
 		Value:       value,
 		TimestampMs: ts,
