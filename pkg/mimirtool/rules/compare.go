@@ -196,7 +196,8 @@ func rulesEqual(a, b *rulefmt.Rule) bool {
 	if a.Alert != b.Alert ||
 		a.Record != b.Record ||
 		a.Expr != b.Expr ||
-		a.For != b.For {
+		a.For != b.For ||
+		a.KeepFiringFor != b.KeepFiringFor {
 		return false
 	}
 
