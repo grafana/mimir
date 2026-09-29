@@ -310,6 +310,10 @@ struct SeriesByName {
     // How many series have each label: its postings list them all, and queries compare their
     // size with other candidates' before listing them.
     label_series: hashbrown::HashMap<&'static str, u32>,
+    // The name groups each name matcher other than an equality accepted, with how many names
+    // there were: a sharded query sends the same one in every request, and the names only change
+    // when a metric appears.
+    name_matches: Mutex<HashMap<(u8, String), (usize, Arc<[u32]>)>>,
     len: usize,
 }
 
@@ -502,17 +506,18 @@ impl SeriesByName {
             }
         }
         let group_len = name_group.map(|group| self.groups[group as usize].len());
+        let name_groups = name_matcher
+            .filter(|_| name_group.is_none())
+            .map(|matcher| self.name_groups(matcher));
         // How many series the candidates below would be: a posting list, a name group, the groups
         // of the names a name matcher accepts, or every series.
         let chosen = match (best, group_len) {
             (Some(list), len) if len.is_none_or(|len| list.len() < len) => list.len(),
             (_, Some(len)) => len,
-            _ => match name_matcher {
-                Some(matcher) => self
-                    .names
+            _ => match &name_groups {
+                Some(groups) => groups
                     .iter()
-                    .filter(|(name, _)| matcher.matches_value(name))
-                    .map(|(_, group)| self.groups[*group as usize].len())
+                    .map(|group| self.groups[*group as usize].len())
                     .sum(),
                 None => self.len,
             },
@@ -569,17 +574,12 @@ impl SeriesByName {
                     .iter()
                     .map(|(key, series)| (key, &**series)),
             ),
-            (_, None) => match name_matcher {
-                Some(matcher) => Box::new(
-                    self.names
+            (_, None) => match name_groups {
+                Some(groups) => Box::new((0..groups.len()).flat_map(move |index| {
+                    self.groups[groups[index] as usize]
                         .iter()
-                        .filter(move |(name, _)| matcher.matches_value(name))
-                        .flat_map(move |(_, group)| {
-                            self.groups[*group as usize]
-                                .iter()
-                                .map(|(key, series)| (key, &**series))
-                        }),
-                ),
+                        .map(|(key, series)| (key, &**series))
+                })),
                 None => Box::new(self.iter()),
             },
         };
@@ -627,6 +627,44 @@ impl SeriesByName {
                     }
                 })
         }))
+    }
+
+    /// The name groups whose name `matcher`, a name matcher other than an equality, accepts.
+    fn name_groups(&self, matcher: &CompiledMatcher) -> Arc<[u32]> {
+        let key = match matcher {
+            CompiledMatcher::NotEqual(_, value) => (1, value.clone()),
+            CompiledMatcher::Regex(_, regex) => (2, regex.as_str().to_owned()),
+            CompiledMatcher::NotRegex(_, regex) => (3, regex.as_str().to_owned()),
+            CompiledMatcher::Equal(..) | CompiledMatcher::Shard(..) => {
+                unreachable!("name groups of an equality or shard matcher")
+            }
+        };
+        let names = self.names.len();
+        let mut cache = self
+            .name_matches
+            .lock()
+            .expect("name matches lock poisoned");
+        if let Some((cached_names, groups)) = cache.get(&key)
+            && *cached_names == names
+        {
+            return Arc::clone(groups);
+        }
+        let groups: Arc<[u32]> = self
+            .names
+            .iter()
+            .filter(|(name, _)| {
+                #[cfg(test)]
+                NAME_MATCHES.with(|matches| matches.set(matches.get() + 1));
+                matcher.matches_value(name)
+            })
+            .map(|(_, group)| *group)
+            .collect();
+        // Bounded, so arbitrary queries can't grow it.
+        if cache.len() >= 256 {
+            cache.clear();
+        }
+        cache.insert(key, (names, Arc::clone(&groups)));
+        groups
     }
 
     /// How many series have `label`.
@@ -2269,7 +2307,7 @@ impl Store {
             let mut cold_bounds = Vec::new();
             // Per block, for each label matcher that accepts the empty value, the series with its
             // label when few are: the others match it without reading their labels.
-            let mut block_with_label: Option<(u64, Vec<Option<Vec<u32>>>)> = None;
+            let mut block_with_label: Option<(u64, Vec<Option<Arc<[u32]>>>)> = None;
             for (block_tenant, index, series) in
                 cold.candidates(tenant_id, &lookup, scan_start, scan_end)
             {
@@ -4357,6 +4395,9 @@ fn matcher_shape(matchers: &[cortex::LabelMatcher]) -> String {
 #[cfg(test)]
 thread_local! {
     static CHUNK_BOUNDS_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // Metric names name matchers were checked against, and cold blocks' label lists computed.
+    static NAME_MATCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static COLD_LABEL_LISTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static REGEX_COMPILES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     // Cold blocks' tenants whose query shard hashes were computed.
     static COLD_SHARD_HASHINGS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -5638,6 +5679,21 @@ mod tests {
         // A cold name regex visits the series of the names it accepts, not the other 300.
         let cold_name = reads(&[matcher(2, "__name__", "old"), matcher(3, "agg", ".+")]);
         assert!(cold_name < 200, "{cold_name} label reads");
+        // Repeated, a query matches no names again, and cold blocks list no label's series again.
+        let counters = || {
+            (
+                NAME_MATCHES.with(std::cell::Cell::get),
+                COLD_LABEL_LISTS.with(std::cell::Cell::get),
+            )
+        };
+        let repeated = [
+            matcher(2, "__name__", "hot|old"),
+            matcher(3, "job", "job-1"),
+        ];
+        reads(&repeated);
+        let before = counters();
+        reads(&repeated);
+        assert_eq!(counters(), before);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
