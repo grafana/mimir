@@ -171,7 +171,10 @@ func CheckMaxBlockSize(files []block.File, maxBlockSizeBytes int64) error {
 	}
 
 	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
-		return &MaxBlockInvalidSizeError{LimitBytes: maxBlockSizeBytes, SizeBytes: blockSizeBytes}
+		return &MaxBlockInvalidSizeError{
+			LimitBytes: maxBlockSizeBytes,
+			SizeBytes:  blockSizeBytes,
+		}
 	}
 	return nil
 }
