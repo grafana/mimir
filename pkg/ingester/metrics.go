@@ -51,7 +51,6 @@ type ingesterMetrics struct {
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
 
-	labelValueBytesPerUser        *prometheus.GaugeVec
 	labelNamesOverValueBytesLimit prometheus.Gauge
 	labelValueBytesOverLimit      *prometheus.GaugeVec
 
@@ -222,10 +221,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
-		labelValueBytesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_label_value_bytes",
-			Help: "Total size in bytes of the distinct values held in memory for a label name.",
-		}, []string{"user", "label"}),
 		labelNamesOverValueBytesLimit: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_label_names_over_value_bytes_limit",
 			Help: "Number of (user, label name) pairs whose distinct label values exceed the local per-label-name bytes limit on this ingester.",
@@ -466,7 +461,6 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	filter := prometheus.Labels{"user": userID}
 	m.discarded.DeletePartialMatch(filter)
-	m.labelValueBytesPerUser.DeletePartialMatch(filter)
 	m.labelValueBytesOverLimit.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)

@@ -60,41 +60,34 @@ func TestIngester_LabelValueBytesMetrics(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	values := make([]string, 0, 11)
+	values := make([]string, 0, 10)
 	for n := range cap(values) {
 		values = append(values, labelValueOfLength(strconv.Itoa(n), valueLength))
 	}
 
-	// Values at or below the minimum length never count, however many of them there are.
+	// Values at or below the minimum length never count: these would be far over the limit otherwise.
 	short := make([]string, 0, 200)
 	for n := range cap(short) {
 		short = append(short, labelValueOfLength("s"+strconv.Itoa(n), index.LabelValueBytesMinLength))
 	}
 	pushSeriesWithLabelValues(t, i, ctx, "quiet", "short", short...)
 	i.updateLimitMetrics()
-	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
-
-	// Long values are reported however far they are from the limit.
-	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[0])
-	i.updateLimitMetrics()
-	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 200`)
 	requireLabelNamesOverLimit(t, registry, 0)
 
-	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[1:6]...)
+	// Nine distinct values are 1800 bytes, under the limit.
+	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[:9]...)
 	i.updateLimitMetrics()
-	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 1200`)
 	requireLabelNamesOverLimit(t, registry, 0)
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
 
-	// Repeating an existing value must not move the counter.
+	// Repeating an existing value on another series must not count it again, or it would reach the limit.
 	pushSeriesWithLabelValues(t, i, ctx, "noisy_again", "big", values[0])
 	i.updateLimitMetrics()
-	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 1200`)
+	requireLabelNamesOverLimit(t, registry, 0)
 
-	// Five more distinct values push the label over the limit.
-	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[6:11]...)
+	// A tenth distinct value reaches the limit, which counts as over it.
+	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", values[9])
 	i.updateLimitMetrics()
-	requireLabelValueBytes(t, registry, `cortex_ingester_label_value_bytes{label="big",user="test"} 2200`)
 	requireLabelNamesOverLimit(t, registry, 1)
 	requireLabelValueBytesOverLimit(t, registry, `cortex_ingester_label_value_bytes_over_limit{label="big",user="test"} 1`)
 }
@@ -116,7 +109,7 @@ func TestIngester_LabelValueBytesMetrics_LimitDisabled(t *testing.T) {
 	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", labelValueOfLength("a", 5_000))
 	i.updateLimitMetrics()
 
-	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
+	requireLabelNamesOverLimit(t, registry, 0)
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
 }
 
@@ -138,25 +131,13 @@ func TestIngester_LabelValueBytesMetrics_ClearedWhenTSDBIsClosed(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	pushSeriesWithLabelValues(t, i, ctx, "noisy", "big", labelValueOfLength("a", 600), labelValueOfLength("b", 600))
 	i.updateLimitMetrics()
-	require.Equal(t, 1, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
 	require.Equal(t, 1, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
 
 	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	i.shipBlocks(context.Background(), nil)
 	require.Equal(t, tsdbIdleClosed, i.closeAndDeleteUserTSDBIfIdle(userID))
 
-	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes"))
 	require.Equal(t, 0, testutil.CollectAndCount(registry, "cortex_ingester_label_value_bytes_over_limit"))
-}
-
-func requireLabelValueBytes(t *testing.T, g prometheus.Gatherer, expected string) {
-	t.Helper()
-
-	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(`
-		# HELP cortex_ingester_label_value_bytes Total size in bytes of the distinct values held in memory for a label name.
-		# TYPE cortex_ingester_label_value_bytes gauge
-		`+expected+`
-	`), "cortex_ingester_label_value_bytes"))
 }
 
 func requireLabelNamesOverLimit(t *testing.T, g prometheus.Gatherer, expected int) {
