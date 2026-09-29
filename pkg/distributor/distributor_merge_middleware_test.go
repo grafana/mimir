@@ -192,8 +192,8 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	t.Run("merges identical label sets sharing a created timestamp", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseriesWithCT(lbls, makeSamples(100, 0, 1), 42),
-			makeTimeseriesWithCT(lbls, makeSamples(200, 0, 2), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 42, 1), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 42, 2), 42),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -211,9 +211,9 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		// each still triggers its own zero-sample ingestion downstream.
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseriesWithCT(lbls, makeSamples(100, 0, 1), 10),
-			makeTimeseriesWithCT(lbls, makeSamples(200, 0, 2), 20),
-			makeTimeseriesWithCT(lbls, makeSamples(300, 0, 3), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 10, 1), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 20, 2), 20),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 30, 3), 10),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -609,8 +609,8 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 
 			lbls := []string{model.MetricNameLabel, "series_1"}
 			req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 0, 1), createdTS),
-				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 0, 2), createdTS),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, createdTS, 1), createdTS),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, createdTS, 2), createdTS),
 			}}
 
 			_, err := ds[0].Push(ctx, req)
