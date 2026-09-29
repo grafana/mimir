@@ -22,7 +22,7 @@ func TestReadcacheTSDBCollectorIncludesActiveAndFrozenStores(t *testing.T) {
 
 	active, err := openPartitionTSDB(
 		"active-tenant", 1, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(), log.NewNopLogger(),
 	)
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestReadcacheTSDBCollectorIncludesActiveAndFrozenStores(t *testing.T) {
 
 	frozen, err := openPartitionTSDB(
 		"frozen-tenant", 2, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(), log.NewNopLogger(),
 	)
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestReadcacheTSDBCollectorDoesNotDoubleCountStoreDuringFreeze(t *testing.T)
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 	db, err := openPartitionTSDB(
 		"tenant", 1, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(), log.NewNopLogger(),
 	)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestPartitionTSDBMutationMetrics(t *testing.T) {
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 	db, err := openPartitionTSDB(
 		"tenant", 1, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(), log.NewNopLogger(),
 	)
 	require.NoError(t, err)
