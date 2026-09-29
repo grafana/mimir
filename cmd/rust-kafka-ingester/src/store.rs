@@ -491,8 +491,12 @@ impl SeriesByName {
             }
         }
         let group_len = name_group.map(|group| self.groups[group as usize].len());
+        // Name groups hold exactly one name, so candidates taken from groups already match the
+        // name matcher; checking it again read every candidate's labels, a cache miss per series.
+        let mut name_matched = true;
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
             (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
+                name_matched = false;
                 let mut refs = list
                     .ids()
                     .map(|id| self.refs[id as usize])
@@ -528,6 +532,11 @@ impl SeriesByName {
         // Each matcher's label name is looked up once rather than for every series.
         let resolved = matchers
             .iter()
+            .filter(|matcher| {
+                !(name_matched
+                    && name_matcher
+                        .is_some_and(|name_matcher| std::ptr::eq(*matcher, name_matcher)))
+            })
             .map(|matcher| {
                 (
                     matcher,
@@ -540,7 +549,11 @@ impl SeriesByName {
                 CompiledMatcher::Shard(..) => {
                     in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
                 }
-                _ => matcher.matches_value(name.map_or("", |name| labels.value_of(name))),
+                _ => {
+                    #[cfg(test)]
+                    LABEL_VALUE_READS.with(|reads| reads.set(reads.get() + 1));
+                    matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
+                }
             })
         }))
     }
@@ -2129,10 +2142,17 @@ impl Store {
                     if !in_shard && !counts_index {
                         return None;
                     }
-                    // Decoded once: every block below checks the same chunk bounds.
-                    bounds.clear();
-                    bounds.extend(series_bounds(series));
-                    let overlaps = |lower: i64, upper: i64| {
+                    // Decoded at most once, and only when needed: the head block needs no chunk
+                    // bounds, and most candidates of a sharded query only count toward it.
+                    let mut decoded = false;
+                    let mut overlaps = |lower: i64, upper: i64| {
+                        if !decoded {
+                            #[cfg(test)]
+                            CHUNK_BOUNDS_DECODES.with(|decodes| decodes.set(decodes.get() + 1));
+                            bounds.clear();
+                            bounds.extend(series_bounds(series));
+                            decoded = true;
+                        }
                         bounds
                             .iter()
                             .any(|(min, max)| *min <= upper && *max >= lower)
@@ -4029,6 +4049,13 @@ enum CompiledMatcher {
 }
 
 #[cfg(test)]
+thread_local! {
+    // Per thread, since tests run in parallel and a query reads its store shards on its thread.
+    static LABEL_VALUE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static CHUNK_BOUNDS_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 static REGEX_COMPILES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A matcher's regex, anchored like Prometheus's. Queriers send the same few patterns with every
@@ -4897,6 +4924,82 @@ mod tests {
         assert_eq!(shard("3_of_5".into()), 1);
         assert_eq!(shard("1_of_5".into()), 0);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn sharded_head_queries_only_read_what_they_return() {
+        let store = Store::default();
+        let mut request = series_request("sharded", []);
+        request.series.clear();
+        for n in 0..64 {
+            let mut series = series_request("sharded", [(1_000, 1.0)]).series.remove(0);
+            series.labels.push(("n".into(), n.to_string().into()));
+            request.series.push(series);
+        }
+        store.ingest("tenant", request).unwrap();
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        let counters = || {
+            (
+                LABEL_VALUE_READS.with(std::cell::Cell::get),
+                CHUNK_BOUNDS_DECODES.with(std::cell::Cell::get),
+            )
+        };
+        let mut returned = 0;
+        for index in 1..=16 {
+            let before = counters();
+            let (series, blocks) = store
+                .select_chunks_with_blocks(
+                    "tenant",
+                    i64::MIN,
+                    i64::MAX,
+                    &[
+                        matcher(0, "__name__", "sharded"),
+                        matcher(0, "__query_shard__", &format!("{index}_of_16")),
+                    ],
+                )
+                .unwrap();
+            let after = counters();
+            // Every series counts toward the head's index lookup.
+            assert_eq!(blocks[0].index_series, 64);
+            assert_eq!(blocks[0].series, series.len() as u64);
+            assert_eq!(
+                after.0 - before.0,
+                0,
+                "the name group already matched the name"
+            );
+            assert_eq!(
+                after.1 - before.1,
+                series.len() as u64,
+                "only returned series decode chunks"
+            );
+            returned += series.len();
+        }
+        assert_eq!(returned, 64);
+        // Candidates from a posting list still check the name: a posting only has a value's hash.
+        let before = counters();
+        let series = store
+            .select_chunks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[matcher(0, "__name__", "other"), matcher(0, "n", "1")],
+            )
+            .unwrap();
+        assert!(series.is_empty());
+        let (series, _) = store
+            .select_chunks_with_blocks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[matcher(2, "__name__", "shard.*"), matcher(0, "n", "1")],
+            )
+            .unwrap();
+        assert_eq!(series.len(), 1);
+        assert!(counters().0 > before.0);
     }
 
     #[test]
