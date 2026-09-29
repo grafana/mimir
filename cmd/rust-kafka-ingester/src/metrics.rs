@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use crate::exposition;
+use crate::native_histogram::NativeHistogramVec;
+
 use prometheus::{
     Encoder, Gauge, GaugeVec, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
     IntGaugeVec, Opts, Registry, TextEncoder,
@@ -197,10 +200,13 @@ metric!(ACTIVE_NATIVE_HISTOGRAM_BUCKETS_CUSTOM_TRACKER: IntGaugeVec = IntGaugeVe
 metric!(ACTIVE_SERIES_LOADING: IntGauge = IntGauge::new(
     "cortex_ingester_active_series_loading", "1 if active series counts are still warming up and may be underreported, 0 once they are accurate.",
 ).unwrap());
-metric!(REQUEST_DURATION: HistogramVec = HistogramVec::new(
-    HistogramOpts::new("cortex_request_duration_seconds", "Time (in seconds) spent serving HTTP requests.")
-        .buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0]),
+// dskit's request duration histogram as Mimir configures it: native buckets growing by 1.1, at most
+// 100 of them, reset at most hourly.
+metric!(REQUEST_DURATION: NativeHistogramVec = NativeHistogramVec::new(
+    "cortex_request_duration_seconds", "Time (in seconds) spent serving HTTP requests.",
+    vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0],
     &["method", "route", "status_code", "ws"],
+    1.1, 100, Duration::from_secs(3600),
 ).unwrap());
 metric!(INFLIGHT_REQUESTS: IntGaugeVec = IntGaugeVec::new(
     Opts::new("cortex_inflight_requests", "Current number of inflight requests."),
@@ -337,6 +343,11 @@ pub fn set_runtime_config_hash(hash: u64) {
     RUNTIME_CONFIG_SUCCESS.set(1);
 }
 
+/// `registry` in the protobuf format, which carries native histogram buckets.
+pub fn encode_protobuf(registry: &Registry) -> Vec<u8> {
+    exposition::encode(&registry.gather())
+}
+
 /// Drops the sidecar's `process_*` families, which describe the sidecar rather than the ingester
 /// process whose own ones this registry exports.
 pub fn sidecar_families(text: &str) -> String {
@@ -355,7 +366,8 @@ pub fn sidecar_families(text: &str) -> String {
     output
 }
 
-async fn fetch_sidecar(url: &str) -> Option<String> {
+/// The sidecar's metrics, in the protobuf format when asked and the sidecar answers with it.
+async fn fetch_sidecar(url: &str, protobuf: bool) -> Option<(bool, Vec<u8>)> {
     use http_body_util::{BodyExt, Empty};
     type HttpClient = hyper_util::client::legacy::Client<
         hyper_util::client::legacy::connect::HttpConnector,
@@ -365,12 +377,24 @@ async fn fetch_sidecar(url: &str) -> Option<String> {
         hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .build_http()
     });
-    let response = tokio::time::timeout(Duration::from_secs(2), CLIENT.get(url.parse().ok()?))
+    let mut request = hyper::Request::get(url).body(Empty::new()).ok()?;
+    if protobuf {
+        request.headers_mut().insert(
+            hyper::header::ACCEPT,
+            hyper::header::HeaderValue::from_static(exposition::PROTOBUF_CONTENT_TYPE),
+        );
+    }
+    let response = tokio::time::timeout(Duration::from_secs(2), CLIENT.request(request))
         .await
         .ok()?
         .ok()?;
+    let is_protobuf = response
+        .headers()
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/vnd.google.protobuf"));
     let body = response.into_body().collect().await.ok()?.to_bytes();
-    String::from_utf8(body.to_vec()).ok()
+    Some((is_protobuf, body.to_vec()))
 }
 
 pub fn register_process_metrics() {
@@ -403,12 +427,43 @@ pub async fn serve(
             )
         }
     };
-    let main = move || {
+    let main = move |headers: axum::http::HeaderMap| {
         let sidecar_url = sidecar_url.clone();
         async move {
+            let protobuf = headers
+                .get(axum::http::header::ACCEPT)
+                .and_then(|accept| accept.to_str().ok())
+                .is_some_and(exposition::accepts_protobuf);
+            let sidecar = match &sidecar_url {
+                Some(url) => fetch_sidecar(url, protobuf).await,
+                None => None,
+            };
+            // Both processes' families go out in one format; a sidecar answering in text makes
+            // the whole response text.
+            let sidecar_protobuf = sidecar.as_ref().is_none_or(|(is_protobuf, _)| *is_protobuf);
+            if protobuf && sidecar_protobuf {
+                let mut body = encode_protobuf(&REGISTRY);
+                if let Some((_, sidecar)) = sidecar
+                    && let Some(families) =
+                        exposition::filter_families(&sidecar, |name| name.starts_with("process_"))
+                {
+                    body.extend_from_slice(&families);
+                }
+                return (
+                    [(
+                        axum::http::header::CONTENT_TYPE,
+                        exposition::PROTOBUF_CONTENT_TYPE,
+                    )],
+                    body,
+                );
+            }
             let mut body = encode(&REGISTRY);
-            if let Some(url) = sidecar_url
-                && let Some(sidecar) = fetch_sidecar(&url).await
+            let sidecar = match sidecar {
+                Some((true, _)) => fetch_sidecar(sidecar_url.as_deref().unwrap_or(""), false).await,
+                other => other,
+            };
+            if let Some((false, sidecar)) = sidecar
+                && let Ok(sidecar) = String::from_utf8(sidecar)
             {
                 body.extend_from_slice(sidecar_families(&sidecar).as_bytes());
             }
