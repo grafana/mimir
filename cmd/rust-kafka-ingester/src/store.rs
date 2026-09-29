@@ -307,6 +307,9 @@ struct SeriesByName {
     // The series of the values more than one series has.
     shared_postings: Vec<Vec<u32>>,
     refs: Vec<(u32, u64)>,
+    // How many series have each label: its postings list them all, and queries compare their
+    // size with other candidates' before listing them.
+    label_series: hashbrown::HashMap<&'static str, u32>,
     len: usize,
 }
 
@@ -415,7 +418,15 @@ impl SeriesByName {
             hashbrown::hash_table::Entry::Vacant(entry) => {
                 *len += 1;
                 let labels = labels();
-                add_postings(postings, shared_postings, refs, &labels, group, hash);
+                add_postings(
+                    postings,
+                    shared_postings,
+                    refs,
+                    &mut self.label_series,
+                    &labels,
+                    group,
+                    hash,
+                );
                 let ((_, labels), series) =
                     entry.insert(((hash, labels), Box::default())).into_mut();
                 (&*labels, &mut **series)
@@ -491,24 +502,67 @@ impl SeriesByName {
             }
         }
         let group_len = name_group.map(|group| self.groups[group as usize].len());
+        // How many series the candidates below would be: a posting list, a name group, the groups
+        // of the names a name matcher accepts, or every series.
+        let chosen = match (best, group_len) {
+            (Some(list), len) if len.is_none_or(|len| list.len() < len) => list.len(),
+            (_, Some(len)) => len,
+            _ => match name_matcher {
+                Some(matcher) => self
+                    .names
+                    .iter()
+                    .filter(|(name, _)| matcher.matches_value(name))
+                    .map(|(_, group)| self.groups[*group as usize].len())
+                    .sum(),
+                None => self.len,
+            },
+        };
+        // Like the Go head's postings for matchers that reject the empty value: only series with
+        // the label can match, and the label's postings list them. A nameless label regex visited
+        // every series of the tenant otherwise.
+        let present = matchers
+            .iter()
+            .filter(|matcher| {
+                !matches!(
+                    matcher,
+                    CompiledMatcher::Shard(..) | CompiledMatcher::Equal(..)
+                ) && matcher.label_name() != Some("__name__")
+                    && !matcher.matches_value("")
+            })
+            .filter_map(|matcher| {
+                let label = matcher.label_name()?;
+                Some((self.series_with(label), label))
+            })
+            .min()
+            .filter(|(count, _)| *count < chosen);
         // Name groups hold exactly one name, so candidates taken from groups already match the
         // name matcher; checking it again read every candidate's labels, a cache miss per series.
         let mut name_matched = true;
         let candidates: Box<dyn Iterator<Item = (&SeriesKey, &Series)>> = match (best, name_group) {
+            _ if present.is_some() => {
+                name_matched = false;
+                let (_, label) = present.expect("checked");
+                Box::new(self.refs_of(self.ids_with(label)).into_iter().flat_map(
+                    move |(group, hash)| {
+                        self.groups[group as usize]
+                            .iter_hash(hash)
+                            .filter(move |((entry_hash, _), _)| *entry_hash == hash)
+                            .map(|(key, series)| (key, &**series))
+                    },
+                ))
+            }
             (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
                 name_matched = false;
-                let mut refs = list
-                    .ids()
-                    .map(|id| self.refs[id as usize])
-                    .collect::<Vec<_>>();
-                refs.sort_unstable();
-                refs.dedup();
-                Box::new(refs.into_iter().flat_map(move |(group, hash)| {
-                    self.groups[group as usize]
-                        .iter_hash(hash)
-                        .filter(move |((entry_hash, _), _)| *entry_hash == hash)
-                        .map(|(key, series)| (key, &**series))
-                }))
+                Box::new(
+                    self.refs_of(list.ids())
+                        .into_iter()
+                        .flat_map(move |(group, hash)| {
+                            self.groups[group as usize]
+                                .iter_hash(hash)
+                                .filter(move |((entry_hash, _), _)| *entry_hash == hash)
+                                .map(|(key, series)| (key, &**series))
+                        }),
+                )
             }
             (_, Some(group)) => Box::new(
                 self.groups[group as usize]
@@ -529,7 +583,10 @@ impl SeriesByName {
                 None => Box::new(self.iter()),
             },
         };
-        // Each matcher's label name is looked up once rather than for every series.
+        let candidates_len = present.map_or(chosen, |(count, _)| count);
+        // Each matcher's label name is looked up once rather than for every series. A matcher that
+        // accepts the empty value accepts every series without its label; when few series have it,
+        // their hashes tell which candidates to check, and the others pass without reading labels.
         let resolved = matchers
             .iter()
             .filter(|matcher| {
@@ -538,23 +595,65 @@ impl SeriesByName {
                         .is_some_and(|name_matcher| std::ptr::eq(*matcher, name_matcher)))
             })
             .map(|matcher| {
+                let label = matcher.label_name();
+                let with_label = label
+                    .filter(|label| *label != "__name__" && matcher.matches_value(""))
+                    .filter(|label| self.series_with(label).saturating_mul(4) < candidates_len)
+                    .map(|label| {
+                        self.refs_of(self.ids_with(label))
+                            .into_iter()
+                            .map(|(_, hash)| hash)
+                            .collect::<hashbrown::HashSet<u64>>()
+                    });
                 (
                     matcher,
-                    matcher.label_name().and_then(crate::labels::names::lookup),
+                    label.and_then(crate::labels::names::lookup),
+                    with_label,
                 )
             })
             .collect::<Vec<_>>();
-        Box::new(candidates.filter(move |((_, labels), series)| {
-            resolved.iter().all(|(matcher, name)| match matcher {
-                CompiledMatcher::Shard(..) => {
-                    in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
-                }
-                _ => {
-                    count_label_value_read();
-                    matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
-                }
-            })
+        Box::new(candidates.filter(move |((hash, labels), series)| {
+            resolved
+                .iter()
+                .all(|(matcher, name, with_label)| match matcher {
+                    CompiledMatcher::Shard(..) => {
+                        in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
+                    }
+                    // A hash collision only makes a series without the label read its labels.
+                    _ if with_label.as_ref().is_some_and(|with| !with.contains(hash)) => true,
+                    _ => {
+                        count_label_value_read();
+                        matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
+                    }
+                })
         }))
+    }
+
+    /// How many series have `label`.
+    fn series_with(&self, label: &str) -> usize {
+        self.label_series
+            .get(label)
+            .map_or(0, |count| *count as usize)
+    }
+
+    /// The ids of every series with `label`, from all of its postings.
+    fn ids_with<'a>(&'a self, label: &str) -> impl Iterator<Item = u32> + 'a {
+        self.postings
+            .get(label)
+            .into_iter()
+            .flat_map(move |values| {
+                values
+                    .values()
+                    .flat_map(move |posting| Posting::new(&self.shared_postings, *posting).ids())
+            })
+    }
+
+    /// The (name group, label hash) of each of `ids`, once each.
+    fn refs_of(&self, ids: impl Iterator<Item = u32>) -> Vec<(u32, u64)> {
+        let mut refs = ids.map(|id| self.refs[id as usize]).collect::<Vec<_>>();
+        refs.sort_unstable();
+        refs.dedup();
+        refs
     }
 
     fn for_each_mut(&mut self, mut visit: impl FnMut(&StoredLabels, &mut Series)) {
@@ -580,12 +679,14 @@ impl SeriesByName {
             self.postings.clear();
             self.shared_postings.clear();
             self.refs.clear();
+            self.label_series.clear();
             for (group, table) in self.groups.iter().enumerate() {
                 for ((hash, labels), _) in table.iter() {
                     add_postings(
                         &mut self.postings,
                         &mut self.shared_postings,
                         &mut self.refs,
+                        &mut self.label_series,
                         labels,
                         group as u32,
                         *hash,
@@ -601,6 +702,7 @@ fn add_postings(
     postings: &mut hashbrown::HashMap<&'static str, ValuePostings>,
     shared_postings: &mut Vec<Vec<u32>>,
     refs: &mut Vec<(u32, u64)>,
+    label_series: &mut hashbrown::HashMap<&'static str, u32>,
     labels: &StoredLabels,
     group: u32,
     hash: u64,
@@ -618,6 +720,7 @@ fn add_postings(
             Some(values) => values,
             None => postings.entry(name).or_default(),
         };
+        *label_series.entry(name).or_default() += 1;
         match values.entry(posting_key(value)) {
             std::collections::hash_map::Entry::Occupied(mut posting) => {
                 let posting = posting.get_mut();
@@ -2164,6 +2267,9 @@ impl Store {
             let mut cold_series: hashbrown::HashMap<StoredLabels, Vec<ChunkMeta>> =
                 hashbrown::HashMap::new();
             let mut cold_bounds = Vec::new();
+            // Per block, for each label matcher that accepts the empty value, the series with its
+            // label when few are: the others match it without reading their labels.
+            let mut block_with_label: Option<(u64, Vec<Option<Vec<u32>>>)> = None;
             for (block_tenant, index, series) in
                 cold.candidates(tenant_id, &lookup, scan_start, scan_end)
             {
@@ -2185,7 +2291,34 @@ impl Store {
                         .iter()
                         .any(|(min, max)| *min <= upper && *max >= lower)
                 };
-                if !overlaps(scan_start, scan_end) || !matches(&series, &cold_labels) {
+                if !overlaps(scan_start, scan_end) {
+                    continue;
+                }
+                if block_with_label
+                    .as_ref()
+                    .is_none_or(|(id, _)| *id != block_tenant.block_id())
+                {
+                    let sets = cold_labels
+                        .iter()
+                        .map(|matcher| {
+                            let label = matcher.label_name()?;
+                            if label == "__name__" || !matcher.matches_value("") {
+                                return None;
+                            }
+                            let with = block_tenant.with_label(tenant_id, label);
+                            (with.len().saturating_mul(4) < block_tenant.series_count())
+                                .then_some(with)
+                        })
+                        .collect();
+                    block_with_label = Some((block_tenant.block_id(), sets));
+                }
+                let (_, sets) = block_with_label.as_ref().expect("computed");
+                let labels_match = cold_labels.iter().zip(sets).all(|(matcher, with)| {
+                    with.as_ref()
+                        .is_some_and(|with| with.binary_search(&(index as u32)).is_err())
+                        || matches(&series, std::slice::from_ref(matcher))
+                });
+                if !labels_match {
                     continue;
                 }
                 for (block, counts) in blocks.iter().zip(&mut counts) {
@@ -5309,6 +5442,190 @@ mod tests {
         assert_eq!(series.len(), 3);
         // The name group holds the candidates; each one's `n` is checked once.
         assert_eq!(counters(), (before.0 + 1, before.1 + 4));
+    }
+
+    // Every series' labels, from a query without matchers.
+    fn every_series(store: &Store, tenant: &str) -> Vec<Vec<(String, String)>> {
+        let (series, _) = store
+            .select_chunks_with_blocks(tenant, i64::MIN, i64::MAX, &[])
+            .unwrap();
+        series
+            .iter()
+            .map(|view| {
+                cortex::QueryStreamSeries::decode(view.encoded_labels.clone())
+                    .unwrap()
+                    .labels
+                    .into_iter()
+                    .map(|pair| {
+                        (
+                            String::from_utf8(pair.name.to_vec()).unwrap(),
+                            String::from_utf8(pair.value.to_vec()).unwrap(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn label_matchers_select_the_same_whatever_series_have_their_label() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-presence-{}", std::process::id()));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let start = 10 * HOUR;
+        // A sparse label (agg, on one series in 12), a common one (job) and a unique one (n), on
+        // series that move to cold blocks and series that stay in the head. The old ones come
+        // first: the head rejects samples an hour behind its newest.
+        for (name, minutes) in [("old", 0..100), ("hot", 150..300)] {
+            let mut request =
+                series_request("keep", minutes.clone().map(|m| (start + m * 60_000, 1.0)));
+            for n in 0..120_i64 {
+                let mut series = series_request(
+                    name,
+                    minutes.clone().map(|m| (start + m * 60_000, n as f64)),
+                )
+                .series
+                .remove(0);
+                series
+                    .labels
+                    .push(("job".into(), format!("job-{}", n % 5).into()));
+                series.labels.push(("n".into(), n.to_string().into()));
+                if n % 12 == 0 {
+                    series
+                        .labels
+                        .push(("agg".into(), format!("sum-{}", n % 24).into()));
+                }
+                series.labels.sort();
+                request.series.push(series);
+            }
+            store.ingest("tenant", request).unwrap();
+        }
+        store.head_tick(true, false);
+        store.head_tick(false, false);
+        assert!(
+            store.num_series("tenant") < 241,
+            "old series moved to cold blocks"
+        );
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        let shapes = vec![
+            vec![matcher(2, "agg", "sum-.*")],
+            vec![matcher(2, "agg", ".+")],
+            vec![matcher(2, "job", "job-[12]")],
+            vec![matcher(0, "__name__", "hot"), matcher(3, "agg", ".+")],
+            vec![matcher(0, "__name__", "old"), matcher(1, "agg", "sum-0")],
+            vec![matcher(2, "__name__", "hot|old"), matcher(3, "agg", ".+")],
+            vec![matcher(2, "__name__", "hot|old"), matcher(0, "agg", "")],
+            vec![matcher(0, "__name__", "hot"), matcher(2, "agg", ".*")],
+            vec![matcher(0, "__name__", "hot"), matcher(3, "agg", "")],
+            vec![matcher(3, "job", "job-1"), matcher(2, "agg", ".+")],
+            vec![matcher(2, "n", "1.*"), matcher(3, "agg", "sum-12")],
+            vec![matcher(2, "missing", ".+")],
+            vec![matcher(3, "missing", ".+"), matcher(0, "__name__", "old")],
+            vec![matcher(0, "job", "job-2"), matcher(3, "agg", ".+")],
+            vec![matcher(2, "__name__", ".+"), matcher(3, "n", "[0-5]?[0-9]")],
+            vec![matcher(1, "agg", ""), matcher(0, "__name__", "hot")],
+        ];
+        let everything = every_series(&store, "tenant");
+        // Prometheus's semantics: a missing label has the empty value; regexes are anchored.
+        let expected = |matchers: &[cortex::LabelMatcher]| {
+            let compiled = compile_matchers(matchers).unwrap();
+            let mut selected = everything
+                .iter()
+                .filter(|labels| {
+                    compiled.iter().all(|matcher| {
+                        let name = matcher.label_name().unwrap();
+                        let value = labels
+                            .iter()
+                            .find(|(label, _)| label == name)
+                            .map_or("", |(_, value)| value.as_str());
+                        matcher.matches_value(value)
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            selected.sort();
+            selected
+        };
+        let mut digest = std::collections::hash_map::DefaultHasher::new();
+        for base in &shapes {
+            for shard in [None, Some("1_of_3"), Some("3_of_3")] {
+                let mut matchers = base.clone();
+                if let Some(shard) = shard {
+                    matchers.push(matcher(0, "__query_shard__", shard));
+                }
+                for (from, to) in [
+                    (i64::MIN, i64::MAX),
+                    (start + 20 * 60_000, start + 40 * 60_000),
+                ] {
+                    let (series, blocks) = store
+                        .select_chunks_with_blocks("tenant", from, to, &matchers)
+                        .unwrap();
+                    let reads = series
+                        .iter()
+                        .map(|view| {
+                            (
+                                view.encoded_labels.to_vec(),
+                                view.chunks[view.chunk_start..view.chunk_end]
+                                    .iter()
+                                    .map(|chunk| chunk.wire.to_vec())
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    let stats = blocks
+                        .into_iter()
+                        .map(|block| (block.generation, block.index_series, block.series))
+                        .collect::<Vec<_>>();
+                    std::hash::Hash::hash(&(&reads, &stats), &mut digest);
+                    if shard.is_none() && from == i64::MIN {
+                        let mut selected = series
+                            .iter()
+                            .map(|view| {
+                                cortex::QueryStreamSeries::decode(view.encoded_labels.clone())
+                                    .unwrap()
+                                    .labels
+                                    .into_iter()
+                                    .map(|pair| {
+                                        (
+                                            String::from_utf8(pair.name.to_vec()).unwrap(),
+                                            String::from_utf8(pair.value.to_vec()).unwrap(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect::<Vec<_>>();
+                        selected.sort();
+                        assert_eq!(selected, expected(base), "{base:?}");
+                    }
+                }
+            }
+        }
+        // The old code prints the same, before series knew which have a label.
+        println!("presence digest {}", std::hash::Hasher::finish(&digest));
+        // Only series with the label are checked, head and cold, rather than every one.
+        let with_agg = everything
+            .iter()
+            .filter(|labels| labels.iter().any(|(name, _)| name == "agg"))
+            .count() as u64;
+        let reads = |matchers: &[cortex::LabelMatcher]| {
+            let before = LABEL_VALUE_READS.with(std::cell::Cell::get);
+            store
+                .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, matchers)
+                .unwrap();
+            LABEL_VALUE_READS.with(std::cell::Cell::get) - before
+        };
+        // A nameless regex only checks series with its label.
+        let nameless = reads(&[matcher(2, "agg", "sum-.*")]);
+        assert!(nameless <= with_agg, "{nameless} label reads");
+        // A negation only checks series with its label; cold series still check their name regex
+        // from their labels. Every series checked each matcher before.
+        let negated = reads(&[matcher(2, "__name__", "hot|old"), matcher(3, "agg", ".+")]);
+        assert!(negated < everything.len() as u64, "{negated} label reads");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
