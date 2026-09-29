@@ -1914,38 +1914,36 @@ impl Store {
         tenant_id: &str,
         query: impl Fn(&Tenant, &ChunkDiskMapper, &ColdState) -> T + Sync,
     ) -> Vec<T> {
-        self.pool.install(|| {
-            self.shards
-                .par_iter()
-                .filter_map(|shard| {
-                    let state = shard.read().expect("store lock poisoned");
-                    state
-                        .tenants
-                        .get(tenant_id)
-                        .map(|tenant| query(tenant, &state.disk, &state.cold))
-                })
-                .collect()
-        })
+        self.shards
+            .iter()
+            .filter_map(|shard| {
+                let state = shard.read().expect("store lock poisoned");
+                state
+                    .tenants
+                    .get(tenant_id)
+                    .map(|tenant| query(tenant, &state.disk, &state.cold))
+            })
+            .collect()
     }
 
-    /// Runs `query` on the tenant in every shard in parallel.
+    /// Runs `query` on the tenant in every shard, one after the other on the calling thread: like
+    /// Go's head, a query runs on one thread and concurrent queries use the cores. Spreading each
+    /// small query over the store's threads spent more CPU finding work than running it.
     fn per_shard<T: Send>(
         &self,
         tenant_id: &str,
         query: impl Fn(&Tenant, &ChunkDiskMapper) -> T + Sync,
     ) -> Vec<T> {
-        self.pool.install(|| {
-            self.shards
-                .par_iter()
-                .filter_map(|shard| {
-                    let state = shard.read().expect("store lock poisoned");
-                    state
-                        .tenants
-                        .get(tenant_id)
-                        .map(|tenant| query(tenant, &state.disk))
-                })
-                .collect()
-        })
+        self.shards
+            .iter()
+            .filter_map(|shard| {
+                let state = shard.read().expect("store lock poisoned");
+                state
+                    .tenants
+                    .get(tenant_id)
+                    .map(|tenant| query(tenant, &state.disk))
+            })
+            .collect()
     }
 
     pub fn select_chunks(
@@ -4001,6 +3999,30 @@ enum CompiledMatcher {
     Shard(u64, u64),
 }
 
+#[cfg(test)]
+static REGEX_COMPILES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A matcher's regex, anchored like Prometheus's. Queriers send the same few patterns with every
+/// request, and compiling them was an eighth of a busy ingester's CPU; like Go's matcher cache,
+/// compiled regexes are kept, up to a bound so arbitrary queries can't grow it.
+fn anchored_regex(pattern: &str) -> Result<Regex> {
+    const CACHED_REGEXES: usize = 4096;
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Regex>>> =
+        std::sync::LazyLock::new(Default::default);
+    if let Some(regex) = CACHE.lock().expect("regex cache poisoned").get(pattern) {
+        return Ok(regex.clone());
+    }
+    #[cfg(test)]
+    REGEX_COMPILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let regex = Regex::new(&format!("^(?:{pattern})$"))?;
+    let mut cache = CACHE.lock().expect("regex cache poisoned");
+    if cache.len() >= CACHED_REGEXES {
+        cache.clear();
+    }
+    cache.insert(pattern.to_owned(), regex.clone());
+    Ok(regex)
+}
+
 fn compile_matchers(matchers: &[cortex::LabelMatcher]) -> Result<Vec<CompiledMatcher>> {
     matchers
         .iter()
@@ -4012,14 +4034,10 @@ fn compile_matchers(matchers: &[cortex::LabelMatcher]) -> Result<Vec<CompiledMat
             Ok(match matcher.r#type {
                 0 => CompiledMatcher::Equal(matcher.name.clone(), matcher.value.clone()),
                 1 => CompiledMatcher::NotEqual(matcher.name.clone(), matcher.value.clone()),
-                2 => CompiledMatcher::Regex(
-                    matcher.name.clone(),
-                    Regex::new(&format!("^(?:{})$", matcher.value))?,
-                ),
-                3 => CompiledMatcher::NotRegex(
-                    matcher.name.clone(),
-                    Regex::new(&format!("^(?:{})$", matcher.value))?,
-                ),
+                2 => CompiledMatcher::Regex(matcher.name.clone(), anchored_regex(&matcher.value)?),
+                3 => {
+                    CompiledMatcher::NotRegex(matcher.name.clone(), anchored_regex(&matcher.value)?)
+                }
                 value => bail!("invalid matcher type {value}"),
             })
         })
@@ -4566,6 +4584,29 @@ mod tests {
             "{}",
             list.0.len()
         );
+    }
+
+    #[test]
+    fn matcher_regexes_are_compiled_once() {
+        let matcher = |value: &str| cortex::LabelMatcher {
+            r#type: 2,
+            name: "job".into(),
+            value: value.into(),
+        };
+        let pattern = "api-[0-9]+-compiled-once";
+        let compiles = || REGEX_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+        let before = compiles();
+        for _ in 0..3 {
+            let compiled = compile_matchers(&[matcher(pattern)]).unwrap();
+            assert!(compiled[0].matches_value("api-12-compiled-once"));
+            assert!(
+                !compiled[0].matches_value("xapi-12-compiled-once"),
+                "anchored"
+            );
+        }
+        // Other tests compile regexes in parallel, but not this pattern.
+        assert!(compiles() - before < 3);
+        assert!(compile_matchers(&[matcher("(")]).is_err());
     }
 
     #[test]
