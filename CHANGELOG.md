@@ -106,7 +106,7 @@
 
 ### Mimirtool
 
-* [BUGFIX] Fix `rules diff` and `rules sync` ignoring changes to a rule's `keep_firing_for`, so a change to only that field was never uploaded. #PRNUM
+* [BUGFIX] Fix `rules diff` and `rules sync` ignoring changes to a rule's `keep_firing_for`, so a change to only that field was never uploaded. #16717
 
 ### Documentation
 
