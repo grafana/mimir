@@ -724,6 +724,9 @@ helm-conftest-quick-test:
 
 helm-conftest-test: build-helm-tests helm-conftest-quick-test
 
+check-helm-gossip-alerts: ## Exercise release-specific gossip-ring rules and KSM filtering with promtool.
+	@python3 operations/helm/scripts/test-gossip-ring-alerts.py
+
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
