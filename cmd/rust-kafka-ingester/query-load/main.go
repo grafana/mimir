@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // query-load sends a steady, ingester-heavy mix of queries to a query-frontend: recent range and
-// instant queries plus label lookups, all inside the window queriers serve from ingesters.
+// instant queries plus label lookups, all inside the window queriers serve from ingesters. It
+// queries the metrics with the most series in ingesters, within bounds, and drops metrics that
+// Adaptive Metrics aggregates, which only answer aggregated queries from a few series.
 package main
 
 import (
@@ -37,6 +39,8 @@ type config struct {
 	pause           time.Duration
 	maxRange        time.Duration
 	metricsSample   int
+	minSeries       int
+	maxSeries       int
 	refreshInterval time.Duration
 	reportInterval  time.Duration
 	timeout         time.Duration
@@ -57,6 +61,8 @@ func main() {
 	flag.DurationVar(&cfg.pause, "pause", time.Second, "Pause between queries in each loop")
 	flag.DurationVar(&cfg.maxRange, "max-range", 5*time.Hour, "Longest range query; keep it below -querier.query-store-after so ingesters serve it")
 	flag.IntVar(&cfg.metricsSample, "metrics-per-tenant", 200, "Metric names sampled per tenant")
+	flag.IntVar(&cfg.minSeries, "min-series", 1000, "Fewest series in ingesters of a queried metric")
+	flag.IntVar(&cfg.maxSeries, "max-series", 200_000, "Most series in ingesters of a queried metric, so queriers don't fetch too much")
 	flag.DurationVar(&cfg.refreshInterval, "refresh-interval", 10*time.Minute, "How often to resample metric names")
 	flag.DurationVar(&cfg.reportInterval, "report-interval", time.Minute, "How often to print latency and error summaries")
 	flag.DurationVar(&cfg.timeout, "timeout", 2*time.Minute, "Per-request timeout")
@@ -137,6 +143,9 @@ func loop(ctx context.Context, client *http.Client, cfg config, names *metricNam
 		if ctx.Err() != nil {
 			return
 		}
+		if err != nil && strings.Contains(err.Error(), "Can't query aggregated metric") {
+			names.remove(tenant, metric)
+		}
 		results <- result{kind: kind, latency: time.Since(started), err: err}
 		sleep(ctx, cfg.pause)
 	}
@@ -198,14 +207,38 @@ func get(ctx context.Context, client *http.Client, cfg config, tenant, path stri
 	return nil
 }
 
+// sampleMetricNames picks metric names by their series in ingesters, from the cardinality API.
 func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, tenant string) ([]string, error) {
-	now := time.Now()
 	params := url.Values{}
-	params.Set("start", formatTime(now.Add(-time.Hour)))
-	params.Set("end", formatTime(now))
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.address+"/api/v1/label/__name__/values?"+params.Encode(), nil)
-	if err != nil {
+	params.Set("label_names[]", "__name__")
+	params.Set("limit", "5000")
+	var decoded struct {
+		Labels []struct {
+			Cardinality []struct {
+				LabelValue  string `json:"label_value"`
+				SeriesCount int    `json:"series_count"`
+			} `json:"cardinality"`
+		} `json:"labels"`
+	}
+	if err := getJSON(ctx, client, cfg, tenant, "/api/v1/cardinality/label_values?"+params.Encode(), &decoded); err != nil {
 		return nil, err
+	}
+	var names []string
+	for _, label := range decoded.Labels {
+		for _, value := range label.Cardinality {
+			if value.SeriesCount >= cfg.minSeries && value.SeriesCount <= cfg.maxSeries {
+				names = append(names, value.LabelValue)
+			}
+		}
+	}
+	rand.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })
+	return names[:min(cfg.metricsSample, len(names))], nil
+}
+
+func getJSON(ctx context.Context, client *http.Client, cfg config, tenant, path string, into any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.address+path, nil)
+	if err != nil {
+		return err
 	}
 	request.Header.Set("X-Scope-OrgID", tenant)
 	if cfg.clusterLabel != "" {
@@ -213,21 +246,17 @@ func sampleMetricNames(ctx context.Context, client *http.Client, cfg config, ten
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer response.Body.Close()
-	var decoded struct {
-		Status string   `json:"status"`
-		Data   []string `json:"data"`
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
 	}
-	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("status %d: %w", response.StatusCode, err)
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d: %s", response.StatusCode, truncate(string(body), 200))
 	}
-	if decoded.Status != "success" {
-		return nil, fmt.Errorf("status %d: %s", response.StatusCode, decoded.Status)
-	}
-	rand.Shuffle(len(decoded.Data), func(i, j int) { decoded.Data[i], decoded.Data[j] = decoded.Data[j], decoded.Data[i] })
-	return decoded.Data[:min(cfg.metricsSample, len(decoded.Data))], nil
+	return json.Unmarshal(body, into)
 }
 
 type metricNames struct {
@@ -243,6 +272,12 @@ func (m *metricNames) set(tenant string, names []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.byName[tenant] = names
+}
+
+func (m *metricNames) remove(tenant, name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.byName[tenant] = slices.DeleteFunc(m.byName[tenant], func(candidate string) bool { return candidate == name })
 }
 
 func (m *metricNames) pick(tenant string) (string, bool) {
