@@ -195,18 +195,20 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		}
 
 		for _, h := range ts.Histograms {
+			var (
+				ih *histogram.Histogram
+				fh *histogram.FloatHistogram
+			)
+
+			if h.IsFloatHistogram() {
+				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
+			} else {
+				ih = mimirpb.FromHistogramProtoToHistogram(&h)
+			}
+
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				var (
-					ih *histogram.Histogram
-					fh *histogram.FloatHistogram
-				)
-				// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
-				// just uses it to decide the type, so don't convert the input, use dummy histograms.
-				if h.IsFloatHistogram() {
-					fh = zeroFloatHistogram
-				} else {
-					ih = zeroHistogram
-				}
+				// AppendHistogramSTZeroSample copies Schema, ZeroThreshold and CustomValues from
+				// the histogram it is given onto the zero sample it injects.
 				if ref != 0 {
 					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 				} else {
@@ -225,16 +227,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 					discardedSamples++
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
-			}
-			var (
-				ih *histogram.Histogram
-				fh *histogram.FloatHistogram
-			)
-
-			if h.IsFloatHistogram() {
-				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
-			} else {
-				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
 			if ref != 0 {
@@ -270,11 +262,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	return app.Commit()
 }
-
-var (
-	zeroHistogram      = &histogram.Histogram{}
-	zeroFloatHistogram = &histogram.FloatHistogram{}
-)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
