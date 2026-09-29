@@ -50,6 +50,8 @@ struct TenantIndex {
     // Each metric name, sorted, with its series: built on the first query by a name matcher other
     // than an equality, from the series' own labels, since the postings only hold values' hashes.
     metric_names: std::sync::OnceLock<MetricNames>,
+    // The series with each label queries asked for, from `with_label`: the block never changes.
+    with_label: std::sync::Mutex<HashMap<String, std::sync::Arc<[u32]>>>,
 }
 
 // Each metric name, sorted, with the indexes of its series.
@@ -261,6 +263,7 @@ impl ColdBlock {
                 postings_count: field(5) as usize,
                 shard_hashes: std::sync::OnceLock::new(),
                 metric_names: std::sync::OnceLock::new(),
+                with_label: std::sync::Mutex::default(),
             };
             cursor = &cursor[48..];
             min_time = min_time.min(index.min_time);
@@ -329,9 +332,23 @@ impl ColdBlock {
 
     /// Indexes of the tenant's series with label `name`, from every posting list under it: the
     /// table is sorted by name, so they are one range of it.
-    pub fn with_label(&self, tenant: &str, name: &str) -> Vec<u32> {
-        let (Some(table), Some(local)) = (self.tenants.get(tenant), self.local_ids.get(name))
-        else {
+    pub fn with_label(&self, tenant: &str, name: &str) -> std::sync::Arc<[u32]> {
+        let Some(table) = self.tenants.get(tenant) else {
+            return std::sync::Arc::from([]);
+        };
+        let mut cache = table.with_label.lock().expect("with label lock poisoned");
+        if let Some(series) = cache.get(name) {
+            return std::sync::Arc::clone(series);
+        }
+        #[cfg(test)]
+        COLD_LABEL_LISTS.with(|lists| lists.set(lists.get() + 1));
+        let series: std::sync::Arc<[u32]> = self.with_label_uncached(table, name).into();
+        cache.insert(name.to_owned(), std::sync::Arc::clone(&series));
+        series
+    }
+
+    fn with_label_uncached(&self, table: &TenantIndex, name: &str) -> Vec<u32> {
+        let Some(local) = self.local_ids.get(name) else {
             return Vec::new();
         };
         let bytes = self.bytes();
@@ -482,7 +499,7 @@ impl ColdBlock {
                     && !matches!(matcher, CompiledMatcher::Equal(..))
                     && !matcher.matches_value("")
                 {
-                    let list = self.with_label(tenant, name);
+                    let list = self.with_label(tenant, name).to_vec();
                     if best.as_ref().is_none_or(|best| list.len() < best.len()) {
                         best = Some(list);
                     }
@@ -510,7 +527,7 @@ impl<'a> ColdTenant<'a> {
     }
 
     /// See `ColdBlock::with_label`.
-    pub fn with_label(&self, tenant: &str, name: &str) -> Vec<u32> {
+    pub fn with_label(&self, tenant: &str, name: &str) -> std::sync::Arc<[u32]> {
         self.block.with_label(tenant, name)
     }
 
