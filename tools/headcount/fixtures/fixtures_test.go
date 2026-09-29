@@ -115,25 +115,42 @@ func TestCheckBlockLevels(t *testing.T) {
 	})
 }
 
-func TestWaitForStableBlockSet(t *testing.T) {
-	t.Run("returns once the block set stops changing", func(t *testing.T) {
+func TestWaitForCompaction(t *testing.T) {
+	t.Run("returns once the block set stabilizes at the wanted shape", func(t *testing.T) {
 		bucket := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(bucket, "anonymous"), 0o755))
+		writeFakeBlock(t, bucket, 1)
 
 		done := make(chan error, 1)
 		go func() {
-			done <- waitForStableBlockSet(bucket, 200*time.Millisecond, 20*time.Millisecond, 5*time.Second)
+			// The level-1 block written above is never removed, so the
+			// final shape has sources present: wantSources=true.
+			done <- waitForCompaction(bucket, true, 200*time.Millisecond, 20*time.Millisecond, 5*time.Second)
 		}()
 
 		time.Sleep(50 * time.Millisecond)
-		writeFakeBlock(t, bucket, 1) // a change during the stability window must reset the clock.
+		writeFakeBlock(t, bucket, 4) // simulates the compactor producing its output.
 
 		select {
 		case err := <-done:
 			require.NoError(t, err)
 		case <-time.After(3 * time.Second):
-			t.Fatal("waitForStableBlockSet did not return")
+			t.Fatal("waitForCompaction did not return")
 		}
+	})
+
+	t.Run("does not mistake an unchanging but incomplete block set for a finished one", func(t *testing.T) {
+		// Regression test: right after the compactor starts, the block set
+		// is just its unchanged input, which trivially looks stable for as
+		// long as the compactor takes to produce anything. A bucket stuck
+		// at level 1 only, however long it stays that way, must never be
+		// reported as done.
+		bucket := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(bucket, "anonymous"), 0o755))
+		writeFakeBlock(t, bucket, 1)
+
+		err := waitForCompaction(bucket, false, 100*time.Millisecond, 20*time.Millisecond, 400*time.Millisecond)
+		require.Error(t, err)
 	})
 
 	t.Run("times out if the block set keeps changing", func(t *testing.T) {
@@ -154,7 +171,7 @@ func TestWaitForStableBlockSet(t *testing.T) {
 		}()
 		defer close(stop)
 
-		err := waitForStableBlockSet(bucket, 300*time.Millisecond, 20*time.Millisecond, 500*time.Millisecond)
+		err := waitForCompaction(bucket, false, 300*time.Millisecond, 20*time.Millisecond, 500*time.Millisecond)
 		require.Error(t, err)
 	})
 }
