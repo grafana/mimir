@@ -1393,6 +1393,65 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 	require.Equal(t, string(expectedResponse), string(body))
 }
 
+func TestRuler_PrometheusRulesAndAlerts_GetRulesError(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules))
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+
+	endpoints := map[string]struct {
+		url     string
+		handler http.HandlerFunc
+	}{
+		"rules":  {url: "https://localhost:8080/prometheus/api/v1/rules", handler: a.PrometheusRules},
+		"alerts": {url: "https://localhost:8080/prometheus/api/v1/alerts", handler: a.PrometheusAlerts},
+	}
+
+	for name, endpoint := range endpoints {
+		t.Run(name, func(t *testing.T) {
+			tests := map[string]struct {
+				cancelCtx         bool
+				expectedStatus    int
+				expectedErrorType v1.ErrorType
+			}{
+				"request context cancelled": {
+					cancelCtx:         true,
+					expectedStatus:    statusClientClosedRequest,
+					expectedErrorType: v1.ErrCanceled,
+				},
+				"request context not cancelled": {
+					expectedStatus:    http.StatusInternalServerError,
+					expectedErrorType: v1.ErrServer,
+				},
+			}
+
+			for testName, tc := range tests {
+				t.Run(testName, func(t *testing.T) {
+					req := requestFor(t, http.MethodGet, endpoint.url, nil, "user1")
+					if tc.cancelCtx {
+						ctx, cancel := context.WithCancel(req.Context())
+						cancel()
+						req = req.WithContext(ctx)
+					}
+
+					w := httptest.NewRecorder()
+					endpoint.handler(w, req)
+
+					resp := w.Result()
+					body, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+
+					responseJSON := response{}
+					require.NoError(t, json.Unmarshal(body, &responseJSON))
+					require.Equal(t, tc.expectedStatus, resp.StatusCode)
+					require.Equal(t, "error", responseJSON.Status)
+					require.Equal(t, tc.expectedErrorType, responseJSON.ErrorType)
+				})
+			}
+		})
+	}
+}
+
 func TestAPI_CreateRuleGroup(t *testing.T) {
 	defaultCfg := defaultRulerConfig(t)
 

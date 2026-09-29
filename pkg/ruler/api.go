@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,8 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+const statusClientClosedRequest = 499
 
 var (
 	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
@@ -149,6 +152,10 @@ func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
 
+func respondClientClosedRequest(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, statusClientClosedRequest, v1.ErrCanceled, msg)
+}
+
 // API is used to handle HTTP requests for the ruler service
 type API struct {
 	ruler *Ruler
@@ -234,6 +241,10 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
+		if errors.Is(req.Context().Err(), context.Canceled) {
+			respondClientClosedRequest(logger, w, err.Error())
 			return
 		}
 		respondServerError(logger, w, err.Error())
@@ -341,6 +352,10 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
+		if errors.Is(req.Context().Err(), context.Canceled) {
+			respondClientClosedRequest(logger, w, err.Error())
 			return
 		}
 		respondServerError(logger, w, err.Error())
