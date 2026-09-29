@@ -829,6 +829,9 @@ pub struct Store {
     // Set when the emulated head's min time moved or series were evicted, so the next head tick
     // moves the series no longer in the head to cold blocks.
     freeze_pending: std::sync::atomic::AtomicBool,
+    // Series whose oldest sample a head tick looked up.
+    #[cfg(test)]
+    oldest_scans: std::sync::atomic::AtomicU64,
     // Retention's last cutoff: cold blocks keep references to chunks it removed.
     pruned_before: std::sync::atomic::AtomicI64,
     // Whether the last head tick compacted, so this one checks for an early compaction with
@@ -1312,6 +1315,8 @@ impl Store {
             non_owned_eviction: None,
             early_head_compaction: None,
             freeze_pending: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            oldest_scans: std::sync::atomic::AtomicU64::new(0),
             pruned_before: std::sync::atomic::AtomicI64::new(i64::MIN),
             compacted_last_tick: std::sync::atomic::AtomicBool::new(false),
         })
@@ -2549,8 +2554,16 @@ impl Store {
                             let mut min_time = i64::MAX;
                             tenant.series.for_each_mut(|_, series| {
                                 let newest = series_newest(series);
-                                if let Some(oldest) = series_oldest(series) {
-                                    min_time = min_time.min(oldest);
+                                // The oldest sample is the head's min time only until its first
+                                // compaction, which sets it for good; looking it up decodes every
+                                // chunk of every series, each tick.
+                                if head_min == i64::MIN {
+                                    #[cfg(test)]
+                                    self.oldest_scans
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    if let Some(oldest) = series_oldest(series) {
+                                        min_time = min_time.min(oldest);
+                                    }
                                 }
                                 let mut in_head = !series.head_evicted
                                     && newest.is_some_and(|newest| newest >= head_min);
@@ -4839,6 +4852,50 @@ mod tests {
         // Under 15% of reductions in total, compacting is not worth it.
         let mut few = vec![("a".to_owned(), 10, 5)];
         assert!(tenants_to_compact_early(1_000, config, &mut few).is_empty());
+    }
+
+    #[test]
+    fn head_ticks_look_up_oldest_samples_only_before_the_first_compaction() {
+        let store = Store::default();
+        let start = 10 * HOUR;
+        let mut request =
+            series_request("a", (0..=240).map(|minute| (start + minute * 60_000, 1.0)));
+        request.series.push(
+            series_request("b", [(start + 30 * 60_000, 1.0)])
+                .series
+                .remove(0),
+        );
+        store.ingest("tenant", request).unwrap();
+        let scans = || {
+            store
+                .oldest_scans
+                .load(std::sync::atomic::Ordering::Relaxed)
+        };
+        let report = |compact| {
+            let mut reports = store.head_tick(compact, false);
+            assert_eq!(reports.len(), 1);
+            let report = reports.remove(0);
+            (
+                report.head_min_time,
+                report.memory_series,
+                report.head_chunks,
+                report.series_created,
+                report.series_removed,
+            )
+        };
+        // Before any compaction, the head's min time is its oldest sample.
+        assert_eq!(report(false).0, start);
+        assert_eq!(scans(), 2);
+        let compacted = report(true);
+        assert!(compacted.0 > start, "compaction moved the head's min time");
+        let scanned = scans();
+        // From then on, ticks report the same without looking at every series' chunks.
+        let after = report(false);
+        assert_eq!(scans(), scanned);
+        assert_eq!(after.0, compacted.0);
+        // The compaction's tick still counted b, which only the next tick finds out of the head.
+        assert_eq!((after.1, after.4), (1, 1));
+        assert_eq!(report(false), (after.0, 1, after.2, 0, 0));
     }
 
     #[test]

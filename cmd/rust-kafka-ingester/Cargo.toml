@@ -62,6 +62,7 @@ tonic-prost-build = "0.14"
 
 [dev-dependencies]
 libc = "0.2"
+lz4_flex = "0.14"
 snap = "1.1"
 
 [[bench]]
@@ -70,6 +71,10 @@ harness = false
 
 [[bench]]
 name = "cold_query"
+harness = false
+
+[[bench]]
+name = "segment_codec"
 harness = false
 
 [[bench]]
