@@ -834,7 +834,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
                                     Duration::from_secs(5),
                                     partition_client.get_offset(OffsetAt::Latest),
                                 ).await;
-                                if matches!(latest, Ok(Ok(offset)) if offset <= next_offset) {
+                                if !fetch_stalled(&latest, next_offset) {
                                     last_fetch_progress = Instant::now();
                                     continue;
                                 }
@@ -1393,6 +1393,16 @@ async fn shutdown_signal() -> Result<()> {
 #[cfg(not(unix))]
 async fn shutdown_signal() -> Result<()> {
     tokio::signal::ctrl_c().await.context("wait for Ctrl-C")
+}
+
+/// Whether a fetch that made no progress for a while stalled, given the partition's latest offset
+/// then. An unknown latest offset (-1, as a client that lost the partition reports it) is a stall:
+/// taking it for "nothing new" kept a pod from ever reconnecting.
+fn fetch_stalled(
+    latest: &Result<Result<i64>, tokio::time::error::Elapsed>,
+    next_offset: i64,
+) -> bool {
+    !matches!(latest, Ok(Ok(offset)) if *offset >= 0 && *offset <= next_offset)
 }
 
 const APPLY_BATCH: usize = 64;
@@ -2023,6 +2033,17 @@ mod tests {
         assert_eq!(samples, (1..=12).collect::<Vec<_>>());
         drop(applier);
         std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_unknown_latest_offset_is_a_stalled_fetch() {
+        assert!(!fetch_stalled(&Ok(Ok(10)), 10), "caught up");
+        assert!(fetch_stalled(&Ok(Ok(11)), 10), "records to fetch");
+        assert!(fetch_stalled(&Ok(Ok(-1)), 10), "unknown latest offset");
+        assert!(fetch_stalled(&Ok(Err(anyhow::anyhow!("watermarks"))), 10));
+        let elapsed =
+            tokio::time::timeout(Duration::ZERO, std::future::pending::<Result<i64>>()).await;
+        assert!(fetch_stalled(&elapsed, 10));
     }
 
     #[test]

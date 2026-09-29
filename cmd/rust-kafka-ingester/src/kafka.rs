@@ -71,10 +71,32 @@ impl RawRecord {
 }
 
 pub struct PartitionClient {
-    consumer: StreamConsumer<KafkaContext>,
+    consumer: std::mem::ManuallyDrop<StreamConsumer<KafkaContext>>,
     topic: String,
     partition: i32,
     high_watermark: AtomicI64,
+}
+
+#[cfg(test)]
+static CLOSED_ON_OWN_THREAD: AtomicI64 = AtomicI64::new(0);
+
+// Closing a consumer waits on its brokers, which can take forever during an outage: dropping the
+// client replaced on a reconnect once stopped a pod's consumption and later its shutdown.
+impl Drop for PartitionClient {
+    fn drop(&mut self) {
+        // SAFETY: the consumer is taken once, here, and not used after.
+        let consumer = unsafe { std::mem::ManuallyDrop::take(&mut self.consumer) };
+        let spawned = std::thread::Builder::new()
+            .name("kafka-close".into())
+            .spawn(move || drop(consumer));
+        #[cfg(test)]
+        if spawned.is_ok() {
+            CLOSED_ON_OWN_THREAD.fetch_add(1, Ordering::Relaxed);
+        }
+        if let Err(error) = spawned {
+            eprintln!("phase=kafka_close_thread_failed error={error}");
+        }
+    }
 }
 
 struct KafkaContext {
@@ -191,7 +213,7 @@ impl PartitionClient {
             })
             .context("create Kafka consumer")?;
         Ok(Arc::new(Self {
-            consumer,
+            consumer: std::mem::ManuallyDrop::new(consumer),
             topic: topic.to_owned(),
             partition,
             high_watermark: AtomicI64::new(-1),
@@ -374,6 +396,37 @@ mod tests {
         assert_eq!(config.get("fetch.max.bytes"), Some("16777216"));
         assert_eq!(config.get("fetch.message.max.bytes"), Some("16777216"));
         assert_eq!(config.get("enable.auto.commit"), Some("false"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn clients_close_their_consumer_on_its_own_thread() {
+        // A broker that accepts connections and never answers, like WarpStream agents during an
+        // outage.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let mut connections = Vec::new();
+            for connection in listener.incoming().flatten() {
+                connections.push(connection);
+            }
+        });
+        let client =
+            super::PartitionClient::connect(&address, "topic", 0, false, None, None, "PLAIN")
+                .unwrap();
+        client.assign(0).unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), client.next_raw()).await;
+        let closed = super::CLOSED_ON_OWN_THREAD.load(std::sync::atomic::Ordering::Relaxed);
+        let started = std::time::Instant::now();
+        drop(client);
+        assert_eq!(
+            super::CLOSED_ON_OWN_THREAD.load(std::sync::atomic::Ordering::Relaxed),
+            closed + 1
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "dropping the client blocked for {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
