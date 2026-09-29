@@ -71,11 +71,16 @@ func TestRegistrationFollowsRustReadiness(t *testing.T) {
 	instanceRing := value.(*ring.Desc)
 	require.Equal(t, ring.ACTIVE, instanceRing.Ingesters[cfg.instanceID].State)
 	require.Equal(t, net.JoinHostPort(cfg.podIP, strconv.Itoa(port)), instanceRing.Ingesters[cfg.instanceID].Addr)
-	value, err = partitionClient.Get(ctx, cfg.partitionRingKey)
-	require.NoError(t, err)
-	partitionRing := value.(*ring.PartitionRingDesc)
-	require.Equal(t, ring.PartitionActive, partitionRing.Partitions[0].State)
-	require.Contains(t, partitionRing.Owners, cfg.instanceID)
+	// Its own partition ring's lifecycler activates the partition it owns, soon after.
+	require.Eventually(t, func() bool {
+		value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
+		if err != nil || value == nil {
+			return false
+		}
+		partitionRing := value.(*ring.PartitionRingDesc)
+		_, owned := partitionRing.Owners[cfg.instanceID]
+		return owned && partitionRing.Partitions[0].State == ring.PartitionActive
+	}, 5*time.Second, 20*time.Millisecond)
 
 	require.NoError(t, rustPort.Close())
 	require.Eventually(t, func() bool {
@@ -237,7 +242,8 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, ring.PartitionPending, partitionRing().Partitions[0].State, "a pending partition is never activated")
-	require.False(t, ready.Load())
+	// Like a Go ingester that consumed its new partition: ready while the partition is pending.
+	require.True(t, ready.Load())
 
 	setPartition(ring.PartitionActive)
 	require.Eventually(t, ready.Load, 5*time.Second, 20*time.Millisecond)
@@ -245,11 +251,17 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	setPartition(ring.PartitionInactive)
 	require.Eventually(t, func() bool {
 		_, owned := partitionRing().Owners[cfg.instanceID]
-		return !owned && !ready.Load()
+		return !owned
 	}, 5*time.Second, 20*time.Millisecond)
 	time.Sleep(200 * time.Millisecond)
 	_, owned := partitionRing().Owners[cfg.instanceID]
 	require.False(t, owned, "an inactive partition is not owned again")
+	// Still consumed and serving, like the Go ingesters of a partition being scaled down.
+	require.True(t, ready.Load())
+
+	// Not ready while the Rust ingester isn't serving, which it only does once replayed.
+	require.NoError(t, rustPort.Close())
+	require.Eventually(t, func() bool { return !ready.Load() }, 5*time.Second, 20*time.Millisecond)
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 }
@@ -285,7 +297,15 @@ func startIsolatedSidecar(t *testing.T, cfg config, lifecycle *lifecycleState) (
 	go func() {
 		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, lifecycle, logger)
 	}()
-	require.Eventually(t, ready.Load, 5*time.Second, 20*time.Millisecond)
+	// Ready, and in the isolated ring, owning a partition its lifecycler activated.
+	require.Eventually(t, func() bool {
+		value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
+		if err != nil || value == nil || !ready.Load() {
+			return false
+		}
+		partition, ok := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
+		return ok && partition.State == ring.PartitionActive
+	}, 5*time.Second, 20*time.Millisecond)
 	return cancel, done, instanceClient, partitionClient, &ready
 }
 

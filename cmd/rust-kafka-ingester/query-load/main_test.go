@@ -79,7 +79,7 @@ func TestAggregatedMetricsAreNoLongerPicked(t *testing.T) {
 }
 
 func TestQueriesParseAggregateAndStayWithinTheRange(t *testing.T) {
-	cfg := config{maxRange: 6 * time.Hour}
+	cfg := config{maxRange: 6 * time.Hour, points: 60}
 	now := time.Now()
 	promql := parser.NewParser(parser.Options{})
 	jobs := []string{"api", "dev/web.1", "a|b"}
@@ -115,7 +115,7 @@ func TestQueriesParseAggregateAndStayWithinTheRange(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, map[string]bool{"range": true, "instant": true, "labels": true, "label_values": true}, kinds)
+	require.Equal(t, map[string]bool{"range": true, "instant": true, "labels": true, "series": true, "label_values": true}, kinds)
 }
 
 func TestRegexesMatchTheNamesTheyAlternateLiterally(t *testing.T) {
