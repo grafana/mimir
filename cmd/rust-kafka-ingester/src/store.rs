@@ -550,8 +550,7 @@ impl SeriesByName {
                     in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
                 }
                 _ => {
-                    #[cfg(test)]
-                    LABEL_VALUE_READS.with(|reads| reads.set(reads.get() + 1));
+                    count_label_value_read();
                     matcher.matches_value(name.map_or("", |name| labels.value_of(name)))
                 }
             })
@@ -2110,6 +2109,24 @@ impl Store {
 
     /// The selected series and, per block the Go ingester would read, what it reports.
     pub fn select_chunks_with_blocks(
+        &self,
+        tenant_id: &str,
+        start: i64,
+        end: i64,
+        matchers: &[cortex::LabelMatcher],
+    ) -> Result<(Vec<QuerySeriesView>, Vec<QueriedBlock>)> {
+        let reads_before = LABEL_VALUE_READS.with(std::cell::Cell::get);
+        let selected = self.select_chunks_with_blocks_counted(tenant_id, start, end, matchers);
+        let shape = matcher_shape(matchers);
+        metrics::QUERY_SHAPES.with_label_values(&[&shape]).inc();
+        metrics::QUERY_LABEL_CHECKS
+            .with_label_values(&[&shape])
+            .inc_by(LABEL_VALUE_READS.with(std::cell::Cell::get) - reads_before);
+        selected
+    }
+
+    /// `select_chunks_with_blocks`, without the query metrics.
+    fn select_chunks_with_blocks_counted(
         &self,
         tenant_id: &str,
         start: i64,
@@ -4176,10 +4193,43 @@ enum CompiledMatcher {
     Shard(u64, u64),
 }
 
+thread_local! {
+    // Series label values that queries on this thread looked up to check a matcher: a query reads
+    // its store shards on its thread, so the difference over a query is what it looked up.
+    static LABEL_VALUE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn count_label_value_read() {
+    LABEL_VALUE_READS.with(|reads| reads.set(reads.get() + 1));
+}
+
+/// Matchers by type and what they select on, like `eq:name,eq:shard,re:other`: enough to tell which
+/// queries check labels series by series, without a label for every label name.
+fn matcher_shape(matchers: &[cortex::LabelMatcher]) -> String {
+    let mut parts = matchers
+        .iter()
+        .map(|matcher| {
+            let kind = match matcher.r#type {
+                0 => "eq",
+                1 => "neq",
+                2 => "re",
+                3 => "nre",
+                _ => "unknown",
+            };
+            let label = match matcher.name.as_str() {
+                "__name__" => "name",
+                "__query_shard__" => "shard",
+                _ => "other",
+            };
+            format!("{kind}:{label}")
+        })
+        .collect::<Vec<_>>();
+    parts.sort_unstable();
+    parts.join(",")
+}
+
 #[cfg(test)]
 thread_local! {
-    // Per thread, since tests run in parallel and a query reads its store shards on its thread.
-    static LABEL_VALUE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static CHUNK_BOUNDS_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static REGEX_COMPILES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     // Cold blocks' tenants whose query shard hashes were computed.
@@ -4257,6 +4307,7 @@ fn matches<L: crate::trackers::LabelSet + ?Sized>(
     matchers.iter().all(|matcher| match matcher {
         CompiledMatcher::Shard(index, count) => stable_hash_set(labels) % count == *index,
         _ => {
+            count_label_value_read();
             let value = labels.value(matcher.label_name().expect("label matcher"));
             matcher.matches_value(value)
         }
@@ -5294,6 +5345,53 @@ mod tests {
                 data.len()
             );
         }
+    }
+
+    #[test]
+    fn counts_label_checks_by_matcher_shape() {
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        assert_eq!(
+            matcher_shape(&[
+                matcher(2, "n", ".+"),
+                matcher(0, "__name__", "a"),
+                matcher(0, "__query_shard__", "1_of_2"),
+            ]),
+            "eq:name,eq:shard,re:other"
+        );
+        let store = Store::default();
+        let mut request = series_request("a", []);
+        request.series.clear();
+        for n in 0..4 {
+            let mut series = series_request("a", [(1_000, 1.0)]).series.remove(0);
+            series.labels.push(("n".into(), n.to_string().into()));
+            request.series.push(series);
+        }
+        store.ingest("tenant", request).unwrap();
+        let shape = "eq:name,nre:other";
+        let counters = || {
+            (
+                metrics::QUERY_SHAPES.with_label_values(&[shape]).get(),
+                metrics::QUERY_LABEL_CHECKS
+                    .with_label_values(&[shape])
+                    .get(),
+            )
+        };
+        let before = counters();
+        let (series, _) = store
+            .select_chunks_with_blocks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[matcher(0, "__name__", "a"), matcher(3, "n", "1")],
+            )
+            .unwrap();
+        assert_eq!(series.len(), 3);
+        // The name group holds the candidates; each one's `n` is checked once.
+        assert_eq!(counters(), (before.0 + 1, before.1 + 4));
     }
 
     #[test]
