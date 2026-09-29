@@ -89,7 +89,7 @@
       customType: 'regex',
       description: 'Update rclone image in migrate-minio-to-rustfs chart values',
       managerFilePatterns: [
-        'operations/helm/migrate-minio-to-rustfs/\\.ya?ml$',
+        'operations/helm/migrate-minio-to-rustfs/*.yaml',
       ],
       matchStrings: [
         'image:\\s*docker\\.io/(?<depName>rclone/rclone):(?<currentValue>[^\\s"\']+)',

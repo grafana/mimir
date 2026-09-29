@@ -32,11 +32,12 @@ spec:
               set -eu
               while true; do
                 rclone sync minio:{{ .Values.buckets.tsdb }} rustfs:{{ .Values.buckets.tsdb }} --checksum --s3-no-check-bucket -q $EXTRA_SYNC_ARGS
-                rclone sync minio:{{ .Values.buckets.ruler }} rustfs:{{ .Values.buckets.ruler }} --checksum --s3-no-check-bucket -q $EXTRA_SYNC_ARGS
+                # Ruler bucket: always a full copy, never filtered (see sync-job.yaml).
+                rclone sync minio:{{ .Values.buckets.ruler }} rustfs:{{ .Values.buckets.ruler }} --checksum --s3-no-check-bucket -q
                 sleep {{ .Values.watch.intervalSeconds }}
               done
           env:
-            # Must match EXTRA_SYNC_ARGS of the bulk Job.
+            # EXTRA_SYNC_ARGS applies to the tsdb sync only; must match the bulk Job.
             - name: EXTRA_SYNC_ARGS
               value: {{ .Values.extraSyncArgs | quote }}
             - name: RCLONE_CONFIG_MINIO_TYPE

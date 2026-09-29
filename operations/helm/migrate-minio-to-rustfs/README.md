@@ -45,7 +45,7 @@ extraSyncArgs: "--max-age 30d"
 helm install migrator ./operations/helm/migrate-minio-to-rustfs -f migrator-values.yaml
 ```
 
-The value is shared by Job and tail. Changing any Job-affecting value
+The value is shared by the `mimir-tsdb` sync in Job and tail. The `mimir-ruler` sync always ignores it and copies whole. Changing any Job-affecting value
 (`extraSyncArgs`, `checkers`, `transfers`, `buckets`) after install requires
 deleting the Job first — Jobs are immutable, so run `kubectl delete job
 <release>-migrate-minio-to-rustfs-sync` before `helm upgrade`, or the upgrade

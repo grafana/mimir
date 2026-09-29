@@ -121,7 +121,7 @@ rclone sync minio:mimir-tsdb rustfs:mimir-tsdb --max-age 30d --checksum --s3-no-
 rclone sync minio:mimir-tsdb rustfs:mimir-tsdb --max-transfer 100G --cutoff-mode SOFT --checksum --s3-no-check-bucket
 ```
 
-Note `--min-age` is the inverse (older than) — `--min-age 30d` copies everything _except_ the last 30 days. To filter from the chart instead of the CLI, put it in `migrator-values.yaml` — one value feeds both Job and tail, so they can't drift:
+Note `--min-age` is the inverse (older than) — `--min-age 30d` copies everything _except_ the last 30 days. To filter from the chart instead of the CLI, put it in `migrator-values.yaml` — one value feeds the `mimir-tsdb` sync in both Job and tail, so they can't drift. The `mimir-ruler` sync ignores it and is always a full copy. Never pass these flags to a `mimir-ruler` sync by hand either: old rule groups are still live config.
 
 ```yaml
 extraSyncArgs: "--max-age 30d"

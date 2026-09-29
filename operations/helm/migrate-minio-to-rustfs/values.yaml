@@ -31,8 +31,10 @@ buckets:
 checkers: 16
 transfers: 16
 
-# -- Extra flags appended to every rclone sync, e.g. "--max-age 30d".
-# Must be identical for Job and tail: an unfiltered tail backfills what a filtered bulk copy skipped.
+# -- Extra flags for the mimir-tsdb sync only, e.g. "--max-age 30d".
+# The mimir-ruler sync is always a full copy: rule groups are mutable live
+# config, so age is not a proxy for expendability. Must be identical for Job
+# and tail: an unfiltered tail backfills tsdb objects a filtered bulk copy skipped.
 extraSyncArgs: ""
 
 watch:
