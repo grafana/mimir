@@ -69,6 +69,10 @@ name = "query_stream"
 harness = false
 
 [[bench]]
+name = "cold_query"
+harness = false
+
+[[bench]]
 name = "histogram_query"
 harness = false
 

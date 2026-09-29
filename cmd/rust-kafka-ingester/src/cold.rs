@@ -44,6 +44,9 @@ struct TenantIndex {
     series_count: usize,
     postings_table: usize,
     postings_count: usize,
+    // Each series' `labels.StableHash`, by which sharded queries pick series: computed on the
+    // first sharded query rather than from the labels for every series of every one.
+    shard_hashes: std::sync::OnceLock<Box<[u64]>>,
 }
 
 /// One cold block of a store shard.
@@ -250,6 +253,7 @@ impl ColdBlock {
                 series_count: field(3) as usize,
                 postings_table: field(4) as usize,
                 postings_count: field(5) as usize,
+                shard_hashes: std::sync::OnceLock::new(),
             };
             cursor = &cursor[48..];
             min_time = min_time.min(index.min_time);
@@ -290,7 +294,10 @@ impl ColdBlock {
     }
 
     pub fn series(&self, tenant: &str, index: usize) -> ColdSeries<'_> {
-        let table = &self.tenants[tenant];
+        self.series_in(&self.tenants[tenant], index)
+    }
+
+    fn series_in<'a>(&'a self, table: &TenantIndex, index: usize) -> ColdSeries<'a> {
         let at = table.series_table + index * 8;
         let offset = u64::from_le_bytes(self.bytes()[at..at + 8].try_into().unwrap()) as usize;
         let mut cursor = &self.bytes()[offset..];
@@ -304,6 +311,13 @@ impl ColdBlock {
             labels,
             chunks,
         }
+    }
+
+    /// The tenant's series here, its table looked up once rather than for each series.
+    pub fn tenant(&self, tenant: &str) -> Option<ColdTenant<'_>> {
+        self.tenants
+            .get(tenant)
+            .map(|table| ColdTenant { block: self, table })
     }
 
     /// The series with `name="value"`, or None when the name never appears here, so nothing does.
@@ -365,6 +379,30 @@ impl ColdBlock {
             }
         }
         best.unwrap_or_else(|| (0..self.series_count(tenant) as u32).collect())
+    }
+}
+
+/// One tenant's series of a cold block.
+#[derive(Clone, Copy)]
+pub(super) struct ColdTenant<'a> {
+    block: &'a ColdBlock,
+    table: &'a TenantIndex,
+}
+
+impl<'a> ColdTenant<'a> {
+    pub fn series(&self, index: usize) -> ColdSeries<'a> {
+        self.block.series_in(self.table, index)
+    }
+
+    /// The query shard hash of the series at `index`.
+    pub fn shard_hash(&self, index: usize) -> u64 {
+        self.table.shard_hashes.get_or_init(|| {
+            #[cfg(test)]
+            COLD_SHARD_HASHINGS.with(|hashings| hashings.set(hashings.get() + 1));
+            (0..self.table.series_count)
+                .map(|index| stable_hash_set(&self.series(index)))
+                .collect()
+        })[index]
     }
 }
 
