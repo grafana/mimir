@@ -260,8 +260,16 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 		if !memberlistRunning() {
 			return errors.New("memberlist stopped")
 		}
-		if !reachable(rustAddress) || !hasCoverage(cfg, time.Now()) || !mayOwnPartition(ctx, cfg, partitionClient) {
+		if !reachable(rustAddress) || !hasCoverage(cfg, time.Now()) {
 			ready.Store(false)
+			wait(ctx, cfg.pollInterval)
+			continue
+		}
+		// Like the Go ingester, which is ready once it consumed its partition up to the latest
+		// offset whatever the partition's state: the Rust port opens only then. A partition this
+		// pod may not own, missing or inactive, leaves it nothing to register.
+		if !mayOwnPartition(ctx, cfg, partitionClient) {
+			ready.Store(true)
 			wait(ctx, cfg.pollInterval)
 			continue
 		}
@@ -293,13 +301,12 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 		}
 		_ = level.Info(logger).Log("msg", "Rust ingester registered", "partition", cfg.partition, "address", advertiseAddress)
 		lifecycle.partition.Store(partition)
+		ready.Store(true)
 		for ctx.Err() == nil && reachable(rustAddress) && memberlistRunning() && mayOwnPartition(ctx, cfg, partitionClient) {
-			state, _, err := partition.GetPartitionState(ctx)
-			ready.Store(err == nil && state == ring.PartitionActive)
 			wait(ctx, cfg.pollInterval)
 		}
 		lifecycle.partition.Store(nil)
-		ready.Store(false)
+		ready.Store(ctx.Err() == nil && reachable(rustAddress) && memberlistRunning())
 		// An outage withdraws both registrations so queriers stop asking this pod. A process
 		// shutdown keeps them like the Go ingester, unless prepare-shutdown was requested.
 		if ctx.Err() != nil && !lifecycle.prepared.Load() {

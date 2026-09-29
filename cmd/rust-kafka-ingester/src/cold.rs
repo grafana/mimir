@@ -49,8 +49,11 @@ struct TenantIndex {
     shard_hashes: std::sync::OnceLock<Box<[u64]>>,
     // Each metric name, sorted, with its series: built on the first query by a name matcher other
     // than an equality, from the series' own labels, since the postings only hold values' hashes.
-    metric_names: std::sync::OnceLock<Box<[(Box<str>, Box<[u32]>)]>>,
+    metric_names: std::sync::OnceLock<MetricNames>,
 }
+
+// Each metric name, sorted, with the indexes of its series.
+type MetricNames = Box<[(Box<str>, Box<[u32]>)]>;
 
 /// One cold block of a store shard.
 pub(super) struct ColdBlock {
