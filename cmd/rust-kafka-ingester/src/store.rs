@@ -211,6 +211,9 @@ struct Series {
     non_owned_since_s: u32,
     // Mimir's `ShardByAllLabels`, which decides which partition owns the series.
     owned_hash: u32,
+    // Go's `labels.StableHash`, by which sharded queries pick series. Kept like Go's head keeps
+    // it: rehashing every series' labels for each query shard was a fifth of a busy ingester's CPU.
+    shard_hash: u64,
     // Custom trackers this series matches, computed for one overrides generation.
     tracker_generation: u64,
     tracker_matches: Box<[u16]>,
@@ -522,7 +525,24 @@ impl SeriesByName {
                 None => Box::new(self.iter()),
             },
         };
-        Box::new(candidates.filter(move |((_, labels), _)| matches(labels, matchers)))
+        // Each matcher's label name is looked up once rather than for every series.
+        let resolved = matchers
+            .iter()
+            .map(|matcher| {
+                (
+                    matcher,
+                    matcher.label_name().and_then(crate::labels::names::lookup),
+                )
+            })
+            .collect::<Vec<_>>();
+        Box::new(candidates.filter(move |((_, labels), series)| {
+            resolved.iter().all(|(matcher, name)| match matcher {
+                CompiledMatcher::Shard(..) => {
+                    in_query_shard(series.shard_hash, std::slice::from_ref(matcher))
+                }
+                _ => matcher.matches_value(name.map_or("", |name| labels.value_of(name))),
+            })
+        }))
     }
 
     fn for_each_mut(&mut self, mut visit: impl FnMut(&StoredLabels, &mut Series)) {
@@ -2102,7 +2122,7 @@ impl Store {
                 .series
                 .matching(&lookup)
                 .filter_map(|((_, labels), series)| {
-                    let in_shard = shard.is_empty() || matches(labels, &shard);
+                    let in_shard = in_query_shard(series.shard_hash, &shard);
                     for (block, counts) in blocks.iter().zip(&mut counts) {
                         let indexed = if block.head {
                             head.holds(series)
@@ -3154,6 +3174,7 @@ fn ingest_series(
     );
     if created.get() {
         series.owned_hash = shard_by_all_labels(context.tenant_id, key_labels);
+        series.shard_hash = stable_hash_set(key_labels);
     }
     let existed = has_samples(series);
     let rules = context.rules;
@@ -4079,6 +4100,14 @@ fn matches<L: crate::trackers::LabelSet + ?Sized>(
     })
 }
 
+/// Whether a series with `shard_hash` is in every query shard of `shard`, only shard matchers.
+fn in_query_shard(shard_hash: u64, shard: &[CompiledMatcher]) -> bool {
+    shard.iter().all(|matcher| match matcher {
+        CompiledMatcher::Shard(index, count) => shard_hash % count == *index,
+        _ => unreachable!("only shard matchers"),
+    })
+}
+
 fn parse_shard(value: &str) -> Result<(u64, u64)> {
     let mut parts = value.split('_');
     let one_based: u64 = parts.next().context("missing shard index")?.parse()?;
@@ -4778,6 +4807,47 @@ mod tests {
         ingest("b");
         let back = tick(false);
         assert_eq!((back.memory_series, back.series_created), (2, 1));
+    }
+
+    #[test]
+    fn restored_series_keep_their_query_shard() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-shard-restore-{}", std::process::id()));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let mut request = series_request("sharded", [(1_000, 1.0)]);
+        request.series[0].labels.push(("n".into(), "1".into()));
+        store.ingest("tenant", request).unwrap();
+        store
+            .write_snapshot(&[SnapshotOffset {
+                offset: Some(1),
+                timestamp_ms: 1,
+            }])
+            .unwrap();
+        drop(store);
+        let store = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .unwrap()
+            .store;
+        let shard = |value: String| {
+            store
+                .select_chunks(
+                    "tenant",
+                    i64::MIN,
+                    i64::MAX,
+                    &[cortex::LabelMatcher {
+                        r#type: 0,
+                        name: "__query_shard__".into(),
+                        value,
+                    }],
+                )
+                .unwrap()
+                .len()
+        };
+        // labels.StableHash of the series, from Go, is 2 modulo 5: a missing hash would be 0.
+        assert_eq!(609_427_224_681_409_917_u64 % 5, 2);
+        assert_eq!(shard("3_of_5".into()), 1);
+        assert_eq!(shard("1_of_5".into()), 0);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
