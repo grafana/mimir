@@ -22,6 +22,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -33,6 +34,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
@@ -2287,4 +2291,80 @@ func requestFor(t *testing.T, method string, url string, body io.Reader, userID 
 	ctx := user.InjectOrgID(req.Context(), userID)
 
 	return req.WithContext(ctx)
+}
+
+type errorRulerClient struct {
+	RulerClient
+	err error
+}
+
+func (c *errorRulerClient) Rules(context.Context, *RulesRequest, ...grpc.CallOption) (*RulesResponse, error) {
+	return nil, c.err
+}
+
+type errorRulerClientsPool struct {
+	ClientsPool
+	err error
+}
+
+func (p *errorRulerClientsPool) GetClientForInstance(ring.InstanceDesc) (RulerClient, error) {
+	return &errorRulerClient{err: p.err}, nil
+}
+
+func TestRuler_PrometheusRulesAndAlerts_GetRulesErrors(t *testing.T) {
+	tests := map[string]struct {
+		err                error
+		expectedStatusCode int
+		expectedErrorType  v1.ErrorType
+	}{
+		"context canceled": {
+			err:                context.Canceled,
+			expectedStatusCode: 499,
+			expectedErrorType:  v1.ErrCanceled,
+		},
+		"wrapped gRPC canceled": {
+			err:                fmt.Errorf("wrapped: %w", status.Error(codes.Canceled, "context canceled")),
+			expectedStatusCode: 499,
+			expectedErrorType:  v1.ErrCanceled,
+		},
+		"other error": {
+			err:                errors.New("something went wrong"),
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  v1.ErrServer,
+		},
+	}
+
+	endpoints := map[string]func(*API) func(http.ResponseWriter, *http.Request){
+		"/prometheus/api/v1/rules":  func(a *API) func(http.ResponseWriter, *http.Request) { return a.PrometheusRules },
+		"/prometheus/api/v1/alerts": func(a *API) func(http.ResponseWriter, *http.Request) { return a.PrometheusAlerts },
+	}
+
+	for name, tc := range tests {
+		for path, handlerFor := range endpoints {
+			t.Run(name+" "+path, func(t *testing.T) {
+				cfg := defaultRulerConfig(t)
+				r := prepareRuler(t, cfg, newMockRuleStore(mockRules), withRulerAddrAutomaticMapping())
+				r.clientsPool = &errorRulerClientsPool{ClientsPool: r.clientsPool, err: tc.err}
+				require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+				})
+
+				handler := handlerFor(NewAPI(r, r.store, mimirtest.NewTestingLogger(t)))
+				req := requestFor(t, http.MethodGet, "https://localhost:8080"+path, nil, "user1")
+				w := httptest.NewRecorder()
+				handler(w, req)
+
+				resp := w.Result()
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+
+				responseJSON := response{}
+				require.NoError(t, json.Unmarshal(body, &responseJSON))
+				require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+				require.Equal(t, "error", responseJSON.Status)
+				require.Equal(t, tc.expectedErrorType, responseJSON.ErrorType)
+			})
+		}
+	}
 }

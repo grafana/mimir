@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -32,6 +33,8 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+const statusClientClosedRequest = 499
 
 var (
 	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
@@ -145,6 +148,10 @@ func respondUnprocessableRequest(logger log.Logger, w http.ResponseWriter, msg s
 	respondError(logger, w, http.StatusUnprocessableEntity, v1.ErrExec, msg)
 }
 
+func respondCanceled(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, statusClientClosedRequest, v1.ErrCanceled, msg)
+}
+
 func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
@@ -234,6 +241,11 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
+		if grpcutil.IsCanceled(err) {
+			level.Debug(logger).Log("msg", "request canceled while retrieving rules", "err", err)
+			respondCanceled(logger, w, err.Error())
 			return
 		}
 		respondServerError(logger, w, err.Error())
@@ -341,6 +353,11 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, errTenantRuleEvaluationDisabled) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
+		if grpcutil.IsCanceled(err) {
+			level.Debug(logger).Log("msg", "request canceled while retrieving rules", "err", err)
+			respondCanceled(logger, w, err.Error())
 			return
 		}
 		respondServerError(logger, w, err.Error())

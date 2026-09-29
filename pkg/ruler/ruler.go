@@ -1172,7 +1172,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 	err = r.forEachRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		// Fail if we have not been able to get the client for a ruler.
 		if rulerClientErr != nil {
-			return err
+			return rulerClientErr
 		}
 
 		newGrps, err := rulerClient.Rules(ctx, &req)
