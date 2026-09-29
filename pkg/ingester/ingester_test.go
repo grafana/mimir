@@ -3632,8 +3632,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600, StartTimestamp: 500},
+									{Value: 1, TimestampMs: 600},
 								},
+								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3646,6 +3647,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(800, 700, util_test.GenerateTestHistogram(1)),
 								},
+								CreatedTimestamp: 700,
 							},
 						},
 					},
@@ -3715,8 +3717,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600, StartTimestamp: 1500},
+									{Value: 1, TimestampMs: 600},
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3729,6 +3732,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(800, 1500, util_test.GenerateTestHistogram(1)),
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3796,8 +3800,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600, StartTimestamp: 600},
+									{Value: 1, TimestampMs: 600},
 								},
+								CreatedTimestamp: 600,
 							},
 						},
 					},
@@ -3810,6 +3815,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(800, 800, util_test.GenerateTestHistogram(1)),
 								},
+								CreatedTimestamp: 800,
 							},
 						},
 					},
@@ -3881,6 +3887,7 @@ func TestIngester_Push(t *testing.T) {
 									mimirpb.FromHistogramToHistogramProto(600, 500, util_test.GenerateTestHistogram(2)),
 									mimirpb.FromHistogramToHistogramProto(700, 0, util_test.GenerateTestHistogram(3)),
 								},
+								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3893,6 +3900,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(800, 500, util_test.GenerateTestHistogram(4)),
 								},
+								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3904,9 +3912,10 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: 1400},
-									{Value: 2, TimestampMs: 1600, StartTimestamp: 1500},
+									{Value: 2, TimestampMs: 1600},
 									{Value: 3, TimestampMs: 1700},
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3917,8 +3926,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 4, TimestampMs: 1800, StartTimestamp: 1500},
+									{Value: 4, TimestampMs: 1800},
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3992,6 +4002,7 @@ func TestIngester_Push(t *testing.T) {
 									mimirpb.FromHistogramToHistogramProto(600, 500, util_test.GenerateTestHistogram(2)),
 									mimirpb.FromHistogramToHistogramProto(700, 0, util_test.GenerateTestHistogram(3)),
 								},
+								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -4004,6 +4015,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(800, 500, util_test.GenerateTestHistogram(4)),
 								},
+								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -4015,9 +4027,10 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: 1400},
-									{Value: 2, TimestampMs: 1600, StartTimestamp: 1500},
+									{Value: 2, TimestampMs: 1600},
 									{Value: 3, TimestampMs: 1700},
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -4028,8 +4041,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 4, TimestampMs: 1800, StartTimestamp: 1500},
+									{Value: 4, TimestampMs: 1800},
 								},
+								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -4089,6 +4103,77 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
+		"should ignore created timestamp if no samples": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					// Initialize the user TSDB.
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 400},
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:           []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(400)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
 		"should succeed on created timestamp being duplicate sample": {
 			allowOOO:         true,
 			nativeHistograms: true,
@@ -4111,8 +4196,9 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 2, TimestampMs: 500, StartTimestamp: 400},
+									{Value: 2, TimestampMs: 500},
 								},
+								CreatedTimestamp: 400,
 							},
 						},
 					},
@@ -4186,6 +4272,7 @@ func TestIngester_Push(t *testing.T) {
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(500, 400, util_test.GenerateTestHistogram(2)),
 								},
+								CreatedTimestamp: 400,
 							},
 						},
 					},
@@ -4236,72 +4323,6 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
-				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
-				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
-				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
-			`,
-		},
-		"should ingest a zero sample again when the start timestamp changes within the same batch": {
-			allowOOO:         true,
-			nativeHistograms: true,
-			reqs: []*mimirpb.WriteRequest{
-				{
-					Timeseries: []mimirpb.PreallocTimeseries{
-						{
-							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
-								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
-									{Value: 2, TimestampMs: 2000, StartTimestamp: 500},
-									{Value: 3, TimestampMs: 3000, StartTimestamp: 2500},
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedErr: nil,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{
-					Metric: metricLabelSet,
-					Values: []model.SamplePair{
-						{Value: 0, Timestamp: model.Time(500)},
-						{Value: 1, Timestamp: model.Time(1000)},
-						{Value: 2, Timestamp: model.Time(2000)},
-						{Value: 0, Timestamp: model.Time(2500)},
-						{Value: 3, Timestamp: model.Time(3000)},
-					},
-				},
-			},
-			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
-			expectedMetrics: `
-				# HELP cortex_ingester_active_series Number of currently active series per user.
-				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
-				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 5
-				# HELP cortex_ingester_memory_series The current number of series in memory.
-				# TYPE cortex_ingester_memory_series gauge
-				cortex_ingester_memory_series 1
-				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-				# TYPE cortex_ingester_memory_series_created_total counter
-				cortex_ingester_memory_series_created_total{user="test"} 1
-				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-				# TYPE cortex_ingester_memory_series_removed_total counter
-				cortex_ingester_memory_series_removed_total{user="test"} 0
-				# HELP cortex_ingester_memory_users The current number of users in memory.
-				# TYPE cortex_ingester_memory_users gauge
-				cortex_ingester_memory_users 1
-				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
-				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
-				cortex_ingester_tsdb_head_max_timestamp_seconds 3
-				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
-				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
-				cortex_ingester_tsdb_head_min_timestamp_seconds 0.5
 				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
@@ -6002,6 +6023,7 @@ func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	// fetching labels from blocks.
 	i.Flush()
 
+	b.ResetTimer()
 	b.ReportAllocs()
 
 	for b.Loop() {

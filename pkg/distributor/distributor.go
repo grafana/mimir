@@ -1412,16 +1412,6 @@ func reusePrePushMergeSeen(seen map[prePushMergeSeenKey]prePushMergeSeenEntry) {
 	prePushMergeSeenPool.Put(seen)
 }
 
-func legacyCreatedTimestamp(ts *mimirpb.PreallocTimeseries) int64 {
-	if len(ts.Samples) > 0 {
-		return ts.Samples[0].StartTimestamp
-	}
-	if len(ts.Histograms) > 0 {
-		return ts.Histograms[0].StartTimestamp
-	}
-	return 0
-}
-
 // prePushMergeMiddleware merges timeseries objects that share the same label set
 // and created timestamp within a single write request. Without this, the
 // within-timeseries dedup in validateSamples only catches duplicates inside one
@@ -1484,10 +1474,9 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
-
 			key := prePushMergeSeenKey{
 				labelsHash:       mimirpb.NonStableHash(ts.Labels),
-				createdTimestamp: legacyCreatedTimestamp(&ts),
+				createdTimestamp: ts.CreatedTimestamp,
 			}
 
 			// A later timeseries merges into a kept one only when their label sets

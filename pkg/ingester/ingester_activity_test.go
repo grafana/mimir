@@ -93,7 +93,7 @@ func BenchmarkRequestActivity(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		requestActivity(context.Background(), "Ingester/QueryStream", request)
 	}
 }

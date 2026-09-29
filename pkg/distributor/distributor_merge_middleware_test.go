@@ -102,6 +102,12 @@ func sampleTimestamps(ts mimirpb.PreallocTimeseries) []int64 {
 	return out
 }
 
+func makeTimeseriesWithCT(lbls []string, samples []mimirpb.Sample, createdTimestamp int64) mimirpb.PreallocTimeseries {
+	ts := makeTimeseries(lbls, samples, nil, nil)
+	ts.CreatedTimestamp = createdTimestamp
+	return ts
+}
+
 // labelsWithNonStableHashCollision returns two DIFFERENT label sets that produce
 // the same mimirpb.NonStableHash — the hash prePushMergeMiddleware keys on. They
 // were found with https://github.com/pstibrany/labels_hash_collisions. Because
@@ -186,14 +192,14 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	t.Run("merges identical label sets sharing a created timestamp", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(lbls, makeSamples(100, 42, 1), nil, nil),
-			makeTimeseries(lbls, makeSamples(200, 42, 2), nil, nil),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 0, 1), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 0, 2), 42),
 		}}
 
 		got := runPrePushMerge(t, d, req)
 
 		require.Len(t, got.Timeseries, 1)
-		assert.Equal(t, int64(42), got.Timeseries[0].Samples[0].StartTimestamp)
+		assert.Equal(t, int64(42), got.Timeseries[0].CreatedTimestamp)
 		assert.Equal(t, []int64{100, 200}, sampleTimestamps(got.Timeseries[0]))
 	})
 
@@ -205,9 +211,9 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		// each still triggers its own zero-sample ingestion downstream.
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(lbls, makeSamples(100, 10, 1), nil, nil),
-			makeTimeseries(lbls, makeSamples(200, 20, 2), nil, nil),
-			makeTimeseries(lbls, makeSamples(300, 10, 3), nil, nil),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 0, 1), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 0, 2), 20),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 0, 3), 10),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -216,7 +222,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		require.Len(t, got.Timeseries, 2)
 		byCT := map[int64][]int64{}
 		for _, ts := range got.Timeseries {
-			byCT[legacyCreatedTimestamp(&ts)] = sampleTimestamps(ts)
+			byCT[ts.CreatedTimestamp] = sampleTimestamps(ts)
 		}
 		assert.Equal(t, []int64{100, 300}, byCT[10])
 		assert.Equal(t, []int64{200}, byCT[20])
@@ -603,8 +609,8 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 
 			lbls := []string{model.MetricNameLabel, "series_1"}
 			req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries(lbls, makeSamples(duplicateTS, createdTS, 1), nil, nil),
-				makeTimeseries(lbls, makeSamples(duplicateTS, createdTS, 2), nil, nil),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 0, 1), createdTS),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 0, 2), createdTS),
 			}}
 
 			_, err := ds[0].Push(ctx, req)
@@ -630,7 +636,7 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 			for i := range ingesters {
 				for _, s := range ingesters[i].series() {
 					sawSeries = true
-					assert.Equal(t, createdTS, legacyCreatedTimestamp(s), "the created timestamp must survive the middleware")
+					assert.Equal(t, createdTS, s.CreatedTimestamp, "the created timestamp must survive the middleware")
 					assert.Len(t, s.Samples, expectedSamples, "unexpected number of samples reached the ingester")
 				}
 			}

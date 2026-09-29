@@ -6742,10 +6742,12 @@ func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, histograms 
 }
 
 func makeSamples(ts, st int64, value float64) []mimirpb.Sample {
+	if st != 0 {
+		panic("temp panic, must set created timestamp")
+	}
 	return []mimirpb.Sample{{
-		Value:          value,
-		TimestampMs:    ts,
-		StartTimestamp: st,
+		Value:       value,
+		TimestampMs: ts,
 	}}
 }
 
@@ -8280,17 +8282,17 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
 				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
 	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
-			"cortex_distributor_requests_in_total",
-			"cortex_distributor_samples_in_total",
-			"cortex_distributor_exemplars_in_total",
-			"cortex_distributor_metadata_in_total",
-			"cortex_distributor_received_requests_total",
-			"cortex_distributor_received_samples_total",
-			"cortex_distributor_received_exemplars_total",
-			"cortex_distributor_received_metadata_total",
-			"cortex_distributor_received_native_histogram_samples_total",
-			"cortex_distributor_received_native_histogram_buckets_total",
-		}
+				"cortex_distributor_requests_in_total",
+				"cortex_distributor_samples_in_total",
+				"cortex_distributor_exemplars_in_total",
+				"cortex_distributor_metadata_in_total",
+				"cortex_distributor_received_requests_total",
+				"cortex_distributor_received_samples_total",
+				"cortex_distributor_received_exemplars_total",
+				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_native_histogram_samples_total",
+				"cortex_distributor_received_native_histogram_buckets_total",
+			}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}

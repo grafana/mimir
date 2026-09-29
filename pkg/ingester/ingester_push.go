@@ -608,11 +608,7 @@ func (i *Ingester) pushSamplesToAppender(
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		var prevSampleStartTimestamp int64
-		var stOwners map[int64]mimirpb.STOwner
-		if nativeHistogramsIngestionEnabled {
-			stOwners = mimirpb.DupeSTOwners(&ts, minTimestampMs, maxTimestampMs)
-		}
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
 			var err error
@@ -626,29 +622,26 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
-			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs {
-				// If there's no owner entry, or if we are the owner, record the zero.
-				if owner, ok := stOwners[s.StartTimestamp]; !ok || owner == mimirpb.STOwnerFloat {
-					if ref != 0 {
-						_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, s.StartTimestamp)
-					} else {
-						// Copy the label set because both TSDB and the active series tracker may retain it.
-						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, s.StartTimestamp)
-					}
-					if err == nil {
-						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-						// if the start time is unknown, then it should equal to the timestamp of the first sample,
-						// which will mean a created timestamp equal to the timestamp of the first sample for later
-						// samples. Thus we ignore if zero sample would cause duplicate.
-						// We also ignore out of order sample as created timestamp is out of order most of the time,
-						// except when written before the first sample.
-						errProcessor.ProcessErr(err, s.StartTimestamp, ts.Labels)
-					}
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				}
-				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
+				if err == nil {
+					stats.succeededSamplesCount++
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
+					// We also ignore out of order sample as created timestamp is out of order most of the time,
+					// except when written before the first sample.
+					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -679,8 +672,6 @@ func (i *Ingester) pushSamplesToAppender(
 
 		numNativeHistogramBuckets := -1
 		if nativeHistogramsIngestionEnabled {
-			var prevHistogramStartTimestamp int64
-
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -702,28 +693,26 @@ func (i *Ingester) pushSamplesToAppender(
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
 
-				if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
-					if owner, ok := stOwners[h.StartTimestamp]; !ok || owner == mimirpb.STOwnerHistogram {
-						if ref != 0 {
-							_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, h.StartTimestamp, ih, fh)
-						} else {
-							// Copy the label set because both TSDB and the active series tracker may retain it.
-							copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-							ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, h.StartTimestamp, ih, fh)
-						}
-						if err == nil {
-							stats.succeededSamplesCount++
-						} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-							// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-							// if the start time is unknown, then it should equal to the timestamp of the first sample,
-							// which will mean a created timestamp equal to the timestamp of the first sample for later
-							// samples. Thus we ignore if zero sample would cause duplicate.
-							// We also ignore out of order sample as created timestamp is out of order most of the time,
-							// except when written before the first sample.
-							errProcessor.ProcessErr(err, h.StartTimestamp, ts.Labels)
-						}
+				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					if ref != 0 {
+						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 					}
-					prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
+					if err == nil {
+						stats.succeededSamplesCount++
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					}
+					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
 
 				// If the cached reference exists, we try to use it.

@@ -830,10 +830,11 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 			}
 
 			newTS := TimeSeriesRW2{
-				LabelsRefs: newLbls,
-				Samples:    ts.Samples,
-				Exemplars:  newExemplars,
-				Histograms: ts.Histograms,
+				LabelsRefs:       newLbls,
+				Samples:          ts.Samples,
+				Exemplars:        newExemplars,
+				Histograms:       ts.Histograms,
+				CreatedTimestamp: ts.CreatedTimestamp,
 				Metadata: MetadataRW2{
 					Type:    ts.Metadata.Type,
 					HelpRef: helpRef,
