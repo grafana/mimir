@@ -8,8 +8,12 @@
 //   - handover: compacted with a long deletion delay, so the level-1
 //     sources and the compactor's output coexist on disk, as they briefly
 //     do in a real bucket between a compaction and the next cleanup.
-//   - compacted: compacted with no deletion delay, so a cleanup pass has
-//     already removed the sources.
+//   - compacted: handover with its sources cleaned up, as a bucket looks
+//     once the deletion delay has elapsed. Building it from handover
+//     rather than from l1 avoids redoing the same split-and-merge work
+//     twice: the second compactor run only has a cleanup pass to do, which
+//     is both faster and needs far less scratch disk than recompacting
+//     from scratch.
 package fixtures
 
 import (
@@ -65,7 +69,7 @@ func Build(pop *model.Model, partitions int, seed int64, cfg Config) (Result, er
 		return Result{}, fmt.Errorf("building handover snapshot: %w", err)
 	}
 
-	compacted, err := compactSnapshot(cfg, l1, "compacted", compactorOptions{
+	compacted, err := compactSnapshot(cfg, handover, "compacted", compactorOptions{
 		Partitions:    partitions,
 		DeletionDelay: "0s", // sources are removed as soon as the cleaner next runs.
 		WantSources:   false,

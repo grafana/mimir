@@ -42,16 +42,18 @@ const (
 	stableWindow = 3 * (compactionInterval + cleanupInterval)
 )
 
-// compactSnapshot copies l1Dir into a scratch directory, runs cfg's Mimir
-// binary as a compactor against it with opts until the log goes quiet, then
-// moves the result into cfg.Dir/name and returns its path.
-func compactSnapshot(cfg Config, l1Dir, name string, opts compactorOptions) (string, error) {
+// compactSnapshot copies sourceDir into a scratch directory (sourceDir
+// itself is left untouched, since it is typically another snapshot this
+// build still needs to return), runs cfg's Mimir binary as a compactor
+// against the copy with opts until the block set stabilizes, then moves
+// the result into cfg.Dir/name and returns its path.
+func compactSnapshot(cfg Config, sourceDir, name string, opts compactorOptions) (string, error) {
 	work := filepath.Join(cfg.Dir, "work-"+name)
 	if err := os.RemoveAll(work); err != nil {
 		return "", err
 	}
-	if err := copyTree(l1Dir, work); err != nil {
-		return "", fmt.Errorf("copying %s into scratch dir: %w", l1Dir, err)
+	if err := copyTree(sourceDir, work); err != nil {
+		return "", fmt.Errorf("copying %s into scratch dir: %w", sourceDir, err)
 	}
 
 	dataDir := filepath.Join(cfg.Dir, "compactor-data-"+name)
@@ -78,13 +80,17 @@ func compactSnapshot(cfg Config, l1Dir, name string, opts compactorOptions) (str
 		return "", fmt.Errorf("%s snapshot doesn't have the expected shape (see %s): %w", name, logPath, err)
 	}
 
+	// work is scratch-only past this point, so move rather than copy it
+	// into place: at this data volume, a duplicate copy is the difference
+	// between fitting on disk and not.
 	dst := filepath.Join(cfg.Dir, name)
 	if err := os.RemoveAll(dst); err != nil {
 		return "", err
 	}
-	if err := copyTree(work, dst); err != nil {
+	if err := os.Rename(work, dst); err != nil {
 		return "", fmt.Errorf("snapshotting %s: %w", name, err)
 	}
+	_ = os.RemoveAll(dataDir) // compactor scratch state; safe to lose.
 	return dst, nil
 }
 
