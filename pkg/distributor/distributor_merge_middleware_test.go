@@ -213,7 +213,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 			makeTimeseriesWithCT(lbls, makeSamples(100, 10, 1), 10),
 			makeTimeseriesWithCT(lbls, makeSamples(200, 20, 2), 20),
-			makeTimeseriesWithCT(lbls, makeSamples(300, 30, 3), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 10, 3), 10),
 		}}
 
 		got := runPrePushMerge(t, d, req)
