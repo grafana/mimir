@@ -3979,9 +3979,10 @@ fn query_chunks(
     let empty = Series::default();
     let series = series.unwrap_or(&empty);
     let overlaps = |min: i64, max: i64| min <= end && max >= start;
-    let mut candidates = Vec::new();
+    let mut candidates: Vec<(ooo_merge::Candidate, Option<&[u8]>)> = Vec::new();
     let (mut in_order, mut out_of_order) = (0, 0);
-    let mut add = |chunk: ooo_merge::Chunk, ooo: bool| {
+    // A chunk's data stays where it is, in the chunk files or the series, until a merge needs it.
+    let mut add = |chunk: ooo_merge::Chunk, data, ooo: bool| {
         let counter = if ooo {
             &mut out_of_order
         } else {
@@ -3989,10 +3990,13 @@ fn query_chunks(
         };
         *counter += 1;
         if overlaps(chunk.min_time, chunk.max_time) {
-            candidates.push(ooo_merge::Candidate {
-                chunk,
-                order: (ooo, *counter),
-            });
+            candidates.push((
+                ooo_merge::Candidate {
+                    chunk,
+                    order: (ooo, *counter),
+                },
+                data,
+            ));
         }
     };
     // A series' cold chunks come first: they are older than what it has in memory, like a block's
@@ -4004,17 +4008,9 @@ fn query_chunks(
             encoding: i32::from(chunk.encoding),
             data: Vec::new(),
         };
-        if overlaps(chunk.min_time, chunk.max_time) {
-            add(
-                ooo_merge::Chunk {
-                    data: disk.read(chunk.reference, chunk.len).to_vec(),
-                    ..stored
-                },
-                chunk.out_of_order,
-            );
-        } else {
-            add(stored, chunk.out_of_order);
-        }
+        let data =
+            overlaps(chunk.min_time, chunk.max_time).then(|| disk.read(chunk.reference, chunk.len));
+        add(stored, data, chunk.out_of_order);
     }
     if let Some(head) = &series.float_head {
         add(
@@ -4022,8 +4018,9 @@ fn query_chunks(
                 min_time: head.min_time,
                 max_time: head.appender.last_timestamp().expect("head has samples"),
                 encoding: i32::from(XOR_ENCODING),
-                data: head.appender.bytes().to_vec(),
+                data: Vec::new(),
             },
+            Some(head.appender.bytes()),
             false,
         );
     }
@@ -4043,6 +4040,7 @@ fn query_chunks(
                 encoding: encoded.encoding,
                 data: encoded.data,
             },
+            None,
             false,
         );
     }
@@ -4051,31 +4049,47 @@ fn query_chunks(
     out_of_order += 1;
     for chunk in ooo_head {
         if overlaps(chunk.min_time, chunk.max_time) {
-            candidates.push(ooo_merge::Candidate {
-                chunk,
-                order: (true, out_of_order),
-            });
+            candidates.push((
+                ooo_merge::Candidate {
+                    chunk,
+                    order: (true, out_of_order),
+                },
+                None,
+            ));
         }
     }
-    let merged = if candidates.iter().any(|candidate| candidate.order.0) {
-        match ooo_merge::merge_overlapping(candidates) {
-            Ok(merged) => merged,
+    // Only merges need chunks of their own; the rest are encoded from where their data is.
+    if candidates.iter().any(|(candidate, _)| candidate.order.0) {
+        let owned = candidates
+            .into_iter()
+            .map(|(mut candidate, borrowed)| {
+                if let Some(borrowed) = borrowed {
+                    candidate.chunk.data = borrowed.to_vec();
+                }
+                candidate
+            })
+            .collect();
+        return match ooo_merge::merge_overlapping(owned) {
+            Ok(merged) => merged
+                .iter()
+                .map(|chunk| {
+                    wire_chunk(chunk.min_time, chunk.max_time, chunk.encoding, &chunk.data)
+                })
+                .collect(),
             Err(error) => {
                 eprintln!("phase=query_merge_error error={error:#}");
-                return Vec::new();
+                Vec::new()
             }
-        }
-    } else {
-        let mut chunks = candidates
-            .into_iter()
-            .map(|candidate| candidate.chunk)
-            .collect::<Vec<_>>();
-        chunks.sort_by_key(|chunk| chunk.min_time);
-        chunks
-    };
-    merged
-        .into_iter()
-        .map(|chunk| wire_chunk(chunk.min_time, chunk.max_time, chunk.encoding, &chunk.data))
+        };
+    }
+    candidates.sort_by_key(|(candidate, _)| candidate.chunk.min_time);
+    candidates
+        .iter()
+        .map(|(candidate, borrowed)| {
+            let chunk = &candidate.chunk;
+            let data = borrowed.unwrap_or(&chunk.data);
+            wire_chunk(chunk.min_time, chunk.max_time, chunk.encoding, data)
+        })
         .collect()
 }
 
@@ -4086,15 +4100,34 @@ fn wire_chunk(min_time: i64, max_time: i64, encoding: i32, data: &[u8]) -> Encod
         samples: data.get(..2).map_or(0, |count| {
             u32::from(u16::from_be_bytes([count[0], count[1]]))
         }),
-        wire: cortex::Chunk {
-            start_timestamp_ms: min_time,
-            end_timestamp_ms: max_time,
-            encoding,
-            data: Bytes::copy_from_slice(data),
-        }
-        .encode_to_vec()
-        .into(),
+        wire: encode_chunk(min_time, max_time, encoding, data).into(),
     }
+}
+
+/// A `cortex.Chunk` message as prost encodes it, written straight from the chunk's data: building
+/// the message first copied every returned chunk twice more.
+fn encode_chunk(min_time: i64, max_time: i64, encoding: i32, data: &[u8]) -> Vec<u8> {
+    use prost::encoding::{WireType, encode_key, encode_varint, encoded_len_varint};
+    let mut bytes =
+        Vec::with_capacity(3 * 11 + 1 + encoded_len_varint(data.len() as u64) + data.len());
+    // Like prost for proto3 fields: in tag order, without the ones at their default.
+    for (tag, value) in [
+        (1, min_time as u64),
+        (2, max_time as u64),
+        // An int32 goes out as its sign-extended 64 bits.
+        (3, i64::from(encoding) as u64),
+    ] {
+        if value != 0 {
+            encode_key(tag, WireType::Varint, &mut bytes);
+            encode_varint(value, &mut bytes);
+        }
+    }
+    if !data.is_empty() {
+        encode_key(4, WireType::LengthDelimited, &mut bytes);
+        encode_varint(data.len() as u64, &mut bytes);
+        bytes.extend_from_slice(data);
+    }
+    bytes
 }
 
 // Like head truncation, retention drops whole chunks, so a chunk that straddles the cutoff stays.
@@ -5214,6 +5247,53 @@ mod tests {
         let parallel = reads(&stores[0].0);
         assert_eq!(parallel[0].0, 700);
         assert_eq!(parallel, reads(&stores[1].0));
+    }
+
+    #[test]
+    fn chunks_encode_like_prost() {
+        let mut state = 0x243f_6a88_85a3_08d3_u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut cases = vec![
+            (0, 0, 0, Vec::new()),
+            (-1, i64::MIN, -1, vec![0]),
+            (i64::MAX, 1, 4, vec![1; 300]),
+        ];
+        for _ in 0..1000 {
+            let pick = |value: u64, choice: u64| match choice % 4 {
+                0 => 0,
+                1 => value as i64 % 1000,
+                2 => -(value as i64 % 1_000_000),
+                _ => value as i64,
+            };
+            let (a, b, c) = (random(), random(), random());
+            let len = (random() % 200) as usize;
+            cases.push((
+                pick(a, random()),
+                pick(b, random()),
+                pick(c, random()) as i32,
+                (0..len).map(|index| (a >> (index % 8)) as u8).collect(),
+            ));
+        }
+        for (min_time, max_time, encoding, data) in cases {
+            let expected = cortex::Chunk {
+                start_timestamp_ms: min_time,
+                end_timestamp_ms: max_time,
+                encoding,
+                data: data.clone().into(),
+            }
+            .encode_to_vec();
+            assert_eq!(
+                encode_chunk(min_time, max_time, encoding, &data),
+                expected,
+                "{min_time} {max_time} {encoding} {}",
+                data.len()
+            );
+        }
     }
 
     #[test]
