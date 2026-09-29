@@ -121,11 +121,16 @@ async fn main() {
                 DecodedRequest {
                     source: 0,
                     series: vec![DecodedSeries {
+                        // Like Adaptive Metrics' aggregated series, a few have __aggregation__.
                         labels: [
                             ("__name__".to_owned(), "sharded".to_owned()),
                             ("pod".to_owned(), format!("pod_{index}")),
                         ]
                         .into_iter()
+                        .chain(
+                            (index % 100 == 0)
+                                .then(|| ("__aggregation__".to_owned(), "sum".to_owned())),
+                        )
                         .map(|(name, value)| (name.into(), value.into()))
                         .collect(),
                         samples: (0..SHARDED_SAMPLES)
@@ -166,6 +171,27 @@ async fn main() {
             "sharded",
             vec![
                 matcher(0, "__name__", "sharded"),
+                matcher(0, "__query_shard__", "1_of_16"),
+            ],
+            SHARDED_SAMPLES * 15_000,
+            None,
+        ),
+        // What queriers ask when Adaptive Metrics excludes aggregated series from raw queries.
+        (
+            "sharded_without_aggregated",
+            vec![
+                matcher(0, "__name__", "sharded"),
+                matcher(3, "__aggregation__", ".+"),
+                matcher(0, "__query_shard__", "1_of_16"),
+            ],
+            SHARDED_SAMPLES * 15_000,
+            None,
+        ),
+        // A label regex without a metric name.
+        (
+            "nameless_label_regex",
+            vec![
+                matcher(2, "__aggregation__", "s.*"),
                 matcher(0, "__query_shard__", "1_of_16"),
             ],
             SHARDED_SAMPLES * 15_000,

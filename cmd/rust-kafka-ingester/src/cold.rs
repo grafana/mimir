@@ -320,6 +320,49 @@ impl ColdBlock {
             .map(|table| ColdTenant { block: self, table })
     }
 
+    /// Indexes of the tenant's series with label `name`, from every posting list under it: the
+    /// table is sorted by name, so they are one range of it.
+    pub fn with_label(&self, tenant: &str, name: &str) -> Vec<u32> {
+        let (Some(table), Some(local)) = (self.tenants.get(tenant), self.local_ids.get(name))
+        else {
+            return Vec::new();
+        };
+        let bytes = self.bytes();
+        let entry = |index: usize| {
+            let at = table.postings_table + index * 16;
+            (
+                u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()),
+                u32::from_le_bytes(bytes[at + 12..at + 16].try_into().unwrap()),
+            )
+        };
+        let (mut low, mut high) = (0, table.postings_count);
+        while low < high {
+            let middle = (low + high) / 2;
+            if entry(middle).0 < *local {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        let lists = table.postings_table + table.postings_count * 16;
+        let mut series = Vec::new();
+        for index in low..table.postings_count {
+            let (entry_name, offset) = entry(index);
+            if entry_name != *local {
+                break;
+            }
+            let at = lists + offset as usize;
+            let count = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+            series.extend((0..count).map(|index| {
+                let at = at + 4 + index * 4;
+                u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+            }));
+        }
+        series.sort_unstable();
+        series.dedup();
+        series
+    }
+
     /// The series with `name="value"`, or None when the name never appears here, so nothing does.
     fn posting(&self, tenant: &str, name: &str, value: &str) -> Vec<u32> {
         let (Some(table), Some(local)) = (self.tenants.get(tenant), self.local_ids.get(name))
@@ -365,7 +408,8 @@ impl ColdBlock {
     }
 
     /// Indexes of the tenant's series that may match `matchers`: the smallest posting list of
-    /// their equality matchers, or every series. Callers still check the matchers.
+    /// their equality matchers or, without one, of the series with the label of a matcher that
+    /// rejects the empty value, or every series. Callers still check the matchers.
     pub fn candidates(&self, tenant: &str, matchers: &[CompiledMatcher]) -> Vec<u32> {
         let mut best: Option<Vec<u32>> = None;
         for matcher in matchers {
@@ -375,6 +419,19 @@ impl ColdBlock {
                 let list = self.posting(tenant, name, value);
                 if best.as_ref().is_none_or(|best| list.len() < best.len()) {
                     best = Some(list);
+                }
+            }
+        }
+        if best.is_none() {
+            for matcher in matchers {
+                if let Some(name) = matcher.label_name()
+                    && !matches!(matcher, CompiledMatcher::Equal(..))
+                    && !matcher.matches_value("")
+                {
+                    let list = self.with_label(tenant, name);
+                    if best.as_ref().is_none_or(|best| list.len() < best.len()) {
+                        best = Some(list);
+                    }
                 }
             }
         }
@@ -390,6 +447,19 @@ pub(super) struct ColdTenant<'a> {
 }
 
 impl<'a> ColdTenant<'a> {
+    pub fn block_id(&self) -> u64 {
+        self.block.id
+    }
+
+    pub fn series_count(&self) -> usize {
+        self.table.series_count
+    }
+
+    /// See `ColdBlock::with_label`.
+    pub fn with_label(&self, tenant: &str, name: &str) -> Vec<u32> {
+        self.block.with_label(tenant, name)
+    }
+
     pub fn series(&self, index: usize) -> ColdSeries<'a> {
         self.block.series_in(self.table, index)
     }
