@@ -200,9 +200,10 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var ready atomic.Bool
+	lifecycle := &lifecycleState{}
 	done := make(chan error, 1)
 	go func() {
-		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, nil, logger)
+		done <- manage(ctx, cfg, instanceClient, partitionClient, func() bool { return true }, &ready, lifecycle, logger)
 	}()
 	partitionRing := func() *ring.PartitionRingDesc {
 		value, err := partitionClient.Get(ctx, cfg.partitionRingKey)
@@ -248,16 +249,18 @@ func TestSharedRingNeverCreatesOrActivatesPartitions(t *testing.T) {
 	setPartition(ring.PartitionActive)
 	require.Eventually(t, ready.Load, 5*time.Second, 20*time.Millisecond)
 
+	// The Go ingesters prepared a downscale: like them, the pod keeps owning and serving the
+	// partition until it is scaled down itself, and the rollout operator's delayed downscale of it
+	// proceeds without changing the partition's state.
 	setPartition(ring.PartitionInactive)
-	require.Eventually(t, func() bool {
-		_, owned := partitionRing().Owners[cfg.instanceID]
-		return !owned
-	}, 5*time.Second, 20*time.Millisecond)
 	time.Sleep(200 * time.Millisecond)
 	_, owned := partitionRing().Owners[cfg.instanceID]
-	require.False(t, owned, "an inactive partition is not owned again")
-	// Still consumed and serving, like the Go ingesters of a partition being scaled down.
+	require.True(t, owned, "an inactive partition stays owned")
 	require.True(t, ready.Load())
+	recorder := httptest.NewRecorder()
+	preparePartitionDownscaleHandler(recorder, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil), cfg, lifecycle, logger)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, ring.PartitionInactive, partitionRing().Partitions[0].State)
 
 	// Not ready while the Rust ingester isn't serving, which it only does once replayed.
 	require.NoError(t, rustPort.Close())
