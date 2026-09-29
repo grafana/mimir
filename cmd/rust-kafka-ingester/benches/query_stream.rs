@@ -13,7 +13,8 @@ use tonic::Request;
 use cortex::ingester_server::Ingester;
 
 const SERIES: usize = 25_000;
-const RUNS: u32 = 5;
+const RUNS: u32 = 20;
+const SHARDED_SAMPLES: i64 = 1_200;
 
 fn rss_bytes() -> u64 {
     let output = Command::new("ps")
@@ -28,10 +29,14 @@ fn rss_bytes() -> u64 {
         * 1024
 }
 
-async fn query(service: &IngesterService, matchers: Vec<cortex::LabelMatcher>) -> (usize, usize) {
+async fn query(
+    service: &IngesterService,
+    matchers: Vec<cortex::LabelMatcher>,
+    end: i64,
+) -> (usize, usize) {
     let mut request = Request::new(cortex::QueryRequest {
         start_timestamp_ms: 0,
-        end_timestamp_ms: 20_000,
+        end_timestamp_ms: end,
         matchers,
         streaming_chunks_batch_size: 1024,
     });
@@ -107,36 +112,80 @@ async fn main() {
             )
             .unwrap();
     }
+    // One metric's series over five hours, each in ten chunks: queriers split a query for one
+    // metric into query shards, so each request walks the metric's series for a sixteenth.
+    for index in 0..SERIES {
+        store
+            .ingest(
+                "benchmark",
+                DecodedRequest {
+                    source: 0,
+                    series: vec![DecodedSeries {
+                        labels: [
+                            ("__name__".to_owned(), "sharded".to_owned()),
+                            ("pod".to_owned(), format!("pod_{index}")),
+                        ]
+                        .into_iter()
+                        .map(|(name, value)| (name.into(), value.into()))
+                        .collect(),
+                        samples: (0..SHARDED_SAMPLES)
+                            .map(|sample| cortexpb::Sample {
+                                timestamp_ms: sample * 15_000,
+                                value: sample as f64,
+                            })
+                            .collect(),
+                        histograms: Vec::new(),
+                        exemplars: Vec::new(),
+                        created_timestamp: 0,
+                    }],
+                    metadata: Vec::new(),
+                },
+            )
+            .unwrap();
+    }
     let service = IngesterService::new(store);
-    for (name, matchers, expected) in [
+    let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+        r#type,
+        name: name.into(),
+        value: value.into(),
+    };
+    for (name, matchers, end, expected) in [
         (
             "selective",
-            vec![cortex::LabelMatcher {
-                r#type: 0,
-                name: "label_9".into(),
-                value: "group_0".into(),
-            }],
-            100,
+            vec![matcher(0, "label_9", "group_0")],
+            20_000,
+            Some(100),
         ),
         (
             "broad",
-            vec![cortex::LabelMatcher {
-                r#type: 2,
-                name: "label_9".into(),
-                value: ".+".into(),
-            }],
-            SERIES,
+            vec![matcher(2, "label_9", ".+")],
+            20_000,
+            Some(SERIES),
+        ),
+        (
+            "sharded",
+            vec![
+                matcher(0, "__name__", "sharded"),
+                matcher(0, "__query_shard__", "1_of_16"),
+            ],
+            SHARDED_SAMPLES * 15_000,
+            None,
         ),
     ] {
         let before = rss_bytes();
         let started = Instant::now();
-        let (series, bytes) = query(&service, matchers.clone()).await;
+        let (series, bytes) = query(&service, matchers.clone(), end).await;
         let cold = started.elapsed();
-        assert_eq!(series, expected);
+        if let Some(expected) = expected {
+            assert_eq!(series, expected);
+        }
         let mut hot = Duration::ZERO;
         for _ in 0..RUNS {
             let started = Instant::now();
-            assert_eq!(query(&service, matchers.clone()).await, (series, bytes));
+            assert_eq!(
+                query(&service, matchers.clone(), end).await,
+                (series, bytes)
+            );
             hot += started.elapsed();
         }
         report(
