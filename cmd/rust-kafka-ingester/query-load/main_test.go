@@ -79,7 +79,7 @@ func TestAggregatedMetricsAreNoLongerPicked(t *testing.T) {
 }
 
 func TestQueriesParseAggregateAndStayWithinTheRange(t *testing.T) {
-	cfg := config{maxRange: 6 * time.Hour, points: 60}
+	cfg := config{maxRange: 6 * time.Hour, points: 60, lookupShare: 0.4}
 	now := time.Now()
 	promql := parser.NewParser(parser.Options{})
 	jobs := []string{"api", "dev/web.1", "a|b"}

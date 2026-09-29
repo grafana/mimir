@@ -45,6 +45,7 @@ type config struct {
 	maxSeries          int
 	maxHistogramSeries int
 	points             int
+	lookupShare        float64
 	refreshInterval    time.Duration
 	reportInterval     time.Duration
 	timeout            time.Duration
@@ -68,6 +69,7 @@ func main() {
 	flag.IntVar(&cfg.minSeries, "min-series", 1000, "Fewest series in ingesters of a queried metric")
 	flag.IntVar(&cfg.maxSeries, "max-series", 200_000, "Most series in ingesters of a queried metric, so queriers don't fetch too much")
 	flag.IntVar(&cfg.maxHistogramSeries, "max-histogram-series", 50_000, "Most series of a queried histogram, whose samples are much larger")
+	flag.Float64Var(&cfg.lookupShare, "lookup-share", 0.4, "Share of label names, label values and series lookups, which cost ingesters more than queriers")
 	flag.IntVar(&cfg.points, "points", 60, "Points of a range query: ingesters read every chunk of the range whatever the step, queriers evaluate each point")
 	flag.DurationVar(&cfg.refreshInterval, "refresh-interval", 10*time.Minute, "How often to resample metric names")
 	flag.DurationVar(&cfg.reportInterval, "report-interval", time.Minute, "How often to print latency and error summaries")
@@ -227,40 +229,36 @@ func nextQuery(cfg config, m metric, jobs, peers []string, now time.Time) (kind,
 		}
 	}
 	queries = append(queries, regexQueries(name, jobs, peers)...)
+	span := time.Duration(30+rand.Int64N(int64(cfg.maxRange/time.Minute)-29)) * time.Minute
 	// Weighted toward what costs ingesters more than queriers, which run out first: label lookups,
 	// and range queries of few points, whose ingesters still read every chunk of the range.
-	switch rand.IntN(10) {
-	case 0, 1, 2, 3:
-		span := time.Duration(30+rand.Int64N(int64(cfg.maxRange/time.Minute)-29)) * time.Minute
-		step := max(15*time.Second, (span / time.Duration(cfg.points)).Truncate(15*time.Second))
-		params.Set("query", queries[rand.IntN(len(queries))])
+	if rand.Float64() < cfg.lookupShare {
+		params.Set("match[]", selector)
 		params.Set("start", formatTime(now.Add(-span)))
 		params.Set("end", formatTime(now))
-		params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', -1, 64))
-		return "range", "/api/v1/query_range", params
-	case 4, 5:
+		switch rand.IntN(4) {
+		case 0, 1:
+			return "labels", "/api/v1/labels", params
+		case 2:
+			// Its series, which queriers pass on: bounded, since every query stays under max-series.
+			params.Set("limit", "1000")
+			return "series", "/api/v1/series", params
+		default:
+			return "label_values", "/api/v1/label/job/values", params
+		}
+	}
+	if rand.IntN(3) == 0 {
 		queries = append(queries, fmt.Sprintf("count by (job) (%s)", selector))
 		params.Set("query", queries[rand.IntN(len(queries))])
 		params.Set("time", formatTime(now))
 		return "instant", "/api/v1/query", params
-	case 6, 7:
-		params.Set("match[]", selector)
-		params.Set("start", formatTime(now.Add(-time.Hour)))
-		params.Set("end", formatTime(now))
-		return "labels", "/api/v1/labels", params
-	case 8:
-		params.Set("match[]", selector)
-		params.Set("start", formatTime(now.Add(-time.Hour)))
-		params.Set("end", formatTime(now))
-		// Its series, which queriers pass on: bounded, since every query stays under max-series.
-		params.Set("limit", "1000")
-		return "series", "/api/v1/series", params
-	default:
-		params.Set("match[]", selector)
-		params.Set("start", formatTime(now.Add(-time.Hour)))
-		params.Set("end", formatTime(now))
-		return "label_values", "/api/v1/label/job/values", params
 	}
+	step := max(15*time.Second, (span / time.Duration(cfg.points)).Truncate(15*time.Second))
+	params.Set("query", queries[rand.IntN(len(queries))])
+	params.Set("start", formatTime(now.Add(-span)))
+	params.Set("end", formatTime(now))
+	params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', -1, 64))
+	return "range", "/api/v1/query_range", params
 }
 
 // regexQueries select a metric and its peers by a name regex and, once its jobs are known, some of
