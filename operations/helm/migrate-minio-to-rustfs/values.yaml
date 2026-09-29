@@ -1,0 +1,52 @@
+# Default values for migrate-minio-to-rustfs.
+# This chart never sees plaintext credentials unless you opt into secret.create
+# (dev only). Production: bring your own Secret (imperative kubectl, ExternalSecrets,
+# Vault, SealedSecrets) and set secret.name to it.
+
+# -- Container image (single string so Renovate tracks the tag via the existing regex manager).
+image: docker.io/rclone/rclone:1.69.3
+# -- Image pull policy.
+imagePullPolicy: IfNotPresent
+
+secret:
+  # -- Create a Secret from the values below (dev only; never commit real credentials).
+  create: false
+  # -- Name of the Secret the Job/Deployment read via secretKeyRef. When create=false,
+  # any out-of-band Secret with the six keys works (kubectl, ExternalSecrets, Vault, ...).
+  name: rclone-minio-to-rustfs
+  # -- Only used when secret.create=true.
+  minioEndpoint: http://mimir-minio.mimir.svc:9000
+  minioAccessKeyId: grafana-mimir
+  minioSecretAccessKey: CHANGEME
+  rustfsEndpoint: http://rustfs.rustfs.svc:9000
+  rustfsAccessKeyId: CHANGEME
+  rustfsSecretAccessKey: CHANGEME
+
+# -- Buckets to copy (ruler bucket is tiny; always copy whole).
+buckets:
+  tsdb: mimir-tsdb
+  ruler: mimir-ruler
+
+# -- Parallelism for the bulk copy.
+checkers: 16
+transfers: 16
+
+# -- Extra flags appended to every rclone sync, e.g. "--max-age 30d".
+# Must be identical for Job and tail: an unfiltered tail backfills what a filtered bulk copy skipped.
+extraSyncArgs: ""
+
+watch:
+  # -- Render the continuous-tail Deployment (looping sync until deleted before the flip).
+  enabled: true
+  # -- Seconds between tail iterations.
+  intervalSeconds: 60
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# -- Pod security context (empty by default; rclone image runs as root).
+podSecurityContext: {}
+# -- Container security context (empty by default; set runAsNonRoot etc. to suit your policy).
+securityContext: {}

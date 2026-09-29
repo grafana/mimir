@@ -84,6 +84,17 @@
       ],
       depNameTemplate: 'alpine/helm',
       datasourceTemplate: 'docker',
+    },
+    {
+      customType: 'regex',
+      description: 'Update rclone image in migrate-minio-to-rustfs chart values',
+      managerFilePatterns: [
+        'operations/helm/migrate-minio-to-rustfs/\\.ya?ml$',
+      ],
+      matchStrings: [
+        'image:\\s*docker\\.io/(?<depName>rclone/rclone):(?<currentValue>[^\\s"\']+)',
+      ],
+      datasourceTemplate: 'docker',
     }
   ],
   baseBranchPatterns: [

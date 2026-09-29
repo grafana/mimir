@@ -1,0 +1,9 @@
+apiVersion: v2
+name: migrate-minio-to-rustfs
+version: 0.1.0
+appVersion: 1.69.3
+description: "One-shot rclone copy of Grafana Mimir buckets from MinIO to RustFS (S3-to-S3)"
+home: https://github.com/grafana/mimir/blob/main/docs/sources/mimir/set-up/migrate/migrate-from-minio-to-rustfs.md
+icon: https://grafana.com/static/img/logos/logo-mimir.svg
+kubeVersion: ^1.32.0-0
+type: application
