@@ -88,21 +88,23 @@ impl Encoder {
         Some(appender)
     }
 
+    fn push_float(&mut self, timestamp: i64, value: f64) {
+        self.finish_histograms();
+        if let Some((_, appender)) = &self.floats
+            && self.size_cut
+            && appender.bytes().len() > MAX_BYTES_PER_XOR_CHUNK_BEFORE_APPEND
+        {
+            self.finish_floats();
+        }
+        self.floats
+            .get_or_insert_with(|| (timestamp, xor::Appender::default()))
+            .1
+            .append(timestamp, value);
+    }
+
     fn push(&mut self, timestamp: i64, value: &Value) {
         match value {
-            Value::Float(value) => {
-                self.finish_histograms();
-                if let Some((_, appender)) = &self.floats
-                    && self.size_cut
-                    && appender.bytes().len() > MAX_BYTES_PER_XOR_CHUNK_BEFORE_APPEND
-                {
-                    self.finish_floats();
-                }
-                self.floats
-                    .get_or_insert_with(|| (timestamp, xor::Appender::default()))
-                    .1
-                    .append(timestamp, *value);
-            }
+            Value::Float(value) => self.push_float(timestamp, *value),
             Value::Histogram(histogram) => {
                 self.finish_floats();
                 let mut histogram = (**histogram).clone();
@@ -169,15 +171,7 @@ pub fn merge_overlapping(mut candidates: Vec<Candidate>) -> Result<Vec<Chunk>> {
             0 => {}
             1 => output.push(group.pop().expect("one chunk")),
             _ => {
-                let iterators = group
-                    .iter()
-                    .map(|chunk| decode(chunk.encoding, &chunk.data))
-                    .collect::<Result<Vec<_>>>()?;
-                let mut encoder = Encoder::new(true, false);
-                for (timestamp, value) in chain(iterators) {
-                    encoder.push(timestamp, &value);
-                }
-                output.extend(encoder.finish());
+                output.extend(merge_group(group)?);
                 group.clear();
             }
         }
@@ -198,12 +192,33 @@ pub fn merge_overlapping(mut candidates: Vec<Candidate>) -> Result<Vec<Chunk>> {
     Ok(output)
 }
 
-struct Cursor {
-    samples: Vec<(i64, Value)>,
+/// Merges a group of overlapping chunks. Float chunks, most of them, merge as plain floats: the
+/// same chain and chunk cuts as any value, without wrapping each sample in a `Value`.
+fn merge_group(group: &[Chunk]) -> Result<Vec<Chunk>> {
+    let mut encoder = Encoder::new(true, false);
+    if group.iter().all(|chunk| chunk.encoding == XOR_ENCODING) {
+        let iterators = group.iter().map(|chunk| xor::decode(&chunk.data)).collect();
+        for (timestamp, value) in chain(iterators) {
+            encoder.push_float(timestamp, value);
+        }
+    } else {
+        let iterators = group
+            .iter()
+            .map(|chunk| decode(chunk.encoding, &chunk.data))
+            .collect::<Result<Vec<_>>>()?;
+        for (timestamp, value) in chain(iterators) {
+            encoder.push(timestamp, &value);
+        }
+    }
+    Ok(encoder.finish())
+}
+
+struct Cursor<T> {
+    samples: Vec<(i64, T)>,
     position: Option<usize>,
 }
 
-impl Cursor {
+impl<T> Cursor<T> {
     fn next(&mut self) -> bool {
         let next = self.position.map_or(0, |position| position + 1);
         self.position = Some(next);
@@ -220,11 +235,11 @@ impl Cursor {
 struct GoHeap(Vec<usize>);
 
 impl GoHeap {
-    fn less(&self, cursors: &[Cursor], i: usize, j: usize) -> bool {
+    fn less<T>(&self, cursors: &[Cursor<T>], i: usize, j: usize) -> bool {
         cursors[self.0[i]].at_t() < cursors[self.0[j]].at_t()
     }
 
-    fn push(&mut self, cursors: &[Cursor], cursor: usize) {
+    fn push<T>(&mut self, cursors: &[Cursor<T>], cursor: usize) {
         self.0.push(cursor);
         let mut j = self.0.len() - 1;
         while j > 0 {
@@ -237,7 +252,7 @@ impl GoHeap {
         }
     }
 
-    fn pop(&mut self, cursors: &[Cursor]) -> usize {
+    fn pop<T>(&mut self, cursors: &[Cursor<T>]) -> usize {
         let n = self.0.len() - 1;
         self.0.swap(0, n);
         let mut i = 0;
@@ -263,7 +278,7 @@ impl GoHeap {
 
 /// `chainSampleIterator.Next`: the first chunk is the current iterator, the others wait in the
 /// heap, and a sample whose timestamp was already emitted is skipped.
-fn chain(iterators: Vec<Vec<(i64, Value)>>) -> Vec<(i64, Value)> {
+fn chain<T: Clone>(iterators: Vec<Vec<(i64, T)>>) -> Vec<(i64, T)> {
     let mut cursors = iterators
         .into_iter()
         .map(|samples| Cursor {
@@ -277,7 +292,7 @@ fn chain(iterators: Vec<Vec<(i64, Value)>>) -> Vec<(i64, Value)> {
             heap.push(&cursors, index);
         }
     }
-    let mut output: Vec<(i64, Value)> = Vec::new();
+    let mut output: Vec<(i64, T)> = Vec::new();
     let mut curr = 0;
     let mut last_t = i64::MIN;
     loop {

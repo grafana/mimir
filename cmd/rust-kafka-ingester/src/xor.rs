@@ -34,9 +34,20 @@ impl BitWriter {
         self.bytes.push(value << self.free);
     }
 
-    fn bits(&mut self, value: u64, count: usize) {
-        for shift in (0..count).rev() {
-            self.bit(((value >> shift) & 1) != 0);
+    /// The low `count` bits of `value`, most significant first, filling the last byte's free bits
+    /// at once: writing them one by one was most of what appending a sample cost.
+    fn bits(&mut self, value: u64, mut count: usize) {
+        while count > 0 {
+            if self.free == 0 {
+                self.bytes.push(0);
+                self.free = 8;
+            }
+            let take = count.min(usize::from(self.free));
+            count -= take;
+            let chunk = ((value >> count) & ((1 << take) - 1)) as u8;
+            let last = self.bytes.len() - 1;
+            self.bytes[last] |= chunk << (usize::from(self.free) - take);
+            self.free -= take as u8;
         }
     }
 }
@@ -255,40 +266,55 @@ fn write_varint(out: &mut BitWriter, value: i64) {
     write_uvarint(out, encoded);
 }
 
+struct Reader<'a> {
+    bytes: &'a [u8],
+    bit: usize,
+}
+
+impl Reader<'_> {
+    fn bit(&mut self) -> bool {
+        let value = self.bytes[self.bit / 8] & (0x80 >> (self.bit % 8)) != 0;
+        self.bit += 1;
+        value
+    }
+
+    /// The next `count` bits, most significant first, a byte's worth at a time.
+    fn bits(&mut self, mut count: usize) -> u64 {
+        let mut value = 0_u64;
+        while count > 0 {
+            let available = 8 - self.bit % 8;
+            let take = count.min(available);
+            let byte = u64::from(self.bytes[self.bit / 8]);
+            value = value << take | (byte >> (available - take)) & ((1 << take) - 1);
+            self.bit += take;
+            count -= take;
+        }
+        value
+    }
+
+    fn uvarint(&mut self) -> u64 {
+        let mut value = 0;
+        for shift in (0..).step_by(7) {
+            let byte = self.bits(8);
+            value |= (byte & 0x7f) << shift;
+            if byte < 0x80 {
+                break;
+            }
+        }
+        value
+    }
+
+    fn signed(&mut self, count: usize) -> i64 {
+        let value = self.bits(count);
+        if count < 64 && value >= 1 << (count - 1) {
+            value as i64 - (1 << count)
+        } else {
+            value as i64
+        }
+    }
+}
+
 pub fn decode(bytes: &[u8]) -> Vec<(i64, f64)> {
-    struct Reader<'a> {
-        bytes: &'a [u8],
-        bit: usize,
-    }
-    impl Reader<'_> {
-        fn bit(&mut self) -> bool {
-            let value = self.bytes[self.bit / 8] & (0x80 >> (self.bit % 8)) != 0;
-            self.bit += 1;
-            value
-        }
-        fn bits(&mut self, count: usize) -> u64 {
-            (0..count).fold(0, |value, _| value << 1 | u64::from(self.bit()))
-        }
-        fn uvarint(&mut self) -> u64 {
-            let mut value = 0;
-            for shift in (0..).step_by(7) {
-                let byte = self.bits(8);
-                value |= (byte & 0x7f) << shift;
-                if byte < 0x80 {
-                    break;
-                }
-            }
-            value
-        }
-        fn signed(&mut self, count: usize) -> i64 {
-            let value = self.bits(count);
-            if count < 64 && value >= 1 << (count - 1) {
-                value as i64 - (1 << count)
-            } else {
-                value as i64
-            }
-        }
-    }
     let count = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
     let mut reader = Reader { bytes, bit: 16 };
     let mut samples = Vec::with_capacity(count);
@@ -341,6 +367,77 @@ pub fn decode(bytes: &[u8]) -> Vec<(i64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bits_are_read_like_one_at_a_time() {
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let bytes = (0..4096).map(|_| random() as u8).collect::<Vec<_>>();
+        let (mut bulk, mut single) = (
+            Reader {
+                bytes: &bytes,
+                bit: 0,
+            },
+            Reader {
+                bytes: &bytes,
+                bit: 0,
+            },
+        );
+        while bulk.bit + 64 < bytes.len() * 8 {
+            let count = (random() % 65) as usize;
+            let expected = (0..count).fold(0, |value, _| value << 1 | u64::from(single.bit()));
+            assert_eq!(bulk.bits(count), expected, "{count} bits at {}", bulk.bit);
+            assert_eq!(bulk.bit, single.bit);
+            if random() % 3 == 0 {
+                assert_eq!(bulk.bit(), single.bit());
+            }
+        }
+    }
+
+    #[test]
+    fn bits_are_written_like_one_at_a_time() {
+        // One bit at a time, which writing in bulk must match.
+        fn reference(writer: &mut BitWriter, value: u64, count: usize) {
+            for shift in (0..count).rev() {
+                writer.bit(((value >> shift) & 1) != 0);
+            }
+        }
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..200 {
+            let (mut bulk, mut single) = (BitWriter::new(), BitWriter::new());
+            for _ in 0..200 {
+                let value = random();
+                match random() % 4 {
+                    0 => {
+                        let bit = value & 1 == 1;
+                        bulk.bit(bit);
+                        single.bit(bit);
+                    }
+                    1 => {
+                        bulk.byte(value as u8);
+                        single.byte(value as u8);
+                    }
+                    _ => {
+                        let count = (random() % 65) as usize;
+                        bulk.bits(value, count);
+                        reference(&mut single, value, count);
+                    }
+                }
+                assert_eq!((&bulk.bytes, bulk.free), (&single.bytes, single.free));
+            }
+        }
+    }
 
     #[test]
     fn appender_matches_batch_encoding_and_round_trips() {

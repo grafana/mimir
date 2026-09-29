@@ -74,6 +74,10 @@ name = "cold_query"
 harness = false
 
 [[bench]]
+name = "ooo_merge"
+harness = false
+
+[[bench]]
 name = "segment_codec"
 harness = false
 
