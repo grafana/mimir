@@ -1,8 +1,7 @@
 //! CPU per sample on the steady-state Kafka path: small records for series the store already
 //! has, decoded, logged to the segment log and applied in small batches, like a caught-up pod.
 //!
-//! `cargo bench --bench steady_ingest` (`STEADY_SERIES`, `STEADY_ROUNDS` to resize,
-//! `STEADY_BATCHES=1,8` for the records per batch).
+//! `cargo bench --bench steady_ingest` (`STEADY_SERIES`, `STEADY_ROUNDS` to resize).
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -146,10 +145,7 @@ fn ingest(
             })
             .collect();
         let started = Instant::now();
-        // Like the applier: the store's threads only for full batches, which records waited for.
-        store
-            .ingest_flushes_on(prepared, group.len() >= 64)
-            .unwrap();
+        store.ingest_flushes(prepared).unwrap();
         let applied = Instant::now();
         for frame in frames {
             log.append_compressed(frame).unwrap();
@@ -184,13 +180,7 @@ fn main() {
         .as_millis() as i64;
     let start = now - (rounds as i64 + 2) * SCRAPE_MS;
     let directory = std::env::temp_dir().join(format!("steady-ingest-{}", std::process::id()));
-    let batches = std::env::var("STEADY_BATCHES").map_or(vec![1, 8], |batches| {
-        batches
-            .split(',')
-            .map(|batch| batch.trim().parse().expect("STEADY_BATCHES"))
-            .collect()
-    });
-    for batch in batches {
+    for batch in [1, 8] {
         let store =
             Store::with_shards(20 * 60 * 1000, None, Some(directory.clone()), 16, threads).unwrap();
         let (mut log, _) =
