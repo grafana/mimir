@@ -1,11 +1,13 @@
 pub mod chunk_disk;
 pub mod consistency;
 pub mod exemplars;
+pub mod exposition;
 pub mod histogram;
 pub mod kafka;
 pub mod labels;
 pub mod limits;
 pub mod metrics;
+pub mod native_histogram;
 pub mod ooo_merge;
 pub mod protection;
 pub mod proto;
