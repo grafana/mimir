@@ -766,6 +766,34 @@ impl ColdState {
             })
             .filter(move |series| series.has_data(start, end) && matches(series, matchers))
     }
+
+    /// Every candidate of `matchers` in the blocks overlapping `[start, end]`, unchecked, with its
+    /// block's tenant and index: for callers that check the time range and matchers themselves.
+    fn candidates<'a>(
+        &'a self,
+        tenant_id: &'a str,
+        matchers: &'a [CompiledMatcher],
+        start: i64,
+        end: i64,
+    ) -> impl Iterator<Item = (cold::ColdTenant<'a>, usize, cold::ColdSeries<'a>)> + 'a {
+        self.blocks
+            .iter()
+            .filter_map(move |block| {
+                let tenant = block.tenant(tenant_id)?;
+                block
+                    .overlaps(tenant_id, start, end)
+                    .then_some((block, tenant))
+            })
+            .flat_map(move |(block, tenant)| {
+                block
+                    .candidates(tenant_id, matchers)
+                    .into_iter()
+                    .map(move |index| {
+                        let index = index as usize;
+                        (tenant, index, tenant.series(index))
+                    })
+            })
+    }
 }
 
 fn cold_dir(directory: &std::path::Path, shard: usize) -> PathBuf {
@@ -2092,6 +2120,10 @@ impl Store {
         } else {
             (compiled, Vec::new())
         };
+        // Cold series are checked against the shard by each block's cached hashes, and against
+        // the other matchers by their labels.
+        let cold_labels = compile_matchers(&index_matchers)?;
+        let cold_shard = compile_matchers(&shard_matchers)?;
         let head = self.head_view(tenant_id);
         let pruned_before = self
             .pruned_before
@@ -2106,19 +2138,44 @@ impl Store {
         let per_shard = self.per_shard_with_cold(tenant_id, |tenant, disk, cold| {
             let mut counts = vec![[0_u64; 2]; blocks.len()];
             // Cold series, by labels: one may be in several blocks, and also back in memory.
-            let mut cold_series: HashMap<StoredLabels, Vec<ChunkMeta>> = HashMap::new();
-            for series in cold.matching(tenant_id, &lookup, scan_start, scan_end) {
-                let in_shard = shard.is_empty() || matches(&series, &shard);
+            // Hashed with hashbrown's default hasher: every head candidate looks itself up.
+            let mut cold_series: hashbrown::HashMap<StoredLabels, Vec<ChunkMeta>> =
+                hashbrown::HashMap::new();
+            let mut cold_bounds = Vec::new();
+            for (block_tenant, index, series) in
+                cold.candidates(tenant_id, &lookup, scan_start, scan_end)
+            {
+                let in_shard = cold_shard.is_empty()
+                    || in_query_shard(block_tenant.shard_hash(index), &cold_shard);
+                // Only index lookups count series outside the shard. Checked first: a hash
+                // comparison, where the rest decodes the series.
+                if !in_shard && !count_index {
+                    continue;
+                }
+                cold_bounds.clear();
+                cold_bounds.extend(
+                    series
+                        .chunks()
+                        .map(|chunk| (chunk.min_time, chunk.max_time)),
+                );
+                let overlaps = |lower: i64, upper: i64| {
+                    cold_bounds
+                        .iter()
+                        .any(|(min, max)| *min <= upper && *max >= lower)
+                };
+                if !overlaps(scan_start, scan_end) || !matches(&series, &cold_labels) {
+                    continue;
+                }
                 for (block, counts) in blocks.iter().zip(&mut counts) {
-                    if block.head || !series.has_data(block.lower, block.upper) {
+                    if block.head || !overlaps(block.lower, block.upper) {
                         continue;
                     }
                     counts[0] += u64::from(block.count_index);
-                    if in_shard && series.has_data(start.max(block.lower), end.min(block.upper)) {
+                    if in_shard && overlaps(start.max(block.lower), end.min(block.upper)) {
                         counts[1] += 1;
                     }
                 }
-                if in_shard && series.has_data(start, end) {
+                if in_shard && overlaps(start, end) {
                     cold_series.entry(series.labels()).or_default().extend(
                         series
                             .chunks()
@@ -2182,7 +2239,11 @@ impl Store {
                     if !in_shard {
                         return None;
                     }
-                    let cold_chunks = cold_series.remove(labels);
+                    let cold_chunks = if cold_series.is_empty() {
+                        None
+                    } else {
+                        cold_series.remove(labels)
+                    };
                     if cold_chunks.is_none() && !overlaps(start, end) {
                         return None;
                     }
@@ -4067,10 +4128,10 @@ thread_local! {
     // Per thread, since tests run in parallel and a query reads its store shards on its thread.
     static LABEL_VALUE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static CHUNK_BOUNDS_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static REGEX_COMPILES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // Cold blocks' tenants whose query shard hashes were computed.
+    static COLD_SHARD_HASHINGS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
-
-#[cfg(test)]
-static REGEX_COMPILES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A matcher's regex, anchored like Prometheus's. Queriers send the same few patterns with every
 /// request, and compiling them was an eighth of a busy ingester's CPU; like Go's matcher cache,
@@ -4083,7 +4144,7 @@ fn anchored_regex(pattern: &str) -> Result<Regex> {
         return Ok(regex.clone());
     }
     #[cfg(test)]
-    REGEX_COMPILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    REGEX_COMPILES.with(|compiles| compiles.set(compiles.get() + 1));
     let regex = Regex::new(&format!("^(?:{pattern})$"))?;
     let mut cache = CACHE.lock().expect("regex cache poisoned");
     if cache.len() >= CACHED_REGEXES {
@@ -4713,7 +4774,7 @@ mod tests {
             value: value.into(),
         };
         let pattern = "api-[0-9]+-compiled-once";
-        let compiles = || REGEX_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+        let compiles = || REGEX_COMPILES.with(std::cell::Cell::get);
         let before = compiles();
         for _ in 0..3 {
             let compiled = compile_matchers(&[matcher(pattern)]).unwrap();
@@ -4723,8 +4784,7 @@ mod tests {
                 "anchored"
             );
         }
-        // Other tests compile regexes in parallel, but not this pattern.
-        assert!(compiles() - before < 3);
+        assert_eq!(compiles() - before, 1);
         assert!(compile_matchers(&[matcher("(")]).is_err());
     }
 
@@ -5062,6 +5122,123 @@ mod tests {
         assert_eq!(pusher.count(2 * 200 * 150 * 40, 150), 2);
         assert_eq!(pusher.count(usize::MAX, 150), 2);
         assert_eq!(pusher.count(usize::MAX, 0), 1);
+    }
+
+    #[test]
+    fn sharded_reads_of_cold_series_match_the_head() {
+        let directory =
+            std::env::temp_dir().join(format!("mimir-rust-cold-shards-{}", std::process::id()));
+        let store = Store::new(20 * 60 * 1000, None, Some(directory.clone())).unwrap();
+        let start = 10 * HOUR;
+        let mut request = series_request(
+            "long",
+            (0..=300).map(|minute| (start + minute * 60_000, minute as f64)),
+        );
+        // Every 15 s, so old series have several chunks.
+        for (name, count, quarters) in [("old", 60, 0..400), ("middle", 20, 600..640)] {
+            for n in 0..count {
+                let mut series = series_request(
+                    name,
+                    quarters
+                        .clone()
+                        .map(|quarter| (start + quarter * 15_000, f64::from(n))),
+                )
+                .series
+                .remove(0);
+                series.labels.push(("n".into(), n.to_string().into()));
+                request.series.push(series);
+            }
+        }
+        store.ingest("tenant", request).unwrap();
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        let shard =
+            |index: u64, count: u64| matcher(0, "__query_shard__", &format!("{index}_of_{count}"));
+        let mut queries = vec![vec![matcher(0, "__name__", "old")], vec![]];
+        for index in 1..=4 {
+            queries.push(vec![matcher(0, "__name__", "old"), shard(index, 4)]);
+            queries.push(vec![matcher(2, "n", "1.*"), shard(index, 4)]);
+            queries.push(vec![
+                matcher(0, "__name__", "middle"),
+                matcher(0, "n", "3"),
+                shard(index, 4),
+            ]);
+        }
+        for index in 1..=3 {
+            queries.push(vec![shard(index, 3)]);
+        }
+        type Read = (Vec<(Vec<u8>, Vec<Vec<u8>>)>, Vec<(String, u64, u64)>);
+        let reads = |store: &Store| -> Vec<Read> {
+            let mut reads = Vec::new();
+            for matchers in &queries {
+                // Everything, part of old's chunks, a block range after old's samples, the head.
+                for (from, to) in [
+                    (i64::MIN, i64::MAX),
+                    (start + 30 * 60_000, start + 40 * 60_000),
+                    (start + 105 * 60_000, start + 115 * 60_000),
+                    (start + 2 * HOUR, start + 5 * HOUR),
+                ] {
+                    let (series, blocks) = store
+                        .select_chunks_with_blocks("tenant", from, to, matchers)
+                        .unwrap();
+                    reads.push((
+                        series
+                            .iter()
+                            .map(|view| {
+                                (
+                                    view.encoded_labels.to_vec(),
+                                    view.chunks[view.chunk_start..view.chunk_end]
+                                        .iter()
+                                        .map(|chunk| chunk.wire.to_vec())
+                                        .collect(),
+                                )
+                            })
+                            .collect(),
+                        blocks
+                            .into_iter()
+                            .map(|block| (block.generation, block.index_series, block.series))
+                            .collect(),
+                    ));
+                }
+            }
+            reads
+        };
+        store.head_tick(true, false);
+        let before = reads(&store);
+        assert_eq!(store.num_series("tenant"), 81);
+        // The first range of the first sharded query: old with shard 1 of 4.
+        let sharded_old = &before[8];
+        assert!(sharded_old.0.iter().all(|(_, chunks)| chunks.len() > 1));
+        assert!(
+            !sharded_old.0.is_empty() && sharded_old.0.len() < 60,
+            "a shard of old"
+        );
+        store.head_tick(false, false);
+        assert_eq!(store.num_series("tenant"), 21, "old left memory");
+        let hashings = || COLD_SHARD_HASHINGS.with(std::cell::Cell::get);
+        let hashed = hashings();
+        assert_eq!(reads(&store), before);
+        // Each block's shard hashes are computed once, not for every sharded query.
+        assert!(hashings() > hashed);
+        let hashed = hashings();
+        assert_eq!(reads(&store), before);
+        assert_eq!(hashings(), hashed);
+        store
+            .write_snapshot(&[SnapshotOffset {
+                offset: Some(1),
+                timestamp_ms: 1,
+            }])
+            .unwrap();
+        drop(store);
+        let store = Store::restore(20 * 60 * 1000, None, &directory, 2)
+            .unwrap()
+            .unwrap()
+            .store;
+        assert_eq!(reads(&store), before);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
