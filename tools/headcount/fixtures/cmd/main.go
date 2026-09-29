@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/tools/headcount/cardgen"
 	"github.com/grafana/mimir/tools/headcount/fixtures"
 	"github.com/grafana/mimir/tools/headcount/model"
+	"github.com/grafana/mimir/tools/headcount/truth"
 )
 
 func main() {
@@ -59,6 +60,23 @@ func main() {
 	log.Printf("l1:        %s", result.L1)
 	log.Printf("handover:  %s", result.Handover)
 	log.Printf("compacted: %s", result.Compacted)
+
+	// Ground-truth cross-check: a hash-deduplicated read of the on-disk
+	// blocks must agree with the population that generated them. This
+	// catches a cardgen or compactor bug that a snapshot-shape check alone
+	// (fixtures.Build's own level assertions) wouldn't: the right blocks in
+	// the right shape, but the wrong series in them.
+	want := pop.Truth(nil, p.Population.Start.UnixMilli(), p.Population.End.UnixMilli())
+	for name, dir := range map[string]string{"l1": result.L1, "compacted": result.Compacted} {
+		got, err := truth.CountDistinctSeries(dir)
+		if err != nil {
+			log.Fatalf("cross-checking %s: %v", name, err)
+		}
+		if got != want {
+			log.Fatalf("cross-check FAILED for %s: model truth=%d, on-disk distinct series=%d", name, want, got)
+		}
+		log.Printf("cross-check passed for %s: %d series", name, got)
+	}
 }
 
 // buildMimir compiles the mimir binary this worktree's cmd/mimir points at,
