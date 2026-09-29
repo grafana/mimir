@@ -266,8 +266,8 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 			continue
 		}
 		// Like the Go ingester, which is ready once it consumed its partition up to the latest
-		// offset whatever the partition's state: the Rust port opens only then. A partition this
-		// pod may not own, missing or inactive, leaves it nothing to register.
+		// offset whatever the partition's state: the Rust port opens only then. A partition the Go
+		// ingesters haven't created leaves it nothing to register.
 		if !mayOwnPartition(ctx, cfg, partitionClient) {
 			ready.Store(true)
 			wait(ctx, cfg.pollInterval)
@@ -321,7 +321,7 @@ func manage(ctx context.Context, cfg config, instanceClient, partitionClient kv.
 }
 
 // A shared partition ring belongs to the Go ingesters: an extra owner must never make a partition
-// ACTIVE, and must not keep an INACTIVE partition alive after Go's owners leave.
+// ACTIVE.
 func waitOwnersOnPending(cfg config) int {
 	if cfg.sharedRing {
 		return math.MaxInt32
@@ -329,6 +329,10 @@ func waitOwnersOnPending(cfg config) int {
 	return 1
 }
 
+// In the shared ring, the pod owns its partition while the Go ingesters' partition exists, whatever
+// its state, like the Go ingesters: an INACTIVE partition still serves reads until its pods are
+// scaled down, and the rollout operator's delayed downscale asks this pod's partition lifecycler.
+// It leaves the partition when scaled down itself, which removes its ownership.
 func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client) bool {
 	if !cfg.sharedRing {
 		return true
@@ -337,8 +341,8 @@ func mayOwnPartition(ctx context.Context, cfg config, partitionClient kv.Client)
 	if err != nil || value == nil {
 		return false
 	}
-	partition, exists := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
-	return exists && partition.State != ring.PartitionInactive
+	_, exists := value.(*ring.PartitionRingDesc).Partitions[int32(cfg.partition)]
+	return exists
 }
 
 type lifecycleState struct {
