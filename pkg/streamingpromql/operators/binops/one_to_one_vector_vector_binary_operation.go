@@ -65,7 +65,7 @@ import (
 // no left series of the group does, the evaluator synthesises a left operand from the fill value.
 //
 // For most operators the synthesised point carries the same output labels as any other point in the
-// group. computeResult adds it to the result inline (missingLeftInResult mode).
+// group. computeResult adds it to the main result.
 //
 // For name-retaining comparison filters (e.g. "a > fill_left(0) b") with ignoring()/without
 // matching, the output labels differ between a both-present step (keeps the left metric name) and a
@@ -79,7 +79,7 @@ import (
 //
 // A group has exactly one set of fill-left points (fill applies only when no left series has a
 // sample). The operator computes them on the last matched read of the group only. Earlier matched
-// reads skip the fill-left branch (missingLeftSkip) to avoid emitting spurious points or
+// reads skip the fill-left branch to avoid spurious points or
 // annotations. The last matched read uses missingLeftSeparate mode and stores the fill-left points
 // in the split holder. sortSeries places the last matched read before the name-dropped sibling,
 // which then takes the points from the holder.
@@ -186,7 +186,7 @@ type oneToOneBinaryOperationFillState struct {
 // left-absent even when another left series of the group has a sample there. Only the last of those
 // reads has the complete left-side presence of the group. Only that read can decide which steps the
 // left fill applies to. Every earlier read therefore skips the fill-left branch (see
-// fillLeftOptionsFor).
+// missingLeftOptionsFor).
 //
 // A group whose fill-left carrier is one of its matched output series has no name-dropped sibling.
 // That carrier emits the group's fill-left points itself, so the holder stays empty and only marks
@@ -1389,9 +1389,10 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		rightData = rightSide.mergedData
 	}
 
-	fillLeft := b.fillLeftOptionsFor(thisSeries, rightSide, isLastUseOfRightSide)
+	missingLeft := b.missingLeftOptionsFor(thisSeries, rightSide, isLastUseOfRightSide)
 
-	finalResult, fillLeftResult, err := b.evaluator.computeResult(mergedLeftSide, rightData, true, isLastUseOfRightSide, fillLeft)
+	options := computeResultOptions{missingLeft: missingLeft}
+	finalResult, fillLeftResult, err := b.evaluator.computeResult(mergedLeftSide, rightData, true, isLastUseOfRightSide, options)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -1401,7 +1402,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return finalResult, nil
 	}
 
-	if fillLeft.mode == missingLeftSeparate {
+	if missingLeft.mode == missingLeftSeparate {
 		// This is the last matched read of a split group, so fillLeftResult holds the group's fill-left
 		// points.
 		if fillLeftCarrier {
@@ -1428,7 +1429,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	return finalResult, nil
 }
 
-// fillLeftOptionsFor returns the fill-left instructions for one read of thisSeries.
+// missingLeftOptionsFor returns the missing-left instructions for one series read.
 //
 // A read that is not part of a name-retaining fill-left split group gets the zero value. The
 // evaluator then adds every kept fill-left point to the main result.
@@ -1446,16 +1447,16 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 // the group covers. rightSide.leftSidePresence is nil when only one output series uses the group's
 // right side. The group then has a single matched output series. The left side of this read is
 // therefore the whole left side of the group, and the evaluator skips no step.
-func (b *OneToOneVectorVectorBinaryOperation) fillLeftOptionsFor(thisSeries *oneToOneBinaryOperationOutputSeries, rightSide *oneToOneBinaryOperationRightSide, isLastUseOfRightSide bool) fillLeftOptions {
+func (b *OneToOneVectorVectorBinaryOperation) missingLeftOptionsFor(thisSeries *oneToOneBinaryOperationOutputSeries, rightSide *oneToOneBinaryOperationRightSide, isLastUseOfRightSide bool) missingSideOptions {
 	if thisSeries.fill == nil || thisSeries.fill.splitHolder == nil {
-		return fillLeftOptions{mode: missingLeftInResult}
+		return missingSideOptions{mode: missingInResult}
 	}
 
 	if !isLastUseOfRightSide {
-		return fillLeftOptions{mode: missingLeftSkip}
+		return missingSideOptions{mode: missingSkip}
 	}
 
-	return fillLeftOptions{mode: missingLeftSeparate, leftSidePresence: rightSide.leftSidePresence}
+	return missingSideOptions{mode: missingLeftSeparate, groupPresence: rightSide.leftSidePresence}
 }
 
 // mergeGroupFillLeftPoints merges the fill-left points of a match group into the result of the
@@ -1511,7 +1512,7 @@ func (b *OneToOneVectorVectorBinaryOperation) nextFilledLeftSeries(ctx context.C
 	// at every right timestep, through the same per-timestep fill path used for intermittently matched
 	// groups. This is a fill-left-only output series; its labels already have no metric name, so the
 	// split path is not needed.
-	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, false, isLastUseOfRightSide, fillLeftOptions{})
+	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, false, isLastUseOfRightSide, computeResultOptions{})
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
