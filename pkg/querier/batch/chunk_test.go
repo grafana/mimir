@@ -36,11 +36,11 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	ch := mkChunk(t, 0, 100, encoding)
 	iter := &chunkIterator{}
 
-	iter.reset(ch)
-	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
+	iter.reset(ch, IteratorOptions{})
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels(), IteratorOptions{}), encoding)
 
-	iter.reset(ch)
-	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
+	iter.reset(ch, IteratorOptions{})
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels(), IteratorOptions{}), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -258,7 +258,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram], _ *zeropool.Pool[*[chunk.BatchSize]int64]) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,
@@ -290,7 +290,7 @@ func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
 	chk := chunk.NewChunk(labels.EmptyLabels(), encoded, model.Time(chunkTimestamps[0]), model.Time(chunkTimestamps[len(chunkTimestamps)-1]))
 
 	it := &chunkIterator{}
-	it.reset(chk)
+	it.reset(chk, IteratorOptions{})
 
 	require.Equal(t, chunkenc.ValFloat, it.Next(2))
 	require.Equal(t, int64(50), it.AtTime())

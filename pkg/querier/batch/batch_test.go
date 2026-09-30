@@ -49,7 +49,7 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 					fh *histogram.FloatHistogram
 				)
 				for n := 0; n < b.N; n++ {
-					it = NewChunkMergeIterator(it, lbls, chunks)
+					it = NewChunkMergeIterator(it, lbls, chunks, IteratorOptions{})
 					for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 						switch valType {
 						case chunkenc.ValFloat:
@@ -78,7 +78,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
-	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
+	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks, IteratorOptions{})
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
 	require.Equal(t, chunkenc.ValFloat, sut.Next())
@@ -114,7 +114,7 @@ func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWith
 			model.SamplePair{Timestamp: 1720588092946, Value: 875741.198983},
 			model.SamplePair{Timestamp: 1720588152848, Value: 30455667.651284}, // Clashing sample.
 		),
-	})
+	}, IteratorOptions{})
 
 	second := NewChunkMergeIterator(nil, metric, []chunk.Chunk{
 		createEncodedChunk(t, metric,
@@ -125,7 +125,7 @@ func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWith
 			model.SamplePair{Timestamp: 1720588148418, Value: 23084.411222},
 			model.SamplePair{Timestamp: 1720588152848, Value: 30455667.651284}, // Clashing sample.
 		),
-	})
+	}, IteratorOptions{})
 
 	assert.Equal(t, iterateEncodedChunks(t, first), iterateEncodedChunks(t, second))
 }
