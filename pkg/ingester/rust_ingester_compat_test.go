@@ -916,6 +916,42 @@ func TestRustCompatHeadCompaction(t *testing.T) {
 	)
 }
 
+// Regex matchers compile like Prometheus's: `.` matches newlines, and a pattern that only parses
+// inside the anchors' group is rejected rather than matched unanchored.
+func TestRustCompatRegexMatchers(t *testing.T) {
+	now := ms(time.Now())
+	ingesters := startCompatIngesters(t, compatSetup{limits: defaultLimitsTestConfig()}, func(tb testing.TB, cfg ingest.KafkaConfig) int64 {
+		write, last := compatProducer(tb, cfg)
+		var series []mimirpb.PreallocTimeseries
+		for _, message := range []string{"first\nsecond", "plain", "b"} {
+			ts := compatSeries("logs", mimirpb.Sample{TimestampMs: now - 1000, Value: 1})
+			ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: "message", Value: message})
+			series = append(series, ts)
+		}
+		write("tenant", &mimirpb.WriteRequest{Timeseries: series})
+		return last()
+	})
+	for _, matcher := range []*client.LabelMatcher{
+		parityMatcher(client.REGEX_MATCH, "message", "first.second"),
+		parityMatcher(client.REGEX_MATCH, "message", ".*"),
+		parityMatcher(client.REGEX_MATCH, "message", "(?-s:first.second)"),
+		parityMatcher(client.REGEX_NO_MATCH, "message", "f.*"),
+	} {
+		request := parityRequest(0, now, parityMatcher(client.EQUAL, "__name__", "logs"), matcher)
+		goSeries := paritySeries(t, ingesters.goSide.api, parityContext("tenant", ingesters.goSide.offset), request)
+		rustSeries := paritySeries(t, ingesters.rustSide.api, parityContext("tenant", ingesters.rustSide.offset), request)
+		require.Equal(t, goSeries, rustSeries, "%v", matcher)
+	}
+	request := parityRequest(0, now, parityMatcher(client.REGEX_MATCH, "message", "a)|(b"))
+	for _, side := range []compatSide{ingesters.goSide, ingesters.rustSide} {
+		stream, err := side.api.QueryStream(parityContext("tenant", side.offset), request)
+		if err == nil {
+			_, err = stream.Recv()
+		}
+		require.Error(t, err, "a)|(b is not a valid matcher")
+	}
+}
+
 // Queries count the series, samples and exemplars they return alike.
 func TestRustCompatQueryMetrics(t *testing.T) {
 	limits := defaultLimitsTestConfig()
