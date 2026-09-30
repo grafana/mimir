@@ -551,7 +551,7 @@ func isEitherBinaryExpressionSideEmptyWithFill(node *core.BinaryExpression, para
 		return false, err
 	}
 
-	lhsFillSet := node.VectorMatching != nil && node.VectorMatching.FillValues.LhsSet
+	lhsFillSet, rhsFillSet := binaryExpressionSyntacticFillSides(node)
 	if lhsEmpty && !lhsFillSet {
 		return true, nil
 	}
@@ -561,12 +561,24 @@ func isEitherBinaryExpressionSideEmptyWithFill(node *core.BinaryExpression, para
 		return false, err
 	}
 
-	rhsFillSet := node.VectorMatching != nil && node.VectorMatching.FillValues.RhsSet
 	if rhsEmpty && !rhsFillSet {
 		return true, nil
 	}
 
 	return false, nil
+}
+
+func binaryExpressionSyntacticFillSides(node *core.BinaryExpression) (lhsFillSet, rhsFillSet bool) {
+	if node.VectorMatching == nil {
+		return false, false
+	}
+
+	fillValues := node.VectorMatching.FillValues
+	if node.VectorMatching.Card == parser.CardOneToMany {
+		return fillValues.RhsSet, fillValues.LhsSet
+	}
+
+	return fillValues.LhsSet, fillValues.RhsSet
 }
 
 // isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent

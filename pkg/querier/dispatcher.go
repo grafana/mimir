@@ -136,11 +136,13 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	}
 
 	nodeIndices := make([]int64, 0, len(req.Nodes))
+	nodeTimeRanges := make([]types.QueryTimeRange, 0, len(req.Nodes))
 	for _, node := range req.Nodes {
 		nodeIndices = append(nodeIndices, node.NodeIndex)
+		nodeTimeRanges = append(nodeTimeRanges, node.TimeRange.Decode())
 	}
 
-	nodes, err := req.Plan.DecodeNodes(nodeIndices...)
+	nodes, err := req.Plan.DecodeNodesWithTimeRanges(nodeIndices, nodeTimeRanges)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
@@ -152,7 +154,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	for idx, node := range nodes {
 		nodeRequests = append(nodeRequests, streamingpromql.NodeEvaluationRequest{
 			Node:      node,
-			TimeRange: req.Nodes[idx].TimeRange.Decode(),
+			TimeRange: nodeTimeRanges[idx],
 		})
 
 		nodeToIndexMap[node] = req.Nodes[idx].NodeIndex
