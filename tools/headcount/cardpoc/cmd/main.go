@@ -113,9 +113,29 @@ func runSnapshots(dir string, pop *model.Model, experiments []string, out string
 				if err != nil {
 					log.Fatalf("E9 (K=%d): %v", k, err)
 				}
-				fmt.Printf("%s E9 K=%d: %d above, %d naive misses\n", status(r.Pass()), k, len(r.Above), len(r.NaiveMisses))
+				fmt.Printf("%s E9 sum-of-cutoffs K=%d: %d above, %d naive misses\n", status(r.Pass()), k, len(r.Above), len(r.NaiveMisses))
 				fmt.Print(r.Details())
 				pass = pass && r.Pass()
+				for _, dedup := range []bool{false, true} {
+					tr, err := cardpoc.RunE9TPUT(compacted, pop, k, e9TopN, dedup)
+					if err != nil {
+						log.Fatalf("E9 TPUT (K=%d): %v", k, err)
+					}
+					mode := "tput"
+					if dedup {
+						mode = "tput-dedup"
+					}
+					fmt.Printf("%s E9 %s K=%d: T=%d, round-1 entries=%d, round-2 entries=%d, exact counts=%d, missed=%d\n",
+						status(tr.Pass()), mode, k, tr.Threshold, tr.Round1Entries, tr.Round2Entries, tr.ExactNames, len(tr.Missed()))
+					for i, e := range tr.Answer {
+						var truth cardpoc.TopNEntry
+						if i < len(tr.Truth) {
+							truth = tr.Truth[i]
+						}
+						fmt.Printf("  #%d answer %-14s %-7d truth %-14s %d\n", i+1, shortName(e.Name), e.Count, shortName(truth.Name), truth.Count)
+					}
+					pass = pass && tr.Pass()
+				}
 			}
 		case "e10":
 			r, err := runE10(compacted, pop, budget)
