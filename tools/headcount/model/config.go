@@ -29,6 +29,12 @@ type Config struct {
 	SeriesZipfS float64
 	// SeriesFloor and SeriesCap bound the series count for any one name.
 	SeriesFloor, SeriesCap uint64
+	// FixedSeries, if set, overrides the Zipf draw for the first
+	// len(FixedSeries) metric names: name i gets FixedSeries[i] series.
+	// It builds populations with many names near a counting threshold,
+	// which a Zipf draw bounded by SeriesCap never produces. The spike
+	// metric ignores it. Optional.
+	FixedSeries []uint64
 
 	// ChurnFraction is the fraction of each metric's series whose "pod" label
 	// value is periodically replaced, splitting one logical workload into a
@@ -90,6 +96,13 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("churn fraction must be in [0, 1], got %g", cfg.ChurnFraction)
 	case cfg.StaleFraction < 0 || cfg.StaleFraction > 1:
 		return fmt.Errorf("stale fraction must be in [0, 1], got %g", cfg.StaleFraction)
+	case len(cfg.FixedSeries) > cfg.MetricNames:
+		return fmt.Errorf("fixed series has %d entries, more than %d metric names", len(cfg.FixedSeries), cfg.MetricNames)
+	}
+	for i, n := range cfg.FixedSeries {
+		if n == 0 {
+			return fmt.Errorf("fixed series count for metric %d must be positive", i)
+		}
 	}
 	return nil
 }
