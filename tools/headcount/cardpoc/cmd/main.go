@@ -29,7 +29,7 @@ func main() {
 	snapshots := flag.String("snapshots", "", "directory holding the l1, handover and compacted snapshots from tools/headcount/fixtures")
 	profile := flag.String("profile", "small", fmt.Sprintf("with -snapshots: the profile the snapshots were built from, one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "with -snapshots: the seed the snapshots were built with")
-	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e9, e10, names and all")
+	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e9, e10, e13, names and all")
 	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
 	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
 	flag.Parse()
@@ -145,6 +145,23 @@ func runSnapshots(dir string, pop *model.Model, experiments []string, out string
 					r.SnappedCount, r.TruthSnapped, r.SnappedTime.Round(time.Millisecond),
 					r.CheckedCount, r.Truth, r.TruthWidened, r.CheckedSeries, r.CheckedTime.Round(time.Millisecond))
 				pass = pass && r.Pass()
+			}
+		case "e13":
+			for _, snap := range []string{l1, compacted} {
+				tables, err := cardpoc.MeasureNameTables(snap)
+				if err != nil {
+					log.Fatalf("E13: %v", err)
+				}
+				var names int
+				var nameBytes, tableBytes int64
+				for _, tbl := range tables {
+					names += tbl.Names
+					nameBytes += tbl.Bytes
+					tableBytes += tbl.TableBytes
+				}
+				fmt.Printf("E13 %s: %d blocks, %.0f names per block, %.1f bytes per name, name entries %.1f MiB of %.1f MiB postings offset tables\n",
+					filepath.Base(snap), len(tables), float64(names)/float64(len(tables)), float64(nameBytes)/float64(names),
+					float64(nameBytes)/(1<<20), float64(tableBytes)/(1<<20))
 			}
 		case "names":
 			if err := runNames(compacted, pop, out); err != nil {
