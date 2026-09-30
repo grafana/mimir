@@ -79,8 +79,8 @@ func IndexHeadersOnDisk(blockDir string) ([]OnDiskIndexHeader, error) {
 	return headers, nil
 }
 
-// removeIndexHeaderVersions removes every given index-header file in blockDir.
-func removeIndexHeaderVersions(blockDir string, versionsToRemove ...OnDiskIndexHeader) error {
+// removeIndexHeaders removes every given index-header file in blockDir.
+func removeIndexHeaders(blockDir string, versionsToRemove ...OnDiskIndexHeader) error {
 	for _, h := range versionsToRemove {
 		if filepath.Dir(h.Path) != blockDir {
 			return fmt.Errorf("index-header %s is not located within block directory %s", h.Path, blockDir)

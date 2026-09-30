@@ -148,7 +148,7 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
 		// Remove any existing index-header versions not required by the current config
-		if err = removeIndexHeaderVersions(localBlockDir, headers...); err != nil {
+		if err = removeIndexHeaders(localBlockDir, headers...); err != nil {
 			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
 		}
 	}
@@ -160,8 +160,8 @@ func NewStreamBinaryReader(
 	)
 	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
-	if err != nil || ((indexHeaderVersion == BinaryFormatV2) != cfg.BucketReader.Enabled) {
-		if err = removeIndexHeaderVersions(localBlockDir, headers...); err != nil {
+	if err != nil || indexHeaderVersion != requiredIndexHeaderVersion(cfg) {
+		if err = removeIndexHeaders(localBlockDir, headers...); err != nil {
 			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
 		}
 		// TOC read checks CRC32; assume a failure here is either due to a file corruption.
@@ -234,8 +234,10 @@ func NewStreamBinaryReader(
 	}
 
 	// Required index-header section(s) are now on disk.
-	// If we previously failed to load the sparse index-header, build it now from full header.
-	// If the bucket reader is enabled, the postings offsets sparse index-header is built from the index header in the bucket.
+	// If we previously failed to load the sparse index-header, build it now from the index-header.
+	// If the bucket reader is enabled, the postings offsets sparse index-header is built from the index-header in the bucket.
+	// This may be slow, which is why when the bucket-reader is enabled,
+	// we offload building the sparse index-header to the block builder and compactor.
 	if !sparseHeaderLoaded {
 		start := time.Now()
 		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(

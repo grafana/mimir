@@ -29,7 +29,7 @@ type ReaderPoolMetrics struct {
 	streamReader *StreamBinaryReaderMetrics
 
 	// onDiskVersion reports the index-header version on disk when a binary reader is set up,
-	// and decremented immediately before a block's directory is actually removed from disk.
+	// and is decremented immediately before a block's directory is actually removed from disk.
 	// It is NOT decremented on reader close, since reader close doesn't remove the index-header from disk.
 	onDiskVersion *prometheus.GaugeVec
 }

@@ -81,7 +81,7 @@ func TestIndexHeadersOnDisk(t *testing.T) {
 	})
 }
 
-func TestRemoveIndexHeaderVersions(t *testing.T) {
+func TestRemoveIndexHeaders(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		extantFiles            []string
@@ -140,7 +140,7 @@ func TestRemoveIndexHeaderVersions(t *testing.T) {
 				writeFile(t, filepath.Join(outsideDir, f), "content")
 			}
 
-			err := removeIndexHeaderVersions(blockDir, tc.toRemove(blockDir, outsideDir)...)
+			err := removeIndexHeaders(blockDir, tc.toRemove(blockDir, outsideDir)...)
 			if tc.wantErr {
 				require.Error(t, err)
 			} else {
