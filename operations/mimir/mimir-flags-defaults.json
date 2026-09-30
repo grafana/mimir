@@ -901,6 +901,7 @@
   "blocks-storage.bucket-store.batch-series-size": 5000,
   "blocks-storage.bucket-store.series-fetch-preference": 0.75,
   "blocks-storage.tsdb.dir": "./tsdb/",
+  "blocks-storage.tsdb.engine": "prometheus",
   "blocks-storage.tsdb.retention-period": 46800000000000,
   "blocks-storage.tsdb.ship-interval": 60000000000,
   "blocks-storage.tsdb.ship-concurrency": 10,

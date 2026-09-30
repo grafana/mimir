@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -979,5 +980,63 @@ func TestEngineConflictingDuplicates(t *testing.T) {
 	for _, head := range heads {
 		require.NoError(t, head.CompactOOOHead(context.Background()))
 		require.Equal(t, 1.0, read(head))
+	}
+}
+
+// Like Mimir's ingesters without shipping, retention counts from when a block was written, not from
+// its samples' times: old samples stay until their block is older than the retention period.
+func TestEngineRetentionCountsFromBlockCreation(t *testing.T) {
+	samples := func(e *Engine) []int64 {
+		q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "m"))
+		var got []int64
+		for set.Next() {
+			chunkIt := set.At().Iterator(nil)
+			for chunkIt.Next() {
+				it := chunkIt.At().Chunk.Iterator(nil)
+				for it.Next() == chunkenc.ValFloat {
+					ts, _ := it.At()
+					got = append(got, ts)
+				}
+			}
+		}
+		return got
+	}
+	for name, retention := range map[string]int64{"kept within the retention": time.Hour.Milliseconds(), "expired after it": 1} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			e, err := OpenEngine(dir, "user", EngineOptions{Shards: 2, TimelyCompaction: true, RetentionMs: retention})
+			require.NoError(t, err)
+			app := e.Appender(context.Background())
+			lset := promlabels.FromStrings("__name__", "m")
+			ref, err := app.Append(0, lset, 0, 1)
+			require.NoError(t, err)
+			_, err = app.Append(ref, lset, 1, 2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			// Across a restart too, which restores the blocks' creation times.
+			require.NoError(t, e.Close())
+			e, err = OpenEngine(dir, "user", EngineOptions{Shards: 2, TimelyCompaction: true, RetentionMs: retention})
+			require.NoError(t, err)
+			defer e.Close()
+			// Retention doesn't touch the head, only blocks.
+			require.NoError(t, e.Compact(context.Background()))
+			require.Equal(t, []int64{0, 1}, samples(e))
+			// Like the ingester's forced compaction.
+			require.NoError(t, e.CompactHead(0, 1))
+			require.NoError(t, e.Compact(context.Background()))
+			if retention > 5 {
+				require.Equal(t, []int64{0, 1}, samples(e), "a block just written keeps its samples")
+			}
+			time.Sleep(5 * time.Millisecond)
+			require.NoError(t, e.Compact(context.Background()))
+			if retention > 5 {
+				require.Equal(t, []int64{0, 1}, samples(e))
+			} else {
+				require.Empty(t, samples(e), "the block is older than the retention")
+			}
+		})
 	}
 }

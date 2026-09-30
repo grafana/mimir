@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,6 +26,9 @@ type emulatedBlock struct {
 	outOfOrder bool
 	// Its series' label hashes, sorted: a block holds label sets, whichever series ref wrote them.
 	series []uint64
+	// When it was written: Mimir's ingesters without shipping delete a block once it was written
+	// longer than the retention period ago, whatever its samples' times.
+	createdMs int64
 }
 
 // overlaps is Prometheus's Block.OverlapsClosedInterval.
@@ -56,13 +60,26 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder bool, holds func(
 		return false
 	}
 	slices.Sort(hashes)
-	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, series: slices.Compact(hashes)}
+	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, series: slices.Compact(hashes), createdMs: nowMs()}
 	home, t := e.home()
 	home.Lock()
 	// Appending never changes the elements a lookup's copy of the slice reads.
 	t.blocks = append(t.blocks, block)
 	home.Unlock()
 	return true
+}
+
+// expiredBefore is the time before which data goes: the end of the newest in-order block written
+// before deadline, or math.MinInt64 when there's none. Out-of-order blocks go with the in-order
+// data they overlap, which Mimir keeps until they expire themselves.
+func expiredBefore(blocks []emulatedBlock, deadline int64) int64 {
+	cutoff := int64(math.MinInt64)
+	for _, block := range blocks {
+		if !block.outOfOrder && block.createdMs < deadline {
+			cutoff = max(cutoff, block.maxTime)
+		}
+	}
+	return cutoff
 }
 
 // pruneBlocks drops the blocks whose data is all older than cutoff, into a new slice: lookups may
@@ -118,7 +135,9 @@ func (e *Engine) oooIn(shard int, series *Series, start, end int64) bool {
 // out-of-order head.
 const (
 	engineStateFileName = "engine-state"
-	engineStateMagic    = "SSENGINE1"
+	engineStateMagic    = "SSENGINE2"
+	// Without the blocks' creation times, which a restore then sets to its own time.
+	engineStateMagicV1 = "SSENGINE1"
 )
 
 // writeState saves the out-of-order head's watermarks and bounds and the blocks, for the next Open.
@@ -151,6 +170,7 @@ func (e *Engine) writeState() error {
 		for _, hash := range block.series {
 			buf = binary.LittleEndian.AppendUint64(buf, hash)
 		}
+		buf = binary.AppendVarint(buf, block.createdMs)
 	}
 	home.RUnlock()
 	buf = binary.LittleEndian.AppendUint32(buf, crc32.ChecksumIEEE(buf))
@@ -181,7 +201,8 @@ func takeState(dir string) ([]byte, error) {
 
 // restoreState applies a state takeState read; the head was restored with it.
 func (e *Engine) restoreState(buf []byte) error {
-	if len(buf) < len(engineStateMagic)+4 || !bytes.HasPrefix(buf, []byte(engineStateMagic)) {
+	withCreation := bytes.HasPrefix(buf, []byte(engineStateMagic))
+	if len(buf) < len(engineStateMagic)+4 || !withCreation && !bytes.HasPrefix(buf, []byte(engineStateMagicV1)) {
 		return errors.New("engine state: bad magic")
 	}
 	body := buf[:len(buf)-4]
@@ -245,6 +266,12 @@ func (e *Engine) restoreState(buf []byte) error {
 				return err
 			}
 			block.series[i] = binary.LittleEndian.Uint64(raw[:])
+		}
+		block.createdMs = nowMs()
+		if withCreation {
+			if block.createdMs, err = binary.ReadVarint(r); err != nil {
+				return err
+			}
 		}
 		blocks = append(blocks, block)
 	}

@@ -476,6 +476,11 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+		// Index lookup planning steers the Prometheus TSDB's postings lookups; the seriesstore engine
+		// plans its own, and collecting the planner's statistics would only walk its index.
+		cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = false
+	}
 	// Resolve the partition ID up front when ingest storage is enabled, so we can wrap the
 	// registerer with an ingester_partition label before any metric is registered. The wrapping
 	// itself is gated by an additional flag so the label can be rolled out and removed gradually.
