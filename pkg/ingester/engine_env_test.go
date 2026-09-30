@@ -9,12 +9,8 @@ import (
 	"testing"
 )
 
-// testEngine is the engine other branches' implementations run the package's tests on; always empty here.
-var testEngine string
-
 func init() {
 	testEngine = os.Getenv("MIMIR_TEST_TSDB_ENGINE")
-	testNoNativeActive = os.Getenv("MIMIR_TEST_NO_NATIVE_ACTIVE") != ""
 }
 
 // skipIfSeriesstore skips tests of Prometheus TSDB internals the seriesstore engine doesn't have.
