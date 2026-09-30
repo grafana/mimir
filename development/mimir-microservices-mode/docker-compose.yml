@@ -93,7 +93,7 @@
       - "./config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
-  "grpc-tee":
+  "grpc-tee-1":
     "build":
       "context": "../../tools/grpc-tee"
       "dockerfile": "dev.dockerfile"
@@ -108,14 +108,55 @@
       - "--continue"
       - "--"
       - "-server.grpc-listen-address=:9095"
+      - "-server.http-listen-address=:8095"
       - "-backend.address=store-gateway-1:9011"
+      - "-ring.store=memberlist"
+      - "-ring.instance-id=grpc-tee-1"
+      - "-ring.instance-addr=grpc-tee-1"
+      - "-ring.instance-port=9095"
+      - "-memberlist.nodename=grpc-tee-1"
+      - "-memberlist.join=distributor-1:10000"
     "depends_on":
+      - "distributor-1"
       - "store-gateway-1"
-    "hostname": "grpc-tee"
+    "hostname": "grpc-tee-1"
     "image": "grpc-tee"
     "ports":
       - "9095:9095"
+      - "8095:8095"
       - "19095:19095"
+  "grpc-tee-2":
+    "build":
+      "context": "../../tools/grpc-tee"
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "/bin/dlv"
+      - "exec"
+      - "/bin/grpc-tee"
+      - "--listen=:19096"
+      - "--headless=true"
+      - "--api-version=2"
+      - "--accept-multiclient"
+      - "--continue"
+      - "--"
+      - "-server.grpc-listen-address=:9096"
+      - "-server.http-listen-address=:8096"
+      - "-backend.address=store-gateway-1:9011"
+      - "-ring.store=memberlist"
+      - "-ring.instance-id=grpc-tee-2"
+      - "-ring.instance-addr=grpc-tee-2"
+      - "-ring.instance-port=9096"
+      - "-memberlist.nodename=grpc-tee-2"
+      - "-memberlist.join=distributor-1:10000"
+    "depends_on":
+      - "distributor-1"
+      - "store-gateway-1"
+    "hostname": "grpc-tee-2"
+    "image": "grpc-tee"
+    "ports":
+      - "9096:9096"
+      - "8096:8096"
+      - "19096:19096"
   "ingester-1":
     "build":
       "context": "."
@@ -350,7 +391,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-addr=grpc-tee -store-gateway.sharding-ring.instance-port=9095"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-addr=grpc-tee-1 -store-gateway.sharding-ring.instance-port=9095"
     "depends_on":
       - "minio"
       - "distributor-1"

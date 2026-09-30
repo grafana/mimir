@@ -36,7 +36,7 @@ std.manifestYamlDoc({
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
 
-    // If true, a grpc-tee instance is started in front of store-gateway-1.
+    // If true, grpc-tee instances are started in front of store-gateway-1.
     enable_grpc_tee: true,
 
     // If true, a secondary query path is started.
@@ -66,7 +66,7 @@ std.manifestYamlDoc({
     self.memcached +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
-    (if $._config.enable_grpc_tee then self.grpc_tee else {}) +
+    (if $._config.enable_grpc_tee then self.grpc_tees(2) else {}) +
     {},
 
   distributor:: {
@@ -181,10 +181,10 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
-      // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee address in the ring,
-      // so queriers connect through grpc-tee.
+      // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee-1 address in the ring,
+      // so queriers connect through grpc-tee-1.
       extraArguments: if $._config.enable_grpc_tee && id == 1 then [
-        '-store-gateway.sharding-ring.instance-addr=grpc-tee',
+        '-store-gateway.sharding-ring.instance-addr=grpc-tee-1',
         '-store-gateway.sharding-ring.instance-port=9095',
       ] else [],
     })
@@ -489,16 +489,27 @@ std.manifestYamlDoc({
     },
   },
 
-  grpc_tee:: {
-    local grpcPort = 9095,
-    local debugPort = 19095,
+  grpc_tees(count):: {
     local useDelve = $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, 'grpc-tee')),
-    local flags = [
-      '-server.grpc-listen-address=:%d' % grpcPort,
-      '-backend.address=store-gateway-1:9011',
-    ],
 
-    'grpc-tee': {
+    ['grpc-tee-%d' % id]: {
+      local name = 'grpc-tee-%d' % id,
+      local grpcPort = 9094 + id,
+      local httpPort = 8094 + id,
+      local debugPort = 19094 + id,
+      local flags = [
+        '-server.grpc-listen-address=:%d' % grpcPort,
+        '-server.http-listen-address=:%d' % httpPort,
+        '-backend.address=store-gateway-1:9011',
+        // grpc-tee joins its own ring (key "grpc-tee") over the same memberlist cluster as Mimir.
+        '-ring.store=memberlist',
+        '-ring.instance-id=%s' % name,
+        '-ring.instance-addr=%s' % name,
+        '-ring.instance-port=%d' % grpcPort,
+        '-memberlist.nodename=%s' % name,
+        '-memberlist.join=distributor-1:10000',
+      ],
+
       image: 'grpc-tee',
       build: {
         context: '../../tools/grpc-tee',
@@ -507,10 +518,11 @@ std.manifestYamlDoc({
       command: if useDelve
       then ['/bin/dlv', 'exec', '/bin/grpc-tee', '--listen=:%d' % debugPort, '--headless=true', '--api-version=2', '--accept-multiclient', '--continue', '--'] + flags
       else flags,
-      hostname: 'grpc-tee',
-      ports: ['%d:%d' % [grpcPort, grpcPort]] + (if useDelve then ['%d:%d' % [debugPort, debugPort]] else []),
-      depends_on: ['store-gateway-1'],
-    },
+      hostname: name,
+      ports: ['%d:%d' % [grpcPort, grpcPort], '%d:%d' % [httpPort, httpPort]] + (if useDelve then ['%d:%d' % [debugPort, debugPort]] else []),
+      depends_on: ['distributor-1', 'store-gateway-1'],
+    }
+    for id in std.range(1, count)
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
