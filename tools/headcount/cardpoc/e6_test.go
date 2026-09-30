@@ -88,3 +88,12 @@ func TestE6Result_HLLErrorStats(t *testing.T) {
 	require.Zero(t, p95Err)
 	require.Zero(t, maxErr)
 }
+
+func TestE6Result_PassBar(t *testing.T) {
+	result := func(estimate int) E6Result {
+		return E6Result{Threshold: 10, Groups: []NameGroupResult{{Truth: 100, Estimate: estimate, UsedHLL: true}}}
+	}
+	require.True(t, result(104).Pass(), "4% error is inside the 5% p95 bar")
+	require.True(t, result(95).Pass(), "5% error is on the bar")
+	require.False(t, result(106).Pass(), "6% error is outside the bar")
+}
