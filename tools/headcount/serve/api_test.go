@@ -101,3 +101,36 @@ func TestLogfmtFields(t *testing.T) {
 	require.Equal(t, "16", f["sharded_queries"])
 	require.NotContains(t, f, "msg", "quoted values are skipped")
 }
+
+func TestHandleWindow_DedupExactSumOvercounts(t *testing.T) {
+	s := testServer(t)
+	var out struct {
+		Names       int `json:"names"`
+		NamesExact  int `json:"names_exact"`
+		SummedTotal int `json:"summed_total"`
+		ExactTotal  int `json:"exact_total"`
+		TruthTotal  int `json:"truth_total"`
+		Ranges      int `json:"ranges"`
+	}
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/window?from=0&to=2", &out))
+	require.Equal(t, 3, out.Ranges)
+	require.Equal(t, out.TruthTotal, out.ExactTotal)
+	require.Equal(t, out.Names, out.NamesExact)
+	require.Greater(t, out.SummedTotal, out.ExactTotal)
+
+	require.Equal(t, http.StatusBadRequest, getJSON(t, s, "/api/window?from=2&to=1", &out))
+}
+
+func TestHandleGrowth_ReportsChangedAndFalls(t *testing.T) {
+	s := testServer(t)
+	var out struct {
+		Changed int         `json:"changed"`
+		Names   int         `json:"names"`
+		Falls   []growthRow `json:"falls"`
+	}
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/growth?day=1&base=0", &out))
+	require.LessOrEqual(t, out.Changed, out.Names)
+	for _, f := range out.Falls {
+		require.Negative(t, f.Growth)
+	}
+}
