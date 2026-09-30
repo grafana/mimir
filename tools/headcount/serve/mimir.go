@@ -63,9 +63,13 @@ func (q queryResult) byLabel(name string) map[string]int {
 	return out
 }
 
+// defaultLimits, passed as a series limit, gives the tenant Mimir's
+// default limits instead of none.
+const defaultLimits = -1
+
 // query runs an instant query at time atMS. With seriesLimit > 0 the
 // tenant's max_fetched_series_per_query is set to it first; with 0 the
-// tenant has no fetch limits.
+// tenant has no fetch limits; with defaultLimits it has Mimir's defaults.
 func (m *mimir) query(q string, atMS int64, seriesLimit int) queryResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -124,24 +128,32 @@ func (m *mimir) setSeriesLimit(limit int) error {
 		return nil
 	}
 	cfg := fmt.Sprintf("overrides:\n  anonymous:\n    max_fetched_chunks_per_query: 0\n    max_fetched_chunk_bytes_per_query: 0\n    max_fetched_series_per_query: %d\n", limit)
+	want := fmt.Sprintf("max_fetched_series_per_query: %d", limit)
+	if limit == defaultLimits {
+		cfg, want = "overrides: {}\n", ""
+	}
 	if err := os.WriteFile(m.runtimeConfig, []byte(cfg), 0o644); err != nil {
 		return err
 	}
-	want := fmt.Sprintf("max_fetched_series_per_query: %d", limit)
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(m.baseURL + "/runtime_config")
 		if err == nil {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			if bytes.Contains(b, []byte(want)) {
+			// With default limits the tenant has no override block left.
+			loaded := bytes.Contains(b, []byte(want))
+			if limit == defaultLimits {
+				loaded = !bytes.Contains(b, []byte("anonymous:"))
+			}
+			if loaded {
 				m.lastLimit, m.limitKnown = limit, true
 				return nil
 			}
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("mimir did not load %q within 30s", want)
+	return fmt.Errorf("mimir did not load the runtime config for series limit %d within 30s", limit)
 }
 
 func (m *mimir) logSize() int64 {
