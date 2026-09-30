@@ -258,6 +258,9 @@ func metricValues(family *dto.MetricFamily, ignored ...string) []string {
 	}
 	var values []string
 	for _, metric := range family.GetMetric() {
+		if perBlockStage(metric) {
+			continue
+		}
 		var labels []string
 		for _, pair := range metric.GetLabel() {
 			skip := false
@@ -293,6 +296,17 @@ func metricValues(family *dto.MetricFamily, ignored ...string) []string {
 	}
 	sort.Strings(values)
 	return values
+}
+
+// perBlockStage reports whether the metric is a query stage of a single block, which the Rust
+// ingester doesn't report: it doesn't split its data into blocks.
+func perBlockStage(metric *dto.Metric) bool {
+	for _, pair := range metric.GetLabel() {
+		if pair.GetName() == "stage" && strings.HasPrefix(pair.GetValue(), "single_block_") {
+			return true
+		}
+	}
+	return false
 }
 
 // requireSameMetrics waits for the named metrics to agree, since each side updates on its own
@@ -802,8 +816,7 @@ func TestRustCompatChunkLayouts(t *testing.T) {
 }
 
 // Head compaction moves the head's min time and removes the series and chunks it no longer
-// holds alike, label lookups see the same series, and queries read the same blocks, with the
-// postings cache settings of the cell.
+// holds alike, and label lookups and queries see the same series.
 func TestRustCompatHeadCompaction(t *testing.T) {
 	now := time.Now().Truncate(time.Minute)
 	start := ms(now.Add(-5 * time.Hour))
@@ -812,17 +825,9 @@ func TestRustCompatHeadCompaction(t *testing.T) {
 		config: func(cfg *Config) {
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
-			cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce = true
-			cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce = true
-			cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache = true
-			cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation = true
 		},
 		rustArgs: []string{
 			"--blocks-storage.tsdb.head-compaction-interval", "100ms",
-			"--blocks-storage.tsdb.head-postings-for-matchers-cache-force", "true",
-			"--blocks-storage.tsdb.block-postings-for-matchers-cache-force", "true",
-			"--blocks-storage.tsdb.shared-postings-for-matchers-cache", "true",
-			"--blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", "true",
 		},
 	}, func(tb testing.TB, cfg ingest.KafkaConfig) int64 {
 		write, last := compatProducer(tb, cfg)
@@ -885,7 +890,6 @@ func TestRustCompatHeadCompaction(t *testing.T) {
 	requireSameMetrics(t, ingesters, nil, false,
 		"cortex_ingester_queried_series",
 		"cortex_ingester_queried_samples",
-		"cortex_ingester_queried_blocks_total",
 	)
 }
 
@@ -929,7 +933,6 @@ func TestRustCompatQueryMetrics(t *testing.T) {
 		"cortex_ingester_queried_series",
 		"cortex_ingester_queried_samples",
 		"cortex_ingester_queried_exemplars",
-		"cortex_ingester_queried_blocks_total",
 	)
 }
 

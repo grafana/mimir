@@ -44,8 +44,7 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use mimir_rust_kafka_ingester::service::IngesterService;
 use mimir_rust_kafka_ingester::store::{
-    EarlyHeadCompaction, IngestRecord, NonOwnedEviction, PostingsCacheConfig, PusherShards,
-    SnapshotOffset, Store,
+    EarlyHeadCompaction, IngestRecord, NonOwnedEviction, PusherShards, SnapshotOffset, Store,
 };
 use mimir_rust_kafka_ingester::xor;
 
@@ -196,16 +195,6 @@ struct ServeArgs {
         default_value_t = 40
     )]
     ingestion_concurrency_target_flushes_per_shard: usize,
-    /// Mimir's postings-for-matchers cache settings, which decide what queries report in
-    /// `cortex_ingester_queried_series{stage="single_block_index"}`.
-    #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-force", default_value_t = false, action = clap::ArgAction::Set)]
-    head_postings_cache_force: bool,
-    #[arg(long = "blocks-storage.tsdb.block-postings-for-matchers-cache-force", default_value_t = false, action = clap::ArgAction::Set)]
-    block_postings_cache_force: bool,
-    #[arg(long = "blocks-storage.tsdb.shared-postings-for-matchers-cache", default_value_t = false, action = clap::ArgAction::Set)]
-    shared_postings_cache: bool,
-    #[arg(long = "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", default_value_t = false, action = clap::ArgAction::Set)]
-    head_postings_cache_invalidation: bool,
     #[arg(
         long = "blocks-storage.tsdb.early-head-compaction-min-in-memory-series",
         default_value_t = 0
@@ -404,10 +393,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
         track_owned_series,
         use_owned_series_for_limits,
         head_compaction_interval,
-        head_postings_cache_force,
-        block_postings_cache_force,
-        shared_postings_cache,
-        head_postings_cache_invalidation,
         graceful_shutdown_timeout,
         early_head_compaction_min_in_memory_series,
         early_head_compaction_min_estimated_series_reduction_percentage,
@@ -539,12 +524,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
             shards: store_shards,
             threads: ingest_threads,
             overrides: Arc::clone(&overrides),
-            postings_cache: PostingsCacheConfig {
-                head_force: head_postings_cache_force,
-                block_force: block_postings_cache_force,
-                shared: shared_postings_cache,
-                head_invalidation: head_postings_cache_invalidation,
-            },
             cost_attribution_intervals: (
                 parse_duration_ms(&cost_attribution_cleanup_interval)?,
                 parse_duration_ms(&cost_attribution_eviction_interval)?,
@@ -1090,7 +1069,6 @@ struct StoreConfig {
     shards: usize,
     threads: usize,
     overrides: Arc<Overrides>,
-    postings_cache: PostingsCacheConfig,
     cost_attribution_intervals: (i64, i64),
     flush_series: usize,
     pusher_shards: PusherShards,
@@ -1232,7 +1210,6 @@ fn open_store(
         shards,
         threads,
         overrides,
-        postings_cache,
         cost_attribution_intervals,
         flush_series,
         pusher_shards,
@@ -1257,8 +1234,7 @@ fn open_store(
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
             .with_non_owned_eviction(non_owned_eviction)
-            .with_early_head_compaction(early_head_compaction)
-            .with_postings_cache(postings_cache),
+            .with_early_head_compaction(early_head_compaction),
         ))
     };
     let Some(restored) = Store::restore(active_window_ms, retention_ms, chunk_dir, threads)? else {
@@ -1311,8 +1287,7 @@ fn open_store(
             .with_flush_series(flush_series)
             .with_pusher_shards(pusher_shards)
             .with_non_owned_eviction(non_owned_eviction)
-            .with_early_head_compaction(early_head_compaction)
-            .with_postings_cache(postings_cache),
+            .with_early_head_compaction(early_head_compaction),
         logs: logs.into_iter().zip(restored.offsets).collect(),
     })
 }
@@ -1917,7 +1892,6 @@ mod tests {
                     shards: 4,
                     threads: 2,
                     overrides: Arc::default(),
-                    postings_cache: PostingsCacheConfig::default(),
                     cost_attribution_intervals: (180_000, 1_200_000),
                     flush_series: 150,
                     pusher_shards: PusherShards::default(),
