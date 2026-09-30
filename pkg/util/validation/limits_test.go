@@ -1726,6 +1726,16 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: errInvalidHistogramChunkEncoding,
 		},
+		"should pass if histogram_chunk_encoding is histogram": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "histogram"
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should pass if histogram_chunk_encoding is histogram_st": {
 			cfg: func() Limits {
 				cfg := Limits{}
