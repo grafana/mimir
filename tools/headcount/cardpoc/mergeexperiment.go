@@ -68,15 +68,22 @@ func RunE3(l1Dir string, pop *model.Model) (E3Result, error) {
 	return E3Result{res}, err
 }
 
-// E4Result is RunE4's outcome on a handover snapshot: the level-1
-// sources a compaction has already superseded are still on disk, so a
-// naive sum double-counts them, but skipping blocks listed in another
-// visible block's Compaction.Sources is expected to recover the exact
-// count here (unlike on the level-1 snapshot, where that link doesn't
-// exist yet).
+// E4Result is RunE4's outcome on a handover snapshot: superseded blocks
+// (a compaction's inputs, still on disk because the deletion delay hasn't
+// elapsed) inflate a naive sum.
+//
+// Source-dedup (SumSkipSources) fixes exactly that: it reduces handover
+// to the same block selection SumAll would see on the equivalent fully
+// compacted snapshot, verified separately below. It is not, by itself, a
+// fix for cross-block duplication a series can still have when its
+// window spans more than one final block (a long-lived series appearing
+// in each of several day-sized blocks for its shard, say) -- that is
+// what E2 already measures, and only hash union resolves it, on handover
+// exactly as on compacted. So SumSkipSources isn't required to equal
+// Truth here; only HashUnion is.
 type E4Result struct{ MergeExperimentResult }
 
-func (r E4Result) Pass() bool { return r.HashUnion == r.Truth && r.SumSkipSources == r.Truth }
+func (r E4Result) Pass() bool { return r.HashUnion == r.Truth }
 
 // RunE4 runs the merge experiment against a handover snapshot.
 func RunE4(handoverDir string, pop *model.Model) (E4Result, error) {

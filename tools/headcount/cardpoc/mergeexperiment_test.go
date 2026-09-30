@@ -38,8 +38,9 @@ func TestE2Result_Pass(t *testing.T) {
 
 func TestE4Result_Pass(t *testing.T) {
 	require.True(t, E4Result{MergeExperimentResult{Truth: 10, HashUnion: 10, SumSkipSources: 10}}.Pass())
-	require.False(t, E4Result{MergeExperimentResult{Truth: 10, HashUnion: 10, SumSkipSources: 9}}.Pass(),
-		"E4 additionally requires the sources-skip sum to be exact, unlike E2 and E3")
+	require.True(t, E4Result{MergeExperimentResult{Truth: 10, HashUnion: 10, SumSkipSources: 14}}.Pass(),
+		"a source-dedup sum that still overcounts (cross-block-range duplication, not a duplicate-block problem) must not fail E4: only hash union is required to be exact")
+	require.False(t, E4Result{MergeExperimentResult{Truth: 10, HashUnion: 9}}.Pass())
 }
 
 func TestMergeExperimentResult_RelativeError(t *testing.T) {
