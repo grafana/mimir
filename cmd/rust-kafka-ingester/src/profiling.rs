@@ -189,7 +189,11 @@ async fn cpu_profile(
             .build()
             .context("start CPU profiler")?;
         std::thread::sleep(Duration::from_secs(seconds));
-        let report = profiler.report().build().context("build CPU profile")?;
+        let report = profiler
+            .report()
+            .frames_post_processor(qualify_frames)
+            .build()
+            .context("build CPU profile")?;
         let profile = report.pprof().context("encode CPU profile")?;
         let mut bytes = Vec::new();
         profile
@@ -217,5 +221,131 @@ async fn cpu_profile(
             )
                 .into_response()
         }
+    }
+}
+
+/// Names each frame of a stack by its module path. Inlined frames only carry their short name, so
+/// profiles would otherwise merge every `next`, `fold` or `{closure#0}` of the program into one
+/// function. Closures and async blocks are named after the function of the same file they run in.
+fn qualify_frames(frames: &mut pprof::Frames) {
+    // Innermost first, so the functions a frame runs in come after it.
+    let symbols: Vec<&mut pprof::Symbol> = frames.frames.iter_mut().flatten().collect();
+    let files: Vec<Option<String>> = symbols
+        .iter()
+        .map(|symbol| {
+            symbol
+                .filename
+                .as_deref()
+                .map(|file| file.to_string_lossy().into_owned())
+        })
+        .collect();
+    let mut qualified = vec![String::new(); symbols.len()];
+    for (index, symbol) in symbols.iter().enumerate().rev() {
+        let name = symbol.name();
+        qualified[index] = if name.contains("::") {
+            name.clone()
+        } else if name.starts_with('{') {
+            let within = (index + 1..symbols.len())
+                .find(|outer| files[*outer].is_some() && files[*outer] == files[index])
+                .map(|outer| qualified[outer].clone())
+                .or_else(|| files[index].as_deref().and_then(module_path));
+            within.map_or(name.clone(), |within| format!("{within}::{name}"))
+        } else {
+            files[index]
+                .as_deref()
+                .and_then(module_path)
+                .map_or(name.clone(), |module| format!("{module}::{name}"))
+        };
+    }
+    for (symbol, name) in symbols.into_iter().zip(qualified) {
+        symbol.name = Some(name.into_bytes());
+    }
+}
+
+/// The module path of a source file of the standard library, a dependency or this crate, which
+/// is built in `/src`.
+fn module_path(file: &str) -> Option<String> {
+    let (root, path) = file.rsplit_once("/src/")?;
+    let krate = root.rsplit('/').next().unwrap_or_default();
+    // Registry sources are in `<crate>-<version>`.
+    let krate = match krate.rsplit_once('-') {
+        Some((name, version)) if version.starts_with(|c: char| c.is_ascii_digit()) => name,
+        _ => krate,
+    };
+    let krate = if krate == "src" { "" } else { krate };
+    let mut parts: Vec<&str> = path.strip_suffix(".rs")?.split('/').collect();
+    if matches!(parts.last(), Some(&("mod" | "lib" | "main"))) {
+        parts.pop();
+    }
+    let module = std::iter::once(krate)
+        .chain(parts)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("::")
+        .replace('-', "_");
+    (!module.is_empty()).then_some(module)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn symbol(name: &str, file: &str) -> pprof::Symbol {
+        pprof::Symbol {
+            name: Some(name.as_bytes().to_vec()),
+            addr: None,
+            lineno: None,
+            filename: Some(PathBuf::from(file)),
+        }
+    }
+
+    #[test]
+    fn frames_are_named_by_module() {
+        let std = "/rustc/48a229ce/library/core/src/iter/adapters/map.rs";
+        let tokio = "/usr/local/cargo/registry/src/index.crates.io-1949cf8c/tokio-1.53.1/src/runtime/task/mod.rs";
+        let store = "/src/src/store.rs";
+        let mut frames = pprof::Frames {
+            frames: vec![
+                vec![
+                    symbol("{closure#0}", store),
+                    symbol("{closure#2}", store),
+                    symbol("try_fold", std),
+                    symbol("matching", store),
+                ],
+                vec![
+                    symbol("next", store),
+                    symbol("<a::B>::poll", "/src/src/lib.rs"),
+                ],
+                vec![
+                    symbol("{async_block#1}", "/src/src/main.rs"),
+                    symbol("run", tokio),
+                ],
+            ],
+            thread_name: String::new(),
+            thread_id: 0,
+            sample_timestamp: std::time::SystemTime::UNIX_EPOCH,
+        };
+        qualify_frames(&mut frames);
+        let names: Vec<Vec<String>> = frames
+            .frames
+            .iter()
+            .map(|frame| frame.iter().map(pprof::Symbol::name).collect())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                vec![
+                    "store::matching::{closure#2}::{closure#0}",
+                    "store::matching::{closure#2}",
+                    "core::iter::adapters::map::try_fold",
+                    "store::matching",
+                ],
+                vec!["store::next", "<a::B>::poll"],
+                // Nothing of the same file runs it.
+                vec!["{async_block#1}", "tokio::runtime::task::run"],
+            ]
+        );
     }
 }
