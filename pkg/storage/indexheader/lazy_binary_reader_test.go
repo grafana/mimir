@@ -137,7 +137,7 @@ func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T)
 		InstrumentedBucketReader: bkt,
 	}
 
-	factory := func() (Reader, error) {
+	factory := func(ctx context.Context) (Reader, error) {
 		return NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
@@ -393,7 +393,7 @@ func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBuck
 func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
-	factory := func() (Reader, error) {
+	factory := func(ctx context.Context) (Reader, error) {
 		return NewStreamBinaryReader(ctx, id, bkt, dir, Config{}, 3, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
@@ -424,7 +424,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 
 	errOhNo := errors.New("oh no")
 
-	factory := func() (Reader, error) {
+	factory := func(context.Context) (Reader, error) {
 		testInflight := inflight.Inc()
 		require.LessOrEqual(t, testInflight, uint32(maxLazyLoadConcurrency))
 		totalLoaded.Inc()
@@ -472,7 +472,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 		numClients             = 25
 	)
 
-	factory := func() (Reader, error) { return nil, errors.New("error") }
+	factory := func(context.Context) (Reader, error) { return nil, errors.New("error") }
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
@@ -558,7 +558,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t
 	waitLoad := make(chan struct{})
 	loadStarted := make(chan struct{})
 
-	factory := func() (Reader, error) {
+	factory := func(context.Context) (Reader, error) {
 		close(loadStarted) // will panic if closed twice; no panic means that the factory was invoked only once
 		<-waitLoad
 		reader := mockReader{
@@ -608,7 +608,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 
 	reader, loadErr := Reader(nil), assert.AnError
 
-	factory := func() (Reader, error) {
+	factory := func(context.Context) (Reader, error) {
 		close(loadStarted)
 		<-waitLoad
 		return reader, loadErr
@@ -661,7 +661,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_N
 		testRuns               = 100
 	)
 
-	factory := func() (Reader, error) {
+	factory := func(context.Context) (Reader, error) {
 		return mockReader{
 			IndexVersionFunc: func(context.Context) (int, error) { return 0, nil },
 		}, nil
@@ -731,7 +731,7 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 func BenchmarkNewLazyBinaryReader(b *testing.B) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(b)
 
-	factory := func() (Reader, error) {
+	factory := func(context.Context) (Reader, error) {
 		reader := mockReader{
 			IndexVersionFunc: func(context.Context) (int, error) { return 1, nil },
 		}
@@ -798,7 +798,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 				bktReg *prometheus.Registry,
 			) *LazyBinaryReader {
 				ll := log.NewNopLogger()
-				diskReaderFactory := func() (Reader, error) {
+				diskReaderFactory := func(ctx context.Context) (Reader, error) {
 					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, Config{}, 32, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
@@ -822,7 +822,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 						BucketIndexSections: SectionPostingsOffsetsTable,
 					},
 				}
-				splitReaderFactory := func() (Reader, error) {
+				splitReaderFactory := func(ctx context.Context) (Reader, error) {
 					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, splitReaderCfg, 32, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
@@ -864,7 +864,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 						baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
 						b.StartTimer()
 
-						reader, err := lazyReader.loadReader()
+						reader, err := lazyReader.loadReader(context.Background())
 						require.NoError(b, err)
 
 						b.StopTimer()

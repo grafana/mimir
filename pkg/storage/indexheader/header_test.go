@@ -68,7 +68,7 @@ var implementations = []struct {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			readerFactory := func() (Reader, error) {
+			readerFactory := func(ctx context.Context) (Reader, error) {
 				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 

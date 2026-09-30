@@ -2122,7 +2122,7 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
-	_, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	ctx, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
 	defer span.End()
 	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
