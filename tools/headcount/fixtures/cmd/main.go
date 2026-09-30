@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/tools/headcount/cardgen"
+	"github.com/grafana/mimir/tools/headcount/cardpoc"
 	"github.com/grafana/mimir/tools/headcount/fixtures"
 	"github.com/grafana/mimir/tools/headcount/model"
 	"github.com/grafana/mimir/tools/headcount/truth"
@@ -76,6 +77,15 @@ func main() {
 			log.Fatalf("cross-check FAILED for %s: model truth=%d, on-disk distinct series=%d", name, want, got)
 		}
 		log.Printf("cross-check passed for %s: %d series", name, got)
+	}
+
+	report, err := cardpoc.RunAll(result.L1, result.Handover, result.Compacted, pop, 10_000, 5)
+	if err != nil {
+		log.Fatalf("running experiments: %v", err)
+	}
+	fmt.Print(report.String())
+	if !report.Pass() {
+		log.Fatal("one or more experiments failed")
 	}
 }
 
