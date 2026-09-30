@@ -567,9 +567,7 @@ overrides_exporter:
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
   # Comma-separated list of metrics to include in the exporter. Metric names
-  # must match yaml tags from the limits section of the configuration, except
-  # histogram_chunk_encoding_float_histograms, which reports the float-histogram
-  # value of the histogram_chunk_encoding limit.
+  # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
   [enabled_metrics: <string> | default = "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group"]
 
@@ -4714,9 +4712,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [float_chunk_encoding: <string> | default = "xor"]
 
 # (experimental) Encoding used for integer and float native histogram chunks
-# written for this tenant by the ingester and block-builder. The histogram_st
-# value selects the start-timestamp-capable encodings. Supported values are:
-# histogram, histogram_st.
+# written for this tenant by the ingester and block-builder. Supported values
+# are: histogram, histogram_st.
 # CLI flag: -blocks-storage.tsdb.histogram-chunk-encoding
 [histogram_chunk_encoding: <string> | default = "histogram"]
 
