@@ -105,7 +105,7 @@ func main() {
 		grpc.UnknownServiceHandler(proxy.TransparentHandler(director)),
 	}
 	if codec := backend.Codec(); codec != nil {
-		grpcOpts = append(grpcOpts, grpc.StreamInterceptor(decodingStreamInterceptor(codec, logger)))
+		grpcOpts = append(grpcOpts, grpc.StreamInterceptor(decodingStreamInterceptor(codec, logProxiedCall(logger))))
 	}
 	grpcServer := grpc.NewServer(grpcOpts...)
 
