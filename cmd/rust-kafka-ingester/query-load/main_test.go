@@ -48,11 +48,11 @@ func TestHistogramsAreToldFromOtherMetrics(t *testing.T) {
 	histograms, err := histogramFamilies(context.Background(), server.Client(), cfg, "tenant")
 	require.NoError(t, err)
 	require.Equal(t, []metric{
-		{name: "http_duration_seconds", kind: classicHistogram},
-		{name: "rpc_duration_seconds", kind: nativeHistogram},
-		{name: "requests_total"},
+		{name: "http_duration_seconds", kind: classicHistogram, series: 5000},
+		{name: "rpc_duration_seconds", kind: nativeHistogram, series: 5000},
+		{name: "requests_total", series: 5000},
 		// Not a histogram family's buckets.
-		{name: "queue_bucket"},
+		{name: "queue_bucket", series: 5000},
 	}, classify([]sampled{
 		{"http_duration_seconds_bucket", 5000},
 		{"rpc_duration_seconds", 5000},
@@ -60,7 +60,7 @@ func TestHistogramsAreToldFromOtherMetrics(t *testing.T) {
 		{"queue_bucket", 5000},
 	}, histograms, 10_000))
 	// Histograms too large to query are left out; other metrics aren't.
-	require.Equal(t, []metric{{name: "requests_total"}}, classify([]sampled{
+	require.Equal(t, []metric{{name: "requests_total", series: 20000}}, classify([]sampled{
 		{"http_duration_seconds_bucket", 20_000},
 		{"rpc_duration_seconds", 20_000},
 		{"requests_total", 20_000},
@@ -124,4 +124,26 @@ func TestRegexesMatchTheNamesTheyAlternateLiterally(t *testing.T) {
 	require.Contains(t, queries, `sum(rate({__name__="requests_total", job!~"a\\|b"}[5m]))`)
 	// Only the sampled metrics, never a whole family by prefix.
 	require.Contains(t, queries, `count by (__name__) ({__name__=~"requests_total|up|a\\.b"})`)
+}
+
+func TestMetricsAndTenantsArePickedByTheirSeries(t *testing.T) {
+	sampled := newMetrics()
+	sampled.set("big", []metric{{name: "large", series: 99_000}, {name: "small", series: 1_000}})
+	sampled.set("tiny", []metric{{name: "canary", series: 600}})
+	picks := map[string]int{}
+	tenants := map[string]int{}
+	for range 10_000 {
+		tenant, ok := sampled.pickTenant([]string{"big", "tiny", "empty"})
+		require.True(t, ok)
+		tenants[tenant]++
+		m, ok := sampled.pick("big")
+		require.True(t, ok)
+		picks[m.name]++
+	}
+	// Proportional to series: 99% and 1%, and 0.6% of tenants' series for the tiny tenant.
+	require.InDelta(t, 9_900, picks["large"], 150)
+	require.InDelta(t, 9_940, tenants["big"], 150)
+	require.Zero(t, tenants["empty"])
+	_, ok := newMetrics().pickTenant([]string{"empty"})
+	require.False(t, ok, "no tenant has sampled metrics yet")
 }
