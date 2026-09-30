@@ -67,6 +67,8 @@ impl ChunkList {
     }
 
     fn iter(&self) -> ChunkIter<'_> {
+        #[cfg(test)]
+        CHUNK_LIST_DECODES.with(|decodes| decodes.set(decodes.get() + 1));
         ChunkIter {
             bytes: &self.0,
             reference: 0,
@@ -310,9 +312,11 @@ struct SeriesByName {
     // How many series have each label: its postings list them all, and queries compare their
     // size with other candidates' before listing them.
     label_series: hashbrown::HashMap<&'static str, u32>,
-    // The name groups each name matcher other than an equality accepted, with how many names
-    // there were: a sharded query sends the same one in every request, and the names only change
-    // when a metric appears.
+    // Each name group's name: groups are numbered as names appear and never removed.
+    group_names: Vec<CompactString>,
+    // The name groups each name matcher other than an equality accepted, with how many groups
+    // were checked: a sharded query sends the same one in every request, and a metric appearing
+    // only needs its own name checked.
     name_matches: Mutex<HashMap<NameMatcherKey, (usize, NameGroups)>>,
     len: usize,
 }
@@ -423,6 +427,7 @@ impl SeriesByName {
             None => {
                 let group = self.groups.len() as u32;
                 self.names.insert(CompactString::from(name), group);
+                self.group_names.push(CompactString::from(name));
                 self.groups.push(HashTable::new());
                 group
             }
@@ -671,31 +676,39 @@ impl SeriesByName {
     /// The name groups whose name `matcher`, a name matcher other than an equality, accepts.
     fn name_groups(&self, matcher: &CompiledMatcher) -> Arc<[u32]> {
         let key = name_matcher_key(matcher);
-        let names = self.names.len();
         let mut cache = self
             .name_matches
             .lock()
             .expect("name matches lock poisoned");
-        if let Some((cached_names, groups)) = cache.get(&key)
-            && *cached_names == names
+        let (checked, cached) = cache
+            .get(&key)
+            .map_or((0, None), |(checked, groups)| (*checked, Some(groups)));
+        if checked == self.group_names.len()
+            && let Some(groups) = cached
         {
             return Arc::clone(groups);
         }
-        let groups: Arc<[u32]> = self
-            .names
-            .iter()
-            .filter(|(name, _)| {
-                #[cfg(test)]
-                NAME_MATCHES.with(|matches| matches.set(matches.get() + 1));
-                matcher.matches_value(name)
-            })
-            .map(|(_, group)| *group)
+        // Only the names that appeared since are checked.
+        let groups: Arc<[u32]> = cached
+            .into_iter()
+            .flat_map(|groups| groups.iter().copied())
+            .chain(
+                self.group_names[checked..]
+                    .iter()
+                    .zip(checked as u32..)
+                    .filter(|(name, _)| {
+                        #[cfg(test)]
+                        NAME_MATCHES.with(|matches| matches.set(matches.get() + 1));
+                        matcher.matches_value(name)
+                    })
+                    .map(|(_, group)| group),
+            )
             .collect();
         // Bounded, so arbitrary queries can't grow it.
-        if cache.len() >= 256 {
+        if cache.len() >= 1024 {
             cache.clear();
         }
-        cache.insert(key, (names, Arc::clone(&groups)));
+        cache.insert(key, (self.group_names.len(), Arc::clone(&groups)));
         groups
     }
 
@@ -2340,6 +2353,9 @@ impl Store {
             // Per block, for each label matcher that accepts the empty value, the series with its
             // label when few are: the others match it without reading their labels.
             let mut block_with_label: Option<(u64, Vec<Option<ColdSeriesList>>)> = None;
+            // Like the head's, each regex matcher's result for the label values it saw.
+            let mut cold_remembered =
+                vec![hashbrown::HashMap::<Box<str>, bool>::new(); cold_labels.len()];
             for (block_tenant, index, series) in
                 cold.candidates(tenant_id, &lookup, scan_start, scan_end)
             {
@@ -2383,11 +2399,34 @@ impl Store {
                     block_with_label = Some((block_tenant.block_id(), sets));
                 }
                 let (_, sets) = block_with_label.as_ref().expect("computed");
-                let labels_match = cold_labels.iter().zip(sets).all(|(matcher, with)| {
-                    with.as_ref()
-                        .is_some_and(|with| with.binary_search(&(index as u32)).is_err())
-                        || matches(&series, std::slice::from_ref(matcher))
-                });
+                let labels_match = cold_labels.iter().zip(sets).zip(&mut cold_remembered).all(
+                    |((matcher, with), remembered)| {
+                        if with
+                            .as_ref()
+                            .is_some_and(|with| with.binary_search(&(index as u32)).is_err())
+                        {
+                            return true;
+                        }
+                        let (CompiledMatcher::Regex(label, _)
+                        | CompiledMatcher::NotRegex(label, _)) = matcher
+                        else {
+                            return matches(&series, std::slice::from_ref(matcher));
+                        };
+                        count_label_value_read();
+                        let value = crate::trackers::LabelSet::value(&series, label);
+                        if let Some(matched) = remembered.get(value) {
+                            return *matched;
+                        }
+                        #[cfg(test)]
+                        REGEX_EVALUATIONS
+                            .with(|evaluations| evaluations.set(evaluations.get() + 1));
+                        let matched = matcher.matches_value(value);
+                        if remembered.len() < REMEMBERED_VALUES {
+                            remembered.insert(value.into(), matched);
+                        }
+                        matched
+                    },
+                );
                 if !labels_match {
                     continue;
                 }
@@ -2423,6 +2462,7 @@ impl Store {
             };
             let counts_index = blocks.iter().any(|block| block.count_index);
             let mut bounds = Vec::new();
+            let mut metas = Vec::new();
             let mut selected = tenant
                 .series
                 .matching(&lookup)
@@ -2433,14 +2473,22 @@ impl Store {
                         return None;
                     }
                     // Decoded at most once, and only when needed: the head block needs no chunk
-                    // bounds, and most candidates of a sharded query only count toward it.
+                    // bounds, and most candidates of a sharded query only count toward it. The
+                    // chunks decoded for their bounds are the ones a returned series then reads.
                     let mut decoded = false;
                     let mut overlaps = |lower: i64, upper: i64| {
                         if !decoded {
                             #[cfg(test)]
                             CHUNK_BOUNDS_DECODES.with(|decodes| decodes.set(decodes.get() + 1));
+                            metas.clear();
+                            metas.extend(series.chunks.iter());
                             bounds.clear();
-                            bounds.extend(series_bounds(series));
+                            bounds.extend(
+                                metas
+                                    .iter()
+                                    .map(|chunk| (chunk.min_time, chunk.max_time))
+                                    .chain(head_bounds(series)),
+                            );
                             decoded = true;
                         }
                         bounds
@@ -2469,18 +2517,19 @@ impl Store {
                     } else {
                         cold_series.remove(labels)
                     };
-                    if cold_chunks.is_none() && !overlaps(start, end) {
+                    // Checked either way: it decodes the chunks the series reads.
+                    if !overlaps(start, end) && cold_chunks.is_none() {
                         return None;
                     }
                     let cold_chunks = cold_chunks.unwrap_or_default();
                     view(
                         labels,
-                        query_chunks(Some(series), &cold_chunks, disk, start, end),
+                        query_chunks(Some(series), &metas, &cold_chunks, disk, start, end),
                     )
                 })
                 .collect::<Vec<_>>();
             selected.extend(cold_series.into_iter().filter_map(|(labels, chunks)| {
-                view(&labels, query_chunks(None, &chunks, disk, start, end))
+                view(&labels, query_chunks(None, &[], &chunks, disk, start, end))
             }));
             (selected, counts)
         });
@@ -4151,6 +4200,15 @@ fn compute_chunk_end_time(start: i64, current: i64, max: i64, ratio_to_full: f64
 }
 
 fn series_bounds(series: &Series) -> impl Iterator<Item = (i64, i64)> + '_ {
+    series
+        .chunks
+        .iter()
+        .map(|chunk| (chunk.min_time, chunk.max_time))
+        .chain(head_bounds(series))
+}
+
+/// The bounds of a series' open chunks.
+fn head_bounds(series: &Series) -> impl Iterator<Item = (i64, i64)> + '_ {
     let float_head = series.float_head.as_ref().map(|head| {
         (
             head.min_time,
@@ -4167,11 +4225,8 @@ fn series_bounds(series: &Series) -> impl Iterator<Item = (i64, i64)> + '_ {
         .first()
         .zip(series.out_of_order.last())
         .map(|(first, last)| (first.0, last.0));
-    series
-        .chunks
-        .iter()
-        .map(|chunk| (chunk.min_time, chunk.max_time))
-        .chain(float_head)
+    float_head
+        .into_iter()
         .chain(histogram_head)
         .chain(out_of_order)
 }
@@ -4182,8 +4237,10 @@ fn matches_time_range(series: &Series, start: i64, end: i64) -> bool {
 
 // With out-of-order samples, overlapping chunks are merged as the Go ingester's out-of-order
 // querier does; otherwise every chunk is returned as stored.
+/// `chunks` are the series' completed chunks, decoded from its chunk list.
 fn query_chunks(
     series: Option<&Series>,
+    chunks: &[ChunkMeta],
     cold_chunks: &[ChunkMeta],
     disk: &ChunkDiskMapper,
     start: i64,
@@ -4214,7 +4271,7 @@ fn query_chunks(
     };
     // A series' cold chunks come first: they are older than what it has in memory, like a block's
     // before the head's.
-    for chunk in cold_chunks.iter().copied().chain(series.chunks.iter()) {
+    for chunk in cold_chunks.iter().chain(chunks).copied() {
         let stored = ooo_merge::Chunk {
             min_time: chunk.min_time,
             max_time: chunk.max_time,
@@ -4430,6 +4487,7 @@ fn matcher_shape(matchers: &[cortex::LabelMatcher]) -> String {
 #[cfg(test)]
 thread_local! {
     static CHUNK_BOUNDS_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static CHUNK_LIST_DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     // Metric names name matchers were checked against, and cold blocks' label lists computed.
     static NAME_MATCHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static COLD_LABEL_LISTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -5373,6 +5431,7 @@ mod tests {
             (
                 LABEL_VALUE_READS.with(std::cell::Cell::get),
                 CHUNK_BOUNDS_DECODES.with(std::cell::Cell::get),
+                CHUNK_LIST_DECODES.with(std::cell::Cell::get),
             )
         };
         let mut returned = 0;
@@ -5403,6 +5462,8 @@ mod tests {
                 series.len() as u64,
                 "only returned series decode chunks"
             );
+            // Once each: the chunks decoded for their bounds are the ones they return.
+            assert_eq!(after.2 - before.2, series.len() as u64);
             returned += series.len();
         }
         assert_eq!(returned, 64);
@@ -5733,15 +5794,64 @@ mod tests {
         let before = counters();
         reads(&repeated);
         assert_eq!(counters(), before);
-        // A label regex is evaluated once per distinct value of the label, not per series.
-        let before = REGEX_EVALUATIONS.with(std::cell::Cell::get);
-        reads(&[matcher(0, "__name__", "hot"), matcher(2, "job", "job-[12]")]);
-        let evaluations = REGEX_EVALUATIONS.with(std::cell::Cell::get) - before;
-        assert!(
-            evaluations <= 5 * 16,
-            "{evaluations} regex evaluations for 5 values in 16 shards"
-        );
+        // A label regex is evaluated once per distinct value of the label, not per series, in
+        // memory and in cold blocks.
+        for name in ["hot", "old"] {
+            let before = REGEX_EVALUATIONS.with(std::cell::Cell::get);
+            reads(&[matcher(0, "__name__", name), matcher(2, "job", "job-[12]")]);
+            let evaluations = REGEX_EVALUATIONS.with(std::cell::Cell::get) - before;
+            assert!(
+                evaluations <= 5 * 16,
+                "{evaluations} regex evaluations of {name} for 5 values in 16 shards"
+            );
+        }
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn name_regexes_only_check_the_names_that_appeared_since() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        let ingest = |name: &str| {
+            store
+                .ingest("tenant", series_request(name, [(now_ms(), 1.0)]))
+                .unwrap();
+        };
+        for name in ["api_requests", "api_errors", "db_queries"] {
+            ingest(name);
+        }
+        let regex = [cortex::LabelMatcher {
+            r#type: 2,
+            name: "__name__".into(),
+            value: "api_.*".into(),
+        }];
+        // Every series of an api_ metric, by their labels.
+        let names = || {
+            every_series(&store, "tenant")
+                .into_iter()
+                .filter(|labels| {
+                    labels
+                        .iter()
+                        .any(|(name, value)| name == "__name__" && value.starts_with("api_"))
+                })
+                .count()
+        };
+        let selected = || {
+            store
+                .select_chunks("tenant", i64::MIN, i64::MAX, &regex)
+                .unwrap()
+                .len()
+        };
+        let matches = || NAME_MATCHES.with(std::cell::Cell::get);
+        assert_eq!(selected(), 2);
+        let before = matches();
+        assert_eq!(selected(), 2, "cached");
+        assert_eq!(matches(), before);
+        ingest("api_latency");
+        ingest("db_errors");
+        let before = matches();
+        assert_eq!(selected(), 3, "a new metric the regex accepts");
+        assert_eq!(matches() - before, 2, "only the new names are checked");
+        assert_eq!(selected(), names());
     }
 
     #[test]
