@@ -82,6 +82,7 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.5.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
+	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.5.0
 	go.opentelemetry.io/collector/pdata v1.67.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0
@@ -188,7 +189,6 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/twmb/franz-go/plugin/kslog v1.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/component v1.67.0 // indirect
 	go.opentelemetry.io/collector/confmap v1.67.0 // indirect
@@ -331,7 +331,7 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.50.0
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
