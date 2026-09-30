@@ -3603,6 +3603,14 @@ fn append_float(
         }
         Ok(Append::InOrder) => {}
     }
+    // Like Prometheus's head appender, the chunk's size is checked before its sample count.
+    if series
+        .float_head
+        .as_ref()
+        .is_some_and(|head| head.appender.bytes().len() > xor::MAX_BYTES_BEFORE_APPEND)
+    {
+        cut_float_head(series, disk)?;
+    }
     if let Some(head) = &mut series.float_head {
         let samples = head.appender.len();
         if samples == SAMPLES_PER_CHUNK / 4 {
