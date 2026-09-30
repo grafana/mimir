@@ -546,6 +546,9 @@ func TestIngester_Push(t *testing.T) {
 		nativeHistograms          bool
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
+		// stZeroSamples is the number of zero samples in expectedIngested that TSDB appended from start timestamps.
+		// These are not counted as ingested samples.
+		stZeroSamples int
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -3623,6 +3626,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type": {
+			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3683,7 +3687,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 4
+				cortex_ingester_ingested_samples_total{user="test"} 2
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3874,6 +3878,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates": {
+			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3964,7 +3969,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 10
+				cortex_ingester_ingested_samples_total{user="test"} 8
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3989,6 +3994,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates if out-of-order is disabled": {
+			stZeroSamples:    2,
 			allowOOO:         false,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4079,7 +4085,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 10
+				cortex_ingester_ingested_samples_total{user="test"} 8
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -4450,6 +4456,7 @@ func TestIngester_Push(t *testing.T) {
 				expectedSamplesCount += len(stream.Values) + len(stream.Histograms)
 				expectedHistogramsCount += len(stream.Histograms)
 			}
+			expectedSamplesCount -= testData.stZeroSamples
 			for _, series := range testData.expectedExemplarsIngested {
 				expectedExemplarsCount += len(series.Exemplars)
 			}
