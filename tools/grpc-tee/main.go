@@ -30,8 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/siderolabs/grpc-proxy/proxy"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 )
 
 func main() {
@@ -41,12 +39,13 @@ func main() {
 	var (
 		memberlistCfg memberlist.KVConfig
 		ringCfg       RingConfig
+		backendCfg    RingBackendConfig
 	)
 	listenAddress := flag.String("server.grpc-listen-address", ":9095", "Address to listen on for gRPC requests.")
 	httpListenAddress := flag.String("server.http-listen-address", ":8095", "Address to listen on for HTTP requests (ring status page and metrics).")
-	backendAddress := flag.String("backend.address", "localhost:9096", "Address of the gRPC backend to forward requests to.")
 	memberlistCfg.RegisterFlags(flag.CommandLine)
 	ringCfg.RegisterFlags(flag.CommandLine, logger)
+	backendCfg.RegisterFlagsWithPrefix("backend.", flag.CommandLine)
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fatal(logger, "failed to parse flags", err)
 	}
@@ -69,6 +68,7 @@ func main() {
 	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "memberlist"}, cortexReg))
 	memberlistKV := memberlist.NewKVInitService(&memberlistCfg, log.With(logger, "component", "memberlist"), dnsProvider, reg)
 	ringCfg.Common.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	backendCfg.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
 
 	lifecycler, err := newLifecycler(ringCfg, logger, cortexReg)
 	if err != nil {
@@ -78,9 +78,14 @@ func main() {
 	if err != nil {
 		fatal(logger, "failed to create ring client", err)
 	}
+	backend, err := NewRingBackend(backendCfg, logger, cortexReg)
+	if err != nil {
+		fatal(logger, "failed to create backend", err)
+	}
 
 	// Start the services in dependency order, and stop them in reverse order.
-	ringServices := []services.Service{memberlistKV, lifecycler, ringClient}
+	// The backend starts before the lifecycler, so this instance joins the ring only when it can read the backend ring.
+	ringServices := []services.Service{memberlistKV, backend, lifecycler, ringClient}
 	for _, s := range ringServices {
 		if err := services.StartAndAwaitRunning(context.Background(), s); err != nil {
 			fatal(logger, "failed to start service", err)
@@ -88,27 +93,9 @@ func main() {
 	}
 	level.Info(logger).Log("msg", "joined ring", "ring", ringKey, "instance_id", lifecycler.GetInstanceID(), "instance_addr", lifecycler.GetInstanceAddr())
 
-	// The client uses the raw codec, so response frames return as opaque bytes.
-	conn, err := grpc.NewClient(
-		*backendAddress,
-		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(proxy.Codec())),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		fatal(logger, "failed to create backend client", err)
-	}
-
-	backend := &proxy.SingleBackend{
-		GetConn: func(ctx context.Context) (context.Context, *grpc.ClientConn, error) {
-			// Forward the inbound metadata (for example X-Scope-OrgID) to the backend.
-			md, _ := metadata.FromIncomingContext(ctx) //lint:ignore faillint The proxy forwards all keys.
-			return metadata.NewOutgoingContext(ctx, md), conn, nil
-		},
-	}
-
 	director := func(_ context.Context, fullMethodName string) (proxy.Mode, []proxy.Backend, error) {
-		level.Debug(logger).Log("msg", "proxying request", "method", fullMethodName, "backend", *backendAddress)
-		return proxy.One2One, []proxy.Backend{backend}, nil
+		level.Debug(logger).Log("msg", "proxying request", "method", fullMethodName, "backend", backend.Name(), "address", backendCfg.Address)
+		return proxy.One2One, []proxy.Backend{backend.ProxyBackend()}, nil
 	}
 
 	// The server registers no services, so every call goes to the transparent handler.
@@ -126,6 +113,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/ring", ringClient)
 	mux.Handle("/memberlist", memberlistKV)
+	mux.Handle("/backend/"+backend.Name()+"/ring", backend)
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	httpServer := &http.Server{
 		Addr:         *httpListenAddress,
@@ -137,7 +125,7 @@ func main() {
 	serveErrs := make(chan error, 2)
 	go func() { serveErrs <- grpcServer.Serve(lis) }()
 	go func() { serveErrs <- httpServer.ListenAndServe() }()
-	level.Info(logger).Log("msg", "grpc-tee started", "grpc_address", *listenAddress, "http_address", *httpListenAddress, "backend", *backendAddress)
+	level.Info(logger).Log("msg", "grpc-tee started", "grpc_address", *listenAddress, "http_address", *httpListenAddress, "backend", backend.Name(), "backend_address", backendCfg.Address)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -152,9 +140,6 @@ func main() {
 	}
 
 	grpcServer.Stop()
-	if err := conn.Close(); err != nil {
-		level.Warn(logger).Log("msg", "failed to close backend client", "err", err)
-	}
 	if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		level.Warn(logger).Log("msg", "failed to close HTTP server", "err", err)
 	}

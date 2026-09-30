@@ -50,7 +50,7 @@ std.manifestYamlDoc({
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
     (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
-    self.store_gateways(1) +
+    self.store_gateways(2) +
     self.compactor +
     //    self.rulers(2) +
     //    self.alertmanagers(3) +
@@ -500,7 +500,13 @@ std.manifestYamlDoc({
       local flags = [
         '-server.grpc-listen-address=:%d' % grpcPort,
         '-server.http-listen-address=:%d' % httpPort,
+        '-backend.name=store-gateway',
         '-backend.address=store-gateway-1:9011',
+        // grpc-tee reads the store-gateway ring the same way as the querier. These values match config/mimir.yaml.
+        '-backend.ring.key=store-gateway',
+        '-backend.ring.store=memberlist',
+        '-backend.ring.replication-factor=3',
+        '-backend.ring.heartbeat-timeout=15s',
         // grpc-tee joins its own ring (key "grpc-tee") over the same memberlist cluster as Mimir.
         '-ring.store=memberlist',
         '-ring.instance-id=%s' % name,

@@ -109,7 +109,12 @@
       - "--"
       - "-server.grpc-listen-address=:9095"
       - "-server.http-listen-address=:8095"
+      - "-backend.name=store-gateway"
       - "-backend.address=store-gateway-1:9011"
+      - "-backend.ring.key=store-gateway"
+      - "-backend.ring.store=memberlist"
+      - "-backend.ring.replication-factor=3"
+      - "-backend.ring.heartbeat-timeout=15s"
       - "-ring.store=memberlist"
       - "-ring.instance-id=grpc-tee-1"
       - "-ring.instance-addr=grpc-tee-1"
@@ -141,7 +146,12 @@
       - "--"
       - "-server.grpc-listen-address=:9096"
       - "-server.http-listen-address=:8096"
+      - "-backend.name=store-gateway"
       - "-backend.address=store-gateway-1:9011"
+      - "-backend.ring.key=store-gateway"
+      - "-backend.ring.store=memberlist"
+      - "-backend.ring.replication-factor=3"
+      - "-backend.ring.heartbeat-timeout=15s"
       - "-ring.store=memberlist"
       - "-ring.instance-id=grpc-tee-2"
       - "-ring.instance-addr=grpc-tee-2"
@@ -407,6 +417,32 @@
       - "8011:8011"
       - "10011:10011"
       - "18011:18011"
+    "volumes":
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
+  "store-gateway-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "/bin/sh"
+      - "-c"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18012 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 -usage-stats.enabled=false"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=store-gateway-2"
+    "hostname": "store-gateway-2"
+    "image": "mimir"
+    "ports":
+      - "8012:8012"
+      - "10012:10012"
+      - "18012:18012"
     "volumes":
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
