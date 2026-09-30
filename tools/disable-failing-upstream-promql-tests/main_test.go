@@ -3,8 +3,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,48 +28,82 @@ FAIL	github.com/grafana/mimir/pkg/streamingpromql/comparisons	2.1s
 	}, parseFailures(out))
 }
 
-func TestLoadBaselineEnabledEvals(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "x.test"), []byte(
-		"# a comment\n"+
-			"load 1m\n"+
-			"  metric 1 2 3\n"+
-			"\n"+
-			"eval instant at 0m sum(metric)\n"+
-			"  {} 6\n"+
-			"\n"+
-			"# Unsupported by streaming engine.\n"+
-			"# eval instant at 0m rate(metric[1m])\n"+
-			"#   {} 0\n"+
-			"\n"+
-			"eval range from 0 to 1m step 30s count(metric)\n"+
-			"  {} 1 1 1\n"), 0o644))
+func TestBaselineOrigin(t *testing.T) {
+	b := parseBaseline(
+		"# a comment\n" +
+			"load 1m\n" +
+			"  metric 1 2 3\n" +
+			"\n" +
+			"eval instant at 0m sum(metric)\n" +
+			"  {} 6\n" +
+			"\n" +
+			"# Unsupported by streaming engine.\n" +
+			"# eval instant at 0m rate(metric[1m])\n" +
+			"#   {} 0\n" +
+			"\n" +
+			"# Unsupported by streaming engine.\n" +
+			"# eval instant at 0m count(metric)\n" +
+			"#   {} 3\n" +
+			"\n" +
+			"eval instant at 0m count(metric)\n" +
+			"  {} 3\n")
 
-	t.Run("enabled evals only", func(t *testing.T) {
-		require.Equal(t, map[string]bool{
-			"eval instant at 0m sum(metric)":                 true,
-			"eval range from 0 to 1m step 30s count(metric)": true,
-		}, loadBaselineEnabledEvals(dir, "x.test"))
-	})
+	testCases := map[string]struct {
+		baseline *baseline
+		evalLine string
+		expected origin
+	}{
+		"enabled before":                           {baseline: b, evalLine: "eval instant at 0m sum(metric)", expected: originExisting},
+		"disabled before":                          {baseline: b, evalLine: "eval instant at 0m rate(metric[1m])", expected: originPreviouslyDisabled},
+		"both enabled and disabled before":         {baseline: b, evalLine: "eval instant at 0m count(metric)", expected: originExisting},
+		"not in the file before":                   {baseline: b, evalLine: "eval instant at 0m max(metric)", expected: originNew},
+		"file new upstream: every case counts new": {baseline: parseBaseline(""), evalLine: "eval instant at 0m sum(metric)", expected: originNew},
+		"no baseline":                              {baseline: nil, evalLine: "eval instant at 0m sum(metric)", expected: originUnknown},
+	}
 
-	t.Run("file new upstream: every case counts as new", func(t *testing.T) {
-		require.Equal(t, map[string]bool{}, loadBaselineEnabledEvals(dir, "missing.test"))
-	})
-
-	t.Run("no baseline: origin unknown", func(t *testing.T) {
-		require.Nil(t, loadBaselineEnabledEvals("", "x.test"))
-	})
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.baseline.origin(tc.evalLine))
+		})
+	}
 }
 
 func TestRenderDisabledCases(t *testing.T) {
-	t.Run("nothing disabled", func(t *testing.T) {
-		require.Empty(t, renderDisabledCases(nil, nil, nil, nil))
-	})
+	cases := map[caseGroup][]string{
+		{originNew, true}:                 {"- new unsupported"},
+		{originExisting, false}:           {"- existing divergent"},
+		{originPreviouslyDisabled, false}: {"- previously disabled"},
+		{originNew, false}:                {"- new divergent"},
+	}
 
-	t.Run("possible regressions come first and empty sections are omitted", func(t *testing.T) {
-		require.Equal(t,
-			"**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**\n\n- existing\n\n"+
-				"**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**\n\n- new\n\n",
-			renderDisabledCases(nil, []string{"- existing"}, []string{"- new"}, nil))
-	})
+	testCases := map[string]struct {
+		cases                     map[caseGroup][]string
+		includePreviouslyDisabled bool
+		expected                  string
+	}{
+		"nothing disabled": {},
+		"possible regressions come first and empty sections are omitted": {
+			cases:                     cases,
+			includePreviouslyDisabled: true,
+			expected: "**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**\n\n- existing divergent\n\n" +
+				"**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**\n\n- new divergent\n\n" +
+				"**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**\n\n- new unsupported\n\n" +
+				"**Divergent result or runtime error in PREVIOUSLY-DISABLED cases that upstream changes re-enabled (disabled again):**\n\n- previously disabled\n\n",
+		},
+		"previously disabled cases left out": {
+			cases: cases,
+			expected: "**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**\n\n- existing divergent\n\n" +
+				"**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**\n\n- new divergent\n\n" +
+				"**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**\n\n- new unsupported\n\n",
+		},
+		"only previously disabled cases, left out": {
+			cases: map[caseGroup][]string{{originPreviouslyDisabled, true}: {"- previously disabled"}},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, renderDisabledCases(tc.cases, tc.includePreviouslyDisabled))
+		})
+	}
 }
