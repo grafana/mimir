@@ -36,6 +36,12 @@ type Config struct {
 	// metric ignores it. Optional.
 	FixedSeries []uint64
 
+	// Trends makes some metric names grow or shrink by a fixed number of
+	// series each day, so that day-over-day rankings have more than one
+	// mover. A trend overrides the name's Zipf draw and FixedSeries entry,
+	// and its series never churn. Optional.
+	Trends []Trend
+
 	// ChurnFraction is the fraction of each metric's series whose "pod" label
 	// value is periodically replaced, splitting one logical workload into a
 	// sequence of distinct label sets over time (matching Prometheus
@@ -68,6 +74,22 @@ type Config struct {
 	StaleFraction float64
 }
 
+// Trend is one metric name whose series count on day d (0-indexed from
+// Start) is Start + PerDay*d, floored at zero. Series are numbered from
+// zero and series k exists on exactly the days whose count exceeds k, so a
+// growing name adds series and a shrinking one ends them, each at a day
+// boundary.
+type Trend struct {
+	Metric int
+	Start  int
+	PerDay int
+}
+
+// countOn returns the trend's series count on day d.
+func (tr Trend) countOn(d int) int {
+	return max(0, tr.Start+tr.PerDay*d)
+}
+
 // Validate reports the first invalid field, or nil if cfg can be used to
 // generate a Model.
 func (cfg Config) Validate() error {
@@ -98,6 +120,20 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("stale fraction must be in [0, 1], got %g", cfg.StaleFraction)
 	case len(cfg.FixedSeries) > cfg.MetricNames:
 		return fmt.Errorf("fixed series has %d entries, more than %d metric names", len(cfg.FixedSeries), cfg.MetricNames)
+	}
+	seen := map[int]bool{}
+	for _, tr := range cfg.Trends {
+		switch {
+		case tr.Metric < 0 || tr.Metric >= cfg.MetricNames:
+			return fmt.Errorf("trend metric index %d out of range [0, %d)", tr.Metric, cfg.MetricNames)
+		case tr.Metric == cfg.SpikeMetric:
+			return fmt.Errorf("trend metric %d is also the spike metric", tr.Metric)
+		case seen[tr.Metric]:
+			return fmt.Errorf("trend metric %d appears twice", tr.Metric)
+		case tr.Start < 0:
+			return fmt.Errorf("trend metric %d has a negative start count", tr.Metric)
+		}
+		seen[tr.Metric] = true
 	}
 	for i, n := range cfg.FixedSeries {
 		if n == 0 {
