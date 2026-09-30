@@ -62,6 +62,8 @@ func (s *server) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/breakdown", s.handleBreakdown)
 	mux.HandleFunc("GET /api/promql/growth", s.handlePromQLGrowth)
 	mux.HandleFunc("GET /api/promql/breakdown", s.handlePromQLBreakdown)
+	mux.HandleFunc("GET /api/window", s.handleWindow)
+	mux.HandleFunc("GET /api/promql/window", s.handlePromQLWindow)
 }
 
 type dayJSON struct {
@@ -122,18 +124,32 @@ func (s *server) handleGrowth(w http.ResponseWriter, r *http.Request) {
 	elapsed := time.Since(start)
 
 	rows := growthRows(baseCounts.Counts, dayCounts.Counts)
-	exact := 0
+	exact, changed := 0, 0
 	for _, row := range rows {
 		if row.Base == s.dayTruth[base][row.Name] && row.Day == s.dayTruth[day][row.Name] {
 			exact++
 		}
+		if row.Growth != 0 {
+			changed++
+		}
 	}
-	top := rows[:min(limit, len(rows))]
-	for i := range top {
-		top[i].TruthBase, top[i].TruthDay = s.dayTruth[base][top[i].Name], s.dayTruth[day][top[i].Name]
+	withTruth := func(rs []growthRow) []growthRow {
+		out := append([]growthRow(nil), rs...)
+		for i := range out {
+			out[i].TruthBase, out[i].TruthDay = s.dayTruth[base][out[i].Name], s.dayTruth[day][out[i].Name]
+		}
+		return out
 	}
+	top := withTruth(rows[:min(limit, len(rows))])
+	var falls []growthRow
+	for i := len(rows) - 1; i >= 0 && len(falls) < 5 && rows[i].Growth < 0; i-- {
+		falls = append(falls, rows[i])
+	}
+	falls = withTruth(falls)
 	writeJSON(w, map[string]any{
 		"rows":        top,
+		"falls":       falls,
+		"changed":     changed,
 		"names":       len(rows),
 		"names_exact": exact,
 		"total_day":   dayCounts.Total(),
@@ -284,6 +300,95 @@ func (s *server) handlePromQLBreakdown(w http.ResponseWriter, r *http.Request) {
 		out["values"] = len(counts)
 	}
 	writeJSON(w, out)
+}
+
+type windowRow struct {
+	Name   string `json:"name"`
+	Summed int    `json:"summed"`
+	Exact  int    `json:"exact"`
+	Truth  int    `json:"truth"`
+}
+
+// windowDays parses from and to, inclusive day indices, as a window.
+func (s *server) windowDays(r *http.Request) (minT, maxT int64, days int, err error) {
+	from, err1 := strconv.Atoi(r.URL.Query().Get("from"))
+	to, err2 := strconv.Atoi(r.URL.Query().Get("to"))
+	if err1 != nil || err2 != nil || from < 0 || to >= len(s.days) || from > to {
+		return 0, 0, 0, fmt.Errorf("from and to must be day indices with 0 <= from <= to < %d", len(s.days))
+	}
+	return s.days[from].MinT, s.days[to].MaxT, to - from + 1, nil
+}
+
+// handleWindow counts every metric name over several days, both by adding
+// the days' index-header counts and exactly by hash union.
+func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
+	minT, maxT, _, err := s.windowDays(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	limit := 10
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	wc, err := cardpoc.NameCountsForWindow(s.compacted, minT, maxT)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	truth := s.pop.TruthBy(nil, "__name__", minT, maxT)
+
+	rows := make([]windowRow, 0, len(wc.Exact))
+	summedTotal, exactTotal, truthTotal, exactNames := 0, 0, 0, 0
+	for name, exact := range wc.Exact {
+		rows = append(rows, windowRow{Name: name, Summed: wc.Summed[name], Exact: exact, Truth: truth[name]})
+		summedTotal += wc.Summed[name]
+		exactTotal += exact
+		if exact == truth[name] {
+			exactNames++
+		}
+	}
+	for _, n := range truth {
+		truthTotal += n
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Exact != rows[j].Exact {
+			return rows[i].Exact > rows[j].Exact
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	writeJSON(w, map[string]any{
+		"rows":         rows[:min(limit, len(rows))],
+		"names":        len(rows),
+		"names_exact":  exactNames,
+		"summed_total": summedTotal,
+		"exact_total":  exactTotal,
+		"truth_total":  truthTotal,
+		"ranges":       len(wc.Ranges),
+		"summed_cost":  headcountCost{ElapsedMS: ms(wc.SummedTime), IndexHeaderBytes: wc.SummedHeaders},
+		"exact_cost":   headcountCost{ElapsedMS: ms(wc.ExactTime), ObjectStorageBytes: wc.IndexBytes, SeriesTouched: wc.SeriesRead},
+	})
+}
+
+// handlePromQLWindow asks Mimir for the tenant-wide per-name table over
+// the same days, with Mimir's default limits or with none.
+func (s *server) handlePromQLWindow(w http.ResponseWriter, r *http.Request) {
+	_, maxT, days, err := s.windowDays(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	seriesLimit := 0
+	if r.URL.Query().Get("limits") == "default" {
+		seriesLimit = defaultLimits
+	}
+	q := fmt.Sprintf(`count by (__name__) (last_over_time({__name__=~".+"}[%dd]))`, days)
+	res := s.mimir.query(q, maxT-1, seriesLimit)
+	total := 0
+	for _, v := range res.Values {
+		total += int(v)
+	}
+	writeJSON(w, map[string]any{"query": q, "result": res.summary(), "total": total})
 }
 
 // dayBaseLimit parses the day, base and limit query parameters. base
