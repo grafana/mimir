@@ -336,7 +336,7 @@ func equalLastHistogram(last lastInOrder, h *histogram.Histogram, fh *histogram.
 		return false
 	}
 	if last.h.IsFloatHistogram() {
-		return fh != nil && fh.Equals(mimirpb.FromHistogramProtoToFloatHistogram(last.h))
+		return fh != nil && fh.Equals(mimirpb.FromFloatHistogramProtoToFloatHistogram(last.h))
 	}
 	return h != nil && h.Equals(mimirpb.FromHistogramProtoToHistogram(last.h))
 }
