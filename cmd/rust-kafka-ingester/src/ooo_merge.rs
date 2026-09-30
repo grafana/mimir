@@ -10,7 +10,6 @@ use crate::proto::cortexpb;
 use crate::xor;
 
 pub const XOR_ENCODING: i32 = 4;
-const MAX_BYTES_PER_XOR_CHUNK_BEFORE_APPEND: usize = 1024;
 const TARGET_BYTES_PER_HISTOGRAM_CHUNK: usize = 1024;
 const MIN_SAMPLES_PER_HISTOGRAM_CHUNK: usize = 10;
 
@@ -92,7 +91,7 @@ impl Encoder {
         self.finish_histograms();
         if let Some((_, appender)) = &self.floats
             && self.size_cut
-            && appender.bytes().len() > MAX_BYTES_PER_XOR_CHUNK_BEFORE_APPEND
+            && appender.bytes().len() > xor::MAX_BYTES_BEFORE_APPEND
         {
             self.finish_floats();
         }

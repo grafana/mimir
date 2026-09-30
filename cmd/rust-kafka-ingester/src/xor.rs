@@ -52,6 +52,10 @@ impl BitWriter {
     }
 }
 
+/// Like Prometheus's `MaxBytesPerXORChunkBeforeAppend`: past this, the head and merged chunks
+/// start a new chunk, so no chunk exceeds 1024 bytes whatever its samples.
+pub const MAX_BYTES_BEFORE_APPEND: usize = 1024 - 19;
+
 pub fn encode(samples: &[(i64, f64)]) -> Vec<u8> {
     encode_iter(samples.len(), samples.iter().copied())
 }
