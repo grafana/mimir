@@ -79,6 +79,7 @@
     <h2>Cost of answering it</h2>
     <div class="card today"><h3>Today: PromQL through Mimir</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
     <div class="card hc"><h3>Headcount</h3><code>postings offset table per block, summed over one day's series-disjoint shards</code><div id="growth-hc" class="kv"></div></div>
+    <div class="card hc" id="sg-card"><h3>Mimir store-gateway, prototype endpoint</h3><code>/store-gateway/tenant/{tenant}/metric_name_counts, inside the running Mimir</code><div id="growth-sg" class="kv"></div></div>
   </section>
   <section>
     <h2 id="bd-title">2. Which label value exploded?</h2>
@@ -192,6 +193,13 @@ async function run() {
       pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
     }
     kv($("growth-today"), pairs);
+    const sg = await get(`api/storegateway/growth?day=${day}&base=${base}&limit=10`);
+    if (sg.error) {
+      kv($("growth-sg"), [["result", sg.error, "err"]]);
+    } else {
+      const same = sg.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
+      kv($("growth-sg"), [["latency", secs(sg.latency_ms)], ["blocks", sg.blocks], ["object storage", "0 B"], ["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]]);
+    }
     await runWindow();
     $("status").textContent = "";
   } catch (e) {
