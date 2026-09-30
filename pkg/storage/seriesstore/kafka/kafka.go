@@ -24,7 +24,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 type OffsetAt int

@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/trackers"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
 )
 
 // ActiveSeriesReport is a tenant's active series, metadata and exemplars, as the store reports

@@ -21,14 +21,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/exemplars"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/trackers"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
 )
 
 // DefaultShards is how many store shards a store has, each with its own lock.
@@ -87,6 +87,14 @@ type tenant struct {
 	// tenant's overrides change, and matching every series again was a tenth of an ingester's CPU.
 	trackers          *trackers.CustomTrackers
 	trackerGeneration uint64
+	// An engine's series of this shard by reference.
+	byRef map[uint64]refLocation
+	// An engine's out-of-order head bounds, and the start of its oldest emulated block, in the
+	// home shard.
+	minOOOTime, maxOOOTime int64
+	// The blocks an engine's compactions would have written, oldest first; replaced, never
+	// changed, so lookups can keep reading a copy of the slice.
+	blocks []emulatedBlock
 }
 
 func newTenant() *tenant {
@@ -97,6 +105,8 @@ func newTenant() *tenant {
 		minTime:     math.MaxInt64,
 		headMin:     math.MinInt64,
 		truncatedTo: math.MinInt64,
+		minOOOTime:  math.MaxInt64,
+		maxOOOTime:  math.MinInt64,
 		// Series start at generation 0, so they match the trackers on the first report.
 		trackerGeneration: 1,
 	}
@@ -180,6 +190,8 @@ type costAttributionState struct {
 
 // Store holds every tenant's series.
 type Store struct {
+	// Set by the engine, which keeps only head series in memory: see headView.memoryIsHead.
+	memoryIsHead   bool
 	shards         []*shardState
 	threads        int
 	activeWindowMs int64

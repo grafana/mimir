@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/protection"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/protection"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 type serveArgs struct {

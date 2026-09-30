@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/kafka"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/protection"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/segment"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/kafka"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/protection"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 const (

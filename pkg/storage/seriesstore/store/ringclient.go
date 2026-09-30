@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
 )
 
 // The partition ring is read through the ring sidecar, which already watches it over memberlist:

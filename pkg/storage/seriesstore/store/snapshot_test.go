@@ -15,11 +15,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 type chunkRead struct {
@@ -364,7 +364,7 @@ func samplesEverything(t testing.TB, s *Store) []string {
 // v3FixtureRequests, which the Rust ingester's own tests restore too.
 func restoresRustFixture(t *testing.T, name string) {
 	directory := filepath.Join(t.TempDir(), "store")
-	copyFixture(t, filepath.Join("..", "..", "..", "rust-kafka-ingester", "testdata", name), directory)
+	copyFixture(t, filepath.Join("..", "..", "..", "..", "cmd", "rust-kafka-ingester", "testdata", name), directory)
 	for shard := range DefaultShards {
 		require.NoError(t, os.MkdirAll(filepath.Join(directory, fmt.Sprintf("shard-%03d", shard)), 0o755))
 	}

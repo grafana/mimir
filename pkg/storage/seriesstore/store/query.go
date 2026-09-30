@@ -11,10 +11,10 @@ import (
 
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/exemplars"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // QuerySeriesView is a selected series: its `QueryStreamSeries` labels, encoded, and its chunks.
@@ -308,6 +308,19 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 // are merged as the Go ingester's out-of-order querier does; otherwise every chunk is returned
 // as stored.
 func queryChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.DiskMapper, start, end int64, a *arena) []EncodedChunk {
+	var storage [8]chunks.Chunk
+	raw := queryRawChunks(series, stored, coldChunks, disk, start, end, storage[:0])
+	out := a.chunkSlice(len(raw))
+	for index := range raw {
+		out = append(out, wireChunk(raw[index].MinTime, raw[index].MaxTime, raw[index].Encoding, raw[index].Data, a))
+	}
+	return out
+}
+
+// queryRawChunks appends to out the series' chunks in [start, end], as queryChunks returns them.
+// Their data may point into the chunk files or the series' open chunks: callers copy it before
+// releasing the shard's lock.
+func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.DiskMapper, start, end int64, out []chunks.Chunk) []chunks.Chunk {
 	overlaps := func(minTime, maxTime int64) bool { return minTime <= end && maxTime >= start }
 	var (
 		candidates        []chunks.Candidate
@@ -367,19 +380,13 @@ func queryChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.Di
 	if anyOutOfOrder {
 		merged, err := chunks.MergeOverlapping(candidates)
 		if err != nil {
-			return nil
+			return out
 		}
-		out := a.chunkSlice(len(merged))
-		for index := range merged {
-			out = append(out, wireChunk(merged[index].MinTime, merged[index].MaxTime, merged[index].Encoding, merged[index].Data, a))
-		}
-		return out
+		return append(out, merged...)
 	}
 	sort.SliceStable(candidates, func(x, y int) bool { return candidates[x].Chunk.MinTime < candidates[y].Chunk.MinTime })
-	out := a.chunkSlice(len(candidates))
 	for index := range candidates {
-		chunk := &candidates[index].Chunk
-		out = append(out, wireChunk(chunk.MinTime, chunk.MaxTime, chunk.Encoding, chunk.Data, a))
+		out = append(out, candidates[index].Chunk)
 	}
 	return out
 }
@@ -495,7 +502,7 @@ func (s *Store) SelectLabels(tenantID string, start, end int64, matchers []Label
 	s.perShardWithCold(tenantID, func(t *tenant, _ *chunks.DiskMapper, cold *coldState) {
 		selected := map[labels.Labels]struct{}{}
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if entry.series.hasDataIn(start, end) {
+			if s.memoryIsHead && entry.series.hasChunkIn(start, end) || !s.memoryIsHead && entry.series.hasDataIn(start, end) {
 				selected[entry.labels] = struct{}{}
 			}
 			return true
@@ -514,6 +521,12 @@ func (s *Store) SelectLabels(tenantID string, start, end int64, matchers []Label
 // see.
 type headView struct {
 	headMin, minTime, maxTime int64
+	// The engine's out-of-order head bounds and the start of its oldest emulated block.
+	minOOOTime, maxOOOTime int64
+	blocks                 []emulatedBlock
+	// Whether every series in memory is in the head, as the engine's head garbage collection
+	// keeps it; the store's Kafka path keeps series out of the head until its next head tick.
+	memoryIsHead bool
 }
 
 var emptyHeadView = headView{headMin: math.MinInt64, minTime: math.MaxInt64, maxTime: math.MinInt64}
@@ -521,6 +534,9 @@ var emptyHeadView = headView{headMin: math.MinInt64, minTime: math.MaxInt64, max
 func (h headView) holds(series *Series) bool {
 	if series.headEvicted {
 		return false
+	}
+	if h.memoryIsHead {
+		return true
 	}
 	newest, ok := series.newest()
 	return ok && newest >= h.headMin
@@ -535,6 +551,8 @@ type labelWindow struct {
 	hasBlocks        bool
 	lower, upper     int64
 	rangeStart, rEnd int64
+	// The engine's blocks the lookup overlaps, which hold their series whatever the range.
+	blocks []emulatedBlock
 }
 
 func (h headView) labelWindow(start, end int64) labelWindow {
@@ -544,6 +562,9 @@ func (h headView) labelWindow(start, end int64) labelWindow {
 		view:       h,
 		rangeStart: start,
 		rEnd:       end,
+	}
+	if h.memoryIsHead {
+		return h.engineLabelWindow(w, start, end)
 	}
 	if h.headMin != math.MinInt64 {
 		lower := rangeStart(start)
@@ -555,8 +576,47 @@ func (h headView) labelWindow(start, end int64) labelWindow {
 	return w
 }
 
-func (w *labelWindow) includes(series *Series) bool {
+// engineLabelWindow is Prometheus's DB.Querier: the head's index when the range overlaps the
+// head's in-order bounds, which its label lookups check even when the range only overlaps the
+// out-of-order head, and every block the range overlaps.
+func (h headView) engineLabelWindow(w labelWindow, start, end int64) labelWindow {
+	w.head = h.minTime != math.MaxInt64 && end >= h.minTime && start <= h.maxTime
+	for _, block := range h.blocks {
+		if block.overlaps(start, end) {
+			w.blocks = append(w.blocks, block)
+		}
+	}
+	return w
+}
+
+func (w *labelWindow) inBlocks(hash uint64) bool {
+	for i := range w.blocks {
+		if w.blocks[i].holds(hash) {
+			return true
+		}
+	}
+	return false
+}
+
+// coldMatching calls visit for the cold series matching matchers the window sees.
+func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, visit func(*coldSeries)) {
+	if len(w.blocks) > 0 {
+		cold.matching(tenantID, matchers, math.MinInt64, math.MaxInt64, func(series *coldSeries) {
+			if w.inBlocks(series.labels().Hash()) {
+				visit(series)
+			}
+		})
+		return
+	}
+	if w.hasBlocks {
+		cold.matching(tenantID, matchers, w.lower, w.upper, visit)
+	}
+}
+
+func (w *labelWindow) includes(entry *seriesEntry) bool {
+	series := &entry.series
 	return (w.head && w.view.holds(series)) ||
+		(len(w.blocks) > 0 && w.inBlocks(entry.hash)) ||
 		(w.hasBlocks && series.hasDataIn(w.lower, w.upper)) ||
 		// Evicted series are in their own compacted block.
 		(series.headEvicted && series.hasDataIn(w.rangeStart, w.rEnd))
@@ -570,7 +630,7 @@ func (s *Store) headView(tenantID string) headView {
 	if !ok {
 		return emptyHeadView
 	}
-	return headView{headMin: t.headMin, minTime: t.minTime, maxTime: t.maxTime}
+	return headView{headMin: t.headMin, minTime: t.minTime, maxTime: t.maxTime, memoryIsHead: s.memoryIsHead, minOOOTime: t.minOOOTime, maxOOOTime: t.maxOOOTime, blocks: t.blocks}
 }
 
 // LabelNames returns the label names of the matching series the label window of [start, end]
@@ -584,7 +644,7 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 	names := map[string]struct{}{}
 	s.perShardWithCold(tenantID, func(t *tenant, _ *chunks.DiskMapper, cold *coldState) {
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if window.includes(&entry.series) {
+			if window.includes(entry) {
 				it := entry.labels.Iter()
 				for name, _, ok := it.Next(); ok; name, _, ok = it.Next() {
 					names[name] = struct{}{}
@@ -592,11 +652,9 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 			}
 			return true
 		})
-		if window.hasBlocks {
-			cold.matching(tenantID, compiled, window.lower, window.upper, func(series *coldSeries) {
-				series.Range(func(name, _ string) { names[name] = struct{}{} })
-			})
-		}
+		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
+			series.Range(func(name, _ string) { names[name] = struct{}{} })
+		})
 	})
 	return sortedKeys(names), nil
 }
@@ -613,20 +671,18 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 	id, known := labels.Lookup(name)
 	s.perShardWithCold(tenantID, func(t *tenant, _ *chunks.DiskMapper, cold *coldState) {
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if known && window.includes(&entry.series) {
+			if known && window.includes(entry) {
 				if value, ok := labelValue(entry.labels, id); ok {
 					values[value] = struct{}{}
 				}
 			}
 			return true
 		})
-		if window.hasBlocks {
-			cold.matching(tenantID, compiled, window.lower, window.upper, func(series *coldSeries) {
-				if value, ok := series.lookup(name); ok {
-					values[value] = struct{}{}
-				}
-			})
-		}
+		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
+			if value, ok := series.lookup(name); ok {
+				values[value] = struct{}{}
+			}
+		})
 	})
 	return sortedKeys(values), nil
 }

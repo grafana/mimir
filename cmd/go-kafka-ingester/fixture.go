@@ -11,12 +11,12 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/segment"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/service"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/service"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 type fixtureArgs struct {

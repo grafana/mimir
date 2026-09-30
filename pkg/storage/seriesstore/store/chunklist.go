@@ -5,7 +5,7 @@ package store
 import (
 	"math/bits"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
 
 // ChunkMeta is a completed chunk in the chunk files, like Prometheus's `mmappedChunk`.

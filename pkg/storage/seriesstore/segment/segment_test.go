@@ -22,8 +22,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 func request() *record.DecodedRequest {
@@ -462,7 +462,7 @@ func TestRestartsFromVersion3Files(t *testing.T) {
 	directory := directoryOf(root, 0, "topic", 0)
 	require.NoError(t, os.MkdirAll(directory, 0o755))
 	// Written by the Rust version 3 log: 20 records of request(), each with its own sample.
-	fixture, err := os.ReadFile("../../../rust-kafka-ingester/testdata/segment-v3/00000000000018000000-0000.segment")
+	fixture, err := os.ReadFile("../../../../cmd/rust-kafka-ingester/testdata/segment-v3/00000000000018000000-0000.segment")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "00000000000018000000-0000.segment"), fixture, 0o644))
 	expected := func(offset int64) *record.DecodedRequest {
