@@ -31,6 +31,20 @@ impl LabelMatcher {
     }
 }
 
+/// A matcher's regex as Prometheus's `FastRegexMatcher` compiles it: the pattern must parse on
+/// its own, so `a)|(b` can't escape the anchors, `.` matches newlines, and it matches whole values.
+pub fn anchored_regex(pattern: &str) -> Result<Regex> {
+    prometheus_regex_parser().parse(pattern)?;
+    Ok(Regex::new(&format!("^(?s:{pattern})$"))?)
+}
+
+/// A parser with the flags Prometheus parses matcher regexes with.
+pub fn prometheus_regex_parser() -> regex_syntax::Parser {
+    regex_syntax::ParserBuilder::new()
+        .dot_matches_new_line(true)
+        .build()
+}
+
 /// Parses an Alertmanager-style matcher list such as `{a="b", c=~"d|e"}`, the syntax of Mimir's
 /// custom tracker definitions. Braces are optional and values may be unquoted.
 pub fn parse_matchers(input: &str) -> Result<Vec<LabelMatcher>> {
@@ -88,12 +102,11 @@ pub fn parse_matchers(input: &str) -> Result<Vec<LabelMatcher>> {
             }
             value.trim_end().to_owned()
         };
-        let anchored = |pattern: &str| Regex::new(&format!("^(?:{pattern})$"));
         let op = match op.as_str() {
             "=" => MatchOp::Equal(value),
             "!=" => MatchOp::NotEqual(value),
-            "=~" => MatchOp::Regex(anchored(&value)?),
-            "!~" => MatchOp::NotRegex(anchored(&value)?),
+            "=~" => MatchOp::Regex(anchored_regex(&value)?),
+            "!~" => MatchOp::NotRegex(anchored_regex(&value)?),
             other => bail!("unknown match operator {other:?} in {input:?}"),
         };
         matchers.push(LabelMatcher { name, op });
@@ -304,8 +317,13 @@ fn index_values(matchers: &[LabelMatcher]) -> Option<(String, Vec<String>)> {
     }
     for matcher in matchers {
         if let MatchOp::Regex(regex) = &matcher.op {
-            let pattern = regex.as_str();
-            let inner = &pattern[4..pattern.len() - 2];
+            let Some(inner) = regex
+                .as_str()
+                .strip_prefix("^(?s:")
+                .and_then(|pattern| pattern.strip_suffix(")$"))
+            else {
+                continue;
+            };
             if !inner.is_empty()
                 && inner
                     .chars()
