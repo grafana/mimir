@@ -242,6 +242,12 @@ fn qualify_frames(frames: &mut pprof::Frames) {
     let mut qualified = vec![String::new(); symbols.len()];
     for (index, symbol) in symbols.iter().enumerate().rev() {
         let name = symbol.name();
+        // Inlined frames carry their generic arguments, whose paths say nothing of where the
+        // function is.
+        let name = match name.find('<') {
+            Some(generics) if generics > 0 => name[..generics].to_owned(),
+            _ => name,
+        };
         qualified[index] = if name.contains("::") {
             name.clone()
         } else if name.starts_with('{') {
@@ -309,9 +315,9 @@ mod tests {
         let mut frames = pprof::Frames {
             frames: vec![
                 vec![
-                    symbol("{closure#0}", store),
+                    symbol("{closure#0}<core::result::Result<(), E>>", store),
                     symbol("{closure#2}", store),
-                    symbol("try_fold", std),
+                    symbol("try_fold<a::B, C>", std),
                     symbol("matching", store),
                 ],
                 vec![
