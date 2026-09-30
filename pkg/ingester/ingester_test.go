@@ -12355,7 +12355,7 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
@@ -12411,7 +12411,7 @@ func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
 
 	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
