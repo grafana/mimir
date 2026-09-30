@@ -62,7 +62,10 @@ fn histogram(timestamp: i64) -> cortexpb::Histogram {
             offset: 0,
             length: 50,
         }],
-        positive_deltas: vec![1; 50],
+        // One observation in each bucket, matching the count.
+        positive_deltas: std::iter::once(1)
+            .chain(std::iter::repeat_n(0, 49))
+            .collect(),
         ..Default::default()
     }
 }
