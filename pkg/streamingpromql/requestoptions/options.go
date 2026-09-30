@@ -14,6 +14,7 @@ type Options struct {
 	CacheDisabled    bool
 	ShardingDisabled bool
 	TotalShards      int32
+	Explain          []ExplainValue
 
 	// PropagatedHeaders carries an allow-listed subset of the request's HTTP headers so that
 	// optimization passes can read per-request toggles at planning time. This is a generic carrier:
@@ -22,6 +23,8 @@ type Options struct {
 	// extra-propagated-headers allow-list.
 	PropagatedHeaders http.Header
 }
+
+type ExplainValue string
 
 const (
 	CacheControlHeader = "Cache-Control"
@@ -32,6 +35,14 @@ const (
 	// TotalShardsControlHeader is the HTTP header used to override the
 	// total number of query shards. A value of "0" disables sharding.
 	TotalShardsControlHeader = "Sharding-Control"
+
+	// ExplainHeader is the HTTP header used to enable extra information in
+	// query responses that explains their cost.
+	ExplainHeader = "X-Mimir-Explain"
+
+	// ExplainValueCost is the ExplainHeader value that includes
+	// per-selector cost information in the query response.
+	ExplainValueCost = ExplainValue("cost")
 )
 
 type contextKey int
@@ -75,6 +86,14 @@ func (d OptionDecoder) DecodeOptions(r *http.Request) Options {
 		}
 	}
 
+	for _, value := range r.Header.Values(ExplainHeader) {
+		value = strings.ToLower(value)
+		switch ExplainValue(value) {
+		case ExplainValueCost:
+			opts.Explain = append(opts.Explain, ExplainValueCost)
+		}
+	}
+
 	for _, name := range d.PropagatedHeaders {
 		if values := r.Header.Values(name); len(values) > 0 {
 			if opts.PropagatedHeaders == nil {
@@ -106,4 +125,8 @@ func EncodeOptions(r *http.Request, opts Options) {
 	if opts.TotalShards > 0 {
 		r.Header.Set(TotalShardsControlHeader, strconv.Itoa(int(opts.TotalShards)))
 	}
+	for _, explain := range opts.Explain {
+		r.Header.Add(ExplainHeader, string(explain))
+	}
+
 }

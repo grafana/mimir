@@ -248,12 +248,11 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 		return err
 	}
 
-	plan, _, err := updatedPlan.ToEncodedPlan(
-		planning.QueryPlanEncodingOptions{
-			IncludeDescriptions: true,
-			IncludeDetails:      false,
-			IncludePlanningId:   true,
-		})
+	plan, _, err := updatedPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+		IncludeDescriptions: true,
+		IncludeDetails:      false,
+		IncludePlanningId:   true,
+	})
 	if err != nil {
 		return err
 	}
@@ -273,12 +272,11 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 }
 
 func (o *PlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	plan, _, err := finalPlan.ToEncodedPlan(
-		planning.QueryPlanEncodingOptions{
-			IncludeDescriptions: true,
-			IncludeDetails:      false,
-			IncludePlanningId:   true,
-		})
+	plan, _, err := finalPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+		IncludeDescriptions: true,
+		IncludeDetails:      false,
+		IncludePlanningId:   true,
+	})
 	if err != nil {
 		return err
 	}
