@@ -4312,9 +4312,9 @@ fn accepted_values(pattern: &str) -> Option<Vec<Box<str>>> {
                 .collect(),
         )
     }
-    // Parsed alone, as the anchored regex wraps it in a group: a pattern that only parses
-    // wrapped, like `a)|(b`, isn't anchored as a whole and keeps its regex.
-    let hir = regex_syntax::parse(pattern).ok()?;
+    let hir = crate::trackers::prometheus_regex_parser()
+        .parse(pattern)
+        .ok()?;
     let mut values = language(&hir)?
         .into_iter()
         .map(|value| String::from_utf8(value).map(String::into_boxed_str))
@@ -4341,7 +4341,7 @@ fn anchored_regex(pattern: &str) -> Result<CompiledRegex> {
     #[cfg(test)]
     REGEX_COMPILES.with(|compiles| compiles.set(compiles.get() + 1));
     let regex = CompiledRegex {
-        regex: Regex::new(&format!("^(?:{pattern})$"))?,
+        regex: crate::trackers::anchored_regex(pattern)?,
         values: accepted_values(pattern).map(Arc::from),
     };
     let mut cache = CACHE.lock().expect("regex cache poisoned");
@@ -5676,6 +5676,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn regexes_compile_like_prometheus() {
+        // Like Go's matchers, `.` matches newlines.
+        assert!(anchored_regex("a.b").unwrap().is_match("a\nb"));
+        assert!(!anchored_regex("(?-s:a.b)").unwrap().is_match("a\nb"));
+        // A pattern that only parses inside the anchors' group is invalid, not unanchored.
+        assert!(anchored_regex("a)|(b").is_err());
+        let store = Store::default();
+        let mut request = series_request("logs", [(now_ms(), 1.0)]);
+        request.series[0]
+            .labels
+            .push(("message".into(), "first\nsecond".into()));
+        store.ingest("tenant", request).unwrap();
+        let select = |pattern: &str| {
+            store.select_chunks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[cortex::LabelMatcher {
+                    r#type: 2,
+                    name: "message".into(),
+                    value: pattern.into(),
+                }],
+            )
+        };
+        assert_eq!(select("first.second").unwrap().len(), 1);
+        assert_eq!(select(".*").unwrap().len(), 1);
+        assert!(select("a)|(b").is_err());
     }
 
     #[test]
