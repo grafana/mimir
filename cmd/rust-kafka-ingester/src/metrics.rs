@@ -147,16 +147,6 @@ metric!(QUERIED_EXEMPLARS: prometheus::Histogram = prometheus::Histogram::with_o
     HistogramOpts::new("cortex_ingester_queried_exemplars", "The total number of exemplars returned from queries.")
         .buckets(prometheus::exponential_buckets(10.0, 5.0, 5).unwrap()),
 ).unwrap());
-// Which queries check labels series by series, to decide whether matching through postings, like
-// the Go ingester, is worth it.
-metric!(QUERY_SHAPES: IntCounterVec = IntCounterVec::new(
-    Opts::new("rust_ingester_queries_total", "Chunk queries by the type and target of their matchers."),
-    &["matchers"],
-).unwrap());
-metric!(QUERY_LABEL_CHECKS: IntCounterVec = IntCounterVec::new(
-    Opts::new("rust_ingester_query_label_checks_total", "Series label values chunk queries looked up to check matchers, by the type and target of their matchers."),
-    &["matchers"],
-).unwrap());
 metric!(QUERIED_SERIES: HistogramVec = HistogramVec::new(
     HistogramOpts::new("cortex_ingester_queried_series", "The total number of series returned from queries.")
         .buckets(prometheus::exponential_buckets(10.0, 8.0, 6).unwrap()),
