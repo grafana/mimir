@@ -44,6 +44,8 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"gap fraction without duration": func(c *Config) { c.GapFraction = 0.1 },
 		"churn fraction without period": func(c *Config) { c.ChurnFraction = 0.1 },
+		"more fixed series than names":  func(c *Config) { c.FixedSeries = make([]uint64, c.MetricNames+1) },
+		"zero fixed series count":       func(c *Config) { c.FixedSeries = []uint64{5, 0} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -182,4 +184,28 @@ func TestTruth_MatchesLabelSelectors(t *testing.T) {
 		}
 	}
 	require.Equal(t, want, got)
+}
+
+func TestNew_FixedSeriesOverridesZipf(t *testing.T) {
+	cfg := testConfig()
+	cfg.FixedSeries = []uint64{1234, 777}
+
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	perName := map[string]int{}
+	var names []string
+	for _, s := range m.Series {
+		name := s.Labels.Get("__name__")
+		if perName[name] == 0 {
+			names = append(names, name)
+		}
+		perName[name]++
+	}
+	require.Len(t, names, cfg.MetricNames)
+	require.Equal(t, 1234, perName[names[0]])
+	require.Equal(t, 777, perName[names[1]])
+	for _, name := range names[2:] {
+		require.LessOrEqual(t, uint64(perName[name]), cfg.SeriesCap, "names past FixedSeries still use the Zipf draw")
+	}
 }
