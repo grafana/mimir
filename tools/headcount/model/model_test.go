@@ -3,7 +3,9 @@
 package model
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,4 +230,34 @@ func TestTruthBy_SumsToTruth(t *testing.T) {
 		total += n
 	}
 	require.Equal(t, m.Truth(matcher, start, end), total)
+}
+
+func TestNew_TrendsChangeCountsPerDay(t *testing.T) {
+	cfg := testConfig() // 4 days
+	cfg.Trends = []Trend{{Metric: 3, Start: 100, PerDay: 50}, {Metric: 4, Start: 300, PerDay: -100}}
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	day := 24 * time.Hour.Milliseconds()
+	nameOf := func(metric int) string {
+		prefix := fmt.Sprintf("metric_%06d_", metric)
+		for _, s := range m.Series {
+			if n := s.Labels.Get("__name__"); strings.HasPrefix(n, prefix) {
+				return n
+			}
+		}
+		t.Fatalf("metric %d not found", metric)
+		return ""
+	}
+	for metric, want := range map[int][]int{3: {100, 150, 200, 250}, 4: {300, 200, 100, 0}} {
+		matcher := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", nameOf(metric))}
+		for d, n := range want {
+			s := cfg.startMillis() + int64(d)*day
+			require.Equal(t, n, m.Truth(matcher, s, s+day), "metric %d day %d", metric, d)
+		}
+	}
+
+	bad := testConfig()
+	bad.Trends = []Trend{{Metric: 1, Start: 1}, {Metric: 1, Start: 2}}
+	require.Error(t, bad.Validate(), "a metric can have only one trend")
 }
