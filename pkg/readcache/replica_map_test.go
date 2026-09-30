@@ -44,9 +44,9 @@ func startReadcacheForAssignment(t *testing.T, instanceID string) (*Readcache, c
 
 // TestApplyAssignment_MatchesLeasesThroughReplicaMap is the readcache
 // half of RF=2: leases name a logical slot, and every concrete mirror
-// of that slot must claim the partition. Without the replica map a
-// zone-a pod would see "readcache-0" in the log, fail the exact
-// instance-ID comparison, and own nothing.
+// of that slot must claim the partition. The replica map is one way
+// to see that expansion; a zonal pod also claims the slot parsed from
+// its own name when the map omits it.
 func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 	replicaMap := readcacheassignment.ReplicaMap{
 		"readcache-0": {
@@ -103,21 +103,52 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 			{PartitionID: 2, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
 		}, now))
 		assert.Equal(t, []int32{2}, r.OwnedPartitions(),
-			"the replica map decides who owns a lease, not when it is active")
+			"slot ownership does not keep an expired or future lease")
 	})
 
-	t.Run("clearing the map falls back to exact instance-ID matching", func(t *testing.T) {
+	t.Run("a zonal pod keeps its slot when the map is cleared", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-0")
 		r.setReplicaMap(replicaMap)
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
-		require.NotEmpty(t, r.OwnedPartitions())
+		require.Equal(t, []int32{0, 2}, r.OwnedPartitions())
 
-		// The rebalancer went back to RF=1 and cleared the map; the
-		// logical IDs in the log no longer match this pod.
+		// A nil map is RF=1 identity for queriers. This pod's slot
+		// still comes from its name, so logical leases stay owned
+		// until the log itself stops naming that slot.
 		r.setReplicaMap(nil)
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
-		assert.Empty(t, r.OwnedPartitions())
+		assert.Equal(t, []int32{0, 2}, r.OwnedPartitions())
 	})
+}
+
+// TestApplyAssignment_ZonalPodOwnsSlotWhenMapOmitsIt is the restart
+// case: the replica map lists only the mirrors that are currently
+// healthy, and a pod that is LEAVING or past its heartbeat timeout is
+// absent. The leases for its slot are unchanged. Matching ownership
+// through the map made that look like "owns nothing" and the first
+// reconcile deleted the resume offsets.
+func TestApplyAssignment_ZonalPodOwnsSlotWhenMapOmitsIt(t *testing.T) {
+	now := time.Now()
+	entries := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+		{PartitionID: 1, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+		{PartitionID: 2, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+	}
+	// zone-b-0 has not re-entered the ring. zone-a-0 is the only
+	// healthy mirror of slot 0. Slot 1 has nobody up.
+	live := readcacheassignment.ReplicaMap{
+		"readcache-0": {
+			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
+		},
+		"readcache-1": nil,
+	}
+
+	r, ctx := startReadcacheForAssignment(t, "readcache-zone-b-0")
+	r.setReplicaMap(live)
+
+	require.NoError(t, r.applyAssignment(ctx, entries, now))
+	assert.Equal(t, []int32{0, 2}, r.OwnedPartitions(),
+		"absence from the replica map must not drop the slot's leases")
 }
 
 // TestApplyAssignment_WithoutReplicaMapIsExactMatch is the RF=1

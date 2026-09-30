@@ -1292,6 +1292,25 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 	}
 }
 
+// ownsAssignmentLease reports whether this pod should consume a lease
+// stored under leaseInstanceID.
+//
+// OwnsLogical covers RF=1 (the lease names this pod) and the steady
+// RF=2 case (the replica map expands the logical slot to this pod).
+// A zonal pod also matches the slot parsed from its own instance id.
+// That slot does not change when the pod drops out of the map, and
+// the map is a liveness filter for queriers.
+func (r *Readcache) ownsAssignmentLease(replicaMap readcacheassignment.ReplicaMap, leaseInstanceID string) bool {
+	if replicaMap.OwnsLogical(r.cfg.InstanceID, leaseInstanceID) {
+		return true
+	}
+	id, ok := readcacheassignment.ParseInstanceIdentity(r.cfg.InstanceID)
+	if !ok || id.Zone == "" {
+		return false
+	}
+	return leaseInstanceID == id.LogicalID
+}
+
 // setReplicaMap installs the logical->concrete expansion published by
 // the rebalancer. Called from the assignment stream; also used by
 // tests that drive applyAssignment directly.
@@ -1328,16 +1347,19 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	firstReconcile := !r.startupReconcileDone.Load()
 	defer r.startupReconcileDone.Store(true)
 
-	// A lease names a logical slot under RF≥2; this pod owns the
-	// partition when it is one of that slot's concrete replicas. With
-	// no replica map OwnsLogical reduces to an exact instance-ID
-	// match, which is the RF=1 behaviour.
+	// A lease names a logical slot under RF≥2 and this pod's concrete
+	// id under RF=1. The replica map tells queriers which mirrors are
+	// currently up; it is not what decides ownership. A zonal pod
+	// whose name parses to the lease's slot owns that lease even when
+	// the map has not listed it yet (restart, LEAVING, heartbeat
+	// timeout). Treating "absent from the map" as "owns nothing"
+	// deletes resume offsets on the first snapshot.
 	replicaMap := r.getReplicaMap()
 
 	wanted := map[int32]struct{}{}
 	var snapshotForInstance int
 	for _, e := range entries {
-		if !replicaMap.OwnsLogical(r.cfg.InstanceID, e.InstanceID) {
+		if !r.ownsAssignmentLease(replicaMap, e.InstanceID) {
 			continue
 		}
 		snapshotForInstance++
