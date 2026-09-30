@@ -11,6 +11,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.0
+	github.com/axiomhq/hyperloglog v0.3.0
 	github.com/benbjohnson/clock v1.3.5
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cortexproject/promqlsmith v0.0.0-20260205231645-0c8ef5fe46a5
@@ -146,6 +147,7 @@ require (
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v0.2.0 // indirect
+	github.com/dgryski/go-metro v0.0.0-20250106013310-edb8663e5e33 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
@@ -220,6 +222,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
+	github.com/kamstrup/intmap v0.5.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/knadh/koanf/maps v0.1.3 // indirect
