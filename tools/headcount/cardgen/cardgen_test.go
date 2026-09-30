@@ -149,3 +149,10 @@ func TestThresholdsProfile_NamesAboveE6Threshold(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoProfile_Valid(t *testing.T) {
+	p, err := LoadProfile("demo", 1)
+	require.NoError(t, err)
+	require.NoError(t, p.Population.Validate())
+	require.Len(t, p.Population.Trends, 22)
+}

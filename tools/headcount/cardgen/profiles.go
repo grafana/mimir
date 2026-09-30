@@ -16,7 +16,8 @@ var epoch = time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 
 // Profile bundles a population Config with the partition count the
 // downstream compactor run must match, one per scale tier (small,
-// medium, large), plus thresholds, which targets E6 and E9.
+// medium, large), plus thresholds, which targets E6 and E9, and demo,
+// which has day-over-day growth for the demo page.
 type Profile struct {
 	Population model.Config
 	Partitions int
@@ -67,6 +68,22 @@ var profiles = map[string]Profile{
 			SpikeMetric:   -1,
 		},
 	},
+	// demo is 20,000 names over 4 days with 22 names that grow or shrink
+	// every day at different rates, plus a one-day spike, so that a
+	// day-over-day ranking has a different top 10 for every pair of days.
+	"demo": {
+		Partitions: 4,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(4 * 24 * time.Hour),
+			MetricNames: 20_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			Trends:        demoTrends(),
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   0, SpikeDay: 2, SpikeBaseValues: 10, SpikePeakValues: 30_000,
+		},
+	},
 	"large": {
 		Partitions: 4,
 		Population: model.Config{
@@ -90,6 +107,26 @@ func thresholdSeries() []uint64 {
 	}
 	for n := uint64(17_500); n >= 10_000; n -= 500 {
 		out = append(out, n)
+	}
+	return out
+}
+
+// demoTrends returns the demo profile's trends on metrics 1 to 22: one
+// new name growing from nothing, eleven growing at rates from 100 to 3,000
+// series a day, one shrinking to nothing, and nine shrinking at rates from
+// 300 to 2,500 a day.
+func demoTrends() []model.Trend {
+	rates := []struct{ start, perDay int }{
+		{0, 4000},
+		{2000, 3000}, {5000, 2500}, {1000, 2000}, {8000, 1500}, {500, 1200}, {3000, 1000},
+		{4000, 800}, {600, 600}, {2500, 400}, {1500, 300}, {700, 100},
+		{6000, -3000},
+		{12000, -2500}, {9000, -2000}, {7000, -1500}, {6000, -1000}, {5000, -800},
+		{4000, -600}, {3000, -400}, {2000, -300}, {2500, -500},
+	}
+	out := make([]model.Trend, len(rates))
+	for i, r := range rates {
+		out[i] = model.Trend{Metric: i + 1, Start: r.start, PerDay: r.perDay}
 	}
 	return out
 }
