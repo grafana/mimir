@@ -29,7 +29,7 @@ func main() {
 	snapshots := flag.String("snapshots", "", "directory holding the l1, handover and compacted snapshots from tools/headcount/fixtures")
 	profile := flag.String("profile", "small", fmt.Sprintf("with -snapshots: the profile the snapshots were built from, one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "with -snapshots: the seed the snapshots were built with")
-	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e9, e10, names and all")
+	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e9, e10, names and all")
 	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
 	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
 	flag.Parse()
@@ -134,6 +134,18 @@ func runSnapshots(dir string, pop *model.Model, experiments []string, out string
 			}
 			fmt.Printf("  truth values=%d total=%d\n", len(r.Truth), truthTotal)
 			pass = pass && r.Pass()
+		case "e7":
+			results, err := runE7(compacted, pop)
+			if err != nil {
+				log.Fatalf("E7: %v", err)
+			}
+			for _, r := range results {
+				fmt.Printf("%s E7 %s..%s snapped to %s..%s: snapped=%d (truth %d, %s) checked=%d (truth %d..%d, %d series read, %s)\n",
+					status(r.Pass()), rfc3339(r.MinT), rfc3339(r.MaxT), rfc3339(r.Snapped.MinT), rfc3339(r.Snapped.MaxT),
+					r.SnappedCount, r.TruthSnapped, r.SnappedTime.Round(time.Millisecond),
+					r.CheckedCount, r.Truth, r.TruthWidened, r.CheckedSeries, r.CheckedTime.Round(time.Millisecond))
+				pass = pass && r.Pass()
+			}
 		case "names":
 			if err := runNames(compacted, pop, out); err != nil {
 				log.Fatalf("names: %v", err)
@@ -212,6 +224,28 @@ func runE10(compacted string, pop *model.Model, budget int) (cardpoc.E10Result, 
 		}
 	}
 	return cardpoc.E10Result{}, fmt.Errorf("no block range holds the spike day start")
+}
+
+// runE7 counts three unaligned windows on the second day and on the
+// spike day of the profile.
+func runE7(compacted string, pop *model.Model) ([]cardpoc.E7Result, error) {
+	cfg := pop.Config()
+	days := []int{1}
+	if cfg.SpikeMetric >= 0 && cfg.SpikeDay != 1 {
+		days = append(days, cfg.SpikeDay)
+	}
+	var windows [][2]int64
+	for _, d := range days {
+		day := cfg.Start.Add(time.Duration(d) * 24 * time.Hour)
+		for _, w := range [][2]time.Duration{
+			{6 * time.Hour, 18 * time.Hour},
+			{30 * time.Minute, 70 * time.Minute},
+			{12*time.Hour + 17*time.Minute, 12*time.Hour + 43*time.Minute},
+		} {
+			windows = append(windows, [2]int64{day.Add(w[0]).UnixMilli(), day.Add(w[1]).UnixMilli()})
+		}
+	}
+	return cardpoc.RunE7(compacted, pop, windows)
 }
 
 func rfc3339(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
