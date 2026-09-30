@@ -134,3 +134,18 @@ func TestGenerate_NoSeriesSplitWithinAnHour(t *testing.T) {
 		require.NoError(t, r.Close())
 	}
 }
+
+func TestThresholdsProfile_NamesAboveE6Threshold(t *testing.T) {
+	p, err := LoadProfile("thresholds", 1)
+	require.NoError(t, err)
+	require.NoError(t, p.Population.Validate())
+
+	fixed := p.Population.FixedSeries
+	require.Len(t, fixed, 22)
+	for i, n := range fixed {
+		require.GreaterOrEqual(t, n, uint64(10_000), "name %d must sit above E6's exact-hash threshold", i)
+		if i > 0 {
+			require.Less(t, n, fixed[i-1], "counts must be strictly descending so the top-N order is unambiguous")
+		}
+	}
+}
