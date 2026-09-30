@@ -13,13 +13,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/trackers"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
 )
 
 func TestShardsLikeTheGoIngester(t *testing.T) {

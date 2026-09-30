@@ -29,9 +29,9 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/zeebo/xxh3"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 var (

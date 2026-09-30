@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
 )
 
 const (

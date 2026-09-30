@@ -7,10 +7,10 @@ import (
 	"math"
 	"slices"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 // appendRules are the head state a flush's samples are checked against, taken when the flush's
@@ -312,10 +312,27 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 		result, err := insertOutOfOrder(series, disk, oooSample{T: timestamp, F: value})
 		return result, 0, true, err
 	}
+	result, err := appendFloatInOrder(series, disk, timestamp, value, false)
+	if err != nil {
+		return appended{}, 0, false, err
+	}
+	return result, 0, true, nil
+}
+
+// appendFloatInOrder appends a sample the head appender accepted in order, cutting the open chunk
+// on its size, then its estimated end time or sample count, like Prometheus's head.
+func appendFloatInOrder(series *Series, disk *chunks.DiskMapper, timestamp int64, value float64, oneOpenChunk bool) (appended, error) {
+	// Prometheus's head has one open chunk: a float after histograms starts a new one. The Kafka
+	// path keeps both open, like the Rust store it's checked against.
+	if oneOpenChunk && series.histogramHead != nil {
+		if err := cutHistogramHead(series, disk); err != nil {
+			return appended{}, err
+		}
+	}
 	// Like Prometheus's head appender, the chunk's size is checked before its sample count.
 	if series.floatHead != nil && len(series.floatHead.appender.Bytes()) > maxXORBytesBeforeAppend {
 		if err := cutFloatHead(series, disk); err != nil {
-			return appended{}, 0, false, err
+			return appended{}, err
 		}
 	}
 	if fh := series.floatHead; fh != nil {
@@ -325,7 +342,7 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 		}
 		if timestamp >= fh.nextAt || samples >= samplesPerChunk*2 {
 			if err := cutFloatHead(series, disk); err != nil {
-				return appended{}, 0, false, err
+				return appended{}, err
 			}
 		}
 	}
@@ -337,10 +354,10 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 	// A float after an older float in the head can only follow a histogram at a later time, which
 	// the in-order check above rules out.
 	if last, ok := fh.appender.LastTimestamp(); ok && timestamp <= last {
-		return appended{noop: true}, 0, true, nil
+		return appended{noop: true}, nil
 	}
 	fh.appender.Append(timestamp, value)
-	return appended{opened: opened}, 0, true, nil
+	return appended{opened: opened}, nil
 }
 
 func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules, head *committedHead, h *mimirpb.Histogram) (appended, DiscardReason, bool, error) {
@@ -369,6 +386,21 @@ func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules
 		result, err := insertOutOfOrder(series, disk, oooSample{T: h.Timestamp, H: &copied})
 		return result, 0, true, err
 	}
+	result, err := appendHistogramInOrder(series, disk, h, false)
+	if err != nil {
+		return appended{}, 0, false, err
+	}
+	return result, 0, true, nil
+}
+
+// appendHistogramInOrder appends a histogram the head appender accepted in order.
+func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.Histogram, oneOpenChunk bool) (appended, error) {
+	// A histogram after floats starts a new chunk, like the head's one open chunk.
+	if oneOpenChunk && series.floatHead != nil {
+		if err := cutFloatHead(series, disk); err != nil {
+			return appended{}, err
+		}
+	}
 	timestamp := h.Timestamp
 	// Prometheus's `histogramsAppendPreprocessor`: cut on the estimated end time or twice the
 	// target size, with at least a few samples unless a new block range starts.
@@ -387,34 +419,34 @@ func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules
 			(samples >= minSamplesPerHistogramChunk || timestamp >= nextRangeStart) {
 			next := chunks.NewHistogramAppender(h, hh)
 			if err := cutHistogramHead(series, disk); err != nil {
-				return appended{}, 0, false, err
+				return appended{}, err
 			}
 			series.histogramHead = next
 			series.histogramNextAt = rangeEnd(timestamp)
 			series.histogramEndComputed = false
-			return appended{opened: true}, 0, true, nil
+			return appended{opened: true}, nil
 		}
 	}
 	if series.histogramHead == nil {
 		series.histogramHead = chunks.NewHistogramAppender(h, nil)
 		series.histogramNextAt = rangeEnd(timestamp)
 		series.histogramEndComputed = false
-		return appended{opened: true}, 0, true, nil
+		return appended{opened: true}, nil
 	}
 	result, next, err := series.histogramHead.Append(h)
 	if err != nil {
-		return appended{}, 0, false, err
+		return appended{}, err
 	}
 	if result != chunks.AppendedNewChunk {
-		return appended{}, 0, true, nil
+		return appended{}, nil
 	}
 	if err := cutHistogramHead(series, disk); err != nil {
-		return appended{}, 0, false, err
+		return appended{}, err
 	}
 	series.histogramHead = next
 	series.histogramNextAt = rangeEnd(timestamp)
 	series.histogramEndComputed = false
-	return appended{opened: true}, 0, true, nil
+	return appended{opened: true}, nil
 }
 
 func cutFloatHead(series *Series, disk *chunks.DiskMapper) error {

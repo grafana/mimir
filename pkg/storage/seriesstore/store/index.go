@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // seriesEntry is a stored series with its labels and their hash.

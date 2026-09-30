@@ -12,14 +12,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/kafka"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/segment"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/kafka"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 type stuckServer struct {

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	ingestermetrics "github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
+	ingestermetrics "github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
 )
 
 // Reason is why reads are limited, empty when they aren't. Read on every request, so it's a

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/trackers"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
 )
 
 // ParseDurationMs parses a Prometheus `model.Duration` such as `2h`, `1h30m`, `10000d` or `0`, in

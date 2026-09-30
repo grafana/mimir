@@ -16,10 +16,10 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/exemplars"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // Head snapshot magics, one per layout version.

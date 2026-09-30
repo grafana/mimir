@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 type accounting struct {

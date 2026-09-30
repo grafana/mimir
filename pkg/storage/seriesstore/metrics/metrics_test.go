@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
 )
 
 func encodeText(t *testing.T, registry *prometheus.Registry) string {

@@ -14,12 +14,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/exemplars"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/kafka"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/kafka"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 const (

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/trackers"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
 )
 
 // HeadReport is a tenant's emulated Go head, as the metrics report it.

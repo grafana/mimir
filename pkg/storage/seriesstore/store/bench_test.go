@@ -18,10 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/segment"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
 )
 
 // The Rust ingester's store benches are programs printing one line per case (`cargo bench --bench

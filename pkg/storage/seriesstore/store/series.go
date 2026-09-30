@@ -3,8 +3,8 @@
 package store
 
 import (
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
 
 // The wire encoding of float chunks.
@@ -39,6 +39,8 @@ type oooSample = chunks.Sample
 // Series keeps only its open chunks on the heap; completed chunks are referenced in the chunk
 // files.
 type Series struct {
+	// The engine's series reference, never reused; 0 outside an engine.
+	ref       uint64
 	chunks    chunkList
 	floatHead *floatHead
 	// The open histogram chunk, kept encoded like Prometheus's head chunk; most series are floats.
@@ -172,6 +174,36 @@ func (s *Series) hasDataIn(start, end int64) bool {
 		}
 	}
 	return s.headOverlaps(start, end)
+}
+
+// hasChunkIn is hasDataIn with the open out-of-order chunk split by encoding, as Prometheus's
+// reads split its out-of-order head chunk: a query only sees a series through chunks overlapping
+// its range, and a mixed chunk's first and last samples can straddle a range none of its parts do.
+func (s *Series) hasChunkIn(start, end int64) bool {
+	it := s.chunks.iter()
+	for chunk, more := it.next(); more; chunk, more = it.next() {
+		if chunk.MinTime <= end && chunk.MaxTime >= start {
+			return true
+		}
+	}
+	if s.floatHead != nil && s.floatHead.minTime <= end && s.floatHead.lastTimestamp() >= start {
+		return true
+	}
+	if s.histogramHead != nil && s.histogramHead.FirstTimestamp() <= end && s.histogramHead.Last().Timestamp >= start {
+		return true
+	}
+	if n := len(s.outOfOrder); n > 0 && s.outOfOrder[0].T <= end && s.outOfOrder[n-1].T >= start {
+		encoded, err := chunks.EncodeOutOfOrder(s.outOfOrder)
+		if err != nil {
+			return true
+		}
+		for _, chunk := range encoded {
+			if chunk.MinTime <= end && chunk.MaxTime >= start {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Series) headOverlaps(start, end int64) bool {

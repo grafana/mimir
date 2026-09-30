@@ -18,8 +18,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
 // rustResults are the query results the Rust store returned for the same data and queries, from
