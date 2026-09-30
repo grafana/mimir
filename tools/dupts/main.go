@@ -101,6 +101,7 @@ func main() {
 		dumpSeries:            *dump,
 		streams:               map[string]streamInfo{},
 		stats:                 map[dupKey]*dupStat{},
+		crossReq:              map[crossKey][]crossEntry{},
 	}
 	if *urls {
 		a.urlHist = map[string]int{}
@@ -123,6 +124,7 @@ func main() {
 		fatalf("scan messages: %v", err)
 	}
 	a.report(os.Stdout)
+	a.printCrossRequestFindings(os.Stdout)
 }
 
 // streamInfo captures what pass A learns about one HTTP/2 stream (one RPC).
@@ -374,6 +376,54 @@ func (a *analyzer) decodeRemoteWrite(frame, tenant, source string, body []byte, 
 		a.decodeErrors++
 		return
 	}
+
+	// Cross-object duplicate-label detection: flag cases where this
+	// WriteRequest contains multiple SEPARATE TimeSeries entries sharing an
+	// identical label set. This is exactly what -distributor.merge-duplicate-
+	// timeseries merges before per-object validation runs, and is
+	// independent of checkSeries below, which only detects duplicates
+	// *within* one object's own Samples list.
+	byLabels := make(map[string][]int, len(wr.Timeseries))
+	for i, ts := range wr.Timeseries {
+		byLabels[labelsString(ts.Labels)] = append(byLabels[labelsString(ts.Labels)], i)
+	}
+	for lbls, idxs := range byLabels {
+		if len(idxs) <= 1 {
+			continue
+		}
+		// Only report a genuine hazard: the same label set split across
+		// multiple objects AND at least one sample timestamp actually
+		// colliding across those objects (not just distinct-timestamp
+		// samples for the same series legitimately batched together).
+		tsOwners := map[int64][]int{}
+		for _, i := range idxs {
+			for _, s := range wr.Timeseries[i].Samples {
+				tsOwners[s.TimestampMs] = append(tsOwners[s.TimestampMs], i)
+			}
+		}
+		collision := false
+		for _, owners := range tsOwners {
+			if len(owners) > 1 {
+				collision = true
+				break
+			}
+		}
+		if !collision {
+			continue
+		}
+		fmt.Printf("frame=%s tenant=%q source=%s CROSS-OBJECT duplicate label set across %d separate TimeSeries entries (indices %v): %s\n",
+			frame, tenant, source, len(idxs), idxs, lbls)
+		for _, i := range idxs {
+			for _, s := range wr.Timeseries[i].Samples {
+				marker := ""
+				if len(tsOwners[s.TimestampMs]) > 1 {
+					marker = "  <- COLLIDES"
+				}
+				fmt.Printf("    idx=%d sample t=%d (%s) v=%g%s\n", i, s.TimestampMs, msToUTC(s.TimestampMs).Format("2006-01-02 15:04:05.000 MST"), s.Value, marker)
+			}
+		}
+	}
+
 	for _, ts := range wr.Timeseries {
 		a.totalSeries++
 		a.emitSeries(frame, tenant, source, ts)
@@ -503,6 +553,69 @@ type analyzer struct {
 	streams map[string]streamInfo
 	urlHist map[string]int // nil unless -urls is set
 	stats   map[dupKey]*dupStat
+
+	// crossReq tracks every (tenant, labels, sample timestamp) seen across the
+	// WHOLE pcap, regardless of which request/frame it came from, to detect
+	// duplicates that arrive as two entirely SEPARATE requests (e.g. two
+	// unsharded scrapers, or a client-side retry) rather than as two objects
+	// within one WriteRequest. prePushMergeMiddleware cannot help this case at
+	// all, since it only ever sees one request at a time.
+	crossReq map[crossKey][]crossEntry
+}
+
+type crossKey struct {
+	tenant string
+	labels string
+	ts     int64
+}
+
+type crossEntry struct {
+	frame string
+	value float64
+}
+
+// checkCrossRequest records every sample of ts into the global cross-request
+// index, keyed by (tenant, labels, timestamp), so report() can later find any
+// key whose samples came from more than one distinct frame.
+func (a *analyzer) checkCrossRequest(frame, tenant string, ts mimirpb.PreallocTimeseries) {
+	if ts.TimeSeries == nil {
+		return
+	}
+	labelsStr := labelsString(ts.Labels)
+	for _, s := range ts.Samples {
+		key := crossKey{tenant: tenant, labels: labelsStr, ts: s.TimestampMs}
+		a.crossReq[key] = append(a.crossReq[key], crossEntry{frame: frame, value: s.Value})
+	}
+}
+
+// printCrossRequestFindings reports every (tenant, labels, timestamp) key
+// whose samples were recorded from more than one distinct frame.
+func (a *analyzer) printCrossRequestFindings(w io.Writer) {
+	type finding struct {
+		key     crossKey
+		entries []crossEntry
+	}
+	var findings []finding
+	for k, entries := range a.crossReq {
+		frames := map[string]struct{}{}
+		for _, e := range entries {
+			frames[e.frame] = struct{}{}
+		}
+		if len(frames) > 1 {
+			findings = append(findings, finding{key: k, entries: entries})
+		}
+	}
+	if len(findings) == 0 {
+		fmt.Fprintln(w, "\nno CROSS-REQUEST duplicates found (same tenant+labels+timestamp split across different frames)")
+		return
+	}
+	fmt.Fprintf(w, "\n==================== CROSS-REQUEST duplicates (%d) — same tenant+labels+timestamp, different frames ====================\n", len(findings))
+	for _, f := range findings {
+		fmt.Fprintf(w, "tenant=%q ts=%d (%s) labels=%s\n", f.key.tenant, f.key.ts, msToUTC(f.key.ts).Format("2006-01-02 15:04:05.000 MST"), f.key.labels)
+		for _, e := range f.entries {
+			fmt.Fprintf(w, "    frame=%s value=%g\n", e.frame, e.value)
+		}
+	}
 }
 
 // emitSeries runs duplicate detection and, when -dump is set, prints the full
@@ -512,6 +625,7 @@ func (a *analyzer) emitSeries(frame, tenant, source string, ts mimirpb.PreallocT
 		a.printSeries(tenant, source, ts)
 	}
 	a.checkSeries(frame, tenant, source, ts)
+	a.checkCrossRequest(frame, tenant, ts)
 }
 
 // printSeries writes one decoded timeseries (labels + samples + histograms) to
