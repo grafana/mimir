@@ -25,3 +25,18 @@ func matches(lbls labels.Labels, matchers []*labels.Matcher) bool {
 	}
 	return true
 }
+
+// TruthBy is Truth broken down by one label: for every value of label
+// among the series matching matchers and live in [start, end), the number
+// of such series. Series without the label are counted under "". It scans
+// the population once, so a breakdown over many values costs the same as
+// one Truth call.
+func (m *Model) TruthBy(matchers []*labels.Matcher, label string, start, end int64) map[string]int {
+	out := map[string]int{}
+	for _, s := range m.Series {
+		if s.Live(start, end) && matches(s.Labels, matchers) {
+			out[s.Labels.Get(label)]++
+		}
+	}
+	return out
+}
