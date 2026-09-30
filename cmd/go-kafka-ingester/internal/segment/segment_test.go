@@ -940,6 +940,48 @@ func BenchmarkEncodeFrame(b *testing.B) {
 	}
 }
 
+func TestTrainingOnIdenticalFramesLeavesTheFileWithoutADictionary(t *testing.T) {
+	log, _ := openLog(t, t.TempDir(), 0, noRetention())
+	defer log.Close()
+	require.NoError(t, log.BeginBatch(nowMs()))
+	req := benchmarkRequest(0)
+	keys := SeriesKeys("tenant", req)
+	log.dictionaryFrames = 434
+	for offset := range int64(434) {
+		_, err := log.Encode(offset, 0, nowMs(), "tenant", req, keys)
+		require.NoError(t, err)
+	}
+	// Without a dictionary, the file's frames are compressed on their own.
+	require.Eventually(t, func() bool {
+		log.current.dictionary.poll()
+		return log.current.dictionary.state == unavailable
+	}, 30*time.Second, 10*time.Millisecond)
+	_, err := log.Encode(434, 0, nowMs(), "tenant", req, keys)
+	require.NoError(t, err)
+}
+
+// Steady ingestion encodes most frames with the file's trained dictionary.
+func BenchmarkEncodeFrameWithDictionary(b *testing.B) {
+	log, _ := openLog(b, b.TempDir(), 0, noRetention())
+	defer log.Close()
+	log.dictionaryFrames = 50
+	deadline := time.Now().Add(10 * time.Second)
+	for offset := int64(1); log.current == nil || log.current.dictionary.state != ready; offset++ {
+		require.True(b, time.Now().Before(deadline))
+		require.NoError(b, log.Append(offset, offset, "tenant", variedRequest(offset)))
+	}
+	req := benchmarkRequest(0)
+	keys := SeriesKeys("tenant", req)
+	_, err := log.Encode(0, 0, nowMs(), "tenant", req, keys)
+	require.NoError(b, err)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := log.Encode(1, 0, nowMs(), "tenant", req, keys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkSeriesKeys(b *testing.B) {
 	req := benchmarkRequest(0)
 	b.ReportAllocs()

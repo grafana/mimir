@@ -71,6 +71,13 @@ const (
 // encoder per frame would cost more than compressing it.
 var plainEncoder = mustEncoder()
 
+// Frames of series the file already has are a few hundred bytes of ids and samples: building their
+// literals' Huffman tables took half of compressing them and saved nothing, while frames carrying
+// labels are a third smaller with them.
+const entropyFromBytes = 2048
+
+var plainSmallEncoder = mustEncoder(zstd.WithNoEntropyCompression(true))
+
 func mustEncoder(opts ...zstd.EOption) *zstd.Encoder {
 	encoder, err := zstd.NewWriter(nil, encoderOptions(opts...)...)
 	if err != nil {
@@ -172,12 +179,13 @@ const (
 // dictionary is a file's dictionary, from its first frames' payloads to the encoder of the frames
 // after.
 type dictionary struct {
-	state   dictionaryState
-	samples []byte
-	sizes   []int
-	trained chan []byte
-	bytes   []byte
-	encoder *zstd.Encoder
+	state        dictionaryState
+	samples      []byte
+	sizes        []int
+	trained      chan []byte
+	bytes        []byte
+	encoder      *zstd.Encoder
+	smallEncoder *zstd.Encoder
 }
 
 // poll takes a trained dictionary once it is there.
@@ -195,7 +203,11 @@ func (d *dictionary) poll() {
 		if err != nil {
 			return
 		}
-		d.state, d.bytes, d.encoder = ready, trained, encoder
+		smallEncoder, err := zstd.NewWriter(nil, encoderOptions(zstd.WithEncoderDict(trained), zstd.WithNoEntropyCompression(true))...)
+		if err != nil {
+			return
+		}
+		d.state, d.bytes, d.encoder, d.smallEncoder = ready, trained, encoder, smallEncoder
 	default:
 	}
 }
@@ -220,7 +232,14 @@ func (d *dictionary) sample(payload []byte, frames int) {
 // trainDictionary returns a dictionary for the payloads in samples, or nil when none can be
 // trained from them. Training wants samples many times the dictionary's size, and frames can only
 // name a dictionary by id.
-func trainDictionary(samples []byte, sizes []int) []byte {
+func trainDictionary(samples []byte, sizes []int) (trained []byte) {
+	// klauspost's builder panics on some inputs, like many identical frames: the file then does
+	// without a dictionary rather than taking the ingester down from the training goroutine.
+	defer func() {
+		if recover() != nil {
+			trained = nil
+		}
+	}()
 	size := min(dictionaryBytes, len(samples)/20)
 	if size < 1024 {
 		return nil
@@ -501,10 +520,17 @@ func (l *Log) Encode(offset, timestampMs, ingestedMs int64, tenant string, reque
 	frame = putI64(frame, timestampMs)
 	frame = putI64(frame, ingestedMs)
 	var dictionaryBytes []byte
-	if current.dictionary.state == ready {
+	small := len(payload) < entropyFromBytes
+	switch {
+	case current.dictionary.state == ready && small:
+		frame = current.dictionary.smallEncoder.EncodeAll(payload, frame)
+		dictionaryBytes = current.dictionary.bytes
+	case current.dictionary.state == ready:
 		frame = current.dictionary.encoder.EncodeAll(payload, frame)
 		dictionaryBytes = current.dictionary.bytes
-	} else {
+	case small:
+		frame = plainSmallEncoder.EncodeAll(payload, frame)
+	default:
 		frame = plainEncoder.EncodeAll(payload, frame)
 	}
 	current.dictionary.sample(payload, l.dictionaryFrames)

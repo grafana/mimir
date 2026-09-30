@@ -77,7 +77,9 @@ type XORAppender struct {
 // NewXORAppender returns an empty chunk's appender.
 func NewXORAppender() XORAppender {
 	return XORAppender{
-		out:          bitWriter{bytes: make([]byte, 2, 128)},
+		// Most open chunks hold a few samples, and each series has one: growing from Rust's first
+		// allocation, rather than reserving a full chunk, keeps that per-series cost small.
+		out:          bitWriter{bytes: make([]byte, 2, 8)},
 		previousTime: math.MinInt64,
 		leading:      math.MaxUint8,
 	}

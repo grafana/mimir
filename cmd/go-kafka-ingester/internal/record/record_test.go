@@ -85,7 +85,8 @@ func TestVersion1RecordsDecodeLikeRust(t *testing.T) {
 			// A series' label bytes alone decode to its labels.
 			for i, span := range spans {
 				if span.OK {
-					alone, _, err := decodeSeries(record, record[span.Start:span.End])
+					scratch := newArena(0, 0)
+					alone, _, err := decodeSeries(record, record[span.Start:span.End], &scratch)
 					require.NoError(t, err)
 					require.Equal(t, request.Series[i].Labels, alone.Labels)
 				}
@@ -347,4 +348,52 @@ func BenchmarkDecodeRecord(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// Series share a record's label and sample arrays, and replacing a full array keeps them apart.
+func TestSeriesOfARecordKeepTheirOwnLabelsAndSamples(t *testing.T) {
+	var request mimirpb.WriteRequest
+	for id := range 200 {
+		series := &mimirpb.TimeSeries{}
+		// Labels of different counts, so some series cross from one array to the next.
+		for label := range id%37 + 1 {
+			series.Labels = append(series.Labels, mimirpb.LabelAdapter{Name: fmt.Sprintf("l%02d", label), Value: fmt.Sprintf("%d-%d", id, label)})
+		}
+		for sample := range id % 5 {
+			series.Samples = append(series.Samples, mimirpb.Sample{TimestampMs: int64(id*10 + sample), Value: float64(sample)})
+		}
+		request.Timeseries = append(request.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: series})
+	}
+	encoded, err := request.Marshal()
+	require.NoError(t, err)
+	decoded, err := DecodeRecordBytes(1, encoded)
+	require.NoError(t, err)
+	require.Len(t, decoded.Series, 200)
+	check := func() {
+		for id, series := range decoded.Series {
+			expected := request.Timeseries[id]
+			require.Len(t, series.Labels, len(expected.Labels), "series %d", id)
+			for index, pair := range series.Labels {
+				require.Equal(t, [2]string{expected.Labels[index].Name, expected.Labels[index].Value}, pair)
+			}
+			require.Equal(t, len(expected.Samples), len(series.Samples))
+			for index, sample := range series.Samples {
+				require.Equal(t, expected.Samples[index], sample)
+			}
+		}
+	}
+	check()
+	// Appending to a series' slices leaves the next series' as they were.
+	for index := range decoded.Series {
+		decoded.Series[index].Labels = append(decoded.Series[index].Labels, [2]string{"zz", "appended"})
+		decoded.Series[index].Samples = append(decoded.Series[index].Samples, mimirpb.Sample{TimestampMs: -1})
+	}
+	for index := range decoded.Series {
+		decoded.Series[index].Labels = decoded.Series[index].Labels[:len(decoded.Series[index].Labels)-1]
+		decoded.Series[index].Samples = decoded.Series[index].Samples[:len(decoded.Series[index].Samples)-1]
+		if len(decoded.Series[index].Samples) == 0 {
+			decoded.Series[index].Samples = nil
+		}
+	}
+	check()
 }
