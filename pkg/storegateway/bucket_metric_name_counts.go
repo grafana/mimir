@@ -42,6 +42,10 @@ func (s *BucketStore) metricNameCounts(ctx context.Context, minT, maxT int64) (m
 		if m.MaxTime <= minT || m.MinTime >= maxT {
 			return
 		}
+		if m.MinTime >= minT && m.MaxTime <= maxT && (m.MinTime != minT || m.MaxTime != maxT) {
+			errOut = fmt.Errorf("the window [%d, %d) spans more than one block range, and counts across block ranges need deduplication", minT, maxT)
+			return
+		}
 		if m.MinTime != minT || m.MaxTime != maxT {
 			errOut = fmt.Errorf("block %s covers [%d, %d), which cuts through the window [%d, %d)", m.ULID, m.MinTime, m.MaxTime, minT, maxT)
 			return
