@@ -547,6 +547,7 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason))))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompactByLevel.WithLabelValues(string(block.PreemptiveNoCompactReason), "2")))
 
 		// Verify the compacted block has expected no-compact marker.
 		var noCompactBlockID ulid.ULID
