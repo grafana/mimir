@@ -209,3 +209,23 @@ func TestNew_FixedSeriesOverridesZipf(t *testing.T) {
 		require.LessOrEqual(t, uint64(perName[name]), cfg.SeriesCap, "names past FixedSeries still use the Zipf draw")
 	}
 }
+
+func TestTruthBy_SumsToTruth(t *testing.T) {
+	cfg := testConfig()
+	cfg.SpikeMetric, cfg.SpikeDay, cfg.SpikeBaseValues, cfg.SpikePeakValues = 0, 1, 3, 40
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	name := m.Series[0].Labels.Get("__name__")
+	matcher := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", name)}
+	start, end := cfg.startMillis(), cfg.endMillis()
+
+	byPod := m.TruthBy(matcher, "pod", start, end)
+	require.Len(t, byPod, 40, "spike metric has 40 pod values over the whole range")
+	total := 0
+	for value, n := range byPod {
+		require.Equal(t, 1, n, "pod %s", value)
+		total += n
+	}
+	require.Equal(t, m.Truth(matcher, start, end), total)
+}
