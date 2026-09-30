@@ -186,6 +186,58 @@ func (m *mimir) queryRange(q string, startMS, endMS int64, step time.Duration, s
 	return res
 }
 
+// storeGatewayCounts is one call to the store-gateway's
+// metric_name_counts endpoint.
+type storeGatewayCounts struct {
+	Err     string
+	Latency time.Duration
+	Blocks  int
+	Counts  map[string]int
+}
+
+// metricNameCounts asks the store-gateway for every metric name's count
+// over one block range [minT, maxT).
+func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
+	u := fmt.Sprintf("%s/store-gateway/tenant/anonymous/metric_name_counts?start=%.3f&end=%.3f", m.baseURL, float64(minT)/1000, float64(maxT)/1000)
+	start := time.Now()
+	resp, err := http.Get(u)
+	if err != nil {
+		return storeGatewayCounts{Err: err.Error()}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	res := storeGatewayCounts{Latency: time.Since(start)}
+	if err != nil {
+		res.Err = err.Error()
+		return res
+	}
+	if resp.StatusCode == http.StatusNotFound && bytes.Contains(body, []byte("404 page not found")) {
+		res.Err = "this Mimir build has no store-gateway metric_name_counts endpoint"
+		return res
+	}
+	if resp.StatusCode != http.StatusOK {
+		res.Err = strings.TrimSpace(string(body))
+		return res
+	}
+	var parsed struct {
+		Blocks []string `json:"blocks"`
+		Counts []struct {
+			Name  string `json:"name"`
+			Count int    `json:"count"`
+		} `json:"counts"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		res.Err = fmt.Sprintf("decoding response: %v", err)
+		return res
+	}
+	res.Blocks = len(parsed.Blocks)
+	res.Counts = make(map[string]int, len(parsed.Counts))
+	for _, c := range parsed.Counts {
+		res.Counts[c.Name] = c.Count
+	}
+	return res
+}
+
 // setSeriesLimit rewrites the runtime config for the tenant and waits for
 // Mimir to report the new value, unless it is already in effect.
 func (m *mimir) setSeriesLimit(limit int) error {

@@ -63,6 +63,7 @@ func (s *server) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/promql/growth", s.handlePromQLGrowth)
 	mux.HandleFunc("GET /api/promql/breakdown", s.handlePromQLBreakdown)
 	mux.HandleFunc("GET /api/window", s.handleWindow)
+	mux.HandleFunc("GET /api/storegateway/growth", s.handleStoreGatewayGrowth)
 	mux.HandleFunc("GET /api/hourly", s.handleHourly)
 	mux.HandleFunc("GET /api/promql/hourly", s.handlePromQLHourly)
 	mux.HandleFunc("GET /api/promql/window", s.handlePromQLWindow)
@@ -376,6 +377,30 @@ func (s *server) handlePromQLHourly(w http.ResponseWriter, r *http.Request) {
 		if v, ok := res.Stats[k]; ok {
 			out[k] = v
 		}
+	}
+	writeJSON(w, out)
+}
+
+// handleStoreGatewayGrowth asks Mimir's own store-gateway for each day's
+// per-name counts, through its metric_name_counts endpoint, and ranks growth
+// the same way handleGrowth does, so the page can show that a Mimir
+// component gives the same answer as the library.
+func (s *server) handleStoreGatewayGrowth(w http.ResponseWriter, r *http.Request) {
+	day, base, limit, err := s.dayBaseLimit(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	dayRes := s.mimir.metricNameCounts(s.days[day].MinT, s.days[day].MaxT)
+	baseRes := s.mimir.metricNameCounts(s.days[base].MinT, s.days[base].MaxT)
+	out := map[string]any{
+		"latency_ms": ms(dayRes.Latency + baseRes.Latency),
+		"blocks":     dayRes.Blocks + baseRes.Blocks,
+		"error":      dayRes.Err + baseRes.Err,
+	}
+	if dayRes.Err == "" && baseRes.Err == "" {
+		rows := growthRows(baseRes.Counts, dayRes.Counts)
+		out["rows"] = rows[:min(limit, len(rows))]
 	}
 	writeJSON(w, out)
 }

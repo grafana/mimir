@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -150,4 +151,58 @@ func TestHandleHourly_ExactFromChunkMetas(t *testing.T) {
 	require.Equal(t, out.Truth, out.Counts)
 
 	require.Equal(t, http.StatusBadRequest, getJSON(t, s, `/api/hourly?day=0&metric=a"b`, &out))
+}
+
+func TestHandleStoreGatewayGrowth(t *testing.T) {
+	s := testServer(t)
+	// A fake store-gateway that answers each window with the model's truth
+	// for that day, the way the real endpoint would on these blocks.
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/store-gateway/tenant/anonymous/metric_name_counts" {
+			http.NotFound(w, r)
+			return
+		}
+		start := r.URL.Query().Get("start")
+		for i, d := range s.days {
+			if start == strconv.FormatFloat(float64(d.MinT)/1000, 'f', 3, 64) {
+				var out struct {
+					Blocks []string `json:"blocks"`
+					Counts []struct {
+						Name  string `json:"name"`
+						Count int    `json:"count"`
+					} `json:"counts"`
+				}
+				out.Blocks = []string{"b"}
+				for name, n := range s.dayTruth[i] {
+					out.Counts = append(out.Counts, struct {
+						Name  string `json:"name"`
+						Count int    `json:"count"`
+					}{name, n})
+				}
+				_ = json.NewEncoder(w).Encode(out)
+				return
+			}
+		}
+		http.Error(w, "no such range", http.StatusUnprocessableEntity)
+	}))
+	defer fake.Close()
+	s.mimir.baseURL = fake.URL
+
+	var sg, hc struct {
+		Rows  []growthRow `json:"rows"`
+		Error string      `json:"error"`
+	}
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/storegateway/growth?day=1&base=0&limit=5", &sg))
+	require.Empty(t, sg.Error)
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/growth?day=1&base=0&limit=5", &hc))
+	require.Len(t, sg.Rows, len(hc.Rows))
+	for i := range sg.Rows {
+		require.Equal(t, hc.Rows[i].Name, sg.Rows[i].Name)
+		require.Equal(t, hc.Rows[i].Growth, sg.Rows[i].Growth)
+	}
+
+	// A Mimir without the endpoint.
+	s.mimir.baseURL = fake.URL + "/missing"
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/storegateway/growth?day=1&base=0", &sg))
+	require.Contains(t, sg.Error, "no store-gateway metric_name_counts endpoint")
 }
