@@ -197,6 +197,32 @@ async fn main() {
             SHARDED_SAMPLES * 15_000,
             None,
         ),
+        // Alternations of literals, like dashboard variables with several values.
+        (
+            "name_alternation",
+            vec![matcher(
+                2,
+                "__name__",
+                "metric_1|metric_20|metric_300|metric_4000|metric_5|metric_60|metric_700|metric_8000|metric_9|metric_10",
+            )],
+            20_000,
+            Some(10),
+        ),
+        (
+            "label_alternation",
+            vec![matcher(2, "label_9", "group_1|group_2|group_3")],
+            20_000,
+            Some(300),
+        ),
+        (
+            "sharded_label_alternation",
+            vec![
+                matcher(0, "__name__", "sharded"),
+                matcher(2, "pod", "pod_1|pod_2|pod_3|pod_40|pod_500|pod_6000"),
+            ],
+            SHARDED_SAMPLES * 15_000,
+            Some(6),
+        ),
     ] {
         let before = rss_bytes();
         let started = Instant::now();
