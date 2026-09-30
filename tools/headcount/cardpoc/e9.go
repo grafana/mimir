@@ -37,6 +37,9 @@ type E9Result struct {
 	// (round 1 only, no cross-gateway dedup) excludes from its own
 	// top-TopN list.
 	NaiveMisses []string
+	// NearBelow are the highest true counts at or below Threshold, up to
+	// three, showing how close the nearest excluded names came.
+	NearBelow []TopNEntry
 }
 
 // Pass reports whether Above exactly matches Truth, name for name and
@@ -107,14 +110,19 @@ func RunE9(bucketDir string, pop *model.Model, k, topN int) (E9Result, error) {
 	}
 	cfg := pop.Config()
 	start, end := cfg.Start.UnixMilli(), cfg.End.UnixMilli()
-	var truthAbove []TopNEntry
+	var truthAbove, truthBelow []TopNEntry
 	for name := range allNames {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", name)
-		if c := pop.Truth([]*labels.Matcher{matcher}, start, end); c > threshold {
+		c := pop.Truth([]*labels.Matcher{matcher}, start, end)
+		if c > threshold {
 			truthAbove = append(truthAbove, TopNEntry{name, c})
+		} else {
+			truthBelow = append(truthBelow, TopNEntry{name, c})
 		}
 	}
 	sortDesc(truthAbove)
+	sortDesc(truthBelow)
+	nearBelow := truthBelow[:min(3, len(truthBelow))]
 
 	naiveTop := topNames(naiveScore, topN)
 	var misses []string
@@ -124,7 +132,7 @@ func RunE9(bucketDir string, pop *model.Model, k, topN int) (E9Result, error) {
 		}
 	}
 
-	return E9Result{K: k, TopN: topN, Threshold: threshold, Above: above, Truth: truthAbove, NaiveMisses: misses}, nil
+	return E9Result{K: k, TopN: topN, Threshold: threshold, Above: above, Truth: truthAbove, NaiveMisses: misses, NearBelow: nearBelow}, nil
 }
 
 // assignGateways splits blocks into k groups by their ID, simulating each
