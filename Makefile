@@ -272,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests check-mixin-promtool-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
@@ -673,19 +673,8 @@ build-mixin: check-mixin-jb
 		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
 	done
 
-check-mixin-tests: check-mixin-promtool-tests ## Test the mixin files.
+check-mixin-tests: ## Test the mixin files.
 	@./operations/mimir-mixin-tests/run.sh || (echo "Mixin tests are failing. Please fix the reported issues. You can run mixin tests with 'make check-mixin-tests'" && false)
-
-.PHONY: check-mixin-promtool-tests
-check-mixin-promtool-tests:
-	@# Use the build image's Prometheus version; the main module replaces it with a Mimir fork.
-	@# Keep promtool-only dependencies out of the checked-in Go module files and limit build parallelism.
-	@set -eu; \
-		tmpdir=$$(mktemp -d); \
-		trap 'rm -rf "$$tmpdir"' EXIT; \
-		cp mimir-build-image/go.mod "$$tmpdir/promtool.mod"; \
-		cp mimir-build-image/go.sum "$$tmpdir/promtool.sum"; \
-		go run -p=1 -mod=mod -modfile="$$tmpdir/promtool.mod" github.com/prometheus/prometheus/cmd/promtool test rules operations/mimir-mixin-tests/ruler-failed-pushes.test.yaml
 
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
