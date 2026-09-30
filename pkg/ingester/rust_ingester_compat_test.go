@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"math"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -807,6 +808,28 @@ func TestRustCompatChunkLayouts(t *testing.T) {
 		write("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "floats"}}, Samples: floats,
 		}}}})
+		// Values without a pattern take about 9 bytes each, so chunks reach the byte limit before
+		// their sample count: in the head, and when overlapping out-of-order samples are merged.
+		random := rand.New(rand.NewPCG(1, 2))
+		noise := func(from, step int64, count int) []mimirpb.Sample {
+			var samples []mimirpb.Sample
+			for i := range count {
+				samples = append(samples, mimirpb.Sample{TimestampMs: from + int64(i)*step, Value: math.Float64frombits(random.Uint64() >> 2)})
+			}
+			return samples
+		}
+		for _, series := range []struct {
+			name    string
+			samples []mimirpb.Sample
+		}{
+			{"noisy", noise(base, 15_000, 400)},
+			{"noisy_merged", noise(base, 30_000, 200)},
+			{"noisy_merged", noise(base+15_000, 30_000, 200)},
+		} {
+			write("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: series.name}}, Samples: series.samples,
+			}}}})
+		}
 	})
 	request := parityRequest(0, base+10*60*60_000, parityMatcher(client.REGEX_MATCH, "__name__", ".+"))
 	goChunks := compatChunks(t, ingesters.goSide.api, parityContext("tenant", ingesters.goSide.offset), request)
