@@ -687,8 +687,8 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrulertoomanyfailedqueries
           expr: |
             100 * (
-            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (cluster, namespace, instance) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[4m]))
+            # Match the current server_error reason and legacy error or missing reason, but not client_error.
+            sum by (cluster, namespace, instance) (rate(cortex_ruler_queries_failed_total{reason=~"(server_error|error|^$)"}[4m]))
               /
             sum by (cluster, namespace, instance) (rate(cortex_ruler_queries_total[4m]))
             ) > 1
