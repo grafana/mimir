@@ -27,7 +27,13 @@ func GetMatrix(size int) promql.Matrix {
 	return matrixPool.Get(size)
 }
 
-func PutMatrix(m promql.Matrix) {
+// PutMatrix returns m to the pool, unless the query that owns tracker has been poisoned, in which case
+// m is dropped for the garbage collector. See MemoryConsumptionTracker.Poison.
+func PutMatrix(m promql.Matrix, tracker *limiter.MemoryConsumptionTracker) {
+	if tracker.IsPoisoned() {
+		return
+	}
+
 	matrixPool.Put(m)
 }
 

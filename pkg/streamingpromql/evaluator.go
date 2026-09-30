@@ -4,12 +4,17 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"runtime"
+	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
-	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -56,59 +61,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	// Read here rather than in the deferred function below, which runs after ctx is reassigned.
 	rootQueryID := rootqueryid.IDFromContext(ctx)
 
-	defer func() {
-		msg := make([]interface{}, 0, 2*(6+4+2+1)) // 3 fields for all query types, plus worst case of 4 fields for range queries, 2 fields for a failed query and 1 for the root query ID
-
-		msg = append(msg,
-			"msg", "evaluation stats",
-			"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
-			"originalExpression", e.originalExpression,
-			"nodeCount", len(e.nodeRequests),
-		)
-
-		msg = rootqueryid.AppendLogFields(msg, rootQueryID)
-
-		if len(e.nodeRequests) == 1 {
-			timeRange := e.nodeRequests[0].TimeRange
-
-			if timeRange.IsInstant {
-				msg = append(msg,
-					"timeRangeType", "instant",
-					"time", timeRange.StartT,
-				)
-			} else {
-				msg = append(msg,
-					"timeRangeType", "range",
-					"start", timeRange.StartT,
-					"end", timeRange.EndT,
-					"step", timeRange.IntervalMilliseconds,
-				)
-			}
-		}
-
-		if err == nil {
-			msg = append(msg, "status", "success")
-		} else {
-			msg = append(msg,
-				"status", "failed",
-				"err", err,
-			)
-		}
-
-		level.Info(logger).Log(msg...)
-		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
-	}()
-
-	// Recover from panics during evaluation so the stats logging above reports the query as failed
-	// instead of successful. Re-panic afterward to crash.
-	defer func() {
-		if r := recover(); r != nil {
-			if err == nil {
-				err = fmt.Errorf("panic during query evaluation: %v", r)
-			}
-			panic(r)
-		}
-	}()
+	// Wrapped in a closure so that err is read when the evaluation finishes, not when this
+	// deferred call is registered.
+	defer func() { e.logEvaluationStats(logger, rootQueryID, err) }()
 
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
@@ -133,8 +88,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	defer e.engine.activeQueryTracker.Delete(queryID)
 
 	// The order of the deferred cancellations is important: we want to close all operators first, then
-	// cancel with errQueryFinished and not a timeout, so we must defer this function last
-	// (so that it runs before the cancellation of the context with timeout created above).
+	// cancel with errQueryFinished and not a timeout, so this must be registered after the
+	// cancellation of the context with timeout created above (so that it runs before it).
 	defer func() {
 		e.closeOperators()
 		cancel(errQueryFinished)
@@ -145,6 +100,205 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer e.closeOperators()
 	}
 
+	// Registered last, so it is the first deferred call to run while the stack unwinds. That is what
+	// makes recovering safe: the handler poisons the query's memory consumption tracker before the
+	// deferred calls above close the operators, so the cleanup abandons the query's pooled memory
+	// instead of returning it to the pools shared with other queries. See
+	// MemoryConsumptionTracker.Poison.
+	//
+	// It also means the handler only sees panics from the evaluation below, never panics raised by
+	// the deferred calls above. A double-return guard panic from Close on a query that completed
+	// normally therefore escapes and crashes the process, as it must: the guard only fires when the
+	// per-source estimate would go negative, so it can be the late symptom of an earlier double
+	// return that has already put a slice in a shared pool twice.
+	//
+	// The position is also load-bearing for ctx. Arguments of a deferred call are evaluated when
+	// it is registered, so registering here passes the ctx that carries the memory consumption
+	// tracker, the cancellation and the timeout. Moving this loses all of these properties.
+	defer e.handleEvaluationPanic(ctx, logger, &err)
+
+	return e.runEvaluation(ctx, observer)
+}
+
+// logEvaluationStats logs the stats for this evaluation and records its peak memory consumption.
+func (e *Evaluator) logEvaluationStats(logger *spanlogger.SpanLogger, rootQueryID string, err error) {
+	msg := make([]interface{}, 0, 2*(6+4+2+1)) // 3 fields for all query types, plus worst case of 4 fields for range queries, 2 fields for a failed query and 1 for the root query ID
+
+	msg = append(msg,
+		"msg", "evaluation stats",
+		"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
+		"originalExpression", e.originalExpression,
+		"nodeCount", len(e.nodeRequests),
+	)
+
+	msg = rootqueryid.AppendLogFields(msg, rootQueryID)
+
+	if len(e.nodeRequests) == 1 {
+		timeRange := e.nodeRequests[0].TimeRange
+
+		if timeRange.IsInstant {
+			msg = append(msg,
+				"timeRangeType", "instant",
+				"time", timeRange.StartT,
+			)
+		} else {
+			msg = append(msg,
+				"timeRangeType", "range",
+				"start", timeRange.StartT,
+				"end", timeRange.EndT,
+				"step", timeRange.IntervalMilliseconds,
+			)
+		}
+	}
+
+	if err == nil {
+		msg = append(msg, "status", "success")
+	} else {
+		msg = append(msg,
+			"status", "failed",
+			"err", err,
+		)
+	}
+
+	level.Info(logger).Log(msg...)
+	e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
+}
+
+// handleEvaluationPanic recovers from panics during evaluation. A panic can come from the engine's
+// own invariant checks, a Go runtime error, or library code (notably the Prometheus histogram
+// library, which panics on invalid data such as a native histogram with a negative-offset span that
+// older versions could write). Unhandled, it would crash a querier or ruler shared by many tenants.
+//
+// surfaceEvaluationPanics decides what happens, regardless of the panic's source:
+//   - Enabled (dev and ops): re-raise every panic so it crashes the process and bugs fail fast.
+//   - Disabled (the default, production): convert every panic into a query error, matching the
+//     Prometheus engine, so one bad query or series cannot take down the component.
+//
+// Either way the stats logging reports the query as failed. Recovered panics are counted, labelled
+// by tenant and a coarse reason, and logged with a stack trace (except known invalid-data panics,
+// which can recur on every evaluation over the same series).
+//
+// Evaluate must defer this method directly. recover() returns nil if it is not called by a
+// function that Evaluate itself deferred.
+func (e *Evaluator) handleEvaluationPanic(ctx context.Context, logger *spanlogger.SpanLogger, err *error) {
+	r := recover()
+	if r == nil {
+		return
+	}
+
+	// err is always nil here. Evaluate registers this method after its last call that can set the
+	// named return, and a panic in runEvaluation aborts the return statement before it assigns.
+	if rErr, isErr := r.(error); isErr {
+		*err = rErr
+	} else {
+		*err = fmt.Errorf("panic during query evaluation: %v", r)
+	}
+
+	// A memory accounting invariant violation means a slice was returned to a pool more than once. The
+	// pools are shared between every query in the process, so the pool may already be corrupt, and the
+	// process must crash whatever the flag says: continuing would serve other tenants from it.
+	var invariantErr limiter.InvariantViolationError
+	if rErr, isErr := r.(error); isErr && errors.As(rErr, &invariantErr) {
+		logPanicWithStack(level.Error(logger), "memory accounting invariant violated while evaluating query, re-panicking to crash", r, e.originalExpression)
+		panic(r)
+	}
+
+	if e.engine.surfaceEvaluationPanics {
+		logPanicWithStack(level.Error(logger), "panic while evaluating query, re-panicking to crash", r, e.originalExpression)
+		panic(r)
+	}
+
+	// The operators' state can no longer be trusted, so make the cleanup that runs after this handler
+	// abandon this query's pooled memory instead of returning it to the shared pools. See
+	// MemoryConsumptionTracker.Poison.
+	e.MemoryConsumptionTracker.Poison()
+
+	userID := ""
+	if tenantIDs, tenantErr := tenant.TenantIDs(ctx); tenantErr == nil {
+		userID = tenant.JoinTenantIDs(tenantIDs)
+	}
+
+	reason := classifyPanic(r, panicOriginatedIn(prometheusLibraryPackagePrefix))
+	e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
+
+	if reason == "invalid_data" {
+		// Origin is known and this recurs over the same invalid series, so log no stack trace.
+		level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
+	} else {
+		// A possible engine bug that no longer crashes: the stack trace is the only pointer to its origin.
+		logPanicWithStack(level.Error(logger), "recovered from panic while evaluating query, returning it as a query error", r, e.originalExpression)
+	}
+}
+
+// classifyPanic returns the reason label for cortex_mimir_query_engine_evaluation_panics_total, so
+// that data problems and likely bugs can be told apart without reading logs. Validation errors from
+// the histogram library mean invalid stored data; a Go runtime error is almost certainly an engine
+// bug. Any other panic raised inside the Prometheus library (fromPrometheusLibrary) is usually
+// invalid stored data that the library rejects without a typed error, though it can also be the
+// engine passing the library bad input. Anything else is unclassified and is most likely an engine
+// bug.
+func classifyPanic(r any, fromPrometheusLibrary bool) string {
+	if rErr, isErr := r.(error); isErr {
+		var validationErr histogram.Error
+		if errors.As(rErr, &validationErr) {
+			return "invalid_data"
+		}
+
+		var runtimeErr runtime.Error
+		if errors.As(rErr, &runtimeErr) {
+			return "runtime_error"
+		}
+	}
+
+	if fromPrometheusLibrary {
+		return "prometheus"
+	}
+
+	return "unclassified"
+}
+
+// prometheusLibraryPackagePrefix is the import path prefix of the vendored Prometheus library. Its
+// functions keep this prefix in stack traces even though go.mod replaces the module with a fork.
+const prometheusLibraryPackagePrefix = "github.com/prometheus/prometheus/"
+
+// panicOriginatedIn reports whether the panic being recovered was raised by a function whose fully
+// qualified name starts with pkgPrefix. It must be called from the deferred handler while the stack
+// is still unwinding, so the panicking frames are still present: the panic site is the first frame
+// after runtime.gopanic that is not itself in the runtime.
+func panicOriginatedIn(pkgPrefix string) bool {
+	pcs := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(1, pcs)])
+
+	seenPanic := false
+	for {
+		frame, more := frames.Next()
+
+		if seenPanic && !strings.HasPrefix(frame.Function, "runtime.") {
+			return strings.HasPrefix(frame.Function, pkgPrefix)
+		}
+
+		if frame.Function == "runtime.gopanic" {
+			seenPanic = true
+		}
+
+		if !more {
+			return false
+		}
+	}
+}
+
+// logPanicWithStack logs msg with the panic's stack trace. It must run while the stack is still
+// unwinding, so that the trace reaches the panic site: re-panicking would otherwise discard those
+// frames, and when recovering the log is the only pointer to them.
+func logPanicWithStack(l log.Logger, msg string, r any, expr string) {
+	buf := make([]byte, 64<<10)
+	buf = buf[:runtime.Stack(buf, false)]
+	l.Log("msg", msg, "err", r, "expr", expr, "stacktrace", string(buf))
+}
+
+// runEvaluation evaluates every node request and reports the results to observer. It calls
+// observer.EvaluationCompleted when it returns nil, as Evaluate promises.
+func (e *Evaluator) runEvaluation(ctx context.Context, observer EvaluationObserver) error {
 	if err := e.prepare(ctx); err != nil {
 		return err
 	}

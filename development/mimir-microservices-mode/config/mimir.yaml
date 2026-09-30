@@ -178,6 +178,10 @@ querier:
   query_store_after: 10m
   # Enable the experimental streaming label/value search HTTP endpoints.
   experimental_search_api_enabled: true
+  mimir_query_engine:
+    # Crash on query evaluation panics in this dev cluster so engine bugs surface early, instead of
+    # being turned into query errors as they are in production.
+    surface_evaluation_panics: true
 
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.

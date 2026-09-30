@@ -391,6 +391,21 @@ More information:
 - [Kernel doc](https://www.kernel.org/doc/Documentation/sysctl/vm.txt)
 - [Side effects when increasing `vm.max_map_count`](https://www.suse.com/support/kb/doc/?id=000016692)
 
+### MimirQueryEngineEvaluationPanics
+
+This alert fires when the Mimir query engine (MQE) recovers from panics while evaluating queries. Each recovered panic fails the affected query or rule evaluation with an error instead of crashing the querier or ruler process.
+
+The metric's `user` label identifies the affected tenant, and the `reason` label classifies the cause. For the details, find the `recovered from panic while evaluating query` message in the querier or ruler logs: it includes the panic message and the query expression.
+
+- `reason="invalid_data"`: the stored data for the affected series is invalid, for example a native histogram with an invalid bucket layout. The affected queries and rules keep failing until the data is remediated. Note that alerting rules that fail this way don't fire. Investigate to see if this indicates a new bug that should be addressed.
+- `reason="runtime_error"`: a Go runtime error, such as a nil pointer dereference or an index out of range. This almost certainly indicates a bug in the engine. Report the bug, including the logged panic message, stack trace, and query expression.
+- `reason="prometheus"`: a panic raised without a typed error inside the vendored Prometheus library code that MQE calls, not the Prometheus query engine. This is usually invalid stored data that the library rejects, such as a native histogram with an invalid bucket layout or a corrupt chunk, and can be handled as for `invalid_data`. It can also be Mimir passing the library bad input, which is a bug. The panic message tells them apart: a message about the stored values, such as an index or span being out of range, points at the data; a message about an impossible request, such as copying to a higher schema, points at a bug. Report the bug, including the logged panic message, stack trace, and query expression.
+- `reason="unclassified"`: a panic raised outside the Prometheus library. This is almost certainly a bug in the engine. Report the bug, including the logged panic message, stack trace, and query expression.
+
+Where `-querier.mimir-query-engine.surface-evaluation-panics` is set (non-production), panics instead crash the process to surface bugs early, appearing as restarts and a stack trace in the logs rather than firing this alert.
+
+One kind of panic is never recovered, whatever the flag: a violation of the memory accounting invariant, which means a slice was returned to a memory pool more than once. The pools are shared between all queries in the process, so the process crashes rather than continue serving from a pool that may be corrupt. This is logged as `memory accounting invariant violated while evaluating query` with a stack trace, and appears as a restart, not in this metric. Report it as a bug.
+
 ### MimirRulerFailedRingCheck
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.

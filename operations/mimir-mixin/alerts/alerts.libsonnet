@@ -368,6 +368,50 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
+        {
+          // Two variants with distinct messages: invalid stored data fails the affected tenant's
+          // queries but is not an engine defect; any other recovered panic likely indicates an
+          // engine bug. Invalid data recurs on every evaluation over the same series, so that
+          // variant waits for a sustained rate; the other fires on a single panic.
+          alert: $.alertName('QueryEngineEvaluationPanics'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, reason) (
+              rate(cortex_mimir_query_engine_evaluation_panics_total{reason="invalid_data"}[%(rate_interval)s])
+            ) > 0
+          ||| % ($._config { rate_interval: $.rateInterval('5m') }),
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s query engine in %(alert_aggregation_variables)s is recovering from panics (reason: {{ $labels.reason }}) during query evaluation and failing the affected queries.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('QueryEngineEvaluationPanics'),
+          // increase() alone misses the first panic for a tenant and reason: the counter series is
+          // created with that panic already counted, and increase() needs two samples. The second
+          // clause catches a series that did not exist one interval ago. The first clause must
+          // filter out zero increases before the `or`: `or` keeps a left-hand series even at zero,
+          // which would hide the second clause from the second sample onwards.
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, reason) (
+              (increase(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[%(rate_interval)s]) > 0)
+              or
+              (
+                cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}
+                unless
+                cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"} offset %(rate_interval)s
+              )
+            ) > 0
+          ||| % ($._config { rate_interval: $.rateInterval('5m') }),
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s query engine in %(alert_aggregation_variables)s is recovering from panics (reason: {{ $labels.reason }}) during query evaluation and failing the affected queries. This may indicate an engine bug.' % $._config,
+          },
+        },
         kvStoreFailure('classic'),
         kvStoreFailure('native'),
         {

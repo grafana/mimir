@@ -2604,6 +2604,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "surface_evaluation_panics",
+              "required": false,
+              "desc": "Crash the process on query evaluation panics instead of recovering them as query errors. Enable in non-production environments to surface bugs early; keep it disabled in production so one bad query or series cannot crash a shared querier or ruler.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.surface-evaluation-panics",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
               "desc": "Enable common subexpression elimination when evaluating queries.",
