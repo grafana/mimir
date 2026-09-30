@@ -28,7 +28,7 @@
   button { font: inherit; font-weight: bold; background: var(--orange); color: #1d1e24; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
   main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding: 0 24px 24px; }
-  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; } header, .controls { padding-left: 16px; padding-right: 16px; } }
+  @media (max-width: 900px) { .win-grid { grid-template-columns: minmax(0, 1fr) !important; } main { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; } header, .controls { padding-left: 16px; padding-right: 16px; } }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
   section h2 { margin: 0 0 10px; font-size: 15px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -80,6 +80,17 @@
     <h2 id="bd-title">2. Which label value exploded?</h2>
     <div id="bd-bars"></div>
     <p id="bd-note" class="muted"></p>
+  </section>
+  <section style="grid-column: 1 / -1">
+    <h2 id="win-title">4. Across several days: adding the days counts a series once per day</h2>
+    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
+      <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
+      <div>
+        <div class="card bound"><h3>Adding each day's index-header counts</h3><div id="win-sum" class="kv"></div></div>
+        <div class="card hc"><h3>Headcount: hash dedup across the day blocks</h3><div id="win-exact" class="kv"></div></div>
+        <div class="card today"><h3>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
+      </div>
+    </div>
   </section>
   <section>
     <h2>3. It can't become an incident</h2>
@@ -139,7 +150,8 @@ async function run() {
     const g = await get(`api/growth?day=${day}&base=${base}&limit=10`);
     $("growth").innerHTML = `<tr><th>metric</th><th class="num">baseline</th><th class="num">day</th><th class="num">growth</th><th class="num">truth</th><th class="num">error</th></tr>` +
       g.rows.map((r, i) => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${fmt(r.truth_day)}</td><td class="num">${r.day === r.truth_day && r.base === r.truth_base ? "0%" : "≠"}</td></tr>`).join("");
-    $("growth-note").textContent = `${fmt(g.names_exact)} of ${fmt(g.names)} names exact on both days. Tenant total ${fmt(g.total_base)} → ${fmt(g.total_day)} series. Click a row to drill down.`;
+    $("growth-note").innerHTML = `${fmt(g.changed)} of ${fmt(g.names)} names changed between these days; ${fmt(g.names_exact)} of ${fmt(g.names)} are exact against the truth on both days. Tenant total ${fmt(g.total_base)} → ${fmt(g.total_day)} series. Click a row to drill down.` +
+      (g.falls && g.falls.length ? `<br>Largest falls: ${g.falls.map(r => `${short(r.name)} ${fmt(r.base)} → ${fmt(r.day)}`).join(", ")}.` : "");
     kv($("growth-hc"), [
       ["latency", secs(g.cost.elapsed_ms)],
       ["blocks", g.cost.blocks],
@@ -165,12 +177,38 @@ async function run() {
       pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
     }
     kv($("growth-today"), pairs);
+    await runWindow();
     $("status").textContent = "";
   } catch (e) {
     $("status").innerHTML = `<span class="err">${e.message}</span>`;
   } finally {
     $("run").disabled = false;
   }
+}
+
+async function runWindow() {
+  let from = +$("base").value, to = +$("day").value;
+  if (from > to) [from, to] = [to, from];
+  const n = to - from + 1;
+  $("win-title").textContent = `4. Across ${n} day${n > 1 ? "s" : ""} (${days[from].start.slice(0, 10)} to ${days[to].start.slice(0, 10)}): adding the days counts a series once per day`;
+  $("status").textContent = "Window, Headcount...";
+  const w = await get(`api/window?from=${from}&to=${to}&limit=8`);
+  $("win").innerHTML = `<tr><th>metric</th><th class="num">days added</th><th class="num">dedup</th><th class="num">truth</th></tr>` +
+    w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.summed)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td></tr>`).join("") +
+    `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td></tr>`;
+  const over = w.exact_total ? (100 * (w.summed_total - w.exact_total) / w.exact_total).toFixed(0) : 0;
+  $("win-note").textContent = `Adding the ${w.ranges} day blocks overcounts the tenant by ${over}%. Hash dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.`;
+  kv($("win-sum"), [["tenant total", `${fmt(w.summed_total)} (+${over}%)`], ["latency", secs(w.summed_cost.elapsed_ms)], ["index-header files", bytes(w.summed_cost.index_header_bytes)], ["object storage", "0 B"]]);
+  kv($("win-exact"), [["tenant total", fmt(w.exact_total), "ok"], ["latency", secs(w.exact_cost.elapsed_ms)], ["series hashed", fmt(w.exact_cost.series_touched)], ["index read", bytes(w.exact_cost.object_storage_bytes)]]);
+  $("status").textContent = "Window, PromQL...";
+  const [d, u] = [await get(`api/promql/window?from=${from}&to=${to}&limits=default`), await get(`api/promql/window?from=${from}&to=${to}`)];
+  $("win-q").textContent = u.query;
+  const pairs = [];
+  pairs.push(["at default limits", d.result.error ? briefError(d.result.error) : `${fmt(d.total)} series, ${secs(d.result.latency_ms)}`, d.result.error ? "err" : ""]);
+  if (d.result.error) pairs.push(["failed after", secs(d.result.latency_ms)]);
+  pairs.push(["no limits", u.result.error ? briefError(u.result.error) : `${fmt(u.total)} series`, u.result.error ? "err" : (u.total === w.exact_total ? "ok" : "")]);
+  if (!u.result.error) pairs.push(["latency", secs(u.result.latency_ms)], ["series fetched", fmt(u.result.fetched_series_count)], ["chunks read", bytes(u.result.fetched_chunk_bytes)]);
+  kv($("win-today"), pairs);
 }
 
 async function drill(name) {
