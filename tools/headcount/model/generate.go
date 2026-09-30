@@ -29,7 +29,13 @@ func New(cfg Config) (*Model, error) {
 			all = append(all, spikeMetricSeries(cfg, name)...)
 			continue
 		}
-		all = append(all, metricSeries(cfg, name, cfg.SeriesFloor+zipf.Uint64())...)
+		var count uint64
+		if i < len(cfg.FixedSeries) {
+			count = cfg.FixedSeries[i]
+		} else {
+			count = cfg.SeriesFloor + zipf.Uint64()
+		}
+		all = append(all, metricSeries(cfg, name, count)...)
 	}
 
 	applyGaps(cfg, rng, all)
