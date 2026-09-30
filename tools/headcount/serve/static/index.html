@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Headcount</title>
+<style>
+  :root {
+    --bg: #f6f6f8; --panel: #ffffff; --ink: #1d1e24; --muted: #66677d; --line: #d8d8df;
+    --amber: #f8c768; --amber-ink: #8a5a00; --orange: #f4a363; --red: #c9372c; --green: #1a7f4b;
+    --red-bg: #fbe9e7; --green-bg: #e6f4ec; --amber-bg: #fdf3dc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171c; --panel: #202128; --ink: #ececf1; --muted: #a0a1b2; --line: #34353f;
+      --amber-ink: #f8c768; --red-bg: #3a1f1d; --green-bg: #17301f; --amber-bg: #3a3120;
+      --red: #ff7a6e; --green: #5fd18f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Helvetica, Arial, sans-serif; }
+  header { padding: 16px 24px 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 26px; }
+  header .sub { color: var(--muted); }
+  .controls { padding: 0 24px 12px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .controls label { display: flex; gap: 6px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  select, input { font: inherit; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+  button { font: inherit; font-weight: bold; background: var(--orange); color: #1d1e24; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: wait; }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding: 0 24px 24px; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; } header, .controls { padding-left: 16px; padding-right: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+  section h2 { margin: 0 0 10px; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--line); padding: 4px 6px; }
+  td { padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: var(--amber-bg); }
+  tr.sel td { background: var(--amber-bg); }
+  .scroll { overflow-x: auto; }
+  .card { border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 14px; }
+  .today { background: var(--red-bg); } .today h3 { color: var(--red); }
+  .hc { background: var(--green-bg); } .hc h3 { color: var(--green); }
+  .bound { background: var(--amber-bg); } .bound h3 { color: var(--amber-ink); }
+  .card code { font-size: 12px; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; font-size: 13px; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .bar { height: 14px; background: var(--amber); border-radius: 2px; }
+  .muted { color: var(--muted); }
+  .err { color: var(--red); white-space: pre-wrap; word-break: break-word; }
+  .ok { color: var(--green); font-weight: bold; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Headcount</h1>
+  <span class="sub">how many series, straight from the index. Tenant: synthetic medium profile, blocks from a real Mimir compactor.</span>
+</header>
+<div class="controls">
+  <label>Baseline day <select id="base"></select></label>
+  <label>Day <select id="day"></select></label>
+  <label>Budget and series limit <input id="budget" type="number" min="1" step="1000" value="5000" style="width:7em"> series</label>
+  <button id="run">Run both</button>
+  <span id="status" class="muted"></span>
+</div>
+<main>
+  <section>
+    <h2>1. Which metric grew? Headcount ranking, with the model's truth</h2>
+    <div class="scroll"><table id="growth"></table></div>
+    <p id="growth-note" class="muted"></p>
+  </section>
+  <section>
+    <h2>Cost of answering it</h2>
+    <div class="card today"><h3>Today: PromQL through Mimir</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
+    <div class="card hc"><h3>Headcount</h3><code>postings offset table per block, summed over one day's series-disjoint shards</code><div id="growth-hc" class="kv"></div></div>
+  </section>
+  <section>
+    <h2 id="bd-title">2. Which label value exploded?</h2>
+    <div id="bd-bars"></div>
+    <p id="bd-note" class="muted"></p>
+  </section>
+  <section>
+    <h2>3. It can't become an incident</h2>
+    <div class="card bound"><h3>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
+    <div class="card today"><h3>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => (n === undefined || n === null || n === "") ? "" : Number(n).toLocaleString("en-US");
+const bytes = n => { n = Number(n); if (!n) return "0 B"; const u = ["B","KB","MB","GB"]; let i = 0; while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; } return n.toFixed(n < 10 && i ? 1 : 0) + " " + u[i]; };
+const secs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(0) + " ms";
+const short = n => n.replace(/^(metric_\d{6})_.*/, "$1");
+let days = [], selected = null;
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function kv(el, pairs) {
+  el.innerHTML = pairs.map(([k, v, cls]) => `<span>${k}</span><span class="${cls || ""}">${v}</span>`).join("");
+}
+
+// briefError keeps the innermost gRPC description up to Mimir's advice text.
+function briefError(e) {
+  const inner = e.split("desc = ").pop();
+  return inner.split(". Consider")[0];
+}
+
+function todayPairs(res) {
+  if (res.error) return [["result", briefError(res.error), "err"], ["latency", secs(res.latency_ms)]];
+  return [
+    ["latency", secs(res.latency_ms)],
+    ["series fetched", fmt(res.fetched_series_count)],
+    ["chunks read", bytes(res.fetched_chunk_bytes)],
+    ["index read", bytes(res.fetched_index_bytes)],
+  ];
+}
+
+async function init() {
+  const d = await get("api/days");
+  days = d.days;
+  for (const sel of [$("base"), $("day")]) {
+    sel.innerHTML = days.map(x => `<option value="${x.index}">${x.start.slice(0, 10)}</option>`).join("");
+  }
+  $("day").value = d.spike_day;
+  $("base").value = Math.max(0, d.spike_day - 1);
+}
+
+async function run() {
+  $("run").disabled = true;
+  const day = $("day").value, base = $("base").value;
+  try {
+    $("status").textContent = "Headcount...";
+    const g = await get(`api/growth?day=${day}&base=${base}&limit=10`);
+    $("growth").innerHTML = `<tr><th>metric</th><th class="num">baseline</th><th class="num">day</th><th class="num">growth</th><th class="num">truth</th><th class="num">error</th></tr>` +
+      g.rows.map((r, i) => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${fmt(r.truth_day)}</td><td class="num">${r.day === r.truth_day && r.base === r.truth_base ? "0%" : "≠"}</td></tr>`).join("");
+    $("growth-note").textContent = `${fmt(g.names_exact)} of ${fmt(g.names)} names exact on both days. Tenant total ${fmt(g.total_base)} → ${fmt(g.total_day)} series. Click a row to drill down.`;
+    kv($("growth-hc"), [
+      ["latency", secs(g.cost.elapsed_ms)],
+      ["blocks", g.cost.blocks],
+      ["index-header files", bytes(g.cost.index_header_bytes)],
+      ["object storage", bytes(g.cost.object_storage_bytes)],
+    ]);
+    for (const tr of document.querySelectorAll("#growth tr.click")) tr.onclick = () => drill(tr.dataset.name);
+    await drill(g.rows[0].name);
+
+    $("status").textContent = "PromQL...";
+    const p = await get(`api/promql/growth?day=${day}&base=${base}&limit=10`);
+    $("growth-q").textContent = p.query + "\nat the end of each day, twice";
+    const both = {
+      latency_ms: p.day.latency_ms + p.base.latency_ms,
+      error: p.day.error || p.base.error,
+      fetched_series_count: (+p.day.fetched_series_count || 0) + (+p.base.fetched_series_count || 0),
+      fetched_chunk_bytes: (+p.day.fetched_chunk_bytes || 0) + (+p.base.fetched_chunk_bytes || 0),
+      fetched_index_bytes: (+p.day.fetched_index_bytes || 0) + (+p.base.fetched_index_bytes || 0),
+    };
+    const pairs = todayPairs(both);
+    if (p.rows) {
+      const same = p.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
+      pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
+    }
+    kv($("growth-today"), pairs);
+    $("status").textContent = "";
+  } catch (e) {
+    $("status").innerHTML = `<span class="err">${e.message}</span>`;
+  } finally {
+    $("run").disabled = false;
+  }
+}
+
+async function drill(name) {
+  selected = name;
+  for (const tr of document.querySelectorAll("#growth tr.click")) tr.classList.toggle("sel", tr.dataset.name === name);
+  const day = $("day").value, budget = $("budget").value;
+  $("bd-title").textContent = `2. Which label value exploded? ${short(name)} by pod`;
+  const m = encodeURIComponent(name);
+  const baseDay = $("base").value;
+  const [bb, b] = await Promise.all([
+    get(`api/breakdown?day=${baseDay}&metric=${m}&label=pod&limit=5`),
+    get(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=5`),
+  ]);
+  const maxV = Math.max(bb.values, b.values, 1);
+  const bar = (label, n) => `<div style="display:grid;grid-template-columns:10em 1fr 7em;gap:8px;align-items:center;margin:6px 0"><span>${label}</span><div class="bar" style="width:${Math.max(0.5, 100 * n / maxV)}%"></div><span class="num">${fmt(n)}</span></div>`;
+  const top = rows => rows.map(r => `pod=${r.value || "(none)"}: ${fmt(r.count)}`).join(", ");
+  $("bd-bars").innerHTML = `<div class="muted">distinct pod values</div>` +
+    bar(days[baseDay].start.slice(0, 10), bb.values) + bar(days[day].start.slice(0, 10), b.values) +
+    `<div class="muted" style="margin-top:8px">largest values on ${days[day].start.slice(0, 10)}: ${top(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
+  $("bd-note").textContent = `Headcount: ${fmt(b.values)} values, ${fmt(b.total)} series (truth ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series), ${secs(b.cost.elapsed_ms)}, ${fmt(b.cost.series_touched)} series labels and ${bytes(b.cost.postings_bytes)} of postings read from the full index.`;
+  const pq = await get(`api/promql/breakdown?day=${day}&metric=${m}&label=pod&limit=8`);
+  $("bd-note").textContent += ` PromQL count by (pod): ${pq.result.error ? "error: " + pq.result.error : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}.`;
+
+  const lb = await get(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=1&budget=${budget}`);
+  kv($("lim-hc"), [
+    ["answer", lb.lower_bound ? `≥ ${fmt(lb.total)} series (lower bound)` : `${fmt(lb.total)} series (exact, under budget)`, lb.lower_bound ? "" : "ok"],
+    ["values seen", fmt(lb.values)],
+    ["stopped after", `${fmt(lb.cost.series_touched)} series, ${bytes(lb.cost.postings_bytes)} postings`],
+    ["latency", secs(lb.cost.elapsed_ms)],
+  ]);
+  const lq = await get(`api/promql/breakdown?day=${day}&metric=${m}&label=pod&limit=1&series_limit=${budget}`);
+  $("lim-q").textContent = lq.query + `\nwith max_fetched_series_per_query=${fmt(budget)}, enforced per query shard`;
+  const shards = lq.result.sharded_queries ? [["query shards", lq.result.sharded_queries]] : [];
+  kv($("lim-today"), (lq.result.error ? [["result", briefError(lq.result.error), "err"], ["latency", secs(lq.result.latency_ms)]] : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
+}
+
+$("run").onclick = run;
+init().then(run).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; });
+</script>
+</body>
+</html>
