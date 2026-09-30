@@ -16,7 +16,7 @@ var epoch = time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 
 // Profile bundles a population Config with the partition count the
 // downstream compactor run must match, one per scale tier (small,
-// medium, large).
+// medium, large), plus thresholds, which targets E6 and E9.
 type Profile struct {
 	Population model.Config
 	Partitions int
@@ -51,6 +51,22 @@ var profiles = map[string]Profile{
 			SpikeMetric:   0, SpikeDay: 2, SpikeBaseValues: 10, SpikePeakValues: 100_000,
 		},
 	},
+	// thresholds is small plus names sized to sit above E6's 10k
+	// exact-hash threshold and close to E9's top-N threshold, so that both
+	// are tested on several names rather than one.
+	"thresholds": {
+		Partitions: 2,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(2 * 24 * time.Hour),
+			MetricNames: 5_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			FixedSeries:   thresholdSeries(),
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   -1,
+		},
+	},
 	"large": {
 		Partitions: 4,
 		Population: model.Config{
@@ -60,6 +76,22 @@ var profiles = map[string]Profile{
 			SpikeMetric: -1,
 		},
 	},
+}
+
+// thresholdSeries returns the thresholds profile's fixed series counts:
+// six names 100 series apart at the top (19,000 down to 18,500), which is
+// where E9's threshold falls with a top-5, then sixteen names from 17,500
+// down to 10,000 in steps of 500, all above E6's threshold. Churn adds
+// about 10% distinct series to each.
+func thresholdSeries() []uint64 {
+	var out []uint64
+	for n := uint64(19_000); n >= 18_500; n -= 100 {
+		out = append(out, n)
+	}
+	for n := uint64(17_500); n >= 10_000; n -= 500 {
+		out = append(out, n)
+	}
+	return out
 }
 
 // ProfileNames returns the known profile names, for flag usage messages.
