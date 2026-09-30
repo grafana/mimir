@@ -4,6 +4,7 @@
 package record
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -132,6 +133,16 @@ func DecodeRecordWithLabelSpans(version uint32, bytes []byte) (DecodedRequest, [
 func decodeV1(record []byte, spans *[]Span) (DecodedRequest, error) {
 	var request DecodedRequest
 	var metadata []mimirpb.MetricMetadata
+	// A record's series share its label and sample arrays, and the series slice is sized up
+	// front: allocating each per series was most of what ingestion left for the GC.
+	count := countFields(record)
+	arena := newArena(count.labels, count.samples)
+	if count.series > 0 {
+		request.Series = make([]DecodedSeries, 0, count.series)
+		if spans != nil && cap(*spans) < count.series {
+			*spans = make([]Span, 0, count.series)
+		}
+	}
 	buf := record
 	for len(buf) > 0 {
 		tag, wireType, rest, err := key(buf)
@@ -146,7 +157,7 @@ func decodeV1(record []byte, spans *[]Span) (DecodedRequest, error) {
 				return DecodedRequest{}, err
 			}
 			buf = rest
-			series, span, err := decodeSeries(record, field)
+			series, span, err := decodeSeries(record, field, &arena)
 			if err != nil {
 				return DecodedRequest{}, err
 			}
@@ -277,7 +288,8 @@ func decodeV2(record []byte) (DecodedRequest, error) {
 				return DecodedRequest{}, err
 			}
 			buf = rest
-			if _, _, err := decodeSeries(record, field); err != nil {
+			scratch := newArena(0, 0)
+			if _, _, err := decodeSeries(record, field, &scratch); err != nil {
 				return DecodedRequest{}, err
 			}
 		case 2:
@@ -572,14 +584,15 @@ func decodeMetadata(buf []byte) (mimirpb.MetricMetadata, error) {
 	return metadata, nil
 }
 
-func decodeSeries(record, buf []byte) (DecodedSeries, Span, error) {
+func decodeSeries(record, buf []byte, arena *arena) (DecodedSeries, Span, error) {
 	// Positions in the record, from what is left of the series: an empty slice has no address.
 	end := offset(record, buf) + len(buf)
 	position := func(rest []byte) int { return end - len(rest) }
 	// The labels' fields, while no other field came between them.
 	var span Span
 	contiguous, afterLabels := true, false
-	series := DecodedSeries{Labels: make([][2]string, 0, 20)}
+	var series DecodedSeries
+	arena.begin()
 	for len(buf) > 0 {
 		fieldStart := position(buf)
 		tag, wireType, rest, err := key(buf)
@@ -604,6 +617,14 @@ func decodeSeries(record, buf []byte) (DecodedSeries, Span, error) {
 			}
 			span.End = position(buf)
 			var name, value []byte
+			// The generated encoding writes a pair as its name then its value, each with a
+			// one-byte length when short: read that directly, and anything else field by field.
+			if n := len(pair); n >= 4 && pair[0] == 0x0a && pair[1] < 0x80 && int(pair[1])+4 <= n {
+				nameEnd := 2 + int(pair[1])
+				if pair[nameEnd] == 0x12 && pair[nameEnd+1] < 0x80 && nameEnd+2+int(pair[nameEnd+1]) == n {
+					name, value, pair = pair[2:nameEnd], pair[nameEnd+2:], nil
+				}
+			}
 			for len(pair) > 0 {
 				tag, wireType, rest, err := key(pair)
 				if err != nil {
@@ -622,7 +643,7 @@ func decodeSeries(record, buf []byte) (DecodedSeries, Span, error) {
 					return DecodedSeries{}, Span{}, err
 				}
 			}
-			series.Labels = append(series.Labels, [2]string{Label(name), Label(value)})
+			arena.addLabel([2]string{Label(name), Label(value)})
 		case 2:
 			field, rest, err := lengthDelimited(wireType, buf)
 			if err != nil {
@@ -633,7 +654,7 @@ func decodeSeries(record, buf []byte) (DecodedSeries, Span, error) {
 			if err != nil {
 				return DecodedSeries{}, Span{}, err
 			}
-			series.Samples = append(series.Samples, sample)
+			arena.addSample(sample)
 		case 3:
 			field, rest, err := lengthDelimited(wireType, buf)
 			if err != nil {
@@ -674,7 +695,98 @@ func decodeSeries(record, buf []byte) (DecodedSeries, Span, error) {
 	if !contiguous {
 		span = Span{}
 	}
+	series.Labels, series.Samples = arena.end()
 	return series, span, nil
+}
+
+type fieldCounts struct{ series, labels, samples int }
+
+// countFields counts a record's series and their labels and samples, skipping everything else,
+// so decoding allocates each once. Counts stop at anything unexpected: decoding reports it.
+func countFields(record []byte) fieldCounts {
+	var count fieldCounts
+	for len(record) > 0 {
+		tag, wireType, rest, err := key(record)
+		if err != nil {
+			return count
+		}
+		if tag != 1 {
+			if record, err = skip(tag, wireType, rest); err != nil {
+				return count
+			}
+			continue
+		}
+		series, rest, err := lengthDelimited(wireType, rest)
+		if err != nil {
+			return count
+		}
+		record = rest
+		count.series++
+		for len(series) > 0 {
+			tag, wireType, rest, err := key(series)
+			if err != nil {
+				break
+			}
+			switch tag {
+			case 1:
+				count.labels++
+			case 2:
+				count.samples++
+			}
+			if series, err = skip(tag, wireType, rest); err != nil {
+				break
+			}
+		}
+	}
+	return count
+}
+
+// arena holds a record's decoded labels and samples in shared arrays. A full array is replaced
+// rather than grown in place, with the current series' part moved over, so the series already
+// decoded keep theirs; each series' slices are capped at their length, so appending to one never
+// writes into the next.
+type arena struct {
+	labels      [][2]string
+	labelStart  int
+	samples     []mimirpb.Sample
+	sampleStart int
+}
+
+func newArena(labels, samples int) arena {
+	return arena{
+		labels:  make([][2]string, 0, max(labels, 1)),
+		samples: make([]mimirpb.Sample, 0, max(samples, 1)),
+	}
+}
+
+func (a *arena) begin() {
+	a.labelStart, a.sampleStart = len(a.labels), len(a.samples)
+}
+
+func (a *arena) addLabel(pair [2]string) {
+	if len(a.labels) == cap(a.labels) {
+		a.labels = append(make([][2]string, 0, 2*cap(a.labels)), a.labels[a.labelStart:]...)
+		a.labelStart = 0
+	}
+	a.labels = append(a.labels, pair)
+}
+
+func (a *arena) addSample(sample mimirpb.Sample) {
+	if len(a.samples) == cap(a.samples) {
+		a.samples = append(make([]mimirpb.Sample, 0, 2*cap(a.samples)), a.samples[a.sampleStart:]...)
+		a.sampleStart = 0
+	}
+	a.samples = append(a.samples, sample)
+}
+
+// end returns the current series' labels and samples.
+func (a *arena) end() ([][2]string, []mimirpb.Sample) {
+	labels := a.labels[a.labelStart:len(a.labels):len(a.labels)]
+	var samples []mimirpb.Sample
+	if len(a.samples) > a.sampleStart {
+		samples = a.samples[a.sampleStart:len(a.samples):len(a.samples)]
+	}
+	return labels, samples
 }
 
 func decodeSample(buf []byte) (mimirpb.Sample, error) {
@@ -772,9 +884,7 @@ func Label(bytes []byte) string {
 
 func isASCII(bytes []byte) bool {
 	for len(bytes) >= 8 {
-		word := uint64(bytes[0]) | uint64(bytes[1])<<8 | uint64(bytes[2])<<16 | uint64(bytes[3])<<24 |
-			uint64(bytes[4])<<32 | uint64(bytes[5])<<40 | uint64(bytes[6])<<48 | uint64(bytes[7])<<56
-		if word&0x8080808080808080 != 0 {
+		if binary.LittleEndian.Uint64(bytes)&0x8080808080808080 != 0 {
 			return false
 		}
 		bytes = bytes[8:]
@@ -860,6 +970,10 @@ func offset(record, buf []byte) int {
 }
 
 func key(buf []byte) (protowire.Number, protowire.Type, []byte, error) {
+	// Records only use field numbers below 16, whose keys take one byte.
+	if len(buf) > 0 && buf[0] < 0x80 && buf[0]>>3 != 0 && buf[0]&7 <= 5 {
+		return protowire.Number(buf[0] >> 3), protowire.Type(buf[0] & 7), buf[1:], nil
+	}
 	value, n := protowire.ConsumeVarint(buf)
 	if n < 0 {
 		return 0, 0, nil, protowire.ParseError(n)
@@ -904,6 +1018,10 @@ func double(wireType protowire.Type, buf []byte) (float64, []byte, error) {
 }
 
 func lengthDelimited(wireType protowire.Type, buf []byte) ([]byte, []byte, error) {
+	// Label names and values are nearly always shorter than 128 bytes, whose length takes one byte.
+	if wireType == protowire.BytesType && len(buf) > 0 && buf[0] < 0x80 && int(buf[0]) < len(buf) {
+		return buf[1 : 1+int(buf[0])], buf[1+int(buf[0]):], nil
+	}
 	if err := checkWireType(protowire.BytesType, wireType); err != nil {
 		return nil, nil, err
 	}

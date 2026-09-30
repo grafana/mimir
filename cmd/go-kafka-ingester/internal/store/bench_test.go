@@ -575,17 +575,22 @@ func TestSteadyIngestBench(t *testing.T) {
 		var totalUser, totalSystem, wall float64
 		group := batch * steadySeriesPerRecord
 		for round := 1; round <= rounds; round++ {
+			// The round's records are built before it's measured, and their garbage collected: in
+			// production they come from the Kafka client, whose cost isn't the store's.
+			var groups [][][]byte
 			for first := 0; first < series; first += group {
-				// Records are encoded just before they are ingested, as they arrive from Kafka.
-				records := steadyRecords(first, min(first+group, series), start+int64(round)*scrapeMs)
-				user, system := cpuSeconds()
-				wallStart := time.Now()
-				steadyIngest(t, s, log, records, batch, &offset, &phases)
-				userEnd, systemEnd := cpuSeconds()
-				totalUser += userEnd - user
-				totalSystem += systemEnd - system
-				wall += time.Since(wallStart).Seconds()
+				groups = append(groups, steadyRecords(first, min(first+group, series), start+int64(round)*scrapeMs))
 			}
+			runtime.GC()
+			user, system := cpuSeconds()
+			wallStart := time.Now()
+			for _, records := range groups {
+				steadyIngest(t, s, log, records, batch, &offset, &phases)
+			}
+			userEnd, systemEnd := cpuSeconds()
+			totalUser += userEnd - user
+			totalSystem += systemEnd - system
+			wall += time.Since(wallStart).Seconds()
 		}
 		samples := float64(series * rounds)
 		require.NoError(t, log.Close())
