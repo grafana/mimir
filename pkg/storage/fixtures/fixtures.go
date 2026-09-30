@@ -80,10 +80,10 @@ func (b *BucketTestBlock) Close() error {
 	return b.InstrBkt.Close()
 }
 
-type AppendFunc = func(tb testing.TB, appenderFactory func() storage.Appender)
+type AppendFunc = func(tb testing.TB, appenderFactory func() storage.AppenderV2)
 
 func AppendTestSeries(seriesCount int) AppendFunc {
-	return func(t testing.TB, appenderFactory func() storage.Appender) {
+	return func(t testing.TB, appenderFactory func() storage.AppenderV2) {
 		app := appenderFactory()
 		b := labels.NewScratchBuilder(4)
 		addSeries := func(ss ...string) {
@@ -92,7 +92,7 @@ func AppendTestSeries(seriesCount int) AppendFunc {
 				b.Add(ss[i], ss[i+1])
 			}
 			b.Sort()
-			_, err := app.Append(0, b.Labels(), 0, 0)
+			_, err := app.Append(0, b.Labels(), 0, 0, 0, nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 
@@ -143,7 +143,7 @@ func SetupTestBlock(tb testing.TB, appendFuncs ...AppendFunc) *BucketTestBlock {
 
 	// Write data to block
 	for _, appendFunc := range appendFuncs {
-		appendFunc(tb, func() storage.Appender { return head.Appender(context.Background()) })
+		appendFunc(tb, func() storage.AppenderV2 { return head.AppenderV2(context.Background()) })
 	}
 
 	// Compact block to temporary location on disk

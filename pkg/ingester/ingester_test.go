@@ -8248,10 +8248,10 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 		l := labels.FromStrings("n", "v")
 		for i := 0; i < numFullChunks; i++ {
 			// Not using db.Appender() as it checks for compaction.
-			app := head.Appender(context.Background())
-			_, err := app.Append(0, l, int64(i)*chunkRange+1, 9.99)
+			app := head.AppenderV2(context.Background())
+			_, err := app.Append(0, l, 0, int64(i)*chunkRange+1, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
-			_, err = app.Append(0, l, int64(i+1)*chunkRange, 9.99)
+			_, err = app.Append(0, l, 0, int64(i+1)*chunkRange, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 		}
@@ -12357,8 +12357,8 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	headMinTime := int64((10 * time.Hour) / time.Millisecond)
-	app := db.Appender(t.Context())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	app := db.AppenderV2(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, headMinTime, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

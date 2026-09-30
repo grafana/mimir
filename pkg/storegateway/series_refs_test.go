@@ -1101,10 +1101,10 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 
 	tb := test.NewTB(t)
 
-	appendFunc := func(t testing.TB, appenderFactory func() storage.Appender) {
+	appendFunc := func(t testing.TB, appenderFactory func() storage.AppenderV2) {
 		appender := appenderFactory()
 		for i := 0; i < 100; i++ {
-			_, err := appender.Append(0, oneLabel("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
+			_, err := appender.Append(0, oneLabel("l1", fmt.Sprintf("v%d", i)), 0, int64(i*10), 0, nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 		assert.NoError(t, appender.Commit())
@@ -1113,7 +1113,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	defaultTestBlockFactory := testBlockToBucketBlock(tb, testBlock)
 
 	const largerTestBlockSeriesCount = 10_000
-	largerAppendFunc := func(t testing.TB, appenderFactory func() storage.Appender) {
+	largerAppendFunc := func(t testing.TB, appenderFactory func() storage.AppenderV2) {
 		appender := appenderFactory()
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
 			lbls := oneLabel("l1", fmt.Sprintf("v%d", i))
@@ -1121,7 +1121,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			const numSamples = 240 // Write enough samples to have two chunks per series
 			for j := 0; j < numSamples; j++ {
 				var err error
-				ref, err = appender.Append(ref, lbls, int64(i*10+j), float64(j))
+				ref, err = appender.Append(ref, lbls, 0, int64(i*10+j), float64(j), nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 		}
@@ -1512,7 +1512,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 	tb := test.NewTB(t)
 
-	appendFunc := func(_ testing.TB, appenderFactory func() storage.Appender) {
+	appendFunc := func(_ testing.TB, appenderFactory func() storage.AppenderV2) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
@@ -1531,11 +1531,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		appender := appenderFactory()
 		for i := int64(0); i < samplesFor2Chunks; i++ { // write 200 samples, so we get two chunks
 			for _, s := range earlySeries {
-				_, err := appender.Append(0, s, i, 0)
+				_, err := appender.Append(0, s, 0, i, 0, nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 			for _, s := range lateSeries {
-				_, err := appender.Append(0, s, samplesFor2Chunks+i, 0)
+				_, err := appender.Append(0, s, 0, samplesFor2Chunks+i, 0, nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 		}
@@ -1547,7 +1547,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 		for i := int64(0); i < samplesFor13Chunks; i++ {
 			for _, s := range seriesWith50Chunks {
-				_, err := appender.Append(0, s, i, 0)
+				_, err := appender.Append(0, s, 0, i, 0, nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 		}
@@ -1560,14 +1560,14 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		for i := int64(0); i < samplesFor1Chunk; i++ {
 			// Write the first chunk with earlier timestamp
 			for _, s := range seriesWithSparseChunks {
-				_, err := appender.Append(0, s, i, 0)
+				_, err := appender.Append(0, s, 0, i, 0, nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 		}
 		for i := int64(0); i < samplesFor1Chunk; i++ {
 			// Write the next chunk with later timestamp
 			for _, s := range seriesWithSparseChunks {
-				_, err := appender.Append(0, s, 1000+i, 0)
+				_, err := appender.Append(0, s, 0, 1000+i, 0, nil, nil, storage.AOptions{})
 				assert.NoError(t, err)
 			}
 		}
@@ -2033,7 +2033,7 @@ func TestMetasToChunkRefs(t *testing.T) {
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	tb := test.NewTB(t)
-	appendFunc := func(tb testing.TB, appenderFactory func() storage.Appender) {
+	appendFunc := func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
 		existingSeries := []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"), // series ref 32
 			labels.FromStrings("a", "1", "b", "2"), // series ref 48
@@ -2045,7 +2045,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		appender := appenderFactory()
 		for ts := int64(0); ts < 10; ts++ {
 			for _, s := range existingSeries {
-				_, err := appender.Append(0, s, ts, 0)
+				_, err := appender.Append(0, s, 0, ts, 0, nil, nil, storage.AOptions{})
 				assert.NoError(tb, err)
 			}
 		}

@@ -1447,7 +1447,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, 
 	}
 }
 
-type testBlockDataSetup = func(tb testing.TB, appenderFactory func() storage.Appender)
+type testBlockDataSetup = func(tb testing.TB, appenderFactory func() storage.AppenderV2)
 
 func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []testBlockDataSetup) (_ ulid.ULID, minT int64, maxT int64) {
 	headOpts := tsdb.DefaultHeadOptions()
@@ -1463,7 +1463,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	logger := log.NewNopLogger()
 
 	for _, setup := range dataSetup {
-		setup(t, func() storage.Appender { return h.Appender(context.Background()) })
+		setup(t, func() storage.AppenderV2 { return h.AppenderV2(context.Background()) })
 	}
 
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
@@ -1480,8 +1480,8 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	return id, h.MinTime(), h.MaxTime()
 }
 
-func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
-	return func(t testing.TB, appenderFactory func() storage.Appender) {
+func appendTestSeries(series int) func(testing.TB, func() storage.AppenderV2) {
+	return func(t testing.TB, appenderFactory func() storage.AppenderV2) {
 		app := appenderFactory()
 		b := labels.NewScratchBuilder(4)
 		addSeries := func(ss ...string) {
@@ -1490,7 +1490,7 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 				b.Add(ss[i], ss[i+1])
 			}
 			b.Sort()
-			_, err := app.Append(0, b.Labels(), 0, 0)
+			_, err := app.Append(0, b.Labels(), 0, 0, 0, nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 
@@ -2047,13 +2047,13 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.NoError(t, err)
 		defer func() { assert.NoError(t, h.Close()) }()
 
-		app := h.Appender(context.Background())
+		app := h.AppenderV2(context.Background())
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
 			lbls := labels.FromStrings("foo", "bar", "b", "1", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
-			_, err := app.Append(0, lbls, ts, 0)
+			_, err := app.Append(0, lbls, 0, ts, 0, nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 		assert.NoError(t, app.Commit())
@@ -2086,13 +2086,13 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.NoError(t, err)
 		defer func() { assert.NoError(t, h.Close()) }()
 
-		app := h.Appender(context.Background())
+		app := h.AppenderV2(context.Background())
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
 			lbls := labels.FromStrings("foo", "bar", "b", "2", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
-			_, err := app.Append(0, lbls, ts, 0)
+			_, err := app.Append(0, lbls, 0, ts, 0, nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 		assert.NoError(t, app.Commit())
@@ -2470,8 +2470,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 }
 
 func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
-	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
-		_, err := app.Append(0, lset, ts, float64(ts))
+	appendF := func(app storage.AppenderV2, lset labels.Labels, ts int64) error {
+		_, err := app.Append(0, lset, 0, ts, float64(ts), nil, nil, storage.AOptions{})
 		return err
 	}
 	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncXOR)
@@ -2479,8 +2479,8 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 
 func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
 	histograms := test.GenerateTestHistograms(10000)
-	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
-		_, err := app.AppendHistogram(0, lset, ts, histograms[ts], nil)
+	appendF := func(app storage.AppenderV2, lset labels.Labels, ts int64) error {
+		_, err := app.Append(0, lset, 0, ts, 0, histograms[ts], nil, storage.AOptions{})
 		return err
 	}
 	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncHistogram)
@@ -2488,8 +2488,8 @@ func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
 
 func TestBucketStore_Series_BlockWithMultipleFloatHistogramChunks(t *testing.T) {
 	histograms := test.GenerateTestFloatHistograms(10000)
-	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
-		_, err := app.AppendHistogram(0, lset, ts, nil, histograms[ts])
+	appendF := func(app storage.AppenderV2, lset labels.Labels, ts int64) error {
+		_, err := app.Append(0, lset, 0, ts, 0, nil, histograms[ts], storage.AOptions{})
 		return err
 	}
 	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncFloatHistogram)
@@ -2497,7 +2497,7 @@ func TestBucketStore_Series_BlockWithMultipleFloatHistogramChunks(t *testing.T) 
 
 func testBucketStoreSeriesBlockWithMultipleChunks(
 	t *testing.T,
-	appendF func(storage.Appender, labels.Labels, int64) error,
+	appendF func(storage.AppenderV2, labels.Labels, int64) error,
 	encoding chunkenc.Encoding) {
 	tmpDir := t.TempDir()
 
@@ -2515,7 +2515,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	for ts := int64(0); ts < 10000; ts++ {
 		// Appending a single sample is very unoptimised, but guarantees each chunk is always MaxSamplesPerChunk
 		// (except the last one, which could be smaller).
-		app := h.Appender(context.Background())
+		app := h.AppenderV2(context.Background())
 		err := appendF(app, series, ts)
 		assert.NoError(t, err)
 		assert.NoError(t, app.Commit())
@@ -3114,7 +3114,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	h, err := tsdb.NewHead(nil, nil, w, nil, headOpts, nil)
 	assert.NoError(t, err)
 
-	app := h.Appender(context.Background())
+	app := h.AppenderV2(context.Background())
 	for i := 0; i < opts.Series; i++ {
 		tsLabel := j*opts.Series*opts.SamplesPerSeries + i*opts.SamplesPerSeries
 
@@ -3126,13 +3126,17 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		ref, err := app.Append(
 			0,
 			ll,
+			0,
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
+			nil,
+			nil,
+			storage.AOptions{},
 		)
 		assert.NoError(t, err)
 
 		for is := 1; is < opts.SamplesPerSeries; is++ {
-			_, err := app.Append(ref, ll, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
+			_, err := app.Append(ref, ll, 0, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64(), nil, nil, storage.AOptions{})
 			assert.NoError(t, err)
 		}
 	}

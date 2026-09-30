@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
@@ -891,20 +892,20 @@ func createBlockWithOptions(
 			t := mint
 
 			for i := 0; i < numSamples; i++ {
-				app := h.Appender(ctx)
+				app := h.AppenderV2(ctx)
 
 				for _, lset := range batch {
 					var err error
 					if numFloatSamples > 0 {
-						_, err = app.Append(0, lset, t, rand.Float64())
+						_, err = app.Append(0, lset, 0, t, rand.Float64(), nil, nil, storage.AOptions{})
 					} else {
 						count := rand.Int63()
 						// Append a minimal histogram with a single bucket.
-						_, err = app.AppendHistogram(0, lset, t, &histogram.Histogram{
+						_, err = app.Append(0, lset, 0, t, 0, &histogram.Histogram{
 							Count:           uint64(count),
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 							PositiveBuckets: []int64{count},
-						}, nil)
+						}, nil, storage.AOptions{})
 					}
 					if err != nil {
 						if rerr := app.Rollback(); rerr != nil {
