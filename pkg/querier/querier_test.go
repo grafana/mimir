@@ -489,7 +489,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 		_ = head.Close()
 	})
 
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 
 	l := labels.FromStrings(model.MetricNameLabel, "foo")
 
@@ -500,13 +500,13 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 		valType := valueType(ts)
 		switch valType {
 		case chunkenc.ValFloat:
-			_, err := app.Append(0, l, int64(ts), float64(ts))
+			_, err := app.Append(0, l, 0, int64(ts), float64(ts), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		case chunkenc.ValHistogram:
-			_, err := app.AppendHistogram(0, l, int64(ts), test.GenerateTestHistogram(int(ts)), nil)
+			_, err := app.Append(0, l, 0, int64(ts), 0, test.GenerateTestHistogram(int(ts)), nil, storage.AOptions{})
 			require.NoError(t, err)
 		case chunkenc.ValFloatHistogram:
-			_, err := app.AppendHistogram(0, l, int64(ts), nil, test.GenerateTestFloatHistogram(int(ts)))
+			_, err := app.Append(0, l, 0, int64(ts), 0, nil, test.GenerateTestFloatHistogram(int(ts)), storage.AOptions{})
 			require.NoError(t, err)
 		default:
 			t.Errorf("Unknown chunk type %v", valType)

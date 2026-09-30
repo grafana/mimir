@@ -115,7 +115,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		return fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
 	}
 
-	app := db.Appender(ctx).(extendedAppender)
+	app := db.AppenderV2(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
@@ -143,40 +143,25 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
+		appOptions := storage.AppendV2Options{}
 		for _, s := range ts.Samples {
+			startTimestamp := int64(0)
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
-				if ref != 0 {
-					// If the cached reference exists, we try to use it.
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
-				} else {
-					// Copy the label set because TSDB may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
-				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
-				}
+				startTimestamp = ts.CreatedTimestamp
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			}
@@ -206,39 +191,22 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
+			startTimestamp := int64(0)
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				// AppendHistogramSTZeroSample copies Schema, ZeroThreshold and CustomValues from
-				// the histogram it is given onto the zero sample it injects.
-				if ref != 0 {
-					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
-				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
-				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
-				}
+				startTimestamp = ts.CreatedTimestamp
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if _, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if ref, err = app.Append(0, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			}
@@ -347,6 +315,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
+		EnableSTAsZeroSample:                 true, // Gated per tenant in the distributor, which only sets CreatedTimestamp when enabled.
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -576,7 +545,7 @@ func (b *TSDBBuilder) Close() error {
 }
 
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
 }
 

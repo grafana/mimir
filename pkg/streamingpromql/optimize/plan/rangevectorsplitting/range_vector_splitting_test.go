@@ -569,7 +569,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// Histogram at t=3h within the single cacheable block (2h-1ms, 4h-1ms].
 	promStorage := teststorage.New(t)
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-	app := promStorage.Appender(context.Background())
+	app := promStorage.AppenderV2(context.Background())
 	lbls := labels.FromStrings("__name__", "hist", "job", "test", "code", "ok")
 	h := &histogram.FloatHistogram{
 		Schema:          0,
@@ -578,7 +578,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 		PositiveBuckets: []float64{2},
 	}
-	_, err := app.AppendHistogram(0, lbls, timestamp.FromTime(baseT.Add(3*time.Hour)), nil, h)
+	_, err := app.Append(0, lbls, 0, timestamp.FromTime(baseT.Add(3*time.Hour)), 0, nil, h, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -971,17 +971,17 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
 
 	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
-	storage := teststorage.New(t, func(opt *tsdb.Options) {
+	testStorage := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.OutOfOrderTimeWindow = oooWindowMs
 	})
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	t.Cleanup(func() { require.NoError(t, testStorage.Close()) })
 
 	ctx := context.Background()
-	app := storage.Appender(ctx)
+	app := testStorage.AppenderV2(ctx)
 	// Load in-order samples from 0h to 12h (every 10 minutes) for initial query
 	for i := 0; i <= 72; i++ {
 		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -991,7 +991,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	// First query: should cache the cacheable blocks, but not the OOO range
 	// Samples at 5h10m (31) to 12h (72) = 42 samples, sum = (31+72)*42/2 = 2163
-	result1, stats, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2163, "env", "prod"), result1)
 	verifyEvaluationStats(t, stats, 42, 42)
 
@@ -1002,14 +1002,14 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges1)
 
-	app = storage.Appender(ctx)
+	app = testStorage.AppenderV2(ctx)
 	// Add OOO sample at 9h
 	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"),
-		timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0)
+		0, timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	result2, stats, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result2)
 	verifyEvaluationStats(t, stats, 43, 43)
 
@@ -1019,7 +1019,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges2)
 
-	result3, stats, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result3, stats, ranges3 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result3)
 	verifyEvaluationStats(t, stats, 43, 43)
 
@@ -1046,11 +1046,11 @@ func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storageInstance.Close()) })
 
 	ctx := context.Background()
-	app := storageInstance.Appender(ctx)
+	app := storageInstance.AppenderV2(ctx)
 	// Seed hourly data through fixedNow.
 	for i := 0; i <= 12; i++ {
 		sampleTs := timestamp.FromTime(baseT.Add(time.Duration(i) * time.Hour))
-		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), sampleTs, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, sampleTs, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1067,9 +1067,9 @@ func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
 	verifyCacheStats(t, backend, 1, 0, 1)
 
 	// Add data in the uncacheable range after the first execution.
-	app = storageInstance.Appender(ctx)
+	app = storageInstance.AppenderV2(ctx)
 	newSampleTs := timestamp.FromTime(baseT.Add(14 * time.Hour))
-	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), newSampleTs, 999.0)
+	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, newSampleTs, 999.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1298,29 +1298,29 @@ func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
 
 	ctx := context.Background()
-	app := promStorage.Appender(ctx)
+	app := promStorage.AppenderV2(ctx)
 	baseT := timestamp.Time(0)
 
 	// zzz_total: float samples from 0h to 10h every 10 minutes
 	for i := 0; i <= 60; i++ {
 		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// aaa_total: float samples from 4h to 6h10m every 10 minutes (absent from head range)
 	for i := 0; i <= 13; i++ {
 		ts := timestamp.FromTime(baseT.Add(4*time.Hour + time.Duration(i)*10*time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// aaa_total: histogram at 6h30m → creates mixed float+hist in the tail range (6h-1ms, 7h]
-	_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
-		timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), nil, &histogram.FloatHistogram{
+	_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
+		0, timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), 0, nil, &histogram.FloatHistogram{
 			Schema: 0, Count: 10, Sum: 100, ZeroThreshold: 0.001, ZeroCount: 2,
 			PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{3, 5},
-		})
+		}, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

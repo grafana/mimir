@@ -32,6 +32,7 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 
 	ctx := context.Background()
 	var it chunkenc.Iterator
+	appOptions := storage.AppendV2Options{}
 
 	for input.Next() {
 		if err := input.Err(); err != nil {
@@ -40,7 +41,7 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 
 		series := input.At()
 		it = series.Iterator(it)
-		app := blockWriter.Appender(ctx)
+		app := blockWriter.AppenderV2(ctx)
 
 		var seriesRef storage.SeriesRef
 		wroteAny := false
@@ -56,13 +57,13 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 			switch valueType {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				seriesRef, err = app.Append(seriesRef, series.Labels(), t, v)
+				seriesRef, err = app.Append(seriesRef, series.Labels(), it.AtST(), t, v, nil, nil, appOptions)
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil)
-				seriesRef, err = app.AppendHistogram(seriesRef, series.Labels(), t, nil, h)
+				seriesRef, err = app.Append(seriesRef, series.Labels(), it.AtST(), t, 0, nil, h, appOptions)
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
-				seriesRef, err = app.AppendHistogram(seriesRef, series.Labels(), t, h, nil)
+				seriesRef, err = app.Append(seriesRef, series.Labels(), it.AtST(), t, 0, h, nil, appOptions)
 			default:
 				return ulid.Zero, fmt.Errorf("unexpected value type: %v", valueType)
 			}

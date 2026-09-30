@@ -546,6 +546,9 @@ func TestIngester_Push(t *testing.T) {
 		nativeHistograms          bool
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
+		// stZeroSamples is the number of zero samples in expectedIngested that TSDB appended from start timestamps.
+		// These are not counted as ingested samples.
+		stZeroSamples int
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -3623,6 +3626,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type": {
+			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3683,7 +3687,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 4
+				cortex_ingester_ingested_samples_total{user="test"} 2
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3874,6 +3878,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates": {
+			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3964,7 +3969,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 10
+				cortex_ingester_ingested_samples_total{user="test"} 8
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3989,6 +3994,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates if out-of-order is disabled": {
+			stZeroSamples:    2,
 			allowOOO:         false,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4079,7 +4085,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 10
+				cortex_ingester_ingested_samples_total{user="test"} 8
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -4450,6 +4456,7 @@ func TestIngester_Push(t *testing.T) {
 				expectedSamplesCount += len(stream.Values) + len(stream.Histograms)
 				expectedHistogramsCount += len(stream.Histograms)
 			}
+			expectedSamplesCount -= testData.stZeroSamples
 			for _, series := range testData.expectedExemplarsIngested {
 				expectedExemplarsCount += len(series.Exemplars)
 			}
@@ -8241,10 +8248,10 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 		l := labels.FromStrings("n", "v")
 		for i := 0; i < numFullChunks; i++ {
 			// Not using db.Appender() as it checks for compaction.
-			app := head.Appender(context.Background())
-			_, err := app.Append(0, l, int64(i)*chunkRange+1, 9.99)
+			app := head.AppenderV2(context.Background())
+			_, err := app.Append(0, l, 0, int64(i)*chunkRange+1, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
-			_, err = app.Append(0, l, int64(i+1)*chunkRange, 9.99)
+			_, err = app.Append(0, l, 0, int64(i+1)*chunkRange, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 		}
@@ -12350,8 +12357,8 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	headMinTime := int64((10 * time.Hour) / time.Millisecond)
-	app := db.Appender(t.Context())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	app := db.AppenderV2(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, headMinTime, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

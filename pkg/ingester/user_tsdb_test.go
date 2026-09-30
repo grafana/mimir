@@ -471,8 +471,8 @@ func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
 	})
 
 	// append some series
-	app := tsdbDB.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("hello", "world"), 10, 20)
+	app := tsdbDB.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings("hello", "world"), 0, 10, 20, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -587,8 +587,8 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
 
-		app := tsdbDB.Appender(context.Background())
-		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 100, 1.0)
+		app := tsdbDB.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 0, 100, 1.0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -620,10 +620,10 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
 
-		app := tsdbDB.Appender(context.Background())
-		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 100, 1.0)
+		app := tsdbDB.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 0, 100, 1.0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, labels.FromStrings("__name__", "metric_b"), 200, 2.0)
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_b"), 0, 200, 2.0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -646,10 +646,10 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		labelsA := labels.FromStrings("__name__", "metric_a")
 		labelsB := labels.FromStrings("__name__", "metric_b")
 
-		app := tsdbDB.Appender(context.Background())
-		_, err = app.Append(0, labelsA, 100, 1.0)
+		app := tsdbDB.AppenderV2(context.Background())
+		_, err = app.Append(0, labelsA, 0, 100, 1.0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, labelsB, 200, 2.0)
+		_, err = app.Append(0, labelsB, 0, 200, 2.0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
