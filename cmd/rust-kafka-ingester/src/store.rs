@@ -512,24 +512,45 @@ impl SeriesByName {
             },
             _ => None,
         };
-        // The smallest posting list of an equality matcher, when smaller than the name group.
-        let mut best: Option<Posting> = None;
+        // The smallest posting lists of a matcher, when smaller than the name group: an equality's,
+        // or those of every value a regex accepts, when it accepts few and not the empty value.
+        let mut best: Option<(usize, Vec<Posting>)> = None;
         for matcher in matchers {
-            if let CompiledMatcher::Equal(label, value) = matcher
-                && label != "__name__"
-                && !value.is_empty()
-            {
-                let Some(list) = self
-                    .postings
-                    .get(label.as_str())
-                    .and_then(|values| values.get(&posting_key(value)))
-                    .map(|posting| Posting::new(&self.shared_postings, *posting))
-                else {
-                    return Box::new(std::iter::empty());
-                };
-                if best.is_none_or(|best| list.len() < best.len()) {
-                    best = Some(list);
-                }
+            let (label, values) = match matcher {
+                CompiledMatcher::Equal(label, value) if !value.is_empty() => (
+                    label,
+                    std::slice::from_ref(value)
+                        .iter()
+                        .map(String::as_str)
+                        .collect(),
+                ),
+                CompiledMatcher::Regex(label, regex) if !regex.is_match("") => match regex.values()
+                {
+                    Some(values) => (label, values.iter().map(|value| &**value).collect()),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            if label == "__name__" {
+                continue;
+            }
+            let values: Vec<&str> = values;
+            let lists = values
+                .iter()
+                .filter_map(|value| {
+                    self.postings
+                        .get(label.as_str())
+                        .and_then(|postings| postings.get(&posting_key(value)))
+                        .map(|posting| Posting::new(&self.shared_postings, *posting))
+                })
+                .collect::<Vec<_>>();
+            let len = lists.iter().map(|list| list.len()).sum::<usize>();
+            // Only series with one of the values can match.
+            if len == 0 {
+                return Box::new(std::iter::empty());
+            }
+            if best.as_ref().is_none_or(|(best, _)| len < *best) {
+                best = Some((len, lists));
             }
         }
         let group_len = name_group.map(|group| self.groups[group as usize].len());
@@ -538,8 +559,8 @@ impl SeriesByName {
             .map(|matcher| self.name_groups(matcher));
         // How many series the candidates below would be: a posting list, a name group, the groups
         // of the names a name matcher accepts, or every series.
-        let chosen = match (best, group_len) {
-            (Some(list), len) if len.is_none_or(|len| list.len() < len) => list.len(),
+        let chosen = match (&best, group_len) {
+            (Some((list, _)), len) if len.is_none_or(|len| *list < len) => *list,
             (_, Some(len)) => len,
             _ => match &name_groups {
                 Some(groups) => groups
@@ -583,10 +604,10 @@ impl SeriesByName {
                     },
                 ))
             }
-            (Some(list), _) if group_len.is_none_or(|len| list.len() < len) => {
+            (Some((len, lists)), _) if group_len.is_none_or(|group_len| len < group_len) => {
                 name_matched = false;
                 Box::new(
-                    self.refs_of(list.ids())
+                    self.refs_of(lists.into_iter().flat_map(Posting::ids))
                         .into_iter()
                         .flat_map(move |(group, hash)| {
                             self.groups[group as usize]
@@ -675,6 +696,16 @@ impl SeriesByName {
 
     /// The name groups whose name `matcher`, a name matcher other than an equality, accepts.
     fn name_groups(&self, matcher: &CompiledMatcher) -> Arc<[u32]> {
+        if let CompiledMatcher::Regex(_, regex) = matcher
+            && let Some(values) = regex.values()
+        {
+            let mut groups = values
+                .iter()
+                .filter_map(|value| self.names.get(&**value).copied())
+                .collect::<Vec<_>>();
+            groups.sort_unstable();
+            return groups.into();
+        }
         let key = name_matcher_key(matcher);
         let mut cache = self
             .name_matches
@@ -4129,8 +4160,8 @@ fn now_ms() -> i64 {
 enum CompiledMatcher {
     Equal(String, String),
     NotEqual(String, String),
-    Regex(String, Regex),
-    NotRegex(String, Regex),
+    Regex(String, CompiledRegex),
+    NotRegex(String, CompiledRegex),
     Shard(u64, u64),
 }
 
@@ -4164,19 +4195,147 @@ thread_local! {
     static COLD_SHARD_HASHINGS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+/// A matcher's anchored regex, with every value it accepts when there are few, sorted. Queriers
+/// send alternations of literals, like the `a|b|c` of dashboard variables: like Prometheus's set
+/// matches, their values are looked up in the index instead of the regex checking every value.
+#[derive(Clone, Debug)]
+struct CompiledRegex {
+    regex: Regex,
+    values: Option<Arc<[Box<str>]>>,
+}
+
+impl CompiledRegex {
+    fn is_match(&self, value: &str) -> bool {
+        match &self.values {
+            Some(values) => values
+                .binary_search_by(|known| (**known).cmp(value))
+                .is_ok(),
+            None => self.regex.is_match(value),
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        self.regex.as_str()
+    }
+
+    /// Every value the regex accepts, when there are few.
+    fn values(&self) -> Option<&[Box<str>]> {
+        self.values.as_deref()
+    }
+}
+
+// The most values a regex is looked up by: beyond, checking the index's values costs less.
+const MAX_ACCEPTED_VALUES: usize = 256;
+
+/// Every value `pattern`, matched as a whole, accepts, sorted, when it accepts at most
+/// `MAX_ACCEPTED_VALUES`: its language is finite and built from literals, classes and bounded
+/// repetitions.
+fn accepted_values(pattern: &str) -> Option<Vec<Box<str>>> {
+    fn language(hir: &regex_syntax::hir::Hir) -> Option<Vec<Vec<u8>>> {
+        use regex_syntax::hir::{Class, HirKind};
+        Some(match hir.kind() {
+            HirKind::Empty => vec![Vec::new()],
+            HirKind::Literal(literal) => vec![literal.0.to_vec()],
+            HirKind::Class(Class::Unicode(class)) => {
+                let mut values = Vec::new();
+                for range in class.ranges() {
+                    for char in range.start()..=range.end() {
+                        if values.len() == MAX_ACCEPTED_VALUES {
+                            return None;
+                        }
+                        values.push(char.to_string().into_bytes());
+                    }
+                }
+                values
+            }
+            HirKind::Capture(capture) => language(&capture.sub)?,
+            HirKind::Repetition(repetition) => {
+                let max = repetition.max?;
+                let sub = language(&repetition.sub)?;
+                let mut values = Vec::new();
+                let mut repeated = vec![Vec::new()];
+                for count in 0..=max {
+                    if count >= repetition.min {
+                        values.extend(repeated.iter().cloned());
+                    }
+                    if count < max {
+                        repeated = product(&repeated, &sub)?;
+                    }
+                    if values.len() > MAX_ACCEPTED_VALUES {
+                        return None;
+                    }
+                }
+                values
+            }
+            HirKind::Concat(subs) => {
+                let mut values = vec![Vec::new()];
+                for sub in subs {
+                    values = product(&values, &language(sub)?)?;
+                }
+                values
+            }
+            HirKind::Alternation(subs) => {
+                let mut values = Vec::new();
+                for sub in subs {
+                    values.extend(language(sub)?);
+                    if values.len() > MAX_ACCEPTED_VALUES {
+                        return None;
+                    }
+                }
+                values
+            }
+            // Anchors and word boundaries depend on what surrounds a value, and byte classes may
+            // not be text.
+            HirKind::Look(_) | HirKind::Class(Class::Bytes(_)) => return None,
+        })
+    }
+    fn product(prefixes: &[Vec<u8>], suffixes: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
+        if prefixes.len().saturating_mul(suffixes.len()) > MAX_ACCEPTED_VALUES {
+            return None;
+        }
+        Some(
+            prefixes
+                .iter()
+                .flat_map(|prefix| {
+                    suffixes
+                        .iter()
+                        .map(move |suffix| [prefix.as_slice(), suffix].concat())
+                })
+                .collect(),
+        )
+    }
+    // Parsed alone, as the anchored regex wraps it in a group: a pattern that only parses
+    // wrapped, like `a)|(b`, isn't anchored as a whole and keeps its regex.
+    let hir = regex_syntax::parse(pattern).ok()?;
+    let mut values = language(&hir)?
+        .into_iter()
+        .map(|value| String::from_utf8(value).map(String::into_boxed_str))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if values.len() > MAX_ACCEPTED_VALUES {
+        return None;
+    }
+    values.sort_unstable();
+    values.dedup();
+    Some(values)
+}
+
 /// A matcher's regex, anchored like Prometheus's. Queriers send the same few patterns with every
 /// request, and compiling them was an eighth of a busy ingester's CPU; like Go's matcher cache,
 /// compiled regexes are kept, up to a bound so arbitrary queries can't grow it.
-fn anchored_regex(pattern: &str) -> Result<Regex> {
+fn anchored_regex(pattern: &str) -> Result<CompiledRegex> {
     const CACHED_REGEXES: usize = 4096;
-    static CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Regex>>> =
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, CompiledRegex>>> =
         std::sync::LazyLock::new(Default::default);
     if let Some(regex) = CACHE.lock().expect("regex cache poisoned").get(pattern) {
         return Ok(regex.clone());
     }
     #[cfg(test)]
     REGEX_COMPILES.with(|compiles| compiles.set(compiles.get() + 1));
-    let regex = Regex::new(&format!("^(?:{pattern})$"))?;
+    let regex = CompiledRegex {
+        regex: Regex::new(&format!("^(?:{pattern})$"))?,
+        values: accepted_values(pattern).map(Arc::from),
+    };
     let mut cache = CACHE.lock().expect("regex cache poisoned");
     if cache.len() >= CACHED_REGEXES {
         cache.clear();
@@ -5293,6 +5452,29 @@ mod tests {
             vec![matcher(0, "job", "job-2"), matcher(3, "agg", ".+")],
             vec![matcher(2, "__name__", ".+"), matcher(3, "n", "[0-5]?[0-9]")],
             vec![matcher(1, "agg", ""), matcher(0, "__name__", "hot")],
+            // Alternations of literals, whose values are looked up.
+            vec![matcher(2, "job", "job-1|job-3")],
+            vec![
+                matcher(2, "__name__", "hot|gone"),
+                matcher(2, "job", "job-(0|4)"),
+            ],
+            vec![matcher(2, "agg", "sum-0|sum-12|missing")],
+            vec![matcher(0, "__name__", "old"), matcher(2, "n", "1|2|3|200")],
+            vec![
+                matcher(3, "job", "job-1|job-2"),
+                matcher(2, "__name__", "old|keep"),
+            ],
+            vec![matcher(2, "job", "|job-1")],
+            vec![matcher(2, "n", "(?i)1[0-2]")],
+            vec![
+                matcher(2, "__name__", "(?:ho|ol)[td]"),
+                matcher(2, "job", "job-[0-2]"),
+            ],
+            vec![matcher(2, "agg", "nothing|none")],
+            vec![
+                matcher(3, "__name__", "hot|keep"),
+                matcher(2, "n", "4[0-9]"),
+            ],
         ];
         let everything = every_series(&store, "tenant");
         // Prometheus's semantics: a missing label has the empty value; regexes are anchored.
@@ -5307,7 +5489,12 @@ mod tests {
                             .iter()
                             .find(|(label, _)| label == name)
                             .map_or("", |(_, value)| value.as_str());
-                        matcher.matches_value(value)
+                        // By the regex itself, not the values looked up for it.
+                        match matcher {
+                            CompiledMatcher::Regex(_, regex) => regex.regex.is_match(value),
+                            CompiledMatcher::NotRegex(_, regex) => !regex.regex.is_match(value),
+                            _ => matcher.matches_value(value),
+                        }
                     })
                 })
                 .cloned()
@@ -5415,6 +5602,127 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn regexes_accept_exactly_the_values_they_expand_to() {
+        let values = |pattern: &str| {
+            accepted_values(pattern).map(|values| {
+                values
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            })
+        };
+        for (pattern, expected) in [
+            ("a|b", Some(vec!["a", "b"])),
+            ("job-(0|4)", Some(vec!["job-0", "job-4"])),
+            ("x[0-2]", Some(vec!["x0", "x1", "x2"])),
+            ("(?i)ab", Some(vec!["AB", "Ab", "aB", "ab"])),
+            ("|a", Some(vec!["", "a"])),
+            ("a?b{2}", Some(vec!["abb", "bb"])),
+            ("", Some(vec![""])),
+            ("é|ü", Some(vec!["é", "ü"])),
+            (".*", None),
+            ("a+", None),
+            ("^a", None),
+            ("a\\b", None),
+            ("[a-z]{3}", None),
+            ("a)|(b", None),
+            ("(?-u:\\xff)", None),
+        ] {
+            let expected =
+                expected.map(|values| values.into_iter().map(String::from).collect::<Vec<_>>());
+            assert_eq!(values(pattern), expected, "{pattern}");
+        }
+        // Whatever the value, looking it up agrees with the regex.
+        for pattern in [
+            "a|b",
+            "job-(0|4)|job-1[0-9]",
+            "(?i)abc|d",
+            "|a|aa",
+            "a?b?c?",
+            "(a|b)(c|d)(e|f)",
+            "x{1,3}",
+            "api_(requests|errors)_total",
+            "[0-9]",
+            "\\.|\\*",
+        ] {
+            let regex = anchored_regex(pattern).unwrap();
+            let values = regex.values().expect("finite").to_vec();
+            let mut probes = vec![String::new(), "a".into(), "ab".into(), "job-".into()];
+            for value in &values {
+                let value = value.to_string();
+                probes.push(format!("{value}x"));
+                probes.push(format!("x{value}"));
+                probes.push(value.to_uppercase());
+                probes.push(value.chars().skip(1).collect());
+                probes.push(value.chars().rev().collect());
+                probes.push(value);
+            }
+            for probe in probes {
+                assert_eq!(
+                    regex.is_match(&probe),
+                    regex.regex.is_match(&probe),
+                    "{pattern} on {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn alternations_look_their_values_up() {
+        let store = Store::with_shards(20 * 60 * 1000, None, None, 1, 1).unwrap();
+        let mut request = series_request("api_requests", []);
+        request.series.clear();
+        for name in ["api_requests", "api_errors", "db_queries"] {
+            for n in 0..50 {
+                let mut series = series_request(name, [(now_ms(), 1.0)]).series.remove(0);
+                series
+                    .labels
+                    .push(("job".into(), format!("job-{}", n % 10).into()));
+                series.labels.push(("n".into(), n.to_string().into()));
+                series.labels.sort();
+                request.series.push(series);
+            }
+        }
+        store.ingest("tenant", request).unwrap();
+        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
+            r#type,
+            name: name.into(),
+            value: value.into(),
+        };
+        let counters = || {
+            (
+                NAME_MATCHES.with(std::cell::Cell::get),
+                LABEL_VALUE_READS.with(std::cell::Cell::get),
+            )
+        };
+        let before = counters();
+        let series = store
+            .select_chunks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[matcher(2, "__name__", "api_errors|db_queries|missing")],
+            )
+            .unwrap();
+        assert_eq!(series.len(), 100);
+        assert_eq!(counters(), before, "no metric name or label checked");
+        let before = counters();
+        let series = store
+            .select_chunks(
+                "tenant",
+                i64::MIN,
+                i64::MAX,
+                &[matcher(2, "job", "job-1|job-2")],
+            )
+            .unwrap();
+        assert_eq!(series.len(), 30);
+        let after = counters();
+        assert_eq!(after.0, before.0);
+        // Only the series with either value are candidates, each checked once.
+        assert_eq!(after.1 - before.1, 30);
     }
 
     #[test]

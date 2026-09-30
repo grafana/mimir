@@ -396,6 +396,18 @@ impl ColdBlock {
         let Some(table) = self.tenants.get(tenant) else {
             return std::sync::Arc::from([]);
         };
+        let names = self.metric_names(tenant);
+        if let CompiledMatcher::Regex(_, regex) = matcher
+            && let Some(values) = regex.values()
+        {
+            let mut series = values
+                .iter()
+                .filter_map(|value| names.binary_search_by(|(name, _)| (**name).cmp(value)).ok())
+                .flat_map(|index| names[index].1.iter().copied())
+                .collect::<Vec<_>>();
+            series.sort_unstable();
+            return series.into();
+        }
         let key = name_matcher_key(matcher);
         if let Some(series) = table
             .name_matches
@@ -407,8 +419,7 @@ impl ColdBlock {
         }
         #[cfg(test)]
         COLD_NAME_MATCHES.with(|matches| matches.set(matches.get() + 1));
-        let mut series = self
-            .metric_names(tenant)
+        let mut series = names
             .iter()
             .filter(|(name, _)| matcher.matches_value(name))
             .flat_map(|(_, series)| series.iter().copied())
@@ -506,13 +517,27 @@ impl ColdBlock {
     pub fn candidates(&self, tenant: &str, matchers: &[CompiledMatcher]) -> Vec<u32> {
         let mut best: Option<Vec<u32>> = None;
         for matcher in matchers {
-            if let CompiledMatcher::Equal(name, value) = matcher
-                && !value.is_empty()
-            {
-                let list = self.posting(tenant, name, value);
-                if best.as_ref().is_none_or(|best| list.len() < best.len()) {
-                    best = Some(list);
+            let list = match matcher {
+                CompiledMatcher::Equal(name, value) if !value.is_empty() => {
+                    self.posting(tenant, name, value)
                 }
+                // A regex that accepts few values, not the empty one, takes their postings.
+                CompiledMatcher::Regex(name, regex) if !regex.is_match("") => {
+                    let Some(values) = regex.values() else {
+                        continue;
+                    };
+                    let mut list = values
+                        .iter()
+                        .flat_map(|value| self.posting(tenant, name, value))
+                        .collect::<Vec<_>>();
+                    list.sort_unstable();
+                    list.dedup();
+                    list
+                }
+                _ => continue,
+            };
+            if best.as_ref().is_none_or(|best| list.len() < best.len()) {
+                best = Some(list);
             }
         }
         if best.is_none() {

@@ -18,6 +18,7 @@ pprof = { version = "0.15", default-features = false, features = ["prost-codec"]
 prost = "0.14"
 rayon = "1.11"
 regex = "1"
+regex-syntax = "0.8"
 rdkafka = { version = "0.38", default-features = false, features = ["tokio", "libz-static"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
