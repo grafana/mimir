@@ -37,6 +37,11 @@ func TestRunE9_AboveThresholdMatchesTruth(t *testing.T) {
 		require.NoError(t, err, "K=%d", k)
 		require.NotEmpty(t, res.Above, "K=%d: this population must produce at least one name above threshold, or the test isn't exercising the interesting case", k)
 		require.True(t, res.Pass(), "K=%d: above=%v truth=%v", k, res.Above, res.Truth)
+		require.NotEmpty(t, res.NearBelow, "K=%d", k)
+		for _, e := range res.NearBelow {
+			require.LessOrEqual(t, e.Count, res.Threshold, "K=%d: near-below names must be at or below the threshold", k)
+		}
+		require.Contains(t, res.Details(), "near below", "K=%d", k)
 	}
 }
 

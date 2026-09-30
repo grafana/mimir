@@ -116,9 +116,62 @@ func (r Report) String() string {
 			usedHLL++
 		}
 	}
-	line("E6", r.E6.Pass(), fmt.Sprintf("%d names, %d used HLL (threshold %d)", len(r.E6.Groups), usedHLL, r.E6.Threshold))
+	p95Err, maxErr := r.E6.HLLErrorStats()
+	line("E6", r.E6.Pass(), fmt.Sprintf("%d names, %d used HLL (threshold %d), HLL |error| p95=%.2f%% max=%.2f%%",
+		len(r.E6.Groups), usedHLL, r.E6.Threshold, 100*p95Err, 100*maxErr))
 	line("E9", r.E9K3.Pass(), fmt.Sprintf("K=3: threshold=%d %d above, %d naive misses", r.E9K3.Threshold, len(r.E9K3.Above), len(r.E9K3.NaiveMisses)))
 	line("E9", r.E9K12.Pass(), fmt.Sprintf("K=12: threshold=%d %d above, %d naive misses", r.E9K12.Threshold, len(r.E9K12.Above), len(r.E9K12.NaiveMisses)))
 
 	return b.String()
+}
+
+// Details lists the per-name numbers behind the E6 and E9 rows: every
+// name that went through HLL, and for each K the names above the E9
+// threshold and the nearest names below it.
+func (r Report) Details() string {
+	return r.E6.Details() + r.E9K3.Details() + r.E9K12.Details()
+}
+
+// Details lists every name that used HLL with its truth, estimate, error
+// and sketch size.
+func (r E6Result) Details() string {
+	var b strings.Builder
+	groups := r.HLLGroups()
+	fmt.Fprintf(&b, "E6 names above threshold %d: %d\n", r.Threshold, len(groups))
+	for _, g := range groups {
+		fmt.Fprintf(&b, "  %-14s truth=%-7d estimate=%-7d error=%+.2f%% sketch=%dB\n",
+			shortName(g.Name), g.Truth, g.Estimate, 100*g.RelativeError(), g.PayloadBytes)
+	}
+	return b.String()
+}
+
+// Details lists the names found above the threshold, with their true
+// counts, the nearest names below it, and any naive misses.
+func (r E9Result) Details() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "E9 K=%d top-%d threshold=%d\n", r.K, r.TopN, r.Threshold)
+	truth := make(map[string]int, len(r.Truth))
+	for _, e := range r.Truth {
+		truth[e.Name] = e.Count
+	}
+	for _, e := range r.Above {
+		fmt.Fprintf(&b, "  above       %-14s count=%-7d truth=%d\n", shortName(e.Name), e.Count, truth[e.Name])
+	}
+	for _, e := range r.NearBelow {
+		fmt.Fprintf(&b, "  near below  %-14s truth=%-7d margin=%d\n", shortName(e.Name), e.Count, r.Threshold-e.Count)
+	}
+	for _, name := range r.NaiveMisses {
+		fmt.Fprintf(&b, "  naive miss  %s\n", shortName(name))
+	}
+	return b.String()
+}
+
+// shortName trims a generated metric name to its "metric_NNNNNN" prefix;
+// the random suffix only pads the name to a realistic length.
+func shortName(name string) string {
+	const prefix = len("metric_000000")
+	if len(name) > prefix {
+		return name[:prefix]
+	}
+	return name
 }

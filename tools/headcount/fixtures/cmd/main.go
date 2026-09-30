@@ -83,7 +83,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("running experiments: %v", err)
 	}
-	fmt.Print(report.String())
+	fmt.Print(report.String(), report.Details())
 	if !report.Pass() {
 		log.Fatal("one or more experiments failed")
 	}
