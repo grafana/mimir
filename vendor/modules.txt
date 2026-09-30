@@ -278,6 +278,9 @@ github.com/aws/smithy-go/tracing
 github.com/aws/smithy-go/traits
 github.com/aws/smithy-go/transport/http
 github.com/aws/smithy-go/transport/http/internal/io
+# github.com/axiomhq/hyperloglog v0.3.0
+## explicit; go 1.23
+github.com/axiomhq/hyperloglog
 # github.com/bahlo/generic-list-go v0.2.0
 ## explicit; go 1.18
 github.com/bahlo/generic-list-go
@@ -338,6 +341,9 @@ github.com/dennwc/varint
 github.com/dgraph-io/ristretto
 github.com/dgraph-io/ristretto/z
 github.com/dgraph-io/ristretto/z/simd
+# github.com/dgryski/go-metro v0.0.0-20250106013310-edb8663e5e33
+## explicit
+github.com/dgryski/go-metro
 # github.com/dlclark/regexp2/v2 v2.2.2
 ## explicit; go 1.25
 github.com/dlclark/regexp2/v2
@@ -863,6 +869,9 @@ github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 ## explicit; go 1.7
 github.com/julienschmidt/httprouter
+# github.com/kamstrup/intmap v0.5.2
+## explicit; go 1.23
+github.com/kamstrup/intmap
 # github.com/klauspost/compress v1.20.0
 ## explicit; go 1.25
 github.com/klauspost/compress
