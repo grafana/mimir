@@ -846,42 +846,11 @@ struct Tenant {
     head_series: u64,
     // Where the last compaction truncated the head, Prometheus's minValidTime.
     truncated_to: i64,
-    // By start, the block ranges this shard's series have samples in, with their oldest and newest
-    // sample: the blocks the Go ingester compacts the head into.
-    block_ranges: BTreeMap<i64, (i64, i64)>,
     // The custom trackers the series' cached matches are for, and their generation. Like Go, only
     // a change to the tenant's trackers invalidates them: the runtime config reloads whenever any
     // tenant's overrides change, and matching every series again was a tenth of an ingester's CPU.
     trackers: Arc<crate::trackers::CustomTrackers>,
     tracker_generation: u64,
-}
-
-impl Tenant {
-    fn mark_block_ranges(&mut self, series: &Series) {
-        for (min, max) in series_bounds(series) {
-            let mut range = range_start(min);
-            while range <= max {
-                let upper = range.saturating_add(CHUNK_RANGE_MS - 1);
-                mark_block_range(
-                    &mut self.block_ranges,
-                    range,
-                    min.max(range),
-                    max.min(upper),
-                );
-                range = range.saturating_add(CHUNK_RANGE_MS);
-            }
-        }
-    }
-}
-
-fn mark_block_range(ranges: &mut BTreeMap<i64, (i64, i64)>, range: i64, min: i64, max: i64) {
-    ranges
-        .entry(range)
-        .and_modify(|(oldest, newest)| {
-            *oldest = (*oldest).min(min);
-            *newest = (*newest).max(max);
-        })
-        .or_insert((min, max));
 }
 
 impl Default for Tenant {
@@ -897,7 +866,6 @@ impl Default for Tenant {
             owned_recompute: false,
             head_series: 0,
             truncated_to: i64::MIN,
-            block_ranges: BTreeMap::new(),
             trackers: Arc::default(),
             // Series start at generation 0, so they match the trackers on the first report.
             tracker_generation: 1,
@@ -1008,7 +976,6 @@ pub struct Store {
     // or 0 when `-ingest-storage.kafka.ingestion-concurrency-max` is 0 and records push alone.
     flush_series: usize,
     pusher_shards: PusherShards,
-    postings_cache: PostingsCacheConfig,
     non_owned_eviction: Option<NonOwnedEviction>,
     early_head_compaction: Option<EarlyHeadCompaction>,
     // Set when the emulated head's min time moved or series were evicted, so the next head tick
@@ -1099,52 +1066,6 @@ impl Default for PusherShards {
             target_flushes: 40,
         }
     }
-}
-
-/// Mimir's postings-for-matchers cache settings. A block query only records how many series its
-/// index lookup selected when it goes through the cache.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PostingsCacheConfig {
-    pub head_force: bool,
-    pub block_force: bool,
-    pub shared: bool,
-    pub head_invalidation: bool,
-}
-
-impl PostingsCacheConfig {
-    // Prometheus's PostingsForMatchersCache skips the cache for non-concurrent (unsharded) calls
-    // unless forced, and a shared cache with head invalidation needs a metric name to version.
-    fn used(&self, head: bool, sharded: bool, matchers: &[cortex::LabelMatcher]) -> bool {
-        let force = if head {
-            self.head_force
-        } else {
-            self.block_force
-        };
-        let key = !self.shared
-            || !(head && self.head_invalidation)
-            || matchers
-                .iter()
-                .any(|matcher| matcher.r#type == 0 && matcher.name == "__name__");
-        (sharded || force) && key
-    }
-}
-
-/// A block a query read, as Mimir's block querier reports it: its generation, the series its
-/// index lookup selected (0 without the postings cache) and the series it returned.
-#[derive(Clone, Debug, PartialEq)]
-pub struct QueriedBlock {
-    pub generation: String,
-    pub index_series: u64,
-    pub series: u64,
-}
-
-// The time range of a queried block, the head's ending at its max time.
-struct BlockRange {
-    lower: i64,
-    upper: i64,
-    head: bool,
-    count_index: bool,
-    generation: String,
 }
 
 /// Per-tenant state of the emulated Go head, for the memory, owned series and head metrics.
@@ -1496,7 +1417,6 @@ impl Store {
             ingested_samples: std::sync::atomic::AtomicU64::new(0),
             flush_series: 150,
             pusher_shards: PusherShards::default(),
-            postings_cache: PostingsCacheConfig::default(),
             non_owned_eviction: None,
             early_head_compaction: None,
             freeze_pending: std::sync::atomic::AtomicBool::new(false),
@@ -1530,11 +1450,6 @@ impl Store {
 
     pub fn with_pusher_shards(mut self, pusher_shards: PusherShards) -> Self {
         self.pusher_shards = pusher_shards;
-        self
-    }
-
-    pub fn with_postings_cache(mut self, postings_cache: PostingsCacheConfig) -> Self {
-        self.postings_cache = postings_cache;
         self
     }
 
@@ -2145,9 +2060,6 @@ impl Store {
                     tenant
                         .series
                         .retain(|_, series| prune_series(series, cutoff));
-                    tenant
-                        .block_ranges
-                        .retain(|_, (_, newest)| *newest >= cutoff);
                 }
                 // Like Go's block retention, a cold block goes once all of it is older.
                 for block in &state.cold.blocks {
@@ -2205,6 +2117,7 @@ impl Store {
             .collect()
     }
 
+    /// The series a query selects, with their chunks in its range.
     pub fn select_chunks(
         &self,
         tenant_id: &str,
@@ -2212,90 +2125,8 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<QuerySeriesView>> {
-        Ok(self
-            .select_chunks_with_blocks(tenant_id, start, end, matchers)?
-            .0)
-    }
-
-    /// Like Prometheus's DB.ChunkQuerier, a query reads the head when it ends after the head's
-    /// min time, and each compacted block, emulated as a block range with samples below the
-    /// head, it overlaps.
-    fn queried_blocks(
-        &self,
-        tenant_id: &str,
-        start: i64,
-        end: i64,
-        matchers: &[cortex::LabelMatcher],
-    ) -> Vec<BlockRange> {
-        let head = self.head_view(tenant_id);
-        let head_lower = head.head_min.max(head.min_time);
-        let sharded = matchers
-            .iter()
-            .any(|matcher| matcher.r#type == 0 && matcher.name == "__query_shard__");
-        let mut blocks = Vec::new();
-        if head.max_time != i64::MIN && end >= head_lower {
-            blocks.push(BlockRange {
-                lower: head_lower,
-                upper: i64::MAX,
-                head: true,
-                count_index: self.postings_cache.used(true, sharded, matchers),
-                generation: "0".into(),
-            });
-        }
-        if head.head_min == i64::MIN {
-            return blocks;
-        }
-        let last = end.min(head.head_min.saturating_sub(1));
-        let first = range_start(start);
-        if first > last {
-            return blocks;
-        }
-        let mut ranges = BTreeMap::new();
-        for shard in self.per_shard(tenant_id, |tenant, _| {
-            tenant
-                .block_ranges
-                .range(first..=last)
-                .map(|(range, bounds)| (*range, *bounds))
-                .collect::<Vec<_>>()
-        }) {
-            for (range, (oldest, newest)) in shard {
-                mark_block_range(&mut ranges, range, oldest, newest);
-            }
-        }
-        let count_index = self.postings_cache.used(false, sharded, matchers);
-        for (lower, (oldest, newest)) in ranges {
-            // A block's time range is that of its samples.
-            // Blocks end where the head starts, which forced compactions don't align.
-            let newest = newest.min(head.head_min.saturating_sub(1));
-            if oldest > newest || oldest > end || newest < start {
-                continue;
-            }
-            let generation = ((head_lower - oldest) / CHUNK_RANGE_MS).max(1);
-            blocks.push(BlockRange {
-                lower,
-                upper: (lower + CHUNK_RANGE_MS - 1).min(head.head_min.saturating_sub(1)),
-                head: false,
-                count_index,
-                generation: if generation > 100 {
-                    "100+".into()
-                } else {
-                    generation.to_string()
-                },
-            });
-        }
-        blocks
-    }
-
-    /// The selected series and, per block the Go ingester would read, what it reports.
-    pub fn select_chunks_with_blocks(
-        &self,
-        tenant_id: &str,
-        start: i64,
-        end: i64,
-        matchers: &[cortex::LabelMatcher],
-    ) -> Result<(Vec<QuerySeriesView>, Vec<QueriedBlock>)> {
         let reads_before = LABEL_VALUE_READS.with(std::cell::Cell::get);
-        let selected = self.select_chunks_with_blocks_counted(tenant_id, start, end, matchers);
+        let selected = self.select_chunks_counted(tenant_id, start, end, matchers);
         let shape = matcher_shape(matchers);
         metrics::QUERY_SHAPES.with_label_values(&[&shape]).inc();
         metrics::QUERY_LABEL_CHECKS
@@ -2304,80 +2135,48 @@ impl Store {
         selected
     }
 
-    /// `select_chunks_with_blocks`, without the query metrics.
-    fn select_chunks_with_blocks_counted(
+    /// `select_chunks`, without the query metrics.
+    fn select_chunks_counted(
         &self,
         tenant_id: &str,
         start: i64,
         end: i64,
         matchers: &[cortex::LabelMatcher],
-    ) -> Result<(Vec<QuerySeriesView>, Vec<QueriedBlock>)> {
+    ) -> Result<Vec<QuerySeriesView>> {
         let compiled = compile_matchers(matchers)?;
-        let blocks = self.queried_blocks(tenant_id, start, end, matchers);
-        // Counting what an index lookup selects needs the series of every query shard.
-        let count_index = blocks.iter().any(|block| block.count_index);
         let (shard_matchers, index_matchers): (Vec<_>, Vec<_>) = matchers
             .iter()
             .cloned()
             .partition(|matcher| matcher.r#type == 0 && matcher.name == "__query_shard__");
-        let (lookup, shard) = if count_index {
-            (
-                compile_matchers(&index_matchers)?,
-                compile_matchers(&shard_matchers)?,
-            )
-        } else {
-            (compiled, Vec::new())
-        };
         // Cold series are checked against the shard by each block's cached hashes, and against
         // the other matchers by their labels.
         let cold_labels = compile_matchers(&index_matchers)?;
         let cold_shard = compile_matchers(&shard_matchers)?;
-        let head = self.head_view(tenant_id);
         let pruned_before = self
             .pruned_before
             .load(std::sync::atomic::Ordering::Relaxed);
-        // Cold series with data in the query range, or in the blocks it reports.
-        let (scan_start, scan_end) = blocks
-            .iter()
-            .filter(|block| !block.head)
-            .fold((start, end), |(low, high), block| {
-                (low.min(block.lower), high.max(block.upper))
-            });
         let per_shard = self.per_shard_with_cold(tenant_id, |tenant, disk, cold| {
-            let mut counts = vec![[0_u64; 2]; blocks.len()];
             // Cold series, by labels: one may be in several blocks, and also back in memory.
             // Hashed with hashbrown's default hasher: every head candidate looks itself up.
             let mut cold_series: hashbrown::HashMap<StoredLabels, Vec<ChunkMeta>> =
                 hashbrown::HashMap::new();
-            let mut cold_bounds = Vec::new();
             // Per block, for each label matcher that accepts the empty value, the series with its
             // label when few are: the others match it without reading their labels.
             let mut block_with_label: Option<(u64, Vec<Option<ColdSeriesList>>)> = None;
             // Like the head's, each regex matcher's result for the label values it saw.
             let mut cold_remembered =
                 vec![hashbrown::HashMap::<Box<str>, bool>::new(); cold_labels.len()];
-            for (block_tenant, index, series) in
-                cold.candidates(tenant_id, &lookup, scan_start, scan_end)
-            {
-                let in_shard = cold_shard.is_empty()
-                    || in_query_shard(block_tenant.shard_hash(index), &cold_shard);
-                // Only index lookups count series outside the shard. Checked first: a hash
-                // comparison, where the rest decodes the series.
-                if !in_shard && !count_index {
+            for (block_tenant, index, series) in cold.candidates(tenant_id, &compiled, start, end) {
+                // A hash comparison, where the rest decodes the series.
+                if !cold_shard.is_empty()
+                    && !in_query_shard(block_tenant.shard_hash(index), &cold_shard)
+                {
                     continue;
                 }
-                cold_bounds.clear();
-                cold_bounds.extend(
-                    series
-                        .chunks()
-                        .map(|chunk| (chunk.min_time, chunk.max_time)),
-                );
-                let overlaps = |lower: i64, upper: i64| {
-                    cold_bounds
-                        .iter()
-                        .any(|(min, max)| *min <= upper && *max >= lower)
-                };
-                if !overlaps(scan_start, scan_end) {
+                if !series
+                    .chunks()
+                    .any(|chunk| chunk.min_time <= end && chunk.max_time >= start)
+                {
                     continue;
                 }
                 if block_with_label
@@ -2430,22 +2229,11 @@ impl Store {
                 if !labels_match {
                     continue;
                 }
-                for (block, counts) in blocks.iter().zip(&mut counts) {
-                    if block.head || !overlaps(block.lower, block.upper) {
-                        continue;
-                    }
-                    counts[0] += u64::from(block.count_index);
-                    if in_shard && overlaps(start.max(block.lower), end.min(block.upper)) {
-                        counts[1] += 1;
-                    }
-                }
-                if in_shard && overlaps(start, end) {
-                    cold_series.entry(series.labels()).or_default().extend(
-                        series
-                            .chunks()
-                            .filter(|chunk| chunk.max_time >= pruned_before),
-                    );
-                }
+                cold_series.entry(series.labels()).or_default().extend(
+                    series
+                        .chunks()
+                        .filter(|chunk| chunk.max_time >= pruned_before),
+                );
             }
             let view = |labels: &StoredLabels, chunks: Vec<EncodedChunk>| {
                 (!chunks.is_empty()).then(|| {
@@ -2460,65 +2248,27 @@ impl Store {
                     )
                 })
             };
-            let counts_index = blocks.iter().any(|block| block.count_index);
-            let mut bounds = Vec::new();
             let mut metas = Vec::new();
             let mut selected = tenant
                 .series
-                .matching(&lookup)
+                .matching(&compiled)
                 .filter_map(|((_, labels), series)| {
-                    let in_shard = in_query_shard(series.shard_hash, &shard);
-                    // A series outside the query shard only counts toward index lookups.
-                    if !in_shard && !counts_index {
-                        return None;
-                    }
-                    // Decoded at most once, and only when needed: the head block needs no chunk
-                    // bounds, and most candidates of a sharded query only count toward it. The
-                    // chunks decoded for their bounds are the ones a returned series then reads.
-                    let mut decoded = false;
-                    let mut overlaps = |lower: i64, upper: i64| {
-                        if !decoded {
-                            #[cfg(test)]
-                            CHUNK_BOUNDS_DECODES.with(|decodes| decodes.set(decodes.get() + 1));
-                            metas.clear();
-                            metas.extend(series.chunks.iter());
-                            bounds.clear();
-                            bounds.extend(
-                                metas
-                                    .iter()
-                                    .map(|chunk| (chunk.min_time, chunk.max_time))
-                                    .chain(head_bounds(series)),
-                            );
-                            decoded = true;
-                        }
-                        bounds
-                            .iter()
-                            .any(|(min, max)| *min <= upper && *max >= lower)
-                    };
-                    for (block, counts) in blocks.iter().zip(&mut counts) {
-                        let indexed = if block.head {
-                            head.holds(series)
-                        } else {
-                            overlaps(block.lower, block.upper)
-                        };
-                        if !indexed {
-                            continue;
-                        }
-                        counts[0] += u64::from(block.count_index);
-                        if in_shard && overlaps(start.max(block.lower), end.min(block.upper)) {
-                            counts[1] += 1;
-                        }
-                    }
-                    if !in_shard {
-                        return None;
-                    }
+                    #[cfg(test)]
+                    CHUNK_BOUNDS_DECODES.with(|decodes| decodes.set(decodes.get() + 1));
+                    // Decoded once: the chunks read for their bounds are the ones returned.
+                    metas.clear();
+                    metas.extend(series.chunks.iter());
+                    let overlaps = metas
+                        .iter()
+                        .map(|chunk| (chunk.min_time, chunk.max_time))
+                        .chain(head_bounds(series))
+                        .any(|(min, max)| min <= end && max >= start);
                     let cold_chunks = if cold_series.is_empty() {
                         None
                     } else {
                         cold_series.remove(labels)
                     };
-                    // Checked either way: it decodes the chunks the series reads.
-                    if !overlaps(start, end) && cold_chunks.is_none() {
+                    if !overlaps && cold_chunks.is_none() {
                         return None;
                     }
                     let cold_chunks = cold_chunks.unwrap_or_default();
@@ -2531,30 +2281,13 @@ impl Store {
             selected.extend(cold_series.into_iter().filter_map(|(labels, chunks)| {
                 view(&labels, query_chunks(None, &[], &chunks, disk, start, end))
             }));
-            (selected, counts)
+            selected
         });
-        let mut totals = vec![[0_u64; 2]; blocks.len()];
-        let mut selected = Vec::new();
-        for (series, counts) in per_shard {
-            selected.extend(series);
-            for (total, count) in totals.iter_mut().zip(counts) {
-                total[0] += count[0];
-                total[1] += count[1];
-            }
-        }
+        let mut selected = per_shard.into_iter().flatten().collect::<Vec<_>>();
         // The distributor k-way merges each ingester's stream and requires label order, which the
         // Go ingester gets from sorted postings.
         selected.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let blocks = blocks
-            .into_iter()
-            .zip(totals)
-            .map(|(block, [index_series, series])| QueriedBlock {
-                generation: block.generation,
-                index_series,
-                series,
-            })
-            .collect();
-        Ok((selected.into_iter().map(|(_, view)| view).collect(), blocks))
+        Ok(selected.into_iter().map(|(_, view)| view).collect())
     }
 
     pub fn select_exemplars(
@@ -3533,9 +3266,7 @@ fn ingest_series(
         .binary_search_by(|(label, _)| label.as_str().cmp("__name__"))
         .map_or("", |index| decoded_labels[index].1.as_str());
     let Tenant {
-        series: by_name,
-        block_ranges,
-        ..
+        series: by_name, ..
     } = tenant;
     let created = std::cell::Cell::new(false);
     let (key_labels, series) = by_name.get_or_insert_with(
@@ -3578,23 +3309,6 @@ fn ingest_series(
     let mut accepted = 0_u64;
     let mut out_of_order = 0_u64;
     let mut chunks_created = 0_u64;
-    // The block range of the last accepted samples, with their oldest and newest.
-    let mut marked: Option<(i64, i64, i64)> = None;
-    let mut mark = |timestamp: i64| {
-        let range = range_start(timestamp);
-        match &mut marked {
-            Some((current, oldest, newest)) if *current == range => {
-                *oldest = (*oldest).min(timestamp);
-                *newest = (*newest).max(timestamp);
-            }
-            _ => {
-                if let Some((range, oldest, newest)) = marked {
-                    mark_block_range(block_ranges, range, oldest, newest);
-                }
-                marked = Some((range, timestamp, timestamp));
-            }
-        }
-    };
     let mut discard = |reason: DiscardReason| {
         *outcome
             .discarded
@@ -3625,7 +3339,6 @@ fn ingest_series(
             )? {
                 Ok(Some(appended)) => {
                     accepted += 1;
-                    mark(created);
                     count_appended(appended, &mut out_of_order, &mut chunks_created);
                 }
                 Ok(None) => {}
@@ -3642,7 +3355,6 @@ fn ingest_series(
         )? {
             Ok(appended) => {
                 accepted += 1;
-                mark(sample.timestamp_ms);
                 count_appended(appended, &mut out_of_order, &mut chunks_created);
             }
             Err(reason) => discard(reason),
@@ -3681,25 +3393,19 @@ fn ingest_series(
             )? {
                 Ok(Some(appended)) => {
                     accepted += 1;
-                    mark(created);
                     count_appended(appended, &mut out_of_order, &mut chunks_created);
                 }
                 Ok(None) => {}
                 Err(reason) => discard(reason),
             }
         }
-        let timestamp = histogram.timestamp;
         match append_histogram(series, disk, &rules, &committed, histogram)? {
             Ok(appended) => {
                 accepted += 1;
-                mark(timestamp);
                 count_appended(appended, &mut out_of_order, &mut chunks_created);
             }
             Err(reason) => discard(reason),
         }
-    }
-    if let Some((range, oldest, newest)) = marked {
-        mark_block_range(block_ranges, range, oldest, newest);
     }
     if accepted > 0 {
         if let Some(bucket_count) = bucket_count {
@@ -5437,8 +5143,8 @@ mod tests {
         let mut returned = 0;
         for index in 1..=16 {
             let before = counters();
-            let (series, blocks) = store
-                .select_chunks_with_blocks(
+            let series = store
+                .select_chunks(
                     "tenant",
                     i64::MIN,
                     i64::MAX,
@@ -5449,9 +5155,6 @@ mod tests {
                 )
                 .unwrap();
             let after = counters();
-            // Every series counts toward the head's index lookup.
-            assert_eq!(blocks[0].index_series, 64);
-            assert_eq!(blocks[0].series, series.len() as u64);
             assert_eq!(
                 after.0 - before.0,
                 0,
@@ -5478,8 +5181,8 @@ mod tests {
             )
             .unwrap();
         assert!(series.is_empty());
-        let (series, _) = store
-            .select_chunks_with_blocks(
+        let series = store
+            .select_chunks(
                 "tenant",
                 i64::MIN,
                 i64::MAX,
@@ -5571,8 +5274,8 @@ mod tests {
             )
         };
         let before = counters();
-        let (series, _) = store
-            .select_chunks_with_blocks(
+        let series = store
+            .select_chunks(
                 "tenant",
                 i64::MIN,
                 i64::MAX,
@@ -5586,8 +5289,8 @@ mod tests {
 
     // Every series' labels, from a query without matchers.
     fn every_series(store: &Store, tenant: &str) -> Vec<Vec<(String, String)>> {
-        let (series, _) = store
-            .select_chunks_with_blocks(tenant, i64::MIN, i64::MAX, &[])
+        let series = store
+            .select_chunks(tenant, i64::MIN, i64::MAX, &[])
             .unwrap();
         series
             .iter()
@@ -5711,9 +5414,7 @@ mod tests {
                     (i64::MIN, i64::MAX),
                     (start + 20 * 60_000, start + 40 * 60_000),
                 ] {
-                    let (series, blocks) = store
-                        .select_chunks_with_blocks("tenant", from, to, &matchers)
-                        .unwrap();
+                    let series = store.select_chunks("tenant", from, to, &matchers).unwrap();
                     let reads = series
                         .iter()
                         .map(|view| {
@@ -5726,11 +5427,7 @@ mod tests {
                             )
                         })
                         .collect::<Vec<_>>();
-                    let stats = blocks
-                        .into_iter()
-                        .map(|block| (block.generation, block.index_series, block.series))
-                        .collect::<Vec<_>>();
-                    std::hash::Hash::hash(&(&reads, &stats), &mut digest);
+                    std::hash::Hash::hash(&reads, &mut digest);
                     if shard.is_none() && from == i64::MIN {
                         let mut selected = series
                             .iter()
@@ -5764,7 +5461,7 @@ mod tests {
         let reads = |matchers: &[cortex::LabelMatcher]| {
             let before = LABEL_VALUE_READS.with(std::cell::Cell::get);
             store
-                .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, matchers)
+                .select_chunks("tenant", i64::MIN, i64::MAX, matchers)
                 .unwrap();
             LABEL_VALUE_READS.with(std::cell::Cell::get) - before
         };
@@ -5948,7 +5645,7 @@ mod tests {
         for index in 1..=3 {
             queries.push(vec![shard(index, 3)]);
         }
-        type Read = (Vec<(Vec<u8>, Vec<Vec<u8>>)>, Vec<(String, u64, u64)>);
+        type Read = (Vec<(Vec<u8>, Vec<Vec<u8>>)>,);
         let reads = |store: &Store| -> Vec<Read> {
             let mut reads = Vec::new();
             for matchers in &queries {
@@ -5959,27 +5656,19 @@ mod tests {
                     (start + 105 * 60_000, start + 115 * 60_000),
                     (start + 2 * HOUR, start + 5 * HOUR),
                 ] {
-                    let (series, blocks) = store
-                        .select_chunks_with_blocks("tenant", from, to, matchers)
-                        .unwrap();
-                    reads.push((
-                        series
-                            .iter()
-                            .map(|view| {
-                                (
-                                    view.encoded_labels.to_vec(),
-                                    view.chunks[view.chunk_start..view.chunk_end]
-                                        .iter()
-                                        .map(|chunk| chunk.wire.to_vec())
-                                        .collect(),
-                                )
-                            })
-                            .collect(),
-                        blocks
-                            .into_iter()
-                            .map(|block| (block.generation, block.index_series, block.series))
-                            .collect(),
-                    ));
+                    let series = store.select_chunks("tenant", from, to, matchers).unwrap();
+                    reads.push((series
+                        .iter()
+                        .map(|view| {
+                            (
+                                view.encoded_labels.to_vec(),
+                                view.chunks[view.chunk_start..view.chunk_end]
+                                    .iter()
+                                    .map(|chunk| chunk.wire.to_vec())
+                                    .collect(),
+                            )
+                        })
+                        .collect(),));
                 }
             }
             reads
@@ -6043,12 +5732,8 @@ mod tests {
             Vec<String>,
             Vec<String>,
             Vec<Vec<(String, String)>>,
-            Vec<(String, u64, u64)>,
         );
         let reads = |store: &Store| -> Reads {
-            let (_, blocks) = store
-                .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, &[])
-                .unwrap();
             (
                 float_samples(store, i64::MIN, i64::MAX),
                 store
@@ -6063,10 +5748,6 @@ mod tests {
                     .into_iter()
                     .collect::<BTreeSet<_>>()
                     .into_iter()
-                    .collect(),
-                blocks
-                    .into_iter()
-                    .map(|block| (block.generation, block.index_series, block.series))
                     .collect(),
             )
         };
@@ -6161,16 +5842,6 @@ mod tests {
         assert_eq!(names(12 * HOUR, 15 * HOUR), ["long"]);
         assert_eq!(names(0, i64::MAX), ["long", "old"]);
         assert_eq!(names(i64::MIN, i64::MAX), ["long", "old"]);
-        let (_, blocks) = store
-            .select_chunks_with_blocks("tenant", i64::MIN, i64::MAX, &[])
-            .unwrap();
-        assert_eq!(
-            blocks
-                .iter()
-                .map(|block| (block.generation.as_str(), block.series))
-                .collect::<Vec<_>>(),
-            [("0", 1), ("1", 2)]
-        );
     }
 
     #[test]

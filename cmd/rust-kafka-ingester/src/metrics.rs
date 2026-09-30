@@ -162,10 +162,6 @@ metric!(QUERIED_SERIES: HistogramVec = HistogramVec::new(
         .buckets(prometheus::exponential_buckets(10.0, 8.0, 6).unwrap()),
     &["stage"],
 ).unwrap());
-metric!(QUERIED_BLOCKS: IntCounterVec = IntCounterVec::new(
-    Opts::new("cortex_ingester_queried_blocks_total", "Number of times blocks were queried by generation. Generation 0 is the head block; higher generations count persisted blocks back from the head (1 = most recent)."),
-    &["generation"],
-).unwrap());
 metric!(COST_ATTRIBUTION_CARDINALITY: IntGaugeVec = IntGaugeVec::new(
     Opts::new("cortex_cost_attribution_active_series_tracker_cardinality", "The cardinality of a cost attribution active series tracker for each user."),
     &["user", "tracker"],
