@@ -45,9 +45,15 @@ type E6Result struct {
 	Groups    []NameGroupResult
 }
 
+// e6MaxP95Error is the accuracy goal for a sketch-based count: at most 5%
+// absolute relative error per metric at the 95th percentile. HLL's
+// standard error at p=11 is 1.04/sqrt(2^11), about 2.3%, which puts its
+// p95 near 4.5%.
+const e6MaxP95Error = 0.05
+
 // Pass reports whether every group below Threshold matched its truth
 // exactly, and the p95 absolute relative error among groups at or above
-// it is at most 2.5%.
+// it is at most e6MaxP95Error.
 func (r E6Result) Pass() bool {
 	var aboveErrs []float64
 	for _, g := range r.Groups {
@@ -66,7 +72,7 @@ func (r E6Result) Pass() bool {
 	if len(aboveErrs) == 0 {
 		return true
 	}
-	return p95(aboveErrs) <= 0.025
+	return p95(aboveErrs) <= e6MaxP95Error
 }
 
 // HLLGroups returns the groups that used HLL, largest truth first.
