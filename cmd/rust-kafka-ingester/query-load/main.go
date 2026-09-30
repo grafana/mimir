@@ -3,8 +3,8 @@
 // query-load sends a steady, ingester-heavy mix of queries to a query-frontend: range and instant
 // queries, with label regexes and over classic and native histograms, plus label lookups, all
 // inside the window queriers serve from ingesters. It queries the metrics with the most series in
-// ingesters, within bounds, and drops metrics that Adaptive Metrics aggregates, which only answer
-// aggregated queries from a few series.
+// ingesters, within bounds, weighted by their series, and drops metrics that Adaptive Metrics
+// aggregates, which only answer aggregated queries from a few series.
 package main
 
 import (
@@ -143,7 +143,11 @@ func run(ctx context.Context, cfg config) error {
 
 func loop(ctx context.Context, client *http.Client, cfg config, metrics *metrics, results chan<- result) {
 	for ctx.Err() == nil {
-		tenant := cfg.tenants[rand.IntN(len(cfg.tenants))]
+		tenant, ok := metrics.pickTenant(cfg.tenants)
+		if !ok {
+			sleep(ctx, cfg.pause)
+			continue
+		}
 		m, ok := metrics.pick(tenant)
 		if !ok {
 			sleep(ctx, cfg.pause)
@@ -185,6 +189,8 @@ const (
 type metric struct {
 	name string
 	kind metricKind
+	// Its series in ingesters, which weigh how often it's queried.
+	series int
 }
 
 // A metric name and its series in ingesters, from the cardinality API.
@@ -384,11 +390,11 @@ func classify(names []sampled, histograms map[string]bool, maxHistogramSeries in
 		switch {
 		case histogram && sample.series > maxHistogramSeries:
 		case bucket && histograms[family]:
-			metrics = append(metrics, metric{name: family, kind: classicHistogram})
+			metrics = append(metrics, metric{name: family, kind: classicHistogram, series: sample.series})
 		case histograms[sample.name]:
-			metrics = append(metrics, metric{name: sample.name, kind: nativeHistogram})
+			metrics = append(metrics, metric{name: sample.name, kind: nativeHistogram, series: sample.series})
 		default:
-			metrics = append(metrics, metric{name: sample.name})
+			metrics = append(metrics, metric{name: sample.name, series: sample.series})
 		}
 	}
 	return metrics
@@ -441,14 +447,58 @@ func (m *metrics) remove(tenant, name string) {
 	m.byTenant[tenant] = slices.DeleteFunc(m.byTenant[tenant], func(candidate metric) bool { return candidate.name == name })
 }
 
+// pickTenant picks a tenant by the series of its sampled metrics: a query's cost to ingesters
+// grows with the series it reads, so a tenant with few series would only dilute the load.
+func (m *metrics) pickTenant(tenants []string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	weights := make([]int, len(tenants))
+	for index, tenant := range tenants {
+		for _, sampled := range m.byTenant[tenant] {
+			weights[index] += max(sampled.series, 1)
+		}
+	}
+	index, ok := weightedIndex(weights)
+	if !ok {
+		return "", false
+	}
+	return tenants[index], true
+}
+
+// pick picks one of the tenant's sampled metrics by its series, within the sampling bounds, so
+// the same number of queries reads more series.
 func (m *metrics) pick(tenant string) (metric, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	sample := m.byTenant[tenant]
-	if len(sample) == 0 {
+	weights := make([]int, len(sample))
+	for index, sampled := range sample {
+		weights[index] = max(sampled.series, 1)
+	}
+	index, ok := weightedIndex(weights)
+	if !ok {
 		return metric{}, false
 	}
-	return sample[rand.IntN(len(sample))], true
+	return sample[index], true
+}
+
+// weightedIndex picks an index with a probability proportional to its weight.
+func weightedIndex(weights []int) (int, bool) {
+	total := 0
+	for _, weight := range weights {
+		total += weight
+	}
+	if total == 0 {
+		return 0, false
+	}
+	target := rand.IntN(total)
+	for index, weight := range weights {
+		if target < weight {
+			return index, true
+		}
+		target -= weight
+	}
+	return len(weights) - 1, true
 }
 
 // peers are up to count other sampled plain metrics of the tenant.
