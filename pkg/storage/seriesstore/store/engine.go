@@ -436,7 +436,13 @@ func (e *Engine) Compact(context.Context) error {
 		e.compactOOOHead()
 	}
 	if e.opts.RetentionMs > 0 {
-		return e.prune(satSub(nowMs(), e.opts.RetentionMs))
+		home, t := e.home()
+		home.RLock()
+		cutoff := expiredBefore(t.blocks, satSub(nowMs(), e.opts.RetentionMs))
+		home.RUnlock()
+		if cutoff > math.MinInt64 {
+			return e.prune(cutoff)
+		}
 	}
 	return nil
 }

@@ -12878,6 +12878,17 @@
             },
             {
               "kind": "field",
+              "name": "engine",
+              "required": false,
+              "desc": "Storage engine of the ingesters' per-tenant TSDBs. Supported values: prometheus, seriesstore. seriesstore keeps series in the seriesstore layout and requires ingest storage without block shipping; it has no WAL, so after an unclean shutdown the ingester replays Kafka from the retention period.",
+              "fieldValue": null,
+              "fieldDefaultValue": "prometheus",
+              "fieldFlag": "blocks-storage.tsdb.engine",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "retention_period",
               "required": false,
               "desc": "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.",

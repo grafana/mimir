@@ -88,6 +88,7 @@ func TestIngester_filterUsersToCompactToReduceInMemorySeries(t *testing.T) {
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnlyIfEstimatedSeriesReductionIsGreaterThanConfiguredPercentage(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -159,6 +160,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
@@ -321,6 +323,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonoringBlockRangePeriod(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
@@ -390,6 +393,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamplesOlderThanActiveSeriesIdleTimeoutAfterEarlyCompaction(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -450,6 +454,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	util_test.VerifyNoLeak(t)
 
 	const (
@@ -795,6 +800,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 }
 
 func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -845,6 +851,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 }
 
 func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1033,6 +1040,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 }
 
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1138,6 +1146,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 // queryable through the ingester (owned from the head, non-owned from the
 // local block).
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1245,6 +1254,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 // series keeps its in-order chunks in the head, while its OOO chunks are
 // persisted on disk.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1384,6 +1394,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 // remains within the grace period. Eviction proceeds once the timestamp is
 // older than the configured threshold.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -1464,6 +1475,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 // after the scale-up, whereas the same ingester state would not have met the
 // eviction threshold before the scale-up.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	const numSeries = 10000
 
 	cfg := defaultIngesterTestConfig(t)
@@ -1613,6 +1625,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 // pending non-owned. The stale ref should be ignored without error or panic,
 // and no block should be produced.
 func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	ctx := context.Background()
 	ctxWithUser := user.InjectOrgID(ctx, userID)
 
@@ -1712,6 +1725,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 // When compaction runs, only the older refs should be selected for eviction, while the newer
 // refs should remain pending. As a result, exactly one block should be compacted.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes(t *testing.T) {
+	skipIfSeriesstore(t, "it counts the Prometheus blocks early compactions write; the engine's compactions are tested in pkg/storage/seriesstore/store")
 	const (
 		olderSeriesCount = 5
 		newerSeriesCount = 5

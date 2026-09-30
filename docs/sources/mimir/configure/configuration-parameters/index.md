@@ -6492,6 +6492,14 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
+  # (experimental) Storage engine of the ingesters' per-tenant TSDBs. Supported
+  # values: prometheus, seriesstore. seriesstore keeps series in the seriesstore
+  # layout and requires ingest storage without block shipping; it has no WAL, so
+  # after an unclean shutdown the ingester replays Kafka from the retention
+  # period.
+  # CLI flag: -blocks-storage.tsdb.engine
+  [engine: <string> | default = "prometheus"]
+
   # TSDB blocks retention before a block is removed. If shipping is enabled, the
   # retention will be relative to the time when the block was uploaded to
   # storage. If shipping is disabled then it's relative to the creation time of

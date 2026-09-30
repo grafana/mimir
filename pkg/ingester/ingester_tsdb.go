@@ -195,7 +195,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := openPrometheusEngine(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
+	db, err := i.openTenantEngine(udir, userID, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
@@ -409,6 +409,8 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
+	// Tenants whose engine lost its head in an unclean shutdown; guarded by tsdbsMtx.
+	var unclean []string
 
 	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
@@ -435,6 +437,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				// Add the database to the map of user databases
 				i.tsdbsMtx.Lock()
 				i.tsdbs[userID] = db
+				if uncleanlyRestored(db.db) {
+					unclean = append(unclean, userID)
+				}
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
 			}
@@ -465,6 +470,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while opening existing TSDBs", "err", err)
 		return err
+	}
+	if err := i.resetKafkaOffsetsAfterUncleanShutdown(unclean); err != nil {
+		return errors.Wrap(err, "resetting the Kafka offsets after an unclean shutdown")
 	}
 
 	// Update the usage statistics once all TSDBs have been opened.

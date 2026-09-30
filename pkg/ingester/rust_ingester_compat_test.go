@@ -35,10 +35,10 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/cmd/rust-kafka-ingester/ring-sidecar/handlers"
 	"github.com/grafana/mimir/pkg/costattribution"
@@ -327,7 +327,7 @@ func requireSameMetrics(t *testing.T, ingesters compatIngesters, refresh func(),
 		}
 		goFamilies, rustFamilies := gather(ingesters.goSide), gather(ingesters.rustSide)
 		last = ""
-		for _, name := range names {
+		for _, name := range withoutPrometheusHeadMetrics(names) {
 			goValues, rustValues := metricValues(goFamilies[name]), metricValues(rustFamilies[name])
 			if strings.Join(goValues, "\n") != strings.Join(rustValues, "\n") {
 				last += fmt.Sprintf("%s:\n  Go:   %v\n  Rust: %v\n", name, goValues, rustValues)
