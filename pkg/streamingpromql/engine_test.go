@@ -4527,7 +4527,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s:5s]",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5).
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 12,
 			},
@@ -4539,7 +4539,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5).
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 12,
 			},
@@ -4551,9 +4551,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 36, // 3 sample per query * 12 queries (60/5)
+			expectedTotalSamples: 72, // 36 subquery input samples + 36 materialized samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 36,
+				201000: 72,
 			},
 			expectedSamplesRead: 36,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4563,9 +4563,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 72, // 2 * (3 sample per query * 12 queries (60/5))
+			expectedTotalSamples: 144, // 2 * (36 subquery input samples + 36 materialized samples).
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 72,
+				201000: 144,
 			},
 			expectedSamplesRead: 72,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4775,16 +4775,81 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[60s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(231, 0),
+			interval:             10 * time.Second,
+			expectedTotalSamples: 24, // 6 samples in each 60s aggregation window * 4 steps.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
+			},
+			expectedSamplesRead: 9,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 1,
+				221000: 1,
+				231000: 1,
+			},
+		},
+		{
+			query:                "last_over_time(sum_over_time(metricWith1SampleEvery10Seconds[60s])[10s:10s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(231, 0),
+			interval:             10 * time.Second,
+			expectedTotalSamples: 28, // 1 subquery result point + 6 underlying input points per step.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 7,
+				211000: 7,
+				221000: 7,
+				231000: 7,
+			},
+			expectedSamplesRead: 9,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 1,
+				221000: 1,
+				231000: 1,
+			},
+		},
+		{
+			// Aligned counterpart of the unaligned case below: end=216 is the
+			// last actual evaluation step when start=201, step=5. Both cases
+			// should yield identical sample stats; subqueries inside an
+			// unaligned range query must not evaluate past the parent's last
+			// aligned step.
 			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			start:                time.Unix(201, 0),
-			end:                  time.Unix(220, 0),
+			end:                  time.Unix(216, 0),
 			interval:             5 * time.Second,
-			expectedTotalSamples: 144, // 3 sample per query * 12 queries (60/5) * 4 steps
+			expectedTotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
+			},
+			expectedSamplesRead: 45,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 36,
-				206000: 36,
-				211000: 36,
-				216000: 36,
+				206000: 3,
+				211000: 3,
+				216000: 3,
+			},
+		},
+		{
+			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0), // 4s past the last aligned step (216).
+			interval:             5 * time.Second,
+			expectedTotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
 			},
 			expectedSamplesRead: 45,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4799,12 +4864,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
-			expectedTotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
+			expectedTotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 12,
-				206000: 12,
-				211000: 12,
-				216000: 12,
+				201000: 24,
+				206000: 24,
+				211000: 24,
+				216000: 24,
 			},
 			expectedSamplesRead: 15,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4819,12 +4884,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
-			expectedTotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
+			expectedTotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 12,
-				206000: 12,
-				211000: 12,
-				216000: 12,
+				201000: 24,
+				206000: 24,
+				211000: 24,
+				216000: 24,
 			},
 			expectedSamplesRead: 15,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4839,12 +4904,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
-			expectedTotalSamples: 288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
+			expectedTotalSamples: 576, // 288 materialized samples + 288 subquery input samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 72,
-				211000: 72,
-				216000: 72,
+				201000: 144,
+				206000: 144,
+				211000: 144,
+				216000: 144,
 			},
 			expectedSamplesRead: 90,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4855,16 +4920,40 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 		{
+			// Aligned counterpart of the unaligned case below (composite
+			// expression with two sibling subqueries). end=216 is the last
+			// aligned step when start=201, step=5. Both cases should yield
+			// identical sample stats.
 			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
 			start:                time.Unix(201, 0),
-			end:                  time.Unix(220, 0),
+			end:                  time.Unix(216, 0),
 			interval:             5 * time.Second,
-			expectedTotalSamples: 192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
+			expectedTotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 96,
+				206000: 96,
+				211000: 96,
+				216000: 96,
+			},
+			expectedSamplesRead: 60,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 48,
-				206000: 48,
-				211000: 48,
-				216000: 48,
+				206000: 4,
+				211000: 4,
+				216000: 4,
+			},
+		},
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0), // 4s past the last aligned step (216).
+			interval:             5 * time.Second,
+			expectedTotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 96,
+				206000: 96,
+				211000: 96,
+				216000: 96,
 			},
 			expectedSamplesRead: 60,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4875,13 +4964,48 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
-		// Instant subquery: basic SamplesRead merging.
+		// Subquery with @ in a range query:every step consumes the fixed window
+		// (180s, 200s], so per-step stats match the instant query below.
+		{
+			query:                "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
+			start:                time.Unix(250, 0),
+			end:                  time.Unix(280, 0),
+			interval:             10 * time.Second,
+			expectedTotalSamples: 16, // (2 subquery input samples + 2 materialized samples) * 4 steps.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				250000: 4,
+				260000: 4,
+				270000: 4,
+				280000: 4,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				250000: 2,
+				260000: 0,
+				270000: 0,
+				280000: 0,
+			},
+		},
+		{
+			query:                "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
+			start:                time.Unix(250, 0),
+			expectedTotalSamples: 4, // 2 subquery input samples + 2 materialized samples.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				250000: 4,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				250000: 2,
+			},
+		},
+
+		// Instant subquery:basic SamplesRead merging.
 		{
 			query:                "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 2,
+			expectedTotalSamples: 4,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 2,
+				201000: 4,
 			},
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4893,9 +5017,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
 			start:                time.Unix(90, 0),
-			expectedTotalSamples: 1,
+			expectedTotalSamples: 2,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				90000: 1,
+				90000: 2,
 			},
 			expectedSamplesRead: 1,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4907,9 +5031,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
 			start:                time.Unix(240, 0),
-			expectedTotalSamples: 1,
+			expectedTotalSamples: 2,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				240000: 1,
+				240000: 2,
 			},
 			expectedSamplesRead: 1,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4923,10 +5047,10 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(231, 0),
 			interval:             30 * time.Second,
-			expectedTotalSamples: 6,
+			expectedTotalSamples: 12,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 3,
-				231000: 3,
+				201000: 6,
+				231000: 6,
 			},
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4942,15 +5066,15 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(261, 0),
 			interval:             10 * time.Second,
-			expectedTotalSamples: 14,
+			expectedTotalSamples: 28,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 2,
-				211000: 2,
-				221000: 2,
-				231000: 2,
-				241000: 2,
-				251000: 2,
-				261000: 2,
+				201000: 4,
+				211000: 4,
+				221000: 4,
+				231000: 4,
+				241000: 4,
+				251000: 4,
+				261000: 4,
 			},
 			expectedSamplesRead: 8,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4974,10 +5098,10 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			start:                time.Unix(201, 0),
 			end:                  time.Unix(261, 0),
 			interval:             1 * time.Minute,
-			expectedTotalSamples: 6,
+			expectedTotalSamples: 12,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 3,
-				261000: 3,
+				201000: 6,
+				261000: 6,
 			},
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4986,13 +5110,13 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
-		// Histogram subquery: histogram size counting in subquery path.
+		// Histogram subquery:histogram size counting in subquery path.
 		{
 			query:                "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
 			start:                time.Unix(201, 0),
-			expectedTotalSamples: 26,
+			expectedTotalSamples: 52,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				201000: 26,
+				201000: 52,
 			},
 			expectedSamplesRead: 26,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5000,17 +5124,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
-		// Histogram range query + subquery: histogram delta attribution.
+		// Histogram range query + subquery:histogram delta attribution.
 		{
 			query:                "avg_over_time(metricWith1HistogramEvery10Seconds[2m:1m])",
 			start:                time.Unix(120, 0),
 			end:                  time.Unix(240, 0),
 			interval:             60 * time.Second,
-			expectedTotalSamples: 78,
+			expectedTotalSamples: 156,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				120000: 26,
-				180000: 26,
-				240000: 26,
+				120000: 52,
+				180000: 52,
+				240000: 52,
 			},
 			expectedSamplesRead: 52,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5020,21 +5144,21 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
-		// Range query with multiple series + subquery: covers cardinality.
+		// Range query with multiple series + subquery:covers cardinality.
 		{
 			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:10s])",
 			start:                time.Unix(200, 0),
 			end:                  time.Unix(400, 0),
 			interval:             30 * time.Second,
-			expectedTotalSamples: 126,
+			expectedTotalSamples: 252,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				200000: 18,
-				230000: 18,
-				260000: 18,
-				290000: 18,
-				320000: 18,
-				350000: 18,
-				380000: 18,
+				200000: 36,
+				230000: 36,
+				260000: 36,
+				290000: 36,
+				320000: 36,
+				350000: 36,
+				380000: 36,
 			},
 			expectedSamplesRead: 72,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5053,7 +5177,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		// hoisted into a step-invariant expression. The @ modifier freezes
 		// the evaluation window, so every parent step consumes the same
 		// matrix. TotalSamples must reflect the full window at every step;
-		// expectedSamplesRead is counted only once (no new I/O after step 0).
+		// SamplesRead is counted only once (no new I/O after step 0).
 		{
 			query:                "predict_linear(metricWith1SampleEvery10Seconds[60s] @ 100, 60)",
 			start:                time.Unix(100, 0),
@@ -5077,9 +5201,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
 			start:                time.Unix(250, 0),
-			expectedTotalSamples: 6,
+			expectedTotalSamples: 12,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				250000: 6,
+				250000: 12,
 			},
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5091,9 +5215,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
 			start:                time.Unix(240, 0),
-			expectedTotalSamples: 2,
+			expectedTotalSamples: 4,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 4,
 			},
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5105,9 +5229,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		{
 			query:                "sum_over_time(metricWith3SampleEvery10Seconds[1m:10s] @ 200 offset 1m)",
 			start:                time.Unix(300, 0),
-			expectedTotalSamples: 18,
+			expectedTotalSamples: 36,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				300000: 18,
+				300000: 36,
 			},
 			expectedSamplesRead: 18,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -5115,45 +5239,31 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
-		// Nested subquery: recursive merging across two subquery levels.
+		// Nested subquery:recursive merging across two subquery levels.
 		{
 			query:                "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
 			start:                time.Unix(800, 0),
-			expectedTotalSamples: 75,
+			expectedTotalSamples: 525,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				800000: 75,
+				800000: 525,
 			},
 			expectedSamplesRead: 18,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				800000: 18,
 			},
-
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
-			expectedTotalSamplesWithMQE: 450,
-			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
-				800000: 450,
-			},
 		},
 
 		// Outer subquery wrapping inner range-vector (evalSubquery path):
-		// SamplesRead > TotalSamples because inner subquery reads more data than it surfaces.
+		// TotalSamples includes the inner range-vector windows and the outer materialized samples.
 		{
 			query:                "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
 			start:                time.Unix(240, 0),
-			expectedTotalSamples: 2,
+			expectedTotalSamples: 8,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 8,
 			},
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				240000: 6,
-			},
-
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
-			expectedTotalSamplesWithMQE: 6,
-			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
 				240000: 6,
 			},
 		},
