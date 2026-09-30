@@ -332,9 +332,6 @@ type SplitNode interface {
 // - all nodes reachable from the plan's root will be encoded
 // - the corresponding index in the encoded plan for the root node will be returned
 // - RootNode on the returned plan will be populated
-
-// includeDescriptions bool, includeDetails bool,
-
 func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
 	encoder := newQueryPlanEncoder(options)
 
