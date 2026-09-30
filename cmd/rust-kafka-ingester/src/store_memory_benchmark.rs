@@ -85,7 +85,10 @@ fn high_cardinality_multi_tenant_memory() {
                                     offset: 0,
                                     length: 50,
                                 }],
-                                positive_deltas: vec![1; 50],
+                                // One observation in each bucket, matching the count.
+                                positive_deltas: std::iter::once(1)
+                                    .chain(std::iter::repeat_n(0, 49))
+                                    .collect(),
                                 ..Default::default()
                             })
                             .collect()
@@ -171,7 +174,10 @@ fn high_cardinality_multi_tenant_memory() {
                                 offset: 0,
                                 length: 50,
                             }],
-                            positive_deltas: vec![1; 50],
+                            // One observation in each bucket, matching the count.
+                            positive_deltas: std::iter::once(1)
+                                .chain(std::iter::repeat_n(0, 49))
+                                .collect(),
                             ..Default::default()
                         }]
                     } else {
