@@ -62,8 +62,32 @@ func readcacheTestDistributor(t *testing.T, now time.Time, partitions []int32, o
 		})
 	}
 	d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(entries), nil)
+	useIdentitySlotView(d)
 
 	return d
+}
+
+// useIdentitySlotView records every lease owner as a healthy pod of
+// the same name. Tests that pass a nil replica map are the RF=1 shape:
+// the ring view is those pods, not an unavailable ring.
+func useIdentitySlotView(d *Distributor) {
+	log := d.GetReadcacheLog()
+	if log == nil {
+		return
+	}
+	seen := map[string]struct{}{}
+	var pods []readcacheassignment.HealthyPod
+	for _, entry := range log.Entries() {
+		if entry.InstanceID == "" {
+			continue
+		}
+		if _, ok := seen[entry.InstanceID]; ok {
+			continue
+		}
+		seen[entry.InstanceID] = struct{}{}
+		pods = append(pods, readcacheassignment.HealthyPod{InstanceID: entry.InstanceID, Addr: entry.InstanceID})
+	}
+	d.ensureReadcacheSlots().Observe(pods)
 }
 
 func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
@@ -245,6 +269,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_TenantBootstrapIsolatio
 		{PartitionID: 10, InstanceID: "rc-10", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
 		{PartitionID: 11, InstanceID: "rc-11", From: handoff.Add(-2 * time.Hour), To: now.Add(time.Hour)},
 	}), nil)
+	useIdentitySlotView(d)
 
 	from := model.TimeFromUnixNano(handoff.Add(-30 * time.Minute).UnixNano())
 	to := model.TimeFromUnixNano(now.UnixNano())
@@ -332,6 +357,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 			{PartitionID: 0, InstanceID: "rc-a", From: now.Add(-2 * time.Hour), To: now.Add(5 * time.Minute)},
 			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
 		}), nil)
+		useIdentitySlotView(d)
 		return d
 	}
 
@@ -400,6 +426,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
 			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
 		}), nil)
+		useIdentitySlotView(d)
 
 		got := resolvedPartitions(t, d, mt(now.Add(-15*time.Minute)), mt(now))
 		assert.Equal(t, []int32{1}, got, "only the current owner must be queried; the future lease holds no data yet")
@@ -419,6 +446,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
 			{PartitionID: 0, InstanceID: "rc-a", From: now, To: now.Add(5 * time.Minute)},
 		}), nil)
+		useIdentitySlotView(d)
 
 		got := resolvedPartitions(t, d, mt(now), mt(now))
 		assert.Equal(t, []int32{0}, got)

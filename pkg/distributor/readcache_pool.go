@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -40,12 +42,9 @@ type ReadcacheConfig struct {
 	Addresses string `yaml:"addresses" category:"experimental"`
 
 	// IgnoreReplicaMapForQueries keeps query routing on the logical
-	// owner ID recorded in the assignment log (identity expansion)
-	// even when the rebalancer is publishing a replica map. Readcaches
-	// still expand the map for ownership / Kafka consume. Used during
-	// RF=1→RF=2 dual-fleet migration: zone mirrors warm while queriers
-	// keep dialing the legacy non-zonal pods. Clear the flag to cut
-	// queries over to the zone-aware expansion.
+	// owner ID recorded in the assignment log even when the ring-derived
+	// slot view lists zone pods. Used while a legacy non-zonal fleet is
+	// still the dial target. Clear the flag once that fleet is gone.
 	IgnoreReplicaMapForQueries bool `yaml:"ignore_replica_map_for_queries" category:"experimental"`
 
 	// GRPCClientConfig configures the gRPC client used to dial
@@ -57,7 +56,7 @@ type ReadcacheConfig struct {
 // RegisterFlagsWithPrefix registers the readcache pool's flags.
 func (cfg *ReadcacheConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Optional comma-separated list of instance_id=host:port pairs identifying readcache pods. When set, each listed instance overrides ring-based discovery; when empty (the default), the distributor resolves addresses from the readcache instance ring.")
-	f.BoolVar(&cfg.IgnoreReplicaMapForQueries, prefix+"ignore-replica-map-for-queries", false, "When true, query routing dials the logical owner ID from the assignment log and ignores the streamed replica map. Readcaches still use the map for ownership. Used to warm RF=2 zone mirrors without cutting queriers over yet.")
+	f.BoolVar(&cfg.IgnoreReplicaMapForQueries, prefix+"ignore-replica-map-for-queries", false, "When true, query routing dials the logical owner ID from the assignment log and does not consult the ring-derived slot view. Used to keep dialing legacy non-zonal pods until that fleet is gone.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
 
@@ -102,6 +101,7 @@ type readcachePool struct {
 	ring            readcacheRingReader
 	dialOpts        []grpc.DialOption
 	logger          log.Logger
+	slots           *readcacheassignment.SlotViewCache
 
 	mu      sync.Mutex
 	clients map[string]readcacheClient
@@ -187,35 +187,88 @@ func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clust
 	}
 	dialOpts = append(dialOpts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
-	return &readcachePool{
+	p := &readcachePool{
 		staticAddresses: addresses,
 		ring:            ringClient,
 		dialOpts:        dialOpts,
 		logger:          logger,
+		slots:           readcacheassignment.NewSlotViewCache(),
 		clients:         map[string]readcacheClient{},
-	}, nil
+	}
+	// Static-only pools have no ring to refresh later. The address
+	// keys are the healthy set, so a nil replica map still dials the
+	// logged owner and resolveAddr uses the static address.
+	p.refreshSlotView()
+	return p, nil
+}
+
+// refreshSlotView re-reads the readcache ring into the cached grouping.
+// A timestamp-only ring update that leaves the same pods healthy is a
+// no-op inside Observe. The query path reads the cache and does not
+// call this.
+func (p *readcachePool) refreshSlotView() {
+	if p == nil || p.slots == nil {
+		return
+	}
+	if p.ring == nil {
+		p.observeStaticAddresses()
+		return
+	}
+	set, err := p.ring.GetAllHealthy(readcache.ReadcacheRingOp)
+	if err != nil {
+		if errors.Is(err, ring.ErrEmptyRing) {
+			p.slots.Observe(nil)
+			return
+		}
+		level.Warn(p.logger).Log("msg", "readcache ring lookup failed while refreshing slot view", "err", err)
+		p.slots.MarkUnavailable()
+		return
+	}
+	pods := make([]readcacheassignment.HealthyPod, 0, len(set.Instances))
+	for _, inst := range set.Instances {
+		pods = append(pods, readcacheassignment.HealthyPod{
+			InstanceID: inst.Id,
+			Zone:       inst.Zone,
+			Addr:       inst.Addr,
+		})
+	}
+	p.slots.Observe(pods)
+}
+
+// observeStaticAddresses records the configured address map as the
+// slot view. Used when no ring is wired. Grouping still parses the
+// hostname, so a zonal name lands on its logical slot.
+func (p *readcachePool) observeStaticAddresses() {
+	if len(p.staticAddresses) == 0 {
+		return
+	}
+	pods := make([]readcacheassignment.HealthyPod, 0, len(p.staticAddresses))
+	for id := range p.staticAddresses {
+		pods = append(pods, readcacheassignment.HealthyPod{InstanceID: id, Addr: id})
+	}
+	p.slots.Observe(pods)
 }
 
 // resolveAddr returns the dial target for instanceID. Static map
 // wins when present so the operator escape hatch isn't shadowed by
-// stale ring entries.
+// stale ring entries. Otherwise the address comes from the slot view
+// refreshed off the query path.
 func (p *readcachePool) resolveAddr(instanceID string) (string, error) {
 	if addr, ok := p.staticAddresses[instanceID]; ok {
 		return addr, nil
 	}
-	if p.ring == nil {
-		return "", fmt.Errorf("readcache instance %q has no configured address and no ring is wired", instanceID)
+	if p.slots == nil {
+		return "", fmt.Errorf("readcache instance %q has no configured address and no slot view is wired", instanceID)
 	}
-	set, err := p.ring.GetAllHealthy(readcache.ReadcacheRingOp)
-	if err != nil {
-		return "", fmt.Errorf("readcache ring lookup: %w", err)
+	view, ok := p.slots.Current()
+	if !ok {
+		return "", fmt.Errorf("readcache slot view is unavailable")
 	}
-	for _, inst := range set.Instances {
-		if inst.Id == instanceID {
-			return inst.Addr, nil
-		}
+	addr, ok := view.Addr(instanceID)
+	if !ok {
+		return "", fmt.Errorf("readcache instance %q not found in slot view", instanceID)
 	}
-	return "", fmt.Errorf("readcache instance %q not found in ring", instanceID)
+	return addr, nil
 }
 
 // GetClientForInstance returns (or lazily dials) a client for the

@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"sync"
-	syncatomic "sync/atomic" //lint:ignore faillint generic atomic.Pointer isn't available in go.uber.org/atomic.
 	"time"
 
 	"github.com/go-kit/log"
@@ -72,14 +71,18 @@ type Readcache struct {
 	// RebalancerAddress is empty.
 	rebalancerConn *grpc.ClientConn
 
-	// replicaMap is the logical->concrete expansion published by the
-	// rebalancer on the assignment stream. Under RF≥2 a lease names a
-	// logical slot (e.g. "readcache-5") and every zone pod in that
-	// slot's replica set owns the partition, so applyAssignment must
-	// match leases through the map rather than by exact instance ID.
-	// Nil or empty means identity (RF=1): only leases naming this
-	// instance are ours.
-	replicaMap syncatomic.Pointer[readcacheassignment.ReplicaMap]
+	// leaseSlot is the logical slot parsed from this pod's instance id
+	// once at startup ("readcache-5" for both readcache-5 and
+	// readcache-zone-a-5). Empty when the name does not parse; those
+	// pods match leases by the raw instance id. leaseZone is empty for
+	// a non-zonal name.
+	leaseSlot string
+	leaseZone string
+
+	// firstSnapshotZeroLeases is 1 when a zonal pod's first assignment
+	// snapshot named none of its slot's leases. That is the restart
+	// path that used to delete resume offsets.
+	firstSnapshotZeroLeases prometheus.Gauge
 
 	// spotlights is the readcache's local cache of the rebalancer's
 	// spotlighted hash ranges. Populated by a background poller
@@ -355,6 +358,10 @@ func New(
 		seriesStatsRefreshRequested: make(chan struct{}, 1),
 		seriesStatsRefreshInterval:  seriesStatsRefreshInterval,
 	}
+	if id, ok := readcacheassignment.ParseInstanceIdentity(cfg.InstanceID); ok {
+		r.leaseSlot = id.LogicalID
+		r.leaseZone = id.Zone
+	}
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
 
@@ -404,6 +411,11 @@ func New(
 		Name: "cortex_readcache_samples_ingested_total",
 		Help: "Total float and native-histogram samples successfully appended to a partition's TSDB head from the Kafka ingest topic, labelled by Kafka partition ID. Use rate() to get samples/sec per partition. Readcache counterpart to cortex_distributor_nautilus_partition_samples_written_total.",
 	}, []string{"partition"})
+
+	r.firstSnapshotZeroLeases = promauto.With(metricReg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_readcache_first_snapshot_zero_leases",
+		Help: "1 if this zonal readcache's first assignment snapshot matched no leases for its slot. That snapshot used to delete the pod's resume offsets.",
+	})
 
 	r.ingestedSamples = promauto.With(metricReg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_readcache_ingested_samples_total",
@@ -1277,12 +1289,8 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 		if resp.PruneBeforeUnixMs > 0 {
 			local.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
 		}
-		// The replica map is sent in full on every message, so it is
-		// replaced wholesale — including the transition back to
-		// identity when the rebalancer clears it. Store it before
-		// applying so the reconciliation below sees the expansion
-		// matching this snapshot.
-		r.setReplicaMap(rebalancer.ReplicaMapFromProto(resp.ReplicaSets))
+		// replica_sets on the stream is ignored. Ownership is the slot
+		// parsed from this pod's name, not the rebalancer's expansion.
 		if err := r.applyAssignment(ctx, local.Entries(), time.Now()); err != nil {
 			level.Warn(r.logger).Log("msg", "applying readcache assignment", "err", err)
 			// Keep consuming: a single failed add/remove must not
@@ -1293,38 +1301,15 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 }
 
 // ownsAssignmentLease reports whether this pod should consume a lease
-// stored under leaseInstanceID.
-//
-// OwnsLogical covers RF=1 (the lease names this pod) and the steady
-// RF=2 case (the replica map expands the logical slot to this pod).
-// A zonal pod also matches the slot parsed from its own instance id.
-// That slot does not change when the pod drops out of the map, and
-// the map is a liveness filter for queriers.
-func (r *Readcache) ownsAssignmentLease(replicaMap readcacheassignment.ReplicaMap, leaseInstanceID string) bool {
-	if replicaMap.OwnsLogical(r.cfg.InstanceID, leaseInstanceID) {
-		return true
+// stored under leaseInstanceID. The slot is parsed once at startup.
+// A zonal pod owns every lease for that slot. A non-zonal pod's slot
+// is its own instance id, so RF=1 leases still match. An unparseable
+// name matches only the raw instance id.
+func (r *Readcache) ownsAssignmentLease(leaseInstanceID string) bool {
+	if r.leaseSlot != "" {
+		return leaseInstanceID == r.leaseSlot
 	}
-	id, ok := readcacheassignment.ParseInstanceIdentity(r.cfg.InstanceID)
-	if !ok || id.Zone == "" {
-		return false
-	}
-	return leaseInstanceID == id.LogicalID
-}
-
-// setReplicaMap installs the logical->concrete expansion published by
-// the rebalancer. Called from the assignment stream; also used by
-// tests that drive applyAssignment directly.
-func (r *Readcache) setReplicaMap(m readcacheassignment.ReplicaMap) {
-	r.replicaMap.Store(&m)
-}
-
-// getReplicaMap returns the current logical->concrete expansion, or
-// nil when none has been received (identity / RF=1).
-func (r *Readcache) getReplicaMap() readcacheassignment.ReplicaMap {
-	if m := r.replicaMap.Load(); m != nil {
-		return *m
-	}
-	return nil
+	return leaseInstanceID == r.cfg.InstanceID
 }
 
 // applyAssignment reconciles the local owned-partition set with the
@@ -1347,19 +1332,15 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	firstReconcile := !r.startupReconcileDone.Load()
 	defer r.startupReconcileDone.Store(true)
 
-	// A lease names a logical slot under RF≥2 and this pod's concrete
-	// id under RF=1. The replica map tells queriers which mirrors are
-	// currently up; it is not what decides ownership. A zonal pod
-	// whose name parses to the lease's slot owns that lease even when
-	// the map has not listed it yet (restart, LEAVING, heartbeat
-	// timeout). Treating "absent from the map" as "owns nothing"
-	// deletes resume offsets on the first snapshot.
-	replicaMap := r.getReplicaMap()
-
+	// A lease names a logical slot under RF≥2 and this pod's instance
+	// id under RF=1. Both are the slot parsed from the pod name.
+	// Absence from the ring is a querier concern; it does not mean
+	// this pod owns nothing. Treating it that way deleted resume
+	// offsets on the first snapshot after a restart.
 	wanted := map[int32]struct{}{}
 	var snapshotForInstance int
 	for _, e := range entries {
-		if !r.ownsAssignmentLease(replicaMap, e.InstanceID) {
+		if !r.ownsAssignmentLease(e.InstanceID) {
 			continue
 		}
 		snapshotForInstance++
@@ -1403,6 +1384,15 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		"add_partition_ids", formatPartitionIDs(toAdd, 20),
 		"remove_partition_ids", formatPartitionIDs(toRemove, 20),
 	)
+	if firstReconcile && r.leaseZone != "" && snapshotForInstance == 0 {
+		r.firstSnapshotZeroLeases.Set(1)
+		level.Warn(r.logger).Log(
+			"msg", "first readcache assignment snapshot matched zero leases",
+			"instance_id", r.cfg.InstanceID,
+			"lease_slot", r.leaseSlot,
+			"snapshot_entries", len(entries),
+		)
+	}
 
 	var firstErr error
 	var addFailed, removeFailed []int32

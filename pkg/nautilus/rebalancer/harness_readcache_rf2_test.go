@@ -56,6 +56,8 @@ func TestReadcacheRF2_PushFansOutToEveryZoneMirror(t *testing.T) {
 	assert.Equal(t, map[string]int{"readcache-0": 2, "readcache-1": 2}, h.ownersByInstance(),
 		"leases must name logical slots, not concrete zone pods")
 
+	got, ok := h.r.slotReplicaMap()
+	require.True(t, ok)
 	assert.True(t, readcacheassignment.ReplicaMap{
 		"readcache-0": {
 			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
@@ -65,7 +67,8 @@ func TestReadcacheRF2_PushFansOutToEveryZoneMirror(t *testing.T) {
 			{InstanceID: "readcache-zone-a-1", Zone: "zone-a"},
 			{InstanceID: "readcache-zone-b-1", Zone: "zone-b"},
 		},
-	}.Equal(h.r.readcacheStore.getReplicaMap()))
+	}.Equal(got))
+	assert.Empty(t, h.r.readcacheStore.getReplicaMap())
 
 	slot0 := pods["readcache-zone-a-0"].ownedPartitions()
 	slot1 := pods["readcache-zone-a-1"].ownedPartitions()
@@ -101,8 +104,10 @@ func TestReadcacheRF2_ReconstructResolvesLogicalOwnersToMirrors(t *testing.T) {
 	}
 	assert.Len(t, covered, len(activePartitions), "every partition must be reconstructed exactly once per range")
 
-	// Without the expansion the logical owners resolve to nothing.
-	h.r.readcacheStore.setReplicaMap(nil)
+	// An empty healthy set cannot expand logical owners to pods.
+	for _, id := range []string{"readcache-zone-a-0", "readcache-zone-b-0", "readcache-zone-a-1", "readcache-zone-b-1"} {
+		h.removeReadcache(id)
+	}
 	assert.Nil(t, h.r.reconstructAssignmentFromReadcache(h.ctx, activePartitions))
 }
 
@@ -129,10 +134,12 @@ func TestReadcacheRF2_PlacementSurvivesZoneMirrorLoss(t *testing.T) {
 
 	assert.Equal(t, before, h.ownersByInstance(),
 		"losing one zone mirror must not move any partition")
+	got, ok := h.r.slotReplicaMap()
+	require.True(t, ok)
 	assert.Equal(t, []readcacheassignment.Replica{
 		{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
-	}, h.r.readcacheStore.getReplicaMap()["readcache-0"],
-		"the replica map must drop the departed mirror so clients stop dialing it")
+	}, got["readcache-0"],
+		"the slot view must drop the departed mirror")
 	assert.Equal(t, slot0Partitions, pods["readcache-zone-a-0"].ownedPartitions(),
 		"the surviving mirror keeps the slot's ranges")
 }
@@ -169,8 +176,10 @@ func TestReadcacheRF2_ResetSpreadsOverLogicalSlots(t *testing.T) {
 	assert.Equal(t, 2, res.NumInstances)
 	assert.Equal(t, map[string]int{"readcache-0": 2, "readcache-1": 2}, res.PerInstance)
 	assert.Equal(t, map[string]int{"readcache-0": 2, "readcache-1": 2}, h.ownersByInstance())
-	assert.NotEmpty(t, h.r.readcacheStore.getReplicaMap(),
-		"the reset must publish the expansion for the logical IDs it just wrote")
+	got, ok := h.r.slotReplicaMap()
+	require.True(t, ok)
+	assert.NotEmpty(t, got, "the reset refreshes the local slot view for the logical IDs it just wrote")
+	assert.Empty(t, h.r.readcacheStore.getReplicaMap())
 }
 
 // TestReadcacheRF1_PushAndPlacementUnchanged is the regression guard
@@ -192,7 +201,11 @@ func TestReadcacheRF1_PushAndPlacementUnchanged(t *testing.T) {
 
 	require.NoError(t, h.runRound())
 	assert.Equal(t, map[string]int{"readcache-0": 2, "readcache-1": 2}, h.ownersByInstance())
-	assert.Empty(t, h.r.readcacheStore.getReplicaMap(), "RF=1 must publish no replica map")
+	assert.Empty(t, h.r.readcacheStore.getReplicaMap(), "the assignment stream does not carry a replica map")
+	view, ok := h.r.currentSlotView()
+	require.True(t, ok)
+	_, ok = view.Pods("readcache-0")
+	assert.True(t, ok)
 
 	require.NotEmpty(t, rc0.ownedPartitions())
 	require.NotEmpty(t, rc1.ownedPartitions())
@@ -202,42 +215,34 @@ func TestReadcacheRF1_PushAndPlacementUnchanged(t *testing.T) {
 	}
 }
 
-// TestReadcacheRF2_MapChangeReachesSubscribersWithoutLeaseChange pins
-// the reason the store rebroadcasts on a map change: a zone pod
-// joining changes no lease, so a subscriber that only reacts to lease
-// deltas would keep dialing a stale replica set.
-func TestReadcacheRF2_MapChangeReachesSubscribersWithoutLeaseChange(t *testing.T) {
+// TestReadcacheRF2_SlotViewTracksMirrorJoinWithoutLeaseChange checks
+// that a zone pod joining updates the local slot view without moving
+// partitions. Queriers see the same join from their own ring watch;
+// the assignment stream does not broadcast it.
+func TestReadcacheRF2_SlotViewTracksMirrorJoinWithoutLeaseChange(t *testing.T) {
 	h := newHarness(t, rf2HarnessOpts())
 	h.addReadcache("readcache-zone-a-0")
 	h.addReadcache("readcache-zone-a-1")
 	seedBalancedTierAssignments(t, h, []string{"readcache-0", "readcache-1"})
 
 	require.NoError(t, h.runRound())
-	require.Len(t, h.r.readcacheStore.getReplicaMap()["readcache-0"], 1)
+	view, ok := h.r.currentSlotView()
+	require.True(t, ok)
+	pods, ok := view.Pods("readcache-0")
+	require.True(t, ok)
+	require.Len(t, pods, 1)
 	ownersBefore := h.ownersByInstance()
 
-	_, updates, unsubscribe := h.r.readcacheStore.subscribe()
-	defer unsubscribe()
-	select {
-	case <-updates: // drain the priming snapshot
-	default:
-	}
-
-	// zone-b scales up. Ownership is untouched: partition leases still
-	// name the same logical slots.
 	h.addReadcache("readcache-zone-b-0")
 	h.addReadcache("readcache-zone-b-1")
 	h.advance(30 * time.Second)
 	require.NoError(t, h.runRound())
 	require.Equal(t, ownersBefore, h.ownersByInstance(), "scale-up of a mirror must not move partitions")
 
-	select {
-	case u := <-updates:
-		assert.Equal(t, []readcacheassignment.Replica{
-			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
-			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
-		}, u.replicaMap["readcache-0"])
-	default:
-		t.Fatal("a new zone mirror must be broadcast to subscribers even without a lease change")
-	}
+	view, ok = h.r.currentSlotView()
+	require.True(t, ok)
+	pods, ok = view.Pods("readcache-0")
+	require.True(t, ok)
+	assert.Equal(t, []string{"readcache-zone-a-0", "readcache-zone-b-0"}, []string{pods[0].InstanceID, pods[1].InstanceID})
+	assert.Empty(t, h.r.readcacheStore.getReplicaMap())
 }

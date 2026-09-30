@@ -48,6 +48,7 @@ func TestReadcachePool_ResolveAddr_RingLookupSucceeds(t *testing.T) {
 		{Id: "readcache-2", Addr: "10.0.0.8:9095"},
 	}}}, "", nil, log.NewNopLogger())
 	require.NoError(t, err)
+	p.refreshSlotView()
 
 	addr, err := p.resolveAddr("readcache-2")
 	require.NoError(t, err)
@@ -66,10 +67,11 @@ func TestReadcachePool_ResolveAddr_UnknownInstance(t *testing.T) {
 		{Id: "readcache-1", Addr: "10.0.0.7:9095"},
 	}}}, "", nil, log.NewNopLogger())
 	require.NoError(t, err)
+	p.refreshSlotView()
 
 	_, err = p.resolveAddr("readcache-missing")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found in ring")
+	assert.Contains(t, err.Error(), "not found in slot view")
 }
 
 // TestReadcachePool_ResolveAddr_RingErrorBubbles checks that a KV
@@ -79,10 +81,11 @@ func TestReadcachePool_ResolveAddr_UnknownInstance(t *testing.T) {
 func TestReadcachePool_ResolveAddr_RingErrorBubbles(t *testing.T) {
 	p, err := newReadcachePool(ReadcacheConfig{}, stubReadcacheRing{err: errors.New("kv unavailable")}, "", nil, log.NewNopLogger())
 	require.NoError(t, err)
+	p.refreshSlotView()
 
 	_, err = p.resolveAddr("readcache-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "kv unavailable")
+	assert.Contains(t, err.Error(), "slot view is unavailable")
 }
 
 // TestNewReadcachePool_RejectsEmptyConfig guards the invariant that

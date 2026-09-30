@@ -529,7 +529,6 @@ func TestGetReadcacheReplicaMap(t *testing.T) {
 	d.setReadcacheAssignment(readcacheassignment.NewLog(), m)
 	assert.True(t, m.Equal(d.GetReadcacheReplicaMap()))
 
-	var cleared readcacheassignment.ReplicaMap
-	d.setReadcacheAssignment(readcacheassignment.NewLog(), cleared)
-	assert.Empty(t, d.GetReadcacheReplicaMap(), "clearing the map must restore identity")
+	d.ensureReadcacheSlots().Observe(nil)
+	assert.Empty(t, d.GetReadcacheReplicaMap(), "a successful read of no healthy pods clears the view")
 }

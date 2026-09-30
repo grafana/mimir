@@ -171,6 +171,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	if len(instances) == 0 {
 		return nil
 	}
+	r.refreshSlotView()
 
 	// Build the set of unique (instanceID) we need to query. A
 	// readcache pod may own multiple partitions; one GetHashRanges
@@ -182,11 +183,14 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		partition  int32
 	}
 	// Log owners are logical slot IDs under RF≥2, which are not
-	// dialable: expand them to the concrete mirrors. Both mirrors
+	// dialable. Expand them through the slot view. Both mirrors
 	// report the same ranges and the (partition, range) dedup below
-	// collapses the duplicates. With an empty replica map the
-	// expansion is the identity.
-	replicaMap := r.readcacheStore.getReplicaMap()
+	// collapses the duplicates. An unavailable view cannot be
+	// expanded, and a logical id is not dialed in its place.
+	if _, ok := r.currentSlotView(); !ok {
+		level.Warn(r.logger).Log("msg", "reconstructAssignmentFromReadcache: slot view unavailable")
+		return nil
+	}
 	var ownerships []ownership
 	uniqueInstances := make(map[string]struct{})
 	now := r.now()
@@ -194,7 +198,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		if !entry.ActiveAt(now) {
 			continue
 		}
-		for _, concrete := range replicaMap.ConcreteIDs(entry.InstanceID) {
+		for _, concrete := range r.concreteIDsForSlot(entry.InstanceID) {
 			ownerships = append(ownerships, ownership{instanceID: concrete, partition: entry.PartitionID})
 			uniqueInstances[concrete] = struct{}{}
 		}
@@ -580,7 +584,25 @@ func (r *Rebalancer) readcacheStatsReadiness(at time.Time, warmByInstance map[st
 		return readcacheStatsReadiness{}
 	}
 
-	replicaMap := r.readcacheStore.getReplicaMap()
+	if _, viewOK := r.currentSlotView(); !viewOK {
+		level.Warn(r.logger).Log("msg", "readcache stats readiness: slot view unavailable")
+		readiness := readcacheStatsReadiness{
+			unreadyPartitions:     map[int32]bool{},
+			unreadyLogicalTargets: map[string]struct{}{},
+		}
+		for _, entry := range r.readcacheStore.snapshot() {
+			if !entry.ActiveAt(at) {
+				continue
+			}
+			readiness.unreadyPartitions[entry.PartitionID] = true
+			readiness.unreadyLogicalTargets[entry.InstanceID] = struct{}{}
+		}
+		if len(readiness.unreadyPartitions) == 0 {
+			readiness.unreadyPartitions = nil
+			readiness.unreadyLogicalTargets = nil
+		}
+		return readiness
+	}
 	expectedByLogical := map[string]map[int32]struct{}{}
 	for _, entry := range r.readcacheStore.snapshot() {
 		if !entry.ActiveAt(at) {
@@ -601,7 +623,7 @@ func (r *Rebalancer) readcacheStatsReadiness(at time.Time, warmByInstance map[st
 	partitionReady := map[int32]bool{}
 	allExpectedPartitions := map[int32]struct{}{}
 	for logicalID, partitions := range expectedByLogical {
-		concreteIDs := replicaMap.ConcreteIDs(logicalID)
+		concreteIDs := r.concreteIDsForSlot(logicalID)
 		for partitionID := range partitions {
 			allExpectedPartitions[partitionID] = struct{}{}
 			ready := false
@@ -642,6 +664,7 @@ func (r *Rebalancer) readcacheStatsReadiness(at time.Time, warmByInstance map[st
 // partition has no active owner at `at`, its ranges are skipped this
 // round; the next round's slicer pass will assign one.
 func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.Assignment, at time.Time) {
+	r.refreshSlotView()
 	// Build partition -> readcache owner from the live readcache log.
 	// The owner recorded in the log is a logical slot ID under RF≥2
 	// and a concrete instance ID under RF=1; either way it is kept
@@ -660,10 +683,12 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 	//
 	// Every concrete replica of a logical slot consumes the same
 	// partitions and must therefore hold the same hash ranges, so the
-	// push fans out across the whole replica set. With an empty
-	// replica map ConcreteIDs is the identity and this reduces to the
-	// RF=1 behaviour of one push per logged owner.
-	replicaMap := r.readcacheStore.getReplicaMap()
+	// push fans out across the healthy pods in the slot view. A slot
+	// with no healthy pod is skipped; the logical id is not dialed.
+	if _, ok := r.currentSlotView(); !ok {
+		level.Warn(r.logger).Log("msg", "skipping SetHashRanges push: readcache slot view unavailable")
+		return
+	}
 	rangesByInstance := make(map[string][]ingester_client.HashRangeEntry)
 	partitionsInAssignment := make(map[int32]struct{})
 	for _, e := range a.Entries {
@@ -673,7 +698,7 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 			continue
 		}
 		hr := ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID, TenantId: e.TenantID}
-		for _, concrete := range replicaMap.ConcreteIDs(owner) {
+		for _, concrete := range r.concreteIDsForSlot(owner) {
 			rangesByInstance[concrete] = append(rangesByInstance[concrete], hr)
 		}
 	}

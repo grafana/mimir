@@ -418,9 +418,9 @@ func liveReadcachePartitionIDs(log *readcacheassignment.Log, at time.Time) []int
 // maps the synthetic Id to the partition for the QueryAttributionHint.
 //
 // Owners resolved from the log are logical slot IDs under RF≥2 and
-// concrete instance IDs under RF=1; the replica map streamed
-// alongside the log expands the former and is the identity for the
-// latter.
+// concrete instance IDs under RF=1. Both expand through the
+// ring-derived slot view. ignore-replica-map-for-queries keeps the
+// identity dial of the lease name for the legacy non-zonal fleet.
 //
 // Any inability to resolve (no live assignment log, no live readcache
 // log, an uncovered partition, or a partition with no owner during the
@@ -444,7 +444,10 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
 	}
 	rcLog := rcState.log
-	replicaMap := rcState.replicaMap
+	view, viewOK := d.currentReadcacheSlotView()
+	if !d.cfg.Readcache.IgnoreReplicaMapForQueries && !viewOK {
+		return nil, nil, newReadcacheRoutingUnavailableError("readcache slot view is unavailable")
+	}
 
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
 	partitionIDs := partitionsForNautilusQuery(snapshot, userID, w0, w1, metricNames, metricScoped, liveReadcachePartitionIDs(rcLog, d.now()))
@@ -466,7 +469,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d had no readcache owner during the query window", partID))
 		}
 		for _, owner := range owners {
-			set := readcacheReplicationSetForOwner(replicaMap, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries)
+			set := readcacheReplicationSetForOwner(view, viewOK, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries)
 			if len(set.Instances) == 0 {
 				return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("logical readcache owner %q of partition %d has no concrete replica", owner, partID))
 			}

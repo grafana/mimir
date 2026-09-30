@@ -120,7 +120,11 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 	rcLog := rcState.log
-	replicaMap := rcState.replicaMap
+	view, viewOK := d.currentReadcacheSlotView()
+	if !d.cfg.Readcache.IgnoreReplicaMapForQueries && !viewOK {
+		plan.Unavailable = "readcache slot view is unavailable"
+		return plan
+	}
 
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
 	plan.MetricNames, plan.Named = slices.Clone(metricNames), metricScoped
@@ -169,7 +173,14 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 			// Same expansion the query path applies, so the plan
 			// enumerates the concrete pods that would actually be
 			// dialed rather than the logical slots in the log.
-			for _, inst := range readcacheReplicationSetForOwner(replicaMap, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries).Instances {
+			set := readcacheReplicationSetForOwner(view, viewOK, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries)
+			if len(set.Instances) == 0 {
+				plan.Unavailable = fmt.Sprintf("logical readcache owner %q of partition %d has no concrete replica", owner, partID)
+				plan.Partitions = nil
+				plan.TotalCalls = 0
+				return plan
+			}
+			for _, inst := range set.Instances {
 				call := ReadcacheQueryStreamCall{
 					PartitionID:  partID,
 					Owner:        inst.Addr,

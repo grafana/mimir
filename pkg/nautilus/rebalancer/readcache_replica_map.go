@@ -3,9 +3,11 @@
 package rebalancer
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
@@ -35,70 +37,109 @@ func (r *Rebalancer) placementReadcacheInstancesFrom(stabilized []string) []stri
 	return stabilized
 }
 
-// refreshReplicaMap rebuilds the logical→concrete replica map from
-// the readcache ring (or static Instances list) and publishes it on
-// the watch stream. Under DesiredReplicas > 0 the map is what lets
-// readcaches and queriers expand logical lease IDs to zone pods
-// without doubling the lease log.
+// refreshSlotView rebuilds the logical→concrete grouping from the
+// readcache ring (or the static Instances list). A timestamp-only ring
+// update is a no-op. The result is not published on the assignment
+// stream; queriers keep their own copy from the ring they already watch.
 //
-// When DesiredReplicas is 0 the map is cleared (identity / RF=1).
-func (r *Rebalancer) refreshReplicaMap() readcacheassignment.ReplicaMap {
-	if r.cfg.ReadcacheSlicer.DesiredReplicas <= 0 {
-		r.readcacheStore.setReplicaMap(nil)
-		return nil
-	}
-
-	concrete := r.concreteReadcacheReplicas()
-	m := readcacheassignment.BuildReplicaMap(concrete)
-	// Ensure every desired logical slot has an entry (possibly empty
-	// replicas if both zone mirrors are down — queriers fail that
-	// slot; slicer still keeps the slot in the placement set).
-	for _, logical := range readcacheassignment.DesiredLogicalSlots(r.cfg.ReadcacheSlicer.LogicalIDPrefix, r.cfg.ReadcacheSlicer.DesiredReplicas) {
-		if _, ok := m[logical]; !ok {
-			if m == nil {
-				m = readcacheassignment.ReplicaMap{}
-			}
-			m[logical] = nil
+// A failed ring read marks the view unavailable. An empty ring is a
+// successful read of no healthy pods.
+func (r *Rebalancer) refreshSlotView() bool {
+	cache := r.slotCache()
+	pods, err := r.healthyReadcachePods()
+	if err != nil {
+		if errors.Is(err, ring.ErrEmptyRing) {
+			return cache.Observe(nil)
 		}
+		level.Warn(r.logger).Log("msg", "readcache ring lookup failed while refreshing slot view", "err", err)
+		cache.MarkUnavailable()
+		return false
 	}
-	r.readcacheStore.setReplicaMap(m)
-	return m
+	return cache.Observe(pods)
 }
 
-// concreteReadcacheReplicas enumerates concrete pods from the static
-// allow-list (if set) or the ring, including zone labels.
-func (r *Rebalancer) concreteReadcacheReplicas() []readcacheassignment.Replica {
+func (r *Rebalancer) slotCache() *readcacheassignment.SlotViewCache {
+	if r.readcacheSlots == nil {
+		r.readcacheSlots = readcacheassignment.NewSlotViewCache()
+	}
+	return r.readcacheSlots
+}
+
+func (r *Rebalancer) currentSlotView() (readcacheassignment.SlotView, bool) {
+	if r.readcacheSlots == nil {
+		return readcacheassignment.SlotView{}, false
+	}
+	return r.readcacheSlots.Current()
+}
+
+// concreteIDsForSlot returns the healthy pods for a logical slot.
+// A missing slot or an unavailable view returns nil. It does not fall
+// back to dialing the logical id.
+func (r *Rebalancer) concreteIDsForSlot(logicalID string) []string {
+	view, ok := r.currentSlotView()
+	if !ok {
+		return nil
+	}
+	pods, ok := view.Pods(logicalID)
+	if !ok {
+		return nil
+	}
+	out := make([]string, len(pods))
+	for i, pod := range pods {
+		out[i] = pod.InstanceID
+	}
+	return out
+}
+
+// slotReplicaMap is the view as a ReplicaMap, with an empty entry for
+// every desired slot that has no healthy pod. ok is false when the
+// ring could not be read.
+func (r *Rebalancer) slotReplicaMap() (readcacheassignment.ReplicaMap, bool) {
+	view, ok := r.currentSlotView()
+	if !ok {
+		return nil, false
+	}
+	if n := r.cfg.ReadcacheSlicer.DesiredReplicas; n > 0 {
+		return view.ReplicaMapIncluding(readcacheassignment.DesiredLogicalSlots(r.cfg.ReadcacheSlicer.LogicalIDPrefix, n)), true
+	}
+	return view.ReplicaMap(), true
+}
+
+func (r *Rebalancer) healthyReadcachePods() ([]readcacheassignment.HealthyPod, error) {
 	if len(r.cfg.ReadcacheSlicer.Instances) > 0 {
-		out := make([]readcacheassignment.Replica, 0, len(r.cfg.ReadcacheSlicer.Instances))
+		out := make([]readcacheassignment.HealthyPod, 0, len(r.cfg.ReadcacheSlicer.Instances))
 		for _, id := range r.cfg.ReadcacheSlicer.Instances {
-			zone := ""
-			if ident, ok := readcacheassignment.ParseInstanceIdentity(id); ok {
-				zone = ident.Zone
-			}
-			out = append(out, readcacheassignment.Replica{InstanceID: id, Zone: zone})
+			out = append(out, readcacheassignment.HealthyPod{InstanceID: id, Addr: id})
 		}
-		return out
+		return out, nil
 	}
 	if r.readcacheRing == nil {
-		return nil
+		return nil, errors.New("readcache ring is not configured")
 	}
 	set, err := r.readcacheRing.GetAllHealthy(readcacheRingOp)
 	if err != nil {
-		level.Warn(r.logger).Log("msg", "readcache ring lookup failed while building replica map", "err", err)
-		return nil
+		return nil, err
 	}
-	out := make([]readcacheassignment.Replica, 0, len(set.Instances))
+	out := make([]readcacheassignment.HealthyPod, 0, len(set.Instances))
 	for _, inst := range set.Instances {
-		zone := inst.Zone
-		if zone == "" {
-			if ident, ok := readcacheassignment.ParseInstanceIdentity(inst.Id); ok {
-				zone = ident.Zone
-			}
-		}
-		out = append(out, readcacheassignment.Replica{InstanceID: inst.Id, Zone: zone})
+		out = append(out, readcacheassignment.HealthyPod{
+			InstanceID: inst.Id,
+			Zone:       inst.Zone,
+			Addr:       inst.Addr,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].InstanceID < out[j].InstanceID })
-	return out
+	return out, nil
+}
+
+// healthyConcreteSet returns the set of concrete instance IDs in the
+// current slot view.
+func (r *Rebalancer) healthyConcreteSet() map[string]struct{} {
+	view, ok := r.currentSlotView()
+	if !ok {
+		return nil
+	}
+	return view.InstanceIDs()
 }
 
 // excludeLogicalTargetsFromConcreteFailures converts concrete
@@ -107,17 +148,22 @@ func (r *Rebalancer) concreteReadcacheReplicas() []readcacheassignment.Replica {
 // when it has no healthy concrete replica left in the ring (single
 // zone failure must not block the slot under RF=2).
 func excludeLogicalTargetsFromConcreteFailures(failedConcrete map[string]struct{}, replicaMap readcacheassignment.ReplicaMap, healthyConcrete map[string]struct{}) map[string]struct{} {
-	if len(failedConcrete) == 0 {
-		return nil
-	}
 	if len(replicaMap) == 0 {
 		// RF=1 / identity: concrete IDs are logical IDs.
+		if len(failedConcrete) == 0 {
+			return nil
+		}
 		return failedConcrete
 	}
 	out := map[string]struct{}{}
 	for logical, reps := range replicaMap {
 		if len(reps) == 0 {
+			// No healthy pod. Keep the slot out of new placement even
+			// when every stats call succeeded.
 			out[logical] = struct{}{}
+			continue
+		}
+		if len(failedConcrete) == 0 {
 			continue
 		}
 		anyHealthy := false
@@ -136,16 +182,6 @@ func excludeLogicalTargetsFromConcreteFailures(failedConcrete map[string]struct{
 		if !anyHealthy {
 			out[logical] = struct{}{}
 		}
-	}
-	return out
-}
-
-// healthyConcreteSet returns the set of concrete instance IDs currently
-// in the ring (or static list).
-func (r *Rebalancer) healthyConcreteSet() map[string]struct{} {
-	out := map[string]struct{}{}
-	for _, rep := range r.concreteReadcacheReplicas() {
-		out[rep.InstanceID] = struct{}{}
 	}
 	return out
 }

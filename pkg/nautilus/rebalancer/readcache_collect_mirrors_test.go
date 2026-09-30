@@ -221,6 +221,7 @@ func TestCollectRatesFromReadcaches_ReadinessUsesAssignedReplicas(t *testing.T) 
 	owner1.owned[0] = nil // residue from an old owner
 	owner1.owned[1] = nil
 	h.addReadcache("readcache-zone-b-1")
+	require.True(t, h.r.refreshSlotView())
 
 	_, _, _, _, _, _, readiness, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
@@ -246,6 +247,7 @@ func TestCollectRatesFromReadcaches_OneWarmAssignedReplicaProvidesCoverage(t *te
 	warming := h.addReadcache("readcache-zone-b-0")
 	warming.owned[0] = nil
 	warming.setWarming(0)
+	require.True(t, h.r.refreshSlotView())
 
 	_, _, _, _, _, _, readiness, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)

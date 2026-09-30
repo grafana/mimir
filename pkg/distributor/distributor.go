@@ -58,6 +58,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -294,12 +295,11 @@ type Distributor struct {
 	nautilusActiveTableMu sync.Mutex
 
 	// readcacheAssignment holds the (partition -> logical instance) log
-	// and the logical->concrete replica map from the same
-	// WatchReadcacheAssignments message. They are stored together so
-	// querier/ruler read-path goroutines never observe a new log of
-	// logical IDs against a stale (empty) map, which would dial
-	// non-routable logical names under RF≥2.
+	// streamed from the rebalancer. Concrete pods come from
+	// readcacheSlots, refreshed from the readcache ring off the query
+	// path. replica_sets on the assignment stream are ignored.
 	readcacheAssignment syncatomic.Pointer[readcacheAssignmentState]
+	readcacheSlots      *readcacheassignment.SlotViewCache
 
 	// initial assignment synchronization completes during starting(),
 	// before the distributor reports Running. This prevents embedded
@@ -1131,6 +1131,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, err
 		}
 		d.readcachePool = pool
+		d.readcacheSlots = pool.slots
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
@@ -1265,6 +1266,10 @@ func (d *Distributor) starting(ctx context.Context) error {
 		level.Info(d.log).Log("msg", "initial nautilus and readcache assignment snapshots received")
 	}
 
+	if d.readcachePool != nil {
+		d.readcachePool.refreshSlotView()
+	}
+
 	return nil
 }
 
@@ -1274,6 +1279,9 @@ func (d *Distributor) running(ctx context.Context) error {
 
 	if d.nautilusRebalancerConn != nil {
 		go d.runSpotlightLoop(ctx)
+	}
+	if d.readcachePool != nil {
+		go d.refreshReadcacheSlotView(ctx)
 	}
 
 	for {
@@ -1286,6 +1294,19 @@ func (d *Distributor) running(ctx context.Context) error {
 
 		case err := <-d.subservicesWatcher.Chan():
 			return errors.Wrap(err, "distributor subservice failed")
+		}
+	}
+}
+
+func (d *Distributor) refreshReadcacheSlotView(ctx context.Context) {
+	ticker := time.NewTicker(readcacheassignment.SlotViewRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			d.readcachePool.refreshSlotView()
 		}
 	}
 }
