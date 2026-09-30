@@ -120,7 +120,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		return fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
 	}
 
-	app := db.Appender(ctx).(extendedAppender)
+	app := db.AppenderV2(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
@@ -139,6 +139,11 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		discardedSamples = 0
 	)
+
+	appOptions := storage.AppendV2Options{}
+	// Zero samples for created timestamps must never go into the out-of-order head.
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
@@ -153,14 +158,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					// If the cached reference exists, we try to use it.
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because TSDB may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -174,14 +179,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			}
@@ -212,17 +217,16 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			}
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				// AppendHistogramSTZeroSample copies Schema, ZeroThreshold and CustomValues from
-				// the histogram it is given onto the zero sample it injects.
+				zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 				if ref != 0 {
-					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -236,14 +240,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			}
@@ -587,7 +591,7 @@ func (b *TSDBBuilder) Close() error {
 }
 
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
 }
 

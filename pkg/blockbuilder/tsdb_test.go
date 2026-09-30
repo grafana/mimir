@@ -1251,7 +1251,10 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 
 // TestTSDBBuilderFloatChunkEncoding verifies that the block builder honors the
 // per-tenant float_chunk_encoding limit when building blocks: "xor2" produces
-// EncXOR2 chunks and the default ("" or "xor") produces EncXOR chunks.
+// EncXOR2 chunks and the default ("" or "xor") produces EncXOR chunks. It also
+// guards that ingesting a created timestamp as a zero sample doesn't store start
+// timestamps in the chunks, which would switch XOR2 to the costlier per-sample
+// start timestamp encoding.
 func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 	const (
 		partitionID = int32(0)
@@ -1259,13 +1262,16 @@ func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 	)
 
 	for _, tc := range []struct {
-		name        string
-		encoding    string
-		expectedEnc chunkenc.Encoding
+		name                 string
+		encoding             string
+		withCreatedTimestamp bool
+		expectedEnc          chunkenc.Encoding
 	}{
 		{name: "default is xor", encoding: "", expectedEnc: chunkenc.EncXOR},
 		{name: "xor", encoding: "xor", expectedEnc: chunkenc.EncXOR},
 		{name: "xor2", encoding: "xor2", expectedEnc: chunkenc.EncXOR2},
+		{name: "xor with created timestamp", encoding: "xor", withCreatedTimestamp: true, expectedEnc: chunkenc.EncXOR},
+		{name: "xor2 with created timestamp", encoding: "xor2", withCreatedTimestamp: true, expectedEnc: chunkenc.EncXOR2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := map[string]*validation.Limits{
@@ -1281,11 +1287,20 @@ func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 				processingRange = time.Hour.Milliseconds()
 				lastEnd         = 2 * processingRange
 				ts              = lastEnd + (processingRange / 2)
+				createdTs       = ts - 500
 			)
+			var expectedSamples []sample
+			if tc.withCreatedTimestamp {
+				expectedSamples = append(expectedSamples, sample{t: createdTs, v: 0})
+			}
 			ctx := user.InjectOrgID(t.Context(), userID)
 			for i := 0; i < 5; i++ {
 				req := createWriteRequest("1", floatSample(ts+int64(i*1000), float64(i)), nil)
+				if tc.withCreatedTimestamp {
+					req.Timeseries[0].CreatedTimestamp = createdTs
+				}
 				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+				expectedSamples = append(expectedSamples, sample{t: ts + int64(i*1000), v: float64(i)})
 			}
 
 			shipperDir := t.TempDir()
@@ -1297,32 +1312,48 @@ func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, db.Close()) })
 			require.NotEmpty(t, db.Blocks())
 
-			encs := blockFloatChunkEncodings(t, db)
+			encs, samples := blockFloatChunks(t, db)
 			require.NotEmpty(t, encs)
 			for _, e := range encs {
 				require.Equal(t, tc.expectedEnc, e)
 			}
+			require.Equal(t, expectedSamples, samples)
 		})
 	}
 }
 
-func blockFloatChunkEncodings(t *testing.T, db *tsdb.DB) []chunkenc.Encoding {
+type sample struct {
+	st, t int64
+	v     float64
+}
+
+func blockFloatChunks(t *testing.T, db *tsdb.DB) ([]chunkenc.Encoding, []sample) {
 	t.Helper()
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, q.Close()) })
 
 	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-	var encs []chunkenc.Encoding
+	var (
+		encs    []chunkenc.Encoding
+		samples []sample
+	)
 	for ss.Next() {
 		it := ss.At().Iterator(nil)
 		for it.Next() {
-			encs = append(encs, it.At().Chunk.Encoding())
+			chk := it.At().Chunk
+			encs = append(encs, chk.Encoding())
+			sit := chk.Iterator(nil)
+			for sit.Next() == chunkenc.ValFloat {
+				ts, v := sit.At()
+				samples = append(samples, sample{st: sit.AtST(), t: ts, v: v})
+			}
+			require.NoError(t, sit.Err())
 		}
 		require.NoError(t, it.Err())
 	}
 	require.NoError(t, ss.Err())
-	return encs
+	return encs, samples
 }
 
 // TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for
