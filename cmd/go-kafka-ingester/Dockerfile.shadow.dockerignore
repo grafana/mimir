@@ -1,0 +1,4 @@
+.git
+cmd/rust-kafka-ingester/target
+cmd/go-kafka-ingester/go-kafka-ingester
+**/node_modules
