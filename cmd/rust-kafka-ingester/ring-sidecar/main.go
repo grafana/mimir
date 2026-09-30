@@ -133,9 +133,9 @@ func run(ctx context.Context, cfg config) error {
 	}))
 	lifecycle := &lifecycleState{}
 	if cfg.shutdownMarkerDir != "" {
-		exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(cfg.shutdownMarkerDir))
+		exists, err := openShutdownMarkerDir(cfg.shutdownMarkerDir)
 		if err != nil {
-			return fmt.Errorf("check prepare-shutdown marker: %w", err)
+			return err
 		}
 		lifecycle.prepared.Store(exists)
 	}
@@ -431,4 +431,18 @@ func startService(ctx context.Context, service services.Service) error {
 		return err
 	}
 	return nil
+}
+
+// openShutdownMarkerDir creates the prepare-shutdown marker's directory, which the Go ingester's
+// TSDB directory always provides, and reports whether the marker is there: without the
+// directory, prepare-shutdown fails and the rollout operator can't scale the zone down.
+func openShutdownMarkerDir(dir string) (bool, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false, fmt.Errorf("create prepare-shutdown marker directory: %w", err)
+	}
+	exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(dir))
+	if err != nil {
+		return false, fmt.Errorf("check prepare-shutdown marker: %w", err)
+	}
+	return exists, nil
 }
