@@ -77,7 +77,9 @@ func (s *server) handleDays(w http.ResponseWriter, _ *http.Request) {
 		Days      []dayJSON `json:"days"`
 		SpikeName string    `json:"spike_name"`
 		SpikeDay  int       `json:"spike_day"`
-	}{SpikeName: s.spikeName, SpikeDay: s.pop.Config().SpikeDay}
+		Names     int       `json:"names"`
+		Series    int       `json:"series"`
+	}{SpikeName: s.spikeName, SpikeDay: s.pop.Config().SpikeDay, Names: s.pop.Config().MetricNames, Series: len(s.pop.Series)}
 	for i, d := range s.days {
 		out.Days = append(out.Days, dayJSON{i, rfc3339(d.MinT), rfc3339(d.MaxT)})
 	}
