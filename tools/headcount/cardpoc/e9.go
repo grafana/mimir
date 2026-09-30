@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"sort"
 
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/grafana/mimir/tools/headcount/model"
 )
 
@@ -17,8 +15,8 @@ type TopNEntry struct {
 	Count int
 }
 
-// E9Result is RunE9's outcome: which metric names the two-round
-// threshold protocol found above its own guaranteed-correct threshold,
+// E9Result is RunE9's outcome: which metric names the sum-of-cutoffs
+// protocol found above its own guaranteed-correct threshold,
 // checked against the population's own truth, plus how many of them a
 // naive (single-round, no cross-gateway dedup) ranking would have missed
 // entirely.
@@ -61,8 +59,9 @@ func (r E9Result) Pass() bool {
 }
 
 // RunE9 simulates K store-gateways over bucketDir's blocks (assigned by a
-// hash of the block ID) and runs a two-round threshold protocol for
-// the top topN metric names by series count:
+// hash of the block ID) and runs the sum-of-cutoffs protocol for the top
+// topN metric names by series count. RunE9TPUT runs the other protocol,
+// whose threshold comes from partial sums instead:
 //
 //   - Round 1: each gateway reports its own local top-topN names and
 //     counts (exact within that gateway's own blocks).
@@ -108,12 +107,10 @@ func RunE9(bucketDir string, pop *model.Model, k, topN int) (E9Result, error) {
 			allNames[name] = true
 		}
 	}
-	cfg := pop.Config()
-	start, end := cfg.Start.UnixMilli(), cfg.End.UnixMilli()
+	truth := populationTruthByName(pop)
 	var truthAbove, truthBelow []TopNEntry
 	for name := range allNames {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", name)
-		c := pop.Truth([]*labels.Matcher{matcher}, start, end)
+		c := truth[name]
 		if c > threshold {
 			truthAbove = append(truthAbove, TopNEntry{name, c})
 		} else {
@@ -133,6 +130,13 @@ func RunE9(bucketDir string, pop *model.Model, k, topN int) (E9Result, error) {
 	}
 
 	return E9Result{K: k, TopN: topN, Threshold: threshold, Above: above, Truth: truthAbove, NaiveMisses: misses, NearBelow: nearBelow}, nil
+}
+
+// populationTruthByName returns every metric name's true series count over
+// the population's whole range, from one scan.
+func populationTruthByName(pop *model.Model) map[string]int {
+	cfg := pop.Config()
+	return pop.TruthBy(nil, "__name__", cfg.Start.UnixMilli(), cfg.End.UnixMilli())
 }
 
 // assignGateways splits blocks into k groups by their ID, simulating each
