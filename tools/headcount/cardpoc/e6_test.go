@@ -68,3 +68,23 @@ func TestP95(t *testing.T) {
 	require.InDelta(t, 0.05, p95([]float64{0.01, 0.02, 0.03, 0.04, 0.05}), 1e-9)
 	require.InDelta(t, 0.9, p95([]float64{0.1, 0.9}), 1e-9, "nearest-rank at n=2 takes the larger value")
 }
+
+func TestE6Result_HLLErrorStats(t *testing.T) {
+	r := E6Result{Threshold: 10, Groups: []NameGroupResult{
+		{Name: "exact", Truth: 5, Estimate: 5},
+		{Name: "a", Truth: 100, Estimate: 102, UsedHLL: true},
+		{Name: "b", Truth: 200, Estimate: 190, UsedHLL: true},
+	}}
+	p95Err, maxErr := r.HLLErrorStats()
+	require.InDelta(t, 0.05, p95Err, 1e-9)
+	require.InDelta(t, 0.05, maxErr, 1e-9)
+
+	groups := r.HLLGroups()
+	require.Len(t, groups, 2)
+	require.Equal(t, "b", groups[0].Name, "largest truth first")
+	require.Contains(t, r.Details(), "error=-5.00%")
+
+	p95Err, maxErr = E6Result{}.HLLErrorStats()
+	require.Zero(t, p95Err)
+	require.Zero(t, maxErr)
+}

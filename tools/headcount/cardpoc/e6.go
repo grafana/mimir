@@ -69,6 +69,36 @@ func (r E6Result) Pass() bool {
 	return p95(aboveErrs) <= 0.025
 }
 
+// HLLGroups returns the groups that used HLL, largest truth first.
+func (r E6Result) HLLGroups() []NameGroupResult {
+	var out []NameGroupResult
+	for _, g := range r.Groups {
+		if g.UsedHLL {
+			out = append(out, g)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Truth > out[j].Truth })
+	return out
+}
+
+// HLLErrorStats returns the p95 and maximum absolute relative error over
+// the groups that used HLL, or zeros if none did.
+func (r E6Result) HLLErrorStats() (p95Err, maxErr float64) {
+	var errs []float64
+	for _, g := range r.HLLGroups() {
+		e := g.RelativeError()
+		if e < 0 {
+			e = -e
+		}
+		errs = append(errs, e)
+		maxErr = max(maxErr, e)
+	}
+	if len(errs) == 0 {
+		return 0, 0
+	}
+	return p95(errs), maxErr
+}
+
 // p95 returns the 95th percentile of errs, using the nearest-rank method
 // (no interpolation): the smallest value at or above 95% of the data.
 func p95(errs []float64) float64 {
