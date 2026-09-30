@@ -102,10 +102,68 @@ func TestSumSkipSources_SkipsSupersededSources(t *testing.T) {
 		{ID: id(2), Level: 1, Sources: srcs(2), SeriesByName: map[string][]uint64{"m": {3}}},
 		{ID: id(3), Level: 4, Sources: srcs(1, 2), SeriesByName: map[string][]uint64{"m": {1, 2, 3}}},
 	}
-	// Blocks 1 and 2 are listed as sources of block 3, so a merge that
-	// skips superseded sources should count only block 3's series.
+	// Blocks 1 and 2's source-sets ({1}, {2}) are each contained in
+	// block 3's ({1, 2}), so a merge that skips superseded blocks should
+	// count only block 3's series.
 	require.Equal(t, 3, SumSkipSources(blocks))
 	require.Equal(t, 6, SumAll(blocks), "sanity: without the skip, all three blocks' series are counted")
+}
+
+// Regression test: real compactor output lists Compaction.Sources as the
+// transitive set of original level-1 ancestor IDs, not each intermediate
+// block's own ID, so an intermediate block's ID is never literally listed
+// anywhere. A version of SumSkipSources that only checked ID membership
+// (is this block's own ID in anyone's Sources) passed every hand-written
+// fixture in this file, all built with a single compaction step, and
+// still overcounted more than 50x against real multi-level compactor
+// output before this test (and the fix) existed.
+func TestSumSkipSources_SkipsIntermediateLevelsByLineage(t *testing.T) {
+	blocks := []Block{
+		{ID: id(1), Level: 1, Sources: srcs(1), SeriesByName: map[string][]uint64{"m": {1}}},
+		{ID: id(2), Level: 1, Sources: srcs(2), SeriesByName: map[string][]uint64{"m": {2}}},
+		{ID: id(3), Level: 1, Sources: srcs(3), SeriesByName: map[string][]uint64{"m": {3}}},
+		{ID: id(4), Level: 1, Sources: srcs(4), SeriesByName: map[string][]uint64{"m": {4}}},
+		// An intermediate merge of blocks 1 and 2: its own ID (5) is
+		// never listed anywhere, only its lineage {1, 2} is, once it in
+		// turn gets absorbed into block 6.
+		{ID: id(5), Level: 2, Sources: srcs(1, 2), SeriesByName: map[string][]uint64{"m": {1, 2}}},
+		// The final merge: its Sources is the full transitive ancestry
+		// (1, 2, 3, 4), not the immediate parents (3, 4, 5).
+		{ID: id(6), Level: 3, Sources: srcs(1, 2, 3, 4), SeriesByName: map[string][]uint64{"m": {1, 2, 3, 4}}},
+	}
+	require.Equal(t, 4, SumSkipSources(blocks), "only block 6 (the final merge) should survive")
+}
+
+// TestSumSkipSources_MatchesFullyCompactedSelection checks the property
+// E4 actually relies on: source-dedup on a handover-shaped block set
+// (superseded blocks still present) selects the same blocks -- and so
+// gives the same sum -- as SumAll would on the equivalent snapshot with
+// those superseded blocks already deleted. It deliberately does not
+// check source-dedup against the population's ground truth: on a window
+// spanning more than one final block, even the fully compacted sum can
+// still overcount a series that lives in more than one of them (that's
+// E2's finding, not E4's), so matching the compacted sum is the right
+// bar here, not matching truth.
+func TestSumSkipSources_MatchesFullyCompactedSelection(t *testing.T) {
+	l1a := Block{ID: id(1), Level: 1, Sources: srcs(1), SeriesByName: map[string][]uint64{"m": {1}}}
+	l1b := Block{ID: id(2), Level: 1, Sources: srcs(2), SeriesByName: map[string][]uint64{"m": {2}}}
+	final := Block{ID: id(3), Level: 2, Sources: srcs(1, 2), SeriesByName: map[string][]uint64{"m": {1, 2}}}
+
+	handover := []Block{l1a, l1b, final} // sources still present.
+	compacted := []Block{final}          // sources already deleted.
+
+	require.Equal(t, SumAll(compacted), SumSkipSources(handover))
+}
+
+func TestSumSkipSources_TiedLineageKeepsExactlyOne(t *testing.T) {
+	// Two blocks with identical source-sets (an overlapping or retried
+	// compaction can produce this): each must not supersede the other
+	// into nothing, but exactly one of them must still survive.
+	blocks := []Block{
+		{ID: id(1), Level: 4, Sources: srcs(10, 11), SeriesByName: map[string][]uint64{"m": {1, 2}}},
+		{ID: id(2), Level: 4, Sources: srcs(10, 11), SeriesByName: map[string][]uint64{"m": {1, 2}}},
+	}
+	require.Equal(t, 2, SumSkipSources(blocks), "exactly one of the tied blocks must survive")
 }
 
 func TestSumMinLevel_DropsBelowThreshold(t *testing.T) {
