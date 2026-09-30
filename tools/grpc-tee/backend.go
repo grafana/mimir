@@ -16,10 +16,8 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/siderolabs/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 )
 
 // RingBackendConfig is the configuration of a backend discoverable via memberlist.
@@ -30,10 +28,10 @@ type RingBackendConfig struct {
 	Ring    RingClientConfig `yaml:"ring"`
 }
 
-func (cfg *RingBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Name, prefix+"name", "backend-primary", "Name of the backend. grpc-tee uses it in logs, metrics, and the ring status page path.")
-	f.StringVar(&cfg.Type, prefix+"type", backendTypeOpaque, fmt.Sprintf("Type of the backend. The type selects the codec that decodes the proxied messages. Supported values: %s, %s.", backendTypeOpaque, backendTypeStoreGateway))
-	f.StringVar(&cfg.Address, prefix+"address", "localhost:9096", "Address of the gRPC backend to forward requests to.")
+func (cfg *RingBackendConfig) RegisterFlagsWithPrefix(prefix, defaultName, defaultAddress, addressHelp string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Name, prefix+"name", defaultName, "Name of the backend. grpc-tee uses it in logs, metrics, and the ring status page path.")
+	f.StringVar(&cfg.Type, prefix+"type", backendTypeOpaque, fmt.Sprintf("Type of the backend. The type selects the codec that decodes the proxied messages, and the comparator that compares the responses. Supported values: %s, %s.", backendTypeOpaque, backendTypeStoreGateway))
+	f.StringVar(&cfg.Address, prefix+"address", defaultAddress, addressHelp)
 	cfg.Ring.RegisterFlagsWithPrefix(prefix+"ring.", f)
 }
 
@@ -82,13 +80,12 @@ func (cfg *RingClientConfig) ToRingConfig() ring.Config {
 type RingBackend struct {
 	services.Service
 
-	name    string
-	codec   MessageCodec
-	cfg     RingBackendConfig
-	ring    *ring.Ring
-	conn    *grpc.ClientConn
-	proxy   proxy.Backend
-	watcher *services.FailureWatcher
+	name        string
+	backendType backendType
+	cfg         RingBackendConfig
+	ring        *ring.Ring
+	conn        *grpc.ClientConn
+	watcher     *services.FailureWatcher
 }
 
 func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Registerer) (*RingBackend, error) {
@@ -100,7 +97,7 @@ func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Reg
 		return nil, fmt.Errorf("invalid ring config for backend %s: %w", name, err)
 	}
 
-	codec, err := newMessageCodec(cfg.Type)
+	bt, err := newBackendType(cfg.Type)
 	if err != nil {
 		return nil, fmt.Errorf("invalid config for backend %s: %w", name, err)
 	}
@@ -120,7 +117,7 @@ func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Reg
 	// The client uses the raw codec, so response frames return as opaque bytes.
 	conn, err := grpc.NewClient(
 		cfg.Address,
-		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(proxy.Codec())),
+		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(newFrameCodec())),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
@@ -128,19 +125,12 @@ func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Reg
 	}
 
 	b := &RingBackend{
-		name:    name,
-		codec:   codec,
-		cfg:     cfg,
-		ring:    backendRing,
-		conn:    conn,
-		watcher: services.NewFailureWatcher(),
-	}
-	b.proxy = &proxy.SingleBackend{
-		GetConn: func(ctx context.Context) (context.Context, *grpc.ClientConn, error) {
-			// Forward the inbound metadata (for example X-Scope-OrgID) to the backend.
-			md, _ := metadata.FromIncomingContext(ctx) //lint:ignore faillint The proxy forwards all keys.
-			return metadata.NewOutgoingContext(ctx, md), b.conn, nil
-		},
+		name:        name,
+		backendType: bt,
+		cfg:         cfg,
+		ring:        backendRing,
+		conn:        conn,
+		watcher:     services.NewFailureWatcher(),
 	}
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping).WithName("backend " + name)
 
@@ -173,20 +163,20 @@ func (b *RingBackend) Name() string {
 	return b.name
 }
 
-// Codec returns the codec that decodes the messages of this backend, or nil if the backend is opaque.
-func (b *RingBackend) Codec() MessageCodec {
-	return b.codec
+// Type returns the type of this backend.
+func (b *RingBackend) Type() backendType {
+	return b.backendType
+}
+
+// Conn returns the gRPC connection to the configured address of this backend.
+// All calls go to this address. They do not use the ring yet.
+func (b *RingBackend) Conn() *grpc.ClientConn {
+	return b.conn
 }
 
 // Ring returns the ring of this backend.
 func (b *RingBackend) Ring() ring.ReadRing {
 	return b.ring
-}
-
-// ProxyBackend returns the backend that the gRPC proxy forwards requests to.
-// All requests go to the configured address. They do not use the ring yet.
-func (b *RingBackend) ProxyBackend() proxy.Backend {
-	return b.proxy
 }
 
 // ServeHTTP serves the status page of the ring of this backend.

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/siderolabs/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 )
 
@@ -39,13 +39,16 @@ func main() {
 	var (
 		memberlistCfg memberlist.KVConfig
 		ringCfg       RingConfig
-		backendCfg    RingBackendConfig
+		primaryCfg    RingBackendConfig
+		secondaryCfg  RingBackendConfig
 	)
 	listenAddress := flag.String("server.grpc-listen-address", ":9095", "Address to listen on for gRPC requests.")
 	httpListenAddress := flag.String("server.http-listen-address", ":8095", "Address to listen on for HTTP requests (ring status page and metrics).")
 	memberlistCfg.RegisterFlags(flag.CommandLine)
 	ringCfg.RegisterFlags(flag.CommandLine, logger)
-	backendCfg.RegisterFlagsWithPrefix("backend.", flag.CommandLine)
+	primaryCfg.RegisterFlagsWithPrefix("backend.primary.", "backend-primary", "localhost:9096", "Address of the primary gRPC backend. The client gets the responses of the primary backend.", flag.CommandLine)
+	secondaryCfg.RegisterFlagsWithPrefix("backend.secondary.", "backend-secondary", "", "Address of the secondary gRPC backend. grpc-tee compares its responses with the primary responses. If empty, grpc-tee forwards calls to the primary backend only.", flag.CommandLine)
+	secondaryTimeout := flag.Duration("tee.secondary-timeout", time.Minute, "Timeout of each call to the secondary backend. The secondary call can continue after the client call ends.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fatal(logger, "failed to parse flags", err)
 	}
@@ -68,7 +71,8 @@ func main() {
 	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "memberlist"}, cortexReg))
 	memberlistKV := memberlist.NewKVInitService(&memberlistCfg, log.With(logger, "component", "memberlist"), dnsProvider, reg)
 	ringCfg.Common.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	backendCfg.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	primaryCfg.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	secondaryCfg.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
 
 	lifecycler, err := newLifecycler(ringCfg, logger, cortexReg)
 	if err != nil {
@@ -78,14 +82,40 @@ func main() {
 	if err != nil {
 		fatal(logger, "failed to create ring client", err)
 	}
-	backend, err := NewRingBackend(backendCfg, logger, cortexReg)
+	primary, err := NewRingBackend(primaryCfg, logger, cortexReg)
 	if err != nil {
-		fatal(logger, "failed to create backend", err)
+		fatal(logger, "failed to create primary backend", err)
 	}
+	backends := []*RingBackend{primary}
+
+	handler := &teeHandler{
+		backendType:      primary.Type(),
+		primary:          primary,
+		secondaryTimeout: *secondaryTimeout,
+	}
+	if secondaryCfg.Address != "" {
+		secondary, err := NewRingBackend(secondaryCfg, logger, cortexReg)
+		if err != nil {
+			fatal(logger, "failed to create secondary backend", err)
+		}
+		if secondary.Name() == primary.Name() {
+			fatal(logger, "invalid backend config", fmt.Errorf("the primary and secondary backends must have different names, but both are %q", primary.Name()))
+		}
+		if secondary.Type().name != primary.Type().name {
+			fatal(logger, "invalid backend config", fmt.Errorf("the primary and secondary backends must have the same type, but the primary type is %q and the secondary type is %q", primary.Type().name, secondary.Type().name))
+		}
+		handler.secondary = secondary
+		backends = append(backends, secondary)
+	}
+	handler.onFinish = newCallFinisher(handler.backendType.comparator, newTeeMetrics(reg), logger)
 
 	// Start the services in dependency order, and stop them in reverse order.
-	// The backend starts before the lifecycler, so this instance joins the ring only when it can read the backend ring.
-	ringServices := []services.Service{memberlistKV, backend, lifecycler, ringClient}
+	// The backends start before the lifecycler, so this instance joins the ring only when it can read the backend rings.
+	ringServices := []services.Service{memberlistKV}
+	for _, b := range backends {
+		ringServices = append(ringServices, b)
+	}
+	ringServices = append(ringServices, lifecycler, ringClient)
 	for _, s := range ringServices {
 		if err := services.StartAndAwaitRunning(context.Background(), s); err != nil {
 			fatal(logger, "failed to start service", err)
@@ -93,21 +123,12 @@ func main() {
 	}
 	level.Info(logger).Log("msg", "joined ring", "ring", ringKey, "instance_id", lifecycler.GetInstanceID(), "instance_addr", lifecycler.GetInstanceAddr())
 
-	director := func(_ context.Context, fullMethodName string) (proxy.Mode, []proxy.Backend, error) {
-		level.Debug(logger).Log("msg", "proxying request", "method", fullMethodName, "backend", backend.Name(), "address", backendCfg.Address)
-		return proxy.One2One, []proxy.Backend{backend.ProxyBackend()}, nil
-	}
-
-	// The server registers no services, so every call goes to the transparent handler.
-	// The server also uses the raw codec, so request frames stay opaque bytes.
-	grpcOpts := []grpc.ServerOption{
-		grpc.ForceServerCodecV2(proxy.Codec()),
-		grpc.UnknownServiceHandler(proxy.TransparentHandler(director)),
-	}
-	if codec := backend.Codec(); codec != nil {
-		grpcOpts = append(grpcOpts, grpc.StreamInterceptor(decodingStreamInterceptor(codec, logProxiedCall(logger))))
-	}
-	grpcServer := grpc.NewServer(grpcOpts...)
+	// The server registers no services, so every call goes to the tee handler.
+	// The server also uses the frame codec, so request messages stay raw bytes.
+	grpcServer := grpc.NewServer(
+		grpc.ForceServerCodecV2(newFrameCodec()),
+		grpc.UnknownServiceHandler(handler.handle),
+	)
 
 	lis, err := net.Listen("tcp", *listenAddress)
 	if err != nil {
@@ -117,7 +138,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/ring", ringClient)
 	mux.Handle("/memberlist", memberlistKV)
-	mux.Handle("/backend/"+backend.Name()+"/ring", backend)
+	for _, b := range backends {
+		mux.Handle("/backend/"+b.Name()+"/ring", b)
+	}
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	httpServer := &http.Server{
 		Addr:         *httpListenAddress,
@@ -129,7 +152,7 @@ func main() {
 	serveErrs := make(chan error, 2)
 	go func() { serveErrs <- grpcServer.Serve(lis) }()
 	go func() { serveErrs <- httpServer.ListenAndServe() }()
-	level.Info(logger).Log("msg", "grpc-tee started", "grpc_address", *listenAddress, "http_address", *httpListenAddress, "backend", backend.Name(), "backend_address", backendCfg.Address)
+	level.Info(logger).Log("msg", "grpc-tee started", "grpc_address", *listenAddress, "http_address", *httpListenAddress, "primary_backend", primary.Name(), "primary_address", primaryCfg.Address, "secondary_address", secondaryCfg.Address)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)

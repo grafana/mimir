@@ -18,6 +18,9 @@ var errUnknownMethod = errors.New("unknown method")
 
 // MessageCodec decodes the gRPC messages of one backend type.
 type MessageCodec interface {
+	// Knows returns true if the codec can decode the messages of fullMethod.
+	Knows(fullMethod string) bool
+
 	// DecodeRequest decodes a request message of fullMethod.
 	// It returns errUnknownMethod if the codec does not know fullMethod.
 	DecodeRequest(fullMethod string, data []byte) (proto.Message, error)
@@ -27,16 +30,23 @@ type MessageCodec interface {
 	DecodeResponse(fullMethod string, data []byte) (proto.Message, error)
 }
 
-// newMessageCodec returns the codec for backendType.
-// It returns a nil codec for backendTypeOpaque.
-func newMessageCodec(backendType string) (MessageCodec, error) {
-	switch backendType {
+// backendType holds the codec and the comparator of one backend type.
+type backendType struct {
+	name string
+	// codec is nil for backendTypeOpaque.
+	codec      MessageCodec
+	comparator ResponseComparator
+}
+
+// newBackendType returns the codec and the comparator of the backend type with the given name.
+func newBackendType(name string) (backendType, error) {
+	switch name {
 	case backendTypeOpaque:
-		return nil, nil
+		return backendType{name: name, comparator: opaqueComparator{}}, nil
 	case backendTypeStoreGateway:
-		return newStoreGatewayCodec(), nil
+		return backendType{name: name, codec: newStoreGatewayCodec(), comparator: storeGatewayComparator{}}, nil
 	default:
-		return nil, fmt.Errorf("unknown backend type %q", backendType)
+		return backendType{}, fmt.Errorf("unknown backend type %q", name)
 	}
 }
 
@@ -49,6 +59,11 @@ type methodTypes struct {
 // methodTableCodec is a MessageCodec that decodes protobuf messages with a table of message types for each method.
 type methodTableCodec struct {
 	methods map[string]methodTypes
+}
+
+func (c methodTableCodec) Knows(fullMethod string) bool {
+	_, ok := c.methods[fullMethod]
+	return ok
 }
 
 func (c methodTableCodec) DecodeRequest(fullMethod string, data []byte) (proto.Message, error) {
