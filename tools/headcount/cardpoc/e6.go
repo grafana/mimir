@@ -116,12 +116,7 @@ func RunE6(bucketDir string, pop *model.Model, threshold int) (E6Result, error) 
 }
 
 func nameGroupResult(blocks []Block, name string, threshold int, pop *model.Model, start, end int64) (NameGroupResult, error) {
-	seen := map[uint64]struct{}{}
-	for _, b := range blocks {
-		for _, h := range b.SeriesByName[name] {
-			seen[h] = struct{}{}
-		}
-	}
+	seen := hashesForName(blocks, name)
 	exact := len(seen)
 
 	sketch, err := hyperloglog.NewSketch(e6Precision, true)
