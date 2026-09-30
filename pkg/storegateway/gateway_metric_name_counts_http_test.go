@@ -53,6 +53,10 @@ func TestBucketStore_MetricNameCounts(t *testing.T) {
 	_, err = s.store.metricNameCounts(t.Context(), s.minTime, s.minTime+twoHours/2)
 	require.ErrorContains(t, err, "cuts through")
 
+	// A window of two block ranges.
+	_, err = s.store.metricNameCounts(t.Context(), s.minTime, s.minTime+2*twoHours)
+	require.ErrorContains(t, err, "more than one block range")
+
 	// A window with no blocks at all.
 	res, err = s.store.metricNameCounts(t.Context(), s.maxTime+twoHours, s.maxTime+2*twoHours)
 	require.NoError(t, err)
