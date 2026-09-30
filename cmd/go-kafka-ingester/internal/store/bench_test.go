@@ -383,9 +383,8 @@ func TestHistogramQueryBench(t *testing.T) {
 	const series, histogramsPerSeries, runs = 600, 400, 3
 	histogram := func(timestamp int64) mimirpb.Histogram {
 		deltas := make([]int64, 50)
-		for index := range deltas {
-			deltas[index] = 1
-		}
+		// One observation in each bucket, matching the count.
+		deltas[0] = 1
 		return mimirpb.Histogram{Timestamp: timestamp, Count: &mimirpb.Histogram_CountInt{CountInt: 50}, PositiveSpans: []mimirpb.BucketSpan{{Offset: 0, Length: 50}}, PositiveDeltas: deltas}
 	}
 	s := Default()
@@ -617,9 +616,8 @@ func recoveryRequest(frame, uniqueRecords int, histogramHeavy bool) record.Decod
 		for sample := range int64(20) {
 			if histogramSeries {
 				deltas := make([]int64, 50)
-				for i := range deltas {
-					deltas[i] = 1
-				}
+				// One observation in each bucket, matching the count.
+				deltas[0] = 1
 				series.Histograms = append(series.Histograms, mimirpb.Histogram{
 					Timestamp: int64(frame)*1_000 + sample, Count: &mimirpb.Histogram_CountInt{CountInt: 50},
 					PositiveSpans: []mimirpb.BucketSpan{{Offset: 0, Length: 50}}, PositiveDeltas: deltas,
