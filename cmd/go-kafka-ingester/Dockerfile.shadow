@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# The Go port of the Rust Kafka ingester, with the same ring sidecar and load generator at the same
+# paths as the Rust image. The binary is also installed under the Rust ingester's name, so a
+# deployment switches implementations by switching images.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY vendor ./vendor
+COPY pkg ./pkg
+COPY cmd/go-kafka-ingester ./cmd/go-kafka-ingester
+COPY cmd/rust-kafka-ingester/ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+COPY cmd/rust-kafka-ingester/query-load ./cmd/rust-kafka-ingester/query-load
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -mod=vendor -trimpath -o /out/go-kafka-ingester ./cmd/go-kafka-ingester
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -mod=vendor -trimpath -o /out/rust-ingester-ring-sidecar ./cmd/rust-kafka-ingester/ring-sidecar
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -mod=vendor -trimpath -o /out/query-load ./cmd/rust-kafka-ingester/query-load
+
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS certs
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+COPY --from=certs /etc/ssl/certs /etc/ssl/certs
+COPY --from=go-builder /out/go-kafka-ingester /usr/local/bin/go-kafka-ingester
+COPY --from=go-builder /out/go-kafka-ingester /usr/local/bin/mimir-rust-kafka-ingester
+COPY --from=go-builder /out/rust-ingester-ring-sidecar /usr/local/bin/rust-ingester-ring-sidecar
+COPY --from=go-builder /out/query-load /usr/local/bin/query-load
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/go-kafka-ingester"]
