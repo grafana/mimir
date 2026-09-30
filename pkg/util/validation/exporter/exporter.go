@@ -73,16 +73,14 @@ const (
 	alertmanagerMaxAlertsSizeBytes             = "alertmanager_max_alerts_size_bytes"
 	floatChunkEncoding                         = "float_chunk_encoding"
 	histogramChunkEncoding                     = "histogram_chunk_encoding"
-	histogramChunkEncodingFloatHistograms      = "histogram_chunk_encoding_float_histograms"
 )
 
 // stringLimitMetricGetters maps limits that are stored as strings (and therefore
 // cannot be exported via reflection) to a getter returning a stable numeric value.
 // These metrics are still gated by the -overrides-exporter.enabled-metrics flag.
 var stringLimitMetricGetters = map[string]func(*validation.Limits) float64{
-	floatChunkEncoding:                    floatChunkEncodingMetricValue,
-	histogramChunkEncoding:                histogramChunkEncodingMetricValue,
-	histogramChunkEncodingFloatHistograms: histogramChunkEncodingFloatHistogramsMetricValue,
+	floatChunkEncoding:     floatChunkEncodingMetricValue,
+	histogramChunkEncoding: histogramChunkEncodingMetricValue,
 }
 
 // floatChunkEncodingMetricValue maps the per-tenant float_chunk_encoding limit to a
@@ -103,16 +101,6 @@ func histogramChunkEncodingMetricValue(limits *validation.Limits) float64 {
 		return float64(chunk.PrometheusHistogramSTChunk)
 	}
 	return float64(chunk.PrometheusHistogramChunk)
-}
-
-// histogramChunkEncodingFloatHistogramsMetricValue maps the per-tenant histogram_chunk_encoding
-// limit to a stable numeric value. The values match the float histogram storage chunk encoding
-// constants, which are hardcoded for backward compatibility, making them a safe metric contract.
-func histogramChunkEncodingFloatHistogramsMetricValue(limits *validation.Limits) float64 {
-	if validation.ParseHistogramSTEncodingEnabled(limits.HistogramChunkEncoding) {
-		return float64(chunk.PrometheusFloatHistogramSTChunk)
-	}
-	return float64(chunk.PrometheusFloatHistogramChunk)
 }
 
 // Config holds the configuration for an overrides-exporter
@@ -144,7 +132,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Keep existing default metrics
 	c.EnabledMetrics = defaultEnabledMetricNames
-	f.Var(&c.EnabledMetrics, "overrides-exporter.enabled-metrics", "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration, except histogram_chunk_encoding_float_histograms, which reports the float-histogram value of the histogram_chunk_encoding limit.")
+	f.Var(&c.EnabledMetrics, "overrides-exporter.enabled-metrics", "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration.")
 }
 
 // Validate validates the configuration for an overrides-exporter.
@@ -290,14 +278,6 @@ func newLimitsFieldRegistry() *LimitsFieldRegistry {
 				metricNames = append(metricNames, tagValue)
 			}
 		}
-	}
-
-	// histogram_chunk_encoding controls both integer and float histogram chunk encoding together;
-	// register a companion metric name so the float-histogram encoding value can be exported
-	// independently, aliased to the same struct field for validation purposes.
-	if field, ok := fieldsByTag[histogramChunkEncoding]; ok {
-		fieldsByTag[histogramChunkEncodingFloatHistograms] = field
-		metricNames = append(metricNames, histogramChunkEncodingFloatHistograms)
 	}
 
 	return &LimitsFieldRegistry{

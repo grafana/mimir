@@ -12579,59 +12579,70 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 	}
 }
 
-func TestIngesterHistogramSTEncodingEnabled(t *testing.T)  { testIngesterHistogramSTEncoding(t, true) }
-func TestIngesterHistogramSTEncodingDisabled(t *testing.T) { testIngesterHistogramSTEncoding(t, false) }
-
-func testIngesterHistogramSTEncoding(t *testing.T, histogramSTEnabled bool) {
-	limits := defaultLimitsTestConfig()
-	if histogramSTEnabled {
-		limits.HistogramChunkEncoding = "histogram_st"
-	}
-
-	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-		*defaults = limits
-	})
-
-	cfg := defaultIngesterTestConfig(t)
-	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	ctx := user.InjectOrgID(context.Background(), "user1")
-
-	const ts = int64(1000)
-	h := util_test.GenerateTestHistogram(1)
-	fh := util_test.GenerateTestFloatHistogram(1)
-	_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-		[][]mimirpb.LabelAdapter{
-			{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
-			{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
+func TestIngesterHistogramSTEncoding(t *testing.T) {
+	tests := map[string]struct {
+		encoding               string
+		expectedChunkEnc       chunkenc.Encoding
+		expectedClientEnc      chunk.Encoding
+		expectedFloatChunkEnc  chunkenc.Encoding
+		expectedFloatClientEnc chunk.Encoding
+	}{
+		"histogram": {
+			encoding:               "histogram",
+			expectedChunkEnc:       chunkenc.EncHistogram,
+			expectedClientEnc:      chunk.PrometheusHistogramChunk,
+			expectedFloatChunkEnc:  chunkenc.EncFloatHistogram,
+			expectedFloatClientEnc: chunk.PrometheusFloatHistogramChunk,
 		},
-		[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
-		nil,
-	))
-	require.NoError(t, err)
-
-	expectedChunkEnc := chunkenc.EncHistogram
-	expectedClientEnc := int32(chunk.PrometheusHistogramChunk)
-	expectedFloatChunkEnc := chunkenc.EncFloatHistogram
-	expectedFloatClientEnc := int32(chunk.PrometheusFloatHistogramChunk)
-	if histogramSTEnabled {
-		expectedChunkEnc = chunkenc.EncHistogramST
-		expectedClientEnc = int32(chunk.PrometheusHistogramSTChunk)
-		expectedFloatChunkEnc = chunkenc.EncFloatHistogramST
-		expectedFloatClientEnc = int32(chunk.PrometheusFloatHistogramSTChunk)
+		"histogram_st": {
+			encoding:               "histogram_st",
+			expectedChunkEnc:       chunkenc.EncHistogramST,
+			expectedClientEnc:      chunk.PrometheusHistogramSTChunk,
+			expectedFloatChunkEnc:  chunkenc.EncFloatHistogramST,
+			expectedFloatClientEnc: chunk.PrometheusFloatHistogramSTChunk,
+		},
 	}
 
-	chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram")
-	require.Len(t, chunks, 1)
-	assert.Equal(t, expectedClientEnc, chunks[0].Encoding)
-	verifyHistogramChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, h.ToFloat(nil))
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := defaultLimitsTestConfig()
+			limits.HistogramChunkEncoding = testData.encoding
 
-	chunks = queryChunksForMetric(ctx, t, i, "testmetric_float_histogram")
-	require.Len(t, chunks, 1)
-	assert.Equal(t, expectedFloatClientEnc, chunks[0].Encoding)
-	verifyHistogramChunkSample(t, expectedFloatChunkEnc, chunks[0].Data, ts, fh)
+			override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				*defaults = limits
+			})
+
+			cfg := defaultIngesterTestConfig(t)
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), "user1")
+
+			const ts = int64(1000)
+			h := util_test.GenerateTestHistogram(1)
+			fh := util_test.GenerateTestFloatHistogram(1)
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{
+					{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
+					{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
+				},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedClientEnc), chunks[0].Encoding)
+			verifyHistogramChunkSample(t, testData.expectedChunkEnc, chunks[0].Data, ts, h.ToFloat(nil))
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_float_histogram")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedFloatClientEnc), chunks[0].Encoding)
+			verifyHistogramChunkSample(t, testData.expectedFloatChunkEnc, chunks[0].Data, ts, fh)
+		})
+	}
 }
 
 // TestIngesterHistogramSTEncodingRuntimeToggle covers changing the histogram_chunk_encoding limit at runtime,
@@ -12668,7 +12679,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 			require.NoError(t, err)
 			startAndWaitHealthy(t, i, r)
 
-			ctx := user.InjectOrgID(context.Background(), userID)
+			ctx := user.InjectOrgID(t.Context(), userID)
 
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_before"}}},
