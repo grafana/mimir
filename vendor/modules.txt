@@ -866,6 +866,7 @@ github.com/julienschmidt/httprouter
 # github.com/klauspost/compress v1.20.0
 ## explicit; go 1.25
 github.com/klauspost/compress
+github.com/klauspost/compress/dict
 github.com/klauspost/compress/flate
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/gzip
