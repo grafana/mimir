@@ -29,7 +29,8 @@ func main() {
 	snapshots := flag.String("snapshots", "", "directory holding the l1, handover and compacted snapshots from tools/headcount/fixtures")
 	profile := flag.String("profile", "small", fmt.Sprintf("with -snapshots: the profile the snapshots were built from, one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "with -snapshots: the seed the snapshots were built with")
-	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e9, names and all")
+	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e9, e10, names and all")
+	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
 	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
 	flag.Parse()
 
@@ -51,7 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("generating population: %v", err)
 	}
-	if !runSnapshots(*snapshots, pop, strings.Split(*only, ","), *out) {
+	if !runSnapshots(*snapshots, pop, strings.Split(*only, ","), *out, *budget) {
 		os.Exit(1)
 	}
 }
@@ -84,7 +85,7 @@ const (
 	e9TopN      = 5
 )
 
-func runSnapshots(dir string, pop *model.Model, experiments []string, out string) bool {
+func runSnapshots(dir string, pop *model.Model, experiments []string, out string, budget int) bool {
 	l1, handover, compacted := filepath.Join(dir, "l1"), filepath.Join(dir, "handover"), filepath.Join(dir, "compacted")
 
 	pass := true
@@ -116,6 +117,23 @@ func runSnapshots(dir string, pop *model.Model, experiments []string, out string
 				fmt.Print(r.Details())
 				pass = pass && r.Pass()
 			}
+		case "e10":
+			r, err := runE10(compacted, pop, budget)
+			if err != nil {
+				log.Fatalf("E10: %v", err)
+			}
+			fmt.Printf("%s E10 %s by %s over %s..%s, budget %d series\n", status(r.Pass()), shortName(r.Exact.Metric), r.Exact.Label,
+				rfc3339(r.Exact.MinT), rfc3339(r.Exact.MaxT), r.Budget.MaxSeries)
+			for _, b := range []cardpoc.Breakdown{r.Exact, r.Budgeted} {
+				fmt.Printf("  values=%-7d total=%-7d series_touched=%-7d postings_bytes=%-8d lower_bound=%-5v %s\n",
+					len(b.Counts), b.Total(), b.SeriesTouched, b.PostingsBytes, b.LowerBound, b.Elapsed.Round(time.Millisecond))
+			}
+			truthTotal := 0
+			for _, n := range r.Truth {
+				truthTotal += n
+			}
+			fmt.Printf("  truth values=%d total=%d\n", len(r.Truth), truthTotal)
+			pass = pass && r.Pass()
 		case "names":
 			if err := runNames(compacted, pop, out); err != nil {
 				log.Fatalf("names: %v", err)
@@ -143,7 +161,7 @@ func runNames(compacted string, pop *model.Model, out string) error {
 		}
 		truth := pop.Truth(nil, r.MinT, r.MaxT)
 		fmt.Printf("names %s..%s: %d blocks, %d names, total=%d truth=%d, %s, index-header files %.1f MiB\n",
-			time.UnixMilli(r.MinT).UTC().Format(time.RFC3339), time.UnixMilli(r.MaxT).UTC().Format(time.RFC3339),
+			rfc3339(r.MinT), rfc3339(r.MaxT),
 			len(nc.Blocks), len(nc.Counts), nc.Total(), truth, nc.Elapsed.Round(time.Millisecond), float64(nc.IndexHeaderBytes)/(1<<20))
 		if out == "" {
 			continue
@@ -166,6 +184,44 @@ func writeNameCounts(path string, nc cardpoc.NameCounts) error {
 		fmt.Fprintf(&b, "%s\t%d\n", name, nc.Counts[name])
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// runE10 breaks the profile's spike metric down by pod over the block
+// range holding the start of its spike day.
+func runE10(compacted string, pop *model.Model, budget int) (cardpoc.E10Result, error) {
+	cfg := pop.Config()
+	if cfg.SpikeMetric < 0 {
+		return cardpoc.E10Result{}, fmt.Errorf("the profile has no spike metric")
+	}
+	prefix := fmt.Sprintf("metric_%06d_", cfg.SpikeMetric)
+	var metric string
+	for _, s := range pop.Series {
+		if name := s.Labels.Get("__name__"); strings.HasPrefix(name, prefix) {
+			metric = name
+			break
+		}
+	}
+	spikeStart := cfg.Start.Add(time.Duration(cfg.SpikeDay) * 24 * time.Hour).UnixMilli()
+	ranges, err := cardpoc.BlockRanges(compacted)
+	if err != nil {
+		return cardpoc.E10Result{}, err
+	}
+	for _, r := range ranges {
+		if r.MinT <= spikeStart && spikeStart < r.MaxT {
+			return cardpoc.RunE10(compacted, pop, r, metric, "pod", cardpoc.Budget{MaxSeries: budget})
+		}
+	}
+	return cardpoc.E10Result{}, fmt.Errorf("no block range holds the spike day start")
+}
+
+func rfc3339(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
+
+// shortName trims a generated metric name to its "metric_NNNNNN" prefix.
+func shortName(name string) string {
+	if len(name) > len("metric_000000") {
+		return name[:len("metric_000000")]
+	}
+	return name
 }
 
 func status(pass bool) string {
