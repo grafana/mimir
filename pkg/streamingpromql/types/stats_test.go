@@ -35,22 +35,22 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 	samplesReadIfSubsequentStep := newPerStepTracker("samples read if subsequent step", timeRange.StepCount)
 	samplesReadIfFirstStep := newPerStepTracker("samples read if first step", timeRange.StepCount)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 1, nil)
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 1, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 1, 0, 0)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 1, 0, 0)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 1, 0, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 2, nil)
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 2, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2, 0, 0)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 2, 0, 0)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 2, 0, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 1, nil)
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 1, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 1, 0)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 1, 0)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 1, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 4, nil)
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 4, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 0, 4)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 0, 4)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 0, 4)
@@ -113,19 +113,19 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			appendPoint(start)
 
 			// Samples from rangeStart up to and including rangeEnd should be included.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil))
 			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 4*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 4*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 4*testCase.samplesPerPoint, 0, 0)
 
 			// Samples after rangeEnd should not be included.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start.Add(-1*time.Second)), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start.Add(-1*time.Second)), false, nil))
 			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 3*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 3*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 3*testCase.samplesPerPoint, 0, 0)
 
 			// Should behave the same way for subsequent steps as well.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil))
 			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 4*testCase.samplesPerPoint, 0)
 			samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 4*testCase.samplesPerPoint, 0)
 			samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 4*testCase.samplesPerPoint, 0)
@@ -138,19 +138,19 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			appendPoint(start.Add(-2 * time.Second))
 			appendPoint(start.Add(-time.Second))
 			appendPoint(start)
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), false, nil))
 			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 6*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 4*testCase.samplesPerPoint, 0, 0)
 			samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 6*testCase.samplesPerPoint, 0, 0)
 
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), false, nil))
 			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 6*testCase.samplesPerPoint, 0)
 			samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 4*testCase.samplesPerPoint, 0)
 			samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 6*testCase.samplesPerPoint, 0)
 
 			// Using empty buffers should not change anything.
 			clearPoints()
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
+			require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil))
 			samplesProcessedPerStep.requireNoChange(t, stats.allSeries.samplesProcessedPerStep)
 			samplesReadIfSubsequentStep.requireNoChange(t, stats.allSeries.samplesReadIfSubsequentStep)
 
@@ -188,7 +188,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h}))
 	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
 
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h), 0, 0)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 2+EquivalentFloatSampleCount(h), 0, 0)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 2+EquivalentFloatSampleCount(h), 0, 0)
@@ -224,7 +224,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FixedTimesta
 	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
 
 	haveTimestamp := true
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil)
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil))
 
 	// If the range vector selector was evaluated at a fixed timestamp, then no samples would be read if the step is a subsequent step.
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2, 0, 0)
@@ -232,7 +232,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FixedTimesta
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 2, 0, 0)
 
 	// Same applies when the second step is evaluated.
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil)
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil))
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 2, 0)
 	samplesReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 0, 0)
 	samplesReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 2, 0)
@@ -269,7 +269,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 	subset1ReadIfFirstStep := newPerStepTracker("subset[1] samples read if first step", timeRange.StepCount)
 
 	// Test series that matches first subset only.
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 3, []bool{true, false})
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 3, []bool{true, false}))
 	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 3, 0, 0)
 	overallReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 3, 0, 0)
 	overallReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 3, 0, 0)
@@ -281,7 +281,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 	subset1ReadIfFirstStep.requireNoChange(t, stats.subsets[1].samplesReadIfFirstStep)
 
 	// Test series that matches second subset only.
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 2, []bool{false, true})
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 2, []bool{false, true}))
 	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 2, 0)
 	overallReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 2, 0)
 	overallReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 2, 0)
@@ -293,7 +293,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 	subset1ReadIfFirstStep.requireChange(t, stats.subsets[1].samplesReadIfFirstStep, 0, 2, 0)
 
 	// Test series that matches neither subset.
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 1, []bool{false, false})
+	require.NoError(t, stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 1, []bool{false, false}))
 	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 0, 1)
 	overallReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 0, 1)
 	overallReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 0, 1)
@@ -337,7 +337,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 	subsetReadIfFirstStep := newPerStepTracker("subset samples read if first step", timeRange.StepCount)
 
 	// Matching series: both overall and subset should be updated.
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, []bool{true})
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, []bool{true}))
 	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 4, 0, 0)
 	overallReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 4, 0, 0)
 	overallReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 4, 0, 0)
@@ -346,7 +346,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 	subsetReadIfFirstStep.requireChange(t, stats.subsets[0].samplesReadIfFirstStep, 4, 0, 0)
 
 	// Non-matching series: only overall should be updated.
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, []bool{false})
+	require.NoError(t, stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, []bool{false}))
 	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 4, 0)
 	overallReadIfSubsequentStep.requireChange(t, stats.allSeries.samplesReadIfSubsequentStep, 0, 4, 0)
 	overallReadIfFirstStep.requireChange(t, stats.allSeries.samplesReadIfFirstStep, 0, 4, 0)
