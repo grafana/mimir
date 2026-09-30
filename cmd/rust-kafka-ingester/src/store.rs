@@ -2125,24 +2125,6 @@ impl Store {
         end: i64,
         matchers: &[cortex::LabelMatcher],
     ) -> Result<Vec<QuerySeriesView>> {
-        let reads_before = LABEL_VALUE_READS.with(std::cell::Cell::get);
-        let selected = self.select_chunks_counted(tenant_id, start, end, matchers);
-        let shape = matcher_shape(matchers);
-        metrics::QUERY_SHAPES.with_label_values(&[&shape]).inc();
-        metrics::QUERY_LABEL_CHECKS
-            .with_label_values(&[&shape])
-            .inc_by(LABEL_VALUE_READS.with(std::cell::Cell::get) - reads_before);
-        selected
-    }
-
-    /// `select_chunks`, without the query metrics.
-    fn select_chunks_counted(
-        &self,
-        tenant_id: &str,
-        start: i64,
-        end: i64,
-        matchers: &[cortex::LabelMatcher],
-    ) -> Result<Vec<QuerySeriesView>> {
         let compiled = compile_matchers(matchers)?;
         let (shard_matchers, index_matchers): (Vec<_>, Vec<_>) = matchers
             .iter()
@@ -4152,6 +4134,7 @@ enum CompiledMatcher {
     Shard(u64, u64),
 }
 
+#[cfg(test)]
 thread_local! {
     // Series label values that queries on this thread looked up to check a matcher: a query reads
     // its store shards on its thread, so the difference over a query is what it looked up.
@@ -4162,32 +4145,8 @@ thread_local! {
 type ColdSeriesList = Arc<[u32]>;
 
 fn count_label_value_read() {
+    #[cfg(test)]
     LABEL_VALUE_READS.with(|reads| reads.set(reads.get() + 1));
-}
-
-/// Matchers by type and what they select on, like `eq:name,eq:shard,re:other`: enough to tell which
-/// queries check labels series by series, without a label for every label name.
-fn matcher_shape(matchers: &[cortex::LabelMatcher]) -> String {
-    let mut parts = matchers
-        .iter()
-        .map(|matcher| {
-            let kind = match matcher.r#type {
-                0 => "eq",
-                1 => "neq",
-                2 => "re",
-                3 => "nre",
-                _ => "unknown",
-            };
-            let label = match matcher.name.as_str() {
-                "__name__" => "name",
-                "__query_shard__" => "shard",
-                _ => "other",
-            };
-            format!("{kind}:{label}")
-        })
-        .collect::<Vec<_>>();
-    parts.sort_unstable();
-    parts.join(",")
 }
 
 #[cfg(test)]
@@ -5238,53 +5197,6 @@ mod tests {
                 data.len()
             );
         }
-    }
-
-    #[test]
-    fn counts_label_checks_by_matcher_shape() {
-        let matcher = |r#type, name: &str, value: &str| cortex::LabelMatcher {
-            r#type,
-            name: name.into(),
-            value: value.into(),
-        };
-        assert_eq!(
-            matcher_shape(&[
-                matcher(2, "n", ".+"),
-                matcher(0, "__name__", "a"),
-                matcher(0, "__query_shard__", "1_of_2"),
-            ]),
-            "eq:name,eq:shard,re:other"
-        );
-        let store = Store::default();
-        let mut request = series_request("a", []);
-        request.series.clear();
-        for n in 0..4 {
-            let mut series = series_request("a", [(1_000, 1.0)]).series.remove(0);
-            series.labels.push(("n".into(), n.to_string().into()));
-            request.series.push(series);
-        }
-        store.ingest("tenant", request).unwrap();
-        let shape = "eq:name,nre:other";
-        let counters = || {
-            (
-                metrics::QUERY_SHAPES.with_label_values(&[shape]).get(),
-                metrics::QUERY_LABEL_CHECKS
-                    .with_label_values(&[shape])
-                    .get(),
-            )
-        };
-        let before = counters();
-        let series = store
-            .select_chunks(
-                "tenant",
-                i64::MIN,
-                i64::MAX,
-                &[matcher(0, "__name__", "a"), matcher(3, "n", "1")],
-            )
-            .unwrap();
-        assert_eq!(series.len(), 3);
-        // The name group holds the candidates; each one's `n` is checked once.
-        assert_eq!(counters(), (before.0 + 1, before.1 + 4));
     }
 
     // Every series' labels, from a query without matchers.
