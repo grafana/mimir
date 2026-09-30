@@ -983,6 +983,48 @@ func TestEngineConflictingDuplicates(t *testing.T) {
 	}
 }
 
+// A histogram repeated at the head's last timestamp is a no-op when it's the same and a
+// duplicate otherwise, for float histograms as for integer ones.
+func TestEngineRepeatedHistogramsAtTheLastTimestamp(t *testing.T) {
+	opts := differentialOptions{}
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, t.TempDir(), opts, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			_ = head.Close()
+		}
+	})
+	integer := func(count uint64) *histogram.Histogram {
+		return &histogram.Histogram{Count: count, Sum: float64(count), Schema: 0, ZeroThreshold: 0.001,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}}, PositiveBuckets: []int64{int64(count)}}
+	}
+	float := func(count float64) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{Count: count, Sum: count, Schema: 0, ZeroThreshold: 0.001,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}}, PositiveBuckets: []float64{count}}
+	}
+	var errs [2][]error
+	for index, head := range heads {
+		for _, sample := range []struct {
+			name string
+			t    int64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{"floats", 1_000, nil, float(1)}, {"floats", 1_000, nil, float(1)}, {"floats", 1_000, nil, float(2)},
+			{"floats", 1_000, integer(1), nil},
+			{"integers", 1_000, integer(1), nil}, {"integers", 1_000, integer(1), nil}, {"integers", 1_000, integer(2), nil},
+			{"integers", 1_000, nil, float(1)},
+		} {
+			app := head.Appender(context.Background())
+			_, err := app.AppendHistogram(0, promlabels.FromStrings("__name__", sample.name), sample.t, sample.h, sample.fh)
+			errs[index] = append(errs[index], err)
+			require.NoError(t, app.Commit())
+		}
+	}
+	require.Equal(t, errs[0], errs[1])
+	require.ErrorIs(t, errs[1][2], storage.ErrDuplicateSampleForTimestamp)
+	require.NoError(t, errs[1][1])
+}
+
 // Like Mimir's ingesters without shipping, retention counts from when a block was written, not from
 // its samples' times: old samples stay until their block is older than the retention period.
 func TestEngineRetentionCountsFromBlockCreation(t *testing.T) {
