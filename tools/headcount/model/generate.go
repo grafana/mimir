@@ -22,11 +22,20 @@ func New(cfg Config) (*Model, error) {
 	rng := rand.New(rand.NewSource(cfg.Seed))
 	zipf := rand.NewZipf(rng, cfg.SeriesZipfS, 1, cfg.SeriesCap-cfg.SeriesFloor)
 
+	trends := make(map[int]Trend, len(cfg.Trends))
+	for _, tr := range cfg.Trends {
+		trends[tr.Metric] = tr
+	}
+
 	var all []Series
 	for i := 0; i < cfg.MetricNames; i++ {
 		name := metricName(rng, i)
 		if i == cfg.SpikeMetric {
 			all = append(all, spikeMetricSeries(cfg, name)...)
+			continue
+		}
+		if tr, ok := trends[i]; ok {
+			all = append(all, trendSeries(cfg, name, tr)...)
 			continue
 		}
 		var count uint64
@@ -130,6 +139,37 @@ func spikeMetricSeries(cfg Config, name string) []Series {
 		out = append(out, Series{
 			Labels:    labels.FromStrings("__name__", name, "pod", fmt.Sprintf("pod-spike-%d", k)),
 			Intervals: []Interval{{spikeStart, spikeEnd}},
+		})
+	}
+	return out
+}
+
+// trendSeries returns one trend metric's series: series k lives from the
+// start of the first day whose count exceeds k to the end of the last
+// such day. Counts are linear in the day, so those days are contiguous.
+func trendSeries(cfg Config, name string, tr Trend) []Series {
+	start, end := cfg.startMillis(), cfg.endMillis()
+	day := 24 * time.Hour.Milliseconds()
+	days := int((end - start + day - 1) / day)
+
+	peak := 0
+	for d := 0; d < days; d++ {
+		peak = max(peak, tr.countOn(d))
+	}
+	out := make([]Series, 0, peak)
+	for k := 0; k < peak; k++ {
+		first, last := -1, -1
+		for d := 0; d < days; d++ {
+			if tr.countOn(d) > k {
+				if first < 0 {
+					first = d
+				}
+				last = d
+			}
+		}
+		out = append(out, Series{
+			Labels:    labels.FromStrings("__name__", name, "instance", fmt.Sprintf("instance-%d", k)),
+			Intervals: []Interval{{start + int64(first)*day, min(start+int64(last+1)*day, end)}},
 		})
 	}
 	return out
