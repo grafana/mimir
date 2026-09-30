@@ -91,17 +91,17 @@ fn main() {
     ];
     let query = || {
         store
-            .select_chunks_with_blocks("bench", start, start + 5 * HOUR, &matchers)
+            .select_chunks("bench", start, start + 5 * HOUR, &matchers)
             .unwrap()
     };
     let started = Instant::now();
-    let (series, blocks) = query();
+    let series = query();
     let cold = started.elapsed();
     let mut hot = Duration::ZERO;
     let runs = std::env::var("COLD_RUNS").map_or(RUNS, |runs| runs.parse().expect("COLD_RUNS"));
     for _ in 0..runs {
         let started = Instant::now();
-        let (again, _) = query();
+        let again = query();
         hot += started.elapsed();
         assert_eq!(again.len(), series.len());
     }
@@ -110,9 +110,8 @@ fn main() {
         .map(|view| view.chunk_end - view.chunk_start)
         .sum();
     println!(
-        "cold_sharded: series={} chunks={chunks} blocks={} cold_ms={:.2} hot_ms={:.2}",
+        "cold_sharded: series={} chunks={chunks} cold_ms={:.2} hot_ms={:.2}",
         series.len(),
-        blocks.len(),
         cold.as_secs_f64() * 1000.,
         hot.as_secs_f64() * 1000. / f64::from(runs),
     );

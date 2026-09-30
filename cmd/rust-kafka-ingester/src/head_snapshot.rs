@@ -558,7 +558,6 @@ fn read_shard(reader: &mut Checksummed<BufReader<File>>, version: u8) -> Result<
                     legacy_exemplars.push((tenant_id.clone(), key.0, key.1.clone(), exemplar));
                 }
             }
-            tenant.mark_block_ranges(&series);
             if !tenant.series.insert(key, series) {
                 bail!("duplicate series in head snapshot");
             }

@@ -77,9 +77,9 @@ impl cortex::ingester_server::Ingester for IngesterService {
         self.enforce(&request).await?;
         let tenant = tenant(&request)?;
         let request = request.into_inner();
-        let (selected, blocks) = self
+        let selected = self
             .store
-            .select_chunks_with_blocks(
+            .select_chunks(
                 &tenant,
                 request.start_timestamp_ms,
                 request.end_timestamp_ms,
@@ -88,17 +88,6 @@ impl cortex::ingester_server::Ingester for IngesterService {
             .map_err(internal)?;
         // Like Go, observed once the tenant has a TSDB.
         if self.store.has_tenant(&tenant) {
-            for block in &blocks {
-                crate::metrics::QUERIED_BLOCKS
-                    .with_label_values(&[&block.generation])
-                    .inc();
-                crate::metrics::QUERIED_SERIES
-                    .with_label_values(&["single_block_index"])
-                    .observe(block.index_series as f64);
-                crate::metrics::QUERIED_SERIES
-                    .with_label_values(&["single_block_filter"])
-                    .observe(block.series as f64);
-            }
             crate::metrics::QUERIED_SERIES
                 .with_label_values(&["merged_blocks"])
                 .observe(selected.len() as f64);
