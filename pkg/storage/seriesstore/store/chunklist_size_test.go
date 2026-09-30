@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
 
 // Every stored series keeps its chunk list, so it takes exactly its encoded size.

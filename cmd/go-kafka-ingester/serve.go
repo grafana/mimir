@@ -24,14 +24,14 @@ import (
 	// Accepts gzip-compressed requests, like the Go ingester.
 	_ "google.golang.org/grpc/encoding/gzip"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/kafka"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/metrics"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/protection"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/segment"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/service"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/kafka"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/protection"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/service"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 func formatInt(value int64) string { return strconv.FormatInt(value, 10) }

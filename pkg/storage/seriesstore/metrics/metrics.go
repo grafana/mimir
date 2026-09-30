@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/limits"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
 )
 
 var (

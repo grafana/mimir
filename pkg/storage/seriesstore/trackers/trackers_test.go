@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/labels"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 func pairs(kv ...string) labels.Pairs {

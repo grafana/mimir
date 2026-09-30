@@ -17,10 +17,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/record"
-	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/store"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 )
 
 func testStore(t *testing.T, series int) *store.Store {
