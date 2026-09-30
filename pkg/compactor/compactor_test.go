@@ -34,6 +34,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -1724,8 +1725,8 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 		appendSample := func(seriesID int, ts int64, value float64) {
 			lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
-			app := db.Appender(context.Background())
-			_, err := app.Append(0, lbls, ts, value)
+			app := db.AppenderV2(context.Background())
+			_, err := app.Append(0, lbls, 0, ts, value, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 
 			err = app.Commit()

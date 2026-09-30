@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -1580,8 +1581,8 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 	addSample := func(i int) {
 		lbls := labels.FromStrings("series_id", strconv.Itoa(i))
 
-		app := db.Appender(ctx)
-		_, err := app.Append(0, lbls, minT+(step*int64(i)), float64(i))
+		app := db.AppenderV2(ctx)
+		_, err := app.Append(0, lbls, 0, minT+(step*int64(i)), float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Compact(ctx))
@@ -1626,8 +1627,8 @@ func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.L
 			break
 		}
 
-		app := db.Appender(context.Background())
-		_, err := app.Append(0, lbls, timestamp, value)
+		app := db.AppenderV2(context.Background())
+		_, err := app.Append(0, lbls, 0, timestamp, value, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Compact(ctx))
