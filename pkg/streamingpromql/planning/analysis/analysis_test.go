@@ -60,7 +60,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					  {"type": "VectorSelector", "planningId": 1, "description": "{__name__=\"up\"}"}
 					],
 					"originalExpression": "up",
 					"version": 0
@@ -108,7 +108,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					  {"type": "VectorSelector", "planningId": 1, "description": "{__name__=\"up\"}"}
 					],
 					"originalExpression": "up",
 					"version": 0
@@ -154,7 +154,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
+					  {"type": "VectorSelector", "planningId": 1, "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
 					"originalExpression": "up @ start()",
 					"version": 0
@@ -201,7 +201,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 360000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					  {"type": "VectorSelector", "planningId": 1, "description": "{__name__=\"up\"}"}
 					],
 					"originalExpression": "up",
 					"version": 0
@@ -480,16 +480,16 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
-					  {"type": "AggregateExpression", "children": [8], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "planningId": 4, "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 3, "children": [0], "description": "sum", "childrenLabels": [""]},
+					  {"type": "VectorSelector", "planningId": 6, "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 5, "children": [2], "description": "sum", "childrenLabels": [""]},
+					  {"type": "VectorSelector", "planningId": 8,"description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 7, "children": [4], "description": "sum", "childrenLabels": [""]},
+					  {"type": "VectorSelector", "planningId": 10,"description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 9, "children": [6], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "planningId": 2,"children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
+					  {"type": "AggregateExpression", "planningId": 1, "children": [8], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
 					"rootNode": 9,
@@ -545,12 +545,12 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_2\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_2\", __name__=\"up\"}"},
-					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1"]},
-					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "planningId": 4, "description": "{__query_shard__=\"1_of_2\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 3, "children": [0], "description": "sum", "childrenLabels": [""]},
+					  {"type": "VectorSelector", "planningId": 6, "description": "{__query_shard__=\"2_of_2\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "planningId": 5, "children": [2], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "planningId": 2, "children": [1, 3], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1"]},
+					  {"type": "AggregateExpression", "planningId": 1, "children": [4], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
 					"rootNode": 5,

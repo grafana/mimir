@@ -172,12 +172,6 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		))
 	}
 
-	// Note that the NodeIdentifier pass must run last since its purpose is to add a unique ID to all
-	// planning nodes that have been created.
-	if opts.EnableNodeIdentifiers {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewNodeIdentifierOptimizationPass())
-	}
-
 	return planner, nil
 }
 
@@ -375,6 +369,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	plan = p.assignNodeIdentifiers(plan)
+
 	if plan.Version > maximumSupportedQueryPlanVersion {
 		level.Warn(spanLogger).Log(
 			"msg", "generated query plan has version higher than maximum version supported by queriers - this may be OK if the affected nodes will only be evaluated by this query-frontend",
@@ -509,6 +505,25 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	return plan, nil
+}
+
+// assignNodeIdentifiers assigns a unique ID to each node in a query plan in a deterministic order
+// (depth first). The same IDs will be generated for the same nodes given the same query plan. This
+// must be run after all optimization passes have run and made all modifications to the plan that
+// they will make.
+func (p *QueryPlanner) assignNodeIdentifiers(plan *planning.QueryPlan) *planning.QueryPlan {
+	id := int64(1)
+
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if node.GetPlanningId() == 0 {
+			node.SetPlanningId(id)
+			id++
+		}
+
+		return true, nil
+	}))
+
+	return plan
 }
 
 func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
