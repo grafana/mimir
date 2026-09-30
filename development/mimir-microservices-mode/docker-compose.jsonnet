@@ -501,6 +501,7 @@ std.manifestYamlDoc({
         '-server.grpc-listen-address=:%d' % grpcPort,
         '-server.http-listen-address=:%d' % httpPort,
         '-backend.name=store-gateway',
+        '-backend.type=store-gateway',
         '-backend.address=store-gateway-1:9011',
         // grpc-tee reads the store-gateway ring the same way as the querier. These values match config/mimir.yaml.
         '-backend.ring.key=store-gateway',

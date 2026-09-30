@@ -100,10 +100,14 @@ func main() {
 
 	// The server registers no services, so every call goes to the transparent handler.
 	// The server also uses the raw codec, so request frames stay opaque bytes.
-	grpcServer := grpc.NewServer(
+	grpcOpts := []grpc.ServerOption{
 		grpc.ForceServerCodecV2(proxy.Codec()),
 		grpc.UnknownServiceHandler(proxy.TransparentHandler(director)),
-	)
+	}
+	if codec := backend.Codec(); codec != nil {
+		grpcOpts = append(grpcOpts, grpc.StreamInterceptor(decodingStreamInterceptor(codec, logger)))
+	}
+	grpcServer := grpc.NewServer(grpcOpts...)
 
 	lis, err := net.Listen("tcp", *listenAddress)
 	if err != nil {

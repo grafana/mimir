@@ -25,12 +25,14 @@ import (
 // RingBackendConfig is the configuration of a backend discoverable via memberlist.
 type RingBackendConfig struct {
 	Name    string           `yaml:"name"`
+	Type    string           `yaml:"type"`
 	Address string           `yaml:"address"`
 	Ring    RingClientConfig `yaml:"ring"`
 }
 
 func (cfg *RingBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Name, prefix+"name", "backend-primary", "Name of the backend. grpc-tee uses it in logs, metrics, and the ring status page path.")
+	f.StringVar(&cfg.Type, prefix+"type", backendTypeOpaque, fmt.Sprintf("Type of the backend. The type selects the codec that decodes the proxied messages. Supported values: %s, %s.", backendTypeOpaque, backendTypeStoreGateway))
 	f.StringVar(&cfg.Address, prefix+"address", "localhost:9096", "Address of the gRPC backend to forward requests to.")
 	cfg.Ring.RegisterFlagsWithPrefix(prefix+"ring.", f)
 }
@@ -81,6 +83,7 @@ type RingBackend struct {
 	services.Service
 
 	name    string
+	codec   MessageCodec
 	cfg     RingBackendConfig
 	ring    *ring.Ring
 	conn    *grpc.ClientConn
@@ -95,6 +98,11 @@ func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Reg
 	}
 	if err := cfg.Ring.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid ring config for backend %s: %w", name, err)
+	}
+
+	codec, err := newMessageCodec(cfg.Type)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config for backend %s: %w", name, err)
 	}
 
 	ringCfg := cfg.Ring.ToRingConfig()
@@ -121,6 +129,7 @@ func NewRingBackend(cfg RingBackendConfig, logger log.Logger, reg prometheus.Reg
 
 	b := &RingBackend{
 		name:    name,
+		codec:   codec,
 		cfg:     cfg,
 		ring:    backendRing,
 		conn:    conn,
@@ -162,6 +171,11 @@ func (b *RingBackend) stopping(_ error) error {
 
 func (b *RingBackend) Name() string {
 	return b.name
+}
+
+// Codec returns the codec that decodes the messages of this backend, or nil if the backend is opaque.
+func (b *RingBackend) Codec() MessageCodec {
+	return b.codec
 }
 
 // Ring returns the ring of this backend.
