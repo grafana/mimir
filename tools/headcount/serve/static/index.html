@@ -56,12 +56,12 @@
 <body>
 <header>
   <h1>Headcount</h1>
-  <span class="sub">how many series, straight from the index. Tenant: synthetic medium profile, blocks from a real Mimir compactor.</span>
+  <span class="sub" id="sub">how many series, straight from the index</span>
 </header>
 <div class="controls">
   <label>Baseline day <select id="base"></select></label>
   <label>Day <select id="day"></select></label>
-  <label>Budget and series limit <input id="budget" type="number" min="1" step="1000" value="5000" style="width:7em"> series</label>
+  <label>Budget and series limit <input id="budget" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
   <button id="run">Run both</button>
   <span id="status" class="muted"></span>
 </div>
@@ -81,6 +81,11 @@
     <div id="bd-bars"></div>
     <p id="bd-note" class="muted"></p>
   </section>
+  <section>
+    <h2>3. It can't become an incident</h2>
+    <div class="card bound"><h3>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
+    <div class="card today"><h3>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
+  </section>
   <section style="grid-column: 1 / -1">
     <h2 id="win-title">4. Across several days: adding the days counts a series once per day</h2>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
@@ -91,11 +96,6 @@
         <div class="card today"><h3>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
       </div>
     </div>
-  </section>
-  <section>
-    <h2>3. It can't become an incident</h2>
-    <div class="card bound"><h3>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
-    <div class="card today"><h3>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
   </section>
 </main>
 <script>
@@ -135,6 +135,7 @@ function todayPairs(res) {
 async function init() {
   const d = await get("api/days");
   days = d.days;
+  $("sub").textContent = `how many series, straight from the index. Synthetic tenant: ${fmt(d.names)} metric names, ${fmt(d.series)} series over ${d.days.length} days, blocks from a real Mimir compactor.`;
   for (const sel of [$("base"), $("day")]) {
     sel.innerHTML = days.map(x => `<option value="${x.index}">${x.start.slice(0, 10)}</option>`).join("");
   }
