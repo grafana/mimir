@@ -30,7 +30,6 @@ import (
 
 	"github.com/grafana/mimir/cmd/rust-kafka-ingester/ring-sidecar/handlers"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
 func TestRegistrationFollowsRustReadiness(t *testing.T) {
@@ -353,7 +352,11 @@ func TestShutdownKeepsRegistrationsLikeGoUnlessPrepared(t *testing.T) {
 }
 
 func TestPrepareShutdownHandlerPersistsAMarker(t *testing.T) {
-	cfg := config{shutdownMarkerDir: t.TempDir()}
+	// The pod's data volume starts without the marker's directory.
+	cfg := config{shutdownMarkerDir: filepath.Join(t.TempDir(), "sidecar")}
+	prepared, err := openShutdownMarkerDir(cfg.shutdownMarkerDir)
+	require.NoError(t, err)
+	require.False(t, prepared)
 	lifecycle := &lifecycleState{}
 	call := func(method string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
@@ -365,9 +368,9 @@ func TestPrepareShutdownHandlerPersistsAMarker(t *testing.T) {
 	require.Equal(t, "set\n", call(http.MethodGet).Body.String())
 	// Like Go with ingest storage, the preparation can't be reverted.
 	require.Equal(t, http.StatusMethodNotAllowed, call(http.MethodDelete).Code)
-	exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(cfg.shutdownMarkerDir))
+	prepared, err = openShutdownMarkerDir(cfg.shutdownMarkerDir)
 	require.NoError(t, err)
-	require.True(t, exists, "the marker survives a restart")
+	require.True(t, prepared, "the marker survives a restart")
 }
 
 func TestPreparePartitionDownscaleSwitchesPartitionState(t *testing.T) {
