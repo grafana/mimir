@@ -1763,7 +1763,11 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+				IncludeDescriptions: true,
+				IncludeDetails:      true,
+				IncludePlanningId:   true,
+			})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
 			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodeIndices)
@@ -1791,7 +1795,7 @@ func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Parameters.CacheDisabled)
 
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 	require.NoError(t, err)
 	require.True(t, encoded.CacheDisabled)
 
@@ -1818,7 +1822,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 	numberLiteralNode := aggregationNode.Param
 	vectorSelectorNode := aggregationNode.Inner
 
-	encoded, nodes, err := plan.ToEncodedPlan(false, true, numberLiteralNode, vectorSelectorNode)
+	encoded, nodes, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), numberLiteralNode, vectorSelectorNode)
 	require.NoError(t, err)
 	require.Len(t, nodes, 2)
 	require.Len(t, encoded.Nodes, 2)
@@ -1836,7 +1840,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
+	encoded, nodes, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), plan.Root, plan.Root)
 	require.NoError(t, err)
 	require.Len(t, encoded.Nodes, 2)
 	require.Equal(t, []int64{1, 1}, nodes)
@@ -1867,7 +1871,7 @@ func TestPlanVersioning(t *testing.T) {
 	err := plan.DeterminePlanVersion()
 	require.NoError(t, err)
 
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
@@ -2044,7 +2048,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 				var marshalled []byte
 
 				for b.Loop() {
-					encoded, _, err := plan.ToEncodedPlan(false, true)
+					encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -2059,7 +2063,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 			})
 
 			b.Run("decode", func(b *testing.B) {
-				encoded, _, err := plan.ToEncodedPlan(false, true)
+				encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 				require.NoError(b, err)
 
 				marshalled, err := encoded.Marshal()

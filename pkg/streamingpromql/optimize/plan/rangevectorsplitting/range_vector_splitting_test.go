@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -41,7 +40,7 @@ import (
 
 // Checks the case where results are not cached as the range (1h) is lower than the split interval (test default is 2h).
 func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -74,7 +73,7 @@ func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 }
 
 func TestQuerySplitting_CacheLookupsAreBatched(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -99,7 +98,7 @@ func TestQuerySplitting_CacheLookupsAreBatched(t *testing.T) {
 //   - Example: PromQL range (2h-1ms, 4h-1ms] becomes storage [2h, 4h-1ms]
 //   - Example: PromQL range (6h-1ms, 6h] becomes storage [6h, 6h]
 func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -237,7 +236,7 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 // TestQuerySplitting_InstantQueryWith5hRange_UsesCache but with Options{CacheDisabled: true}
 // on the context. With caching disabled, no cache entry should be read or written on either run.
 func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -270,7 +269,7 @@ func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest(t *testin
 }
 
 func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	// series1: continuous from 0h-9h
 	// series2: 10m-2h, gap 2h-4h, then 4h10m-6h
@@ -425,7 +424,7 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 }
 
 func TestQuerySplitting_WithCSE(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -588,23 +587,10 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// the broad selector's post-optimization matchers and cache key.
 	opts := defaultSplittingOpts()
 	opts.EnablePropagateMatchers = false
-	backend, eng, planner := setupEngineAndCacheWithOpts(t, opts)
+	backend, eng := setupEngineAndCacheWithOpts(t, opts)
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
 	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
-
-	// Create a plan for the query before it's executed since we need to know the planning
-	// node ID of the matrix selector to correctly use it to generate a cache key.
-	plan, err := planner.NewQueryPlan(t.Context(), query, types.NewInstantQueryTimeRange(ts), time.Minute, false, streamingpromql.NoopPlanningObserver{})
-	require.NoError(t, err)
-
-	var planningId int64
-	require.NoError(t, optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
-		if n, ok := node.(*core.MatrixSelector); ok {
-			planningId = n.GetPlanningId()
-		}
-		return true, nil
-	})))
 
 	r, stats := runInstantQuery(t, eng, promStorage, query, ts)
 	require.NoError(t, r.Err)
@@ -616,7 +602,6 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// histogram_count's inner is Duplicate consumer of the same SplitFunctionCall.
 	// The shared split node's inner is the broad MatrixSelector, so there is a single cache entry.
 	broadSelector := &core.MatrixSelector{
-		NodeIdentifier: core.NodeIdentifier{PlanningId: planningId},
 		MatrixSelectorDetails: &core.MatrixSelectorDetails{
 			Matchers: []core.LabelMatcher{
 				{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
@@ -696,28 +681,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	withoutSSE := defaultSplittingOpts()
 	withoutSSE.EnableSubsetSelectorElimination = false
 	withoutSSE.EnablePropagateMatchers = false
-	backendNoSSE, engineNoSSE, plannerNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
-
-	// Create a plan for the query before it's executed since we need to know the planning
-	// node ID of each matrix selector to correctly use them to generate a cache keys.
-	planNoSSE, err := plannerNoSSE.NewQueryPlan(t.Context(), expr, types.NewInstantQueryTimeRange(ts), time.Minute, false, streamingpromql.NoopPlanningObserver{})
-	require.NoError(t, err)
-
-	var (
-		narrowNoSSEPlanningId int64
-		broadNoSSEPlanningId  int64
-	)
-	require.NoError(t, optimize.Walk(planNoSSE.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
-		if n, ok := node.(*core.MatrixSelector); ok {
-			if slices.Contains(n.Matchers, core.LabelMatcher{Name: "region", Type: labels.MatchEqual, Value: "us"}) {
-				narrowNoSSEPlanningId = n.GetPlanningId()
-			} else {
-				broadNoSSEPlanningId = n.GetPlanningId()
-			}
-
-		}
-		return true, nil
-	})))
+	backendNoSSE, engineNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
 
 	result, _ := runInstantQuery(t, engineNoSSE, promStorage, expr, ts)
 	require.NoError(t, result.Err)
@@ -727,7 +691,6 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 
 	// Without SSE: the two MatrixSelectors retain their original matchers.
 	narrowNoSSE := &core.MatrixSelector{
-		NodeIdentifier: core.NodeIdentifier{PlanningId: narrowNoSSEPlanningId},
 		MatrixSelectorDetails: &core.MatrixSelectorDetails{
 			Matchers: []core.LabelMatcher{
 				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
@@ -738,7 +701,6 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 			ExpressionPosition: core.PositionRange{Start: 14, End: 54},
 		}}
 	broadNoSSE := &core.MatrixSelector{
-		NodeIdentifier: core.NodeIdentifier{PlanningId: broadNoSSEPlanningId},
 		MatrixSelectorDetails: &core.MatrixSelectorDetails{
 			Matchers: []core.LabelMatcher{
 				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
@@ -763,26 +725,12 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	withSSE := defaultSplittingOpts()
 	withSSE.EnableSubsetSelectorElimination = true
 	withSSE.EnablePropagateMatchers = false
-	backendSSE, engineSSE, plannerSSE := setupEngineAndCacheWithOpts(t, withSSE)
-
-	// Create a plan for the query before it's executed since we need to know the planning
-	// node ID of each matrix selector to correctly use them to generate a cache keys.
-	planSSE, err := plannerSSE.NewQueryPlan(t.Context(), expr, types.NewInstantQueryTimeRange(ts), time.Minute, false, streamingpromql.NoopPlanningObserver{})
-	require.NoError(t, err)
-
-	var broadSSEPlanningId int64
-	require.NoError(t, optimize.Walk(planSSE.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
-		if n, ok := node.(*core.MatrixSelector); ok {
-			broadSSEPlanningId = n.GetPlanningId()
-		}
-		return true, nil
-	})))
+	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
 
 	result, _ = runInstantQuery(t, engineSSE, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 
 	broadSSE := &core.MatrixSelector{
-		NodeIdentifier: core.NodeIdentifier{PlanningId: broadSSEPlanningId},
 		MatrixSelectorDetails: &core.MatrixSelectorDetails{
 			Matchers: []core.LabelMatcher{
 				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
@@ -829,7 +777,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 }
 
 func TestQuerySplitting_WithOffset_CacheBehavior(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
 			test_metric{env="prod"} 0+1x100
@@ -886,7 +834,7 @@ func TestQuerySplitting_WithOffset_CacheBehavior(t *testing.T) {
 }
 
 func TestQuerySplitting_WithAtModifier_CacheBehavior(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
 			test_metric{env="prod"} 0+1x100
@@ -938,7 +886,7 @@ func TestQuerySplitting_WithAtModifier_CacheBehavior(t *testing.T) {
 }
 
 func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
 			test_metric{env="prod"} 0+1x100
@@ -970,7 +918,7 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 }
 
 func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
 			test_metric{env="prod"} 0+1x100
@@ -1139,7 +1087,7 @@ func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
 }
 
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -1185,7 +1133,7 @@ func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
 }
 
 func TestQuerySplitting_StorageError(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -1241,7 +1189,7 @@ func TestQuerySplitting_StorageError(t *testing.T) {
 //   - Hit cache for Block1 and Block3
 //   - Miss cache for Block2, re-fetching it from storage
 func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
-	testCache, mimirEngine, planner := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -1252,19 +1200,6 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(8 * time.Hour)
 	expr := "sum_over_time(test_metric[7h])"
-
-	// Create a plan for the query before it's executed since we need to know the planning
-	// node ID of each matrix selector to correctly use them to generate a cache keys.
-	planSSE, err := planner.NewQueryPlan(t.Context(), expr, types.NewInstantQueryTimeRange(ts), time.Minute, false, streamingpromql.NoopPlanningObserver{})
-	require.NoError(t, err)
-
-	var planningId int64
-	require.NoError(t, optimize.Walk(planSSE.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
-		if n, ok := node.(*core.MatrixSelector); ok {
-			planningId = n.GetPlanningId()
-		}
-		return true, nil
-	})))
 
 	// First query populates cache for all 3 cacheable blocks.
 	// Data: first sample @ 1h10m (idx 7), last sample @ 8h (idx 48), 42 samples.
@@ -1282,7 +1217,6 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
 	inner := &core.MatrixSelector{
-		NodeIdentifier: core.NodeIdentifier{PlanningId: planningId},
 		MatrixSelectorDetails: &core.MatrixSelectorDetails{
 			Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
 			Range:              7 * time.Hour,
@@ -1364,7 +1298,7 @@ func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 }
 
 func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
-	backend, mimirEngine, _ := setupEngineAndCache(t)
+	backend, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := teststorage.New(t)
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
@@ -1426,7 +1360,7 @@ func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
 // TestQuerySplitting_NoMatchingSeries_CachesEmptyResult verifies that when a query matches 0 series,
 // the empty result is still cached and subsequent queries hit the cache.
 func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -1456,7 +1390,7 @@ func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
 }
 
 func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
 			test_metric{env="prod"} 0+1x100
@@ -1479,7 +1413,7 @@ func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
 }
 
 func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -1507,7 +1441,7 @@ func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 }
 
 func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
-	testCache, mimirEngine, _ := setupEngineAndCache(t)
+	testCache, mimirEngine := setupEngineAndCache(t)
 	storage := promqltest.LoadedStorage(t, `
 		load 10m
 			some_metric{env="1"} 0+1x40
@@ -1594,7 +1528,7 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testCache, mimirEngine, _ := setupEngineAndCache(t)
+			testCache, mimirEngine := setupEngineAndCache(t)
 
 			result, stats, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
 			require.NoError(t, result.Err)
@@ -1669,11 +1603,11 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	return engine
 }
 
-func setupEngineAndCache(t *testing.T) (*caching.InMemoryCache, promql.QueryEngine, *streamingpromql.QueryPlanner) {
+func setupEngineAndCache(t *testing.T) (*caching.InMemoryCache, promql.QueryEngine) {
 	return setupEngineAndCacheWithOpts(t, defaultSplittingOpts())
 }
 
-func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*caching.InMemoryCache, promql.QueryEngine, *streamingpromql.QueryPlanner) {
+func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*caching.InMemoryCache, promql.QueryEngine) {
 	backend := caching.NewInMemoryCache()
 	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
@@ -1684,7 +1618,7 @@ func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) 
 	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 
-	return backend, mimirEngine, queryPlanner
+	return backend, mimirEngine
 }
 
 func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, *promstats.QuerySamples) {

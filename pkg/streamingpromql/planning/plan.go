@@ -332,8 +332,11 @@ type SplitNode interface {
 // - all nodes reachable from the plan's root will be encoded
 // - the corresponding index in the encoded plan for the root node will be returned
 // - RootNode on the returned plan will be populated
-func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
-	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
+
+// includeDescriptions bool, includeDetails bool,
+
+func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
+	encoder := newQueryPlanEncoder(options)
 
 	encoded := &EncodedQueryPlan{
 		TimeRange:                p.Parameters.TimeRange.Encode(),
@@ -402,18 +405,36 @@ func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (Quer
 	return maxVersion, nil
 }
 
-type queryPlanEncoder struct {
-	nodes               []*EncodedNode
-	nodesToIndex        map[Node]int64
-	includeDescriptions bool // Include descriptions of nodes and their children, for display to a human
-	includeDetails      bool // Include details of nodes, for reconstruction in another process
+// DefaultQueryPlanEncodingOptions returns a QueryPlanEncodingOptions suitable for encoding
+// a plan to be sent between query-frontend and querier for remote execution. It does not include
+// descriptions, does include details, and does include planning IDs.
+func DefaultQueryPlanEncodingOptions() QueryPlanEncodingOptions {
+	return QueryPlanEncodingOptions{
+		IncludeDescriptions: false,
+		IncludeDetails:      true,
+		IncludePlanningId:   true,
+	}
 }
 
-func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPlanEncoder {
+type QueryPlanEncodingOptions struct {
+	// Include descriptions of nodes and their children, for display to a human.
+	IncludeDescriptions bool
+	// Include details of nodes, for reconstruction in another process.
+	IncludeDetails bool
+	// Include the unique ID of each node within the plan.
+	IncludePlanningId bool
+}
+
+type queryPlanEncoder struct {
+	nodes        []*EncodedNode
+	nodesToIndex map[Node]int64
+	options      QueryPlanEncodingOptions
+}
+
+func newQueryPlanEncoder(options QueryPlanEncodingOptions) *queryPlanEncoder {
 	return &queryPlanEncoder{
-		nodesToIndex:        make(map[Node]int64),
-		includeDescriptions: includeDescriptions,
-		includeDetails:      includeDetails,
+		nodesToIndex: make(map[Node]int64),
+		options:      options,
 	}
 }
 
@@ -423,7 +444,6 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	encoded := &EncodedNode{}
-	encoded.PlanningId = n.GetPlanningId()
 
 	childCount := n.ChildCount()
 
@@ -444,7 +464,7 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		encoded.Children = childIndices
 	}
 
-	if e.includeDetails {
+	if e.options.IncludeDetails {
 		encoded.NodeType = n.NodeType()
 		var err error
 		encoded.Details, err = proto.Marshal(n.Details())
@@ -453,10 +473,14 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		}
 	}
 
-	if e.includeDescriptions {
+	if e.options.IncludeDescriptions {
 		encoded.Type = NodeTypeName(n)
 		encoded.Description = n.Describe()
 		encoded.ChildrenLabels = n.ChildrenLabels()
+	}
+
+	if e.options.IncludePlanningId {
+		encoded.PlanningId = n.GetPlanningId()
 	}
 
 	e.nodes = append(e.nodes, encoded)
