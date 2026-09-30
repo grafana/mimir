@@ -3,6 +3,8 @@
 package store
 
 import (
+	"math/bits"
+
 	"github.com/grafana/mimir/cmd/go-kafka-ingester/internal/chunks"
 )
 
@@ -27,8 +29,17 @@ func chunkListFromMetas(metas []ChunkMeta) chunkList {
 	if len(metas) == 0 {
 		return nil
 	}
-	out := make([]byte, 0, len(metas)*12)
+	// Sized exactly, like Rust's boxed slice: every stored series keeps its list, and growing by
+	// appends left up to half of each unused.
+	size := 0
 	var reference, minTime int64
+	for _, meta := range metas {
+		size += uvarintLen(zigzag(int64(meta.Ref)-reference)) + uvarintLen(zigzag(meta.MinTime-minTime)) +
+			uvarintLen(uint64(meta.MaxTime-meta.MinTime)) + uvarintLen(uint64(meta.Len)) + 1
+		reference, minTime = int64(meta.Ref), meta.MinTime
+	}
+	out := make([]byte, 0, size)
+	reference, minTime = 0, 0
 	for _, meta := range metas {
 		out = putUvarint(out, zigzag(int64(meta.Ref)-reference))
 		out = putUvarint(out, zigzag(meta.MinTime-minTime))
@@ -172,4 +183,9 @@ func takeUvarintString(s *string) uint64 {
 		}
 		shift += 7
 	}
+}
+
+// uvarintLen is how many bytes putUvarint writes for value.
+func uvarintLen(value uint64) int {
+	return (bits.Len64(value|1) + 6) / 7
 }

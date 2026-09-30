@@ -510,6 +510,44 @@ type discardKey struct {
 
 // batchSeries is a series of an IngestFlushes batch, with the record it came from and its
 // position in the batch.
+// pendingSeries is a series of a batch, before it's hashed and routed to its store shard.
+type pendingSeries struct {
+	index      int
+	series     *record.DecodedSeries
+	ingestedMs int64
+	rules      appendRules
+	flush      uint64
+	hash       OptionalHash
+	// Whether the hash was computed while decoding.
+	hashed bool
+}
+
+// ingestScratch is what a batch routes its series with. Batches arrive continuously and each
+// held a slice per series and per store shard, which was most of what ingestion left for the GC.
+type ingestScratch struct {
+	all     []pendingSeries
+	buckets [][]batchSeries
+	// Per store shard: cleared maps keep their capacity for the next batch.
+	committed []map[committedKey]committedHead
+}
+
+var ingestScratches = sync.Pool{New: func() any { return &ingestScratch{} }}
+
+// release returns the scratch to the pool without the series it pointed to, which belong to
+// records the caller may drop.
+func (scratch *ingestScratch) release() {
+	clear(scratch.all)
+	scratch.all = scratch.all[:0]
+	for shard := range scratch.buckets {
+		clear(scratch.buckets[shard])
+		scratch.buckets[shard] = scratch.buckets[shard][:0]
+	}
+	for _, committed := range scratch.committed {
+		clear(committed)
+	}
+	ingestScratches.Put(scratch)
+}
+
 type batchSeries struct {
 	index      int
 	position   int
@@ -561,20 +599,21 @@ type committedKey struct {
 // make.
 func (s *Store) IngestFlushes(records []IngestRecord) (uint64, error) {
 	shardCount := len(s.shards)
-	buckets := make([][]batchSeries, shardCount)
+	scratch := ingestScratches.Get().(*ingestScratch)
+	defer scratch.release()
+	if len(scratch.buckets) != shardCount {
+		scratch.buckets = make([][]batchSeries, shardCount)
+		scratch.committed = make([]map[committedKey]committedHead, shardCount)
+	}
+	buckets := scratch.buckets
 	tenantIDs := make([]string, 0, len(records))
 	keepExemplars := make([]bool, 0, len(records))
-	type pending struct {
-		index      int
-		series     *record.DecodedSeries
-		ingestedMs int64
-		rules      appendRules
-		flush      uint64
-		hash       OptionalHash
-		// Whether the hash was computed while decoding.
-		hashed bool
+	total := 0
+	for index := range records {
+		total += len(records[index].Request.Series)
 	}
-	var all []pending
+	all := slices.Grow(scratch.all[:0], total)
+	defer func() { scratch.all = all }()
 	// Like `idealShardsFor`, a tenant's records spread over shards by their expected series.
 	tenantBytes := map[string]int{}
 	for index := range records {
@@ -756,7 +795,7 @@ func (s *Store) IngestFlushes(records []IngestRecord) (uint64, error) {
 					homeTenant.minTime = min(homeTenant.minTime, timestamp)
 				}
 			}
-			p := pending{index: index, series: series, ingestedMs: rec.IngestedMs, rules: rules, flush: flush.id}
+			p := pendingSeries{index: index, series: series, ingestedMs: rec.IngestedMs, rules: rules, flush: flush.id}
 			if hashes != nil {
 				p.hash, p.hashed = hashes[seriesIndex], true
 			}
@@ -822,7 +861,11 @@ func (s *Store) IngestFlushes(records []IngestRecord) (uint64, error) {
 		state.Lock()
 		defer state.Unlock()
 		outcome := newShardOutcome()
-		committed := map[committedKey]committedHead{}
+		committed := scratch.committed[w.shard]
+		if committed == nil {
+			committed = make(map[committedKey]committedHead, len(w.bucket))
+			scratch.committed[w.shard] = committed
+		}
 		// A record's series are consecutive, so the tenant rarely changes.
 		currentIndex := -1
 		var current *tenant
