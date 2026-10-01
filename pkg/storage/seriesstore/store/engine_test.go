@@ -1145,3 +1145,99 @@ func TestColdLabelLookupsMatchTheHead(t *testing.T) {
 	})
 	require.Equal(t, 200, checked)
 }
+
+// compactionWithLeavingSeries is an engine whose next Compact moves the series "gone" out of the
+// head while "live" stays, and the ref of "gone".
+func compactionWithLeavingSeries(t *testing.T) (*Engine, storage.SeriesRef) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	var goneRef storage.SeriesRef
+	for ts := int64(0); ts <= 7*time.Hour.Milliseconds()/2; ts += time.Minute.Milliseconds() {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "live"), ts, 1)
+		require.NoError(t, err)
+		if ts <= time.Hour.Milliseconds() {
+			goneRef, err = app.Append(goneRef, promlabels.FromStrings("__name__", "gone"), ts, 1)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	return e, goneRef
+}
+
+func withFreezeUnlockedHook(t *testing.T, hook func()) {
+	freezeUnlockedHook = hook
+	t.Cleanup(func() { freezeUnlockedHook = nil })
+}
+
+// sampleTimes returns the timestamps of every sample of every series of the metric, duplicates
+// included.
+func sampleTimes(t *testing.T, e *Engine, name string) (series int, times []int64) {
+	q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", name))
+	for set.Next() {
+		series++
+		chunkIt := set.At().Iterator(nil)
+		for chunkIt.Next() {
+			it := chunkIt.At().Chunk.Iterator(nil)
+			for it.Next() == chunkenc.ValFloat {
+				ts, _ := it.At()
+				times = append(times, ts)
+			}
+		}
+		require.NoError(t, chunkIt.Err())
+	}
+	require.NoError(t, set.Err())
+	return series, times
+}
+
+// Head compaction writes cold blocks without the shard lock: queries and appends during it don't
+// wait for the block.
+func TestEngineCompactionDoesNotBlockQueriesWhileWritingBlocks(t *testing.T) {
+	e, _ := compactionWithLeavingSeries(t)
+	withFreezeUnlockedHook(t, func() {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			series, _ := sampleTimes(t, e, "gone")
+			require.Equal(t, 1, series, "the leaving series is still queryable")
+			app := e.Appender(context.Background())
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "live"), 7*time.Hour.Milliseconds()/2+1, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the query and append waited for the block to be written")
+		}
+	})
+	require.NoError(t, e.Compact(context.Background()))
+	series, times := sampleTimes(t, e, "gone")
+	require.Equal(t, 1, series)
+	require.Len(t, times, 61)
+}
+
+// A series that takes a sample while its block is written stays in memory with all of its
+// samples, once, rather than going to a block that misses the new one.
+func TestEngineCompactionKeepsSeriesRevivedWhileWritingBlocks(t *testing.T) {
+	e, goneRef := compactionWithLeavingSeries(t)
+	revivedAt := 7*time.Hour.Milliseconds()/2 + 1
+	withFreezeUnlockedHook(t, func() {
+		app := e.Appender(context.Background())
+		_, err := app.Append(goneRef, promlabels.FromStrings("__name__", "gone"), revivedAt, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	})
+	require.NoError(t, e.Compact(context.Background()))
+	series, times := sampleTimes(t, e, "gone")
+	require.Equal(t, 1, series)
+	require.Len(t, times, 62)
+	require.True(t, slices.IsSorted(times))
+	require.Equal(t, revivedAt, times[len(times)-1])
+	require.Len(t, slices.Compact(slices.Clone(times)), 62, "no sample twice")
+
+}
