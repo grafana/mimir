@@ -402,8 +402,12 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) 
 	for tenantID, t := range state.tenants {
 		t.series.forEach(func(entry *seriesEntry) {
 			series := &entry.series
+			// Most series stay in the head: no need to hash their labels.
+			if series.inHead {
+				return
+			}
 			chunks, ok := pending.keys[frozenKey{tenantID, entry.labels}]
-			if ok && !series.inHead && series.floatHead == nil && series.histogramHead == nil && len(series.outOfOrder) == 0 && bytes.Equal(series.chunks, chunks) {
+			if ok && series.floatHead == nil && series.histogramHead == nil && len(series.outOfOrder) == 0 && bytes.Equal(series.chunks, chunks) {
 				unchanged++
 			}
 		})
