@@ -177,9 +177,17 @@ func NewStreamBinaryReader(
 	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
 		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
 	)
-	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+	var indexHeaderTOC *TOCCompat
+	var indexHeaderVersion int
+	initialTOCErr := func() error {
+		_, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.initialTOCFromIndexHeader")
+		defer finish()
+		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+		return err
+	}()
+
 	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
-	if err != nil || indexHeaderVersion != requiredIndexHeaderVersion(cfg) {
+	if initialTOCErr != nil || indexHeaderVersion != requiredIndexHeaderVersion(cfg) {
 		rebuildErr := func() error {
 			spanLog, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.rebuildIndexHeader")
 			defer finish()
