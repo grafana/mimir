@@ -13,6 +13,7 @@ fn main() {
     let data = std::fs::read(path).expect("read segment");
     let mut payloads = Vec::new();
     let mut at = FILE_HEADER_LEN;
+    let mut dictionary: Option<Vec<u8>> = None;
     // Stops at the first torn frame, like replay.
     while at + FRAME_HEADER_LEN <= data.len() {
         let length = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
@@ -21,8 +22,23 @@ fn main() {
             break;
         }
         let compressed = &data[body + FRAME_PREFIX_LEN..body + length];
-        payloads.push(zstd::bulk::decompress(compressed, 128 * 1024 * 1024).expect("zstd frame"));
         at = body + length;
+        // A file's dictionary frame, which the frames after it are compressed with.
+        if i64::from_le_bytes(data[body..body + 8].try_into().unwrap()) == -1 {
+            dictionary = Some(compressed.to_vec());
+            continue;
+        }
+        let payload = match (
+            zstd::zstd_safe::get_dict_id_from_frame(compressed),
+            &dictionary,
+        ) {
+            (Some(_), Some(dictionary)) => zstd::bulk::Decompressor::with_dictionary(dictionary)
+                .and_then(|mut decompressor| {
+                    decompressor.decompress(compressed, 128 * 1024 * 1024)
+                }),
+            _ => zstd::bulk::decompress(compressed, 128 * 1024 * 1024),
+        };
+        payloads.push(payload.expect("zstd frame"));
     }
     // SEGMENT_BATCH frames compressed together, to see what fewer, larger frames would give.
     let batch =
