@@ -138,7 +138,11 @@ func BenchmarkQuery(b *testing.B) {
 						}
 					}
 
+					// Only the Mimir engine estimates the peak memory of each query, so there is nothing to report for
+					// Prometheus.
 					if name == "Mimir" {
+						// These totals cover every query this process has run, including earlier calls of this function
+						// with a smaller b.N, so subtract the totals from before the loop.
 						sum, count := estimatedPeakMemoryConsumption(b, gatherer)
 						if count > countBefore {
 							b.ReportMetric((sum-sumBefore)/float64(count-countBefore), "estimated-peak-B/op")
