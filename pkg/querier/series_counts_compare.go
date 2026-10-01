@@ -12,7 +12,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+var unregisteredDeduplicatorMetrics = limiter.NewSeriesDeduplicatorMetrics(nil)
 
 // chunksPathCost is what the chunks path read, from the querier's stats.
 type chunksPathCost struct {
@@ -28,6 +31,9 @@ type chunksPathCost struct {
 // on the series_counts route checks SeriesCounts against it.
 func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req SeriesCountsRequest) (map[string][]int64, chunksPathCost, error) {
 	st, ctx := querier_stats.ContextWithEmptyStats(ctx)
+	// Select needs these in the context; the PromQL query path adds them.
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, unregisteredDeduplicatorMetrics)
 	qr, err := q.Querier(req.MinT, req.MaxT-1)
 	if err != nil {
 		return nil, chunksPathCost{}, err
