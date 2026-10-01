@@ -408,6 +408,69 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 	assert.Equal(t, false, trailer["has_more"])
 }
 
+// TestSearchHandlers_TrailerReturnedCount pins that the trailer's returned
+// field equals the number of records written to the wire on every endpoint,
+// excluding the limit+1 has_more probe record.
+func TestSearchHandlers_TrailerReturnedCount(t *testing.T) {
+	five := []storage.SearchResult{sr("a", 1.0), sr("b", 1.0), sr("c", 1.0), sr("d", 1.0), sr("e", 1.0)}
+	var warns annotations.Annotations
+	warns.Add(errors.New("source-warning"))
+
+	labelNames := func(q storage.Queryable) http.Handler { return SearchLabelNamesHandler(q, enabledSearchConfig(), nil) }
+	labelValues := func(q storage.Queryable) http.Handler { return SearchLabelValuesHandler(q, enabledSearchConfig(), nil) }
+	metricNames := func(q storage.Queryable) http.Handler {
+		return SearchMetricNamesHandler(q, enabledSearchConfig(), nil, log.NewNopLogger())
+	}
+
+	tests := []struct {
+		name         string
+		newHandler   func(storage.Queryable) http.Handler
+		url          string
+		results      []storage.SearchResult
+		warns        annotations.Annotations
+		wantReturned int
+		wantHasMore  bool
+	}{
+		{name: "no limit counts records across all batches", newHandler: labelNames, url: "/api/v1/search/label_names?limit=0&batch_size=2", results: five, wantReturned: 5},
+		{name: "limit excludes the has_more probe record", newHandler: labelNames, url: "/api/v1/search/label_names?limit=2", results: five, wantReturned: 2, wantHasMore: true},
+		{name: "data exactly fills limit", newHandler: labelNames, url: "/api/v1/search/label_names?limit=5", results: five, wantReturned: 5},
+		{name: "empty result reports zero", newHandler: labelNames, url: "/api/v1/search/label_names", wantReturned: 0},
+		{name: "warning trailer carries the count", newHandler: labelNames, url: "/api/v1/search/label_names", results: five[:1], warns: warns, wantReturned: 1},
+		{name: "label_values", newHandler: labelValues, url: "/api/v1/search/label_values?label=env", results: five[:3], wantReturned: 3},
+		{name: "metric_names", newHandler: metricNames, url: "/api/v1/search/metric_names", results: five[:3], wantReturned: 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resultSet := func() storage.SearchResultSet {
+				return storage.NewSearchResultSetFromSlice(tc.results, tc.warns)
+			}
+			mq := &searchMockQuerier{
+				namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return resultSet()
+				},
+				valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return resultSet()
+				},
+			}
+			w := httptest.NewRecorder()
+			tc.newHandler(newSearchMockQueryable(mq)).ServeHTTP(w, newSearchHandlerRequest(t, tc.url))
+			require.Equal(t, http.StatusOK, w.Code)
+
+			lines := drainNDJSON(t, w.Body.String())
+			require.NotEmpty(t, lines)
+			onWire := 0
+			for _, ln := range lines[:len(lines)-1] {
+				onWire += len(ln["results"].([]any))
+			}
+			trailer := lines[len(lines)-1]
+			require.Contains(t, trailer, "returned", "returned must be present even when it is zero")
+			assert.Equal(t, float64(tc.wantReturned), trailer["returned"])
+			assert.Equal(t, tc.wantReturned, onWire, "returned must equal the records written to the wire")
+			assert.Equal(t, tc.wantHasMore, trailer["has_more"])
+		})
+	}
+}
+
 // TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne pins that the
 // downstream Searcher sees hints.Limit set to userLimit+1 so the +1
 // probe survives all the way to the iterator. limit=0 ("no limit") is
@@ -1488,18 +1551,25 @@ func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T)
 }
 
 // TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
-// equivalence between the hand-rolled defaultSuccessTrailer constant and
+// equivalence between the hand-rolled writeDefaultSuccessTrailer output and
 // what json.Encoder produces for a zero-warning success trailer. If
 // searchTrailerEnvelope's JSON tags, field order, or default-value
 // rendering ever change, this test forces a deliberate update to
-// defaultSuccessTrailer rather than letting the two paths drift silently.
+// writeDefaultSuccessTrailer rather than letting the two paths drift silently.
 func TestDefaultSuccessTrailer_MatchesEncoderOutput(t *testing.T) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success"}))
-	assert.Equal(t, buf.String(), string(defaultSuccessTrailer),
-		"defaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer")
+	for _, returned := range []int{0, 7, 99, 100, 12345} {
+		t.Run(fmt.Sprintf("returned=%d", returned), func(t *testing.T) {
+			var want bytes.Buffer
+			enc := json.NewEncoder(&want)
+			enc.SetEscapeHTML(false)
+			require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success", Returned: returned}))
+
+			var got bytes.Buffer
+			writeDefaultSuccessTrailer(&got, returned)
+			assert.Equal(t, want.String(), got.String(),
+				"writeDefaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer")
+		})
+	}
 }
 
 // newBenchmarkSearchResults builds n SearchResults with uniform-length names
@@ -1945,6 +2015,31 @@ func fetchSearchPage(t *testing.T, h http.Handler, target string) (names []strin
 		}
 	}
 	return names, nextCursor, hasMore, warnings
+}
+
+// TestSearchLabelNamesHandler_ReturnedExcludesCursorBackstopDiscards pins
+// that returned counts only records written to the wire, not records the
+// cursor backstop dropped because they sort at or before the resume point.
+func TestSearchLabelNamesHandler_ReturnedExcludesCursorBackstopDiscards(t *testing.T) {
+	h := SearchLabelNamesHandler(newSearchMockQueryable(oldBinarySearchMock([]string{"a", "b", "c", "d", "e"})), enabledSearchConfig(), nil)
+
+	trailerOf := func(target string) map[string]any {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+		require.Equal(t, http.StatusOK, w.Code)
+		lines := drainNDJSON(t, w.Body.String())
+		require.NotEmpty(t, lines)
+		return lines[len(lines)-1]
+	}
+
+	page1 := trailerOf("/api/v1/search/label_names?limit=2")
+	assert.Equal(t, float64(2), page1["returned"])
+	cursor, ok := page1["next_cursor"].(string)
+	require.True(t, ok, "page 1 must carry a cursor")
+
+	// The old source re-sends a,b,c; the backstop drops a and b and writes c.
+	page2 := trailerOf("/api/v1/search/label_names?cursor=" + cursor)
+	assert.Equal(t, float64(1), page2["returned"])
 }
 
 func TestSearchLabelNamesHandler_CursorCorrectDespiteSourceIgnoringResumeAfter(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -54,10 +55,14 @@ const (
 	maxSearchTermsPerRequest = 32
 )
 
-// defaultSuccessTrailer is the byte-for-byte JSON output for the common
-// "no warnings, has_more=false" trailer, written verbatim to skip the
-// json.Encoder reflection round-trip for the most frequent request shape.
-var defaultSuccessTrailer = []byte(`{"status":"success","has_more":false}` + "\n")
+// writeDefaultSuccessTrailer writes the byte-for-byte JSON output for the
+// common "no warnings, has_more=false" trailer, skipping the json.Encoder
+// reflection round-trip for the most frequent request shape.
+func writeDefaultSuccessTrailer(w io.Writer, returned int) {
+	_, _ = io.WriteString(w, `{"status":"success","has_more":false,"returned":`)
+	_, _ = io.WriteString(w, strconv.Itoa(returned))
+	_, _ = io.WriteString(w, "}\n")
+}
 
 // Per-(endpoint × score) pools for the per-request batch envelope. The
 // pool stores the envelope wrapper (not just the slice) so the
@@ -156,8 +161,11 @@ type searchBatchEnvelope[T any] struct {
 
 // searchTrailerEnvelope is the final NDJSON line on a successful stream.
 type searchTrailerEnvelope struct {
-	Status     string   `json:"status"`
-	HasMore    bool     `json:"has_more"`
+	Status  string `json:"status"`
+	HasMore bool   `json:"has_more"`
+	// Returned is the number of records in this response. It excludes the
+	// limit+1 has_more probe record.
+	Returned   int      `json:"returned"`
 	NextCursor string   `json:"next_cursor,omitempty"`
 	Warnings   []string `json:"warnings,omitempty"`
 }
@@ -1214,7 +1222,10 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	//      no truncation. Requiring emitted >= enforced avoids the false
 	//      positive that "clamp fired" alone would have for limit=0
 	//      requests against tenants with a positive ceiling.
-	trailer := searchTrailerEnvelope{Status: "success"}
+	trailer := searchTrailerEnvelope{Status: "success", Returned: emitted}
+	if req.limit > 0 && emitted > req.limit {
+		trailer.Returned = req.limit
+	}
 	// If no batches were flushed (e.g. the result set is empty), ensure the
 	// NDJSON content type and the internal streaming header are still set
 	// before writing the trailer so clients see the expected Content-Type.
@@ -1255,11 +1266,11 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		}
 	}
 	// Fast path for the common case: success trailer with no warnings and
-	// no has_more flag. Bypassing json.Encoder skips one bytes allocation
-	// per request and is the only trailer shape the encoder would have
-	// emitted byte-for-byte identical to defaultSuccessTrailer anyway.
+	// no has_more flag. Bypassing json.Encoder skips its reflection
+	// round-trip, and is the only trailer shape the encoder would have
+	// emitted byte-for-byte identical to writeDefaultSuccessTrailer anyway.
 	if !trailer.HasMore && len(trailer.Warnings) == 0 {
-		_, _ = w.Write(defaultSuccessTrailer)
+		writeDefaultSuccessTrailer(w, trailer.Returned)
 	} else {
 		_ = enc.Encode(trailer)
 	}
