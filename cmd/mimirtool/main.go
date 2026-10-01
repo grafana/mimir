@@ -33,6 +33,7 @@ var (
 	remoteReadCommand     commands.RemoteReadCommand
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
+	backfillV2Command     commands.BackfillV2Command
 	runtimeConfigCommand  commands.RuntimeConfigCommand
 	validateCommand       commands.ValidateCommand
 )
@@ -50,6 +51,7 @@ func main() {
 	alertmanagerCommand.Register(app, envVars, &logConfig)
 	analyzeCommand.Register(app, envVars, &logConfig)
 	backfillCommand.Register(app, envVars, &logConfig)
+	backfillV2Command.Register(app, envVars, &logConfig)
 	blocksCommand.Register(app, envVars, &logConfig)
 	bucketValidateCommand.Register(app, envVars, &logConfig)
 	configCommand.Register(app, envVars)
