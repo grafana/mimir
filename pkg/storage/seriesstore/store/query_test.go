@@ -16,9 +16,11 @@ import (
 	"testing"
 	"unicode"
 
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
 
@@ -440,4 +442,52 @@ func TestNameRegexesOnlyCheckTheNamesThatAppearedSince(t *testing.T) {
 	require.Equal(t, 3, selected(), "a new metric the regex accepts")
 	require.Equal(t, uint64(2), nameMatchCount.Load()-before, "only the new names are checked")
 	require.Equal(t, names(), selected())
+}
+
+// Sorting a query's series compares their encodings from the first pair that differs.
+func TestCompareLabelsOrdersLikePrometheus(t *testing.T) {
+	long := strings.Repeat("v", 130)
+	var all []labels.Labels
+	for _, metric := range []string{"a", "b"} {
+		for _, job := range []string{"", "job", long, long + "w"} {
+			for _, pod := range []string{"p1", "p10", "p2", long} {
+				pairs := []string{"__name__", metric}
+				if job != "" {
+					pairs = append(pairs, "job", job)
+				}
+				all = append(all, labels.FromStrings(append(pairs, "pod", pod)...), labels.FromStrings(pairs...))
+			}
+		}
+	}
+	names := labels.TakeSnapshot()
+	for _, a := range all {
+		for _, b := range all {
+			want := promlabels.Compare(promlabels.FromStrings(flattenPairs(a.Pairs())...), promlabels.FromStrings(flattenPairs(b.Pairs())...))
+			got := compareLabels(names, a, b)
+			require.Equal(t, want < 0, got < 0, "%v vs %v", a, b)
+			require.Equal(t, want == 0, got == 0, "%v vs %v", a, b)
+		}
+	}
+}
+
+func flattenPairs(pairs [][2]string) []string {
+	var out []string
+	for _, pair := range pairs {
+		out = append(out, pair[0], pair[1])
+	}
+	return out
+}
+
+func BenchmarkCompareLabelsOfOneMetric(b *testing.B) {
+	series := make([]labels.Labels, 10_000)
+	for n := range series {
+		series[n] = labels.FromStrings("__name__", "http_requests_total", "cluster", "prod-us-east-0", "namespace", "mimir", "pod", fmt.Sprintf("pod-%d", n), "status", fmt.Sprint(200+n%5))
+	}
+	names := labels.TakeSnapshot()
+	work := make([]labels.Labels, len(series))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		copy(work, series)
+		slices.SortFunc(work, func(x, y labels.Labels) int { return compareLabels(names, x, y) })
+	}
 }

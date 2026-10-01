@@ -8,6 +8,7 @@ package labels
 import (
 	"encoding/binary"
 	"fmt"
+	"math/bits"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,7 +228,12 @@ func (l Labels) HeapSize() int {
 
 // Compare orders labels by name then value, pair by pair, like Prometheus.
 func Compare(a, b Labels) int {
-	ai, bi := a.Iter(), b.Iter()
+	start, equal := SharedPairs(a, b)
+	if equal {
+		return 0
+	}
+	names := TakeSnapshot()
+	ai, bi := Iter{rest: string(a)[start:], names: names}, Iter{rest: string(b)[start:], names: names}
 	for {
 		an, av, aok := ai.Next()
 		bn, bv, bok := bi.Next()
@@ -246,6 +252,50 @@ func Compare(a, b Labels) int {
 			return c
 		}
 	}
+}
+
+// SharedPairs returns the length of the leading pairs a and b have in common, from which
+// comparing them pair by pair can start, and whether they are equal. Pairs are self-delimiting,
+// so pairs within the encodings' common prefix are the same pairs in both. A query's results are
+// mostly one metric's series sharing their first pairs, which sorting them otherwise decoded and
+// compared on every comparison.
+func SharedPairs(a, b Labels) (int, bool) {
+	common := commonPrefix(string(a), string(b))
+	if common == len(a) && common == len(b) {
+		return 0, true
+	}
+	// Labels differing from their first pair, like different metrics', gain nothing from it.
+	if common < 8 {
+		return 0, false
+	}
+	start, rest := 0, string(a)
+	for len(rest) > 0 {
+		cursor := rest
+		takeVarintString(&cursor)
+		size := takeVarintString(&cursor)
+		end := len(a) - len(cursor) + int(size)
+		if end > common {
+			break
+		}
+		start, rest = end, string(a)[end:]
+	}
+	return start, false
+}
+
+// commonPrefix is the length of a and b's common prefix, compared eight bytes at a time.
+func commonPrefix(a, b string) int {
+	x, y := unsafe.Slice(unsafe.StringData(a), len(a)), unsafe.Slice(unsafe.StringData(b), len(b))
+	n := min(len(x), len(y))
+	at := 0
+	for ; at+8 <= n; at += 8 {
+		if diff := binary.LittleEndian.Uint64(x[at:]) ^ binary.LittleEndian.Uint64(y[at:]); diff != 0 {
+			return at + bits.TrailingZeros64(diff)/8
+		}
+	}
+	for at < n && x[at] == y[at] {
+		at++
+	}
+	return at
 }
 
 func (l Labels) String() string {

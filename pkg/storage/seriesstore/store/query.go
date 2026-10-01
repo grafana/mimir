@@ -1039,7 +1039,11 @@ func compareMetadataKeys(a, b metadataKey) int {
 // compareLabels orders labels like labels.Compare, pair by pair by name then value, reading
 // the encoded ids: labels of one query mostly share their names, which then need no lookup.
 func compareLabels(names labels.Snapshot, a, b labels.Labels) int {
-	x, y := string(a), string(b)
+	start, equal := labels.SharedPairs(a, b)
+	if equal {
+		return 0
+	}
+	x, y := string(a)[start:], string(b)[start:]
 	for {
 		switch {
 		case len(x) == 0 && len(y) == 0:
