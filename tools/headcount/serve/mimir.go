@@ -186,8 +186,38 @@ func (m *mimir) queryRange(q string, startMS, endMS int64, step time.Duration, s
 	return res
 }
 
-// storeGatewayCounts is one call to the store-gateway's
-// metric_name_counts endpoint.
+// getRoute calls one of Mimir's experimental cardinality routes over
+// [minT, maxT) and decodes the JSON answer into out. It returns the latency
+// and an error message, empty on success.
+func (m *mimir) getRoute(route string, minT, maxT int64, params url.Values, out any) (time.Duration, string) {
+	q := url.Values{"start": {fmt.Sprintf("%.3f", float64(minT)/1000)}, "end": {fmt.Sprintf("%.3f", float64(maxT)/1000)}}
+	for k, v := range params {
+		q[k] = v
+	}
+	start := time.Now()
+	resp, err := http.Get(m.baseURL + "/prometheus/api/v1/cardinality/" + route + "?" + q.Encode())
+	if err != nil {
+		return time.Since(start), err.Error()
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	latency := time.Since(start)
+	switch {
+	case err != nil:
+		return latency, err.Error()
+	case resp.StatusCode == http.StatusNotFound && bytes.Contains(body, []byte("404 page not found")):
+		return latency, "this Mimir build has no " + route + " route"
+	case resp.StatusCode != http.StatusOK:
+		return latency, strings.TrimSpace(string(body))
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return latency, fmt.Sprintf("decoding response: %v", err)
+	}
+	return latency, ""
+}
+
+// storeGatewayCounts is one call to the metric_name_counts route, which
+// reads index-headers only.
 type storeGatewayCounts struct {
 	Err           string
 	Latency       time.Duration
@@ -197,30 +227,8 @@ type storeGatewayCounts struct {
 }
 
 // metricNameCounts asks Mimir for every metric name's count over one block
-// range [minT, maxT) through the querier's metric_name_counts route, which
-// fans out to the store-gateways.
+// range [minT, maxT); the querier fans out to the store-gateways.
 func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
-	u := fmt.Sprintf("%s/prometheus/api/v1/cardinality/metric_name_counts?start=%.3f&end=%.3f", m.baseURL, float64(minT)/1000, float64(maxT)/1000)
-	start := time.Now()
-	resp, err := http.Get(u)
-	if err != nil {
-		return storeGatewayCounts{Err: err.Error()}
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	res := storeGatewayCounts{Latency: time.Since(start)}
-	if err != nil {
-		res.Err = err.Error()
-		return res
-	}
-	if resp.StatusCode == http.StatusNotFound && bytes.Contains(body, []byte("404 page not found")) {
-		res.Err = "this Mimir build has no metric_name_counts route"
-		return res
-	}
-	if resp.StatusCode != http.StatusOK {
-		res.Err = strings.TrimSpace(string(body))
-		return res
-	}
 	var parsed struct {
 		Blocks        int `json:"blocks"`
 		StoreGateways int `json:"store_gateways"`
@@ -229,14 +237,68 @@ func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
 			Count int    `json:"count"`
 		} `json:"counts"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		res.Err = fmt.Sprintf("decoding response: %v", err)
+	res := storeGatewayCounts{}
+	if res.Latency, res.Err = m.getRoute("metric_name_counts", minT, maxT, nil, &parsed); res.Err != "" {
 		return res
 	}
 	res.Blocks, res.StoreGateways = parsed.Blocks, parsed.StoreGateways
 	res.Counts = make(map[string]int, len(parsed.Counts))
 	for _, c := range parsed.Counts {
 		res.Counts[c.Name] = c.Count
+	}
+	return res
+}
+
+// mimirSeriesCounts is one call to the series_counts route, which reads
+// series entries and chunk metas from the full index.
+type mimirSeriesCounts struct {
+	Err           string
+	Latency       time.Duration
+	Dedup         bool
+	LowerBound    bool
+	Blocks        int
+	StoreGateways int
+	SeriesCounted int
+	IndexBytes    int64 // series entries and postings decoded
+	BucketBytes   int64 // read from the bucket rather than a cache
+	Counts        map[string]int
+	Buckets       map[string][]int // only with a step
+}
+
+// seriesCounts asks Mimir for series counts over [minT, maxT). params may
+// set match[], group_by, step and budget.
+func (m *mimir) seriesCounts(minT, maxT int64, params url.Values) mimirSeriesCounts {
+	var parsed struct {
+		Dedup                bool  `json:"dedup"`
+		LowerBound           bool  `json:"lower_bound"`
+		Blocks               int   `json:"blocks"`
+		StoreGateways        int   `json:"store_gateways"`
+		SeriesCounted        int   `json:"series_counted"`
+		IndexBytes           int64 `json:"index_bytes"`
+		PostingsFetchedBytes int64 `json:"postings_fetched_bytes"`
+		SeriesFetchedBytes   int64 `json:"series_fetched_bytes"`
+		Counts               []struct {
+			Value  string `json:"value"`
+			Count  int    `json:"count"`
+			Counts []int  `json:"counts"`
+		} `json:"counts"`
+	}
+	res := mimirSeriesCounts{}
+	if res.Latency, res.Err = m.getRoute("series_counts", minT, maxT, params, &parsed); res.Err != "" {
+		return res
+	}
+	res.Dedup, res.LowerBound = parsed.Dedup, parsed.LowerBound
+	res.Blocks, res.StoreGateways, res.SeriesCounted = parsed.Blocks, parsed.StoreGateways, parsed.SeriesCounted
+	res.IndexBytes, res.BucketBytes = parsed.IndexBytes, parsed.PostingsFetchedBytes+parsed.SeriesFetchedBytes
+	res.Counts = make(map[string]int, len(parsed.Counts))
+	for _, c := range parsed.Counts {
+		res.Counts[c.Value] = c.Count
+		if c.Counts != nil {
+			if res.Buckets == nil {
+				res.Buckets = map[string][]int{}
+			}
+			res.Buckets[c.Value] = c.Counts
+		}
 	}
 	return res
 }
