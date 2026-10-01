@@ -441,6 +441,24 @@ func (u *BucketStores) MetricNameCounts(ctx context.Context, req *storegatewaypb
 	return store.MetricNameCounts(ctx, req)
 }
 
+// SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.SeriesCounts")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return nil, fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return &storegatewaypb.SeriesCountsResponse{}, nil
+	}
+
+	return store.SeriesCounts(ctx, req)
+}
+
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")

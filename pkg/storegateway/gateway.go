@@ -413,7 +413,6 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	return g.stores.LabelNames(ctx, req)
 }
 
-// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 // MetricNameCounts implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) MetricNameCounts(ctx context.Context, req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
 	ix := g.tracker.Insert(func() string {
@@ -424,6 +423,17 @@ func (g *StoreGateway) MetricNameCounts(ctx context.Context, req *storegatewaypb
 	return g.stores.MetricNameCounts(ctx, req)
 }
 
+// SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+	ix := g.tracker.Insert(func() string {
+		return fmt.Sprintf("StoreGateway/SeriesCounts: %d blocks, window [%d, %d)", len(req.BlockIds), req.MinTime, req.MaxTime)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SeriesCounts(ctx, req)
+}
+
+// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(ctx, "StoreGateway/LabelValues", req)
