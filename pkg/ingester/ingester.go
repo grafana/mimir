@@ -740,6 +740,17 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			defer shutdownCancel()
 
 			_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
+
+			// A service that fails or stops while starting never runs stopping(), which is what
+			// closes the TSDBs. The seriesstore engine keeps its head only through the snapshot it
+			// writes on close, so an ingester stopped while replaying Kafka would otherwise replay
+			// from the retention period again at its next start.
+			if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+				if i.ingestReader != nil {
+					_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
+				}
+				i.closeAllTSDB()
+			}
 		}
 	}()
 

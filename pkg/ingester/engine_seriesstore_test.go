@@ -4,18 +4,23 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kmsg"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // Without a WAL, a tenant the engine opens without a clean shutdown's snapshot lost its head: the
@@ -55,6 +60,41 @@ func TestIngester_SeriesstoreResetsKafkaOffsetsAfterUncleanShutdown(t *testing.T
 			}
 		})
 	}
+}
+
+// An ingester stopped while it replays Kafka at startup still closes its seriesstore TSDBs, so
+// the next start restores their heads instead of replaying the retention period.
+func TestIngester_SeriesstoreSnapshotsWhenStoppedWhileStarting(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
+	tenantDir := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	engine, err := store.OpenEngine(tenantDir, userID, store.EngineOptions{Shards: 2})
+	require.NoError(t, err)
+	app := engine.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings(labels.MetricName, "up"), 1000, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, engine.Close())
+
+	ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.NewOverrides(defaultLimitsTestConfig(), nil), nil, nil, nil)
+	// Fetches fail, so the ingester never finishes replaying its partition.
+	kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+		return nil, errors.New("mocked error"), true
+	})
+	require.NoError(t, ingester.StartAsync(context.Background()))
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		return ingester.State() == services.Starting && ingester.getTSDB(userID) != nil
+	})
+	ingester.StopAsync()
+	require.Error(t, ingester.AwaitTerminated(context.Background()), "it failed to start")
+
+	restored, err := store.OpenEngine(tenantDir, userID, store.EngineOptions{Shards: 2})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, restored.Close()) })
+	require.True(t, restored.Restored(), "closed while starting, the head was snapshotted again")
+	require.Equal(t, uint64(1), restored.NumSeries())
 }
 
 func TestValidateSeriesstoreEngine(t *testing.T) {
