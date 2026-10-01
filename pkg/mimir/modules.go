@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"path"
 	"slices"
 	"strconv"
 	"time"
@@ -742,9 +741,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		extractor,
 	)
 
-	// Experimental: per-name series counts from the store-gateways' index-headers.
+	// Experimental: series counts from the store-gateways' index-headers and full index.
 	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
-		internalQuerierRouter = querier.WithMetricNameCountsRoute(internalQuerierRouter, path.Join(t.Cfg.API.PrometheusHTTPPrefix, "/api/v1/cardinality/metric_name_counts"), bq)
+		internalQuerierRouter = querier.WithCardinalityCountsRoutes(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, bq)
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
