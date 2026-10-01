@@ -39,11 +39,11 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 	createWriteRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(now.UnixMilli(), 1), nil, makeExemplars([]string{"trace_id", "xxx"}, now.UnixMilli(), 1)),
-				makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(now.UnixMilli(), 2), nil, nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_3"}, makeSamples(now.UnixMilli(), 3), nil, nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_4"}, makeSamples(now.UnixMilli(), 4), nil, nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_5"}, makeSamples(now.UnixMilli(), 5), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(now.UnixMilli(), 0, 1), nil, makeExemplars([]string{"trace_id", "xxx"}, now.UnixMilli(), 1)),
+				makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(now.UnixMilli(), 0, 2), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_3"}, makeSamples(now.UnixMilli(), 0, 3), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_4"}, makeSamples(now.UnixMilli(), 0, 4), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_5"}, makeSamples(now.UnixMilli(), 0, 5), nil, nil),
 			},
 		}
 	}
@@ -290,9 +290,9 @@ func TestPrePushMaxSeriesLimitMiddleware_CombinesRejectedSamplesFromPreFilterAnd
 	// Create a write request with 3 series, each with 1 sample.
 	writeReq := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(now.UnixMilli(), 1), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(now.UnixMilli(), 2), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "series_3"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(now.UnixMilli(), 0, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(now.UnixMilli(), 0, 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_3"}, makeSamples(now.UnixMilli(), 0, 3), nil, nil),
 		},
 	}
 
@@ -381,7 +381,7 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 				}
 
 				for s := 0; s < numSeriesPerRequest; s++ {
-					req.Timeseries = append(req.Timeseries, makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}, makeSamples(now.UnixMilli(), float64(s)), nil, nil))
+					req.Timeseries = append(req.Timeseries, makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}, makeSamples(now.UnixMilli(), 0, float64(s)), nil, nil))
 				}
 
 				reqs = append(reqs, req)

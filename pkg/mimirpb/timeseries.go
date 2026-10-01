@@ -600,7 +600,6 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
 	// Copy scalar properties.
-	dstTs.CreatedTimestamp = srcTs.CreatedTimestamp
 	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
 
 	// Copy the samples.
@@ -748,6 +747,7 @@ func copyHistogram(src Histogram) Histogram {
 		ResetHint:      src.ResetHint,
 		Timestamp:      src.Timestamp,
 		CustomValues:   slices.Clone(src.CustomValues),
+		StartTimestamp: src.StartTimestamp,
 	}
 }
 

@@ -190,9 +190,9 @@ func TestPusherAppendable(t *testing.T) {
 				if sample.H() != nil || sample.FH() != nil {
 					_, err = a.AppendHistogram(0, lbls, sample.T(), sample.H(), sample.FH())
 					if sample.H() != nil {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sample.T(), sample.H()))
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sample.T(), 0, sample.H()))
 					} else {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sample.T(), sample.FH()))
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sample.T(), 0, sample.FH()))
 					}
 				} else {
 					_, err = a.Append(0, lbls, sample.T(), sample.F())

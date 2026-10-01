@@ -523,9 +523,6 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.CreatedTimestamp != that1.CreatedTimestamp {
-		return false
-	}
 	if len(this.Labels) != len(that1.Labels) {
 		return false
 	}
@@ -587,7 +584,7 @@ func SampleEqual(this *mimirpb.Sample, that interface{}) bool {
 	if !floatEqualsEquateNaN(this.Value, that1.Value) {
 		return false
 	}
-	return true
+	return this.StartTimestamp == that1.StartTimestamp
 }
 
 // ExemplarEqual is a copy of mimirpb.Exemplar.Equal but equates NaN values.
@@ -736,7 +733,7 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 			return false
 		}
 	}
-	return true
+	return this.StartTimestamp == that1.StartTimestamp
 }
 
 func floatEqualsEquateNaN(a, b float64) bool {
