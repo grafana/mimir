@@ -94,6 +94,11 @@ func BenchmarkQuery(b *testing.B) {
 	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(b, err)
 
+	// Used to report the peak memory consumption estimated by the Mimir engine's memory consumption tracker, which is
+	// what per-query memory limits are enforced against. Peak RSS can't show this, as it includes memory not tracked.
+	gatherer, ok := opts.CommonOpts.Reg.(prometheus.Gatherer)
+	require.True(b, ok, "expected the engine's registerer to also be a gatherer")
+
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
 		"Prometheus": prometheusEngine,
@@ -123,6 +128,8 @@ func BenchmarkQuery(b *testing.B) {
 
 			for name, engine := range engines {
 				b.Run("engine="+name, func(b *testing.B) {
+					sumBefore, countBefore := estimatedPeakMemoryConsumption(b, gatherer)
+
 					for i := 0; i < b.N; i++ {
 						res, cleanup := c.Run(ctx, b, start, end, interval, engine, q)
 
@@ -130,10 +137,33 @@ func BenchmarkQuery(b *testing.B) {
 							cleanup()
 						}
 					}
+
+					if name == "Mimir" {
+						sum, count := estimatedPeakMemoryConsumption(b, gatherer)
+						if count > countBefore {
+							b.ReportMetric((sum-sumBefore)/float64(count-countBefore), "estimated-peak-B/op")
+						}
+					}
 				})
 			}
 		})
 	}
+}
+
+// estimatedPeakMemoryConsumption returns the sum and count of the peak memory consumption estimates of all queries
+// the Mimir engine has run so far.
+func estimatedPeakMemoryConsumption(t testing.TB, gatherer prometheus.Gatherer) (float64, uint64) {
+	families, err := gatherer.Gather()
+	require.NoError(t, err)
+
+	for _, family := range families {
+		if family.GetName() == "cortex_mimir_query_engine_estimated_query_peak_memory_consumption" {
+			histogram := family.GetMetric()[0].GetHistogram()
+			return histogram.GetSampleSum(), histogram.GetSampleCount()
+		}
+	}
+
+	return 0, 0
 }
 
 func BenchmarkRangeVectorQueryCase(b *testing.B) {
