@@ -29,7 +29,7 @@ func main() {
 	snapshots := flag.String("snapshots", "", "directory holding the l1, handover and compacted snapshots from tools/headcount/fixtures")
 	profile := flag.String("profile", "small", fmt.Sprintf("with -snapshots: the profile the snapshots were built from, one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "with -snapshots: the seed the snapshots were built with")
-	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e9, e10, e13, names and all")
+	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e8, e9, e10, e13, names and all")
 	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
 	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
 	flag.Parse()
@@ -166,6 +166,23 @@ func runSnapshots(dir string, pop *model.Model, experiments []string, out string
 					r.CheckedCount, r.Truth, r.TruthWidened, r.CheckedSeries, r.CheckedTime.Round(time.Millisecond))
 				pass = pass && r.Pass()
 			}
+		case "e8":
+			results, err := runE8(compacted, pop)
+			if err != nil {
+				log.Fatalf("E8: %v", err)
+			}
+			for _, r := range results {
+				what := "tenant"
+				if r.Metric != "" {
+					what = shortName(r.Metric)
+				}
+				fmt.Printf("%s E8 %s %s..%s per %s: %d series read, %s\n", status(r.Pass()), what,
+					rfc3339(r.Range.MinT), rfc3339(r.Range.MaxT), r.Step, r.SeriesRead, r.Elapsed.Round(time.Millisecond))
+				for i, s := range r.Starts {
+					fmt.Printf("  %s count=%-8d truth=%d\n", time.UnixMilli(s).UTC().Format("15:04"), r.Counts[i], r.Truth[i])
+				}
+				pass = pass && r.Pass()
+			}
 		case "e13":
 			for _, snap := range []string{l1, compacted} {
 				tables, err := cardpoc.MeasureNameTables(snap)
@@ -261,6 +278,42 @@ func runE10(compacted string, pop *model.Model, budget int) (cardpoc.E10Result, 
 		}
 	}
 	return cardpoc.E10Result{}, fmt.Errorf("no block range holds the spike day start")
+}
+
+// runE8 counts the spike day's block range per hour, for the spike metric
+// and for the whole tenant.
+func runE8(compacted string, pop *model.Model) ([]cardpoc.E8Result, error) {
+	cfg := pop.Config()
+	spikeStart := cfg.Start.Add(time.Duration(cfg.SpikeDay) * 24 * time.Hour).UnixMilli()
+	ranges, err := cardpoc.BlockRanges(compacted)
+	if err != nil {
+		return nil, err
+	}
+	var day cardpoc.BlockRange
+	for _, r := range ranges {
+		if r.MinT <= spikeStart && spikeStart < r.MaxT {
+			day = r
+		}
+	}
+	var metric string
+	if cfg.SpikeMetric >= 0 {
+		prefix := fmt.Sprintf("metric_%06d_", cfg.SpikeMetric)
+		for _, s := range pop.Series {
+			if name := s.Labels.Get("__name__"); strings.HasPrefix(name, prefix) {
+				metric = name
+				break
+			}
+		}
+	}
+	var out []cardpoc.E8Result
+	for _, m := range []string{metric, ""} {
+		r, err := cardpoc.RunE8(compacted, pop, day, time.Hour, m)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // runE7 counts three unaligned windows on the second day and on the
