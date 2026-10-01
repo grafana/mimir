@@ -3,6 +3,7 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -319,13 +320,29 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 // Go's head truncation after compacting them into a block. Their open chunks are cut first, so
 // the block has all their data; they stay in memory if the block can't be written.
 func freezeOutOfHead(state *shardState) {
-	started := time.Now()
-	type frozenKey struct {
-		tenant string
-		labels labels.Labels
+	if pending := prepareFreeze(state); pending != nil {
+		installFreeze(state, pending, pending.build(state.cold.directory))
 	}
-	var frozen []frozenSeries
-	frozenKeys := map[frozenKey]struct{}{}
+}
+
+type frozenKey struct {
+	tenant string
+	labels labels.Labels
+}
+
+// pendingFreeze is a cold block of the series that left the head, from what they held when it
+// was prepared.
+type pendingFreeze struct {
+	id      uint64
+	frozen  []frozenSeries
+	keys    map[frozenKey]chunkList
+	started time.Time
+}
+
+// prepareFreeze cuts the open chunks of the series out of the head and takes their data for a
+// cold block, or returns nil when there are none. With the shard locked.
+func prepareFreeze(state *shardState) *pendingFreeze {
+	pending := &pendingFreeze{keys: map[frozenKey]chunkList{}, started: time.Now()}
 	for tenantID, t := range state.tenants {
 		t.series.forEach(func(entry *seriesEntry) {
 			series := &entry.series
@@ -343,25 +360,62 @@ func freezeOutOfHead(state *shardState) {
 				fmt.Fprintf(os.Stderr, "phase=cold_freeze_error tenant=%s error=%v\n", tenantID, err)
 				return
 			}
-			frozenKeys[frozenKey{tenantID, entry.labels}] = struct{}{}
+			// A copy: the series may take samples again before the block is installed.
+			chunks := slices.Clone(series.chunks)
+			pending.keys[frozenKey{tenantID, entry.labels}] = chunks
 			// Series without any sample have nothing to keep.
-			if !series.chunks.isEmpty() {
-				frozen = append(frozen, frozenSeries{tenant: tenantID, labels: entry.labels, chunks: series.chunks, nativeHistogram: series.nativeHistogram})
+			if !chunks.isEmpty() {
+				pending.frozen = append(pending.frozen, frozenSeries{tenant: tenantID, labels: entry.labels, chunks: chunks, nativeHistogram: series.nativeHistogram})
 			}
 		})
 	}
-	if len(frozenKeys) == 0 {
+	if len(pending.keys) == 0 {
+		return nil
+	}
+	pending.id = state.cold.nextID
+	state.cold.nextID++
+	return pending
+}
+
+// build writes the block, which needs no shard lock: it only reads the series' copies and the
+// chunk files' immutable chunks. A nil block is one with no series to keep.
+func (p *pendingFreeze) build(directory string) *coldBlock {
+	if len(p.frozen) == 0 {
+		return nil
+	}
+	block, err := buildColdBlock(directory, p.id, p.frozen)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "phase=cold_block_error id=%d error=%v\n", p.id, err)
+		p.keys = nil
+	}
+	return block
+}
+
+// installFreeze adds the block and drops its series from memory, with the shard locked. If any
+// of them took samples since it was prepared, the block is discarded and they all stay in
+// memory, for the next freeze: the block would miss the new samples.
+func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) {
+	if pending.keys == nil {
 		return
 	}
-	count := len(frozenKeys)
-	id := state.cold.nextID
-	if len(frozen) > 0 {
-		block, err := buildColdBlock(state.cold.directory, id, frozen)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "phase=cold_block_error id=%d error=%v\n", id, err)
-			return
+	unchanged := 0
+	for tenantID, t := range state.tenants {
+		t.series.forEach(func(entry *seriesEntry) {
+			series := &entry.series
+			chunks, ok := pending.keys[frozenKey{tenantID, entry.labels}]
+			if ok && !series.inHead && series.floatHead == nil && series.histogramHead == nil && len(series.outOfOrder) == 0 && bytes.Equal(series.chunks, chunks) {
+				unchanged++
+			}
+		})
+	}
+	if unchanged != len(pending.keys) {
+		fmt.Fprintf(os.Stderr, "phase=cold_block_discarded id=%d series=%d changed=%d\n", pending.id, len(pending.keys), len(pending.keys)-unchanged)
+		if block != nil {
+			discardColdBlock(block)
 		}
-		state.cold.nextID++
+		return
+	}
+	if block != nil {
 		state.cold.blocks = append(state.cold.blocks, block)
 	}
 	for tenantID, t := range state.tenants {
@@ -369,11 +423,11 @@ func freezeOutOfHead(state *shardState) {
 			if entry.series.inHead {
 				return true
 			}
-			_, gone := frozenKeys[frozenKey{tenantID, entry.labels}]
+			_, gone := pending.keys[frozenKey{tenantID, entry.labels}]
 			return !gone
 		})
 	}
-	fmt.Fprintf(os.Stderr, "phase=cold_block_written id=%d series=%d duration_ms=%d\n", id, count, time.Since(started).Milliseconds())
+	fmt.Fprintf(os.Stderr, "phase=cold_block_written id=%d series=%d duration_ms=%d\n", pending.id, len(pending.keys), time.Since(pending.started).Milliseconds())
 }
 
 // ActiveSeriesReport returns the active series counts per tenant for the ingester's metrics,

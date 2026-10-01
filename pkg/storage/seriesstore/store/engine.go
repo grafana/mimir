@@ -660,13 +660,27 @@ func (e *Engine) headGC() {
 	}
 }
 
+// freezeUnlockedHook runs while a freeze writes its block, for tests.
+var freezeUnlockedHook func()
+
 // freezeLeaving moves the tenant's series leaving to a cold block, with the shard locked, and
-// records the ones that left in deleted.
+// records the ones that left in deleted. The shard is unlocked while the block is written, so
+// queries and appends don't wait on it; the compaction lock keeps other freezes out.
 func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]labels.Labels, deleted map[tsdbchunks.HeadSeriesRef]promlabels.Labels, builder *promlabels.ScratchBuilder) {
 	if len(leaving) == 0 {
 		return
 	}
-	freezeOutOfHead(shard)
+	pending := prepareFreeze(shard)
+	if pending == nil {
+		return
+	}
+	shard.Unlock()
+	if freezeUnlockedHook != nil {
+		freezeUnlockedHook()
+	}
+	block := pending.build(shard.cold.directory)
+	shard.Lock()
+	installFreeze(shard, pending, block)
 	for ref, stored := range leaving {
 		if _, still := e.lookupLocked(t, ref); still {
 			continue
