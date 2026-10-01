@@ -98,17 +98,32 @@ type Labels string
 
 // FromSorted encodes pairs, which must be sorted by name without duplicate names.
 func FromSorted(pairs [][2]string) Labels {
+	// The exact size: the labels live as long as their series, and room for the longest varints
+	// cost them about 8 bytes a pair.
+	var stack [32]uint32
+	ids := stack[:0]
 	size := 0
 	for _, pair := range pairs {
-		size += 2*binary.MaxVarintLen32 + len(pair[1])
+		id := Intern(pair[0])
+		ids = append(ids, id)
+		size += varintSize(uint64(id)) + varintSize(uint64(len(pair[1]))) + len(pair[1])
 	}
 	bytes := make([]byte, 0, size)
-	for _, pair := range pairs {
-		bytes = PutVarint(bytes, uint64(Intern(pair[0])))
+	for index, pair := range pairs {
+		bytes = PutVarint(bytes, uint64(ids[index]))
 		bytes = PutVarint(bytes, uint64(len(pair[1])))
 		bytes = append(bytes, pair[1]...)
 	}
 	return Labels(unsafe.String(unsafe.SliceData(bytes), len(bytes)))
+}
+
+func varintSize(value uint64) int {
+	size := 1
+	for value >= 0x80 {
+		value >>= 7
+		size++
+	}
+	return size
 }
 
 // FromStrings encodes alternating names and values, which must be sorted by name.

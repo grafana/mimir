@@ -231,3 +231,21 @@ func TestSharedPairsStopsBeforeTheFirstDifferentPair(t *testing.T) {
 	_, equal = SharedPairs(a, FromStrings("__name__", "metric", "job", long, "pod", "a"))
 	require.True(t, equal)
 }
+
+// Labels keep their allocation as long as their series: it holds their encoding and no more.
+func TestFromSortedAllocatesTheEncodedSize(t *testing.T) {
+	pairs := [][2]string{{"__name__", "http_requests_total"}, {"cluster", "prod-us"}, {"job", "api"}, {"pod", "api-7-abcde"}}
+	encoded := FromSorted(pairs)
+	// Ids take one or two varint bytes, by when other tests interned their names.
+	size := int64(len(encoded))
+	result := testing.Benchmark(func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			encoded = FromSorted(pairs)
+		}
+	})
+	require.Equal(t, int64(1), result.AllocsPerOp())
+	// Rounded up to its size class, 16 bytes apart at these sizes, but no room for longer varints.
+	require.Less(t, result.AllocedBytesPerOp(), size+16)
+	require.Equal(t, [][2]string{{"__name__", "http_requests_total"}, {"cluster", "prod-us"}, {"job", "api"}, {"pod", "api-7-abcde"}}, encoded.Pairs())
+}
