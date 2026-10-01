@@ -203,12 +203,7 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 		}
 		out.ElapsedMS = float64(indexElapsed.Microseconds()) / 1000
 		if r.FormValue("compare") == "true" {
-			check, err := compareWithChunks(r.Context(), q, req, res)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("chunks path: %v", err), http.StatusInternalServerError)
-				return
-			}
-			out.Compare = check
+			out.Compare = compareWithChunks(r.Context(), q, req, res)
 		}
 		slices.SortFunc(out.Counts, func(a, b seriesCountGroup) int {
 			if a.Count != b.Count {
@@ -229,17 +224,20 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 	})
 }
 
-func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesCountsRequest, res SeriesCountsResult) (*seriesCountsCheck, error) {
+// compareWithChunks reports a chunks-path failure, such as a query limit,
+// in Skipped rather than failing the request, since that is a result too.
+func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesCountsRequest, res SeriesCountsResult) *seriesCountsCheck {
 	if res.LowerBound {
 		// A partial answer can't be compared with a full one.
-		return &seriesCountsCheck{Skipped: "the index path stopped at the budget"}, nil
+		return &seriesCountsCheck{Skipped: "the index path stopped at the budget"}
 	}
 	start := time.Now()
 	chunks, cost, err := q.SeriesCountsFromChunks(ctx, req)
-	if err != nil {
-		return nil, err
-	}
 	check := &seriesCountsCheck{ElapsedMS: float64(time.Since(start).Microseconds()) / 1000, Cost: cost}
+	if err != nil {
+		check.Skipped = "chunks path failed: " + err.Error()
+		return check
+	}
 	check.Examples, check.MismatchedGroups = countsDiff(res.Counts, chunks, 5)
 	check.Match = check.MismatchedGroups == 0
 	if q.metrics != nil {
@@ -250,7 +248,7 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesC
 		}
 		q.metrics.seriesCountsCompared.WithLabelValues(result).Inc()
 	}
-	return check, nil
+	return check
 }
 
 func parseSeriesCountsRequest(r *http.Request) (SeriesCountsRequest, int, error) {
