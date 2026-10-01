@@ -596,8 +596,14 @@ func (e *Engine) headGC() {
 	actualMint, minOOOTime := int64(math.MaxInt64), int64(math.MaxInt64)
 	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
 	var builder promlabels.ScratchBuilder
-	for index, shard := range e.store.shards {
+	// Against the order queries read the shards in: a query meets the collection at one shard,
+	// rather than reaching each next shard just after it was locked and waiting on all of them.
+	for index := len(e.store.shards) - 1; index >= 0; index-- {
+		shard := e.store.shards[index]
 		shard.Lock()
+		if headGCShardHook != nil {
+			headGCShardHook(index)
+		}
 		t, ok := shard.tenants[e.tenantID]
 		if !ok {
 			shard.Unlock()
@@ -662,6 +668,9 @@ func (e *Engine) headGC() {
 
 // freezeUnlockedHook runs while a freeze writes its block, for tests.
 var freezeUnlockedHook func()
+
+// headGCShardHook runs as the head's garbage collection locks each shard, for tests.
+var headGCShardHook func(shard int)
 
 // freezeLeaving moves the tenant's series leaving to a cold block, with the shard locked, and
 // records the ones that left in deleted. The shard is unlocked while the block is written, so
