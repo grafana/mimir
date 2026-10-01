@@ -2310,6 +2310,7 @@ rules:
 			newAPIRouter(a).ServeHTTP(w, req)
 
 			require.Equal(t, statusClientClosedRequest, w.Code)
+			require.JSONEq(t, `{"status":"error","data":null,"errorType":"canceled","error":"context canceled"}`, w.Body.String())
 		})
 	}
 }
@@ -2332,36 +2333,43 @@ type contextAwareRuleStore struct {
 	*mockRuleStore
 }
 
-func (s *contextAwareRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (s *contextAwareRuleStore) contextErr(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("object store request failed: %w", err)
+	}
+	return nil
+}
+
+func (s *contextAwareRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+	if err := s.contextErr(ctx); err != nil {
 		return nil, err
 	}
 	return s.mockRuleStore.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, opts...)
 }
 
 func (s *contextAwareRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error) {
-	if err := ctx.Err(); err != nil {
+	if err := s.contextErr(ctx); err != nil {
 		return nil, err
 	}
 	return s.mockRuleStore.GetRuleGroup(ctx, userID, namespace, group)
 }
 
 func (s *contextAwareRuleStore) SetRuleGroup(ctx context.Context, userID, namespace string, group *rulespb.RuleGroupDesc) error {
-	if err := ctx.Err(); err != nil {
+	if err := s.contextErr(ctx); err != nil {
 		return err
 	}
 	return s.mockRuleStore.SetRuleGroup(ctx, userID, namespace, group)
 }
 
 func (s *contextAwareRuleStore) DeleteRuleGroup(ctx context.Context, userID, namespace, group string) error {
-	if err := ctx.Err(); err != nil {
+	if err := s.contextErr(ctx); err != nil {
 		return err
 	}
 	return s.mockRuleStore.DeleteRuleGroup(ctx, userID, namespace, group)
 }
 
 func (s *contextAwareRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string) error {
-	if err := ctx.Err(); err != nil {
+	if err := s.contextErr(ctx); err != nil {
 		return err
 	}
 	return s.mockRuleStore.DeleteNamespace(ctx, userID, namespace)
