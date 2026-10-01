@@ -77,9 +77,10 @@
   <span class="sub" id="sub">how many series, straight from the index</span>
 </header>
 <div class="controls">
+  <label>Preset <select id="preset"></select></label>
   <label>Start <input id="start" type="datetime-local" step="3600"></label>
   <label>End <input id="end" type="datetime-local" step="3600"></label>
-  <label>Preset <select id="preset"></select></label>
+  <label>Step <select id="step"><option value="">auto</option><option value="3600">1h</option><option value="10800">3h</option><option value="21600">6h</option><option value="86400">1d</option></select></label>
   <label>Budget and series limit <input id="budget" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
   <button id="run">Run</button>
   <span id="status" class="muted"></span>
@@ -129,7 +130,7 @@
   </section>
   <section style="grid-column: 1 / -1">
     <div class="ph"><h2 id="hr-title">5. When did it start?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> within the window, when did the selected metric start growing? Buckets are hours for a window of a day or less, days otherwise.</p><p><b>In Mimir</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in a bucket if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with the same step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
+    <div class="info" hidden><p><b>Question:</b> within the window, when did the selected metric start growing? The window is cut into buckets of the Step: auto picks hours for a window of a day or less and days otherwise. This is the API's <code>step</code>, and matches a PromQL range query whose step equals its range selector.</p><p><b>In Mimir</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in a bucket if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with the same step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div><svg id="hr-chart" viewBox="0 0 720 220" style="width:100%;height:auto" role="img" aria-label="Series per bucket"></svg><p id="hr-note" class="muted"></p></div>
       <div>
@@ -154,6 +155,7 @@ const fromInput = v => Math.round(Date.parse(v + ":00Z") / 1000);
 const label = s => new Date(s * 1000).toISOString().slice(0, 16).replace("T", " ");
 const span = w => `${label(w.start)} to ${label(w.end)}`;
 const win = () => `start=${fromInput($("start").value)}&end=${fromInput($("end").value)}`;
+const stepParam = () => $("step").value ? `&step=${$("step").value}` : "";
 
 async function get(path) {
   const r = await fetch(path);
@@ -289,9 +291,10 @@ async function runWindow() {
 
 async function runBuckets(name) {
   const m = encodeURIComponent(name);
-  const [h, q] = await Promise.all([get(`api/buckets?${win()}&metric=${m}`), get(`api/promql/buckets?${win()}&metric=${m}`)]);
-  const hourly = h.step_s === H;
-  $("hr-title").textContent = `5. When did it start? ${short(name)} per ${hourly ? "hour" : "day"}`;
+  const [h, q] = await Promise.all([get(`api/buckets?${win()}${stepParam()}&metric=${m}`), get(`api/promql/buckets?${win()}${stepParam()}&metric=${m}`)]);
+  const hourly = h.step_s < 24 * H;
+  const stepName = h.step_s % (24 * H) === 0 ? `${h.step_s / (24 * H)}d` : `${h.step_s / H}h`;
+  $("hr-title").textContent = `5. When did it start? ${short(name)} per ${stepName}`;
   const W = 720, Ht = 220, L = 56, B = 24, n = h.counts.length, max = Math.max(...h.counts, ...q.counts, 1);
   const bw = (W - L - 8) / n, y = v => Ht - B - (Ht - B - 10) * v / max;
   const tick = s => hourly ? label(s).slice(11) : label(s).slice(5, 10);
@@ -310,7 +313,7 @@ async function runBuckets(name) {
   for (let i = 1; i < n; i++) if (h.counts[i] > 2 * h.counts[i - 1] && first < 0) first = i;
   $("hr-note").textContent = `Bars: Headcount in Mimir; dots: the baseline. ${h.exact ? "Every bucket equals the truth." : "Some buckets differ from the truth."}` +
     (first >= 0 ? ` The count jumps at ${label(h.starts[first] / 1000)}, from ${fmt(h.counts[first - 1])} to ${fmt(h.counts[first])}.` : "");
-  $("hr-q").textContent = q.query + `\nstep ${hourly ? "1h" : "1d"}, each step at the bucket's end minus 1 ms`;
+  $("hr-q").textContent = q.query + `\nstep ${stepName}, each step at the bucket's end minus 1 ms`;
   kv($("hr-today"), q.error ? [["result", briefError(q.error), "err"]] : [["latency", secs(q.latency_ms)], ["series fetched", fmt(q.fetched_series_count)], ["chunks read", bytes(q.fetched_chunk_bytes)], ["same buckets as Headcount", same ? "yes" : "no", same ? "ok" : "err"]]);
   kv($("hr-hc"), mimirPairs(h.read, [["equal to truth", h.exact ? "every bucket" : "no", h.exact ? "ok" : "err"]]));
 }
@@ -359,6 +362,7 @@ for (const b of document.querySelectorAll(".info-btn")) {
   };
 }
 $("run").onclick = run;
+$("step").onchange = () => { if (selected) runBuckets(selected).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; }); };
 init().then(run).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; });
 </script>
 </body>

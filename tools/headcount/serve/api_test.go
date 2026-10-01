@@ -225,6 +225,22 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 		assert.True(t, many.Exact)
 	})
 
+	t.Run("an explicit step", func(t *testing.T) {
+		var out struct {
+			Counts []int `json:"counts"`
+			StepS  int64 `json:"step_s"`
+			Exact  bool  `json:"exact"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/buckets?start=%d&end=%d&step=3600&metric=%s", at(0), at(2), metric), &out))
+		assert.Equal(t, int64(3600), out.StepS)
+		assert.Len(t, out.Counts, 2)
+		assert.True(t, out.Exact)
+		for _, bad := range []string{"0", "60", "7200x"} {
+			assert.Equal(t, http.StatusBadRequest, getJSON(t, s, fmt.Sprintf("/api/buckets?start=%d&end=%d&step=%s&metric=%s", at(0), at(3), bad, metric), &out), bad)
+		}
+		assert.Equal(t, http.StatusBadRequest, getJSON(t, s, fmt.Sprintf("/api/buckets?start=%d&end=%d&step=7200&metric=%s", at(0), at(3), metric), &out), "2h doesn't divide 3h")
+	})
+
 	t.Run("a Mimir without the routes", func(t *testing.T) {
 		s.mimir.baseURL += "/missing"
 		var out struct{}
