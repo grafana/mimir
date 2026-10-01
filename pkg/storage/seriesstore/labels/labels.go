@@ -192,14 +192,30 @@ func (l Labels) Get(name string) string {
 
 // ValueOf returns the value of the label with name id, empty when absent.
 func (l Labels) ValueOf(id uint32) string {
-	rest := string(l)
-	for len(rest) > 0 {
-		name := takeVarintString(&rest)
-		size := takeVarintString(&rest)
-		if uint32(name) == id {
-			return rest[:size]
+	// Walks by index rather than through takeVarintString: this runs for every candidate series of
+	// every query, and almost every name id and value length fits in one varint byte.
+	s := string(l)
+	for i := 0; i < len(s); {
+		var name uint64
+		if c := s[i]; c < 0x80 {
+			name, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			name = takeVarintString(&rest)
+			i = len(s) - len(rest)
 		}
-		rest = rest[size:]
+		var size uint64
+		if c := s[i]; c < 0x80 {
+			size, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			size = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		if uint32(name) == id {
+			return s[i : i+int(size)]
+		}
+		i += int(size)
 	}
 	return ""
 }
