@@ -7,6 +7,7 @@ syntax = "proto3";
 package gatewaypb;
 
 import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
+import "types.proto";
 
 option go_package = "storegatewaypb";
 
@@ -36,6 +37,11 @@ service StoreGateway {
   // index-headers. Experimental: the caller is responsible for asking only for blocks that share no series.
   rpc MetricNameCounts(MetricNameCountsRequest) returns (MetricNameCountsResponse);
 
+  // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
+  // grouped by one label. Unlike MetricNameCounts it reads series entries from the full index, so it can filter by
+  // matchers and by chunk times. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (SeriesCountsResponse);
+
   // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
 }
 
@@ -54,4 +60,42 @@ message MetricNameCountsResponse {
   repeated MetricNameCount counts = 1;
   // Blocks that were counted.
   repeated string block_ids = 2;
+}
+
+message SeriesCountsRequest {
+  // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
+  repeated string block_ids = 1;
+  // Series to count. Empty means every series.
+  repeated thanos.LabelMatcher matchers = 2;
+  // Window in milliseconds, [min_time, max_time). A series counts if one of its chunks overlaps the window.
+  int64 min_time = 3;
+  int64 max_time = 4;
+  // If set, the window is cut into buckets of this width and each group gets one count per bucket.
+  int64 step_ms = 5;
+  // Label to group by. Empty means __name__.
+  string group_by = 6;
+  // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them
+  // across blocks that share series. Not allowed with step_ms.
+  bool hashes = 7;
+  // Stop after this many series and mark the response as a lower bound. 0 means no limit.
+  int64 max_series = 8;
+}
+
+message SeriesCountGroup {
+  string value = 1;
+  // One count per bucket, or a single count when there is no step.
+  repeated int64 counts = 2;
+  repeated uint64 hashes = 3;
+}
+
+message SeriesCountsResponse {
+  repeated SeriesCountGroup groups = 1;
+  // Blocks that were fully counted.
+  repeated string block_ids = 2;
+  // Set when max_series was reached. Counts are then at or below the real ones.
+  bool lower_bound = 3;
+  int64 series_counted = 4;
+  // Bytes of postings and series entries read from the bucket, not from a cache.
+  int64 postings_fetched_bytes = 5;
+  int64 series_fetched_bytes = 6;
 }
