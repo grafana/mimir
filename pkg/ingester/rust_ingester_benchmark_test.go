@@ -307,19 +307,7 @@ func benchmarkLabelValuesCardinality(b *testing.B, api client.IngesterClient, ta
 	b.ReportMetric(float64(responseBytes)/float64(b.N), "response-B/op")
 }
 
-// shadowIngester is the implementation the Rust ingester tests run: "rust", or "go" for its Go
-// port, which takes the same flags and serves the same APIs.
-func shadowIngester() string {
-	if implementation := os.Getenv("MIMIR_SHADOW_INGESTER"); implementation != "" {
-		return implementation
-	}
-	return "rust"
-}
-
-func shadowIngesterBinary() (string, error) {
-	if shadowIngester() == "go" {
-		return filepath.Abs("../../cmd/go-kafka-ingester/go-kafka-ingester")
-	}
+func rustIngesterBinary() (string, error) {
 	return filepath.Abs("../../cmd/rust-kafka-ingester/target/release/mimir-rust-kafka-ingester")
 }
 
@@ -327,20 +315,12 @@ func buildRustIngester(tb testing.TB) {
 	tb.Helper()
 	buildRustIngesterOnce.Do(func() {
 		command := exec.Command("cargo", "build", "--offline", "--release", "--manifest-path", "../../cmd/rust-kafka-ingester/Cargo.toml")
-		if shadowIngester() == "go" {
-			binary, err := shadowIngesterBinary()
-			if err != nil {
-				buildRustIngesterErr = err
-				return
-			}
-			command = exec.Command("go", "build", "-o", binary, "../../cmd/go-kafka-ingester")
-		}
 		command.Dir = "."
 		var output bytes.Buffer
 		command.Stdout = &output
 		command.Stderr = &output
 		if err := command.Run(); err != nil {
-			buildRustIngesterErr = fmt.Errorf("build %s ingester: %w\n%s", shadowIngester(), err, output.String())
+			buildRustIngesterErr = fmt.Errorf("build Rust ingester: %w\n%s", err, output.String())
 		}
 	})
 	require.NoError(tb, buildRustIngesterErr)
@@ -372,7 +352,7 @@ func startRustIngesterAndWaitObserved(
 	address := listener.Addr().String()
 	require.NoError(tb, listener.Close())
 
-	binary, err := shadowIngesterBinary()
+	binary, err := rustIngesterBinary()
 	require.NoError(tb, err)
 	var stderr bytes.Buffer
 	args := []string{

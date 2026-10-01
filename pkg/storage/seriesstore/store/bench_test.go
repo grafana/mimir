@@ -7,8 +7,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
-	"github.com/grafana/mimir/pkg/storage/seriesstore/segment"
 )
 
 // The Rust ingester's store benches are programs printing one line per case (`cargo bench --bench
@@ -441,99 +438,6 @@ const (
 	scrapeMs              = int64(15_000)
 )
 
-func steadySeriesLabels(id int) []mimirpb.LabelAdapter {
-	labels := []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", id%400)}}
-	for label := 1; label < steadyLabels; label++ {
-		var value string
-		switch label {
-		case 1:
-			value = fmt.Sprintf("pod-%d", id/400%2_000)
-		case 2:
-			value = fmt.Sprintf("namespace-%d", id%30)
-		case 3:
-			value = "cluster-a"
-		default:
-			value = fmt.Sprintf("value_%d_%d", label, id%(label*7+3))
-		}
-		labels = append(labels, mimirpb.LabelAdapter{Name: fmt.Sprintf("label_%02d", label), Value: value})
-	}
-	return labels
-}
-
-// steadyRecords returns one Kafka record value per group of series, for the scrape at timestampMs.
-func steadyRecords(from, to int, timestampMs int64) [][]byte {
-	var records [][]byte
-	for first := from; first < to; first += steadySeriesPerRecord {
-		request := mimirpb.WriteRequest{}
-		for id := first; id < min(first+steadySeriesPerRecord, to); id++ {
-			request.Timeseries = append(request.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  steadySeriesLabels(id),
-				Samples: []mimirpb.Sample{{TimestampMs: timestampMs, Value: float64(timestampMs/scrapeMs) * float64(id)}},
-			}})
-		}
-		encoded, err := request.Marshal()
-		if err != nil {
-			panic(err)
-		}
-		records = append(records, encoded)
-	}
-	return records
-}
-
-type steadyPhases struct {
-	decode, keys, encode, apply, write time.Duration
-}
-
-// steadyIngest is like the Kafka consumer: records are decoded and their series keys hashed first,
-// then encoded for the segment log in order, applied, and written.
-func steadyIngest(t testing.TB, s *Store, log *segment.Log, records [][]byte, batch int, offset *int64, phases *steadyPhases) {
-	for first := 0; first < len(records); first += batch {
-		group := records[first:min(first+batch, len(records))]
-		now := nowMs()
-		require.NoError(t, log.BeginBatch(now))
-		frames := make([]*segment.CompressedFrame, 0, len(group))
-		prepared := make([]IngestRecord, 0, len(group))
-		for _, bytes := range group {
-			*offset++
-			started := time.Now()
-			// Like a fetched Kafka record, whose payload the decoded labels share.
-			request, spans, err := record.DecodeRecordWithLabelSpans(1, bytes)
-			require.NoError(t, err)
-			hashes := SeriesHashes(&request)
-			decoded := time.Now()
-			keys := segment.SeriesKeysWithLabelBytes("tenant", &request, bytes, spans)
-			hashed := time.Now()
-			frame, err := log.Encode(*offset, 0, now, "tenant", &request, keys)
-			require.NoError(t, err)
-			frames = append(frames, frame)
-			phases.decode += decoded.Sub(started)
-			phases.keys += hashed.Sub(decoded)
-			phases.encode += time.Since(hashed)
-			prepared = append(prepared, IngestRecord{Tenant: "tenant", Request: request, IngestedMs: now, TrackRate: true, Bytes: len(bytes), SeriesHashes: hashes})
-		}
-		started := time.Now()
-		_, err := s.IngestFlushes(prepared)
-		require.NoError(t, err)
-		applied := time.Now()
-		for _, frame := range frames {
-			require.NoError(t, log.AppendCompressed(frame))
-		}
-		phases.apply += applied.Sub(started)
-		phases.write += time.Since(applied)
-	}
-}
-
-func directoryBytes(directory string) int64 {
-	var total int64
-	_ = filepath.Walk(directory, func(_ string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
-			total += info.Size()
-		}
-		return nil
-	})
-	return total
-}
-
 func envInt(name string, fallback int) int {
 	if value, err := strconv.Atoi(os.Getenv(name)); err == nil {
 		return value
@@ -541,148 +445,5 @@ func envInt(name string, fallback int) int {
 	return fallback
 }
 
-// TestSteadyIngestBench is the Rust steady_ingest bench: CPU per sample on the steady-state Kafka
-// path, small records for series the store already has, decoded, logged to the segment log and
-// applied in small batches, like a caught-up pod.
-func TestSteadyIngestBench(t *testing.T) {
-	requireBench(t)
-	series := envInt("STEADY_SERIES", 200_000)
-	rounds := envInt("STEADY_ROUNDS", 4)
-	threads := runtime.GOMAXPROCS(0)
-	start := nowMs() - int64(rounds+2)*scrapeMs
-	for _, batch := range []int{1, 8} {
-		directory := t.TempDir()
-		s, err := NewWithShards(20*60*1000, Retention{}, directory, 16, threads)
-		require.NoError(t, err)
-		log, _, err := segment.Open(filepath.Join(directory, "segments"), 0, "bench", 0, segment.Retention{})
-		require.NoError(t, err)
-		var offset int64
-		// Creating the series, like a replay: every sample is a new series, in full batches.
-		first := steadyRecords(0, series, start)
-		var creation steadyPhases
-		user, system := cpuSeconds()
-		wallStart := time.Now()
-		steadyIngest(t, s, log, first, 64, &offset, &creation)
-		userEnd, systemEnd := cpuSeconds()
-		perSeries := func(duration time.Duration) float64 { return float64(duration.Nanoseconds()) / float64(series) }
-		cpu := (userEnd - user) + (systemEnd - system)
-		fmt.Printf("create (64-record batches): %.0f ns CPU/series, %.2f cores; wall: decode %.0f, keys %.0f, encode %.0f, apply %.0f, write %.0f ns/series\n",
-			cpu*1e9/float64(series), cpu/time.Since(wallStart).Seconds(),
-			perSeries(creation.decode), perSeries(creation.keys), perSeries(creation.encode), perSeries(creation.apply), perSeries(creation.write))
-		var phases steadyPhases
-		require.NoError(t, log.Flush())
-		initialBytes := directoryBytes(filepath.Join(directory, "segments"))
-		var totalUser, totalSystem, wall float64
-		group := batch * steadySeriesPerRecord
-		for round := 1; round <= rounds; round++ {
-			// The round's records are built before it's measured, and their garbage collected: in
-			// production they come from the Kafka client, whose cost isn't the store's.
-			var groups [][][]byte
-			for first := 0; first < series; first += group {
-				groups = append(groups, steadyRecords(first, min(first+group, series), start+int64(round)*scrapeMs))
-			}
-			runtime.GC()
-			user, system := cpuSeconds()
-			wallStart := time.Now()
-			for _, records := range groups {
-				steadyIngest(t, s, log, records, batch, &offset, &phases)
-			}
-			userEnd, systemEnd := cpuSeconds()
-			totalUser += userEnd - user
-			totalSystem += systemEnd - system
-			wall += time.Since(wallStart).Seconds()
-		}
-		samples := float64(series * rounds)
-		require.NoError(t, log.Close())
-		segmentBytes := directoryBytes(filepath.Join(directory, "segments")) - initialBytes
-		perSample := func(duration time.Duration) float64 { return float64(duration.Nanoseconds()) / samples }
-		fmt.Printf("batch=%d: %.0f ns CPU/sample (%.0f user, %.0f system), %.2f cores; wall: decode %.0f, keys %.0f, encode %.0f, apply %.0f, write %.0f ns/sample; segment log %.1f bytes/sample\n",
-			batch, (totalUser+totalSystem)*1e9/samples, totalUser*1e9/samples, totalSystem*1e9/samples, (totalUser+totalSystem)/wall,
-			perSample(phases.decode), perSample(phases.keys), perSample(phases.encode), perSample(phases.apply), perSample(phases.write),
-			float64(segmentBytes)/samples)
-		require.NoError(t, s.Close())
-	}
-}
-
 const recoveryBaseRecords = 9_739
 const recoverySeriesPerRecord = 20
-
-func recoveryRequest(frame, uniqueRecords int, histogramHeavy bool) record.DecodedRequest {
-	sourceFrame := frame % uniqueRecords
-	request := record.DecodedRequest{}
-	for index := range recoverySeriesPerRecord {
-		seriesID := sourceFrame*recoverySeriesPerRecord + index
-		histogramSeries := histogramHeavy && seriesID%10 == 0
-		pairs := [][2]string{{"__name__", fmt.Sprintf("metric_%d", seriesID)}}
-		for label := range 19 {
-			pairs = append(pairs, [2]string{fmt.Sprintf("label_%d", label), fmt.Sprintf("value_%d_%d", seriesID%1_000, label)})
-		}
-		series := record.DecodedSeries{Labels: pairs}
-		for sample := range int64(20) {
-			if histogramSeries {
-				deltas := make([]int64, 50)
-				// One observation in each bucket, matching the count.
-				deltas[0] = 1
-				series.Histograms = append(series.Histograms, mimirpb.Histogram{
-					Timestamp: int64(frame)*1_000 + sample, Count: &mimirpb.Histogram_CountInt{CountInt: 50},
-					PositiveSpans: []mimirpb.BucketSpan{{Offset: 0, Length: 50}}, PositiveDeltas: deltas,
-				})
-			} else {
-				series.Samples = append(series.Samples, mimirpb.Sample{TimestampMs: int64(frame)*1_000 + sample, Value: float64(seriesID) + float64(sample)})
-			}
-		}
-		request.Series = append(request.Series, series)
-	}
-	return request
-}
-
-// TestRecoveryBench is the Rust recovery bench: replaying a segment log into a new store.
-func TestRecoveryBench(t *testing.T) {
-	requireBench(t)
-	scale := envInt("MIMIR_RECOVERY_SCALE", 1)
-	records := recoveryBaseRecords * scale
-	unique := records * 9 / 10
-	histogramHeavy := os.Getenv("MIMIR_RECOVERY_HISTOGRAM_FIXTURE") != ""
-	directory := t.TempDir()
-	log, _, err := segment.Open(directory, 0, "fixture", 0, segment.Retention{})
-	require.NoError(t, err)
-	for frame := range records {
-		request := recoveryRequest(frame, unique, histogramHeavy)
-		require.NoError(t, log.Append(int64(frame), 1_000_000+int64(frame), "benchmark", &request))
-	}
-	require.NoError(t, log.Close())
-	fmt.Printf("variant=segment bytes=%d\n", directoryBytes(directory))
-	runtime.GC()
-	var before runtime.MemStats
-	runtime.ReadMemStats(&before)
-	beforeUser, beforeSystem := cpuSeconds()
-	started := time.Now()
-	s := Default()
-	count := 0
-	replayed, err := segment.OpenReplaying(directory, 0, "fixture", 0, segment.Retention{}, 2, func(recovered segment.RecoveredRecord) error {
-		count++
-		return s.IngestRecovered(recovered.Tenant, recovered.Request, recovered.IngestedMs)
-	})
-	require.NoError(t, err)
-	last, ok := replayed.LastOffset()
-	require.True(t, ok)
-	require.Equal(t, int64(records-1), last)
-	require.Equal(t, records, count)
-	restore := time.Since(started)
-	restoreUser, restoreSystem := cpuSeconds()
-	var restored runtime.MemStats
-	runtime.ReadMemStats(&restored)
-	started = time.Now()
-	selected, err := s.SelectChunks("benchmark", 0, math.MaxInt64, nil)
-	require.NoError(t, err)
-	require.Len(t, selected, unique*recoverySeriesPerRecord)
-	query := time.Since(started)
-	queryUser, querySystem := cpuSeconds()
-	var queried runtime.MemStats
-	runtime.ReadMemStats(&queried)
-	fmt.Printf("variant=segment series=%d restore_ms=%.2f query_ms=%.2f restore_cpu_ms=%.2f query_cpu_ms=%.2f restore_heap_delta_B=%d query_heap_B=%d\n",
-		len(selected), float64(restore.Microseconds())/1000, float64(query.Microseconds())/1000,
-		((restoreUser-beforeUser)+(restoreSystem-beforeSystem))*1000, ((queryUser-restoreUser)+(querySystem-restoreSystem))*1000,
-		int64(restored.HeapInuse)-int64(before.HeapInuse), queried.HeapInuse)
-	require.NoError(t, replayed.Close())
-}

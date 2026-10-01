@@ -52,7 +52,4 @@ vendor/**/AGENTS.md
 
 # Claude configuration and project memory files: https://code.claude.com/docs/en/memory
 CLAUDE.local.md
-/cmd/go-kafka-ingester/go-kafka-ingester
-/go-kafka-ingester
 /pkg/storage/seriesstore/**/*.test
-/cmd/go-kafka-ingester/**/*.test
