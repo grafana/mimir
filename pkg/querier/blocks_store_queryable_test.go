@@ -3316,6 +3316,7 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 }
 
 type storeGatewayClientMock struct {
+	mockedMetricNameCounts    func(*storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error)
 	remoteAddr                string
 	remoteZone                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
@@ -3344,6 +3345,13 @@ func (m *storeGatewayClientMock) LabelNames(context.Context, *storepb.LabelNames
 
 func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValuesRequest, ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
+}
+
+func (m *storeGatewayClientMock) MetricNameCounts(_ context.Context, req *storegatewaypb.MetricNameCountsRequest, _ ...grpc.CallOption) (*storegatewaypb.MetricNameCountsResponse, error) {
+	if m.mockedMetricNameCounts == nil {
+		return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
+	}
+	return m.mockedMetricNameCounts(req)
 }
 
 func (m *storeGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
@@ -3443,6 +3451,10 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 
 func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *cancelerStoreGatewayClientMock) MetricNameCounts(context.Context, *storegatewaypb.MetricNameCountsRequest, ...grpc.CallOption) (*storegatewaypb.MetricNameCountsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 }
 
 func (m *cancelerStoreGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
