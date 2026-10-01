@@ -98,4 +98,6 @@ message SeriesCountsResponse {
   // Bytes of postings and series entries read from the bucket, not from a cache.
   int64 postings_fetched_bytes = 5;
   int64 series_fetched_bytes = 6;
+  // Postings and series bytes read, cached or not. This is what the Series call reports as fetched index bytes.
+  int64 index_bytes = 7;
 }
