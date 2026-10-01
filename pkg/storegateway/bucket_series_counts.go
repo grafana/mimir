@@ -215,6 +215,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
+	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
 	return resp, nil
 }
 

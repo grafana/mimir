@@ -139,6 +139,7 @@ type seriesCountsResponse struct {
 	SeriesCounted        int64              `json:"series_counted"`
 	PostingsFetchedBytes int64              `json:"postings_fetched_bytes"`
 	SeriesFetchedBytes   int64              `json:"series_fetched_bytes"`
+	IndexBytes           int64              `json:"index_bytes"`
 	ElapsedMS            float64            `json:"elapsed_ms"`
 	Counts               []seriesCountGroup `json:"counts"`
 	Compare              *seriesCountsCheck `json:"compare,omitempty"`
@@ -190,7 +191,7 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 			MinTime: req.MinT, MaxTime: req.MaxT, StepMS: req.Step, GroupBy: req.GroupBy,
 			Dedup: res.Dedup, LowerBound: res.LowerBound, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
-			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes,
+			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
 			Counts: make([]seriesCountGroup, 0, len(res.Counts)),
 		}
 		for v, counts := range res.Counts {
