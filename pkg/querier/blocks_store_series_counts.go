@@ -41,6 +41,8 @@ type SeriesCountsResult struct {
 	SeriesCounted        int64
 	PostingsFetchedBytes int64
 	SeriesFetchedBytes   int64
+	// IndexBytes is measured the way the Series call measures it.
+	IndexBytes int64
 }
 
 // SeriesCounts counts the matching series with a chunk in the window, from
@@ -125,6 +127,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		res.SeriesCounted += resp.SeriesCounted
 		res.PostingsFetchedBytes += resp.PostingsFetchedBytes
 		res.SeriesFetchedBytes += resp.SeriesFetchedBytes
+		res.IndexBytes += resp.IndexBytes
 		return nil
 	}
 
