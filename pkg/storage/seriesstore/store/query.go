@@ -601,8 +601,8 @@ func (w *labelWindow) inBlocks(hash uint64) bool {
 // coldMatching calls visit for the cold series matching matchers the window sees.
 func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, visit func(*coldSeries)) {
 	if len(w.blocks) > 0 {
-		cold.matching(tenantID, matchers, math.MinInt64, math.MaxInt64, func(series *coldSeries) {
-			if w.inBlocks(series.labels().Hash()) {
+		cold.matchingIndexed(tenantID, matchers, math.MinInt64, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
+			if w.inBlocks(series.block.labelsHash(table, index)) {
 				visit(series)
 			}
 		})
@@ -652,9 +652,24 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 			}
 			return true
 		})
+		// Names are collected by block-local id, without decoding the values or inserting every
+		// series' names: a block's names are the same few for most of its series.
+		seen := map[*coldBlock][]bool{}
 		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
-			series.Range(func(name, _ string) { names[name] = struct{}{} })
+			ids, ok := seen[series.block]
+			if !ok {
+				ids = make([]bool, len(series.block.names))
+				seen[series.block] = ids
+			}
+			series.rangeNameIDs(func(id uint64) { ids[id] = true })
 		})
+		for block, ids := range seen {
+			for id, ok := range ids {
+				if ok {
+					names[block.names[id]] = struct{}{}
+				}
+			}
+		}
 	})
 	return sortedKeys(names), nil
 }

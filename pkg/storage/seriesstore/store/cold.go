@@ -46,6 +46,10 @@ type coldTenantIndex struct {
 	// sharded query rather than from the labels for every series of every one.
 	shardHashesOnce sync.Once
 	shardHashes     []uint64
+	// Each series' labels hash, by which label lookups tell which emulated Prometheus blocks hold
+	// it: computed once rather than by rebuilding every series' labels on every lookup.
+	labelHashesOnce sync.Once
+	labelHashes     []uint64
 	// Each metric name, sorted, with its series: built on the first query by a name matcher other
 	// than an equality, from the series' own labels, since the postings only hold values' hashes.
 	metricNamesOnce sync.Once
@@ -588,6 +592,29 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 	return all
 }
 
+// labelsHash returns the labels hash of the series at index, like the head's series hash.
+func (b *coldBlock) labelsHash(table *coldTenantIndex, index int) uint64 {
+	table.labelHashesOnce.Do(func() {
+		hashes := make([]uint64, table.seriesCount)
+		for series := range hashes {
+			s := b.seriesIn(table, series)
+			hashes[series] = s.labels().Hash()
+		}
+		table.labelHashes = hashes
+	})
+	return table.labelHashes[index]
+}
+
+// rangeNameIDs calls visit with the block-local id of each of the series' label names.
+func (s *coldSeries) rangeNameIDs(visit func(id uint64)) {
+	rest := s.encoded
+	for len(rest) > 0 {
+		visit(takeUvarintString(&rest))
+		size := takeUvarintString(&rest)
+		rest = rest[size:]
+	}
+}
+
 // shardHash returns the query shard hash of the series at index.
 func (b *coldBlock) shardHash(table *coldTenantIndex, index int) uint64 {
 	table.shardHashesOnce.Do(func() {
@@ -686,6 +713,11 @@ func newColdState(directory string) (*coldState, error) {
 // matching calls visit for the tenant's cold series that match matchers with data in
 // [start, end], block by block.
 func (c *coldState) matching(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldSeries)) {
+	c.matchingIndexed(tenant, matchers, start, end, func(_ *coldTenantIndex, _ int, series *coldSeries) { visit(series) })
+}
+
+// matchingIndexed is matching, with each series' tenant table and index in its block.
+func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldTenantIndex, int, *coldSeries)) {
 	for _, block := range c.blocks {
 		if !block.overlaps(tenant, start, end) {
 			continue
@@ -694,7 +726,7 @@ func (c *coldState) matching(tenant string, matchers []compiledMatcher, start, e
 		for _, index := range block.candidates(tenant, matchers) {
 			series := block.seriesIn(table, int(index))
 			if series.hasData(start, end) && matches(&series, matchers) {
-				visit(&series)
+				visit(table, int(index), &series)
 			}
 		}
 	}

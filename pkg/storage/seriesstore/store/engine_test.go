@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
 
 // headUnderTest is what the differential tests drive on the Prometheus TSDB and on the engine: the
@@ -1081,4 +1082,66 @@ func TestEngineRetentionCountsFromBlockCreation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestColdLabelLookupsMatchTheHead(t *testing.T) {
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(context.Background())
+	for n := range 200 {
+		pairs := []string{"__name__", fmt.Sprintf("metric_%d", n%7), "pod", fmt.Sprintf("pod-%d", n)}
+		// Names that only some series of a block carry.
+		if n%5 == 0 {
+			pairs = append(pairs, "rare", strconv.Itoa(n))
+		}
+		if n == 13 {
+			pairs = append(pairs, "zz_once", "x")
+		}
+		_, err := app.Append(0, promlabels.FromStrings(pairs...), int64(n)*1000, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	reads := func() [][]string {
+		q, err := engine.Querier(0, 2*3_600_000)
+		require.NoError(t, err)
+		defer q.Close()
+		var out [][]string
+		for _, matchers := range [][]*promlabels.Matcher{
+			nil,
+			{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")},
+			{promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "pod-13")},
+		} {
+			names, _, err := q.LabelNames(context.Background(), nil, matchers...)
+			require.NoError(t, err)
+			values, _, err := q.LabelValues(context.Background(), "rare", nil, matchers...)
+			require.NoError(t, err)
+			out = append(out, names, values)
+		}
+		return out
+	}
+	before := reads()
+	require.Contains(t, before[0], "zz_once")
+	app = engine.Appender(context.Background())
+	_, err := app.Append(0, promlabels.FromStrings("__name__", "fresh"), 6*3_600_000, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, engine.Compact(context.Background()))
+	require.Equal(t, uint64(1), engine.NumSeries(), "series left the head")
+	require.Equal(t, before, reads())
+	// The cached hashes by which the window picks blocks are each series' labels hash.
+	checked := 0
+	engine.store.perShardWithCold("tenant", func(_ *tenant, _ *chunks.DiskMapper, cold *coldState) {
+		for _, block := range cold.blocks {
+			table, ok := block.tenants["tenant"]
+			if !ok {
+				continue
+			}
+			for index := range table.seriesCount {
+				series := block.seriesIn(table, index)
+				require.Equal(t, series.labels().Hash(), block.labelsHash(table, index))
+				checked++
+			}
+		}
+	})
+	require.Equal(t, 200, checked)
 }

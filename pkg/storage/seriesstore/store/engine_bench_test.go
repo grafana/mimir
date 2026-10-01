@@ -169,6 +169,59 @@ func BenchmarkEngineLabelValues(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineColdLabels looks up label names and values over a range only compacted blocks
+// cover, like the label APIs over the hours before the head.
+func BenchmarkEngineColdLabels(b *testing.B) {
+	engine := openEngine(b, b.TempDir(), differentialOptions{}, nil)
+	b.Cleanup(func() { _ = engine.Close() })
+	refs := make([]storage.SeriesRef, benchSeries)
+	for sample := range 480 {
+		app := engine.Appender(context.Background())
+		for n := range benchSeries {
+			ref, err := app.Append(refs[n], benchLabels(n), int64(sample)*benchInterval, float64(sample))
+			require.NoError(b, err)
+			refs[n] = ref
+		}
+		require.NoError(b, app.Commit())
+	}
+	// One series keeps the head six hours ahead, so compaction moves every other series out of it.
+	app := engine.Appender(context.Background())
+	_, err := app.Append(0, promlabels.FromStrings("__name__", "fresh"), 6*3_600_000, 1)
+	require.NoError(b, err)
+	require.NoError(b, app.Commit())
+	require.NoError(b, engine.Compact(context.Background()))
+	require.Less(b, engine.NumSeries(), uint64(benchSeries), "series left the head")
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
+	for _, lookup := range []struct {
+		name string
+		run  func(storage.Querier) error
+	}{
+		{"names", func(q storage.Querier) error { _, _, err := q.LabelNames(context.Background(), nil); return err }},
+		{"names with matcher", func(q storage.Querier) error {
+			_, _, err := q.LabelNames(context.Background(), nil, matcher)
+			return err
+		}},
+		{"values with matcher", func(q storage.Querier) error {
+			_, _, err := q.LabelValues(context.Background(), "pod", nil, matcher)
+			return err
+		}},
+	} {
+		b.Run(lookup.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				q, err := engine.Querier(0, 2*3_600_000)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := lookup.run(q); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
+	}
+}
+
 // BenchmarkEngineHeapPerSeries reports the heap each head holds per series, with two hours of
 // samples.
 func BenchmarkEngineHeapPerSeries(b *testing.B) {
