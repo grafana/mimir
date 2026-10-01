@@ -6,7 +6,9 @@
 package benchmarks
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"strconv"
@@ -38,6 +40,46 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	// tools/benchmark-query-engine wants the peak RSS of this process. On Linux it can't get that from the Rusage returned
+	// by wait4: Go spawns child processes with CLONE_VM, and on exec the kernel carries the parent's high-water RSS over
+	// into the child's accounting. The parent holds the whole ingester data set, so every benchmark would report the same,
+	// query-independent number. VmHWM from /proc/self/status only covers this process, so we report that instead.
+	if os.Getenv(ReportPeakRSSEnvVar) == "true" {
+		if peak, ok := peakRSSBytesFromProc(); ok {
+			fmt.Printf("%s%d\n", PeakRSSOutputLinePrefix, peak)
+		}
+	}
+
+	os.Exit(code)
+}
+
+// peakRSSBytesFromProc returns the high-water RSS of this process. Only available on Linux (reads /proc/self/status).
+func peakRSSBytesFromProc() (int64, bool) {
+	f, err := os.Open("/proc/self/status")
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// Format is "VmHWM:\t   12345 kB".
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 3 && fields[0] == "VmHWM:" && fields[2] == "kB" {
+			kb, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return 0, false
+			}
+			return kb * 1024, true
+		}
+	}
+
+	return 0, false
+}
 
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {

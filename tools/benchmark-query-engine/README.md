@@ -4,6 +4,8 @@ Each benchmark is run in a separate process to provide some kind of guarantee th
 
 An ingester is started in the `benchmark-query-engine` process (ie. not the benchmark process) to ensure the TSDB does not skew results.
 
+Peak memory utilisation is the high-water mark of the benchmark process' resident set size (RSS), reported in the last column of each benchmark line as `B`. On macOS this is taken from the `Rusage` returned when the benchmark process exits. On Linux that value would include the peak RSS of the `benchmark-query-engine` process itself (including the ingester's data), so the benchmark process reports its own peak RSS from `/proc/self/status` instead. This is the peak over all iterations of the benchmark, and a benchmark runs more iterations when each query is faster. To compare the peak memory utilisation of two versions whose queries take different times, run both with the same number of iterations, for example with `-benchtime=10x`.
+
 Results from `benchmark-query-engine` can be summarised with `benchstat`, as well as [`compare.sh`](./compare.sh).
 
 Usage:
