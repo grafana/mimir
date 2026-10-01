@@ -298,8 +298,10 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 			}
 		}
 		clear(g.entries[len(kept):])
-		// Retention removes whole hours of series at once; give back the slots.
-		if cap(kept) > 4*max(len(kept), 8) {
+		// Head compaction and retention remove whole hours of series at once; give back their
+		// slots, which are most of an entry's cost once a group lost half its series. Growing the
+		// slice again copies it once, as appending to it would have anyway.
+		if cap(kept) > max(len(kept)+len(kept)/4, 8) {
 			kept = slices.Clone(kept)
 		}
 		g.entries = kept
