@@ -381,10 +381,6 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
 		for _, em := range oe.exportedMetrics {
-			// An empty float chunk encoding inherits the global setting.
-			if em.Name == floatChunkEncoding && limits.FloatChunkEncoding == "" {
-				continue
-			}
 			if em.Get(limits) == em.Get(oe.defaultLimits) {
 				// Skip exporting tenant limits that are the same as the default limits.
 				// Note: this comes with an expected tradeoff where metrics, passed via Config.ExtraMetrics, and whose getter

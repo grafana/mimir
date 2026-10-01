@@ -1706,7 +1706,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if float_chunk_encoding is empty": {
+		"should fail if float_chunk_encoding is empty": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1714,7 +1714,7 @@ func TestLimits_Validate(t *testing.T) {
 
 				return cfg
 			}(),
-			expectedErr: nil,
+			expectedErr: errInvalidFloatChunkEncoding,
 		},
 		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
@@ -3125,25 +3125,54 @@ func TestMergeLimits(t *testing.T) {
 }
 
 func TestOverrides_FloatChunkEncoding(t *testing.T) {
-	for _, global := range []string{"", "xor", "xor2"} {
-		t.Run("global="+global, func(t *testing.T) {
-			overrides := MockOverrides(func(defaults *Limits, tenantLimits map[string]*Limits) {
-				defaults.FloatChunkEncoding = global
-				tenantLimits["empty"] = &Limits{}
-				tenantLimits["xor"] = &Limits{FloatChunkEncoding: "xor"}
-				tenantLimits["xor2"] = &Limits{FloatChunkEncoding: "xor2"}
-			})
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+	})
 
-			for _, tenant := range []string{"missing", "empty", "xor", "xor2"} {
-				expected := global
-				if tenant == "xor" || tenant == "xor2" {
-					expected = tenant
-				}
-				if expected == "" {
-					expected = "xor"
-				}
-				assert.Equal(t, expected, overrides.FloatChunkEncodingValue(tenant), tenant)
-				assert.Equal(t, ParseFloatChunkEncoding(expected), overrides.FloatChunkEncoding(tenant), tenant)
+	assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
+
+	// A tenant without an override gets the default encoding.
+	assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+}
+
+func TestLimitsLoading_FloatChunkEncoding(t *testing.T) {
+	defaults := getDefaultLimits()
+	defaults.FloatChunkEncoding = "xor2"
+	SetDefaultLimitsForYAMLUnmarshalling(defaults)
+	t.Cleanup(func() { SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits()) })
+
+	for name, unmarshal := range map[string]func([]byte, any) error{
+		"YAML": yaml.Unmarshal,
+		"JSON": json.Unmarshal,
+		"map": func(data []byte, out any) error {
+			var config map[string]any
+			if err := yaml.Unmarshal(data, &config); err != nil {
+				return err
+			}
+			return DecodeLimitsMap(config, out)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				input    string
+				expected string
+			}{
+				{name: "omitted inherits global", input: `{}`, expected: "xor2"},
+				{name: "explicit xor", input: `{"float_chunk_encoding":"xor"}`, expected: "xor"},
+				{name: "explicit xor2", input: `{"float_chunk_encoding":"xor2"}`, expected: "xor2"},
+				{name: "empty is rejected", input: `{"float_chunk_encoding":""}`},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					var limits Limits
+					err := unmarshal([]byte(tc.input), &limits)
+					if tc.expected == "" {
+						require.ErrorIs(t, err, errInvalidFloatChunkEncoding)
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, tc.expected, limits.FloatChunkEncoding)
+				})
 			}
 		})
 	}

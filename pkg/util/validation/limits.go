@@ -761,7 +761,7 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
+	if !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
 	}
 
@@ -1457,18 +1457,14 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 
 // FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
-	return ParseFloatChunkEncoding(o.FloatChunkEncodingValue(userID))
+	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
-// -blocks-storage.tsdb.float-chunk-encoding limit. An empty tenant value inherits the global setting.
-// The result is never empty: tsdb.DB.ApplyConfig() reads an empty chunk encoding as
-// "keep the encoding resolved at startup", which may differ from the global setting.
+// -blocks-storage.tsdb.float-chunk-encoding limit. It falls back to DefaultFloatChunkEncodingValue
+// for invalid values, so tsdb.DB.ApplyConfig() always receives a concrete encoding.
 func (o *Overrides) FloatChunkEncodingValue(userID string) string {
 	value := o.getOverridesForUser(userID).FloatChunkEncoding
-	if value == "" {
-		value = o.defaultLimits.FloatChunkEncoding
-	}
 	if _, ok := floatChunkEncodings[value]; ok {
 		return value
 	}
