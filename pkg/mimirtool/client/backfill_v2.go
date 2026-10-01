@@ -36,9 +36,11 @@ type backfillJobStartResult struct {
 
 type backfillRequestBody func() (body io.ReadCloser, size int64, err error)
 
+const backfillV2RequestMaxAttempts = 10
+
 // TODO: add manifest support
 func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
-	resp, _, err := c.sendBackfillV2Request(ctx, path.Join(backfillV2EndpointPrefix, "start"), nil)
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(backfillV2EndpointPrefix, "start"), nil)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to start backfill job")
 	}
@@ -55,9 +57,11 @@ func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
 }
 
 func (c *MimirClient) FinishBackfillJob(ctx context.Context, jobID string) error {
-	if _, err := c.doBackfillV2Request(ctx, path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "finish"), nil); err != nil {
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "finish"), nil)
+	if err != nil {
 		return errors.Wrapf(err, "failed to finish backfill job %s", jobID)
 	}
+	drainAndCloseBody(resp)
 	return nil
 }
 
@@ -116,9 +120,11 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	logger = log.With(logger, "block", blockID)
 
 	level.Info(logger).Log("msg", "starting block upload")
-	if _, err := c.doBackfillV2Request(ctx, path.Join(blockPath, "start"), bytesRequestBody(metaJSON)); err != nil {
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(blockPath, "start"), bytesRequestBody(metaJSON))
+	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
+	drainAndCloseBody(resp)
 
 	// TODO: support for skipping already uploaded files
 	for _, f := range meta.Thanos.Files {
@@ -128,15 +134,20 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 
 		level.Info(logger).Log("msg", "uploading block file", "file", f.RelPath, "size", f.SizeBytes)
 		filePath := fmt.Sprintf("%s?path=%s", path.Join(blockPath, "files"), url.QueryEscape(f.RelPath))
-		if _, err := c.doBackfillV2Request(ctx, filePath, bucketObjectRequestBody(ctx, bkt, path.Join(blockID.String(), f.RelPath), f.SizeBytes)); err != nil {
+		resp, err := c.doBackfillV2RequestWithRetry(ctx, filePath, bucketObjectRequestBody(ctx, bkt, path.Join(blockID.String(), f.RelPath), f.SizeBytes))
+		if err != nil {
 			return errors.Wrapf(err, "request to upload file %q failed", f.RelPath)
 		}
+		drainAndCloseBody(resp)
 	}
 
-	retried, err := c.doBackfillV2Request(ctx, path.Join(blockPath, "finish"), nil)
-	if retried && errors.Is(err, ErrConflict) {
-		level.Debug(logger).Log("msg", "an earlier attempt already finished the block upload")
-	} else if err != nil {
+	resp, err = c.doBackfillV2RequestWithRetry(ctx, path.Join(blockPath, "finish"), nil)
+	switch {
+	case err == nil:
+		drainAndCloseBody(resp)
+	case errors.Is(err, ErrConflict):
+		level.Debug(logger).Log("msg", "block upload already finished")
+	default:
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
 
@@ -144,30 +155,27 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	return nil
 }
 
-func (c *MimirClient) doBackfillV2Request(ctx context.Context, path string, newBody backfillRequestBody) (bool, error) {
-	retries := backoff.New(ctx, backoff.Config{
+func (c *MimirClient) doBackfillV2RequestWithRetry(ctx context.Context, path string, newBody backfillRequestBody) (*http.Response, error) {
+	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: time.Second,
 		MaxBackoff: 30 * time.Second,
-		MaxRetries: 10,
+		MaxRetries: backfillV2RequestMaxAttempts,
 	})
 	for {
-		resp, retryable, err := c.sendBackfillV2Request(ctx, path, newBody)
-		if err == nil {
-			drainAndCloseBody(resp)
-		}
+		resp, retryable, err := c.doBackfillV2Request(ctx, path, newBody)
 		if err == nil || !retryable {
-			return retries.NumRetries() > 0, err
+			return resp, err
 		}
 
-		retries.Wait()
-		if !retries.Ongoing() {
-			return true, err
+		b.Wait()
+		if !b.Ongoing() {
+			return nil, err
 		}
-		level.Warn(c.logger).Log("msg", "retrying backfill request", "path", path, "retry", retries.NumRetries(), "err", err)
+		level.Warn(c.logger).Log("msg", "retrying backfill request", "path", path, "retry", b.NumRetries(), "err", err)
 	}
 }
 
-func (c *MimirClient) sendBackfillV2Request(ctx context.Context, path string, newBody backfillRequestBody) (*http.Response, bool, error) {
+func (c *MimirClient) doBackfillV2Request(ctx context.Context, path string, newBody backfillRequestBody) (*http.Response, bool, error) {
 	var payload io.Reader
 	contentLength := int64(-1)
 	if newBody != nil {

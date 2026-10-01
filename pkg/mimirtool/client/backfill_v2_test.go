@@ -115,14 +115,6 @@ func TestStartAndFinishBackfillJob(t *testing.T) {
 	assert.Equal(t, []string{"/api/v1/backfill/start", "/api/v1/backfill/" + testJobID + "/finish"}, s.paths())
 }
 
-func TestStartBackfillJob_DoesNotRetry(t *testing.T) {
-	s, c := newBackfillTestServer(t, map[string][]int{"/api/v1/backfill/start": {http.StatusServiceUnavailable}})
-
-	_, err := c.StartBackfillJob(t.Context())
-	require.ErrorContains(t, err, "503 Service Unavailable")
-	assert.Equal(t, []string{"/api/v1/backfill/start"}, s.paths())
-}
-
 func TestIsTransientNetworkError(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err       error
