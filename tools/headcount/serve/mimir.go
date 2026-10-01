@@ -189,16 +189,18 @@ func (m *mimir) queryRange(q string, startMS, endMS int64, step time.Duration, s
 // storeGatewayCounts is one call to the store-gateway's
 // metric_name_counts endpoint.
 type storeGatewayCounts struct {
-	Err     string
-	Latency time.Duration
-	Blocks  int
-	Counts  map[string]int
+	Err           string
+	Latency       time.Duration
+	Blocks        int
+	StoreGateways int
+	Counts        map[string]int
 }
 
-// metricNameCounts asks the store-gateway for every metric name's count
-// over one block range [minT, maxT).
+// metricNameCounts asks Mimir for every metric name's count over one block
+// range [minT, maxT) through the querier's metric_name_counts route, which
+// fans out to the store-gateways.
 func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
-	u := fmt.Sprintf("%s/store-gateway/tenant/anonymous/metric_name_counts?start=%.3f&end=%.3f", m.baseURL, float64(minT)/1000, float64(maxT)/1000)
+	u := fmt.Sprintf("%s/prometheus/api/v1/cardinality/metric_name_counts?start=%.3f&end=%.3f", m.baseURL, float64(minT)/1000, float64(maxT)/1000)
 	start := time.Now()
 	resp, err := http.Get(u)
 	if err != nil {
@@ -212,7 +214,7 @@ func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
 		return res
 	}
 	if resp.StatusCode == http.StatusNotFound && bytes.Contains(body, []byte("404 page not found")) {
-		res.Err = "this Mimir build has no store-gateway metric_name_counts endpoint"
+		res.Err = "this Mimir build has no metric_name_counts route"
 		return res
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -220,8 +222,9 @@ func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
 		return res
 	}
 	var parsed struct {
-		Blocks []string `json:"blocks"`
-		Counts []struct {
+		Blocks        int `json:"blocks"`
+		StoreGateways int `json:"store_gateways"`
+		Counts        []struct {
 			Name  string `json:"name"`
 			Count int    `json:"count"`
 		} `json:"counts"`
@@ -230,7 +233,7 @@ func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
 		res.Err = fmt.Sprintf("decoding response: %v", err)
 		return res
 	}
-	res.Blocks = len(parsed.Blocks)
+	res.Blocks, res.StoreGateways = parsed.Blocks, parsed.StoreGateways
 	res.Counts = make(map[string]int, len(parsed.Counts))
 	for _, c := range parsed.Counts {
 		res.Counts[c.Name] = c.Count
