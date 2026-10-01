@@ -6133,3 +6133,37 @@ func TestEvaluationStatsReportsRootQueryID(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluationStatsLogsOriginalExpressionLast(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x4
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	logs := &concurrency.SyncBuffer{}
+	opts := NewTestEngineOpts()
+	opts.Logger = log.NewLogfmtLogger(logs)
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	ctx := rootqueryid.ContextWithID(t.Context(), "9c5b94b1-35ad-49bb-b118-8e8fc24abf80")
+	q, err := engine.NewRangeQuery(ctx, storage, nil, "some_metric", timestamp.Time(0), timestamp.Time(0).Add(4*time.Minute), time.Minute)
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(ctx)
+	require.NoError(t, res.Err)
+
+	var statsLine string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, `msg="evaluation stats"`) {
+			statsLine = line
+		}
+	}
+	require.NotEmpty(t, statsLine)
+	require.True(t, strings.HasSuffix(statsLine, " status=success originalExpression=some_metric"), "unexpected log line: %s", statsLine)
+}
