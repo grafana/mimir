@@ -732,6 +732,16 @@ func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, s
 	}
 }
 
+// discardColdBlock removes a block no query has seen.
+func discardColdBlock(block *coldBlock) {
+	if block.path != "" {
+		if err := os.Remove(block.path); err != nil {
+			fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", block.path, err)
+		}
+	}
+	_ = block.close()
+}
+
 // pruneBefore removes the blocks all older than cutoff.
 func (c *coldState) pruneBefore(cutoff int64) {
 	kept := c.blocks[:0]
