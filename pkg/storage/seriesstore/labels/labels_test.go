@@ -5,6 +5,7 @@ package labels
 import (
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -143,4 +144,90 @@ func BenchmarkValueOf(b *testing.B) {
 		sink = l.ValueOf(id)
 	}
 	_ = sink
+}
+
+// randomSharingLabels returns labels that mostly share leading pairs, the case SharedPairs skips,
+// with name ids and value lengths of one and more varint bytes, and labels that are other ones'
+// prefixes.
+func randomSharingLabels(rng *rand.Rand, count int) []Labels {
+	names := []string{"__name__", "cluster", "job", "pod"}
+	// Interned after many others, so their ids take two varint bytes.
+	for i := range 200 {
+		Intern(fmt.Sprintf("compare_filler_%d", i))
+	}
+	names = append(names, "zone_late", "a_late")
+	slices.Sort(names)
+	values := []string{"", "a", "ab", "abcdefgh", "abcdefghi", "abcdefgj", strings.Repeat("v", 130), strings.Repeat("v", 131), strings.Repeat("v", 129) + "w"}
+	out := make([]Labels, 0, count)
+	for range count {
+		chosen := map[string]string{}
+		for _, name := range names {
+			if rng.IntN(3) > 0 {
+				chosen[name] = values[rng.IntN(len(values))]
+			}
+		}
+		var pairs []string
+		for _, name := range names {
+			if value, ok := chosen[name]; ok {
+				pairs = append(pairs, name, value)
+			}
+		}
+		out = append(out, FromStrings(pairs...))
+	}
+	return out
+}
+
+func TestCompareOrdersLikePrometheus(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	all := randomSharingLabels(rng, 400)
+	shared := 0
+	for _, a := range all {
+		for _, b := range all {
+			want := promlabels.Compare(promlabels.FromStrings(flatten(a.Pairs())...), promlabels.FromStrings(flatten(b.Pairs())...))
+			require.Equal(t, sign(want), sign(Compare(a, b)), "%v vs %v", a, b)
+			if start, _ := SharedPairs(a, b); start > 0 {
+				shared++
+			}
+		}
+	}
+	require.Greater(t, shared, len(all)*len(all)/50, "enough comparisons skip shared pairs")
+}
+
+func flatten(pairs [][2]string) []string {
+	var out []string
+	for _, pair := range pairs {
+		out = append(out, pair[0], pair[1])
+	}
+	return out
+}
+
+func sign(c int) int {
+	switch {
+	case c < 0:
+		return -1
+	case c > 0:
+		return 1
+	}
+	return 0
+}
+
+func TestSharedPairsStopsBeforeTheFirstDifferentPair(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	a := FromStrings("__name__", "metric", "job", long, "pod", "a")
+	b := FromStrings("__name__", "metric", "job", long, "pod", "b")
+	start, equal := SharedPairs(a, b)
+	require.False(t, equal)
+	require.Equal(t, len(FromStrings("__name__", "metric", "job", long)), start)
+	// A difference inside a value's bytes, not at its pair's start.
+	c := FromStrings("__name__", "metric", "job", long[:199]+"y")
+	start, _ = SharedPairs(a, c)
+	require.Equal(t, len(FromStrings("__name__", "metric")), start)
+	// Labels that are a prefix of the other.
+	prefix := FromStrings("__name__", "metric", "job", long)
+	start, _ = SharedPairs(prefix, a)
+	require.Equal(t, len(prefix), start)
+	require.Negative(t, Compare(prefix, a))
+	require.Positive(t, Compare(a, prefix))
+	_, equal = SharedPairs(a, FromStrings("__name__", "metric", "job", long, "pod", "a"))
+	require.True(t, equal)
 }
