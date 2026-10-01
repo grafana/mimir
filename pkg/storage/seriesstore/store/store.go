@@ -88,7 +88,7 @@ type tenant struct {
 	trackers          *trackers.CustomTrackers
 	trackerGeneration uint64
 	// An engine's series of this shard by reference.
-	byRef map[uint64]refLocation
+	byRef refIndex
 	// An engine's out-of-order head bounds, and the start of its oldest emulated block, in the
 	// home shard.
 	minOOOTime, maxOOOTime int64

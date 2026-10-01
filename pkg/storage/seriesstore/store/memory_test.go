@@ -238,7 +238,7 @@ func TestRetainedSeriesHeapBytes(t *testing.T) {
 	for _, shard := range restored.Store.shards {
 		for _, tn := range shard.tenants {
 			for _, g := range tn.series.groups {
-				table += cap(g.entries)*int(unsafe.Sizeof(seriesEntry{})) + len(g.first)*16
+				table += cap(g.entries)*int(unsafe.Sizeof(seriesEntry{})) + len(g.first.slots)*int(unsafe.Sizeof(hashSlot{}))
 			}
 			tn.series.forEach(func(entry *seriesEntry) {
 				labelBytes += entry.labels.HeapSize()

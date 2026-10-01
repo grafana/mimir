@@ -200,7 +200,7 @@ func (e *Engine) exists(ref uint64) bool {
 	if !ok {
 		return false
 	}
-	_, ok = t.byRef[ref]
+	_, ok = t.byRef.get(ref)
 	return ok
 }
 
@@ -212,9 +212,6 @@ func (e *Engine) create(lset promlabels.Labels, hash uint64, scratch *[][2]strin
 	shard.Lock()
 	defer shard.Unlock()
 	t := tenantOf(shard.tenants, e.tenantID)
-	if t.byRef == nil {
-		t.byRef = map[uint64]refLocation{}
-	}
 	entry, inserted := t.series.getOrInsert(lset.Get(metricNameLabel), hash, pairs, func() labels.Labels { return labels.FromSorted(pairs) })
 	if !inserted {
 		return entry.series.ref, false
@@ -227,7 +224,7 @@ func (e *Engine) create(lset promlabels.Labels, hash uint64, scratch *[][2]strin
 		entry.series.ownedHash = e.opts.SecondaryHashFunction(lset)
 	}
 	groupID := t.series.names[lset.Get(metricNameLabel)]
-	t.byRef[ref] = refLocation{groupID, int32(len(t.series.groups[groupID].entries) - 1), hash}
+	t.byRef.set(ref, refLocation{groupID, int32(len(t.series.groups[groupID].entries) - 1)})
 	return ref, true
 }
 
@@ -250,7 +247,7 @@ func (e *Engine) withSeriesAt(ref uint64, read func(series *Series)) (refLocatio
 	if !ok {
 		return refLocation{}, false
 	}
-	location, ok := t.byRef[ref]
+	location, ok := t.byRef.get(ref)
 	if !ok {
 		return refLocation{}, false
 	}
@@ -584,8 +581,11 @@ func (e *Engine) hashOf(ref uint64) (uint64, bool) {
 	if !ok {
 		return 0, false
 	}
-	location, ok := t.byRef[ref]
-	return location.hash, ok
+	entry, ok := e.lookupLocked(t, ref)
+	if !ok {
+		return 0, false
+	}
+	return entry.hash, true
 }
 
 func toStoreExemplar(e exemplar.Exemplar) exemplars.Exemplar {

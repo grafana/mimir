@@ -24,11 +24,11 @@ type seriesEntry struct {
 // series allocates nothing. The entries are one slice, which a name matcher scans in order.
 type group struct {
 	entries []seriesEntry
-	first   map[uint64]int32
+	first   hashIndex
 }
 
 func (g *group) lookup(hash uint64, visit func(entry *seriesEntry) bool) bool {
-	index, ok := g.first[hash]
+	index, ok := g.first.get(hash, g.entries)
 	for ok && index >= 0 {
 		entry := &g.entries[index]
 		if visit(entry) {
@@ -108,7 +108,7 @@ func (b *seriesByName) getOrInsert(name string, hash uint64, pairs [][2]string, 
 		owned := string([]byte(name))
 		b.names[owned] = groupID
 		b.groupNames = append(b.groupNames, owned)
-		b.groups = append(b.groups, group{first: map[uint64]int32{}})
+		b.groups = append(b.groups, group{})
 	}
 	g := &b.groups[groupID]
 	var found *seriesEntry
@@ -129,11 +129,11 @@ func (b *seriesByName) getOrInsert(name string, hash uint64, pairs [][2]string, 
 func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, series Series) *seriesEntry {
 	g := &b.groups[groupID]
 	next := int32(-1)
-	if first, ok := g.first[hash]; ok {
+	if first, ok := g.first.get(hash, g.entries); ok {
 		next = first
 	}
 	g.entries = append(g.entries, seriesEntry{hash: hash, labels: stored, next: next, series: series})
-	g.first[hash] = int32(len(g.entries) - 1)
+	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
 	b.addPostings(stored, groupID, hash)
 	return &g.entries[len(g.entries)-1]
@@ -148,7 +148,7 @@ func (b *seriesByName) insert(hash uint64, stored labels.Labels, series Series) 
 		owned := string([]byte(name))
 		b.names[owned] = groupID
 		b.groupNames = append(b.groupNames, owned)
-		b.groups = append(b.groups, group{first: map[uint64]int32{}})
+		b.groups = append(b.groups, group{})
 	}
 	if b.groups[groupID].lookup(hash, func(entry *seriesEntry) bool { return entry.labels == stored }) {
 		return false
@@ -316,14 +316,14 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 	b.labelSeries = nil
 	for groupID := range b.groups {
 		g := &b.groups[groupID]
-		g.first = make(map[uint64]int32, len(g.entries))
+		g.first.reset(len(g.entries))
 		for index := range g.entries {
 			entry := &g.entries[index]
 			entry.next = -1
-			if first, ok := g.first[entry.hash]; ok {
+			if first, ok := g.first.get(entry.hash, g.entries); ok {
 				entry.next = first
 			}
-			g.first[entry.hash] = int32(index)
+			g.first.set(entry.hash, int32(index), g.entries)
 			b.addPostings(entry.labels, uint32(groupID), entry.hash)
 		}
 	}
