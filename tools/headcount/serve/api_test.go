@@ -134,3 +134,20 @@ func TestHandleGrowth_ReportsChangedAndFalls(t *testing.T) {
 		require.Negative(t, f.Growth)
 	}
 }
+
+func TestHandleHourly_ExactFromChunkMetas(t *testing.T) {
+	s := testServer(t) // one-hour block ranges, so one bucket per range
+	var out struct {
+		Metric string `json:"metric"`
+		Counts []int  `json:"counts"`
+		Truth  []int  `json:"truth"`
+		Exact  bool   `json:"exact"`
+	}
+	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/hourly?day=0", &out))
+	require.Equal(t, s.spikeName, out.Metric, "defaults to the spike metric")
+	require.Len(t, out.Counts, 1)
+	require.True(t, out.Exact)
+	require.Equal(t, out.Truth, out.Counts)
+
+	require.Equal(t, http.StatusBadRequest, getJSON(t, s, `/api/hourly?day=0&metric=a"b`, &out))
+}

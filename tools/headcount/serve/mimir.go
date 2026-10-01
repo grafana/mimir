@@ -121,6 +121,71 @@ func (m *mimir) query(q string, atMS int64, seriesLimit int) queryResult {
 	return res
 }
 
+// rangeResult is one range query's outcome for a query that returns a
+// single series, such as a count().
+type rangeResult struct {
+	Err     string
+	Latency time.Duration
+	Stats   map[string]string
+	Times   []int64 // milliseconds
+	Values  []float64
+}
+
+// queryRange runs a range query from startMS to endMS at step, with the
+// tenant's limits as in query, and returns the first result series.
+func (m *mimir) queryRange(q string, startMS, endMS int64, step time.Duration, seriesLimit int) rangeResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.setSeriesLimit(seriesLimit); err != nil {
+		return rangeResult{Err: fmt.Sprintf("setting series limit: %v", err)}
+	}
+	logOffset := m.logSize()
+	ts := func(ms int64) string { return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z") }
+	u := m.baseURL + "/prometheus/api/v1/query_range?" + url.Values{
+		"query": {q}, "start": {ts(startMS)}, "end": {ts(endMS)}, "step": {fmt.Sprintf("%ds", int(step.Seconds()))},
+	}.Encode()
+
+	start := time.Now()
+	resp, err := http.Get(u)
+	if err != nil {
+		return rangeResult{Err: err.Error(), Latency: time.Since(start)}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	res := rangeResult{Latency: time.Since(start)}
+	if err != nil {
+		res.Err = err.Error()
+		return res
+	}
+	var parsed struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+		Data   struct {
+			Result []struct {
+				Values [][2]any `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		res.Err = fmt.Sprintf("decoding response: %v", err)
+		return res
+	}
+	if parsed.Status != "success" {
+		res.Err = parsed.Error
+	}
+	if len(parsed.Data.Result) > 0 {
+		for _, v := range parsed.Data.Result[0].Values {
+			sec, _ := strconv.ParseFloat(fmt.Sprint(v[0]), 64)
+			val, _ := strconv.ParseFloat(fmt.Sprint(v[1]), 64)
+			res.Times = append(res.Times, int64(sec*1000+0.5))
+			res.Values = append(res.Values, val)
+		}
+	}
+	res.Stats = m.statsFor(q, logOffset)
+	return res
+}
+
 // setSeriesLimit rewrites the runtime config for the tenant and waits for
 // Mimir to report the new value, unless it is already in effect.
 func (m *mimir) setSeriesLimit(limit int) error {
