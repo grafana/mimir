@@ -63,6 +63,8 @@ func (s *server) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/promql/growth", s.handlePromQLGrowth)
 	mux.HandleFunc("GET /api/promql/breakdown", s.handlePromQLBreakdown)
 	mux.HandleFunc("GET /api/window", s.handleWindow)
+	mux.HandleFunc("GET /api/hourly", s.handleHourly)
+	mux.HandleFunc("GET /api/promql/hourly", s.handlePromQLHourly)
 	mux.HandleFunc("GET /api/promql/window", s.handlePromQLWindow)
 }
 
@@ -300,6 +302,80 @@ func (s *server) handlePromQLBreakdown(w http.ResponseWriter, r *http.Request) {
 		})
 		out["rows"] = rows[:min(limit, len(rows))]
 		out["values"] = len(counts)
+	}
+	writeJSON(w, out)
+}
+
+// hourlyMetric returns the metric query parameter, or the spike metric.
+func (s *server) hourlyMetric(r *http.Request) (string, error) {
+	metric := r.URL.Query().Get("metric")
+	if metric == "" {
+		metric = s.spikeName
+	}
+	if metric == "" || strings.ContainsAny(metric, `"{}\`) {
+		return "", fmt.Errorf("metric is required and must be a plain name")
+	}
+	return metric, nil
+}
+
+// handleHourly counts one metric per hour of one day from chunk metas.
+func (s *server) handleHourly(w http.ResponseWriter, r *http.Request) {
+	day, _, _, err := s.dayBaseLimit(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	metric, err := s.hourlyMetric(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := cardpoc.RunE8(s.compacted, s.pop, s.days[day], time.Hour, metric)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"metric": metric,
+		"starts": res.Starts,
+		"counts": res.Counts,
+		"truth":  res.Truth,
+		"exact":  res.Pass(),
+		// Chunk metas live in the series section of the full index, which
+		// is object storage in a real store-gateway.
+		"cost": headcountCost{ElapsedMS: ms(res.Elapsed), SeriesTouched: res.SeriesRead},
+	})
+}
+
+// handlePromQLHourly asks Mimir for the same hourly counts with a range
+// query whose steps line up with the hours.
+func (s *server) handlePromQLHourly(w http.ResponseWriter, r *http.Request) {
+	day, _, _, err := s.dayBaseLimit(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	metric, err := s.hourlyMetric(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	q := fmt.Sprintf(`count(last_over_time({__name__=%q}[1h]))`, metric)
+	hour := time.Hour.Milliseconds()
+	// Each step at t answers (t-1h, t], so t = hour end minus 1 ms answers
+	// exactly [hour start, hour end).
+	res := s.mimir.queryRange(q, s.days[day].MinT+hour-1, s.days[day].MaxT-1, time.Hour, 0)
+	counts := make([]int, int((s.days[day].MaxT-s.days[day].MinT)/hour))
+	for i, ts := range res.Times {
+		if idx := int((ts + 1 - s.days[day].MinT - hour) / hour); idx >= 0 && idx < len(counts) {
+			counts[idx] = int(res.Values[i])
+		}
+	}
+	out := map[string]any{"query": q, "counts": counts, "latency_ms": ms(res.Latency), "error": res.Err}
+	for _, k := range []string{"fetched_series_count", "fetched_chunk_bytes", "fetched_index_bytes"} {
+		if v, ok := res.Stats[k]; ok {
+			out[k] = v
+		}
 	}
 	writeJSON(w, out)
 }
