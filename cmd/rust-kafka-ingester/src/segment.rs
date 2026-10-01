@@ -22,7 +22,11 @@ const COMPRESSED_FILE_VERSION: u32 = 2;
 // Like the Prometheus WAL, a file holds a series' labels once and refers to them afterwards.
 const SERIES_ID_FILE_VERSION: u32 = 3;
 // A file may hold a dictionary trained on its first frames, which the frames after it use.
-const FILE_FORMAT_VERSION: u32 = 4;
+const DICTIONARY_FILE_VERSION: u32 = 4;
+// Like series, metadata is defined once per file; lengths and counts are varints and sample
+// timestamps are deltas. Frames of series the file already has are then mostly samples, which
+// halves what zstd compresses.
+const FILE_FORMAT_VERSION: u32 = 5;
 const CHECKPOINT_VERSION: u32 = 1;
 const FILE_HEADER_LEN: usize = 28;
 const FRAME_HEADER_LEN: usize = 8;
@@ -54,8 +58,15 @@ struct CurrentFile {
     // Which log instance's file this is, so a frame is only written to the file it was encoded
     // for.
     id: u64,
-    // The id of each series the file holds, by `SeriesKey`, in the order the file defined them.
-    series: hashbrown::HashMap<SeriesKey, u32, std::hash::BuildHasherDefault<KeyHasher>>,
+    // The id of each series the file holds, in the order the file defined them, by the low 64 bits
+    // of its `SeriesKey`, with the next 32 bits to tell apart keys that only share those: an
+    // hour's file holds every series of the partition, so a slot half the size of a whole key
+    // keeps lookups from missing the caches as often.
+    series: hashbrown::HashMap<u64, (u32, u32), std::hash::BuildHasherDefault<KeyHasher>>,
+    // The series the file defined, some of them twice when their keys shared 64 bits.
+    defined_series: u32,
+    // The id of each metadata entry the file defined, by its key.
+    metadata: hashbrown::HashMap<SeriesKey, u32, std::hash::BuildHasherDefault<KeyHasher>>,
     dictionary: Dictionary,
     // Whether the dictionary frame is in the file, which it must be before a frame that uses it.
     dictionary_written: bool,
@@ -167,6 +178,10 @@ impl std::hash::Hasher for KeyHasher {
 
     fn write_u128(&mut self, value: u128) {
         self.0 = value as u64;
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
     }
 }
 
@@ -452,27 +467,52 @@ impl SegmentLog {
         let current = self.current.as_mut().context("segment file is not open")?;
         let payload = &mut self.payload;
         payload.clear();
-        put_string(payload, tenant)?;
-        put_i32(payload, request.source);
-        put_metadata(payload, &request.metadata)?;
-        put_len(payload, request.series.len())?;
-        for (series, key) in request.series.iter().zip(keys) {
-            let defined = current.series.len() as u32;
-            match current.series.entry(*key) {
+        put_varint_string(payload, tenant);
+        put_varint(payload, u64::from(request.source as u32));
+        put_varint(payload, request.metadata.len() as u64);
+        for metadata in &request.metadata {
+            let defined = current.metadata.len() as u32;
+            match current.metadata.entry(metadata_key(metadata)) {
                 hashbrown::hash_map::Entry::Occupied(entry) => {
                     put_varint(payload, u64::from(*entry.get()) + 1);
                 }
                 hashbrown::hash_map::Entry::Vacant(entry) => {
                     entry.insert(defined);
                     put_varint(payload, 0);
-                    put_len(payload, series.labels.len())?;
+                    put_varint(payload, u64::from(metadata.r#type as u32));
+                    put_varint_string(payload, &metadata.metric_family_name);
+                    put_varint_string(payload, &metadata.help);
+                    put_varint_string(payload, &metadata.unit);
+                }
+            }
+        }
+        put_varint(payload, request.series.len() as u64);
+        for (series, key) in request.series.iter().zip(keys) {
+            let check = (*key >> 64) as u32;
+            let id = match current.series.entry(*key as u64) {
+                hashbrown::hash_map::Entry::Occupied(entry) => {
+                    let (id, known) = *entry.get();
+                    // Another series with the same low 64 bits: it gets its labels every time.
+                    (known == check).then_some(id)
+                }
+                hashbrown::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((current.defined_series, check));
+                    None
+                }
+            };
+            match id {
+                Some(id) => put_varint(payload, u64::from(id) + 1),
+                None => {
+                    current.defined_series += 1;
+                    put_varint(payload, 0);
+                    put_varint(payload, series.labels.len() as u64);
                     for (name, value) in &series.labels {
-                        put_string(payload, name)?;
-                        put_string(payload, value)?;
+                        put_varint_string(payload, name);
+                        put_varint_string(payload, value);
                     }
                 }
             }
-            put_series_data(payload, series)?;
+            put_compact_series_data(payload, series, timestamp_ms);
         }
         current.dictionary.poll();
         let (compressed, dictionary) = match &mut current.dictionary {
@@ -573,6 +613,12 @@ impl SegmentLog {
         {
             return Ok(());
         }
+        // The next hour's file defines about as many series, so its map starts at that size
+        // rather than rehashing them all as it grows.
+        let expected_series = self
+            .current
+            .as_ref()
+            .map_or(0, |current| current.series.len());
         self.flush()?;
         self.seal_current()?;
         // A file left open by an earlier process is sealed rather than appended to: the series
@@ -622,7 +668,12 @@ impl SegmentLog {
             sequence,
             file,
             id: self.next_file_id,
-            series: Default::default(),
+            series: hashbrown::HashMap::with_capacity_and_hasher(
+                expected_series,
+                Default::default(),
+            ),
+            defined_series: 0,
+            metadata: Default::default(),
             dictionary: Dictionary::new(),
             dictionary_written: false,
         });
@@ -729,6 +780,7 @@ fn read_segment(
         version,
         cutoff: replay_cutoff,
         series: Vec::new(),
+        metadata: Vec::new(),
         dictionary: None,
     };
     loop {
@@ -810,7 +862,7 @@ fn read_segment(
             return finish_torn(path, reader, mutable, last_offset, valid_len);
         }
         // The frames after it are decoded with the file's dictionary.
-        if version >= FILE_FORMAT_VERSION
+        if version >= DICTIONARY_FILE_VERSION
             && i64::from_le_bytes(body[..8].try_into().unwrap()) == DICTIONARY_OFFSET
         {
             replay_batch(
@@ -908,6 +960,8 @@ struct ReplayState {
     cutoff: Option<i64>,
     // The labels of the series the file defined, by id.
     series: Vec<DefinedLabels>,
+    // The metadata entries the file defined, by id.
+    metadata: Vec<cortexpb::MetricMetadata>,
     // The file's dictionary, once replay read it.
     dictionary: Option<zstd::dict::DecoderDictionary<'static>>,
 }
@@ -972,6 +1026,11 @@ fn replay_batch(
                             .map(DecodedFrame::Record)
                             .with_context(context);
                     }
+                    if version >= FILE_FORMAT_VERSION {
+                        return decode_compact_frame(&body[..FRAME_PREFIX_LEN], payload.into())
+                            .map(DecodedFrame::WithSeriesIds)
+                            .with_context(context);
+                    }
                     decode_frame_with_series_ids(&body[..FRAME_PREFIX_LEN], payload.into())
                         .map(DecodedFrame::WithSeriesIds)
                         .with_context(context)
@@ -990,7 +1049,7 @@ fn replay_batch(
                     .cutoff
                     .is_some_and(|cutoff| frame.ingested_ms < cutoff);
                 let record = frame
-                    .resolve(&mut state.series)
+                    .resolve(&mut state.series, &mut state.metadata)
                     .with_context(|| format!("resolve series in {}", path.display()))?;
                 if expired {
                     *last_offset = Some(record.offset);
@@ -1083,15 +1142,36 @@ struct FrameWithSeriesIds {
     ingested_ms: i64,
     tenant: String,
     source: i32,
-    metadata: Vec<cortexpb::MetricMetadata>,
+    metadata: Vec<FrameMetadata>,
     series: Vec<(FrameLabels, DecodedSeries)>,
 }
+
+// A metadata entry when the frame defines it, or its id.
+type FrameMetadata = Result<cortexpb::MetricMetadata, u32>;
 
 // A series' labels when the frame defines it, or its id.
 type FrameLabels = Result<Vec<(LabelStr, LabelStr)>, u32>;
 
 impl FrameWithSeriesIds {
-    fn resolve(self, defined: &mut Vec<DefinedLabels>) -> Result<RecoveredRecord> {
+    fn resolve(
+        self,
+        defined: &mut Vec<DefinedLabels>,
+        defined_metadata: &mut Vec<cortexpb::MetricMetadata>,
+    ) -> Result<RecoveredRecord> {
+        let metadata = self
+            .metadata
+            .into_iter()
+            .map(|metadata| match metadata {
+                Ok(metadata) => {
+                    defined_metadata.push(metadata.clone());
+                    Ok(metadata)
+                }
+                Err(id) => defined_metadata
+                    .get(id as usize)
+                    .cloned()
+                    .with_context(|| format!("metadata {id} is not defined before its use")),
+            })
+            .collect::<Result<_>>()?;
         let series = self
             .series
             .into_iter()
@@ -1117,10 +1197,58 @@ impl FrameWithSeriesIds {
             request: DecodedRequest {
                 source: self.source,
                 series,
-                metadata: self.metadata,
+                metadata,
             },
         })
     }
+}
+
+fn decode_compact_frame(prefix: &[u8], payload: Bytes) -> Result<FrameWithSeriesIds> {
+    let mut cursor = Cursor::new(prefix);
+    let offset = cursor.i64()?;
+    let kafka_timestamp_ms = cursor.i64()?;
+    let ingested_ms = cursor.i64()?;
+    let mut cursor = Cursor::new(&payload);
+    let tenant = cursor.varint_string()?;
+    let source = u32::try_from(cursor.varint()?).context("source exceeds u32")? as i32;
+    let metadata = cursor.varint_items(|cursor| match cursor.varint()? {
+        0 => Ok(Ok(cortexpb::MetricMetadata {
+            r#type: u32::try_from(cursor.varint()?).context("metadata type exceeds u32")? as i32,
+            metric_family_name: cursor.varint_string()?,
+            help: cursor.varint_string()?,
+            unit: cursor.varint_string()?,
+        })),
+        id => Ok(Err(
+            u32::try_from(id - 1).context("metadata id exceeds u32")?
+        )),
+    })?;
+    let series = cursor.varint_items(|cursor| {
+        let labels = match cursor.varint()? {
+            0 => Ok(cursor.varint_items(|cursor| {
+                Ok((
+                    cursor.varint_label(&payload)?,
+                    cursor.varint_label(&payload)?,
+                ))
+            })?),
+            id => Err(u32::try_from(id - 1).context("series id exceeds u32")?),
+        };
+        Ok((
+            labels,
+            decode_compact_series_data(cursor, kafka_timestamp_ms)?,
+        ))
+    })?;
+    if cursor.remaining() != 0 {
+        bail!("trailing bytes in segment frame");
+    }
+    Ok(FrameWithSeriesIds {
+        offset,
+        kafka_timestamp_ms,
+        ingested_ms,
+        tenant,
+        source,
+        metadata,
+        series,
+    })
 }
 
 fn decode_frame_with_series_ids(prefix: &[u8], payload: Bytes) -> Result<FrameWithSeriesIds> {
@@ -1131,7 +1259,8 @@ fn decode_frame_with_series_ids(prefix: &[u8], payload: Bytes) -> Result<FrameWi
     let mut cursor = Cursor::new(&payload);
     let tenant = cursor.string()?;
     let source = cursor.i32()?;
-    let metadata = decode_metadata(&mut cursor)?;
+    // Version 3 and 4 frames hold their metadata entries.
+    let metadata = decode_metadata(&mut cursor)?.into_iter().map(Ok).collect();
     let series = cursor.items(|cursor| {
         let labels = match cursor.varint()? {
             0 => Ok(cursor.items(|cursor| Ok((cursor.label(&payload)?, cursor.label(&payload)?)))?),
@@ -1153,6 +1282,7 @@ fn decode_frame_with_series_ids(prefix: &[u8], payload: Bytes) -> Result<FrameWi
     })
 }
 
+#[cfg(test)]
 fn put_metadata(bytes: &mut Vec<u8>, metadata: &[cortexpb::MetricMetadata]) -> Result<()> {
     put_len(bytes, metadata.len())?;
     for metadata in metadata {
@@ -1176,6 +1306,7 @@ fn decode_metadata(cursor: &mut Cursor<'_>) -> Result<Vec<cortexpb::MetricMetada
 }
 
 // Everything of a series but its labels.
+#[cfg(test)]
 fn put_series_data(bytes: &mut Vec<u8>, series: &DecodedSeries) -> Result<()> {
     put_i64(bytes, series.created_timestamp);
     put_len(bytes, series.samples.len())?;
@@ -1185,6 +1316,83 @@ fn put_series_data(bytes: &mut Vec<u8>, series: &DecodedSeries) -> Result<()> {
     }
     put_messages(bytes, &series.histograms)?;
     put_messages(bytes, &series.exemplars)
+}
+
+/// `put_series_data` for version 5 files: varints, and each sample's timestamp as a delta from the
+/// previous one's, the first from the frame's timestamp.
+fn put_compact_series_data(bytes: &mut Vec<u8>, series: &DecodedSeries, timestamp_ms: i64) {
+    put_varint(bytes, zigzag(series.created_timestamp));
+    put_varint(bytes, series.samples.len() as u64);
+    let mut previous = timestamp_ms;
+    for sample in &series.samples {
+        put_varint(bytes, zigzag(sample.timestamp_ms.wrapping_sub(previous)));
+        previous = sample.timestamp_ms;
+        put_u64(bytes, sample.value.to_bits());
+    }
+    put_varint_messages(bytes, &series.histograms);
+    put_varint_messages(bytes, &series.exemplars);
+}
+
+fn decode_compact_series_data(cursor: &mut Cursor<'_>, timestamp_ms: i64) -> Result<DecodedSeries> {
+    let created_timestamp = unzigzag(cursor.varint()?);
+    let mut previous = timestamp_ms;
+    let samples = cursor.varint_items(|cursor| {
+        previous = previous.wrapping_add(unzigzag(cursor.varint()?));
+        Ok(cortexpb::Sample {
+            timestamp_ms: previous,
+            value: f64::from_bits(cursor.u64()?),
+        })
+    })?;
+    let histograms = cursor.varint_messages::<cortexpb::Histogram>()?;
+    let exemplars = cursor.varint_messages::<cortexpb::Exemplar>()?;
+    Ok(DecodedSeries {
+        labels: Vec::new(),
+        samples,
+        histograms,
+        exemplars,
+        created_timestamp,
+    })
+}
+
+fn zigzag(value: i64) -> u64 {
+    ((value << 1) ^ (value >> 63)) as u64
+}
+
+fn unzigzag(value: u64) -> i64 {
+    ((value >> 1) as i64) ^ -((value & 1) as i64)
+}
+
+/// A metadata entry's identity within a file, like `SeriesKey` for series.
+fn metadata_key(metadata: &cortexpb::MetricMetadata) -> SeriesKey {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    BUFFER.with_borrow_mut(|buffer| {
+        buffer.clear();
+        buffer.extend_from_slice(&metadata.r#type.to_le_bytes());
+        put_key_part(buffer, metadata.metric_family_name.as_bytes());
+        put_key_part(buffer, metadata.help.as_bytes());
+        put_key_part(buffer, metadata.unit.as_bytes());
+        twox_hash::XxHash3_128::oneshot_with_seed(key_seed() ^ METADATA_KEYS, buffer)
+    })
+}
+
+// Keeps metadata keys apart from series keys.
+const METADATA_KEYS: u64 = 0x2545_f491_4f6c_dd1d;
+
+fn put_varint_string(bytes: &mut Vec<u8>, value: &str) {
+    put_varint(bytes, value.len() as u64);
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+fn put_varint_messages<M: Message>(bytes: &mut Vec<u8>, messages: &[M]) {
+    put_varint(bytes, messages.len() as u64);
+    for message in messages {
+        put_varint(bytes, message.encoded_len() as u64);
+        message
+            .encode(bytes)
+            .expect("a vector grows to fit the message");
+    }
 }
 
 fn decode_series_data(
@@ -1241,6 +1449,7 @@ fn decode_request(cursor: &mut Cursor<'_>) -> Result<DecodedRequest> {
     })
 }
 
+#[cfg(test)]
 fn put_messages<M: Message>(bytes: &mut Vec<u8>, messages: &[M]) -> Result<()> {
     put_len(bytes, messages.len())?;
     for message in messages {
@@ -1353,18 +1562,21 @@ fn hex(bytes: &[u8]) -> String {
     result
 }
 
+#[cfg(test)]
 fn put_len(bytes: &mut Vec<u8>, length: usize) -> Result<()> {
     let length = u32::try_from(length).context("segment collection exceeds u32")?;
     bytes.extend_from_slice(&length.to_le_bytes());
     Ok(())
 }
 
+#[cfg(test)]
 fn put_bytes(bytes: &mut Vec<u8>, value: &[u8]) -> Result<()> {
     put_len(bytes, value.len())?;
     bytes.extend_from_slice(value);
     Ok(())
 }
 
+#[cfg(test)]
 fn put_string(bytes: &mut Vec<u8>, value: &str) -> Result<()> {
     put_bytes(bytes, value.as_bytes())
 }
@@ -1377,6 +1589,7 @@ fn put_varint(bytes: &mut Vec<u8>, mut value: u64) {
     bytes.push(value as u8);
 }
 
+#[cfg(test)]
 fn put_i32(bytes: &mut Vec<u8>, value: i32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
@@ -1472,6 +1685,44 @@ impl<'a> Cursor<'a> {
         (0..length).map(|_| decode(self)).collect()
     }
 
+    fn varint_len(&mut self) -> Result<usize> {
+        usize::try_from(self.varint()?).context("segment length exceeds usize")
+    }
+
+    fn varint_label(&mut self, payload: &Bytes) -> Result<LabelStr> {
+        let length = self.varint_len()?;
+        let bytes = self.take(length)?;
+        if bytes.is_empty() {
+            return Ok(LabelStr::default());
+        }
+        Ok(LabelStr::from_utf8_lossy(payload.slice_ref(bytes)))
+    }
+
+    fn varint_string(&mut self) -> Result<String> {
+        let length = self.varint_len()?;
+        Ok(std::str::from_utf8(self.take(length)?)?.to_owned())
+    }
+
+    fn varint_items<T>(
+        &mut self,
+        mut decode: impl FnMut(&mut Self) -> Result<T>,
+    ) -> Result<Vec<T>> {
+        let length = self.varint_len()?;
+        // Bounded by what's left, so a corrupt count can't reserve without limit.
+        let mut items = Vec::with_capacity(length.min(self.remaining()));
+        for _ in 0..length {
+            items.push(decode(self)?);
+        }
+        Ok(items)
+    }
+
+    fn varint_messages<M: Message + Default>(&mut self) -> Result<Vec<M>> {
+        self.varint_items(|cursor| {
+            let length = cursor.varint_len()?;
+            Ok(M::decode(cursor.take(length)?)?)
+        })
+    }
+
     fn messages<M: Message + Default>(&mut self) -> Result<Vec<M>> {
         self.items(|cursor| {
             let length = cursor.u32()? as usize;
@@ -1511,14 +1762,9 @@ mod tests {
             sizes.push(size);
             log.append_compressed(frame).unwrap();
         }
-        // The second frame refers to the series the first defined; another tenant's series with
-        // the same labels is its own.
-        assert!(sizes[1] < sizes[0], "{sizes:?}");
-        assert_eq!(
-            sizes[2] + "tenant".len() as u64,
-            sizes[0] + "other".len() as u64,
-            "{sizes:?}"
-        );
+        // The second frame refers to the series and metadata the first defined; another tenant's
+        // series with the same labels is its own, while the metadata is the file's.
+        assert!(sizes[1] < sizes[2] && sizes[2] < sizes[0], "{sizes:?}");
         // A new file defines its series again.
         log.begin_batch(now + HOUR_MS).unwrap();
         let keys = series_keys("tenant", &request());
@@ -1536,6 +1782,8 @@ mod tests {
                 record.request.series[0].exemplars,
                 expected.series[0].exemplars
             );
+            assert_eq!(record.request.metadata, expected.metadata);
+            assert_eq!(record.request.source, expected.source);
         }
         assert_eq!(recovered[2].tenant, "other");
         assert_eq!(recovered[2].request.series[0].samples[0].timestamp_ms, 200);
@@ -2060,6 +2308,240 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    // The small records the Rust ingester wrote the Go port's version 4 fixture with.
+    fn tiny_request(offset: i64) -> DecodedRequest {
+        DecodedRequest {
+            source: (offset % 3) as i32,
+            series: vec![DecodedSeries {
+                labels: vec![
+                    ("__name__".into(), format!("metric_{}", offset % 7).into()),
+                    ("job".into(), format!("job-{}", offset % 13).into()),
+                    ("pod".into(), format!("pod-{}", offset % 50).into()),
+                ],
+                samples: vec![cortexpb::Sample {
+                    timestamp_ms: 1_800_000_000_000 + offset * 15_000,
+                    value: offset as f64 / 7.0,
+                }],
+                histograms: if offset % 100 == 0 {
+                    vec![cortexpb::Histogram {
+                        count: Some(cortexpb::histogram::Count::CountInt(3)),
+                        sum: 4.5,
+                        timestamp: offset,
+                        ..Default::default()
+                    }]
+                } else {
+                    Vec::new()
+                },
+                exemplars: Vec::new(),
+                created_timestamp: 0,
+            }],
+            metadata: if offset % 500 == 0 {
+                vec![cortexpb::MetricMetadata {
+                    r#type: 1,
+                    metric_family_name: "metric_0".into(),
+                    help: "help".into(),
+                    unit: String::new(),
+                }]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    #[test]
+    fn restarts_from_version_4_files() {
+        let root = temporary_directory("version-4");
+        let directory = root.join(format!("cluster-0-partition-0-topic-{}", hex(b"topic")));
+        fs::create_dir_all(&directory).unwrap();
+        // Written by the version 4 log, with a dictionary it trained after 2000 frames.
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../pkg/storage/seriesstore/segment/testdata/rust-v4-00000001790780400000-0000.segment",
+        );
+        fs::copy(
+            &fixture,
+            directory.join("00000001790780400000-0000.segment"),
+        )
+        .unwrap();
+        let (mut log, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .map(|record| record.offset)
+                .collect::<Vec<_>>(),
+            (1..=2050).collect::<Vec<_>>()
+        );
+        for record in &recovered {
+            assert_eq!(record.kafka_timestamp_ms, record.offset);
+            assert_eq!(record.tenant, "tenant");
+            assert_eq!(
+                request_bytes(&record.request),
+                request_bytes(&tiny_request(record.offset))
+            );
+        }
+        // The new log writes version 5 files next to it, which replay after it.
+        let now = now_ms();
+        log.begin_batch(now).unwrap();
+        for offset in 2051..2060 {
+            log.append_at(offset, offset, "tenant", &tiny_request(offset), now)
+                .unwrap();
+        }
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 2059);
+        assert_eq!(
+            request_bytes(&recovered[2055].request),
+            request_bytes(&tiny_request(2056))
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // Version 5 frames refer to what their file already defined: series and metadata entries,
+    // whatever tenant and hour they come from, and timestamps are deltas; replay gives back every
+    // record exactly.
+    #[test]
+    fn version_5_files_replay_every_record_exactly() {
+        let root = temporary_directory("version-5");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        log.dictionary_frames = 40;
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let now = now_ms();
+        let mut written = Vec::new();
+        for offset in 1..400_i64 {
+            let tenant = ["tenant", "other", "third"][(next() % 3) as usize];
+            let metadata = (0..next() % 3)
+                .map(|_| {
+                    let family = next() % 5;
+                    cortexpb::MetricMetadata {
+                        r#type: (family % 4) as i32,
+                        metric_family_name: format!("family_{family}"),
+                        help: format!("help of {family}"),
+                        unit: if family % 2 == 0 {
+                            "bytes".into()
+                        } else {
+                            String::new()
+                        },
+                    }
+                })
+                .collect();
+            let series = (0..next() % 6)
+                .map(|_| {
+                    let id = next() % 40;
+                    let base = [0_i64, 1_800_000_000_000, -5, i64::MAX / 2][(next() % 4) as usize];
+                    DecodedSeries {
+                        labels: vec![
+                            ("__name__".into(), format!("metric_{}", id % 7).into()),
+                            ("id".into(), id.to_string().into()),
+                        ],
+                        samples: (0..next() % 4)
+                            .map(|index| cortexpb::Sample {
+                                timestamp_ms: base
+                                    .wrapping_add(index as i64 * 15_000)
+                                    .wrapping_sub((next() % 2_000) as i64),
+                                value: f64::from_bits(next()),
+                            })
+                            .collect(),
+                        histograms: (0..next() % 2)
+                            .map(|_| cortexpb::Histogram {
+                                count: Some(cortexpb::histogram::Count::CountInt(next() % 9)),
+                                sum: 4.5,
+                                timestamp: base,
+                                ..Default::default()
+                            })
+                            .collect(),
+                        exemplars: (0..next() % 2)
+                            .map(|_| cortexpb::Exemplar {
+                                labels: vec![cortexpb::LabelPair {
+                                    name: b"trace_id".to_vec().into(),
+                                    value: next().to_string().into_bytes().into(),
+                                }],
+                                value: 1.5,
+                                timestamp_ms: base,
+                            })
+                            .collect(),
+                        created_timestamp: [0, base, -(next() as i64 % 1000)]
+                            [(next() % 3) as usize],
+                    }
+                })
+                .collect();
+            let request = DecodedRequest {
+                source: [0, 1, 2, i32::MAX, i32::MIN][(next() % 5) as usize],
+                series,
+                metadata,
+            };
+            // Files of three hours, each defining again what the one before did.
+            let ingested = now + (offset / 150) * HOUR_MS;
+            let timestamp = [offset, 0, -offset, 1_800_000_000_000][(next() % 4) as usize];
+            log.append_at(offset, timestamp, tenant, &request, ingested)
+                .unwrap();
+            written.push((offset, timestamp, tenant, request));
+        }
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), written.len());
+        for (record, (offset, timestamp, tenant, request)) in recovered.iter().zip(&written) {
+            assert_eq!(record.offset, *offset);
+            assert_eq!(record.kafka_timestamp_ms, *timestamp);
+            assert_eq!(record.tenant, *tenant);
+            assert_eq!(
+                request_bytes(&record.request),
+                request_bytes(request),
+                "offset {offset}"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A series whose key shares its low 64 bits with another's gets its labels in every frame,
+    // rather than the other's id.
+    #[test]
+    fn series_sharing_the_low_bits_of_their_keys_keep_their_own_labels() {
+        let root = temporary_directory("key-collision");
+        let (mut log, _) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        let now = now_ms();
+        log.begin_batch(now).unwrap();
+        let series = |name: &str| DecodedSeries {
+            labels: vec![("__name__".into(), name.into())],
+            samples: vec![cortexpb::Sample {
+                timestamp_ms: 1,
+                value: 1.0,
+            }],
+            histograms: Vec::new(),
+            exemplars: Vec::new(),
+            created_timestamp: 0,
+        };
+        let request = DecodedRequest {
+            source: 0,
+            series: vec![series("first"), series("second"), series("third")],
+            metadata: Vec::new(),
+        };
+        let keys = [(1_u128 << 64) | 7, (2_u128 << 64) | 7, 3];
+        for offset in 1..4 {
+            let frame = log
+                .encode(offset, 1, now, "tenant", &request, &keys)
+                .unwrap();
+            log.append_compressed(frame).unwrap();
+        }
+        drop(log);
+        let (_, recovered) = SegmentLog::open(&root, 0, "topic", 0, None).unwrap();
+        assert_eq!(recovered.len(), 3);
+        for record in &recovered {
+            let names = record
+                .request
+                .series
+                .iter()
+                .map(|series| series.labels[0].1.as_str().to_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(names, ["first", "second", "third"]);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn restarts_from_version_3_files() {
         let root = temporary_directory("version-3");
@@ -2086,7 +2568,7 @@ mod tests {
                 request_bytes(&expected(record.offset))
             );
         }
-        // The new log writes version 4 files next to it.
+        // The new log writes version 5 files next to it.
         log.dictionary_frames = 50;
         let end = append_past_dictionary(&mut log, 21, 5, now_ms());
         drop(log);

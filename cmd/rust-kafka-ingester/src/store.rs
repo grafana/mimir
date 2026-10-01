@@ -94,16 +94,18 @@ impl ChunkList {
         *self = Self::from_metas(&metas);
     }
 
-    fn retain(&mut self, mut keep: impl FnMut(&ChunkMeta) -> bool) {
+    /// Returns whether it removed a chunk.
+    fn retain(&mut self, mut keep: impl FnMut(&ChunkMeta) -> bool) -> bool {
         let metas = self.to_vec();
         if metas.iter().all(&mut keep) {
-            return;
+            return false;
         }
         let kept = metas
             .into_iter()
             .filter(|meta| keep(meta))
             .collect::<Vec<_>>();
         *self = Self::from_metas(&kept);
+        true
     }
 }
 
@@ -209,6 +211,11 @@ struct Series {
     // Evicted from the emulated head as non-owned, like Mimir's early compaction of non-owned
     // series, until its next sample; its data stays queryable as a compacted block's.
     head_evicted: bool,
+    // Whether the series changed since the last head tick, which then re-evaluates it.
+    touched: bool,
+    // Its head chunks as of the last head tick, which a tick that only re-evaluates the touched
+    // series takes out of the totals before counting them again.
+    head_chunks_counted: u32,
     // When an owned series recompute first found it non-owned, in Unix seconds, or 0.
     non_owned_since_s: u32,
     // Mimir's `ShardByAllLabels`, which decides which partition owns the series.
@@ -319,6 +326,8 @@ struct SeriesByName {
     // only needs its own name checked.
     name_matches: Mutex<HashMap<NameMatcherKey, (usize, NameGroups)>>,
     len: usize,
+    // The (name group, label hash) of the series changed since the last head tick, once each.
+    touched: Vec<(u32, u64)>,
 }
 
 // A name matcher other than an equality, by type and pattern.
@@ -437,7 +446,8 @@ impl SeriesByName {
         let postings = &mut self.postings;
         let shared_postings = &mut self.shared_postings;
         let refs = &mut self.refs;
-        match table.entry(
+        let touched = &mut self.touched;
+        let (labels, series) = match table.entry(
             hash,
             |((entry_hash, entry_labels), _)| *entry_hash == hash && is_same(entry_labels),
             |((entry_hash, _), _)| *entry_hash,
@@ -462,7 +472,35 @@ impl SeriesByName {
                     entry.insert(((hash, labels), Box::default())).into_mut();
                 (&*labels, &mut **series)
             }
+        };
+        // Every change to a series' samples goes through here, so the next head tick finds it.
+        if !series.touched {
+            series.touched = true;
+            touched.push((group, hash));
         }
+        (labels, series)
+    }
+
+    /// Visits the series changed since the last head tick, once each, and forgets them.
+    fn for_each_touched(&mut self, mut visit: impl FnMut(&mut Series)) {
+        for (group, hash) in std::mem::take(&mut self.touched) {
+            let Some(table) = self.groups.get_mut(group as usize) else {
+                continue;
+            };
+            // Series sharing the hash that weren't changed have their flag clear; removed series
+            // are no longer there.
+            for ((entry_hash, _), series) in table.iter_hash_mut(hash) {
+                if *entry_hash == hash && series.touched {
+                    series.touched = false;
+                    visit(series);
+                }
+            }
+        }
+    }
+
+    /// Forgets which series changed, once a tick re-evaluated every series.
+    fn clear_touched(&mut self) {
+        self.touched.clear();
     }
 
     fn insert(&mut self, key: SeriesKey, series: Series) -> bool {
@@ -779,9 +817,33 @@ impl SeriesByName {
     }
 
     fn retain(&mut self, mut keep: impl FnMut(&SeriesKey, &mut Series) -> bool) {
+        self.retain_in_groups(|_, key, series| keep(key, series));
+    }
+
+    /// Like `retain`, for `keep` returning whether to keep a series and whether it changed it: the
+    /// next head tick re-evaluates the series it changed. Returns whether a series the last head
+    /// tick counted in the head was removed, whose counts then need a whole tick.
+    fn retain_touching(&mut self, mut keep: impl FnMut(&mut Series) -> (bool, bool)) -> bool {
+        let mut changed = Vec::new();
+        let mut removed_in_head = false;
+        self.retain_in_groups(|group, (hash, _), series| {
+            let (kept, change) = keep(series);
+            if !kept {
+                removed_in_head |= series.in_head;
+            } else if change && !series.touched {
+                series.touched = true;
+                changed.push((group, *hash));
+            }
+            kept
+        });
+        self.touched.extend(changed);
+        removed_in_head
+    }
+
+    fn retain_in_groups(&mut self, mut keep: impl FnMut(u32, &SeriesKey, &mut Series) -> bool) {
         let mut len = 0;
-        for table in &mut self.groups {
-            table.retain(|(key, series)| keep(key, series));
+        for (group, table) in self.groups.iter_mut().enumerate() {
+            table.retain(|(key, series)| keep(group as u32, key, series));
             // Retention removes whole hours of series at once; give back the slots.
             if table.capacity() > 4 * table.len().max(8) {
                 table.shrink_to_fit(|((hash, _), _)| *hash);
@@ -861,6 +923,10 @@ type MetricMetadataSet = BTreeMap<(i32, String, String), (cortexpb::MetricMetada
 
 struct Tenant {
     series: SeriesByName,
+    // What this shard's series added up to at the last head tick, and the head min time and owned
+    // ranges they were counted against: while those stay, a tick only re-evaluates the series
+    // that changed since.
+    tick_totals: Option<TickTotals>,
     // Tenant metadata, ingestion rates and the head's max time live only in shard 0.
     metadata: BTreeMap<String, MetricMetadataSet>,
     ingested: VecDeque<(Instant, i32, u64)>,
@@ -888,6 +954,7 @@ impl Default for Tenant {
     fn default() -> Self {
         Self {
             series: SeriesByName::default(),
+            tick_totals: None,
             metadata: BTreeMap::new(),
             ingested: VecDeque::new(),
             max_time: i64::MIN,
@@ -902,6 +969,19 @@ impl Default for Tenant {
             tracker_generation: 1,
         }
     }
+}
+
+// A tenant's owned ranges as a head tick sees them: none known yet, the tenant not asked about,
+// or its ranges (None when outside its shuffle shard).
+type TickRanges = Option<Option<Option<Vec<u32>>>>;
+
+#[derive(Clone, PartialEq)]
+struct TickTotals {
+    head_min: i64,
+    ranges: TickRanges,
+    memory_series: u64,
+    owned_series: u64,
+    head_chunks: u64,
 }
 
 struct State {
@@ -1015,6 +1095,9 @@ pub struct Store {
     // Series whose oldest sample a head tick looked up.
     #[cfg(test)]
     oldest_scans: std::sync::atomic::AtomicU64,
+    // Makes every head tick re-evaluate every series, the reference incremental ticks match.
+    #[cfg(test)]
+    full_ticks: std::sync::atomic::AtomicBool,
     // Retention's last cutoff: cold blocks keep references to chunks it removed.
     pruned_before: std::sync::atomic::AtomicI64,
     // Whether the last head tick compacted, so this one checks for an early compaction with
@@ -1453,6 +1536,8 @@ impl Store {
             freeze_pending: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             oldest_scans: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(test)]
+            full_ticks: std::sync::atomic::AtomicBool::new(false),
             pruned_before: std::sync::atomic::AtomicI64::new(i64::MIN),
             compacted_last_tick: std::sync::atomic::AtomicBool::new(false),
         })
@@ -2088,9 +2173,12 @@ impl Store {
             self.shards.par_iter().try_for_each(|shard| {
                 let mut state = shard.write().expect("store lock poisoned");
                 for tenant in state.tenants.values_mut() {
-                    tenant
+                    if tenant
                         .series
-                        .retain(|_, series| prune_series(series, cutoff));
+                        .retain_touching(|series| prune_series(series, cutoff))
+                    {
+                        tenant.tick_totals = None;
+                    }
                 }
                 // Like Go's block retention, a cold block goes once all of it is older.
                 for block in &state.cold.blocks {
@@ -2545,6 +2633,11 @@ impl Store {
                 })
                 .collect::<HashMap<_, _>>()
         };
+        // This tick's report decides early compactions, which need active series counts.
+        let need_active = self.early_head_compaction.is_some()
+            && self
+                .compacted_last_tick
+                .load(std::sync::atomic::Ordering::Relaxed);
         let per_shard = self.pool.install(|| {
             self.shards
                 .par_iter()
@@ -2567,7 +2660,33 @@ impl Store {
                                 ..HeadReport::default()
                             };
                             let mut min_time = i64::MAX;
-                            tenant.series.for_each_mut(|_, series| {
+                            let tick_ranges = ranges.map(|ranges| ranges.cloned());
+                            // A series' counts only change when its samples, the head min time or
+                            // the owned ranges do, unless the tick evicts, recomputes ownership,
+                            // needs active series or the head's oldest sample.
+                            #[cfg(test)]
+                            let forced_full =
+                                self.full_ticks.load(std::sync::atomic::Ordering::Relaxed);
+                            #[cfg(not(test))]
+                            let forced_full = false;
+                            let incremental = !forced_full
+                                && head_min != i64::MIN
+                                && !recompute
+                                && evict_before.is_none()
+                                && !need_active
+                                && tenant.tick_totals.as_ref().is_some_and(|totals| {
+                                    totals.head_min == head_min && totals.ranges == tick_ranges
+                                });
+                            let is_owned = |series: &Series| match ranges {
+                                // Unknown ranges or a tenant the ring has not been asked about
+                                // yet count as owned, like new series in Go.
+                                None | Some(None) => true,
+                                Some(Some(None)) => false,
+                                Some(Some(Some(ranges))) => {
+                                    ranges_include(ranges, series.owned_hash)
+                                }
+                            };
+                            let mut evaluate = |series: &mut Series, report: &mut HeadReport| {
                                 let newest = series_newest(series);
                                 // The oldest sample is the head's min time only until its first
                                 // compaction, which sets it for good; looking it up decodes every
@@ -2599,31 +2718,27 @@ impl Store {
                                     _ => {}
                                 }
                                 series.in_head = in_head;
+                                series.head_chunks_counted = 0;
                                 if !in_head {
                                     return;
                                 }
                                 report.memory_series += 1;
-                                report.active_series += u64::from(series.is_active(active_cutoff));
-                                // Unknown ranges or a tenant the ring has not been asked about
-                                // yet count as owned, like new series in Go.
-                                let is_owned = match ranges {
-                                    None | Some(None) => true,
-                                    Some(Some(None)) => false,
-                                    Some(Some(Some(ranges))) => {
-                                        ranges_include(ranges, series.owned_hash)
-                                    }
-                                };
-                                report.owned_series += u64::from(is_owned);
+                                if !incremental {
+                                    report.active_series +=
+                                        u64::from(series.is_active(active_cutoff));
+                                }
+                                let owned = is_owned(series);
+                                report.owned_series += u64::from(owned);
                                 if recompute && track_non_owned {
                                     // Like addPendingNonOwnedRefs, a series keeps the time it
                                     // was first found non-owned while it stays so.
-                                    if is_owned {
+                                    if owned {
                                         series.non_owned_since_s = 0;
                                     } else if series.non_owned_since_s == 0 {
                                         series.non_owned_since_s = now_s.max(1);
                                     }
                                 }
-                                if recompute && !is_owned {
+                                if recompute && !owned {
                                     // Mimir clears all active series when the tenant owns no
                                     // ranges, and deletes the non-owned ones otherwise.
                                     match ranges {
@@ -2633,15 +2748,46 @@ impl Store {
                                         _ => series.active_cleared = true,
                                     }
                                 }
-                                report.head_chunks += series
+                                let chunks = series
                                     .chunks
                                     .iter()
                                     .filter(|chunk| chunk.max_time >= head_min)
-                                    .count()
-                                    as u64
+                                    .count() as u64
                                     + u64::from(series.float_head.is_some())
                                     + u64::from(!series.histogram_head.is_empty())
                                     + u64::from(!series.out_of_order.is_empty());
+                                series.head_chunks_counted =
+                                    u32::try_from(chunks).unwrap_or(u32::MAX);
+                                report.head_chunks += chunks;
+                            };
+                            if incremental {
+                                let totals = tenant.tick_totals.as_ref().expect("checked");
+                                report.memory_series = totals.memory_series;
+                                report.owned_series = totals.owned_series;
+                                report.head_chunks = totals.head_chunks;
+                                tenant.series.for_each_touched(|series| {
+                                    // Its counts as of the last tick come out, then go back in
+                                    // as they are now.
+                                    if series.in_head {
+                                        report.memory_series -= 1;
+                                        report.owned_series -= u64::from(is_owned(series));
+                                        report.head_chunks -= u64::from(series.head_chunks_counted);
+                                    }
+                                    evaluate(series, &mut report);
+                                });
+                            } else {
+                                tenant.series.for_each_mut(|_, series| {
+                                    series.touched = false;
+                                    evaluate(series, &mut report);
+                                });
+                                tenant.series.clear_touched();
+                            }
+                            tenant.tick_totals = Some(TickTotals {
+                                head_min,
+                                ranges: tick_ranges,
+                                memory_series: report.memory_series,
+                                owned_series: report.owned_series,
+                                head_chunks: report.head_chunks,
                             });
                             report.head_min_time = min_time;
                             report
@@ -4128,8 +4274,15 @@ fn encode_chunk(min_time: i64, max_time: i64, encoding: i32, data: &[u8]) -> Vec
 }
 
 // Like head truncation, retention drops whole chunks, so a chunk that straddles the cutoff stays.
-fn prune_series(series: &mut Series, cutoff: i64) -> bool {
-    series.chunks.retain(|chunk| chunk.max_time >= cutoff);
+/// Drops what `series` has older than `cutoff`. Returns whether to keep it, and whether anything
+/// was dropped.
+fn prune_series(series: &mut Series, cutoff: i64) -> (bool, bool) {
+    let before = (
+        series.float_head.is_some(),
+        series.histogram_head.is_empty(),
+        series.out_of_order.len(),
+    );
+    let dropped_chunks = series.chunks.retain(|chunk| chunk.max_time >= cutoff);
     if series
         .float_head
         .as_ref()
@@ -4147,7 +4300,12 @@ fn prune_series(series: &mut Series, cutoff: i64) -> bool {
     series
         .out_of_order
         .retain(|(timestamp, _)| *timestamp >= cutoff);
-    has_samples(series)
+    let after = (
+        series.float_head.is_some(),
+        series.histogram_head.is_empty(),
+        series.out_of_order.len(),
+    );
+    (has_samples(series), dropped_chunks || before != after)
 }
 
 fn histogram_bucket_count(histogram: &cortexpb::Histogram) -> u64 {
@@ -5082,6 +5240,225 @@ mod tests {
         // The compaction's tick still counted b, which only the next tick finds out of the head.
         assert_eq!((after.1, after.4), (1, 1));
         assert_eq!(report(false), (after.0, 1, after.2, 0, 0));
+    }
+
+    /// Every tenant's head counts recomputed from every series against the head min time and
+    /// owned ranges the last tick counted with, as a tick re-evaluating them all reports them.
+    fn recounted_heads(store: &Store) -> BTreeMap<String, (u64, u64, u64)> {
+        let mut counts = BTreeMap::<String, (u64, u64, u64)>::new();
+        for shard in &store.shards {
+            let mut state = shard.write().unwrap();
+            for (id, tenant) in state.tenants.iter_mut() {
+                let totals = tenant.tick_totals.clone().expect("ticked");
+                let head_min = totals.head_min;
+                let ranges = totals.ranges.as_ref().map(Option::as_ref);
+                let count = counts.entry(id.clone()).or_default();
+                tenant.series.for_each_mut(|_, series| {
+                    let in_head = !series.head_evicted
+                        && series_newest(series).is_some_and(|newest| newest >= head_min);
+                    assert_eq!(
+                        series.in_head, in_head,
+                        "a series' head membership is current"
+                    );
+                    if !in_head {
+                        return;
+                    }
+                    count.0 += 1;
+                    count.1 += u64::from(match ranges {
+                        None | Some(None) => true,
+                        Some(Some(None)) => false,
+                        Some(Some(Some(ranges))) => ranges_include(ranges, series.owned_hash),
+                    });
+                    count.2 += series
+                        .chunks
+                        .iter()
+                        .filter(|chunk| chunk.max_time >= head_min)
+                        .count() as u64
+                        + u64::from(series.float_head.is_some())
+                        + u64::from(!series.histogram_head.is_empty())
+                        + u64::from(!series.out_of_order.is_empty());
+                });
+            }
+        }
+        counts
+    }
+
+    // Ticks that only re-evaluate the series changed since the last one report what ticks
+    // re-evaluating every series do, through appends, out-of-order samples, compactions, owned
+    // range changes and retention.
+    #[test]
+    fn incremental_head_ticks_report_like_whole_ones() {
+        let store = || {
+            let overrides = Overrides::new(out_of_order_limits());
+            overrides.set_active_partitions(1);
+            Store::with_shards(i64::MAX / 4, None, None, 4, 2)
+                .unwrap()
+                .with_overrides(Arc::new(overrides))
+        };
+        let (incremental, whole) = (store(), store());
+        whole
+            .full_ticks
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let base = now_ms() - 4 * HOUR;
+        let mut incremental_ticks = 0;
+        for step in 0..700_i64 {
+            let now = base + step * 15_000;
+            for _ in 0..next(4) {
+                let tenant = ["a", "b"][next(2) as usize];
+                let name = format!("metric_{}", next(150));
+                // Some samples arrive out of order, within the window or past it.
+                let timestamp = if next(10) == 0 {
+                    now - next(3 * HOUR as u64) as i64
+                } else {
+                    now
+                };
+                for store in [&incremental, &whole] {
+                    let _ = store.ingest(tenant, series_request(&name, [(timestamp, step as f64)]));
+                }
+            }
+            if next(50) == 0 {
+                let ranges = ["a", "b"]
+                    .into_iter()
+                    .map(|tenant| {
+                        let ranges = match next(3) {
+                            0 => None,
+                            1 => Some(Vec::new()),
+                            _ => {
+                                let start = next(u64::from(u32::MAX)) as u32;
+                                Some(vec![start / 2, start])
+                            }
+                        };
+                        (tenant.to_owned(), ranges)
+                    })
+                    .collect::<HashMap<_, _>>();
+                incremental.set_owned_ranges(ranges.clone());
+                whole.set_owned_ranges(ranges);
+            }
+            if next(40) == 0 {
+                let cutoff = now - (2 * HOUR + next(HOUR as u64) as i64);
+                incremental.prune_before(cutoff).unwrap();
+                whole.prune_before(cutoff).unwrap();
+            }
+            let compact = next(20) == 0;
+            let track_owned = next(3) != 0;
+            let reports = incremental.head_tick(compact, track_owned);
+            let expected = whole.head_tick(compact, track_owned);
+            let key = |reports: &[HeadReport]| {
+                reports
+                    .iter()
+                    .map(|report| {
+                        (
+                            report.tenant.clone(),
+                            report.memory_series,
+                            report.series_created,
+                            report.series_removed,
+                            report.owned_series,
+                            report.head_chunks,
+                            report.head_min_time,
+                            report.head_max_time,
+                            report.non_owned_evicted,
+                            report.truncated,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(key(&reports), key(&expected), "step {step}");
+            let shard_totals = incremental.shards[0]
+                .read()
+                .unwrap()
+                .tenants
+                .values()
+                .any(|tenant| tenant.tick_totals.is_some());
+            incremental_ticks += usize::from(shard_totals && !compact);
+        }
+        assert!(
+            incremental_ticks > 100,
+            "{incremental_ticks} incremental ticks"
+        );
+    }
+
+    // Evicting non-owned series and early compactions go through whole ticks; the totals an
+    // incremental tick starts from stay what every series adds up to.
+    #[test]
+    fn head_tick_totals_stay_what_every_series_adds_up_to() {
+        let overrides = Arc::new(Overrides::new(Limits {
+            early_head_compaction_owned_series_threshold: 50,
+            ..out_of_order_limits()
+        }));
+        overrides.set_active_partitions(1);
+        let store = Store::with_shards(10 * 60_000, None, None, 4, 2)
+            .unwrap()
+            .with_overrides(overrides)
+            .with_non_owned_eviction(Some(NonOwnedEviction {
+                min_grace_ms: 0,
+                max_grace_ms: 1,
+                jitter_ms: 0,
+            }))
+            .with_early_head_compaction(Some(EarlyHeadCompaction {
+                min_in_memory_series: 10,
+                min_reduction_percentage: 10,
+            }));
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let base = now_ms() - 3 * HOUR;
+        let (mut created, mut removed) = (
+            BTreeMap::<String, u64>::new(),
+            BTreeMap::<String, u64>::new(),
+        );
+        for step in 0..500_i64 {
+            let now = base + step * 15_000;
+            for _ in 0..next(5) {
+                let tenant = ["a", "b"][next(2) as usize];
+                let name = format!("metric_{}", next(120));
+                let timestamp = if next(8) == 0 {
+                    now - next(HOUR as u64) as i64
+                } else {
+                    now
+                };
+                let _ = store.ingest(tenant, series_request(&name, [(timestamp, 1.0)]));
+            }
+            if next(30) == 0 {
+                store.set_owned_ranges(
+                    ["a", "b"]
+                        .into_iter()
+                        .map(|tenant| {
+                            let start = next(u64::from(u32::MAX)) as u32;
+                            (tenant.to_owned(), Some(vec![start / 2, start]))
+                        })
+                        .collect(),
+                );
+            }
+            for report in store.head_tick(next(15) == 0, true) {
+                *created.entry(report.tenant.clone()).or_default() += report.series_created;
+                *removed.entry(report.tenant.clone()).or_default() += report.series_removed;
+                let recounted = recounted_heads(&store);
+                let (memory, owned, chunks) = recounted[&report.tenant];
+                assert_eq!(
+                    (
+                        report.memory_series,
+                        report.owned_series,
+                        report.head_chunks
+                    ),
+                    (memory, owned, chunks),
+                    "step {step} tenant {}",
+                    report.tenant
+                );
+                // What the head gained and lost adds up to what it holds.
+                assert_eq!(created[&report.tenant] - removed[&report.tenant], memory);
+            }
+        }
     }
 
     #[test]
