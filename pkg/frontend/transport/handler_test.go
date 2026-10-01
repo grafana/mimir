@@ -8,6 +8,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -71,6 +73,8 @@ func TestWriteError(t *testing.T) {
 		{http.StatusBadRequest, errors.Wrap(apierror.New(apierror.TypeBadData, "invalid request"), "an error occurred")},
 		{http.StatusNotFound, apierror.New(apierror.TypeNotFound, "")},
 		{http.StatusNotFound, errors.Wrap(apierror.New(apierror.TypeNotFound, "invalid request"), "an error occurred")},
+		{http.StatusUnprocessableEntity, validation.NewLimitError("the query exceeded a limit")},
+		{http.StatusUnprocessableEntity, errors.Wrap(validation.NewLimitError("the query exceeded a limit"), "an error occurred")},
 	} {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -78,6 +82,33 @@ func TestWriteError(t *testing.T) {
 			require.Equal(t, test.status, w.Result().StatusCode)
 		})
 	}
+}
+
+// TestWriteError_LimitError asserts that a limit error returned by a middleware without being
+// wrapped in an apierror.APIError is still reported as an HTTP 422 with a well-formed JSON body,
+// rather than as a plain-text HTTP 500.
+func TestWriteError_LimitError(t *testing.T) {
+	err := validation.NewLimitError("the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 100 bytes) (err-mimir-max-estimated-memory-consumption-per-query)")
+
+	w := httptest.NewRecorder()
+	require.Equal(t, http.StatusUnprocessableEntity, writeError(w, err))
+
+	res := w.Result()
+	require.Equal(t, http.StatusUnprocessableEntity, res.StatusCode)
+	require.Equal(t, "application/json", res.Header.Get("Content-Type"))
+
+	body, readErr := io.ReadAll(res.Body)
+	require.NoError(t, readErr)
+
+	var decoded struct {
+		Status    string `json:"status"`
+		ErrorType string `json:"errorType"`
+		Error     string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	require.Equal(t, "error", decoded.Status)
+	require.Equal(t, string(apierror.TypeExec), decoded.ErrorType)
+	require.Equal(t, err.Error(), decoded.Error)
 }
 
 func TestHandler_ServeHTTP(t *testing.T) {

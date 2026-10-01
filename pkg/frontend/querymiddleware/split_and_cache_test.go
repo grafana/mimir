@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -43,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const resultsCacheTTL = 24 * time.Hour
@@ -2491,6 +2493,11 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 		queryEnd    time.Time
 		memoryLimit uint64
 		expectError bool
+		// expectAPIError is true when the limit error is produced by the middleware itself (while
+		// accounting for cached responses), in which case the middleware must classify it. When the
+		// error comes from the downstream handler instead, classification is the downstream's
+		// responsibility, with writeError() in the frontend transport as the final backstop.
+		expectAPIError bool
 	}{
 		{
 			name:        "without cache, small limit rejects combined split allocations",
@@ -2505,11 +2512,12 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 			expectError: false,
 		},
 		{
-			name:        "with seeded cache, tiny limit rejects due to cached response sizes",
-			seedCache:   true,
-			queryEnd:    dayFiveEnd,
-			memoryLimit: 1, // Any cached response exceeds 1 byte
-			expectError: true,
+			name:           "with seeded cache, tiny limit rejects due to cached response sizes",
+			seedCache:      true,
+			queryEnd:       dayFiveEnd,
+			memoryLimit:    1, // Any cached response exceeds 1 byte
+			expectError:    true,
+			expectAPIError: true,
 		},
 		{
 			name:        "with seeded cache, increased limit allows cached responses plus downstream",
@@ -2606,6 +2614,19 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 			if tc.expectError {
 				require.Error(t, err)
 				require.ErrorContains(t, err, "the query exceeded the maximum allowed estimated amount of memory consumed by a single query")
+
+				if tc.expectAPIError {
+					// The error must be classified as an execution error so that the query-frontend
+					// responds with HTTP 422 rather than falling back to HTTP 500.
+					var apiErr *apierror.APIError
+					require.ErrorAs(t, err, &apiErr)
+					require.Equal(t, apierror.TypeExec, apiErr.Type)
+					require.Equal(t, http.StatusUnprocessableEntity, apiErr.StatusCode())
+				} else {
+					// Errors bubbled up from the downstream handler are left untouched here, so they
+					// must remain recognisable as limit errors for writeError() to classify them.
+					require.True(t, validation.IsLimitError(err))
+				}
 			} else {
 				require.NoError(t, err)
 			}
