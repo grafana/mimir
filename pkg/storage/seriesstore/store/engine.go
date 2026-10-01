@@ -197,7 +197,7 @@ func (e *Engine) adoptRestored() error {
 			shard.Unlock()
 			continue
 		}
-		t.byRef = make(map[uint64]refLocation, t.series.len)
+		t.byRef.reset(t.series.len)
 		var created []promlabels.Labels
 		for groupID := range t.series.groups {
 			entries := t.series.groups[groupID].entries
@@ -205,7 +205,7 @@ func (e *Engine) adoptRestored() error {
 				entry := &entries[position]
 				ref := e.newRef(index)
 				entry.series.ref = ref
-				t.byRef[ref] = refLocation{uint32(groupID), int32(position), entry.hash}
+				t.byRef.set(ref, refLocation{uint32(groupID), int32(position)})
 				lset := toPromLabels(entry.labels, &builder)
 				if e.opts.SecondaryHashFunction != nil {
 					entry.series.ownedHash = e.opts.SecondaryHashFunction(lset)
@@ -685,7 +685,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 		if _, still := e.lookupLocked(t, ref); still {
 			continue
 		}
-		delete(t.byRef, ref)
+		t.byRef.delete(ref)
 		deleted[tsdbchunks.HeadSeriesRef(ref)] = toPromLabels(stored, builder)
 	}
 	reindex(t)
@@ -813,7 +813,7 @@ func (e *Engine) prune(cutoff int64) error {
 			t.series.retain(func(entry *seriesEntry) bool {
 				keep := pruneSeries(&entry.series, cutoff)
 				if !keep && entry.series.ref != 0 {
-					delete(t.byRef, entry.series.ref)
+					t.byRef.delete(entry.series.ref)
 					deleted[tsdbchunks.HeadSeriesRef(entry.series.ref)] = toPromLabels(entry.labels, &builder)
 				}
 				return keep
@@ -835,12 +835,11 @@ func (e *Engine) prune(cutoff int64) error {
 	return errors.Join(errs...)
 }
 
-// refLocation is where a series ref is: its name group, its position there as of its last
-// indexing, and its label hash to find it when removals moved it.
+// refLocation is where a series ref is: its name group and its position there, which every
+// removal from the group records again.
 type refLocation struct {
 	group uint32
 	index int32
-	hash  uint64
 }
 
 // lookupLocked finds the series ref, with its shard locked.
@@ -850,14 +849,14 @@ func reindex(t *tenant) {
 		entries := t.series.groups[groupID].entries
 		for position := range entries {
 			if ref := entries[position].series.ref; ref != 0 {
-				t.byRef[ref] = refLocation{uint32(groupID), int32(position), entries[position].hash}
+				t.byRef.set(ref, refLocation{uint32(groupID), int32(position)})
 			}
 		}
 	}
 }
 
 func (e *Engine) lookupLocked(t *tenant, ref uint64) (*seriesEntry, bool) {
-	location, ok := t.byRef[ref]
+	location, ok := t.byRef.get(ref)
 	if !ok {
 		return nil, false
 	}
@@ -871,15 +870,13 @@ func (e *Engine) locate(t *tenant, ref uint64, location refLocation) (*seriesEnt
 	if index := int(location.index); index < len(entries) && entries[index].series.ref == ref {
 		return &entries[index], true
 	}
-	var found *seriesEntry
-	t.series.groups[location.group].lookup(location.hash, func(entry *seriesEntry) bool {
-		if entry.series.ref == ref {
-			found = entry
-			return true
+	// Every removal records the positions again, so this only keeps a missed one correct.
+	for index := range entries {
+		if entries[index].series.ref == ref {
+			return &entries[index], true
 		}
-		return false
-	})
-	return found, found != nil
+	}
+	return nil, false
 }
 
 // toPromLabels converts stored labels to Prometheus labels, which own their data.
