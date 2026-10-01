@@ -48,6 +48,12 @@
   .tag { display: inline-block; font-size: 11px; font-weight: bold; line-height: 1.5; padding: 0 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; color: #fff; }
   .tag-base { background: var(--red); } .tag-lib { background: var(--muted); } .tag-mimir { background: var(--green); }
   @media (prefers-color-scheme: dark) { .tag { color: #16171c; } }
+  .ph { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; }
+  .ph h2 { margin: 0; flex: 1; }
+  .info-btn { flex: none; width: 22px; height: 22px; padding: 0; border-radius: 50%; font: italic bold 13px Georgia, serif; background: var(--panel); color: var(--muted); border: 1px solid var(--line); cursor: pointer; }
+  .info-btn[aria-expanded="true"] { background: var(--amber); color: #1d1e24; border-color: var(--amber); }
+  .info { background: var(--amber-bg); border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; font-size: 13px; }
+  .info p { margin: 4px 0; }
   .legend { padding: 0 24px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13px; }
   @media (max-width: 900px) { .legend { padding-left: 16px; padding-right: 16px; } }
   .card code { font-size: 12px; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
@@ -77,44 +83,51 @@
   <span id="status" class="muted"></span>
 </div>
 <div class="legend">
+  <span>Pick a baseline day and a day, then press Run. The (i) on each panel says what it shows.</span>
   <span><span class="tag tag-base">Baseline</span>PromQL through Mimir today, which loads every matching chunk</span>
   <span><span class="tag tag-mimir">In Mimir</span>Headcount through the prototype routes: query-frontend, querier, store-gateways, no chunks</span>
   <span><span class="tag tag-lib">Library</span>Headcount code reading the block files itself, outside Mimir</span>
 </div>
 <main>
   <section>
-    <h2>1. Which metric grew? Headcount ranking, with the model's truth</h2>
+    <div class="ph"><h2>1. Which metric grew? Headcount ranking, with the model's truth</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p><b>Question:</b> which metric names gained the most series between the baseline day and the day you picked?</p><p><b>Headcount</b> reads each name's series count from the index-header: the index stores, for every name, where its list of series starts and ends, and each entry is 4 bytes, so the length gives the count. Nothing else is fetched.</p><p><b>Baseline</b> asks the same with PromQL, <code>count by (__name__)</code> over each day, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count, so "error" shows whether Headcount is exact. Click a row to use that metric in panels 2, 3 and 5.</p></div>
     <div class="scroll"><table id="growth"></table></div>
     <p id="growth-note" class="muted"></p>
   </section>
   <section>
-    <h2>Cost of answering it</h2>
+    <div class="ph"><h2>Cost of answering it</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p>The same ranking answered two ways. <b>Baseline</b> is today's PromQL. The other card is Headcount, from Mimir's prototype route or from the library, as picked in "Headcount answers from".</p><p>Compare latency and what was read. Headcount never reads chunks.</p></div>
     <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL count</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
     <div class="card hc src-card"><h3><span class="src-tag"></span>Headcount</h3><code class="src-mimir">metric_name_counts: postings offset table in each store-gateway's index-headers</code><code class="src-library">postings offset table per block, summed over one day's series-disjoint shards</code><div id="growth-hc" class="kv"></div></div>
   </section>
   <section>
-    <h2 id="bd-title">2. Which label value exploded?</h2>
+    <div class="ph"><h2 id="bd-title">2. Which label value exploded?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p><b>Question:</b> the metric grew, but which label is to blame? Here: how many distinct <code>pod</code> values it has on each day.</p><p><b>Headcount</b> looks up the metric's series in the index and counts them per pod value. It reads series labels but no chunks.</p><p><b>Baseline</b> is <code>count by (pod)</code>, which loads the chunks too.</p></div>
     <div id="bd-bars"></div>
     <p id="bd-note" class="muted"></p>
   </section>
   <section>
-    <h2>3. It can't become an incident</h2>
+    <div class="ph"><h2>3. It can't become an incident</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>Headcount</b> stops after the budget (the "Budget and series limit" box) and returns what it counted so far, marked as a lower bound. You get a partial answer, not an outage.</p><p><b>Baseline</b> with the same series limit fails with an error. Change the budget and press Run to see both move.</p></div>
     <div class="card bound"><h3><span class="src-tag"></span>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
     <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
   </section>
   <section style="grid-column: 1 / -1">
-    <h2 id="win-title">4. Across several days: adding the days counts a series once per day</h2>
+    <div class="ph"><h2 id="win-title">4. Across several days: adding the days counts a series once per day</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window, from the baseline day to the day?</p><p>Each day is a separate block. A series that lives on both days is in both blocks, so <b>adding the daily counts counts it twice</b>: the first card, too high on purpose to show the problem.</p><p><b>Dedup</b> fixes it: each store-gateway returns a hash of every series' labels, and the querier counts distinct hashes. That is the second card, and it should equal the truth and the baseline.</p><p><b>Baseline</b> is PromQL over the whole window, which loads the chunks.</p></div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
       <div>
-        <div class="card bound"><h3><span class="src-tag"></span>Adding each day's index-header counts</h3><div id="win-sum" class="kv"></div></div>
-        <div class="card hc src-card"><h3><span class="src-tag"></span>Headcount: hash dedup across the day blocks</h3><div id="win-exact" class="kv"></div></div>
+        <div class="card bound"><h3><span class="src-tag"></span>Wrong way: add each day's count</h3><div id="win-sum" class="kv"></div></div>
+        <div class="card hc src-card"><h3><span class="src-tag"></span>Right way: dedup across the days</h3><div id="win-exact" class="kv"></div></div>
         <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
       </div>
     </div>
   </section>
   <section style="grid-column: 1 / -1">
-    <h2 id="hr-title">5. Which hour did it start?</h2>
+    <div class="ph"><h2 id="hr-title">5. Which hour did it start?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="info" hidden><p><b>Question:</b> within the day, when did the selected metric start growing?</p><p><b>Headcount</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in an hour if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with a 1h step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div><svg id="hr-chart" viewBox="0 0 720 220" style="width:100%;height:auto" role="img" aria-label="Series per hour"></svg><p id="hr-note" class="muted"></p></div>
       <div>
@@ -343,6 +356,13 @@ async function drill(name) {
   kv($("lim-today"), (lq.result.error ? [["result", briefError(lq.result.error), "err"], ["latency", secs(lq.result.latency_ms)]] : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
 }
 
+for (const b of document.querySelectorAll(".info-btn")) {
+  b.onclick = () => {
+    const box = b.parentElement.nextElementSibling, open = box.hidden;
+    box.hidden = !open;
+    b.setAttribute("aria-expanded", String(open));
+  };
+}
 $("run").onclick = run;
 $("source").onchange = run;
 showSource();
