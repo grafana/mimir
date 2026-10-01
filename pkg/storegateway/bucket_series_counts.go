@@ -193,6 +193,11 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	slices.SortFunc(blocks, func(x, y openBlock) int { return x.b.meta.ULID.Compare(y.b.meta.ULID) })
 
 	stats := newSafeQueryStats()
+	defer func() {
+		st := stats.export()
+		s.recordPostingsStats(st)
+		s.recordSeriesStats(st)
+	}()
 	resp := &storegatewaypb.SeriesCountsResponse{}
 	for _, o := range blocks {
 		finished, err := s.addBlockSeriesCounts(ctx, o.b, o.indexr, c, stats)
