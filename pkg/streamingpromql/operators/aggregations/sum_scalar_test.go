@@ -16,10 +16,13 @@ import (
 )
 
 func TestAccumulateFloat64sScalar(t *testing.T) {
-	testAccumulateFloat64s(t, accumulateFloat64sScalar)
+	testAccumulateFloat64s(t, accumulateFloat64sScalar, 2)
 }
 
-func testAccumulateFloat64s(t *testing.T, accumulate func([]float64, []float64, []float64)) {
+func testAccumulateFloat64s(t *testing.T, accumulate func([]float64, []float64, []float64), offset int, lengths ...int) {
+	if len(lengths) == 0 {
+		lengths = []int{0, 1, 2, 3, 7, 8, 9, 31, 32, 33}
+	}
 	inf := math.Inf(1)
 	negativeZero := math.Copysign(0, -1)
 	testCases := []struct {
@@ -48,13 +51,13 @@ func testAccumulateFloat64s(t *testing.T, accumulate func([]float64, []float64, 
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, steps := range []int{0, 1, 2, 3, 7, 8, 9, 31, 32, 33} {
+			for _, steps := range lengths {
 				t.Run(fmt.Sprintf("steps=%d", steps), func(t *testing.T) {
 					const guard = -123.5
-					sumStorage := slices.Repeat([]float64{guard}, steps+4)
+					sumStorage := slices.Repeat([]float64{guard}, steps+offset+2)
 					compensationStorage := slices.Clone(sumStorage)
-					sums := sumStorage[2 : 2+steps]
-					compensations := compensationStorage[2 : 2+steps]
+					sums := sumStorage[offset : offset+steps]
+					compensations := compensationStorage[offset : offset+steps]
 					for i := range steps {
 						sums[i], compensations[i] = tc.sum, tc.compensation
 					}
@@ -64,7 +67,8 @@ func testAccumulateFloat64s(t *testing.T, accumulate func([]float64, []float64, 
 					assertFloat64State(t, wantSums, sums)
 					assertFloat64State(t, wantCompensations, compensations)
 
-					values := make([]float64, steps)
+					valueStorage := slices.Repeat([]float64{guard}, steps+offset+2)
+					values := valueStorage[offset : offset+steps]
 					for series := range tc.terms {
 						for step := range steps {
 							// Adjacent steps exercise different magnitude and non-finite branches.
@@ -80,10 +84,10 @@ func testAccumulateFloat64s(t *testing.T, accumulate func([]float64, []float64, 
 						}
 					}
 
-					require.Equal(t, []float64{guard, guard}, sumStorage[:2])
-					require.Equal(t, []float64{guard, guard}, sumStorage[2+steps:])
-					require.Equal(t, []float64{guard, guard}, compensationStorage[:2])
-					require.Equal(t, []float64{guard, guard}, compensationStorage[2+steps:])
+					for _, storage := range [][]float64{valueStorage, sumStorage, compensationStorage} {
+						require.Equal(t, slices.Repeat([]float64{guard}, offset), storage[:offset])
+						require.Equal(t, []float64{guard, guard}, storage[offset+steps:])
+					}
 				})
 			}
 		})
