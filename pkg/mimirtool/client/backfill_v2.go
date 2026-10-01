@@ -116,8 +116,8 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 		return errors.Wrap(err, "failed to JSON encode block meta")
 	}
 
-	blockPath := path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "block", blockID.String())
-	logger = log.With(logger, "block", blockID)
+	blockPath := path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "block", meta.ULID.String())
+	logger = log.With(logger, "block", meta.ULID)
 
 	level.Info(logger).Log("msg", "starting block upload")
 	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(blockPath, "start"), bytesRequestBody(metaJSON))
