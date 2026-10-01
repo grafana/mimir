@@ -21,8 +21,7 @@ type ChunkMeta struct {
 }
 
 // chunkList is a series' completed chunks, in write order, as varint deltas: most stored series
-// are older than the head, and their chunk references are what they keep in memory. Chunks are
-// added about every half hour, so re-encoding on each addition costs little.
+// are older than the head, and their chunk references are what they keep in memory.
 type chunkList []byte
 
 func chunkListFromMetas(metas []ChunkMeta) chunkList {
@@ -116,9 +115,31 @@ func (l chunkList) isEmpty() bool {
 	return len(l) == 0
 }
 
+// push adds a chunk after the others. Dense histogram series cut a chunk every few samples, so
+// it appends the chunk's delta to the existing bytes instead of decoding the list into chunks and
+// encoding it again, which made each cut cost as much as the whole list and fed the GC.
 func (l *chunkList) push(meta ChunkMeta) {
-	metas := l.toSlice()
-	*l = chunkListFromMetas(append(metas, meta))
+	// The deltas are from the last chunk, read without decoding the others into memory.
+	last := chunkIter{rest: *l}
+	for len(last.rest) > 0 {
+		last.next()
+	}
+	reference := zigzag(int64(meta.Ref) - last.reference)
+	minTime := zigzag(meta.MinTime - last.minTime)
+	duration := uint64(meta.MaxTime - meta.MinTime)
+	size := len(*l) + uvarintLen(reference) + uvarintLen(minTime) + uvarintLen(duration) + uvarintLen(uint64(meta.Len)) + 1
+	// Still sized exactly, like chunkListFromMetas: every stored series keeps its list.
+	out := make([]byte, len(*l), size)
+	copy(out, *l)
+	out = putUvarint(out, reference)
+	out = putUvarint(out, minTime)
+	out = putUvarint(out, duration)
+	out = putUvarint(out, uint64(meta.Len))
+	flags := meta.Encoding & 0x7f
+	if meta.OutOfOrder {
+		flags |= 0x80
+	}
+	*l = append(out, flags)
 }
 
 // retain keeps the chunks keep accepts.
