@@ -864,7 +864,18 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 	r.partitions[partitionID] = p
 	r.partitionMu.Unlock()
 
+	// Open the previous process's TSDBs before the reader starts and
+	// before the partition can be marked warm. Otherwise a tenant with
+	// no record after the stored offset never enters the live map, and
+	// queries return an empty success for it.
+	if resumed {
+		r.reopenUnmarkedLiveDirs(p)
+	}
+
 	if err := r.startKafkaReader(ctx, p); err != nil {
+		// The reader is already stopped. Close anything this attempt
+		// opened, or the retry file-locks the same directories.
+		r.closeOpenedPartitionTSDBs(p)
 		r.partitionMu.Lock()
 		delete(r.partitions, partitionID)
 		if resumed {
