@@ -83,6 +83,14 @@ name = "segment_codec"
 harness = false
 
 [[bench]]
+name = "segment_encode"
+harness = false
+
+[[bench]]
+name = "head_tick"
+harness = false
+
+[[bench]]
 name = "histogram_query"
 harness = false
 
