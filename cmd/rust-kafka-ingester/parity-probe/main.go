@@ -1,40 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// parity-probe compares decoded QueryStream results from a Rust ingester against Go ingesters that own the same partition.
+// parity-probe checks that ingesters owning the same partition answer alike: a reference (the Go
+// TSDB ingester) and any number of compared ones (the Rust ingester, the Go ingester with another
+// storage engine). It generates selectors from the tenant's own label names and values, with their
+// query shard variants, and compares QueryStream samples, label names and values, series,
+// cardinality and user stats.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"math"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/grafana/dskit/clusterutil"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	promvalue "github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 type stringList []string
 
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
+
+// An ingester under test, named for the report.
+type target struct {
+	name string
+	api  client.IngesterClient
+}
+
+func parseTarget(value string) (string, string, error) {
+	name, addr, ok := strings.Cut(value, "=")
+	if !ok || name == "" || addr == "" {
+		return "", "", fmt.Errorf("%q is not name=address", value)
+	}
+	return name, addr, nil
+}
 
 var clusterLabel string
 
@@ -46,66 +53,85 @@ func outgoing(tenant string) context.Context {
 	return ctx
 }
 
-type result struct {
-	series   map[string][]string
-	counts   map[string]int
-	bytes    int
-	chunks   int
-	spanMs   int64
-	unsorted int
-	duration time.Duration
+type config struct {
+	start, end        time.Time
+	longStart         time.Time
+	shards            []string
+	unionShards       int
+	verbose           bool
+	generation        generationConfig
+	explicitSelectors []string
 }
 
 func main() {
-	var goAddrs, tenants, selectors stringList
-	rustAddr := flag.String("rust", "", "Rust ingester gRPC address")
-	flag.Var(&goAddrs, "go", "Go ingester gRPC address owning the same partition (repeatable)")
-	flag.Var(&tenants, "tenant", "tenant to compare (repeatable); defaults to the largest tenants reported by the first Go ingester")
-	flag.Var(&selectors, "selector", "series selector (repeatable)")
+	var reference string
+	var compared, tenants, selectors, shards stringList
+	cfg := config{}
+	flag.StringVar(&reference, "reference", "", "reference ingester as name=address, such as zone-a=ingester-zone-a-5.ingester-zone-a:9095")
+	flag.Var(&compared, "compare", "ingester compared with the reference as name=address, owning the same partition (repeatable)")
+	flag.Var(&tenants, "tenant", "tenant to compare (repeatable); defaults to the reference's largest tenants")
+	flag.Var(&selectors, "selector", "series selector compared in addition to the generated ones (repeatable)")
+	flag.Var(&shards, "shard", "query shard every selector is also compared with, such as 1_of_16 (repeatable; default 1_of_16 and 7_of_16)")
 	topTenants := flag.Int("top-tenants", 3, "tenants to discover when -tenant is not set")
-	window := flag.Duration("window", time.Minute, "query window length")
-	settle := flag.Duration("settle", 2*time.Minute, "gap between the window end and now so both ingesters have consumed it")
-	repeat := flag.Int("repeat", 1, "serial queries per ingester; timings are reported for each")
+	window := flag.Duration("window", time.Minute, "QueryStream window length")
+	longRange := flag.Duration("long-range", 12*time.Hour, "range of the label and series lookups compared beyond the window, within the ingesters' retention")
+	settle := flag.Duration("settle", 10*time.Minute, "gap between the window end and now so every ingester has consumed it")
+	flag.IntVar(&cfg.unionShards, "union-shards", 4, "shard count whose shards together must return each selector's unsharded result (0 to skip)")
+	flag.Uint64Var(&cfg.generation.seed, "seed", 1, "seed of the selector generation, so runs are reproducible")
+	flag.IntVar(&cfg.generation.names, "names", 8, "metric names selectors are generated for")
+	flag.IntVar(&cfg.generation.maxSeries, "max-series", 2000, "most series of a metric or label value a generated selector picks, so a run stays small")
+	flag.IntVar(&cfg.generation.maxSelectors, "max-selectors", 80, "most generated selectors per tenant")
+	flag.BoolVar(&cfg.verbose, "verbose", false, "print every check, not only mismatches")
 	flag.StringVar(&clusterLabel, "cluster-label", "", "cluster validation label expected by the ingesters, such as the namespace")
 	flag.Parse()
-	if *rustAddr == "" || len(goAddrs) == 0 {
-		fmt.Fprintln(os.Stderr, "-rust and at least one -go are required")
+	if reference == "" || len(compared) == 0 {
+		fmt.Fprintln(os.Stderr, "-reference and at least one -compare are required")
 		os.Exit(2)
 	}
-	if len(selectors) == 0 {
-		selectors = stringList{`{__name__=~".+"}`}
+	if len(shards) == 0 {
+		shards = stringList{"1_of_16", "7_of_16"}
 	}
+	cfg.shards = shards
+	cfg.explicitSelectors = selectors
 
-	rust := dial(*rustAddr)
-	gos := make([]client.IngesterClient, len(goAddrs))
-	for i, addr := range goAddrs {
-		gos[i] = dial(addr)
+	ref := mustTarget(reference)
+	var targets []target
+	for _, value := range compared {
+		targets = append(targets, mustTarget(value))
 	}
 	if len(tenants) == 0 {
-		tenants = discoverTenants(gos[0], *topTenants)
+		tenants = discoverTenants(ref.api, *topTenants)
 	}
 
-	end := time.Now().Add(-*settle).Truncate(time.Second)
-	start := end.Add(-*window)
-	fmt.Printf("window=%s..%s tenants=%v\n", start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339), tenants)
+	cfg.end = time.Now().Add(-*settle).Truncate(time.Second)
+	cfg.start = cfg.end.Add(-*window)
+	cfg.longStart = cfg.end.Add(-*longRange)
+	fmt.Printf("window=%s..%s long_range_start=%s tenants=%v reference=%s compared=%v seed=%d\n",
+		cfg.start.UTC().Format(time.RFC3339), cfg.end.UTC().Format(time.RFC3339), cfg.longStart.UTC().Format(time.RFC3339),
+		tenants, ref.name, names(targets), cfg.generation.seed)
 
-	mismatches := 0
+	report := newReport()
 	for _, tenant := range tenants {
-		for _, selector := range selectors {
-			request := buildRequest(selector, start, end)
-			rustResults := query(rust, tenant, request, *repeat)
-			for i, goClient := range gos {
-				goResults := query(goClient, tenant, request, *repeat)
-				diff := compare(rustResults[0].series, goResults[0].series)
-				mismatches += diff + rustResults[0].unsorted + goResults[0].unsorted
-				fmt.Printf("tenant=%s selector=%s go=%s rust=[%s] go=[%s] mismatched_series=%d\n",
-					tenant, selector, goAddrs[i], summarize(rustResults), summarize(goResults), diff)
-			}
-		}
+		probeTenant(cfg, tenant, ref, targets, report)
 	}
-	if mismatches > 0 {
+	report.print(names(targets))
+	if report.failed() {
 		os.Exit(1)
 	}
+}
+
+func mustTarget(value string) target {
+	name, addr, err := parseTarget(value)
+	check(err)
+	return target{name: name, api: dial(addr)}
+}
+
+func names(targets []target) []string {
+	out := make([]string, len(targets))
+	for i, t := range targets {
+		out[i] = t.name
+	}
+	return out
 }
 
 func dial(addr string) client.IngesterClient {
@@ -130,215 +156,6 @@ func discoverTenants(api client.IngesterClient, n int) []string {
 		tenants = append(tenants, s.UserId)
 	}
 	return tenants
-}
-
-func buildRequest(selector string, start, end time.Time) *client.QueryRequest {
-	matchers, err := parser.NewParser(parser.Options{}).ParseMetricSelector(selector)
-	check(err)
-	request, err := client.ToQueryRequest(model.TimeFromUnixNano(start.UnixNano()), model.TimeFromUnixNano(end.UnixNano()), matchers)
-	check(err)
-	request.StreamingChunksBatchSize = 64
-	return request
-}
-
-func query(api client.IngesterClient, tenant string, request *client.QueryRequest, repeat int) []result {
-	results := make([]result, repeat)
-	for i := range results {
-		ctx, cancel := context.WithTimeout(outgoing(tenant), 5*time.Minute)
-		started := time.Now()
-		results[i] = decode(ctx, api, request)
-		results[i].duration = time.Since(started)
-		cancel()
-	}
-	return results
-}
-
-func decode(ctx context.Context, api client.IngesterClient, request *client.QueryRequest) result {
-	stream, err := api.QueryStream(ctx, request)
-	check(err)
-	out := result{series: map[string][]string{}, counts: map[string]int{}}
-	var keys []string
-	var previous labels.Labels
-	// Responses may alias a reused receive buffer, so everything is copied out before the next Recv.
-	for {
-		response, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		check(err)
-		for _, s := range response.StreamingSeries {
-			current := mimirpb.FromLabelAdaptersToLabels(s.Labels).Copy()
-			// The distributor k-way merges ingester streams, so each one must be sorted by labels.
-			if len(keys) > 0 && labels.Compare(previous, current) >= 0 {
-				out.unsorted++
-			}
-			previous = current
-			key := current.String()
-			if _, ok := out.series[key]; ok {
-				fail("duplicate series %s", key)
-			}
-			out.series[key] = nil
-			keys = append(keys, key)
-		}
-		for _, group := range response.StreamingSeriesChunks {
-			if group.SeriesIndex >= uint64(len(keys)) {
-				fail("chunk group references series %d of %d", group.SeriesIndex, len(keys))
-			}
-			key := keys[group.SeriesIndex]
-			for _, wire := range group.Chunks {
-				out.bytes += len(wire.Data)
-				out.chunks++
-				out.spanMs += wire.EndTimestampMs - wire.StartTimestampMs
-				out.series[key] = append(out.series[key], samples(wire, request, out.counts)...)
-			}
-		}
-	}
-	for key, values := range out.series {
-		// Go returns head series without samples in the window; they carry no data to compare.
-		if len(values) == 0 {
-			delete(out.series, key)
-			continue
-		}
-		sort.Strings(values)
-	}
-	return out
-}
-
-func samples(wire client.Chunk, request *client.QueryRequest, counts map[string]int) []string {
-	var encoding chunkenc.Encoding
-	switch chunk.Encoding(wire.Encoding) {
-	case chunk.PrometheusXorChunk:
-		encoding = chunkenc.EncXOR
-	case chunk.PrometheusXor2Chunk:
-		encoding = chunkenc.EncXOR2
-	case chunk.PrometheusHistogramChunk:
-		encoding = chunkenc.EncHistogram
-	case chunk.PrometheusFloatHistogramChunk:
-		encoding = chunkenc.EncFloatHistogram
-	default:
-		fail("unknown wire chunk encoding %d", wire.Encoding)
-	}
-	decoded, err := chunkenc.FromData(encoding, wire.Data)
-	check(err)
-	var values []string
-	it := decoded.Iterator(nil)
-	for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-		var ts int64
-		var value, kind string
-		switch typ {
-		case chunkenc.ValFloat:
-			var v float64
-			ts, v = it.At()
-			kind, value = "float", fmt.Sprintf("f:%016x", math.Float64bits(v))
-			if promvalue.IsStaleNaN(v) {
-				kind, value = "stale", "stale"
-			}
-		case chunkenc.ValHistogram:
-			var h *histogram.Histogram
-			ts, h = it.AtHistogram(nil)
-			// The returned histogram shares slices with the iterator, so compact a copy.
-			h = h.Copy()
-			h.CounterResetHint = histogram.UnknownCounterReset
-			// Go re-codes appended histograms into a widened bucket layout with explicit zero buckets; compacting
-			// both sides compares bucket counts rather than layout.
-			h.Compact(0)
-			normalizeEmpty(&h.PositiveSpans, &h.NegativeSpans, &h.PositiveBuckets, &h.NegativeBuckets)
-			kind, value = "histogram", fmt.Sprintf("h:%#v", *h)
-			// Go writes a histogram stale marker for histogram series; Rust writes a float one. PromQL treats both as stale.
-			if promvalue.IsStaleNaN(h.Sum) {
-				kind, value = "stale", "stale"
-			}
-		case chunkenc.ValFloatHistogram:
-			var h *histogram.FloatHistogram
-			ts, h = it.AtFloatHistogram(nil)
-			h = h.Copy()
-			h.CounterResetHint = histogram.UnknownCounterReset
-			h.Compact(0)
-			normalizeEmpty(&h.PositiveSpans, &h.NegativeSpans, &h.PositiveBuckets, &h.NegativeBuckets)
-			kind, value = "float_histogram", fmt.Sprintf("fh:%#v", *h)
-			if promvalue.IsStaleNaN(h.Sum) {
-				kind, value = "stale", "stale"
-			}
-		default:
-			fail("unexpected chunk value type %v", typ)
-		}
-		if ts >= request.StartTimestampMs && ts <= request.EndTimestampMs {
-			counts[kind]++
-			values = append(values, fmt.Sprintf("%d:%s", ts, value))
-		}
-	}
-	check(it.Err())
-	return values
-}
-
-// Compact leaves an empty, non-nil slice where the input had one; nil and empty are the same histogram.
-func normalizeEmpty[B any](positiveSpans, negativeSpans *[]histogram.Span, positiveBuckets, negativeBuckets *[]B) {
-	for _, spans := range []*[]histogram.Span{positiveSpans, negativeSpans} {
-		if len(*spans) == 0 {
-			*spans = nil
-		}
-	}
-	for _, buckets := range []*[]B{positiveBuckets, negativeBuckets} {
-		if len(*buckets) == 0 {
-			*buckets = nil
-		}
-	}
-}
-
-func compare(rust, golang map[string][]string) int {
-	mismatched := 0
-	report := func(format string, args ...any) {
-		mismatched++
-		if mismatched <= 10 {
-			fmt.Printf("  "+format+"\n", args...)
-		}
-	}
-	for key, r := range rust {
-		g, ok := golang[key]
-		switch {
-		case !ok:
-			report("only in rust: %s (%d samples)", key, len(r))
-		case strings.Join(r, "\n") != strings.Join(g, "\n"):
-			rv, gv := firstDifference(r, g)
-			report("samples differ: %s rust=%d go=%d\n    rust: %s\n    go:   %s", key, len(r), len(g), rv, gv)
-		}
-	}
-	for key, g := range golang {
-		if _, ok := rust[key]; !ok {
-			report("only in go: %s (%d samples)", key, len(g))
-		}
-	}
-	return mismatched
-}
-
-func firstDifference(rust, golang []string) (string, string) {
-	for i := 0; i < len(rust) || i < len(golang); i++ {
-		var r, g string
-		if i < len(rust) {
-			r = rust[i]
-		}
-		if i < len(golang) {
-			g = golang[i]
-		}
-		if r != g {
-			return r, g
-		}
-	}
-	return "", ""
-}
-
-func summarize(results []result) string {
-	r := results[0]
-	durations := make([]string, len(results))
-	for i, res := range results {
-		durations[i] = res.duration.Round(10 * time.Millisecond).String()
-	}
-	var meanSpan time.Duration
-	if r.chunks > 0 {
-		meanSpan = time.Duration(r.spanMs/int64(r.chunks)) * time.Millisecond
-	}
-	return fmt.Sprintf("series=%d unsorted=%d float=%d histogram=%d float_histogram=%d stale=%d chunks=%d mean_chunk_span=%s chunk_bytes=%d durations=%s",
-		len(r.series), r.unsorted, r.counts["float"], r.counts["histogram"], r.counts["float_histogram"], r.counts["stale"], r.chunks, meanSpan.Round(time.Second), r.bytes, strings.Join(durations, "/"))
 }
 
 func check(err error) {
