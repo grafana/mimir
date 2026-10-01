@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -149,6 +150,16 @@ func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
 
+func respondGetRulesError(logger log.Logger, w http.ResponseWriter, err error) {
+	if grpcutil.IsCanceled(err) {
+		respondError(logger, w, statusClientClosedRequest, v1.ErrCanceled, err.Error())
+		return
+	}
+	respondServerError(logger, w, err.Error())
+}
+
+const statusClientClosedRequest = 499
+
 // API is used to handle HTTP requests for the ruler service
 type API struct {
 	ruler *Ruler
@@ -236,7 +247,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
 			return
 		}
-		respondServerError(logger, w, err.Error())
+		respondGetRulesError(logger, w, err)
 		return
 	}
 
@@ -343,7 +354,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
 			return
 		}
-		respondServerError(logger, w, err.Error())
+		respondGetRulesError(logger, w, err)
 		return
 	}
 

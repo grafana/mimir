@@ -77,6 +77,7 @@
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
+* [BUGFIX] Ruler: Return HTTP 499 instead of 500 from `GET /prometheus/api/v1/rules` and `GET /prometheus/api/v1/alerts` when the request is canceled by the client, so that client-aborted requests are no longer reported as server errors.
 
 ### Mixin
 

@@ -33,6 +33,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
@@ -2287,4 +2289,61 @@ func requestFor(t *testing.T, method string, url string, body io.Reader, userID 
 	ctx := user.InjectOrgID(req.Context(), userID)
 
 	return req.WithContext(ctx)
+}
+
+func TestRespondGetRulesError(t *testing.T) {
+	tests := map[string]struct {
+		err                error
+		expectedStatusCode int
+		expectedErrorType  v1.ErrorType
+	}{
+		"context canceled": {
+			err:                context.Canceled,
+			expectedStatusCode: statusClientClosedRequest,
+			expectedErrorType:  v1.ErrCanceled,
+		},
+		"wrapped context canceled": {
+			err:                fmt.Errorf("unable to retrieve rules: %w", context.Canceled),
+			expectedStatusCode: statusClientClosedRequest,
+			expectedErrorType:  v1.ErrCanceled,
+		},
+		"wrapped gRPC canceled": {
+			err:                fmt.Errorf("unable to retrieve rules from ruler 10.0.0.1:9095: %w", status.Error(codes.Canceled, context.Canceled.Error())),
+			expectedStatusCode: statusClientClosedRequest,
+			expectedErrorType:  v1.ErrCanceled,
+		},
+		"gRPC unavailable": {
+			err:                fmt.Errorf("unable to retrieve rules from ruler 10.0.0.1:9095: %w", status.Error(codes.Unavailable, "connection refused")),
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  v1.ErrServer,
+		},
+		"context deadline exceeded": {
+			err:                context.DeadlineExceeded,
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  v1.ErrServer,
+		},
+		"generic error": {
+			err:                errors.New("something went wrong"),
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  v1.ErrServer,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			respondGetRulesError(log.NewNopLogger(), w, tc.err)
+
+			resp := w.Result()
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			responseJSON := response{}
+			require.NoError(t, json.Unmarshal(body, &responseJSON))
+			require.Equal(t, "error", responseJSON.Status)
+			require.Equal(t, tc.expectedErrorType, responseJSON.ErrorType)
+			require.Equal(t, tc.err.Error(), responseJSON.Error)
+		})
+	}
 }
