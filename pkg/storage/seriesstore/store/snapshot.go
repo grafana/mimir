@@ -823,7 +823,7 @@ func inferPreV4Flags(series *Series) {
 			inOrderMax = chunk.MaxTime
 		}
 	}
-	series.chunks = chunkListFromMetas(metas)
+	series.setChunks(chunkListFromMetas(metas))
 	var (
 		float    int64
 		hasFloat bool
@@ -976,7 +976,7 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 					meta.OutOfOrder = flag == 1
 				}
 			}
-			series.chunks = chunkListFromMetas(metas)
+			series.setChunks(chunkListFromMetas(metas))
 			hasFloat, err := r.u8()
 			if err != nil {
 				return image, err

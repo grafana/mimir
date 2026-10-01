@@ -40,9 +40,14 @@ type oooSample = chunks.Sample
 // files.
 type Series struct {
 	// The engine's series reference, never reused; 0 outside an engine.
-	ref       uint64
-	chunks    chunkList
-	floatHead *floatHead
+	ref    uint64
+	chunks chunkList
+	// The last chunk's reference and min time, which the next chunk's deltas are from, for the
+	// chunk list ending at chunksTailEnd: dense histogram series cut a chunk every few samples,
+	// and finding the last chunk otherwise means decoding the whole list on every cut.
+	chunksTailRef, chunksTailMinTime int64
+	chunksTailEnd                    int32
+	floatHead                        *floatHead
 	// The open histogram chunk, kept encoded like Prometheus's head chunk; most series are floats.
 	histogramHead   *chunks.HistogramAppender
 	histogramNextAt int64
@@ -237,4 +242,21 @@ func histogramBucketCount(h *mimirpb.Histogram) uint64 {
 		count += uint64(span.Length)
 	}
 	return count
+}
+
+// setChunks replaces the series' chunk list; every assignment goes through it, so the tail kept
+// for pushChunk never describes another list.
+func (s *Series) setChunks(list chunkList) {
+	s.chunks = list
+	s.chunksTailEnd = -1
+}
+
+// pushChunk adds a chunk after the series' others.
+func (s *Series) pushChunk(meta ChunkMeta) {
+	if int(s.chunksTailEnd) != len(s.chunks) {
+		s.chunksTailRef, s.chunksTailMinTime = s.chunks.last()
+	}
+	s.chunks.pushAfter(meta, s.chunksTailRef, s.chunksTailMinTime)
+	s.chunksTailRef, s.chunksTailMinTime = int64(meta.Ref), meta.MinTime
+	s.chunksTailEnd = int32(len(s.chunks))
 }

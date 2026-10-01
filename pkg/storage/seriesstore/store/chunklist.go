@@ -115,17 +115,26 @@ func (l chunkList) isEmpty() bool {
 	return len(l) == 0
 }
 
-// push adds a chunk after the others. Dense histogram series cut a chunk every few samples, so
-// it appends the chunk's delta to the existing bytes instead of decoding the list into chunks and
-// encoding it again, which made each cut cost as much as the whole list and fed the GC.
+// push adds a chunk after the others.
 func (l *chunkList) push(meta ChunkMeta) {
-	// The deltas are from the last chunk, read without decoding the others into memory.
-	last := chunkIter{rest: *l}
-	for len(last.rest) > 0 {
-		last.next()
+	reference, minTime := l.last()
+	l.pushAfter(meta, reference, minTime)
+}
+
+// last is the last chunk's reference and min time, which the next chunk's deltas are from.
+func (l chunkList) last() (reference, minTime int64) {
+	it := chunkIter{rest: l}
+	for len(it.rest) > 0 {
+		it.next()
 	}
-	reference := zigzag(int64(meta.Ref) - last.reference)
-	minTime := zigzag(meta.MinTime - last.minTime)
+	return it.reference, it.minTime
+}
+
+// pushAfter appends a chunk's delta from the last chunk, whose reference and min time are given,
+// instead of decoding the list into chunks and encoding it again.
+func (l *chunkList) pushAfter(meta ChunkMeta, lastReference, lastMinTime int64) {
+	reference := zigzag(int64(meta.Ref) - lastReference)
+	minTime := zigzag(meta.MinTime - lastMinTime)
 	duration := uint64(meta.MaxTime - meta.MinTime)
 	size := len(*l) + uvarintLen(reference) + uvarintLen(minTime) + uvarintLen(duration) + uvarintLen(uint64(meta.Len)) + 1
 	// Still sized exactly, like chunkListFromMetas: every stored series keeps its list.
