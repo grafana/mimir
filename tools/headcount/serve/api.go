@@ -4,8 +4,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,7 +65,6 @@ func (s *server) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/promql/growth", s.handlePromQLGrowth)
 	mux.HandleFunc("GET /api/promql/breakdown", s.handlePromQLBreakdown)
 	mux.HandleFunc("GET /api/window", s.handleWindow)
-	mux.HandleFunc("GET /api/storegateway/growth", s.handleStoreGatewayGrowth)
 	mux.HandleFunc("GET /api/hourly", s.handleHourly)
 	mux.HandleFunc("GET /api/promql/hourly", s.handlePromQLHourly)
 	mux.HandleFunc("GET /api/promql/window", s.handlePromQLWindow)
@@ -98,13 +99,59 @@ type growthRow struct {
 	TruthDay  int    `json:"truth_day"`
 }
 
+// headcountCost is what one answer cost. Source is "library" when the
+// Headcount code read the block files itself, "mimir" when Mimir's
+// prototype routes answered.
 type headcountCost struct {
+	Source             string  `json:"source"`
 	ElapsedMS          float64 `json:"elapsed_ms"`
 	Blocks             int     `json:"blocks"`
+	StoreGateways      int     `json:"store_gateways,omitempty"`
 	IndexHeaderBytes   int64   `json:"index_header_bytes"`
 	ObjectStorageBytes int64   `json:"object_storage_bytes"`
 	SeriesTouched      int     `json:"series_touched,omitempty"`
 	PostingsBytes      int64   `json:"postings_bytes,omitempty"`
+	// IndexBytes is series entries and postings decoded by the store-gateway.
+	IndexBytes int64 `json:"index_bytes,omitempty"`
+}
+
+// fromMimir reports whether the request asks for Mimir's answer instead of
+// the library's.
+func fromMimir(r *http.Request) bool { return r.URL.Query().Get("source") == "mimir" }
+
+// dayNameCounts returns every metric name's count over one day, from the
+// index-headers, through Mimir or the library.
+func (s *server) dayNameCounts(r *http.Request, day int) (map[string]int, headcountCost, error) {
+	if fromMimir(r) {
+		res := s.mimir.metricNameCounts(s.days[day].MinT, s.days[day].MaxT)
+		if res.Err != "" {
+			return nil, headcountCost{}, errors.New(res.Err)
+		}
+		return res.Counts, headcountCost{Source: "mimir", ElapsedMS: ms(res.Latency), Blocks: res.Blocks, StoreGateways: res.StoreGateways}, nil
+	}
+	start := time.Now()
+	nc, err := cardpoc.NameCountsForRange(s.compacted, s.days[day])
+	if err != nil {
+		return nil, headcountCost{}, err
+	}
+	return nc.Counts, headcountCost{Source: "library", ElapsedMS: ms(time.Since(start)), Blocks: len(nc.Blocks), IndexHeaderBytes: nc.IndexHeaderBytes}, nil
+}
+
+func addCost(a, b headcountCost) headcountCost {
+	a.ElapsedMS += b.ElapsedMS
+	a.Blocks += b.Blocks
+	a.StoreGateways = max(a.StoreGateways, b.StoreGateways)
+	a.IndexHeaderBytes += b.IndexHeaderBytes
+	a.ObjectStorageBytes += b.ObjectStorageBytes
+	a.SeriesTouched += b.SeriesTouched
+	a.IndexBytes += b.IndexBytes
+	return a
+}
+
+// mimirErr writes a Mimir route failure as a 502, so the page can tell it
+// apart from a bad request and fall back to the library.
+func mimirErr(w http.ResponseWriter, msg string) {
+	http.Error(w, "mimir: "+msg, http.StatusBadGateway)
 }
 
 // handleGrowth ranks metric names by series growth from day base to day,
@@ -115,20 +162,25 @@ func (s *server) handleGrowth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	start := time.Now()
-	dayCounts, err := cardpoc.NameCountsForRange(s.compacted, s.days[day])
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	dayCounts, dayCost, err := s.dayNameCounts(r, day)
+	if err == nil {
+		var baseCounts map[string]int
+		var baseCost headcountCost
+		if baseCounts, baseCost, err = s.dayNameCounts(r, base); err == nil {
+			s.writeGrowth(w, day, base, limit, dayCounts, baseCounts, addCost(dayCost, baseCost))
+			return
+		}
 	}
-	baseCounts, err := cardpoc.NameCountsForRange(s.compacted, s.days[base])
-	if err != nil {
+	if fromMimir(r) {
+		mimirErr(w, err.Error())
+	} else {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
-	elapsed := time.Since(start)
+}
 
-	rows := growthRows(baseCounts.Counts, dayCounts.Counts)
+func (s *server) writeGrowth(w http.ResponseWriter, day, base, limit int, dayCounts, baseCounts map[string]int, cost headcountCost) {
+
+	rows := growthRows(baseCounts, dayCounts)
 	exact, changed := 0, 0
 	for _, row := range rows {
 		if row.Base == s.dayTruth[base][row.Name] && row.Day == s.dayTruth[day][row.Name] {
@@ -157,14 +209,18 @@ func (s *server) handleGrowth(w http.ResponseWriter, r *http.Request) {
 		"changed":     changed,
 		"names":       len(rows),
 		"names_exact": exact,
-		"total_day":   dayCounts.Total(),
-		"total_base":  baseCounts.Total(),
-		"cost": headcountCost{
-			ElapsedMS:        ms(elapsed),
-			Blocks:           len(dayCounts.Blocks) + len(baseCounts.Blocks),
-			IndexHeaderBytes: dayCounts.IndexHeaderBytes + baseCounts.IndexHeaderBytes,
-		},
+		"total_day":   sumCounts(dayCounts),
+		"total_base":  sumCounts(baseCounts),
+		"cost":        cost,
 	})
+}
+
+func sumCounts(m map[string]int) int {
+	n := 0
+	for _, c := range m {
+		n += c
+	}
+	return n
 }
 
 // growthRows returns every name in either map with its growth, largest
@@ -211,10 +267,40 @@ func (s *server) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 	}
 	budget, _ := strconv.Atoi(r.URL.Query().Get("budget"))
 
-	bd, err := cardpoc.LabelBreakdown(s.compacted, s.days[day], metric, label, cardpoc.Budget{MaxSeries: budget})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var (
+		counts     map[string]int
+		lowerBound bool
+		cost       headcountCost
+	)
+	if fromMimir(r) {
+		params := url.Values{"match[]": {fmt.Sprintf(`{__name__=%q}`, metric)}, "group_by": {label}}
+		if budget > 0 {
+			params.Set("budget", strconv.Itoa(budget))
+		}
+		res := s.mimir.seriesCounts(s.days[day].MinT, s.days[day].MaxT, params)
+		if res.Err != "" {
+			mimirErr(w, res.Err)
+			return
+		}
+		counts, lowerBound = res.Counts, res.LowerBound
+		cost = headcountCost{Source: "mimir", ElapsedMS: ms(res.Latency), Blocks: res.Blocks, StoreGateways: res.StoreGateways,
+			SeriesTouched: res.SeriesCounted, IndexBytes: res.IndexBytes, ObjectStorageBytes: res.BucketBytes}
+	} else {
+		bd, err := cardpoc.LabelBreakdown(s.compacted, s.days[day], metric, label, cardpoc.Budget{MaxSeries: budget})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		counts, lowerBound = bd.Counts, bd.LowerBound
+		cost = headcountCost{
+			Source:    "library",
+			ElapsedMS: ms(bd.Elapsed),
+			// The breakdown reads postings and series labels from the full
+			// index, which is object storage in a real store-gateway.
+			ObjectStorageBytes: bd.PostingsBytes,
+			SeriesTouched:      bd.SeriesTouched,
+			PostingsBytes:      bd.PostingsBytes,
+		}
 	}
 	truth := s.pop.TruthBy(matchName(metric), label, s.days[day].MinT, s.days[day].MaxT)
 	truthTotal := 0
@@ -222,8 +308,8 @@ func (s *server) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 		truthTotal += n
 	}
 
-	rows := make([]valueRow, 0, len(bd.Counts))
-	for v, n := range bd.Counts {
+	rows := make([]valueRow, 0, len(counts))
+	for v, n := range counts {
 		rows = append(rows, valueRow{Value: v, Count: n, Truth: truth[v]})
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -234,19 +320,12 @@ func (s *server) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 	})
 	writeJSON(w, map[string]any{
 		"rows":         rows[:min(limit, len(rows))],
-		"values":       len(bd.Counts),
-		"total":        bd.Total(),
-		"lower_bound":  bd.LowerBound,
+		"values":       len(counts),
+		"total":        sumCounts(counts),
+		"lower_bound":  lowerBound,
 		"truth_values": len(truth),
 		"truth_total":  truthTotal,
-		"cost": headcountCost{
-			ElapsedMS: ms(bd.Elapsed),
-			// The breakdown reads postings and series labels from the full
-			// index, which is object storage in a real store-gateway.
-			ObjectStorageBytes: bd.PostingsBytes,
-			SeriesTouched:      bd.SeriesTouched,
-			PostingsBytes:      bd.PostingsBytes,
-		},
+		"cost":         cost,
 	})
 }
 
@@ -331,6 +410,10 @@ func (s *server) handleHourly(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if fromMimir(r) {
+		s.handleMimirHourly(w, day, metric)
+		return
+	}
 	res, err := cardpoc.RunE8(s.compacted, s.pop, s.days[day], time.Hour, metric)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -344,7 +427,35 @@ func (s *server) handleHourly(w http.ResponseWriter, r *http.Request) {
 		"exact":  res.Pass(),
 		// Chunk metas live in the series section of the full index, which
 		// is object storage in a real store-gateway.
-		"cost": headcountCost{ElapsedMS: ms(res.Elapsed), SeriesTouched: res.SeriesRead},
+		"cost": headcountCost{Source: "library", ElapsedMS: ms(res.Elapsed), SeriesTouched: res.SeriesRead},
+	})
+}
+
+// handleMimirHourly answers handleHourly through Mimir's series_counts route
+// with a one-hour step.
+func (s *server) handleMimirHourly(w http.ResponseWriter, day int, metric string) {
+	d := s.days[day]
+	res := s.mimir.seriesCounts(d.MinT, d.MaxT, url.Values{"match[]": {fmt.Sprintf(`{__name__=%q}`, metric)}, "step": {"1h"}})
+	if res.Err != "" {
+		mimirErr(w, res.Err)
+		return
+	}
+	hour := time.Hour.Milliseconds()
+	n := int((d.MaxT - d.MinT) / hour)
+	counts, truth, starts := make([]int, n), make([]int, n), make([]int64, n)
+	if c, ok := res.Buckets[metric]; ok && len(c) == n {
+		copy(counts, c)
+	}
+	exact := true
+	for i := range n {
+		starts[i] = d.MinT + int64(i)*hour
+		truth[i] = s.pop.Truth(matchName(metric), starts[i], starts[i]+hour)
+		exact = exact && counts[i] == truth[i]
+	}
+	writeJSON(w, map[string]any{
+		"metric": metric, "starts": starts, "counts": counts, "truth": truth, "exact": exact,
+		"cost": headcountCost{Source: "mimir", ElapsedMS: ms(res.Latency), Blocks: res.Blocks, StoreGateways: res.StoreGateways,
+			SeriesTouched: res.SeriesCounted, IndexBytes: res.IndexBytes, ObjectStorageBytes: res.BucketBytes},
 	})
 }
 
@@ -381,31 +492,6 @@ func (s *server) handlePromQLHourly(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// handleStoreGatewayGrowth asks Mimir's own store-gateway for each day's
-// per-name counts, through its metric_name_counts endpoint, and ranks growth
-// the same way handleGrowth does, so the page can show that a Mimir
-// component gives the same answer as the library.
-func (s *server) handleStoreGatewayGrowth(w http.ResponseWriter, r *http.Request) {
-	day, base, limit, err := s.dayBaseLimit(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	dayRes := s.mimir.metricNameCounts(s.days[day].MinT, s.days[day].MaxT)
-	baseRes := s.mimir.metricNameCounts(s.days[base].MinT, s.days[base].MaxT)
-	out := map[string]any{
-		"latency_ms": ms(dayRes.Latency + baseRes.Latency),
-		"blocks":     dayRes.Blocks + baseRes.Blocks,
-		"gateways":   max(dayRes.StoreGateways, baseRes.StoreGateways),
-		"error":      dayRes.Err + baseRes.Err,
-	}
-	if dayRes.Err == "" && baseRes.Err == "" {
-		rows := growthRows(baseRes.Counts, dayRes.Counts)
-		out["rows"] = rows[:min(limit, len(rows))]
-	}
-	writeJSON(w, out)
-}
-
 type windowRow struct {
 	Name   string `json:"name"`
 	Summed int    `json:"summed"`
@@ -435,10 +521,23 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
 		limit = v
 	}
-	wc, err := cardpoc.NameCountsForWindow(s.compacted, minT, maxT)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var (
+		wc                    cardpoc.WindowNameCounts
+		summedCost, exactCost headcountCost
+	)
+	if fromMimir(r) {
+		var msg string
+		if wc, summedCost, exactCost, msg = s.mimirWindow(minT, maxT); msg != "" {
+			mimirErr(w, msg)
+			return
+		}
+	} else {
+		if wc, err = cardpoc.NameCountsForWindow(s.compacted, minT, maxT); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		summedCost = headcountCost{Source: "library", ElapsedMS: ms(wc.SummedTime), IndexHeaderBytes: wc.SummedHeaders}
+		exactCost = headcountCost{Source: "library", ElapsedMS: ms(wc.ExactTime), ObjectStorageBytes: wc.IndexBytes, SeriesTouched: wc.SeriesRead}
 	}
 	truth := s.pop.TruthBy(nil, "__name__", minT, maxT)
 
@@ -469,9 +568,38 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 		"exact_total":  exactTotal,
 		"truth_total":  truthTotal,
 		"ranges":       len(wc.Ranges),
-		"summed_cost":  headcountCost{ElapsedMS: ms(wc.SummedTime), IndexHeaderBytes: wc.SummedHeaders},
-		"exact_cost":   headcountCost{ElapsedMS: ms(wc.ExactTime), ObjectStorageBytes: wc.IndexBytes, SeriesTouched: wc.SeriesRead},
+		"summed_cost":  summedCost,
+		"exact_cost":   exactCost,
 	})
+}
+
+// mimirWindow fills a WindowNameCounts from Mimir: each day's index-header
+// counts added up, and series_counts over the whole window, which Mimir
+// deduplicates across the day blocks.
+func (s *server) mimirWindow(minT, maxT int64) (cardpoc.WindowNameCounts, headcountCost, headcountCost, string) {
+	wc := cardpoc.WindowNameCounts{MinT: minT, MaxT: maxT, Summed: map[string]int{}}
+	summed := headcountCost{Source: "mimir"}
+	for _, d := range s.days {
+		if d.MinT < minT || d.MaxT > maxT {
+			continue
+		}
+		res := s.mimir.metricNameCounts(d.MinT, d.MaxT)
+		if res.Err != "" {
+			return wc, summed, headcountCost{}, res.Err
+		}
+		for name, n := range res.Counts {
+			wc.Summed[name] += n
+		}
+		wc.Ranges = append(wc.Ranges, d)
+		summed = addCost(summed, headcountCost{ElapsedMS: ms(res.Latency), Blocks: res.Blocks, StoreGateways: res.StoreGateways})
+	}
+	res := s.mimir.seriesCounts(minT, maxT, nil)
+	if res.Err != "" {
+		return wc, summed, headcountCost{}, res.Err
+	}
+	wc.Exact = res.Counts
+	return wc, summed, headcountCost{Source: "mimir", ElapsedMS: ms(res.Latency), Blocks: res.Blocks, StoreGateways: res.StoreGateways,
+		SeriesTouched: res.SeriesCounted, IndexBytes: res.IndexBytes, ObjectStorageBytes: res.BucketBytes}, ""
 }
 
 // handlePromQLWindow asks Mimir for the tenant-wide per-name table over
