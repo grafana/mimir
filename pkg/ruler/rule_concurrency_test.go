@@ -353,7 +353,7 @@ func TestGroupAtRisk(t *testing.T) {
 
 		ruleWaitTime := 1 * time.Millisecond
 		opts := &rules.ManagerOptions{
-			Appendable: st,
+			AppendableV2: st,
 			// Make the rules take 1ms to evaluate.
 			QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 				time.Sleep(ruleWaitTime)
