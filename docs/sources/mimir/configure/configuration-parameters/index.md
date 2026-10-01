@@ -3284,6 +3284,11 @@ The `alertmanager` block configures the alertmanager.
 # CLI flag: -alertmanager.storage.state-read-timeout
 [state_read_timeout: <duration> | default = 15s]
 
+# (experimental) How often each replica checks its owned tenants' silences
+# against each owning peer's and resyncs on a mismatch. 0 disables this check.
+# CLI flag: -alertmanager.silence-reconcile-interval
+[silence_reconcile_interval: <duration> | default = 0s]
+
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

@@ -19293,6 +19293,17 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "silence_reconcile_interval",
+          "required": false,
+          "desc": "How often each replica checks its owned tenants' silences against each owning peer's and resyncs on a mismatch. 0 disables this check.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.silence-reconcile-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,

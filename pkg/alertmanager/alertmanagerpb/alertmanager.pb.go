@@ -129,6 +129,52 @@ func (ReadStateStatus) EnumDescriptor() ([]byte, []int) {
 	return file_alertmanager_proto_rawDescGZIP(), []int{1}
 }
 
+type DigestType int32
+
+const (
+	DigestType_DIGEST_TYPE_UNSPECIFIED DigestType = 0
+	DigestType_DIGEST_TYPE_SILENCES    DigestType = 1
+)
+
+// Enum value maps for DigestType.
+var (
+	DigestType_name = map[int32]string{
+		0: "DIGEST_TYPE_UNSPECIFIED",
+		1: "DIGEST_TYPE_SILENCES",
+	}
+	DigestType_value = map[string]int32{
+		"DIGEST_TYPE_UNSPECIFIED": 0,
+		"DIGEST_TYPE_SILENCES":    1,
+	}
+)
+
+func (x DigestType) Enum() *DigestType {
+	p := new(DigestType)
+	*p = x
+	return p
+}
+
+func (x DigestType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DigestType) Descriptor() protoreflect.EnumDescriptor {
+	return file_alertmanager_proto_enumTypes[2].Descriptor()
+}
+
+func (DigestType) Type() protoreflect.EnumType {
+	return &file_alertmanager_proto_enumTypes[2]
+}
+
+func (x DigestType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DigestType.Descriptor instead.
+func (DigestType) EnumDescriptor() ([]byte, []int) {
+	return file_alertmanager_proto_rawDescGZIP(), []int{2}
+}
+
 type UpdateStateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        UpdateStateStatus      `protobuf:"varint,1,opt,name=status,proto3,enum=alertmanagerpb.UpdateStateStatus" json:"status,omitempty"`
@@ -181,8 +227,10 @@ func (x *UpdateStateResponse) GetError() string {
 	return ""
 }
 
+// If only_silences is false, every part is returned, which is what the initial sync uses.
 type ReadStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	OnlySilences  bool                   `protobuf:"varint,1,opt,name=only_silences,json=onlySilences,proto3" json:"only_silences,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -215,6 +263,13 @@ func (x *ReadStateRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ReadStateRequest.ProtoReflect.Descriptor instead.
 func (*ReadStateRequest) Descriptor() ([]byte, []int) {
 	return file_alertmanager_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ReadStateRequest) GetOnlySilences() bool {
+	if x != nil {
+		return x.OnlySilences
+	}
+	return false
 }
 
 type ReadStateResponse struct {
@@ -277,6 +332,208 @@ func (x *ReadStateResponse) GetState() *clusterpb.FullState {
 	return nil
 }
 
+type TenantDigestsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserIds       []string               `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantDigestsRequest) Reset() {
+	*x = TenantDigestsRequest{}
+	mi := &file_alertmanager_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantDigestsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantDigestsRequest) ProtoMessage() {}
+
+func (x *TenantDigestsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_alertmanager_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantDigestsRequest.ProtoReflect.Descriptor instead.
+func (*TenantDigestsRequest) Descriptor() ([]byte, []int) {
+	return file_alertmanager_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TenantDigestsRequest) GetUserIds() []string {
+	if x != nil {
+		return x.UserIds
+	}
+	return nil
+}
+
+type Digest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          DigestType             `protobuf:"varint,1,opt,name=type,proto3,enum=alertmanagerpb.DigestType" json:"type,omitempty"`
+	Value         uint64                 `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Digest) Reset() {
+	*x = Digest{}
+	mi := &file_alertmanager_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Digest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Digest) ProtoMessage() {}
+
+func (x *Digest) ProtoReflect() protoreflect.Message {
+	mi := &file_alertmanager_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Digest.ProtoReflect.Descriptor instead.
+func (*Digest) Descriptor() ([]byte, []int) {
+	return file_alertmanager_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Digest) GetType() DigestType {
+	if x != nil {
+		return x.Type
+	}
+	return DigestType_DIGEST_TYPE_UNSPECIFIED
+}
+
+func (x *Digest) GetValue() uint64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+// TenantDigest lets a peer cheaply check whether its own view of a tenant matches this replica's.
+// A part missing from digests means "no authoritative data", not zero.
+type TenantDigest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	Digests       []*Digest              `protobuf:"bytes,3,rep,name=digests,proto3" json:"digests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantDigest) Reset() {
+	*x = TenantDigest{}
+	mi := &file_alertmanager_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantDigest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantDigest) ProtoMessage() {}
+
+func (x *TenantDigest) ProtoReflect() protoreflect.Message {
+	mi := &file_alertmanager_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantDigest.ProtoReflect.Descriptor instead.
+func (*TenantDigest) Descriptor() ([]byte, []int) {
+	return file_alertmanager_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TenantDigest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *TenantDigest) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *TenantDigest) GetDigests() []*Digest {
+	if x != nil {
+		return x.Digests
+	}
+	return nil
+}
+
+type TenantDigestsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Digests       []*TenantDigest        `protobuf:"bytes,1,rep,name=digests,proto3" json:"digests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantDigestsResponse) Reset() {
+	*x = TenantDigestsResponse{}
+	mi := &file_alertmanager_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantDigestsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantDigestsResponse) ProtoMessage() {}
+
+func (x *TenantDigestsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_alertmanager_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantDigestsResponse.ProtoReflect.Descriptor instead.
+func (*TenantDigestsResponse) Descriptor() ([]byte, []int) {
+	return file_alertmanager_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TenantDigestsResponse) GetDigests() []*TenantDigest {
+	if x != nil {
+		return x.Digests
+	}
+	return nil
+}
+
 var File_alertmanager_proto protoreflect.FileDescriptor
 
 const file_alertmanager_proto_rawDesc = "" +
@@ -284,12 +541,24 @@ const file_alertmanager_proto_rawDesc = "" +
 	"\x12alertmanager.proto\x12\x0ealertmanagerpb\x1a0github.com/grafana/dskit/httpgrpc/httpgrpc.proto\x1aBgithub.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto\"f\n" +
 	"\x13UpdateStateResponse\x129\n" +
 	"\x06status\x18\x01 \x01(\x0e2!.alertmanagerpb.UpdateStateStatusR\x06status\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\x12\n" +
-	"\x10ReadStateRequest\"\x8e\x01\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"7\n" +
+	"\x10ReadStateRequest\x12#\n" +
+	"\ronly_silences\x18\x01 \x01(\bR\fonlySilences\"\x8e\x01\n" +
 	"\x11ReadStateResponse\x127\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x1f.alertmanagerpb.ReadStateStatusR\x06status\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12*\n" +
-	"\x05state\x18\x03 \x01(\v2\x14.clusterpb.FullStateR\x05state*@\n" +
+	"\x05state\x18\x03 \x01(\v2\x14.clusterpb.FullStateR\x05state\"1\n" +
+	"\x14TenantDigestsRequest\x12\x19\n" +
+	"\buser_ids\x18\x01 \x03(\tR\auserIds\"N\n" +
+	"\x06Digest\x12.\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x1a.alertmanagerpb.DigestTypeR\x04type\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value\"o\n" +
+	"\fTenantDigest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\x120\n" +
+	"\adigests\x18\x03 \x03(\v2\x16.alertmanagerpb.DigestR\adigests\"O\n" +
+	"\x15TenantDigestsResponse\x126\n" +
+	"\adigests\x18\x01 \x03(\v2\x1c.alertmanagerpb.TenantDigestR\adigests*@\n" +
 	"\x11UpdateStateStatus\x12\x06\n" +
 	"\x02OK\x10\x00\x12\x0f\n" +
 	"\vMERGE_ERROR\x10\x02\x12\x12\n" +
@@ -299,11 +568,16 @@ const file_alertmanager_proto_rawDesc = "" +
 	"\aREAD_OK\x10\x01\x12\x0e\n" +
 	"\n" +
 	"READ_ERROR\x10\x02\x12\x17\n" +
-	"\x13READ_USER_NOT_FOUND\x10\x032\xeb\x01\n" +
+	"\x13READ_USER_NOT_FOUND\x10\x03*C\n" +
+	"\n" +
+	"DigestType\x12\x1b\n" +
+	"\x17DIGEST_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14DIGEST_TYPE_SILENCES\x10\x012\xcf\x02\n" +
 	"\fAlertmanager\x12@\n" +
 	"\rHandleRequest\x12\x15.httpgrpc.HTTPRequest\x1a\x16.httpgrpc.HTTPResponse\"\x00\x12E\n" +
 	"\vUpdateState\x12\x0f.clusterpb.Part\x1a#.alertmanagerpb.UpdateStateResponse\"\x00\x12R\n" +
-	"\tReadState\x12 .alertmanagerpb.ReadStateRequest\x1a!.alertmanagerpb.ReadStateResponse\"\x00BIZGgithub.com/grafana/mimir/pkg/alertmanager/alertmanagerpb;alertmanagerpbb\x06proto3"
+	"\tReadState\x12 .alertmanagerpb.ReadStateRequest\x1a!.alertmanagerpb.ReadStateResponse\"\x00\x12b\n" +
+	"\x11ReadTenantDigests\x12$.alertmanagerpb.TenantDigestsRequest\x1a%.alertmanagerpb.TenantDigestsResponse\"\x00BIZGgithub.com/grafana/mimir/pkg/alertmanager/alertmanagerpb;alertmanagerpbb\x06proto3"
 
 var (
 	file_alertmanager_proto_rawDescOnce sync.Once
@@ -317,34 +591,44 @@ func file_alertmanager_proto_rawDescGZIP() []byte {
 	return file_alertmanager_proto_rawDescData
 }
 
-var file_alertmanager_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_alertmanager_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_alertmanager_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_alertmanager_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_alertmanager_proto_goTypes = []any{
 	(UpdateStateStatus)(0),        // 0: alertmanagerpb.UpdateStateStatus
 	(ReadStateStatus)(0),          // 1: alertmanagerpb.ReadStateStatus
-	(*UpdateStateResponse)(nil),   // 2: alertmanagerpb.UpdateStateResponse
-	(*ReadStateRequest)(nil),      // 3: alertmanagerpb.ReadStateRequest
-	(*ReadStateResponse)(nil),     // 4: alertmanagerpb.ReadStateResponse
-	(*clusterpb.FullState)(nil),   // 5: clusterpb.FullState
-	(*httpgrpc.HTTPRequest)(nil),  // 6: httpgrpc.HTTPRequest
-	(*clusterpb.Part)(nil),        // 7: clusterpb.Part
-	(*httpgrpc.HTTPResponse)(nil), // 8: httpgrpc.HTTPResponse
+	(DigestType)(0),               // 2: alertmanagerpb.DigestType
+	(*UpdateStateResponse)(nil),   // 3: alertmanagerpb.UpdateStateResponse
+	(*ReadStateRequest)(nil),      // 4: alertmanagerpb.ReadStateRequest
+	(*ReadStateResponse)(nil),     // 5: alertmanagerpb.ReadStateResponse
+	(*TenantDigestsRequest)(nil),  // 6: alertmanagerpb.TenantDigestsRequest
+	(*Digest)(nil),                // 7: alertmanagerpb.Digest
+	(*TenantDigest)(nil),          // 8: alertmanagerpb.TenantDigest
+	(*TenantDigestsResponse)(nil), // 9: alertmanagerpb.TenantDigestsResponse
+	(*clusterpb.FullState)(nil),   // 10: clusterpb.FullState
+	(*httpgrpc.HTTPRequest)(nil),  // 11: httpgrpc.HTTPRequest
+	(*clusterpb.Part)(nil),        // 12: clusterpb.Part
+	(*httpgrpc.HTTPResponse)(nil), // 13: httpgrpc.HTTPResponse
 }
 var file_alertmanager_proto_depIdxs = []int32{
-	0, // 0: alertmanagerpb.UpdateStateResponse.status:type_name -> alertmanagerpb.UpdateStateStatus
-	1, // 1: alertmanagerpb.ReadStateResponse.status:type_name -> alertmanagerpb.ReadStateStatus
-	5, // 2: alertmanagerpb.ReadStateResponse.state:type_name -> clusterpb.FullState
-	6, // 3: alertmanagerpb.Alertmanager.HandleRequest:input_type -> httpgrpc.HTTPRequest
-	7, // 4: alertmanagerpb.Alertmanager.UpdateState:input_type -> clusterpb.Part
-	3, // 5: alertmanagerpb.Alertmanager.ReadState:input_type -> alertmanagerpb.ReadStateRequest
-	8, // 6: alertmanagerpb.Alertmanager.HandleRequest:output_type -> httpgrpc.HTTPResponse
-	2, // 7: alertmanagerpb.Alertmanager.UpdateState:output_type -> alertmanagerpb.UpdateStateResponse
-	4, // 8: alertmanagerpb.Alertmanager.ReadState:output_type -> alertmanagerpb.ReadStateResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: alertmanagerpb.UpdateStateResponse.status:type_name -> alertmanagerpb.UpdateStateStatus
+	1,  // 1: alertmanagerpb.ReadStateResponse.status:type_name -> alertmanagerpb.ReadStateStatus
+	10, // 2: alertmanagerpb.ReadStateResponse.state:type_name -> clusterpb.FullState
+	2,  // 3: alertmanagerpb.Digest.type:type_name -> alertmanagerpb.DigestType
+	7,  // 4: alertmanagerpb.TenantDigest.digests:type_name -> alertmanagerpb.Digest
+	8,  // 5: alertmanagerpb.TenantDigestsResponse.digests:type_name -> alertmanagerpb.TenantDigest
+	11, // 6: alertmanagerpb.Alertmanager.HandleRequest:input_type -> httpgrpc.HTTPRequest
+	12, // 7: alertmanagerpb.Alertmanager.UpdateState:input_type -> clusterpb.Part
+	4,  // 8: alertmanagerpb.Alertmanager.ReadState:input_type -> alertmanagerpb.ReadStateRequest
+	6,  // 9: alertmanagerpb.Alertmanager.ReadTenantDigests:input_type -> alertmanagerpb.TenantDigestsRequest
+	13, // 10: alertmanagerpb.Alertmanager.HandleRequest:output_type -> httpgrpc.HTTPResponse
+	3,  // 11: alertmanagerpb.Alertmanager.UpdateState:output_type -> alertmanagerpb.UpdateStateResponse
+	5,  // 12: alertmanagerpb.Alertmanager.ReadState:output_type -> alertmanagerpb.ReadStateResponse
+	9,  // 13: alertmanagerpb.Alertmanager.ReadTenantDigests:output_type -> alertmanagerpb.TenantDigestsResponse
+	10, // [10:14] is the sub-list for method output_type
+	6,  // [6:10] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_alertmanager_proto_init() }
@@ -357,8 +641,8 @@ func file_alertmanager_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_alertmanager_proto_rawDesc), len(file_alertmanager_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   3,
+			NumEnums:      3,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

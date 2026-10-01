@@ -63,6 +63,7 @@ The following features are currently experimental:
     - `-cost-attribution.cleanup-interval`
 - Alertmanager
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
+  - Periodic reconciliation of silences between replicas (`-alertmanager.silence-reconcile-interval`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
