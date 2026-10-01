@@ -69,8 +69,9 @@ var profiles = map[string]Profile{
 		},
 	},
 	// demo is 20,000 names over 4 days with 22 names that grow or shrink
-	// every day at different rates, plus a one-day spike, so that a
-	// day-over-day ranking has a different top 10 for every pair of days.
+	// every day at different rates, plus a spike from 14:00 to 20:00 on day
+	// 2, so that a day-over-day ranking has a different top 10 for every pair
+	// of days and an hourly view shows when the spike started.
 	"demo": {
 		Partitions: 4,
 		Population: model.Config{
@@ -81,7 +82,7 @@ var profiles = map[string]Profile{
 			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
 			GapFraction: 0.01, GapDuration: 2 * time.Hour,
 			StaleFraction: 0.01,
-			SpikeMetric:   0, SpikeDay: 2, SpikeBaseValues: 10, SpikePeakValues: 30_000,
+			SpikeMetric:   0, SpikeDay: 2, SpikeStartHour: 14, SpikeHours: 6, SpikeBaseValues: 10, SpikePeakValues: 30_000,
 		},
 	},
 	"large": {

@@ -261,3 +261,24 @@ func TestNew_TrendsChangeCountsPerDay(t *testing.T) {
 	bad.Trends = []Trend{{Metric: 1, Start: 1}, {Metric: 1, Start: 2}}
 	require.Error(t, bad.Validate(), "a metric can have only one trend")
 }
+
+func TestNew_SpikeHoursInsideTheDay(t *testing.T) {
+	cfg := testConfig()
+	cfg.SpikeMetric, cfg.SpikeDay, cfg.SpikeBaseValues, cfg.SpikePeakValues = 0, 1, 2, 50
+	cfg.SpikeStartHour, cfg.SpikeHours = 14, 6
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	name := m.Series[0].Labels.Get("__name__")
+	matcher := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", name)}
+	hour := time.Hour.Milliseconds()
+	day1 := cfg.startMillis() + 24*hour
+	require.Equal(t, 2, m.Truth(matcher, day1+13*hour, day1+14*hour), "before the spike")
+	require.Equal(t, 50, m.Truth(matcher, day1+14*hour, day1+15*hour), "first spike hour")
+	require.Equal(t, 50, m.Truth(matcher, day1+19*hour, day1+20*hour), "last spike hour")
+	require.Equal(t, 2, m.Truth(matcher, day1+20*hour, day1+21*hour), "after the spike")
+
+	bad := cfg
+	bad.SpikeStartHour, bad.SpikeHours = 20, 6
+	require.Error(t, bad.Validate(), "a spike cannot run past the end of its day")
+}
