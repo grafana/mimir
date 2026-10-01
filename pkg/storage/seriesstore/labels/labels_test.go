@@ -4,6 +4,7 @@ package labels
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -112,4 +113,34 @@ func TestHashesMatchPrometheus(t *testing.T) {
 		require.Equal(t, StableHash(ours), StableHashPairs(ours.Pairs()))
 		require.Equal(t, ours.Hash(), HashPairs(ours.Pairs()))
 	}
+}
+
+func TestValueOfMatchesRangeForMultiByteIdsAndLengths(t *testing.T) {
+	// Interning enough names pushes later ids past one varint byte.
+	for i := 0; i < 300; i++ {
+		Intern(fmt.Sprintf("value_of_name_%03d", i))
+	}
+	rng := rand.New(rand.NewPCG(1, 2))
+	for range 500 {
+		var pairs [][2]string
+		for i := 0; i < 300; i += 1 + rng.IntN(60) {
+			pairs = append(pairs, [2]string{fmt.Sprintf("value_of_name_%03d", i), strings.Repeat("v", rng.IntN(300))})
+		}
+		l := FromSorted(pairs)
+		l.Range(func(name, value string) {
+			id, _ := Lookup(name)
+			require.Equal(t, value, l.ValueOf(id), name)
+		})
+		require.Empty(t, l.ValueOf(Intern("value_of_absent")))
+	}
+}
+
+func BenchmarkValueOf(b *testing.B) {
+	l := FromStrings("__name__", "http_requests_total", "cluster", "prod-us-central-0", "instance", "10.0.0.1:9090", "job", "api", "pod", "api-7d9f8b6c5-x2k4j", "zone", "us-central1-a")
+	id, _ := Lookup("zone")
+	var sink string
+	for b.Loop() {
+		sink = l.ValueOf(id)
+	}
+	_ = sink
 }
