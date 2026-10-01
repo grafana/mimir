@@ -69,6 +69,12 @@ func (c *customStoreGatewayClient) MetricNameCounts(ctx context.Context, in *Met
 	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 }
 
+// SeriesCounts implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (*SeriesCountsResponse, error) {
+	res, err := c.wrapped.SeriesCounts(ctx, in, opts...)
+	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+}
+
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
 	*customClientStream
