@@ -84,7 +84,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Alertmanager status](#alertmanager-status) | Alertmanager | `GET /multitenant_alertmanager/status` |
 | [Alertmanager configs](#alertmanager-configs) | Alertmanager | `GET /multitenant_alertmanager/configs` |
 | [Alertmanager ring status](#alertmanager-ring-status) | Alertmanager | `GET /multitenant_alertmanager/ring` |
-| [Alertmanager UI](#alertmanager-ui) | Alertmanager | `GET <alertmanager-http-prefix>` |
+| [Alertmanager API](#alertmanager-api) | Alertmanager | `GET,POST,DELETE <alertmanager-http-prefix>` |
 | [Build Information](#build-information) | Alertmanager | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo` |
 | [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager | `POST /multitenant_alertmanager/delete_tenant_config` |
 | [Get Alertmanager configuration](#get-alertmanager-configuration) | Alertmanager | `GET /api/v1/alerts` |
@@ -1267,13 +1267,13 @@ GET /multitenant_alertmanager/ring
 
 Displays a web page with the Alertmanager hash ring status, including the state, healthy and last heartbeat time of each Alertmanager instance.
 
-### Alertmanager UI
+### Alertmanager API
 
 ```
-GET /<alertmanager-http-prefix>
+GET,POST,DELETE /<alertmanager-http-prefix>
 ```
 
-Displays the Alertmanager UI.
+Manage the Alertmanager.
 
 Requires [authentication](#authentication).
 
@@ -1327,7 +1327,7 @@ POST /api/v1/alerts
 
 This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
-Alertmanager UI/API under `<alertmanager-http-prefix>`.
+Alertmanager API under `<alertmanager-http-prefix>`.
 
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
@@ -1378,7 +1378,7 @@ DELETE /api/v1/alerts
 
 This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
-Alertmanager UI/API under `<alertmanager-http-prefix>`.
+Alertmanager API under `<alertmanager-http-prefix>`.
 
 Deletes the Alertmanager configuration for the authenticated tenant.
 

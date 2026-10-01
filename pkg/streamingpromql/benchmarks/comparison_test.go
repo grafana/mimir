@@ -6,7 +6,9 @@
 package benchmarks
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"strconv"
@@ -39,6 +41,46 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	// tools/benchmark-query-engine wants the peak RSS of this process. On Linux it can't get that from the Rusage returned
+	// by wait4: Go spawns child processes with CLONE_VM, and on exec the kernel carries the parent's high-water RSS over
+	// into the child's accounting. The parent holds the whole ingester data set, so every benchmark would report the same,
+	// query-independent number. VmHWM from /proc/self/status only covers this process, so we report that instead.
+	if os.Getenv(ReportPeakRSSEnvVar) == "true" {
+		if peak, ok := peakRSSBytesFromProc(); ok {
+			fmt.Printf("%s%d\n", PeakRSSOutputLinePrefix, peak)
+		}
+	}
+
+	os.Exit(code)
+}
+
+// peakRSSBytesFromProc returns the high-water RSS of this process. Only available on Linux (reads /proc/self/status).
+func peakRSSBytesFromProc() (int64, bool) {
+	f, err := os.Open("/proc/self/status")
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// Format is "VmHWM:\t   12345 kB".
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 3 && fields[0] == "VmHWM:" && fields[2] == "kB" {
+			kb, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return 0, false
+			}
+			return kb * 1024, true
+		}
+	}
+
+	return 0, false
+}
+
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
 	// Important: the setup below must remain in sync with the setup done in tools/benchmark-query-engine.
@@ -51,6 +93,11 @@ func BenchmarkQuery(b *testing.B) {
 	require.NoError(b, err)
 	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(b, err)
+
+	// Used to report the peak memory consumption estimated by the Mimir engine's memory consumption tracker, which is
+	// what per-query memory limits are enforced against. Peak RSS can't show this, as it includes memory not tracked.
+	gatherer, ok := opts.CommonOpts.Reg.(prometheus.Gatherer)
+	require.True(b, ok, "expected the engine's registerer to also be a gatherer")
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
@@ -81,6 +128,8 @@ func BenchmarkQuery(b *testing.B) {
 
 			for name, engine := range engines {
 				b.Run("engine="+name, func(b *testing.B) {
+					sumBefore, countBefore := estimatedPeakMemoryConsumption(b, gatherer)
+
 					for i := 0; i < b.N; i++ {
 						res, cleanup := c.Run(ctx, b, start, end, interval, engine, q)
 
@@ -88,10 +137,37 @@ func BenchmarkQuery(b *testing.B) {
 							cleanup()
 						}
 					}
+
+					// Only the Mimir engine estimates the peak memory of each query, so there is nothing to report for
+					// Prometheus.
+					if name == "Mimir" {
+						// These totals cover every query this process has run, including earlier calls of this function
+						// with a smaller b.N, so subtract the totals from before the loop.
+						sum, count := estimatedPeakMemoryConsumption(b, gatherer)
+						if count > countBefore {
+							b.ReportMetric((sum-sumBefore)/float64(count-countBefore), "estimated-peak-B/op")
+						}
+					}
 				})
 			}
 		})
 	}
+}
+
+// estimatedPeakMemoryConsumption returns the sum and count of the peak memory consumption estimates of all queries
+// the Mimir engine has run so far.
+func estimatedPeakMemoryConsumption(t testing.TB, gatherer prometheus.Gatherer) (float64, uint64) {
+	families, err := gatherer.Gather()
+	require.NoError(t, err)
+
+	for _, family := range families {
+		if family.GetName() == "cortex_mimir_query_engine_estimated_query_peak_memory_consumption" {
+			histogram := family.GetMetric()[0].GetHistogram()
+			return histogram.GetSampleSum(), histogram.GetSampleCount()
+		}
+	}
+
+	return 0, 0
 }
 
 func BenchmarkRangeVectorQueryCase(b *testing.B) {

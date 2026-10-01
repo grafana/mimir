@@ -155,7 +155,7 @@ type ManagerOptions struct {
 	QueryFunc                 QueryFunc
 	NotifyFunc                NotifyFunc
 	Context                   context.Context
-	Appendable                storage.Appendable
+	AppendableV2              storage.AppendableV2
 	Queryable                 storage.Queryable
 	Logger                    *slog.Logger
 	Registerer                prometheus.Registerer
