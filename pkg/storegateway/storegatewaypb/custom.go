@@ -63,6 +63,12 @@ func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *st
 	return newCustomSearchLabelValuesClient(client), nil
 }
 
+// MetricNameCounts implements StoreGatewayClient.
+func (c *customStoreGatewayClient) MetricNameCounts(ctx context.Context, in *MetricNameCountsRequest, opts ...grpc.CallOption) (*MetricNameCountsResponse, error) {
+	res, err := c.wrapped.MetricNameCounts(ctx, in, opts...)
+	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+}
+
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
 	*customClientStream

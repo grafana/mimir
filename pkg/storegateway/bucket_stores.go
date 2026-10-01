@@ -423,6 +423,24 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// MetricNameCounts implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) MetricNameCounts(ctx context.Context, req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.MetricNameCounts")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return nil, fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return &storegatewaypb.MetricNameCountsResponse{}, nil
+	}
+
+	return store.MetricNameCounts(ctx, req)
+}
+
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
