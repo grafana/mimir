@@ -85,6 +85,10 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		assert.Equal(t, []string{b1.String()}, resp.BlockIds)
 		assert.False(t, resp.LowerBound)
 		assert.Positive(t, resp.SeriesFetchedBytes, "the first read of a block comes from the bucket")
+		// The bucket read is a whole partition, so on a block this small it's
+		// far larger than the series entries actually decoded.
+		assert.Positive(t, resp.IndexBytes)
+		assert.Less(t, resp.IndexBytes, resp.PostingsFetchedBytes+resp.SeriesFetchedBytes)
 	})
 
 	t.Run("window inside the block", func(t *testing.T) {
