@@ -183,6 +183,27 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 		}
 	}
 
+	// The reader has stopped, so nothing appends. Remember the inclusive
+	// sample bounds first: compaction's block max is one millisecond
+	// past the last sample, and the marker's maxT is the reap key.
+	// Then flush each head so the frozen epoch does not keep a live
+	// head for the rest of local retention.
+	p.tenantsMu.RLock()
+	toFlush := make([]*partitionTSDB, 0, len(p.tenants))
+	preFlushBounds := make(map[*partitionTSDB][2]int64, len(p.tenants))
+	for _, db := range p.tenants {
+		mn, mx := db.sampleBounds()
+		preFlushBounds[db] = [2]int64{mn, mx}
+		toFlush = append(toFlush, db)
+	}
+	p.tenantsMu.RUnlock()
+	for _, db := range toFlush {
+		if err := r.flushPartitionHead(db); err != nil {
+			level.Warn(r.logger).Log("msg", "flushing readcache head before freeze",
+				"user", db.tenantID, "partition", partitionID, "err", err)
+		}
+	}
+
 	// Detach the tenant TSDBs from the (now unreachable) live state.
 	// The reader has returned from StopAndAwaitTerminated, so no
 	// goroutine is appending; taking tenantsMu is safe.
@@ -208,7 +229,11 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 		stoppedConsumingAt: stoppedConsumingAt,
 	}
 	for tenant, db := range tenants {
-		mn, mx := db.sampleBounds()
+		bounds, ok := preFlushBounds[db]
+		mn, mx := int64(0), int64(-1)
+		if ok {
+			mn, mx = bounds[0], bounds[1]
+		}
 		if mx < mn {
 			continue // empty TSDB; bounds left at the sentinel
 		}
@@ -336,12 +361,11 @@ func (r *Readcache) reapFrozenEpochs(now time.Time) {
 //
 //   - already past the serving horizon: the directory is deleted
 //     immediately;
-//   - still within the horizon: the TSDB is reopened (WAL replay
-//     included — freezing does not compact the head, so recent
-//     samples live in the WAL) and grouped back into its
-//     (partition, epoch) frozenEpoch in r.frozen. From there it is
-//     queryable and reaped exactly like an epoch frozen by this
-//     process;
+//   - still within the horizon: the TSDB is reopened and grouped back
+//     into its (partition, epoch) frozenEpoch in r.frozen. Freeze
+//     flushes the head first, so a clean shutdown leaves blocks rather
+//     than a WAL to replay. From there it is queryable and reaped
+//     exactly like an epoch frozen by this process;
 //   - unopenable (e.g. unrepairable corruption): the directory is
 //     deleted. Readcache is a cache — the canonical copy of the data
 //     lives with the ingester/blockbuilder — and a dir we cannot open

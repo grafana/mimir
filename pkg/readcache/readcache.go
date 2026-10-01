@@ -96,6 +96,15 @@ type Readcache struct {
 	// care about ring registration).
 	instanceLifecycler *ring.BasicLifecycler
 
+	// instanceRing is the read-only client for that same ring. Compaction
+	// reads its zone list from here. Nil in tests, which then run without
+	// a zone offset. SetInstanceRing wires it after New.
+	instanceRing *ring.Ring
+
+	// compactionIdleTimeout is HeadCompactionIdleTimeout plus the
+	// ingester's +25% jitter, fixed for the life of the process.
+	compactionIdleTimeout time.Duration
+
 	// queryLoad and partitionSeries are the per-partition query-load
 	// and per-partition active-series signals that the rebalancer
 	// pulls via HashRangeStats. Per-hash-range counts live on each
@@ -362,6 +371,7 @@ func New(
 		r.leaseSlot = id.LogicalID
 		r.leaseZone = id.Zone
 	}
+	r.initCompactionSchedule()
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
 
@@ -590,12 +600,17 @@ func (r *Readcache) dialRebalancer(ctx context.Context) (*grpc.ClientConn, error
 	return grpc.DialContext(ctx, r.cfg.RebalancerAddress, dialOpts...)
 }
 
+// SetInstanceRing installs the readcache ring client used to stagger
+// compaction across zones. Nil leaves the schedule unstaggered.
+func (r *Readcache) SetInstanceRing(instanceRing *ring.Ring) {
+	r.instanceRing = instanceRing
+}
+
 func (r *Readcache) running(ctx context.Context) error {
-	// Per-partition tickers for head compaction. Aggregated to one
-	// shared goroutine to avoid one goroutine per partition; the
-	// granularity (an hour by default) makes shared scheduling fine.
-	compactT := time.NewTicker(r.cfg.HeadCompactionInterval)
-	defer compactT.Stop()
+	// One goroutine compacts every owned TSDB. The first wait is the
+	// zone offset plus this pod's jitter; later ticks keep that phase.
+	stopCompact, compactC := r.startCompactionTicker()
+	defer stopCompact()
 
 	tsdbUpdateT := time.NewTicker(r.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateT.Stop()
@@ -631,7 +646,7 @@ func (r *Readcache) running(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-compactT.C:
+		case <-compactC:
 			r.compactHeads()
 		case <-tsdbUpdateT.C:
 			r.applyPartitionTSDBTenantSettings()
@@ -1205,10 +1220,7 @@ func (r *Readcache) compactHeads() {
 		}
 		p.tenantsMu.RUnlock()
 		for _, db := range dbs {
-			if err := db.CompactHead(); err != nil && !errors.Is(err, context.Canceled) {
-				level.Warn(r.logger).Log("msg", "compact head failed",
-					"user", db.tenantID, "partition", db.partitionID, "err", err)
-			}
+			r.compactOne(db)
 		}
 	}
 	r.requestSeriesStatsRefresh()

@@ -8,6 +8,7 @@ import (
 	"math"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -34,8 +35,10 @@ import (
 //
 // Structural differences vs the ingester's userTSDB:
 //
-//   - **Compaction stays on.** The normal head→block compaction loop
-//     runs so the resident head doesn't grow unbounded.
+//   - **Compaction stays owned by readcache.** Prometheus's background
+//     loop is disabled. The service calls DB.Compact on the ingester's
+//     zone-staggered schedule, and forces a head flush when the TSDB
+//     is idle. Blocks stay local.
 //   - **Shipping is off.** No Shipper is configured; readcache never
 //     uploads blocks to object storage. Blockbuilder is the canonical
 //     long-term home for blocks on the experimental Kafka topic.
@@ -61,12 +64,42 @@ type partitionTSDB struct {
 	// ingestion-concurrency-max > 0, which can call the readcache pusher
 	// concurrently; Prometheus TSDB expects a single writer at a time
 	// for appends (same contract as the ingester's acquireAppendLock).
-	// We also hold this for CompactHead and ApplyConfig so those never
-	// race with appends.
+	// Regular DB.Compact does not take it: Prometheus serializes that
+	// itself, and holding it across the call stalls the Kafka fetcher.
+	// Forced compaction uses appendState instead of this lock.
 	tsdbMut sync.Mutex
+
+	// compactMu serializes regular compaction, forced compaction, and
+	// close. Appends do not take it.
+	compactMu sync.Mutex
+
+	// fenceMu guards appendState and forcedMaxTime. Appends take it
+	// for read; forced compaction and close take it for write, then
+	// wait for appends that already started.
+	fenceMu            sync.RWMutex
+	appendState        tsdbAppendState
+	forcedMaxTime      int64
+	appendsBeforeFence sync.WaitGroup
+
+	// lastAppend is the wall time of the last successful push, or of
+	// open when nothing has been pushed yet.
+	lastAppend atomic.Int64
 
 	mutationObservers [tsdbMutationOperationCount]tsdbMutationObservers
 }
+
+type tsdbAppendState uint8
+
+const (
+	tsdbAppendActive tsdbAppendState = iota
+	tsdbAppendForced
+	tsdbAppendClosing
+)
+
+var (
+	errTSDBCompactionOverlap = fmt.Errorf("readcache TSDB head compaction in progress for this time range")
+	errTSDBClosed            = fmt.Errorf("readcache TSDB is closed")
+)
 
 type tsdbMutationOperation uint8
 
@@ -147,12 +180,11 @@ func (c *partitionSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef
 // localBlockRetention is the readcache-scoped time-retention applied
 // to persisted blocks. It is plumbed into tsdb.Options.RetentionDuration,
 // so Prometheus's standard time-retention (BeyondTimeRetention) deletes
-// blocks whose MaxTime is more than localBlockRetention older than the
-// newest block's MaxTime. Deletion only runs on reloadBlocks(), which
-// is triggered by CompactHead — so the *effective* retention upper bound
-// is roughly localBlockRetention + one HeadCompactionInterval. Pass 0
-// to disable time-retention entirely (the pre-wired behavior, useful
-// for tests where data should never age out).
+// a block only when it is a full retention behind the newest block.
+// db.run reloads blocks every BlockReloadInterval whether or not a
+// compaction ran. The newest block is never removed that way; idle
+// close deletes the directory. Pass 0 to disable time-retention
+// (useful for tests where data should never age out).
 //
 // We deliberately do not pass cfg.Retention here: readcache and the
 // ingester serve different lifetimes (blockbuilder is the canonical
@@ -253,11 +285,11 @@ func openPartitionTSDB(
 	if err != nil {
 		return nil, fmt.Errorf("opening partition TSDB %q: %w", dir, err)
 	}
-	// Use our own compaction schedule (no automatic background
-	// compactions kicked off by Prometheus). The readcache Service
-	// calls CompactHead on its own ticker.
+	// Prometheus's own loop is unstaggered. Readcache compacts from
+	// its service ticker instead.
 	db.DisableCompactions()
 	partitionDB.db = db
+	partitionDB.touchLastAppend(time.Now())
 	if cfg.SharedPostingsForMatchersCache && cfg.HeadPostingsForMatchersCacheInvalidation {
 		seriesLifecycleCallback.postingsCache = db.Head().PostingsForMatchersCache()
 	}
@@ -477,8 +509,9 @@ func (p *partitionTSDB) Blocks() []*tsdb.Block {
 	return p.db.Blocks()
 }
 
-// CompactHead compacts the in-memory head into a block on disk.
-// Unlike the ingester, blocks stay local; no shipper picks them up.
+// CompactHead flushes the whole head, including the live tip, while
+// holding tsdbMut. Production compaction does not call this: tests
+// use it to cut a block without waiting for the 1.5× block-range span.
 func (p *partitionTSDB) CompactHead() error {
 	defer p.lockForMutation(tsdbMutationCompact)()
 
@@ -489,9 +522,153 @@ func (p *partitionTSDB) CompactHead() error {
 	return p.db.CompactOOOHead(context.Background())
 }
 
+// compactRegular persists compactable head blocks the way the ingester's
+// regular compact does. Appends continue. The live window stays in the head.
+func (p *partitionTSDB) compactRegular() error {
+	p.compactMu.Lock()
+	defer p.compactMu.Unlock()
+	if p.IsClosed() {
+		return nil
+	}
+	return p.db.Compact(context.Background())
+}
+
+// compactHeadForced flushes the head up to forcedMaxTime in block-range
+// slices, then compacts out-of-order data. Samples at or below the cut
+// are rejected until the flush finishes. Samples newer than the cut
+// are appended. tsdbMut is not held across the flush.
+func (p *partitionTSDB) compactHeadForced(blockDuration, forcedMaxTime int64) error {
+	p.compactMu.Lock()
+	defer p.compactMu.Unlock()
+	if p.IsClosed() {
+		return nil
+	}
+
+	p.fenceMu.Lock()
+	if p.appendState != tsdbAppendActive {
+		state := p.appendState
+		p.fenceMu.Unlock()
+		return fmt.Errorf("readcache TSDB head cannot be force-compacted from state %d", state)
+	}
+	p.appendState = tsdbAppendForced
+	p.forcedMaxTime = forcedMaxTime
+	p.fenceMu.Unlock()
+
+	defer func() {
+		p.fenceMu.Lock()
+		if p.appendState == tsdbAppendForced {
+			p.appendState = tsdbAppendActive
+		}
+		p.fenceMu.Unlock()
+	}()
+
+	// Appends that observed the active state have already incremented
+	// the WaitGroup. Appends that observe the forced state do not.
+	p.appendsBeforeFence.Wait()
+
+	h := p.db.Head()
+	for {
+		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedMaxTime)
+		if !isValid {
+			break
+		}
+		if err := p.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
+			return err
+		}
+		if isLast {
+			break
+		}
+	}
+	return p.db.CompactOOOHead(context.Background())
+}
+
+// beginAppend admits an append, or rejects it when a forced compaction
+// or close owns the sample range. tracked is true when the caller must
+// call endAppend: the compaction or close is waiting for this append.
+func (p *partitionTSDB) beginAppend(minTimestamp int64) (tracked bool, err error) {
+	p.fenceMu.RLock()
+	defer p.fenceMu.RUnlock()
+
+	switch p.appendState {
+	case tsdbAppendActive:
+		p.appendsBeforeFence.Add(1)
+		return true, nil
+	case tsdbAppendForced:
+		if minTimestamp <= p.forcedMaxTime {
+			return false, errTSDBCompactionOverlap
+		}
+		return false, nil
+	default:
+		return false, errTSDBClosed
+	}
+}
+
+func (p *partitionTSDB) endAppend(tracked bool) {
+	if tracked {
+		p.appendsBeforeFence.Done()
+	}
+}
+
+func (p *partitionTSDB) touchLastAppend(t time.Time) {
+	p.lastAppend.Store(t.UnixMilli())
+}
+
+func (p *partitionTSDB) lastAppendTime() time.Time {
+	return time.UnixMilli(p.lastAppend.Load())
+}
+
+// beginIdleClose rejects new appends and waits out appends that already
+// started. The caller must follow with finishIdleClose or abortIdleClose.
+func (p *partitionTSDB) beginIdleClose() bool {
+	p.compactMu.Lock()
+	p.fenceMu.Lock()
+	if p.closed || p.appendState != tsdbAppendActive {
+		p.fenceMu.Unlock()
+		p.compactMu.Unlock()
+		return false
+	}
+	p.appendState = tsdbAppendClosing
+	p.fenceMu.Unlock()
+	p.appendsBeforeFence.Wait()
+	return true
+}
+
+func (p *partitionTSDB) abortIdleClose() {
+	p.fenceMu.Lock()
+	if p.appendState == tsdbAppendClosing && !p.closed {
+		p.appendState = tsdbAppendActive
+	}
+	p.fenceMu.Unlock()
+	p.compactMu.Unlock()
+}
+
+func (p *partitionTSDB) finishIdleClose() error {
+	defer p.compactMu.Unlock()
+	return p.closeDBLocked()
+}
+
 // Close shuts down the TSDB. Idempotent.
 func (p *partitionTSDB) Close() error {
-	// Wait for in-flight appends / compaction / ApplyConfig before closing.
+	p.compactMu.Lock()
+	defer p.compactMu.Unlock()
+	return p.closeDBLocked()
+}
+
+// closeDBLocked closes the Prometheus DB. compactMu is held by the caller.
+func (p *partitionTSDB) closeDBLocked() error {
+	p.fenceMu.Lock()
+	if p.closed {
+		p.fenceMu.Unlock()
+		return nil
+	}
+	alreadyClosing := p.appendState == tsdbAppendClosing
+	p.appendState = tsdbAppendClosing
+	p.fenceMu.Unlock()
+	if !alreadyClosing {
+		p.appendsBeforeFence.Wait()
+	}
+
+	// Wait for in-flight appends / ApplyConfig before closing.
 	defer p.lockForMutation(tsdbMutationClose)()
 
 	p.mu.Lock()
@@ -506,6 +683,28 @@ func (p *partitionTSDB) Close() error {
 		return err
 	}
 	return nil
+}
+
+// nextForcedHeadCompactionRange computes the next TSDB head range to compact
+// when a forced compaction is triggered. If isValid is false, the returned
+// range should not be compacted. Copied from the ingester.
+func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forcedMaxTime int64) (minTime, maxTime int64, isValid, isLast bool) {
+	if headMinTime == math.MaxInt64 || headMaxTime == math.MinInt64 {
+		return 0, 0, false, true
+	}
+
+	minTime = headMinTime
+	maxTime = min(headMaxTime, forcedMaxTime)
+	if maxTime < minTime {
+		return 0, 0, false, true
+	}
+
+	if (minTime/blockDuration)*blockDuration != (maxTime/blockDuration)*blockDuration {
+		// Block max time is exclusive, so subtract one millisecond.
+		maxTime = ((minTime/blockDuration)+1)*blockDuration - 1
+		return minTime, maxTime, true, false
+	}
+	return minTime, maxTime, true, true
 }
 
 // IsClosed reports whether Close has been called.

@@ -187,9 +187,13 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 		var series uint64
 		for _, db := range dbs {
 			series += db.Head().NumSeries()
+			for _, block := range db.Blocks() {
+				series += block.Meta().Stats.NumSeries
+			}
 		}
-		// The frozen epoch contains series_before_restart; the resumed
-		// live epoch must add series_during_downtime after it.
+		// The frozen epoch was flushed to a block at shutdown
+		// (series_before_restart). The resumed live epoch must add
+		// series_during_downtime in its head.
 		return series == 2
 	}, 20*time.Second, 100*time.Millisecond, "second incarnation must consume the record produced during downtime")
 }

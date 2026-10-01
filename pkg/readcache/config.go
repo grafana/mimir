@@ -53,10 +53,9 @@ type Config struct {
 	// truth for ownership.
 	OwnedPartitions string `yaml:"owned_partitions" category:"experimental"`
 
-	// HeadCompactionInterval is how often each partitionTSDB's head is
-	// considered for compaction. Compaction keeps the in-memory head
-	// small even though readcache never ships blocks (blockbuilder
-	// handles long-term blocks).
+	// HeadCompactionInterval is unused. Compaction follows
+	// BlocksStorage.TSDB.HeadCompactionInterval (the ingester's 15m
+	// flag on a cell). The flag remains so existing configs still parse.
 	HeadCompactionInterval time.Duration `yaml:"head_compaction_interval" category:"experimental"`
 
 	// TSDBConfigUpdatePeriod is how often readcache reapplies per-tenant
@@ -119,7 +118,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.KafkaTopic, "readcache.kafka-topic", "nautilus_ingest", "Kafka topic readcache consumes from. The plan uses a dedicated experimental topic to isolate the readcache fleet from production ingesters.")
 	f.StringVar(&cfg.RebalancerAddress, "readcache.rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the readcache pod subscribes to WatchReadcacheAssignments and owns only partitions whose active lease names this instance. Production deployments must set this; -readcache.owned-partitions is only consulted as a fallback when this is empty.")
 	f.StringVar(&cfg.OwnedPartitions, "readcache.owned-partitions", "", "Legacy static comma-separated list of int32 partition IDs this readcache instance owns. Ignored when -readcache.rebalancer-address is set. Intended for tests and degraded-mode bring-up only.")
-	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often each partitionTSDB head is considered for compaction.")
+	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "Unused. Head compaction follows -blocks-storage.tsdb.head-compaction-interval, with the ingester zone offset and per-pod jitter. Kept so existing configs still parse.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "readcache.tsdb-config-update-period", 15*time.Second, "Period with which readcache updates per-tenant TSDB configuration from runtime limits (e.g. out-of-order samples window, exemplars), mirroring the ingester.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
 	f.DurationVar(&cfg.AdoptCatchUpPeriod, "readcache.adopt-catch-up-period", 15*time.Minute, "How much Kafka history to replay asynchronously when a running readcache freshly acquires a partition. The partition remains non-warm until it catches up to the live edge. 0 starts at the live edge without replay.")

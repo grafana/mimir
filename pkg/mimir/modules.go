@@ -1815,6 +1815,7 @@ func (t *Mimir) initReadcache() (services.Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "readcache init")
 	}
+	r.SetInstanceRing(t.ReadcacheInstanceRing)
 	t.Readcache = r
 	t.API.RegisterReadcache(r)
 	t.API.RegisterReadcacheLifecycle(http.HandlerFunc(r.PrepareInstanceRingDownscaleHandler))

@@ -230,16 +230,16 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		assert.Equal(t, 1, r.epochSeq[pid],
 			"epochSeq must be seeded past the restored epoch so a re-acquisition can't collide with its dir")
 
-		// The restored slice is queryable again, with the pre-restart
-		// sample intact (it lived in the WAL: freezing does not
-		// compact the head).
+		// The restored slice is queryable again. Freeze flushes the head,
+		// so the sample is in a block: block min is the sample time and
+		// block max is exclusive.
 		hint := &client.QueryAttributionHint{PartitionId: pid}
 		dbs, err := r.listTSDBsForTenant(tenantID, hint)
 		require.NoError(t, err)
 		require.Len(t, dbs, 1, "restored frozen epoch must be queryable")
 		mn, mx := dbs[0].sampleBounds()
-		assert.Equal(t, sampleTS, mn, "the pre-restart sample must survive the WAL replay")
-		assert.Equal(t, sampleTS, mx)
+		assert.Equal(t, sampleTS, mn, "the pre-restart sample must survive the freeze flush")
+		assert.Equal(t, sampleTS+1, mx)
 
 		// Still kept at "now".
 		r.reapFrozenEpochs(time.Now())
