@@ -115,6 +115,11 @@ type blocksStoreQueryableMetrics struct {
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
 
+	// Experimental series_counts route: time per path, and how often
+	// compare=true found the index path agreeing with the chunks path.
+	seriesCountsDuration *prometheus.HistogramVec
+	seriesCountsCompared *prometheus.CounterVec
+
 	// compartmentsHit counts the read compartments queried per query. It is nil (and unobserved) when
 	// compartments are disabled.
 	compartmentsHit prometheus.Histogram
@@ -155,6 +160,15 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_query_storegateway_chunks_total",
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
+		seriesCountsDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_series_counts_duration_seconds",
+			Help:    "Time to answer a series_counts request, by path: index reads series entries only, chunks loads chunks like a PromQL count.",
+			Buckets: prometheus.ExponentialBuckets(0.005, 4, 8),
+		}, []string{"path"}),
+		seriesCountsCompared: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_series_counts_compared_total",
+			Help: "series_counts requests with compare=true, by whether the index path matched the chunks path.",
+		}, []string{"result"}),
 	}
 
 	// Only register the per-query compartments-hit histogram when compartments are enabled.
