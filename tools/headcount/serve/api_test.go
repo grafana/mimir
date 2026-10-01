@@ -6,10 +6,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/stretchr/testify/require"
 
@@ -153,56 +158,128 @@ func TestHandleHourly_ExactFromChunkMetas(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, getJSON(t, s, `/api/hourly?day=0&metric=a"b`, &out))
 }
 
-func TestHandleStoreGatewayGrowth(t *testing.T) {
-	s := testServer(t)
-	// A fake store-gateway that answers each window with the model's truth
-	// for that day, the way the real endpoint would on these blocks.
+// fakeMimir answers Mimir's two prototype routes from the model's truth,
+// the way the real routes do on these blocks.
+func fakeMimir(t *testing.T, s *server) *httptest.Server {
+	parseT := func(v string) int64 {
+		f, err := strconv.ParseFloat(v, 64)
+		require.NoError(t, err)
+		return int64(f*1000 + 0.5)
+	}
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/prometheus/api/v1/cardinality/metric_name_counts" {
-			http.NotFound(w, r)
-			return
-		}
-		start := r.URL.Query().Get("start")
-		for i, d := range s.days {
-			if start == strconv.FormatFloat(float64(d.MinT)/1000, 'f', 3, 64) {
-				var out struct {
-					Blocks int `json:"blocks"`
-					Counts []struct {
-						Name  string `json:"name"`
-						Count int    `json:"count"`
-					} `json:"counts"`
-				}
-				out.Blocks = 1
-				for name, n := range s.dayTruth[i] {
-					out.Counts = append(out.Counts, struct {
-						Name  string `json:"name"`
-						Count int    `json:"count"`
-					}{name, n})
-				}
-				_ = json.NewEncoder(w).Encode(out)
-				return
+		q := r.URL.Query()
+		minT, maxT := parseT(q.Get("start")), parseT(q.Get("end"))
+		switch r.URL.Path {
+		case "/prometheus/api/v1/cardinality/metric_name_counts":
+			type count struct {
+				Name  string `json:"name"`
+				Count int    `json:"count"`
 			}
+			out := struct {
+				Blocks int     `json:"blocks"`
+				Counts []count `json:"counts"`
+			}{Blocks: 1}
+			for name, n := range s.pop.TruthBy(nil, "__name__", minT, maxT) {
+				out.Counts = append(out.Counts, count{name, n})
+			}
+			_ = json.NewEncoder(w).Encode(out)
+		case "/prometheus/api/v1/cardinality/series_counts":
+			var matchers []*labels.Matcher
+			if sel := q.Get("match[]"); sel != "" {
+				matchers = matchName(strings.TrimSuffix(strings.TrimPrefix(sel, `{__name__="`), `"}`))
+			}
+			groupBy := q.Get("group_by")
+			if groupBy == "" {
+				groupBy = "__name__"
+			}
+			type group struct {
+				Value  string `json:"value"`
+				Count  int    `json:"count"`
+				Counts []int  `json:"counts,omitempty"`
+			}
+			var out struct {
+				Dedup  bool    `json:"dedup"`
+				Counts []group `json:"counts"`
+			}
+			out.Dedup = maxT-minT > s.days[0].MaxT-s.days[0].MinT
+			for v, n := range s.pop.TruthBy(matchers, groupBy, minT, maxT) {
+				g := group{Value: v, Count: n}
+				if q.Get("step") == "1h" {
+					hour := time.Hour.Milliseconds()
+					for b := minT; b < maxT; b += hour {
+						g.Counts = append(g.Counts, s.pop.TruthBy(matchers, groupBy, b, b+hour)[v])
+					}
+				}
+				out.Counts = append(out.Counts, g)
+			}
+			_ = json.NewEncoder(w).Encode(out)
+		default:
+			http.NotFound(w, r)
 		}
-		http.Error(w, "no such range", http.StatusUnprocessableEntity)
 	}))
-	defer fake.Close()
-	s.mimir.baseURL = fake.URL
+	t.Cleanup(fake.Close)
+	return fake
+}
 
-	var sg, hc struct {
-		Rows  []growthRow `json:"rows"`
-		Error string      `json:"error"`
-	}
-	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/storegateway/growth?day=1&base=0&limit=5", &sg))
-	require.Empty(t, sg.Error)
-	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/growth?day=1&base=0&limit=5", &hc))
-	require.Len(t, sg.Rows, len(hc.Rows))
-	for i := range sg.Rows {
-		require.Equal(t, hc.Rows[i].Name, sg.Rows[i].Name)
-		require.Equal(t, hc.Rows[i].Growth, sg.Rows[i].Growth)
-	}
+func TestSourceMimir_SameAnswersAsLibrary(t *testing.T) {
+	s := testServer(t)
+	s.mimir.baseURL = fakeMimir(t, s).URL
+	metric := url.QueryEscape(s.spikeName)
 
-	// A Mimir without the endpoint.
-	s.mimir.baseURL = fake.URL + "/missing"
-	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/storegateway/growth?day=1&base=0", &sg))
-	require.Contains(t, sg.Error, "no metric_name_counts route")
+	t.Run("growth", func(t *testing.T) {
+		var lib, mim struct {
+			Rows       []growthRow   `json:"rows"`
+			NamesExact int           `json:"names_exact"`
+			Cost       headcountCost `json:"cost"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/growth?day=1&base=0&limit=5", &lib))
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/growth?day=1&base=0&limit=5&source=mimir", &mim))
+		assert.Equal(t, lib.Rows, mim.Rows)
+		assert.Equal(t, lib.NamesExact, mim.NamesExact)
+		assert.Equal(t, "library", lib.Cost.Source)
+		assert.Equal(t, "mimir", mim.Cost.Source)
+	})
+
+	t.Run("breakdown", func(t *testing.T) {
+		var lib, mim struct {
+			Values int        `json:"values"`
+			Total  int        `json:"total"`
+			Rows   []valueRow `json:"rows"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/breakdown?day=0&label=pod&limit=100&metric="+metric, &lib))
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/breakdown?day=0&label=pod&limit=100&source=mimir&metric="+metric, &mim))
+		assert.Equal(t, lib.Values, mim.Values)
+		assert.Equal(t, lib.Total, mim.Total)
+		assert.ElementsMatch(t, lib.Rows, mim.Rows)
+	})
+
+	t.Run("window", func(t *testing.T) {
+		var lib, mim struct {
+			SummedTotal int `json:"summed_total"`
+			ExactTotal  int `json:"exact_total"`
+			TruthTotal  int `json:"truth_total"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/window?from=0&to=2", &lib))
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/window?from=0&to=2&source=mimir", &mim))
+		assert.Equal(t, lib, mim)
+	})
+
+	t.Run("hourly", func(t *testing.T) {
+		var lib, mim struct {
+			Counts []int `json:"counts"`
+			Truth  []int `json:"truth"`
+			Exact  bool  `json:"exact"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/hourly?day=0", &lib))
+		require.Equal(t, http.StatusOK, getJSON(t, s, "/api/hourly?day=0&source=mimir", &mim))
+		assert.Equal(t, lib, mim)
+		assert.True(t, mim.Exact)
+	})
+
+	t.Run("a Mimir without the routes", func(t *testing.T) {
+		s.mimir.baseURL += "/missing"
+		var out struct{}
+		assert.Equal(t, http.StatusBadGateway, getJSON(t, s, "/api/growth?day=1&base=0&source=mimir", &out))
+		assert.Equal(t, http.StatusBadGateway, getJSON(t, s, "/api/hourly?day=0&source=mimir", &out))
+	})
 }

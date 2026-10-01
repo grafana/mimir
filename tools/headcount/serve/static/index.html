@@ -44,6 +44,12 @@
   .today { background: var(--red-bg); } .today h3 { color: var(--red); }
   .hc { background: var(--green-bg); } .hc h3 { color: var(--green); }
   .bound { background: var(--amber-bg); } .bound h3 { color: var(--amber-ink); }
+  .lib { background: var(--bg); border: 1px solid var(--line); } .lib h3 { color: var(--ink); }
+  .tag { display: inline-block; font-size: 11px; font-weight: bold; line-height: 1.5; padding: 0 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; color: #fff; }
+  .tag-base { background: var(--red); } .tag-lib { background: var(--muted); } .tag-mimir { background: var(--green); }
+  @media (prefers-color-scheme: dark) { .tag { color: #16171c; } }
+  .legend { padding: 0 24px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 900px) { .legend { padding-left: 16px; padding-right: 16px; } }
   .card code { font-size: 12px; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; font-size: 13px; }
   .kv span:nth-child(odd) { color: var(--muted); }
@@ -66,8 +72,14 @@
   <label>Baseline day <select id="base"></select></label>
   <label>Day <select id="day"></select></label>
   <label>Budget and series limit <input id="budget" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
-  <button id="run">Run both</button>
+  <label>Headcount answers from <select id="source"><option value="mimir">In Mimir</option><option value="library">Library</option></select></label>
+  <button id="run">Run</button>
   <span id="status" class="muted"></span>
+</div>
+<div class="legend">
+  <span><span class="tag tag-base">Baseline</span>PromQL through Mimir today, which loads every matching chunk</span>
+  <span><span class="tag tag-mimir">In Mimir</span>Headcount through the prototype routes: query-frontend, querier, store-gateways, no chunks</span>
+  <span><span class="tag tag-lib">Library</span>Headcount code reading the block files itself, outside Mimir</span>
 </div>
 <main>
   <section>
@@ -77,9 +89,8 @@
   </section>
   <section>
     <h2>Cost of answering it</h2>
-    <div class="card today"><h3>Today: PromQL through Mimir</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
-    <div class="card hc"><h3>Headcount</h3><code>postings offset table per block, summed over one day's series-disjoint shards</code><div id="growth-hc" class="kv"></div></div>
-    <div class="card hc" id="sg-card"><h3>Mimir, prototype route</h3><code>/prometheus/api/v1/cardinality/metric_name_counts: query-frontend, querier, store-gateways</code><div id="growth-sg" class="kv"></div></div>
+    <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL count</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
+    <div class="card hc src-card"><h3><span class="src-tag"></span>Headcount</h3><code class="src-mimir">metric_name_counts: postings offset table in each store-gateway's index-headers</code><code class="src-library">postings offset table per block, summed over one day's series-disjoint shards</code><div id="growth-hc" class="kv"></div></div>
   </section>
   <section>
     <h2 id="bd-title">2. Which label value exploded?</h2>
@@ -88,17 +99,17 @@
   </section>
   <section>
     <h2>3. It can't become an incident</h2>
-    <div class="card bound"><h3>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
-    <div class="card today"><h3>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
+    <div class="card bound"><h3><span class="src-tag"></span>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
+    <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
   </section>
   <section style="grid-column: 1 / -1">
     <h2 id="win-title">4. Across several days: adding the days counts a series once per day</h2>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
       <div>
-        <div class="card bound"><h3>Adding each day's index-header counts</h3><div id="win-sum" class="kv"></div></div>
-        <div class="card hc"><h3>Headcount: hash dedup across the day blocks</h3><div id="win-exact" class="kv"></div></div>
-        <div class="card today"><h3>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
+        <div class="card bound"><h3><span class="src-tag"></span>Adding each day's index-header counts</h3><div id="win-sum" class="kv"></div></div>
+        <div class="card hc src-card"><h3><span class="src-tag"></span>Headcount: hash dedup across the day blocks</h3><div id="win-exact" class="kv"></div></div>
+        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
       </div>
     </div>
   </section>
@@ -107,8 +118,8 @@
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div><svg id="hr-chart" viewBox="0 0 720 220" style="width:100%;height:auto" role="img" aria-label="Series per hour"></svg><p id="hr-note" class="muted"></p></div>
       <div>
-        <div class="card hc"><h3>Headcount: chunk metas, per hour</h3><div id="hr-hc" class="kv"></div></div>
-        <div class="card today"><h3>PromQL, a range query with a 1h step</h3><code id="hr-q"></code><div id="hr-today" class="kv"></div></div>
+        <div class="card hc src-card"><h3><span class="src-tag"></span>Headcount: chunk metas, per hour</h3><div id="hr-hc" class="kv"></div></div>
+        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL, a range query with a 1h step</h3><code id="hr-q"></code><div id="hr-today" class="kv"></div></div>
       </div>
     </div>
   </section>
@@ -119,12 +130,58 @@ const fmt = n => (n === undefined || n === null || n === "") ? "" : Number(n).to
 const bytes = n => { n = Number(n); if (!n) return "0 B"; const u = ["B","KB","MB","GB"]; let i = 0; while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; } return n.toFixed(n < 10 && i ? 1 : 0) + " " + u[i]; };
 const secs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(0) + " ms";
 const short = n => n.replace(/^(metric_\d{6})_.*/, "$1");
-let days = [], selected = null;
+let days = [], selected = null, fellBack = false;
 
 async function get(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+// src is where Headcount's answers come from. hc asks that source, and
+// falls back to the library once if Mimir lacks the prototype routes.
+const src = () => fellBack ? "library" : $("source").value;
+async function hc(path) {
+  if (src() === "library") return get(path);
+  const r = await fetch(path + "&source=mimir");
+  if (r.status === 502) {
+    fellBack = true;
+    showSource();
+    $("status").innerHTML = `<span class="err">Mimir answered: ${(await r.text()).trim()}. Showing the library instead.</span>`;
+    return get(path);
+  }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function showSource() {
+  const mimir = src() === "mimir";
+  for (const el of document.querySelectorAll(".src-tag")) {
+    el.className = "src-tag tag " + (mimir ? "tag-mimir" : "tag-lib");
+    el.textContent = mimir ? "In Mimir" : "Library";
+  }
+  for (const el of document.querySelectorAll(".src-card")) el.className = el.className.replace(/\b(hc|lib)\b/, mimir ? "hc" : "lib");
+  for (const el of document.querySelectorAll(".src-mimir")) el.style.display = mimir ? "" : "none";
+  for (const el of document.querySelectorAll(".src-library")) el.style.display = mimir ? "none" : "";
+}
+
+// costPairs lists what one Headcount answer read. Neither source reads chunks.
+function costPairs(c, extra = []) {
+  const p = [["latency", secs(c.elapsed_ms)], ...extra];
+  if (c.blocks) p.push(["blocks", c.blocks]);
+  if (c.series_touched) p.push(["series read", fmt(c.series_touched)]);
+  if (c.source === "mimir") {
+    if (c.store_gateways) p.push(["store-gateways", c.store_gateways]);
+    // A full-index answer has series_touched; a warm cache can make its
+    // decoded bytes zero.
+    if (c.series_touched) p.push(["index decoded", c.index_bytes ? bytes(c.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(c.object_storage_bytes)]);
+    else p.push(["read", "index-headers only"]);
+  } else {
+    if (c.index_header_bytes) p.push(["index-header files", bytes(c.index_header_bytes)]);
+    if (c.object_storage_bytes) p.push(["index read", bytes(c.object_storage_bytes)]);
+  }
+  p.push(["chunks read", "0 B", "ok"]);
+  return p;
 }
 
 function kv(el, pairs) {
@@ -159,21 +216,18 @@ async function init() {
 }
 
 async function run() {
-  $("run").disabled = true;
+  $("run").disabled = $("source").disabled = true;
+  fellBack = false;
+  showSource();
   const day = $("day").value, base = $("base").value;
   try {
     $("status").textContent = "Headcount...";
-    const g = await get(`api/growth?day=${day}&base=${base}&limit=10`);
+    const g = await hc(`api/growth?day=${day}&base=${base}&limit=10`);
     $("growth").innerHTML = `<tr><th>metric</th><th class="num">baseline</th><th class="num">day</th><th class="num">growth</th><th class="num">truth</th><th class="num">error</th></tr>` +
       g.rows.map((r, i) => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${fmt(r.truth_day)}</td><td class="num">${r.day === r.truth_day && r.base === r.truth_base ? "0%" : "≠"}</td></tr>`).join("");
     $("growth-note").innerHTML = `${fmt(g.changed)} of ${fmt(g.names)} names changed between these days; ${fmt(g.names_exact)} of ${fmt(g.names)} are exact against the truth on both days. Tenant total ${fmt(g.total_base)} → ${fmt(g.total_day)} series. Click a row to drill down.` +
       (g.falls && g.falls.length ? `<br>Largest falls: ${g.falls.map(r => `${short(r.name)} ${fmt(r.base)} → ${fmt(r.day)}`).join(", ")}.` : "");
-    kv($("growth-hc"), [
-      ["latency", secs(g.cost.elapsed_ms)],
-      ["blocks", g.cost.blocks],
-      ["index-header files", bytes(g.cost.index_header_bytes)],
-      ["object storage", bytes(g.cost.object_storage_bytes)],
-    ]);
+    kv($("growth-hc"), costPairs(g.cost));
     for (const tr of document.querySelectorAll("#growth tr.click")) tr.onclick = () => drill(tr.dataset.name);
     await drill(g.rows[0].name);
 
@@ -193,19 +247,12 @@ async function run() {
       pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
     }
     kv($("growth-today"), pairs);
-    const sg = await get(`api/storegateway/growth?day=${day}&base=${base}&limit=10`);
-    if (sg.error) {
-      kv($("growth-sg"), [["result", sg.error, "err"]]);
-    } else {
-      const same = sg.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
-      kv($("growth-sg"), [["latency", secs(sg.latency_ms)], ["blocks", sg.blocks], ["store-gateways", sg.gateways], ["object storage", "0 B"], ["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]]);
-    }
     await runWindow();
-    $("status").textContent = "";
+    if (!fellBack) $("status").textContent = "";
   } catch (e) {
     $("status").innerHTML = `<span class="err">${e.message}</span>`;
   } finally {
-    $("run").disabled = false;
+    $("run").disabled = $("source").disabled = false;
   }
 }
 
@@ -215,14 +262,14 @@ async function runWindow() {
   const n = to - from + 1;
   $("win-title").textContent = `4. Across ${n} day${n > 1 ? "s" : ""} (${days[from].start.slice(0, 10)} to ${days[to].start.slice(0, 10)}): adding the days counts a series once per day`;
   $("status").textContent = "Window, Headcount...";
-  const w = await get(`api/window?from=${from}&to=${to}&limit=8`);
+  const w = await hc(`api/window?from=${from}&to=${to}&limit=8`);
   $("win").innerHTML = `<tr><th>metric</th><th class="num">days added</th><th class="num">dedup</th><th class="num">truth</th></tr>` +
     w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.summed)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td></tr>`).join("") +
     `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td></tr>`;
   const over = w.exact_total ? (100 * (w.summed_total - w.exact_total) / w.exact_total).toFixed(0) : 0;
   $("win-note").textContent = `Adding the ${w.ranges} day blocks overcounts the tenant by ${over}%. Hash dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.`;
-  kv($("win-sum"), [["tenant total", `${fmt(w.summed_total)} (+${over}%)`], ["latency", secs(w.summed_cost.elapsed_ms)], ["index-header files", bytes(w.summed_cost.index_header_bytes)], ["object storage", "0 B"]]);
-  kv($("win-exact"), [["tenant total", fmt(w.exact_total), "ok"], ["latency", secs(w.exact_cost.elapsed_ms)], ["series hashed", fmt(w.exact_cost.series_touched)], ["index read", bytes(w.exact_cost.object_storage_bytes)]]);
+  kv($("win-sum"), [["tenant total", `${fmt(w.summed_total)} (+${over}%)`], ...costPairs(w.summed_cost)]);
+  kv($("win-exact"), costPairs(w.exact_cost, [["tenant total", fmt(w.exact_total), "ok"]]));
   $("status").textContent = "Window, PromQL...";
   const [d, u] = [await get(`api/promql/window?from=${from}&to=${to}&limits=default`), await get(`api/promql/window?from=${from}&to=${to}`)];
   $("win-q").textContent = u.query;
@@ -238,7 +285,7 @@ async function runHourly(name) {
   const day = $("day").value;
   const m = encodeURIComponent(name);
   $("hr-title").textContent = `5. Which hour did it start? ${short(name)} per hour on ${days[day].start.slice(0, 10)}`;
-  const [h, q] = await Promise.all([get(`api/hourly?day=${day}&metric=${m}`), get(`api/promql/hourly?day=${day}&metric=${m}`)]);
+  const [h, q] = await Promise.all([hc(`api/hourly?day=${day}&metric=${m}`), get(`api/promql/hourly?day=${day}&metric=${m}`)]);
   const W = 720, H = 220, L = 56, B = 24, n = h.counts.length, max = Math.max(...h.counts, ...q.counts, 1);
   const bw = (W - L - 8) / n, y = v => H - B - (H - B - 10) * v / max;
   let svg = `<line x1="${L}" y1="${H - B}" x2="${W}" y2="${H - B}"/>` +
@@ -255,7 +302,7 @@ async function runHourly(name) {
   for (let i = 1; i < n; i++) if (h.counts[i] > 2 * h.counts[i - 1] && first < 0) first = i;
   $("hr-note").textContent = `Bars: Headcount per hour; dots: PromQL. ${h.exact ? "Every hour equals the truth." : "Some hours differ from the truth."}` +
     (first >= 0 ? ` The count jumps at ${String(first).padStart(2, "0")}:00, from ${fmt(h.counts[first - 1])} to ${fmt(h.counts[first])}.` : "");
-  kv($("hr-hc"), [["latency", secs(h.cost.elapsed_ms)], ["series read", fmt(h.cost.series_touched)], ["equal to truth", h.exact ? "every hour" : "no", h.exact ? "ok" : "err"]]);
+  kv($("hr-hc"), costPairs(h.cost, [["equal to truth", h.exact ? "every hour" : "no", h.exact ? "ok" : "err"]]));
   $("hr-q").textContent = q.query + "\nstep 1h, each step at the hour's end minus 1 ms";
   kv($("hr-today"), q.error ? [["result", briefError(q.error), "err"]] : [["latency", secs(q.latency_ms)], ["series fetched", fmt(q.fetched_series_count)], ["chunks read", bytes(q.fetched_chunk_bytes)], ["same 24 hours as Headcount", same ? "yes" : "no", same ? "ok" : "err"]]);
 }
@@ -268,8 +315,8 @@ async function drill(name) {
   const m = encodeURIComponent(name);
   const baseDay = $("base").value;
   const [bb, b] = await Promise.all([
-    get(`api/breakdown?day=${baseDay}&metric=${m}&label=pod&limit=5`),
-    get(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=5`),
+    hc(`api/breakdown?day=${baseDay}&metric=${m}&label=pod&limit=5`),
+    hc(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=5`),
   ]);
   const maxV = Math.max(bb.values, b.values, 1);
   const bar = (label, n) => `<div style="display:grid;grid-template-columns:10em 1fr 7em;gap:8px;align-items:center;margin:6px 0"><span>${label}</span><div class="bar" style="width:${Math.max(0.5, 100 * n / maxV)}%"></div><span class="num">${fmt(n)}</span></div>`;
@@ -277,16 +324,17 @@ async function drill(name) {
   $("bd-bars").innerHTML = `<div class="muted">distinct pod values</div>` +
     bar(days[baseDay].start.slice(0, 10), bb.values) + bar(days[day].start.slice(0, 10), b.values) +
     `<div class="muted" style="margin-top:8px">largest values on ${days[day].start.slice(0, 10)}: ${top(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
-  $("bd-note").textContent = `Headcount: ${fmt(b.values)} values, ${fmt(b.total)} series (truth ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series), ${secs(b.cost.elapsed_ms)}, ${fmt(b.cost.series_touched)} series labels and ${bytes(b.cost.postings_bytes)} of postings read from the full index.`;
+  const read = b.cost.source === "mimir" ? `${bytes(b.cost.index_bytes)} of index decoded by the store-gateways` : `${bytes(b.cost.postings_bytes)} of postings read from the full index`;
+  $("bd-note").textContent = `Headcount (${b.cost.source === "mimir" ? "in Mimir" : "library"}): ${fmt(b.values)} values, ${fmt(b.total)} series (truth ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series), ${secs(b.cost.elapsed_ms)}, ${fmt(b.cost.series_touched)} series labels and ${read}, no chunks.`;
   const pq = await get(`api/promql/breakdown?day=${day}&metric=${m}&label=pod&limit=8`);
-  $("bd-note").textContent += ` PromQL count by (pod): ${pq.result.error ? "error: " + pq.result.error : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}.`;
+  $("bd-note").textContent += ` Baseline, PromQL count by (pod): ${pq.result.error ? "error: " + pq.result.error : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}.`;
 
   await runHourly(name);
-  const lb = await get(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=1&budget=${budget}`);
+  const lb = await hc(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=1&budget=${budget}`);
   kv($("lim-hc"), [
     ["answer", lb.lower_bound ? `≥ ${fmt(lb.total)} series (lower bound)` : `${fmt(lb.total)} series (exact, under budget)`, lb.lower_bound ? "" : "ok"],
     ["values seen", fmt(lb.values)],
-    ["stopped after", `${fmt(lb.cost.series_touched)} series, ${bytes(lb.cost.postings_bytes)} postings`],
+    ["stopped after", `${fmt(lb.cost.series_touched)} series`],
     ["latency", secs(lb.cost.elapsed_ms)],
   ]);
   const lq = await get(`api/promql/breakdown?day=${day}&metric=${m}&label=pod&limit=1&series_limit=${budget}`);
@@ -296,6 +344,8 @@ async function drill(name) {
 }
 
 $("run").onclick = run;
+$("source").onchange = run;
+showSource();
 init().then(run).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; });
 </script>
 </body>
