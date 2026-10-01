@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("loaded %d days and their truth in %s", len(s.days), time.Since(t0).Round(time.Millisecond))
+	log.Printf("loaded %d block ranges in %s", len(s.ranges), time.Since(t0).Round(time.Millisecond))
 
 	page, err := fs.Sub(static, "static")
 	if err != nil {
