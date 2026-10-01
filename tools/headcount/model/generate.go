@@ -121,12 +121,17 @@ func churnChain(cfg Config, name string, instance uint64) []Series {
 // spikeMetricSeries returns one metric's series with a "pod" label whose
 // value count jumps from SpikeBaseValues to SpikePeakValues for SpikeDay
 // only: the base values are live for the whole range, the extra peak values
-// exist only during that one day.
+// exist only during that day, or during SpikeHours of it from SpikeStartHour.
 func spikeMetricSeries(cfg Config, name string) []Series {
 	start, end := cfg.startMillis(), cfg.endMillis()
 	day := 24 * time.Hour.Milliseconds()
 	spikeStart := start + int64(cfg.SpikeDay)*day
 	spikeEnd := min(spikeStart+day, end)
+	if cfg.SpikeHours > 0 {
+		hour := time.Hour.Milliseconds()
+		spikeStart += int64(cfg.SpikeStartHour) * hour
+		spikeEnd = min(spikeStart+int64(cfg.SpikeHours)*hour, end)
+	}
 
 	out := make([]Series, 0, cfg.SpikePeakValues)
 	for k := 0; k < cfg.SpikeBaseValues; k++ {
