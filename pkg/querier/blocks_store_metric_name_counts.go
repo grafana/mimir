@@ -108,6 +108,12 @@ func checkMetricNameCountsBlocks(blocks bucketindex.Blocks, minT, maxT int64) er
 			return fmt.Errorf("block %s covers [%d, %d), which cuts through the window [%d, %d)", b.ID, b.MinTime, b.MaxTime, minT, maxT)
 		}
 	}
+	return checkDisjointShards(blocks)
+}
+
+// checkDisjointShards returns nil if blocks is at most one block, or
+// split-compactor shards with one shard count and distinct shard IDs.
+func checkDisjointShards(blocks bucketindex.Blocks) error {
 	if len(blocks) <= 1 {
 		return nil
 	}
