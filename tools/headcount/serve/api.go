@@ -515,12 +515,22 @@ func (s *server) handlePromQLWindow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"query": q, "result": res.summary(), "total": total})
 }
 
-// bucketStep is one hour for a window of a day or less, else one day.
-func bucketStep(minT, maxT int64) int64 {
-	if maxT-minT <= 24*hourMs {
-		return hourMs
+// bucketStep reads the step parameter, in seconds, or picks one hour for a
+// window of a day or less and one day otherwise. A given step must be whole
+// hours and divide the window.
+func bucketStep(r *http.Request, minT, maxT int64) (int64, error) {
+	if v := r.URL.Query().Get("step"); v != "" {
+		sec, err := strconv.ParseInt(v, 10, 64)
+		step := sec * 1000
+		if err != nil || step <= 0 || step%hourMs != 0 || (maxT-minT)%step != 0 {
+			return 0, fmt.Errorf("step must be whole hours, in seconds, and divide the window")
+		}
+		return step, nil
 	}
-	return 24 * hourMs
+	if maxT-minT <= 24*hourMs {
+		return hourMs, nil
+	}
+	return 24 * hourMs, nil
 }
 
 // handleBuckets counts one metric per bucket of the window. Each block
@@ -538,7 +548,11 @@ func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	step := bucketStep(minT, maxT)
+	step, err := bucketStep(r, minT, maxT)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	match := fmt.Sprintf(`{__name__=%q}`, metric)
 	var (
 		starts []int64
@@ -607,7 +621,11 @@ func (s *server) handlePromQLBuckets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	step := bucketStep(minT, maxT)
+	step, err := bucketStep(r, minT, maxT)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	q := fmt.Sprintf(`count(last_over_time({__name__=%q}[%ds]))`, metric, step/1000)
 	// Each step at t answers (t-step, t], so t = bucket end minus 1 ms
 	// answers exactly [bucket start, bucket end).
