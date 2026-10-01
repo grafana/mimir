@@ -331,7 +331,7 @@ func splitChunks(series *Series, disk *chunks.DiskMapper, cuts func(meta ChunkMe
 		}
 	}
 	if changed {
-		series.chunks = chunkListFromMetas(out)
+		series.setChunks(chunkListFromMetas(out))
 	}
 	return nil
 }
