@@ -57,6 +57,10 @@ type Config struct {
 	SpikeMetric int
 	// SpikeDay is the 0-indexed day (from Start) on which the spike occurs.
 	SpikeDay int
+	// SpikeStartHour and SpikeHours place the spike inside SpikeDay: the
+	// extra values are live from SpikeStartHour for SpikeHours hours. Zero
+	// SpikeHours means the whole day, from midnight. Optional.
+	SpikeStartHour, SpikeHours int
 	// SpikeBaseValues and SpikePeakValues are the "pod" label's cardinality
 	// outside and during the spike day.
 	SpikeBaseValues, SpikePeakValues int
@@ -108,6 +112,8 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("spike metric index %d out of range [0, %d)", cfg.SpikeMetric, cfg.MetricNames)
 	case cfg.SpikeMetric >= 0 && cfg.SpikePeakValues < cfg.SpikeBaseValues:
 		return fmt.Errorf("spike peak values %d must be >= base values %d", cfg.SpikePeakValues, cfg.SpikeBaseValues)
+	case cfg.SpikeStartHour < 0 || cfg.SpikeHours < 0 || cfg.SpikeStartHour+cfg.SpikeHours > 24:
+		return fmt.Errorf("spike hours [%d, %d) must lie inside one day", cfg.SpikeStartHour, cfg.SpikeStartHour+cfg.SpikeHours)
 	case cfg.GapFraction > 0 && cfg.GapDuration <= 0:
 		return fmt.Errorf("gap duration must be positive when gap fraction > 0")
 	case cfg.ChurnFraction > 0 && cfg.ChurnPeriod <= 0:
