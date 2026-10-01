@@ -396,6 +396,7 @@ func (s *server) handleStoreGatewayGrowth(w http.ResponseWriter, r *http.Request
 	out := map[string]any{
 		"latency_ms": ms(dayRes.Latency + baseRes.Latency),
 		"blocks":     dayRes.Blocks + baseRes.Blocks,
+		"gateways":   max(dayRes.StoreGateways, baseRes.StoreGateways),
 		"error":      dayRes.Err + baseRes.Err,
 	}
 	if dayRes.Err == "" && baseRes.Err == "" {

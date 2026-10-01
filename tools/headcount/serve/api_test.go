@@ -158,7 +158,7 @@ func TestHandleStoreGatewayGrowth(t *testing.T) {
 	// A fake store-gateway that answers each window with the model's truth
 	// for that day, the way the real endpoint would on these blocks.
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/store-gateway/tenant/anonymous/metric_name_counts" {
+		if r.URL.Path != "/prometheus/api/v1/cardinality/metric_name_counts" {
 			http.NotFound(w, r)
 			return
 		}
@@ -166,13 +166,13 @@ func TestHandleStoreGatewayGrowth(t *testing.T) {
 		for i, d := range s.days {
 			if start == strconv.FormatFloat(float64(d.MinT)/1000, 'f', 3, 64) {
 				var out struct {
-					Blocks []string `json:"blocks"`
+					Blocks int `json:"blocks"`
 					Counts []struct {
 						Name  string `json:"name"`
 						Count int    `json:"count"`
 					} `json:"counts"`
 				}
-				out.Blocks = []string{"b"}
+				out.Blocks = 1
 				for name, n := range s.dayTruth[i] {
 					out.Counts = append(out.Counts, struct {
 						Name  string `json:"name"`
@@ -204,5 +204,5 @@ func TestHandleStoreGatewayGrowth(t *testing.T) {
 	// A Mimir without the endpoint.
 	s.mimir.baseURL = fake.URL + "/missing"
 	require.Equal(t, http.StatusOK, getJSON(t, s, "/api/storegateway/growth?day=1&base=0", &sg))
-	require.Contains(t, sg.Error, "no store-gateway metric_name_counts endpoint")
+	require.Contains(t, sg.Error, "no metric_name_counts route")
 }
