@@ -10,12 +10,14 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
 func TestBucketStore_MetricNameCounts(t *testing.T) {
@@ -44,6 +46,19 @@ func TestBucketStore_MetricNameCounts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, res.blocks, 1)
 	assert.Equal(t, map[string]int64{"up": 3, "requests_total": 1}, res.counts)
+
+	// The gRPC method counts exactly the requested blocks it holds, and says which.
+	unknown := ulid.MustNew(1, nil)
+	grpcRes, err := s.store.MetricNameCounts(t.Context(), &storegatewaypb.MetricNameCountsRequest{BlockIds: []string{res.blocks[0].String(), unknown.String()}})
+	require.NoError(t, err)
+	assert.Equal(t, []string{res.blocks[0].String()}, grpcRes.BlockIds)
+	grpcCounts := map[string]int64{}
+	for _, c := range grpcRes.Counts {
+		grpcCounts[c.Name] = c.Count
+	}
+	assert.Equal(t, res.counts, grpcCounts)
+	_, err = s.store.MetricNameCounts(t.Context(), &storegatewaypb.MetricNameCountsRequest{BlockIds: []string{"not-a-ulid"}})
+	require.Error(t, err)
 
 	// The next range holds two blocks without shard IDs, which may share series.
 	_, err = s.store.metricNameCounts(t.Context(), s.minTime+twoHours, s.minTime+2*twoHours)
