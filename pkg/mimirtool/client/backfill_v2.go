@@ -40,7 +40,7 @@ const backfillV2RequestMaxAttempts = 10
 
 // TODO: add manifest support
 func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
-	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(backfillV2EndpointPrefix, "start"), nil)
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(backfillV2EndpointPrefix, "start"), nil)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to start backfill job")
 	}
@@ -57,7 +57,7 @@ func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
 }
 
 func (c *MimirClient) FinishBackfillJob(ctx context.Context, jobID string) error {
-	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "finish"), nil)
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "finish"), nil)
 	if err != nil {
 		return errors.Wrapf(err, "failed to finish backfill job %s", jobID)
 	}
@@ -120,7 +120,7 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	logger = log.With(logger, "block", meta.ULID)
 
 	level.Info(logger).Log("msg", "starting block upload")
-	resp, err := c.doBackfillV2RequestWithRetry(ctx, path.Join(blockPath, "start"), bytesRequestBody(metaJSON))
+	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(blockPath, "start"), bytesRequestBody(metaJSON))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
@@ -134,14 +134,14 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 
 		level.Info(logger).Log("msg", "uploading block file", "file", f.RelPath, "size", f.SizeBytes)
 		filePath := fmt.Sprintf("%s?path=%s", path.Join(blockPath, "files"), url.QueryEscape(f.RelPath))
-		resp, err := c.doBackfillV2RequestWithRetry(ctx, filePath, bucketObjectRequestBody(ctx, bkt, path.Join(blockID.String(), f.RelPath), f.SizeBytes))
+		resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, filePath, bucketObjectRequestBody(ctx, bkt, path.Join(blockID.String(), f.RelPath), f.SizeBytes))
 		if err != nil {
 			return errors.Wrapf(err, "request to upload file %q failed", f.RelPath)
 		}
 		drainAndCloseBody(resp)
 	}
 
-	resp, err = c.doBackfillV2RequestWithRetry(ctx, path.Join(blockPath, "finish"), nil)
+	resp, err = c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(blockPath, "finish"), nil)
 	switch {
 	case err == nil:
 		drainAndCloseBody(resp)
@@ -155,14 +155,14 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	return nil
 }
 
-func (c *MimirClient) doBackfillV2RequestWithRetry(ctx context.Context, path string, newBody backfillRequestBody) (*http.Response, error) {
+func (c *MimirClient) doBackfillV2RequestWithRetry(ctx context.Context, method, path string, newBody backfillRequestBody) (*http.Response, error) {
 	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: time.Second,
 		MaxBackoff: 30 * time.Second,
 		MaxRetries: backfillV2RequestMaxAttempts,
 	})
 	for {
-		resp, retryable, err := c.doBackfillV2Request(ctx, path, newBody)
+		resp, retryable, err := c.doBackfillV2Request(ctx, method, path, newBody)
 		if err == nil || !retryable {
 			return resp, err
 		}
@@ -175,7 +175,7 @@ func (c *MimirClient) doBackfillV2RequestWithRetry(ctx context.Context, path str
 	}
 }
 
-func (c *MimirClient) doBackfillV2Request(ctx context.Context, path string, newBody backfillRequestBody) (*http.Response, bool, error) {
+func (c *MimirClient) doBackfillV2Request(ctx context.Context, method, path string, newBody backfillRequestBody) (*http.Response, bool, error) {
 	var payload io.Reader
 	contentLength := int64(-1)
 	if newBody != nil {
@@ -187,7 +187,7 @@ func (c *MimirClient) doBackfillV2Request(ctx context.Context, path string, newB
 		payload, contentLength = body, size
 	}
 
-	req, resp, err := c.executeRequest(ctx, path, http.MethodPost, payload, contentLength)
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
 	if err != nil {
 		return nil, ctx.Err() == nil && isTransientNetworkError(err), err
 	}
