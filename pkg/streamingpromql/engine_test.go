@@ -3791,6 +3791,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 10,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 5,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				600000: 5,
+			},
+
 			expectedSamplesRead: 5,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				600000: 5,
@@ -3803,6 +3811,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 4, 120000: 6, 180000: 8, 240000: 10, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 45,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 3, 180000: 4, 240000: 5, 300000: 5, 360000: 5, 420000: 5, 480000: 5, 540000: 5, 600000: 5,
+			},
+
 			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
@@ -3826,6 +3842,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 11,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+
 			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
@@ -3849,6 +3873,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 2, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 2,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 3,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 1,
+			},
+
 			expectedSamplesRead: 3,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 1,
@@ -3873,6 +3905,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 4, 120000: 6, 180000: 10, 240000: 12, 300000: 12, 360000: 14, 420000: 14, 480000: 12, 540000: 14, 600000: 14,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 57,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 3, 180000: 5, 240000: 6, 300000: 6, 360000: 7, 420000: 7, 480000: 6, 540000: 7, 600000: 7,
+			},
+
 			expectedSamplesRead: 14,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 1, 120000: 1, 180000: 2, 240000: 1, 300000: 1, 360000: 2, 420000: 1, 480000: 1, 540000: 2, 600000: 1,
@@ -3955,6 +3995,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 20,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 10,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+
 			expectedSamplesRead: 10,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				600000: 10,
@@ -3966,6 +4014,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 4, 60000: 8, 120000: 12, 180000: 16, 240000: 20, 300000: 20, 360000: 20, 420000: 20, 480000: 20, 540000: 20, 600000: 20,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 90,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 4, 120000: 6, 180000: 8, 240000: 10, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
+			},
+
 			expectedSamplesRead: 22,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
@@ -4088,6 +4144,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 12, 60000: 12, 120000: 12, 180000: 12, 240000: 12, 300000: 12, 360000: 12, 420000: 12, 480000: 12, 540000: 12, 600000: 12,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 66,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
+			},
+
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 6, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
@@ -4549,6 +4613,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 72,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 36,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 36,
+			},
+
 			expectedSamplesRead: 36,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 36,
@@ -4561,6 +4633,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 144,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 72,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 72,
+			},
+
 			expectedSamplesRead: 72,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 72,
@@ -4800,6 +4880,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				221000: 7,
 				231000: 7,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 24,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
+			},
+
 			expectedSamplesRead: 9,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 6,
@@ -4825,6 +4916,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 72,
 				216000: 72,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 144,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
+			},
+
 			expectedSamplesRead: 45,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 36,
@@ -4845,6 +4947,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 72,
 				216000: 72,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 144,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
+			},
+
 			expectedSamplesRead: 45,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 36,
@@ -4865,6 +4978,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 24,
 				216000: 24,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 48,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+
 			expectedSamplesRead: 15,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 12,
@@ -4885,6 +5009,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 24,
 				216000: 24,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 48,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+
 			expectedSamplesRead: 15,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 12,
@@ -4905,6 +5040,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 144,
 				216000: 144,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 288,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
+			},
+
 			expectedSamplesRead: 90,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 72,
@@ -4929,6 +5075,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 96,
 				216000: 96,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 192,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
+			},
+
 			expectedSamplesRead: 60,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 48,
@@ -4949,6 +5106,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				211000: 96,
 				216000: 96,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 192,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
+			},
+
 			expectedSamplesRead: 60,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 48,
@@ -4972,6 +5140,17 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				270000: 4,
 				280000: 4,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 8,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				250000: 2,
+				260000: 2,
+				270000: 2,
+				280000: 2,
+			},
+
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				250000: 2,
@@ -4987,6 +5166,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				250000: 4,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 2,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				250000: 2,
+			},
+
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				250000: 2,
@@ -5001,6 +5188,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 4,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 2,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 2,
+			},
+
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 2,
@@ -5015,6 +5210,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				90000: 2,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 1,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				90000: 1,
+			},
+
 			expectedSamplesRead: 1,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				90000: 1,
@@ -5029,6 +5232,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				240000: 2,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 1,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				240000: 1,
+			},
+
 			expectedSamplesRead: 1,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				240000: 1,
@@ -5046,6 +5257,15 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				201000: 6,
 				231000: 6,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 6,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 3,
+				231000: 3,
+			},
+
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 3,
@@ -5070,6 +5290,20 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				251000: 4,
 				261000: 4,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 14,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 2,
+				211000: 2,
+				221000: 2,
+				231000: 2,
+				241000: 2,
+				251000: 2,
+				261000: 2,
+			},
+
 			expectedSamplesRead: 8,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 2,
@@ -5097,6 +5331,15 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				201000: 6,
 				261000: 6,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 6,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 3,
+				261000: 3,
+			},
+
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 3,
@@ -5112,6 +5355,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 52,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 26,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				201000: 26,
+			},
+
 			expectedSamplesRead: 26,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				201000: 26,
@@ -5130,6 +5381,16 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				180000: 52,
 				240000: 52,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 78,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				120000: 26,
+				180000: 26,
+				240000: 26,
+			},
+
 			expectedSamplesRead: 52,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				120000: 26,
@@ -5154,6 +5415,20 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				350000: 36,
 				380000: 36,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 126,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				200000: 18,
+				230000: 18,
+				260000: 18,
+				290000: 18,
+				320000: 18,
+				350000: 18,
+				380000: 18,
+			},
+
 			expectedSamplesRead: 72,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				200000: 18,
@@ -5199,6 +5474,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				250000: 12,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 6,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				250000: 6,
+			},
+
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				250000: 6,
@@ -5213,6 +5496,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				240000: 4,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 2,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				240000: 2,
@@ -5227,6 +5518,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				300000: 36,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 18,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				300000: 18,
+			},
+
 			expectedSamplesRead: 18,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				300000: 18,
@@ -5241,6 +5540,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				800000: 525,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 450,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				800000: 450,
+			},
+
 			expectedSamplesRead: 18,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				800000: 18,
@@ -5256,6 +5563,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				240000: 8,
 			},
+
+			// Overriding to unblock vendoring upstream Prometheus - MQE needs to be updated to mirror
+			// the new behaviour introduced in https://github.com/prometheus/prometheus/pull/19165
+			expectedTotalSamplesWithMQE: 6,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				240000: 6,
+			},
+
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				240000: 6,
