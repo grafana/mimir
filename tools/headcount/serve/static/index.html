@@ -51,6 +51,10 @@
   .muted { color: var(--muted); }
   .err { color: var(--red); white-space: pre-wrap; word-break: break-word; }
   .ok { color: var(--green); font-weight: bold; }
+  #hr-chart .bar-hc { fill: var(--amber); }
+  #hr-chart .dot-q { fill: var(--red); }
+  #hr-chart text { fill: var(--muted); font-size: 11px; }
+  #hr-chart line { stroke: var(--line); }
 </style>
 </head>
 <body>
@@ -94,6 +98,16 @@
         <div class="card bound"><h3>Adding each day's index-header counts</h3><div id="win-sum" class="kv"></div></div>
         <div class="card hc"><h3>Headcount: hash dedup across the day blocks</h3><div id="win-exact" class="kv"></div></div>
         <div class="card today"><h3>PromQL over the same days</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
+      </div>
+    </div>
+  </section>
+  <section style="grid-column: 1 / -1">
+    <h2 id="hr-title">5. Which hour did it start?</h2>
+    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
+      <div><svg id="hr-chart" viewBox="0 0 720 220" style="width:100%;height:auto" role="img" aria-label="Series per hour"></svg><p id="hr-note" class="muted"></p></div>
+      <div>
+        <div class="card hc"><h3>Headcount: chunk metas, per hour</h3><div id="hr-hc" class="kv"></div></div>
+        <div class="card today"><h3>PromQL, a range query with a 1h step</h3><code id="hr-q"></code><div id="hr-today" class="kv"></div></div>
       </div>
     </div>
   </section>
@@ -212,6 +226,32 @@ async function runWindow() {
   kv($("win-today"), pairs);
 }
 
+async function runHourly(name) {
+  const day = $("day").value;
+  const m = encodeURIComponent(name);
+  $("hr-title").textContent = `5. Which hour did it start? ${short(name)} per hour on ${days[day].start.slice(0, 10)}`;
+  const [h, q] = await Promise.all([get(`api/hourly?day=${day}&metric=${m}`), get(`api/promql/hourly?day=${day}&metric=${m}`)]);
+  const W = 720, H = 220, L = 56, B = 24, n = h.counts.length, max = Math.max(...h.counts, ...q.counts, 1);
+  const bw = (W - L - 8) / n, y = v => H - B - (H - B - 10) * v / max;
+  let svg = `<line x1="${L}" y1="${H - B}" x2="${W}" y2="${H - B}"/>` +
+    `<text x="${L - 6}" y="${y(max) + 4}" text-anchor="end">${fmt(max)}</text><text x="${L - 6}" y="${H - B}" text-anchor="end">0</text>`;
+  h.counts.forEach((c, i) => {
+    const x = L + i * bw;
+    svg += `<rect class="bar-hc" x="${x + 1}" y="${y(c)}" width="${bw - 2}" height="${H - B - y(c)}"><title>${String(i).padStart(2, "0")}:00 Headcount ${fmt(c)}, PromQL ${fmt(q.counts[i])}, truth ${fmt(h.truth[i])}</title></rect>`;
+    svg += `<circle class="dot-q" cx="${x + bw / 2}" cy="${y(q.counts[i])}" r="3"/>`;
+    if (i % 3 === 0) svg += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${String(i).padStart(2, "0")}:00</text>`;
+  });
+  $("hr-chart").innerHTML = svg;
+  const same = h.counts.every((c, i) => c === q.counts[i]);
+  let first = -1;
+  for (let i = 1; i < n; i++) if (h.counts[i] > 2 * h.counts[i - 1] && first < 0) first = i;
+  $("hr-note").textContent = `Bars: Headcount per hour; dots: PromQL. ${h.exact ? "Every hour equals the truth." : "Some hours differ from the truth."}` +
+    (first >= 0 ? ` The count jumps at ${String(first).padStart(2, "0")}:00, from ${fmt(h.counts[first - 1])} to ${fmt(h.counts[first])}.` : "");
+  kv($("hr-hc"), [["latency", secs(h.cost.elapsed_ms)], ["series read", fmt(h.cost.series_touched)], ["equal to truth", h.exact ? "every hour" : "no", h.exact ? "ok" : "err"]]);
+  $("hr-q").textContent = q.query + "\nstep 1h, each step at the hour's end minus 1 ms";
+  kv($("hr-today"), q.error ? [["result", briefError(q.error), "err"]] : [["latency", secs(q.latency_ms)], ["series fetched", fmt(q.fetched_series_count)], ["chunks read", bytes(q.fetched_chunk_bytes)], ["same 24 hours as Headcount", same ? "yes" : "no", same ? "ok" : "err"]]);
+}
+
 async function drill(name) {
   selected = name;
   for (const tr of document.querySelectorAll("#growth tr.click")) tr.classList.toggle("sel", tr.dataset.name === name);
@@ -233,6 +273,7 @@ async function drill(name) {
   const pq = await get(`api/promql/breakdown?day=${day}&metric=${m}&label=pod&limit=8`);
   $("bd-note").textContent += ` PromQL count by (pod): ${pq.result.error ? "error: " + pq.result.error : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}.`;
 
+  await runHourly(name);
   const lb = await get(`api/breakdown?day=${day}&metric=${m}&label=pod&limit=1&budget=${budget}`);
   kv($("lim-hc"), [
     ["answer", lb.lower_bound ? `≥ ${fmt(lb.total)} series (lower bound)` : `${fmt(lb.total)} series (exact, under budget)`, lb.lower_bound ? "" : "ok"],
