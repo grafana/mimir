@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -134,4 +135,110 @@ func TestCloseIdleTSDBRemovesEmptyDirectory(t *testing.T) {
 	require.NoError(t, app.Commit())
 	live.touchLastAppend(time.Now().Add(-2 * time.Hour))
 	require.False(t, r.shouldCloseIdleTSDB(live, time.Now()))
+}
+
+func TestCloseIdleTSDBDropsTenantWhenCloseFails(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	cfg.LocalBlockRetention = time.Hour
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	db, err := openPartitionTSDB(
+		"tenant-1", 7, 0, cfg.DataDir, cfg.BlocksStorage.TSDB, cfg.LocalBlockRetention,
+		limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	db.touchLastAppend(time.Now().Add(-2 * time.Hour))
+	db.closeErrHook = func() error { return os.ErrClosed }
+
+	part := newPartitionState(7)
+	part.tenants["tenant-1"] = db
+	r := &Readcache{
+		cfg:        cfg,
+		logger:     log.NewNopLogger(),
+		partitions: map[int32]*partitionState{7: part},
+	}
+
+	r.closeIdleTSDB(db)
+
+	_, statErr := os.Stat(db.Dir())
+	require.True(t, os.IsNotExist(statErr))
+	part.tenantsMu.RLock()
+	_, stillThere := part.tenants["tenant-1"]
+	part.tenantsMu.RUnlock()
+	require.False(t, stillThere, "a failed close must not leave the dead TSDB in the map")
+	require.True(t, db.IsClosed())
+}
+
+func TestCloseIdleTSDBAbortsWhenAlreadyDetached(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	cfg.LocalBlockRetention = time.Hour
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	db, err := openPartitionTSDB(
+		"tenant-1", 7, 0, cfg.DataDir, cfg.BlocksStorage.TSDB, cfg.LocalBlockRetention,
+		limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	db.touchLastAppend(time.Now().Add(-2 * time.Hour))
+
+	part := newPartitionState(7)
+	// Freeze already moved this TSDB out of the live map.
+	r := &Readcache{
+		cfg:        cfg,
+		logger:     log.NewNopLogger(),
+		partitions: map[int32]*partitionState{7: part},
+	}
+
+	r.closeIdleTSDB(db)
+
+	_, statErr := os.Stat(db.Dir())
+	require.NoError(t, statErr)
+	require.False(t, db.IsClosed())
+	tracked, err := db.beginAppend(1)
+	require.NoError(t, err)
+	db.endAppend(tracked)
+}
+
+func TestDetachLiveTenantsLeavesIdleClose(t *testing.T) {
+	closing := &partitionTSDB{tenantID: "closing", appendState: tsdbAppendClosing}
+	closed := &partitionTSDB{tenantID: "closed", closed: true}
+	live := &partitionTSDB{tenantID: "live"}
+
+	part := newPartitionState(7)
+	part.tenants["closing"] = closing
+	part.tenants["closed"] = closed
+	part.tenants["live"] = live
+
+	got := detachLiveTenants(part, []*partitionTSDB{closing, closed, live})
+	require.Equal(t, map[string]*partitionTSDB{"live": live}, got)
+
+	part.tenantsMu.RLock()
+	defer part.tenantsMu.RUnlock()
+	require.Equal(t, closing, part.tenants["closing"])
+	require.Equal(t, closed, part.tenants["closed"])
+	_, stillLive := part.tenants["live"]
+	require.False(t, stillLive)
+}
+
+func TestListTSDBsForTenantSkipsClosed(t *testing.T) {
+	part := newPartitionState(7)
+	part.warm.Store(true)
+	closed := &partitionTSDB{tenantID: "tenant", closed: true}
+	part.tenants["tenant"] = closed
+
+	r := &Readcache{
+		partitions: map[int32]*partitionState{7: part},
+		frozen: map[int32][]*frozenEpoch{
+			7: {{
+				tenants: map[string]*partitionTSDB{
+					"tenant": {tenantID: "tenant", closed: true},
+				},
+			}},
+		},
+	}
+
+	dbs, err := r.listTSDBsForTenant("tenant", &client.QueryAttributionHint{PartitionId: 7})
+	require.NoError(t, err)
+	require.Empty(t, dbs)
 }

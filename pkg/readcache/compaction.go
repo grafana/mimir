@@ -184,10 +184,21 @@ func (r *Readcache) closeIdleTSDB(db *partitionTSDB) {
 		return
 	}
 
+	// compactMu is still held. freezePartition takes it before detaching
+	// tenants, so a TSDB missing here has already moved to a frozen epoch.
+	p.tenantsMu.Lock()
+	stillLive := p.tenants[db.tenantID] == db
+	p.tenantsMu.Unlock()
+	if !stillLive {
+		db.abortIdleClose()
+		return
+	}
+
 	if err := db.finishIdleClose(); err != nil {
 		level.Warn(r.logger).Log("msg", "failed to close idle readcache TSDB",
 			"user", db.tenantID, "partition", db.partitionID, "err", err)
-		return
+		// DB.Close has stopped the TSDB. Leaving the dead object in the
+		// map makes every later push re-resolve to it and retry forever.
 	}
 
 	dir := db.Dir()

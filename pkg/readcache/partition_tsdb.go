@@ -85,6 +85,11 @@ type partitionTSDB struct {
 	// open when nothing has been pushed yet.
 	lastAppend atomic.Int64
 
+	// closeErrHook, when set, is returned from closeDBLocked after the
+	// Prometheus DB has been closed. Tests use it to simulate a Close
+	// error: DB.Close stops the database before it reports an error.
+	closeErrHook func() error
+
 	mutationObservers [tsdbMutationOperationCount]tsdbMutationObservers
 }
 
@@ -647,6 +652,20 @@ func (p *partitionTSDB) finishIdleClose() error {
 	return p.closeDBLocked()
 }
 
+// idleCloseClaimed reports whether closeIdleTSDB owns this TSDB.
+// The answer is stable only while the caller holds compactMu: that is
+// the lock beginIdleClose holds until the map entry is deleted or the
+// close is aborted.
+func (p *partitionTSDB) idleCloseClaimed() bool {
+	if p.IsClosed() {
+		return true
+	}
+	p.fenceMu.RLock()
+	closing := p.appendState == tsdbAppendClosing
+	p.fenceMu.RUnlock()
+	return closing
+}
+
 // Close shuts down the TSDB. Idempotent.
 func (p *partitionTSDB) Close() error {
 	p.compactMu.Lock()
@@ -676,8 +695,15 @@ func (p *partitionTSDB) closeDBLocked() error {
 	if p.closed {
 		return nil
 	}
+	// DB.Close stops the database before it returns an error, so this
+	// object is unusable either way. Mark it closed first; the caller
+	// drops it from the tenant map.
 	p.closed = true
-	if err := p.db.Close(); err != nil {
+	err := p.db.Close()
+	if p.closeErrHook != nil {
+		err = p.closeErrHook()
+	}
+	if err != nil {
 		level.Warn(util_log.Logger).Log("msg", "error closing partition TSDB",
 			"user", p.tenantID, "partition", p.partitionID, "err", err)
 		return err

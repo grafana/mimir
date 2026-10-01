@@ -1065,6 +1065,16 @@ func tsdbMetricsTenantID(tenantID string, partitionID int32) string {
 	return fmt.Sprintf("%s/%d", tenantID, partitionID)
 }
 
+// appendOpenTSDB adds db when it is still open. Idle close leaves a
+// closed TSDB in the tenant map until RemoveAll finishes, so a query
+// must not open a querier on it: that error fails the whole request.
+func appendOpenTSDB(out []*partitionTSDB, db *partitionTSDB) []*partitionTSDB {
+	if db == nil || db.IsClosed() {
+		return out
+	}
+	return append(out, db)
+}
+
 // listTSDBsForTenant returns the partition TSDBs this readcache owns
 // for the given tenant, across all owned partitions. If hint is non-
 // nil, only the TSDB for the matching partition is returned (or empty
@@ -1096,9 +1106,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 				return nil, errStillWarming(hint.PartitionId)
 			}
 			p.tenantsMu.RLock()
-			if db := p.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, p.tenants[tenantID])
 			p.tenantsMu.RUnlock()
 		}
 	} else {
@@ -1108,9 +1116,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 				return nil, errStillWarming(p.partitionID)
 			}
 			p.tenantsMu.RLock()
-			if db := p.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, p.tenants[tenantID])
 			p.tenantsMu.RUnlock()
 		}
 	}
@@ -1129,9 +1135,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 	addFrozen := func(partitionID int32) {
 		for _, ep := range r.frozen[partitionID] {
 			frozenForHint = true
-			if db := ep.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, ep.tenants[tenantID])
 		}
 	}
 	if hint != nil {

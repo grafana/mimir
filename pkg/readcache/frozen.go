@@ -204,13 +204,10 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 		}
 	}
 
-	// Detach the tenant TSDBs from the (now unreachable) live state.
-	// The reader has returned from StopAndAwaitTerminated, so no
-	// goroutine is appending; taking tenantsMu is safe.
-	p.tenantsMu.Lock()
-	tenants := p.tenants
-	p.tenants = map[string]*partitionTSDB{}
-	p.tenantsMu.Unlock()
+	// Detach tenants idle close does not own. An empty head is flushed
+	// above without taking compactMu, so idle close can be past its
+	// liveness check and about to Close and RemoveAll this directory.
+	tenants := detachLiveTenants(p, toFlush)
 
 	if len(tenants) == 0 {
 		level.Info(r.logger).Log("msg", "readcache: partition removed (nothing to freeze)", "partition", partitionID)
@@ -270,6 +267,54 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 	level.Info(r.logger).Log("msg", "readcache: partition frozen",
 		"partition", partitionID, "epoch", p.epoch, "minT", ep.minT, "maxT", ep.maxT)
 	return firstErr
+}
+
+// detachLiveTenants moves tenant TSDBs that idle close does not own out
+// of p.tenants. Idle close holds compactMu from beginIdleClose until
+// the TSDB is closed, so taking that lock waits the close out; a TSDB
+// already marked closed stays in the map for closeIdleTSDB to delete
+// after RemoveAll. Publishing it would let the close delete a directory
+// the frozen epoch still serves.
+//
+// candidates are the TSDBs snapshotted before the flush. A TSDB opened
+// after that snapshot is taken too, unless it is already closed.
+// The caller must not hold tenantsMu or any compactMu.
+func detachLiveTenants(p *partitionState, candidates []*partitionTSDB) map[string]*partitionTSDB {
+	locked := make([]*partitionTSDB, 0, len(candidates))
+	seen := make(map[*partitionTSDB]struct{}, len(candidates))
+	for _, db := range candidates {
+		if db == nil {
+			continue
+		}
+		if _, ok := seen[db]; ok {
+			continue
+		}
+		seen[db] = struct{}{}
+		db.compactMu.Lock()
+		locked = append(locked, db)
+	}
+	defer func() {
+		for _, db := range locked {
+			db.compactMu.Unlock()
+		}
+	}()
+
+	p.tenantsMu.Lock()
+	defer p.tenantsMu.Unlock()
+
+	moving := make(map[string]*partitionTSDB, len(p.tenants))
+	for id, db := range p.tenants {
+		if _, ok := seen[db]; ok {
+			if db.idleCloseClaimed() {
+				continue
+			}
+		} else if db.IsClosed() {
+			continue
+		}
+		moving[id] = db
+		delete(p.tenants, id)
+	}
+	return moving
 }
 
 // writeFrozenMarker serializes the epoch's state into
