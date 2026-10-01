@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -140,6 +141,18 @@ type seriesCountsResponse struct {
 	SeriesFetchedBytes   int64              `json:"series_fetched_bytes"`
 	ElapsedMS            float64            `json:"elapsed_ms"`
 	Counts               []seriesCountGroup `json:"counts"`
+	Compare              *seriesCountsCheck `json:"compare,omitempty"`
+}
+
+// seriesCountsCheck is the compare=true result: the same request answered
+// by loading chunks, and whether every group agrees.
+type seriesCountsCheck struct {
+	Match            bool           `json:"match"`
+	MismatchedGroups int            `json:"mismatched_groups"`
+	Examples         []string       `json:"examples,omitempty"`
+	Skipped          string         `json:"skipped,omitempty"`
+	ElapsedMS        float64        `json:"elapsed_ms"`
+	Cost             chunksPathCost `json:"cost"`
 }
 
 // SeriesCountsHandler serves series counts read from the full index by the
@@ -147,7 +160,9 @@ type seriesCountsResponse struct {
 // end, an optional match[] selector, group_by (default __name__), step for
 // per-bucket counts, budget for a series cap per store-gateway, and limit
 // to keep the largest groups. With a step, a group's count is its largest
-// bucket. Experimental.
+// bucket. With compare=true it also answers the request by loading chunks,
+// as a PromQL count would, and reports whether the two agree and what each
+// cost. Experimental.
 func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
@@ -167,6 +182,10 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		indexElapsed := time.Since(start)
+		if q.metrics != nil {
+			q.metrics.seriesCountsDuration.WithLabelValues("index").Observe(indexElapsed.Seconds())
+		}
 		out := seriesCountsResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, StepMS: req.Step, GroupBy: req.GroupBy,
 			Dedup: res.Dedup, LowerBound: res.LowerBound, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
@@ -182,7 +201,15 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 			out.Counts = append(out.Counts, g)
 			out.Series += g.Count
 		}
-		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
+		out.ElapsedMS = float64(indexElapsed.Microseconds()) / 1000
+		if r.FormValue("compare") == "true" {
+			check, err := compareWithChunks(r.Context(), q, req, res)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("chunks path: %v", err), http.StatusInternalServerError)
+				return
+			}
+			out.Compare = check
+		}
 		slices.SortFunc(out.Counts, func(a, b seriesCountGroup) int {
 			if a.Count != b.Count {
 				if a.Count > b.Count {
@@ -200,6 +227,30 @@ func SeriesCountsHandler(q *BlocksStoreQueryable) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesCountsRequest, res SeriesCountsResult) (*seriesCountsCheck, error) {
+	if res.LowerBound {
+		// A partial answer can't be compared with a full one.
+		return &seriesCountsCheck{Skipped: "the index path stopped at the budget"}, nil
+	}
+	start := time.Now()
+	chunks, cost, err := q.SeriesCountsFromChunks(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	check := &seriesCountsCheck{ElapsedMS: float64(time.Since(start).Microseconds()) / 1000, Cost: cost}
+	check.Examples, check.MismatchedGroups = countsDiff(res.Counts, chunks, 5)
+	check.Match = check.MismatchedGroups == 0
+	if q.metrics != nil {
+		q.metrics.seriesCountsDuration.WithLabelValues("chunks").Observe(time.Since(start).Seconds())
+		result := "match"
+		if !check.Match {
+			result = "mismatch"
+		}
+		q.metrics.seriesCountsCompared.WithLabelValues(result).Inc()
+	}
+	return check, nil
 }
 
 func parseSeriesCountsRequest(r *http.Request) (SeriesCountsRequest, int, error) {
