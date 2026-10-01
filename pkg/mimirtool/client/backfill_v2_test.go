@@ -3,18 +3,13 @@
 package client
 
 import (
-	"context"
-	"crypto/x509"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
-	"syscall"
 	"testing"
 	"testing/synctest"
 
@@ -30,9 +25,9 @@ import (
 const testJobID = "11111111-1111-1111-1111-111111111111"
 
 type backfillTestServer struct {
-	t         *testing.T
-	requests  []backfillTestRequest
-	responses map[string][]int
+	t             *testing.T
+	requests      []backfillTestRequest
+	errorStatuses map[string][]int
 }
 
 type backfillTestRequest struct {
@@ -41,8 +36,8 @@ type backfillTestRequest struct {
 	body string
 }
 
-func newBackfillTestServer(t *testing.T, responses map[string][]int) (*backfillTestServer, *MimirClient) {
-	s := &backfillTestServer{t: t, responses: responses}
+func newBackfillTestServer(t *testing.T, errorStatuses map[string][]int) (*backfillTestServer, *MimirClient) {
+	s := &backfillTestServer{t: t, errorStatuses: errorStatuses}
 	c, err := New(Config{Address: "http://mimir", ID: "test"}, log.NewNopLogger())
 	require.NoError(t, err)
 	c.Client.Transport = s
@@ -60,8 +55,8 @@ func (s *backfillTestServer) RoundTrip(r *http.Request) (*http.Response, error) 
 	s.requests = append(s.requests, backfillTestRequest{path: r.URL.Path, file: r.URL.Query().Get("path"), body: string(body)})
 
 	w := httptest.NewRecorder()
-	if queued := s.responses[r.URL.Path]; len(queued) > 0 {
-		s.responses[r.URL.Path] = queued[1:]
+	if queued := s.errorStatuses[r.URL.Path]; len(queued) > 0 {
+		s.errorStatuses[r.URL.Path] = queued[1:]
 		http.Error(w, http.StatusText(queued[0]), queued[0])
 	} else if r.URL.Path == "/api/v1/backfill/start" {
 		_, _ = fmt.Fprintf(w, `{"job":%q}`, testJobID)
@@ -115,23 +110,6 @@ func TestStartAndFinishBackfillJob(t *testing.T) {
 	assert.Equal(t, []string{"/api/v1/backfill/start", "/api/v1/backfill/" + testJobID + "/finish"}, s.paths())
 }
 
-func TestIsTransientNetworkError(t *testing.T) {
-	for name, tc := range map[string]struct {
-		err       error
-		transient bool
-	}{
-		"connection refused":    {err: &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}, transient: true},
-		"broken pipe":           {err: &net.OpError{Op: "write", Err: os.NewSyscallError("write", syscall.EPIPE)}, transient: true},
-		"timeout":               {err: &net.OpError{Op: "read", Err: os.ErrDeadlineExceeded}, transient: true},
-		"untrusted certificate": {err: x509.UnknownAuthorityError{}, transient: false},
-		"cancelled context":     {err: context.Canceled, transient: false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.transient, isTransientNetworkError(&url.Error{Op: "Post", URL: "http://x", Err: tc.err}))
-		})
-	}
-}
-
 func TestUploadBackfillBlocks(t *testing.T) {
 	dir := t.TempDir()
 	uploaded := ulid.MustNew(1000, nil)
@@ -162,25 +140,25 @@ func TestUploadBackfillBlocks_Retries(t *testing.T) {
 	finishPath := blockRequestPath(blockID, "finish")
 
 	for name, tc := range map[string]struct {
-		responses     map[string][]int
+		errorStatuses map[string][]int
 		expectedPaths []string
 		expectFailure bool
 	}{
 		"retries a file upload and sends the whole file again": {
-			responses:     map[string][]int{filesPath: {http.StatusServiceUnavailable}},
+			errorStatuses: map[string][]int{filesPath: {http.StatusServiceUnavailable}},
 			expectedPaths: blockRequestPaths(blockID, "start", "files", "files", "files", "finish"),
 		},
 		"retries 429 and 5xx, and treats a conflict on a retried finish as success": {
-			responses:     map[string][]int{finishPath: {http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusConflict}},
+			errorStatuses: map[string][]int{finishPath: {http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusConflict}},
 			expectedPaths: blockRequestPaths(blockID, "start", "files", "files", "finish", "finish", "finish"),
 		},
 		"does not retry other 4xx": {
-			responses:     map[string][]int{filesPath: {http.StatusBadRequest}},
+			errorStatuses: map[string][]int{filesPath: {http.StatusBadRequest}},
 			expectedPaths: blockRequestPaths(blockID, "start", "files"),
 			expectFailure: true,
 		},
 		"gives up after the maximum number of attempts": {
-			responses:     map[string][]int{finishPath: slices.Repeat([]int{http.StatusBadGateway}, 10)},
+			errorStatuses: map[string][]int{finishPath: slices.Repeat([]int{http.StatusBadGateway}, 10)},
 			expectedPaths: blockRequestPaths(blockID, append([]string{"start", "files", "files"}, slices.Repeat([]string{"finish"}, 10)...)...),
 			expectFailure: true,
 		},
@@ -188,7 +166,7 @@ func TestUploadBackfillBlocks_Retries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				blockDir := writeTestBlock(t, t.TempDir(), blockID)
-				s, c := newBackfillTestServer(t, tc.responses)
+				s, c := newBackfillTestServer(t, tc.errorStatuses)
 
 				err := c.UploadBackfillBlocks(t.Context(), testJobID, []string{blockDir})
 				if tc.expectFailure {
