@@ -32,5 +32,26 @@ service StoreGateway {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
+  // MetricNameCounts returns every metric name's series count in the given blocks, read from the blocks'
+  // index-headers. Experimental: the caller is responsible for asking only for blocks that share no series.
+  rpc MetricNameCounts(MetricNameCountsRequest) returns (MetricNameCountsResponse);
+
   // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
+}
+
+message MetricNameCountsRequest {
+  // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
+  repeated string block_ids = 1;
+}
+
+message MetricNameCount {
+  string name = 1;
+  int64 count = 2;
+}
+
+message MetricNameCountsResponse {
+  // Per-name series counts summed over the counted blocks.
+  repeated MetricNameCount counts = 1;
+  // Blocks that were counted.
+  repeated string block_ids = 2;
 }
