@@ -1241,3 +1241,24 @@ func TestEngineCompactionKeepsSeriesRevivedWhileWritingBlocks(t *testing.T) {
 	require.Len(t, slices.Compact(slices.Clone(times)), 62, "no sample twice")
 
 }
+
+// Queries read the shards in order, so head GC locks them the other way round: a query meets
+// it at one shard instead of reaching each next shard just after it was locked.
+func TestEngineHeadGCLocksShardsAgainstTheQueryOrder(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	defer e.Close()
+	for ts := int64(0); ts <= 7*time.Hour.Milliseconds()/2; ts += time.Minute.Milliseconds() {
+		app := e.Appender(context.Background())
+		for n := range 16 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "m", "n", fmt.Sprint(n)), ts, 1)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	var order []int
+	headGCShardHook = func(shard int) { order = append(order, shard) }
+	t.Cleanup(func() { headGCShardHook = nil })
+	require.NoError(t, e.Compact(context.Background()))
+	require.Equal(t, []int{3, 2, 1, 0}, order)
+}
