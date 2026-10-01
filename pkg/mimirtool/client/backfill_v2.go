@@ -185,8 +185,9 @@ func (c *MimirClient) sendBackfillV2Request(ctx context.Context, path string, ne
 	}
 
 	retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError
-	if err := c.backfillResponseError(req, resp); err != nil {
-		return nil, retryable, err
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, retryable, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
 	}
 	return resp, false, nil
 }

@@ -128,26 +128,18 @@ func (c *MimirClient) doBackfillRequest(ctx context.Context, path, method string
 		return nil, err
 	}
 
-	if err := c.backfillResponseError(req, resp); err != nil {
-		return nil, err
-	}
-
-	return resp, nil
-}
-
-func (c *MimirClient) backfillResponseError(req *http.Request, resp *http.Response) error {
 	if resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_ = resp.Body.Close()
-		return fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
+		return nil, fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
 	}
 
 	if err := c.checkResponse(resp); err != nil {
 		_ = resp.Body.Close()
-		return errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
 	}
 
-	return nil
+	return resp, nil
 }
 
 // drainAndCloseBody drains and closes the body to let the transport reuse the connection.
