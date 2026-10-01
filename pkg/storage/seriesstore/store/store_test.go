@@ -431,3 +431,23 @@ func TestChunksEncodeLikeProtobuf(t *testing.T) {
 		require.Equal(t, want, encodeChunk(c.minTime, c.maxTime, c.encoding, c.data, nil), "%d %d %d %d", c.minTime, c.maxTime, c.encoding, len(c.data))
 	}
 }
+
+// A group that lost half its series to head compaction gives back their slots: an entry's slot
+// costs more than most series' other memory.
+func TestRetainGivesBackTheSlotsOfRemovedSeries(t *testing.T) {
+	b := newSeriesByName()
+	for n := range 1000 {
+		stored := labels.FromStrings("__name__", "m", "pod", fmt.Sprint(n))
+		b.insert(stored.Hash(), stored, Series{ref: uint64(n + 1)})
+	}
+	b.retain(func(entry *seriesEntry) bool { return entry.series.ref%2 == 0 })
+	g := b.groups[0]
+	require.Len(t, g.entries, 500)
+	require.LessOrEqual(t, cap(g.entries), 625)
+	// Lookups still find every kept series.
+	for n := range 1000 {
+		stored := labels.FromStrings("__name__", "m", "pod", fmt.Sprint(n))
+		found := g.lookup(stored.Hash(), func(entry *seriesEntry) bool { return entry.labels == stored })
+		require.Equal(t, (n+1)%2 == 0, found, n)
+	}
+}
