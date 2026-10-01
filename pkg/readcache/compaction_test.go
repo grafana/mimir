@@ -137,6 +137,55 @@ func TestCloseIdleTSDBRemovesEmptyDirectory(t *testing.T) {
 	require.False(t, r.shouldCloseIdleTSDB(live, time.Now()))
 }
 
+func TestIngesterScheduleCompactionFlagGatesIdleCloseAndFlush(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	cfg.LocalBlockRetention = time.Hour
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	openIdle := func(t *testing.T, tenant string) *partitionTSDB {
+		t.Helper()
+		db, err := openPartitionTSDB(
+			tenant, 7, 0, cfg.DataDir, cfg.BlocksStorage.TSDB, cfg.LocalBlockRetention,
+			limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+		db.touchLastAppend(time.Now().Add(-2 * time.Hour))
+		return db
+	}
+
+	legacy := openIdle(t, "legacy")
+	t.Cleanup(func() { _ = legacy.Close() })
+	part := newPartitionState(7)
+	part.tenants["legacy"] = legacy
+	r := &Readcache{
+		cfg:        cfg,
+		logger:     log.NewNopLogger(),
+		partitions: map[int32]*partitionState{7: part},
+	}
+	r.compactHeads()
+	_, statErr := os.Stat(legacy.Dir())
+	require.NoError(t, statErr, "legacy compaction must not close an idle TSDB")
+	require.False(t, legacy.IsClosed())
+
+	// A TSDB CompactHead has not touched. A full-range flush of an empty
+	// head moves the appendable window, so the flush check uses its own DB.
+	withHead := openIdle(t, "with-head")
+	t.Cleanup(func() { _ = withHead.Close() })
+	app := withHead.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("__name__", "up"), time.Now().UnixMilli(), 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, r.flushPartitionHead(withHead))
+	require.Equal(t, uint64(1), withHead.Head().NumSeries(), "legacy freeze must leave the head in place")
+
+	r.cfg.IngesterScheduleCompaction = true
+	ingester := openIdle(t, "ingester")
+	part.tenants["ingester"] = ingester
+	r.compactHeads()
+	_, statErr = os.Stat(ingester.Dir())
+	require.True(t, os.IsNotExist(statErr), "ingester-schedule compaction closes an idle TSDB")
+}
+
 func TestCloseIdleTSDBDropsTenantWhenCloseFails(t *testing.T) {
 	cfg := newTestConfig(t, false, 0)
 	cfg.LocalBlockRetention = time.Hour

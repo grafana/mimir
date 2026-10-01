@@ -215,9 +215,16 @@ type Readcache struct {
 	frozen   map[int32][]*frozenEpoch
 
 	// epochSeq tracks the next epoch number to hand out per partition
-	// (0 on first acquisition). Mutated only in addPartition under
-	// partitionMu.
+	// (0 on first acquisition). Mutated under partitionMu.
 	epochSeq map[int32]int
+
+	// resumeEpoch is the on-disk epoch a previous process closed
+	// without a frozen marker (restart or crash). addPartition reuses
+	// it when this pod still owns the partition, so a restart does not
+	// open a second TSDB beside the one it just closed. The first
+	// assignment promotes any epoch it did not reuse to a frozen epoch.
+	resumeEpoch map[int32]int
+	unmarked    []unmarkedTSDBDir
 
 	// startupReconcileDone flips to true once the initial partition
 	// set has been reconciled: after the first rebalancer assignment
@@ -360,6 +367,7 @@ func New(
 		partitions:                  make(map[int32]*partitionState),
 		frozen:                      make(map[int32][]*frozenEpoch),
 		epochSeq:                    make(map[int32]int),
+		resumeEpoch:                 make(map[int32]int),
 		instanceLifecycler:          instanceLifecycler,
 		queryLoad:                   loadstats.NewTracker("cortex_readcache"),
 		partitionSeries:             loadstats.NewPartitionSeries(),
@@ -574,6 +582,7 @@ func (r *Readcache) starting(ctx context.Context) error {
 			return fmt.Errorf("starting partition %d: %w", pid, err)
 		}
 	}
+	r.promoteUnownedResumeEpochs(wanted)
 	r.removeUnownedFrozenPartitionOffsets(wanted)
 	r.startupReconcileDone.Store(true)
 	r.assignmentReady.Store(true)
@@ -760,7 +769,7 @@ func (r *Readcache) stopping(_ error) error {
 	for _, entry := range parts {
 		entry := entry
 		g.Go(func() error {
-			if err := r.freezePartitionForShutdown(entry.partitionID, entry.state); err != nil {
+			if err := r.closeLiveForRestart(entry.state); err != nil {
 				firstErrMu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -847,18 +856,20 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 		return fmt.Errorf("creating readcache data-dir for partition %d: %w", partitionID, err)
 	}
 	p := newPartitionState(partitionID)
-	// Assign this acquisition's epoch (0 on the first time this pod
-	// owns the partition; incremented on each re-acquisition) so a
-	// fresh live TSDB never collides on disk with a frozen epoch of
-	// the same partition still being served.
-	p.epoch = r.epochSeq[partitionID]
-	r.epochSeq[partitionID]++
+	// Reuse the epoch the previous process closed in place when this
+	// pod still owns the partition. Otherwise hand out the next epoch
+	// so a fresh live TSDB never collides with a frozen one.
+	var resumed bool
+	p.epoch, resumed = r.takeLiveEpoch(partitionID)
 	r.partitions[partitionID] = p
 	r.partitionMu.Unlock()
 
 	if err := r.startKafkaReader(ctx, p); err != nil {
 		r.partitionMu.Lock()
 		delete(r.partitions, partitionID)
+		if resumed {
+			r.resumeEpoch[partitionID] = p.epoch
+		}
 		r.partitionMu.Unlock()
 		return err
 	}
@@ -1224,6 +1235,13 @@ func (r *Readcache) compactHeads() {
 		}
 		p.tenantsMu.RUnlock()
 		for _, db := range dbs {
+			if !r.cfg.IngesterScheduleCompaction {
+				if err := db.CompactHead(); err != nil {
+					level.Warn(r.logger).Log("msg", "readcache head compaction failed",
+						"user", db.tenantID, "partition", db.partitionID, "err", err)
+				}
+				continue
+			}
 			r.compactOne(db)
 		}
 	}
@@ -1435,6 +1453,7 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		}
 	}
 	if firstReconcile {
+		r.promoteUnownedResumeEpochs(wanted)
 		r.removeUnownedFrozenPartitionOffsets(wanted)
 	}
 	if len(toAdd) > 0 || len(toRemove) > 0 {

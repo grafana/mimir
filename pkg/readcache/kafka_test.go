@@ -165,8 +165,8 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, rc1))
 	require.FileExists(t, filepath.Join(cfg.DataDir, "partition-0.offset.json"),
 		"offset file must survive a process stop so the next incarnation can resume")
-	require.FileExists(t, filepath.Join(cfg.DataDir, tenantID, "partition-0", frozenMarkerFilename),
-		"process stop must persist the old live epoch for historical routing after restart")
+	require.NoFileExists(t, filepath.Join(cfg.DataDir, tenantID, "partition-0", frozenMarkerFilename),
+		"a restart keeps the live TSDB; it does not freeze a new epoch")
 
 	// Produce while the readcache is down: this is the eviction window.
 	writeSample("series_during_downtime", baseTimestamp+1)
@@ -181,7 +181,7 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		dbs, err := rc2.listTSDBsForTenant(tenantID, &client.QueryAttributionHint{PartitionId: 0})
-		if err != nil || len(dbs) != 2 {
+		if err != nil || len(dbs) != 1 {
 			return false
 		}
 		var series uint64
@@ -191,9 +191,9 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 				series += block.Meta().Stats.NumSeries
 			}
 		}
-		// The frozen epoch was flushed to a block at shutdown
-		// (series_before_restart). The resumed live epoch must add
-		// series_during_downtime in its head.
+		// The same TSDB is reopened. series_before_restart is replayed
+		// from its WAL (or a block, if the compaction flag flushed it)
+		// and series_during_downtime is appended after the resume.
 		return series == 2
 	}, 20*time.Second, 100*time.Millisecond, "second incarnation must consume the record produced during downtime")
 }

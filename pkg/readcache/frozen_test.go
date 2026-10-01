@@ -122,12 +122,13 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 // freeze/reap tests (no Kafka, no rings) rooted at cfg.DataDir.
 func newFrozenTestReadcache(cfg Config, limits *validation.Overrides) *Readcache {
 	return &Readcache{
-		logger:     log.NewNopLogger(),
-		cfg:        cfg,
-		limits:     limits,
-		partitions: map[int32]*partitionState{},
-		frozen:     map[int32][]*frozenEpoch{},
-		epochSeq:   map[int32]int{},
+		logger:      log.NewNopLogger(),
+		cfg:         cfg,
+		limits:      limits,
+		partitions:  map[int32]*partitionState{},
+		frozen:      map[int32][]*frozenEpoch{},
+		epochSeq:    map[int32]int{},
+		resumeEpoch: map[int32]int{},
 	}
 }
 
@@ -197,6 +198,7 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 	setup := func(t *testing.T, sampleTS int64) (Config, *validation.Overrides, string) {
 		cfg := newTestConfig(t, false, 0)
 		cfg.LocalBlockRetention = time.Hour
+		cfg.IngesterScheduleCompaction = true
 		limits := validation.NewOverrides(validation.Limits{}, nil)
 
 		// "Previous process": freeze one epoch, then drop it from
@@ -296,6 +298,11 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 
 		r := newFrozenTestReadcache(cfg, limits)
 		r.restoreFrozenEpochsOnStartup(time.Now())
+		require.Empty(t, r.frozen[pid], "an unmarked dir stays live until the assignment gives the partition away")
+		require.Equal(t, 0, r.resumeEpoch[pid])
+
+		// This pod did not get the partition back.
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{})
 
 		require.Len(t, r.frozen[pid], 1)
 		assert.Equal(t, 1, r.epochSeq[pid])
@@ -307,6 +314,33 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		minT, maxT := dbs[0].sampleBounds()
 		assert.Equal(t, sampleTS, minT)
 		assert.Equal(t, sampleTS, maxT)
+	})
+
+	t.Run("unmarked live dir is reused when the partition stays owned", func(t *testing.T) {
+		cfg := newTestConfig(t, false, 0)
+		cfg.LocalBlockRetention = time.Hour
+		limits := validation.NewOverrides(validation.Limits{}, nil)
+
+		db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
+
+		r := newFrozenTestReadcache(cfg, limits)
+		r.restoreFrozenEpochsOnStartup(time.Now())
+
+		r.partitionMu.Lock()
+		epoch, resumed := r.takeLiveEpoch(pid)
+		p := newPartitionState(pid)
+		p.epoch = epoch
+		r.partitions[pid] = p
+		r.partitionMu.Unlock()
+		require.True(t, resumed)
+		require.Equal(t, 0, epoch)
+
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{pid: {}})
+		require.Empty(t, r.frozen[pid])
+		require.NoFileExists(t, filepath.Join(db.dir, frozenMarkerFilename))
 	})
 
 	t.Run("multiple tenants of one epoch are grouped back together", func(t *testing.T) {
