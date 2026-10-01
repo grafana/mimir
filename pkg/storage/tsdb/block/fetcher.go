@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -487,7 +488,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.ResetTx()
 
 	// Run this in thread safe run group.
-	v, err, _ := f.g.Do("", func() (i interface{}, err error) {
+	v, err, _ := f.g.Do(strconv.FormatBool(excludeMarkedForDeletion), func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
 		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
@@ -499,7 +500,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	// Copy as same response might be reused by different goroutines.
 	metas := make(map[ulid.ULID]*Meta, len(resp.metas))
 	for id, m := range resp.metas {
-		metas[id] = m
+		metas[id] = m.Clone()
 	}
 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
