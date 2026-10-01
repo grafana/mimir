@@ -239,8 +239,54 @@ impl Hash for Labels {
 
 impl Ord for Labels {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.iter().cmp(other.iter())
+        // Pairs are self-delimiting, so pairs within the buffers' common prefix are the same pairs
+        // in both: the comparison starts at the pair holding the first differing byte. A query's
+        // results are mostly one metric's series sharing their first pairs, which sorting them
+        // otherwise decoded and compared on every comparison.
+        let (a, b) = (&self.0[..], &other.0[..]);
+        let common = common_prefix(a, b);
+        if common == a.len() && common == b.len() {
+            return Ordering::Equal;
+        }
+        // Labels differing from their first pair, like different metrics', gain nothing from it.
+        if common < 8 {
+            return self.iter().cmp(other.iter());
+        }
+        let mut start = 0;
+        let mut rest = a;
+        while !rest.is_empty() {
+            let mut cursor = rest;
+            take_varint(&mut cursor);
+            let len = take_varint(&mut cursor) as usize;
+            let end = a.len() - cursor.len() + len;
+            if end > common {
+                break;
+            }
+            start = end;
+            rest = &a[end..];
+        }
+        let names = names::snapshot();
+        let suffix = Iter { bytes: &a[start..], names };
+        suffix.cmp(Iter { bytes: &b[start..], names })
     }
+}
+
+/// The length of `a` and `b`'s common prefix, compared eight bytes at a time.
+fn common_prefix(a: &[u8], b: &[u8]) -> usize {
+    let len = a.len().min(b.len());
+    let mut at = 0;
+    while at + 8 <= len {
+        let x = u64::from_le_bytes(a[at..at + 8].try_into().expect("8 bytes"));
+        let y = u64::from_le_bytes(b[at..at + 8].try_into().expect("8 bytes"));
+        if x != y {
+            return at + ((x ^ y).trailing_zeros() / 8) as usize;
+        }
+        at += 8;
+    }
+    while at < len && a[at] == b[at] {
+        at += 1;
+    }
+    at
 }
 
 impl PartialOrd for Labels {
@@ -332,6 +378,34 @@ pub(crate) fn take_varint(bytes: &mut &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comparisons_order_like_their_pairs() {
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut random = |below: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % below
+        };
+        let names = ["__name__", "a", "aa", "b", "instance", "job", "z"];
+        let values = ["", "a", "ab", "abc", "b", "x\u{e9}", "zzzzzzzzzzzzzzzzzz"];
+        let mut sets = Vec::new();
+        for _ in 0..400 {
+            let mut pairs = Vec::new();
+            for name in names {
+                if random(3) > 0 {
+                    pairs.push((name, values[random(values.len() as u64) as usize]));
+                }
+            }
+            sets.push(Labels::from_sorted(pairs.iter().map(|(n, v)| (*n, *v))));
+        }
+        for a in &sets {
+            for b in &sets {
+                assert_eq!(a.cmp(b), a.iter().cmp(b.iter()), "{a:?} vs {b:?}");
+            }
+        }
+    }
 
     #[test]
     fn short_comparisons_see_every_byte() {
