@@ -231,6 +231,9 @@ type mimirSeriesCounts struct {
 	BucketBytes   int64 // read from the bucket rather than a cache
 	Counts        map[string]int
 	Buckets       map[string][]int // only with a step
+	// Estimated holds the groups Mimir counted from an HLL sketch.
+	Estimated              map[string]bool
+	HashBytes, SketchBytes int64 // dedup payload the store-gateways sent
 }
 
 // estimate asks Mimir for series counts over [minT, maxT). params may set
@@ -245,10 +248,13 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 		IndexBytes           int64  `json:"index_bytes"`
 		PostingsFetchedBytes int64  `json:"postings_fetched_bytes"`
 		SeriesFetchedBytes   int64  `json:"series_fetched_bytes"`
+		HashBytes            int64  `json:"hash_bytes"`
+		SketchBytes          int64  `json:"sketch_bytes"`
 		Counts               []struct {
-			Value  string `json:"value"`
-			Count  int    `json:"count"`
-			Counts []int  `json:"counts"`
+			Value     string `json:"value"`
+			Count     int    `json:"count"`
+			Counts    []int  `json:"counts"`
+			Estimated bool   `json:"estimated"`
 		} `json:"counts"`
 	}
 	res := mimirSeriesCounts{}
@@ -258,9 +264,16 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 	res.Read, res.Dedup = parsed.Read, parsed.Dedup
 	res.Blocks, res.StoreGateways, res.SeriesCounted = parsed.Blocks, parsed.StoreGateways, parsed.SeriesCounted
 	res.IndexBytes, res.BucketBytes = parsed.IndexBytes, parsed.PostingsFetchedBytes+parsed.SeriesFetchedBytes
+	res.HashBytes, res.SketchBytes = parsed.HashBytes, parsed.SketchBytes
 	res.Counts = make(map[string]int, len(parsed.Counts))
 	for _, c := range parsed.Counts {
 		res.Counts[c.Value] = c.Count
+		if c.Estimated {
+			if res.Estimated == nil {
+				res.Estimated = map[string]bool{}
+			}
+			res.Estimated[c.Value] = true
+		}
 		if c.Counts != nil {
 			if res.Buckets == nil {
 				res.Buckets = map[string][]int{}
