@@ -97,6 +97,12 @@ func fakeMimir(t *testing.T, s *server) *httptest.Server {
 			Dedup  bool    `json:"dedup"`
 			Counts []group `json:"counts"`
 		}
+		truth := s.pop.TruthBy(matchers, groupBy, minT, maxT)
+		if limit, _ := strconv.Atoi(q.Get("max_index_bytes")); limit > 0 && sumCounts(truth)*512 > limit {
+			// Like the store-gateway's check: matching series at 512 bytes each.
+			http.Error(w, fmt.Sprintf("max_index_bytes %d: the request would read about %d index bytes", limit, sumCounts(truth)*512), http.StatusUnprocessableEntity)
+			return
+		}
 		out.Read = "full_index"
 		if matchers == nil && groupBy == "__name__" && q.Get("step") == "" && isBlockRange(minT, maxT) {
 			out.Read = "index_header"
@@ -191,6 +197,20 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 		for _, r := range out.Rows {
 			assert.Equal(t, r.Truth, r.Count)
 		}
+	})
+
+	t.Run("breakdown over max_index_bytes is refused, not partial", func(t *testing.T) {
+		var out struct {
+			Refused    bool   `json:"refused"`
+			Error      string `json:"error"`
+			TruthTotal int    `json:"truth_total"`
+			Values     *int   `json:"values"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/breakdown?start=%d&end=%d&label=pod&metric=%s&max_index_bytes=1000", at(0), at(1), metric), &out))
+		assert.True(t, out.Refused)
+		assert.Contains(t, out.Error, "max_index_bytes 1000")
+		assert.Positive(t, out.TruthTotal)
+		assert.Nil(t, out.Values, "no count comes back with a refusal")
 	})
 
 	t.Run("window: adding the block ranges overcounts, dedup doesn't", func(t *testing.T) {
