@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -376,4 +377,72 @@ func logfmtFields(line string) map[string]string {
 
 func matchName(name string) []*labels.Matcher {
 	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", name)}
+}
+
+// storeGatewayRead is what the store-gateways read, from their own
+// metrics: index bytes (postings and series entries touched) and chunk
+// bytes fetched. The difference between two reads is what the requests in
+// between read, so it is only meaningful while the demo runs one at a time.
+type storeGatewayRead struct {
+	IndexBytes int64 `json:"index_bytes"`
+	ChunkBytes int64 `json:"chunk_bytes"`
+}
+
+func (a storeGatewayRead) sub(b storeGatewayRead) storeGatewayRead {
+	return storeGatewayRead{a.IndexBytes - b.IndexBytes, a.ChunkBytes - b.ChunkBytes}
+}
+
+// storeGatewayRead reads Mimir's metrics page.
+func (m *mimir) storeGatewayRead() (storeGatewayRead, error) {
+	resp, err := http.Get(m.baseURL + "/metrics")
+	if err != nil {
+		return storeGatewayRead{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return storeGatewayRead{}, fmt.Errorf("metrics: %s", resp.Status)
+	}
+	return parseStoreGatewayRead(resp.Body)
+}
+
+func parseStoreGatewayRead(r io.Reader) (storeGatewayRead, error) {
+	var out storeGatewayRead
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		touched := strings.HasPrefix(line, "cortex_bucket_store_series_data_size_touched_bytes_sum{")
+		fetched := strings.HasPrefix(line, "cortex_bucket_store_series_data_size_fetched_bytes_sum{")
+		if !touched && !fetched {
+			continue
+		}
+		i := strings.LastIndexByte(line, ' ')
+		v, err := strconv.ParseFloat(line[i+1:], 64)
+		if err != nil {
+			return out, fmt.Errorf("metrics line %q: %w", line, err)
+		}
+		switch {
+		case touched && (strings.Contains(line, `data_type="postings"`) || strings.Contains(line, `data_type="series"`)):
+			out.IndexBytes += int64(v)
+		case fetched && strings.Contains(line, `data_type="chunks"`):
+			out.ChunkBytes += int64(v)
+		}
+	}
+	return out, sc.Err()
+}
+
+// measureRead runs f and returns what the store-gateways read meanwhile, or
+// nil if the metrics page can't be read.
+func (m *mimir) measureRead(f func()) *storeGatewayRead {
+	before, err := m.storeGatewayRead()
+	f()
+	if err != nil {
+		return nil
+	}
+	after, err := m.storeGatewayRead()
+	if err != nil {
+		return nil
+	}
+	d := after.sub(before)
+	return &d
 }

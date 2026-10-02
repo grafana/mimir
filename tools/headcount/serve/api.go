@@ -350,14 +350,19 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 	if maxIndexBytes > 0 {
 		params.Set("max_index_bytes", strconv.Itoa(maxIndexBytes))
 	}
-	res := s.mimir.estimate(minT, maxT, params)
+	var res mimirSeriesCounts
+	read := s.mimir.measureRead(func() { res = s.mimir.estimate(minT, maxT, params) })
 	if res.Err != "" && maxIndexBytes > 0 && strings.Contains(res.Err, "max_index_bytes") {
 		// Mimir refused the request at the limit: that is the answer.
 		truth := s.pop.TruthBy(matchName(metric), label, minT, maxT)
-		writeJSON(w, map[string]any{
+		out := map[string]any{
 			"window": win(minT, maxT), "refused": true, "error": res.Err, "latency_ms": ms(res.Latency),
 			"truth_values": len(truth), "truth_total": sumCounts(truth),
-		})
+		}
+		if read != nil {
+			out["store_gateway_read"] = read
+		}
+		writeJSON(w, out)
 		return
 	}
 	if res.Err != "" {
@@ -411,8 +416,13 @@ func (s *server) handlePromQLBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := fmt.Sprintf(`count by (%s) (last_over_time({__name__=%q}[%s]))`, label, metric, promqlRange(minT, maxT))
-	res := s.mimir.query(q, maxT-1, intParam(r, "series_limit", 0))
+	seriesLimit := intParam(r, "series_limit", 0)
+	var res queryResult
+	read := s.mimir.measureRead(func() { res = s.mimir.query(q, maxT-1, seriesLimit) })
 	out := map[string]any{"query": q, "result": res.summary()}
+	if seriesLimit > 0 && read != nil {
+		out["store_gateway_read"] = read
+	}
 	if res.Err == "" {
 		counts := res.byLabel(label)
 		out["rows"] = sortedValues(counts, nil, intParam(r, "limit", 5))
