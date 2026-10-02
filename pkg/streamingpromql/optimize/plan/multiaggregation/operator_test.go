@@ -4,6 +4,7 @@ package multiaggregation
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -124,6 +125,65 @@ func TestOperator_Finalize(t *testing.T) {
 	instance1.Close()
 	instance2.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestOperator_SharedDenseSumInput(t *testing.T) {
+	for _, sumFirst := range []bool{true, false} {
+		name := "sum last"
+		if sumFirst {
+			name = "sum first"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			tr := types.NewRangeQueryTimeRange(time.Unix(0, 0), time.Unix(0, 0).Add(128*time.Minute), time.Minute)
+			inner := &operators.TestOperator{MemoryConsumptionTracker: tracker}
+			for i, value := range []float64{1e16, 1, -1e16} {
+				points, err := types.FPointSlicePool.Get(tr.StepCount, tracker)
+				require.NoError(t, err)
+				for step := range tr.StepCount {
+					points = append(points, promql.FPoint{T: tr.IndexTime(int64(step)), F: value})
+				}
+				inner.Series = append(inner.Series, labels.FromStrings("idx", strconv.Itoa(i)))
+				inner.Data = append(inner.Data, types.InstantVectorSeriesData{Floats: points})
+			}
+			group := NewMultiAggregatorGroupEvaluator(inner, tracker, tr, log.NewNopLogger())
+			first, second := group.AddInstance(), group.AddInstance()
+			firstOp, secondOp := parser.ItemType(parser.SUM), parser.ItemType(parser.COUNT)
+			firstValue, secondValue := float64(1), float64(3)
+			if !sumFirst {
+				firstOp, secondOp = secondOp, firstOp
+				firstValue, secondValue = secondValue, firstValue
+			}
+			require.NoError(t, first.Configure(firstOp, nil, false, nil, -1, tracker, tr, posrange.PositionRange{}, nil))
+			require.NoError(t, second.Configure(secondOp, nil, false, nil, -1, tracker, tr, posrange.PositionRange{}, nil))
+			require.NoError(t, first.Prepare(ctx, nil))
+			require.NoError(t, second.Prepare(ctx, nil))
+			for i, instance := range []*MultiAggregatorInstanceOperator{first, second} {
+				metadata, err := instance.SeriesMetadata(ctx, nil)
+				require.NoError(t, err)
+				require.Equal(t, []types.SeriesMetadata{{Labels: labels.EmptyLabels()}}, metadata)
+				types.SeriesMetadataSlicePool.Put(&metadata, tracker)
+				data, err := instance.NextSeries(ctx)
+				require.NoError(t, err)
+				require.Len(t, data.Floats, tr.StepCount)
+				value := firstValue
+				if i == 1 {
+					value = secondValue
+				}
+				for step, point := range data.Floats {
+					require.Equal(t, tr.IndexTime(int64(step)), point.T)
+					require.Equal(t, value, point.F)
+				}
+				types.PutInstantVectorSeriesData(data, tracker)
+			}
+			require.NoError(t, first.FinishedReading(ctx))
+			require.NoError(t, second.FinishedReading(ctx))
+			first.Close()
+			second.Close()
+			require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
