@@ -59,7 +59,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3, 0}}}, SeriesFetchedBytes: 5}):   {{b2}},
 		}
 		q := seriesCountsQueryable(0, 2*60*60*1000, shards, clients)
-		res, err := q.SeriesCounts(context.Background(), "user-1", SeriesCountsRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, Step: 60 * 60 * 1000, GroupBy: "__name__"})
+		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, Step: 60 * 60 * 1000, GroupBy: "__name__"})
 		require.NoError(t, err)
 		assert.False(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {4, 2}}, res.Counts)
@@ -82,7 +82,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}}):                                   {{b1}},
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "x", Hashes: []uint64{9}}}}): {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).SeriesCounts(context.Background(), "user-1", SeriesCountsRequest{MinT: 0, MaxT: 2 * dayMs})
+		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 		require.NoError(t, err)
 		assert.True(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {3}, "x": {1}}, res.Counts, "series 2 is in both days")
@@ -91,7 +91,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 
 	t.Run("refuses buckets across block ranges", func(t *testing.T) {
 		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).SeriesCounts(context.Background(), "user-1", SeriesCountsRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
+		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
 		require.ErrorContains(t, err, "inside one block range")
 	})
 
@@ -100,7 +100,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
 			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}, LowerBound: true, SeriesCounted: 5, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}}): {{b1}},
 		}
-		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", SeriesCountsRequest{MinT: 0, MaxT: dayMs, MaxSeries: 5})
+		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxSeries: 5})
 		require.NoError(t, err, "an unfinished block is expected under a budget")
 		assert.True(t, res.LowerBound)
 		assert.Equal(t, int64(5), res.SeriesCounted)
@@ -111,7 +111,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
 			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}}): {{b1}},
 		}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", SeriesCountsRequest{MinT: 0, MaxT: dayMs})
+		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.ErrorContains(t, err, "was not counted")
 	})
 }
@@ -133,10 +133,10 @@ func TestBlockRangeHolding(t *testing.T) {
 }
 
 func TestParseSeriesCountsRequest(t *testing.T) {
-	parse := func(query string) (SeriesCountsRequest, int, error) {
+	parse := func(query string) (CardinalityEstimateRequest, int, error) {
 		r := httptest.NewRequest(http.MethodGet, "/x?"+query, nil)
 		require.NoError(t, r.ParseForm())
-		return parseSeriesCountsRequest(r)
+		return parseCardinalityEstimateRequest(r)
 	}
 	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&budget=100&limit=5`)
 	require.NoError(t, err)
@@ -219,16 +219,16 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 
 	for name, tc := range map[string]struct {
-		req     SeriesCountsRequest
+		req     CardinalityEstimateRequest
 		read    string
 		counts  map[string][]int64
 		snapped bool
 	}{
-		"every name over one block range": {SeriesCountsRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
-		"a matcher":                       {SeriesCountsRequest{MinT: 0, MaxT: dayMs, Matchers: up}, readFullIndex, map[string][]int64{"up": {2}}, false},
-		"a window inside the block":       {SeriesCountsRequest{MinT: 0, MaxT: dayMs / 2}, readFullIndex, map[string][]int64{"up": {2}}, false},
-		"snapped to the block":            {SeriesCountsRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, readIndexHeader, map[string][]int64{"up": {3}}, true},
-		"grouped by another label":        {SeriesCountsRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"every name over one block range": {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
+		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"snapped to the block":            {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, readIndexHeader, map[string][]int64{"up": {3}}, true},
+		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readFullIndex, map[string][]int64{"up": {2}}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := tc.req
