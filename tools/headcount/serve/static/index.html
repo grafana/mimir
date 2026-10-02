@@ -103,14 +103,13 @@
   <div class="group">Find it</div>
   <section style="grid-column: 1 / -1">
     <div class="ph"><h2 id="g-title">1. Which metric grew?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> which metric names gained the most series in the window, compared with the window of the same length just before it?</p><p><b>In Mimir</b> picks the cheapest read for the window. A window that is exactly one day (one block range) is read from the index-headers: for every name the index records where its list of series starts and ends, and each entry is 4 bytes, so the length is the count. Any other window reads series entries and chunk metas from the full index, and a window across days removes duplicates. The cost column says which read was used.</p><p><b>Baseline</b> is <code>count by (__name__)</code> over the window, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count, before → window. Click a row to use that metric in panels 2 to 4.</p><p><b>What panel 1 cost:</b> the same ranking answered both ways. Both count every metric name in the window and in the window before it. Compare latency and what was read. Headcount never reads chunks.</p></div>
+    <div class="info" hidden><p><b>Question:</b> which metric names gained the most series in the window, compared with the window of the same length just before it?</p><p><b>In Mimir</b> picks the cheapest read for the window. A window that is exactly one day (one block range) is read from the index-headers: for every name the index records where its list of series starts and ends, and each entry is 4 bytes, so the length is the count. Any other window reads series entries and chunk metas from the full index, and a window across days removes duplicates. The cost column says which read was used.</p><p><b>Baseline</b> is <code>count by (__name__)</code> over the window, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count, before → window. Click a row to use that metric in panels 2 to 4.</p><p><b>The cost column</b> is the same ranking answered both ways. Both count every metric name in the window and in the window before it. Compare latency and what was read. Headcount never reads chunks.</p></div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div>
         <div class="scroll"><table id="growth"></table></div>
         <p id="growth-note" class="muted"></p>
       </div>
       <div>
-        <h3 id="cost-title" style="margin:0 0 6px;font-size:14px">What panel 1 cost</h3>
         <p class="headline" id="cost-headline"></p>
         <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL count</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
         <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount</h3><div id="growth-hc" class="kv"></div></div>
@@ -264,7 +263,6 @@ async function run() {
     const hcRead = addRead(g.read, g.prev_read);
     kv($("growth-hc"), mimirPairs(hcRead));
     $("cost-headline").textContent = "";
-    $("cost-title").textContent = `What panel 1 cost: counting ${fmt(g.names)} names in ${prevLen ? "two windows" : "the window"}`;
     for (const tr of document.querySelectorAll("#growth tr.click")) tr.onclick = () => drill(tr.dataset.name);
 
     $("status").textContent = "Baseline...";
