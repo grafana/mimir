@@ -89,7 +89,8 @@
   <label>Start <input id="start" type="datetime-local" step="3600"></label>
   <label>End <input id="end" type="datetime-local" step="3600"></label>
   <label>Step <select id="step"><option value="">auto</option><option value="3600">1h</option><option value="10800">3h</option><option value="21600">6h</option><option value="86400">1d</option></select></label>
-  <label>Budget and series limit <input id="budget" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
+  <label>PromQL series limit <input id="slimit" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
+  <label>Headcount index limit <input id="blimit" type="number" min="0.1" step="0.5" value="1" style="width:5em"> MB</label>
   <button id="run">Run</button>
   <span id="status" class="muted"></span>
 </div>
@@ -137,10 +138,10 @@
   <div class="group">Why you can trust it</div>
   <div class="pair pair-wide">
     <section>
-      <div class="ph"><h2 id="lim-title">4. It can't become an incident</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-      <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> each store-gateway stops after the budget (the "Budget and series limit" box) and returns what it counted so far, marked as a lower bound. You get a partial answer, not an outage. The budget applies per store-gateway, so with several store-gateways the lower bound can be up to the budget times their number.</p><p><b>Baseline</b> with the same series limit fails with an error. Change the budget and press Run to see both move.</p></div>
-      <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
-      <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
+      <div class="ph"><h2 id="lim-title">4. Too big to answer: refused before the work</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> the limit is index bytes for the whole request (the "Headcount index limit" box), split evenly across the store-gateways. Each store-gateway first resolves the postings it already holds, which says how many series match, and prices the request at the planner's estimate of 512 bytes per series entry. Over the limit, it refuses before reading a single series entry and says what it would have read. If entries turn out larger than the estimate, it stops once it passes the limit. Either way the answer is an error, never a partial count.</p><p><b>Baseline</b> with a series limit (the "PromQL series limit" box) fails too, after it has started fetching. Change either limit and press Run.</p></div>
+      <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with a series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
+      <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the index limit</h3><div id="lim-hc" class="kv"></div></div>
     </section>
     <section>
       <div class="ph"><h2 id="win-title">5. Distinct series over the whole window</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
@@ -361,7 +362,7 @@ async function runBuckets(name) {
 async function drill(name) {
   selected = name;
   for (const tr of document.querySelectorAll("#growth tr.click")) tr.classList.toggle("sel", tr.dataset.name === name);
-  const budget = $("budget").value, m = encodeURIComponent(name);
+  const seriesLimit = $("slimit").value, maxIndexBytes = Math.round(Number($("blimit").value) * 1e6), m = encodeURIComponent(name);
   $("status").textContent = "Breakdown...";
   $("bd-title").textContent = `2. Which label exploded? ${short(name)}`;
   const byLabel = await Promise.all(LABELS.map(l => get(`api/breakdown?${win()}&metric=${m}&label=${l}&limit=5`).then(b => ({label: l, b}))));
@@ -388,22 +389,34 @@ async function drill(name) {
   $("status").textContent = "Buckets...";
   await runBuckets(name);
 
-  $("status").textContent = "Budget...";
-  $("lim-title").textContent = `4. It can't become an incident: ${short(name)} by ${lbl}`;
-  const lq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&series_limit=${budget}`);
-  $("lim-q").textContent = lq.query + `\nwith max_fetched_series_per_query=${fmt(budget)}, enforced per query shard`;
+  $("status").textContent = "Limits...";
+  $("lim-title").textContent = `4. Too big to answer: refused before the work, ${short(name)} by ${lbl}`;
+  const lq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&series_limit=${seriesLimit}`);
+  $("lim-q").textContent = lq.query + `\nwith max_fetched_series_per_query=${fmt(seriesLimit)}, enforced per query shard`;
   const shards = lq.result.sharded_queries ? [["query shards", lq.result.sharded_queries]] : [];
   kv($("lim-today"), (lq.result.error ? [["result", briefError(lq.result.error), "err"], ["latency", secs(lq.result.latency_ms)]] : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
-  const lb = await get(`api/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&budget=${budget}`);
-  kv($("lim-hc"), [
-    ["answer", lb.lower_bound ? `≥ ${fmt(lb.total)} series (lower bound)` : `${fmt(lb.total)} series (exact, under budget)`, lb.lower_bound ? "" : "ok"],
-    ["truth", `${fmt(lb.truth_total)} series`],
-    ["budget", `${fmt(budget)} series per store-gateway`],
-    ["store-gateways", lb.read.store_gateways],
-    ["stopped after", `${fmt(lb.read.series_read)} series`],
-    ["latency", secs(lb.read.elapsed_ms)],
-    ["chunks read", "0 B", "ok"],
-  ]);
+  const lb = await get(`api/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&max_index_bytes=${maxIndexBytes}`);
+  if (lb.refused) {
+    const est = /would read about (\d+) index bytes/.exec(lb.error);
+    kv($("lim-hc"), [
+      ["result", /would read about/.test(lb.error) ? "refused before reading any series entry" : "stopped at the limit while reading", "ok"],
+      ["limit", `${bytes(maxIndexBytes)} of index for the request`],
+      ...(est ? [["Mimir's estimate", `about ${bytes(Number(est[1]))}`]] : []),
+      ["series entries read", "0", "ok"],
+      ["chunks read", "0 B", "ok"],
+      ["refused after", secs(lb.latency_ms)],
+      ["without the limit", `${fmt(lb.truth_total)} series, exact (panel 2)`],
+    ]);
+  } else {
+    kv($("lim-hc"), [
+      ["answer", `${fmt(lb.total)} series, exact, under the limit`, "ok"],
+      ["limit", `${bytes(maxIndexBytes)} of index for the request`],
+      ["index read", lb.read.index_bytes ? bytes(lb.read.index_bytes) : "0 B (cached)"],
+      ["series read", fmt(lb.read.series_read)],
+      ["latency", secs(lb.read.elapsed_ms)],
+      ["chunks read", "0 B", "ok"],
+    ]);
+  }
 }
 
 for (const b of document.querySelectorAll(".info-btn")) {
