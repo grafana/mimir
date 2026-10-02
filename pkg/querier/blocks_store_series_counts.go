@@ -17,9 +17,9 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-// SeriesCountsRequest asks for series counts over [MinT, MaxT), see
+// CardinalityEstimateRequest asks for series counts over [MinT, MaxT), see
 // storegatewaypb.SeriesCountsRequest for the fields.
-type SeriesCountsRequest struct {
+type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
 	Step       int64
@@ -31,8 +31,8 @@ type SeriesCountsRequest struct {
 	Snap bool
 }
 
-// SeriesCountsResult holds one count per bucket for each group.
-type SeriesCountsResult struct {
+// CardinalityEstimateResult holds one count per bucket for each group.
+type CardinalityEstimateResult struct {
 	// Read is readIndexHeader or readFullIndex.
 	Read    string
 	Snapped bool
@@ -56,7 +56,7 @@ type SeriesCountsResult struct {
 // added up. Otherwise, for example over several days, each store-gateway
 // returns label-set hashes and the counts are the size of their union.
 // Per-bucket counts need the first case.
-func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string, req SeriesCountsRequest) (SeriesCountsResult, error) {
+func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	type found struct {
 		c         blocksStoreCompartment
 		blocks    bucketindex.Blocks
@@ -69,19 +69,19 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 	for _, c := range q.compartments {
 		blocks, indexMeta, err := c.finder.GetBlocks(ctx, tenantID, req.MinT, req.MaxT-1)
 		if err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
 		all = append(all, blocks...)
 		parts = append(parts, found{c, blocks, indexMeta})
 	}
 
-	res := SeriesCountsResult{Counts: map[string][]int64{}, Dedup: !inOneRangeWithoutSharedSeries(all)}
+	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: !inOneRangeWithoutSharedSeries(all)}
 	if res.Dedup && req.Step > 0 {
-		return SeriesCountsResult{}, errors.New("per-bucket counts need a window inside one block range whose blocks share no series")
+		return CardinalityEstimateResult{}, errors.New("per-bucket counts need a window inside one block range whose blocks share no series")
 	}
 	matchers, err := storepb.PromMatchersToMatchers(req.Matchers...)
 	if err != nil {
-		return SeriesCountsResult{}, err
+		return CardinalityEstimateResult{}, err
 	}
 	pbMatchers := make([]*storepb.LabelMatcher, len(matchers))
 	for i := range matchers {
@@ -142,7 +142,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		}
 		clients, err := p.c.stores.GetClientsFor(tenantID, p.blocks, nil)
 		if err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
 		g, gCtx := errgroup.WithContext(grpcContextWithBucketStoreRequestMeta(ctx, tenantID, p.indexMeta))
 		for client, partitions := range clients {
@@ -167,14 +167,14 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 			}
 		}
 		if err := g.Wait(); err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
 	}
 
 	for _, b := range all {
 		// A store-gateway that stopped at max_series leaves blocks unfinished.
 		if !counted[b.ID] && !res.LowerBound {
-			return SeriesCountsResult{}, fmt.Errorf("block %s was not counted by the store-gateway it was sent to", b.ID)
+			return CardinalityEstimateResult{}, fmt.Errorf("block %s was not counted by the store-gateway it was sent to", b.ID)
 		}
 		res.Blocks = append(res.Blocks, b.ID)
 	}
@@ -209,30 +209,30 @@ const (
 // updated to say so. A window of exactly one block range whose blocks share
 // no series, asked for every metric name with no matchers and no step, is
 // counted from the index-headers. Anything else reads the full index.
-func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID string, req *SeriesCountsRequest) (SeriesCountsResult, error) {
+func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	blocks, err := q.blocksFor(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
-		return SeriesCountsResult{}, err
+		return CardinalityEstimateResult{}, err
 	}
 	snapped := false
 	if req.Snap {
 		lo, hi, err := blockRangeHolding(blocks, req.MinT, req.MaxT)
 		if err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
 		snapped = lo != req.MinT || hi != req.MaxT
 		req.MinT, req.MaxT = lo, hi
 		if blocks, err = q.blocksFor(ctx, tenantID, lo, hi); err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
 	}
 	byName := req.GroupBy == "" || req.GroupBy == labels.MetricName
 	if byName && len(req.Matchers) == 0 && req.Step == 0 && len(blocks) > 0 && checkMetricNameCountsBlocks(blocks, req.MinT, req.MaxT) == nil {
 		mc, err := q.MetricNameCounts(ctx, tenantID, req.MinT, req.MaxT)
 		if err != nil {
-			return SeriesCountsResult{}, err
+			return CardinalityEstimateResult{}, err
 		}
-		res := SeriesCountsResult{Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways}
+		res := CardinalityEstimateResult{Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways}
 		for name, n := range mc.Counts {
 			res.Counts[name] = []int64{n}
 		}

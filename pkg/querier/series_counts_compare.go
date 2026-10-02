@@ -29,7 +29,7 @@ type chunksPathCost struct {
 // the matching series with their chunks through the store-gateways' Series
 // call and counts a series in a bucket if it has a sample there. compare=true
 // on the cardinality/estimate route checks the estimate against it.
-func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req SeriesCountsRequest) (map[string][]int64, chunksPathCost, error) {
+func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req CardinalityEstimateRequest) (map[string][]int64, chunksPathCost, error) {
 	st, ctx := querier_stats.ContextWithEmptyStats(ctx)
 	// Select needs these in the context; the PromQL query path adds them.
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
@@ -57,7 +57,7 @@ func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req S
 
 // countSeriesSamples counts each series of set once per bucket of req in
 // which it has at least one sample.
-func countSeriesSamples(set storage.SeriesSet, req SeriesCountsRequest) (map[string][]int64, error) {
+func countSeriesSamples(set storage.SeriesSet, req CardinalityEstimateRequest) (map[string][]int64, error) {
 	buckets := 1
 	if req.Step > 0 {
 		buckets = int((req.MaxT - req.MinT) / req.Step)
