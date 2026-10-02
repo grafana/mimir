@@ -188,7 +188,7 @@ function mimirPairs(r, extra = []) {
   const p = [...extra, ["read", r.method], ["latency", secs(r.elapsed_ms)]];
   if (r.calls > 1) p.push(["calls", r.calls]);
   p.push(["blocks", r.blocks], ["store-gateways", r.store_gateways]);
-  if (r.route === "series_counts") {
+  if (r.route === "full_index") {
     p.push(["series read", fmt(r.series_read)], ["index decoded", r.index_bytes ? bytes(r.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(r.bucket_bytes)]);
   }
   p.push(["chunks read", "0 B", "ok"]);
