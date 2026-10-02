@@ -451,7 +451,6 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
-	a.RegisterRoute("/store-gateway/tenant/{tenant}/metric_name_counts", http.HandlerFunc(s.MetricNameCountsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/prepare-shutdown", http.HandlerFunc(s.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 }
 
@@ -524,8 +523,7 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
-	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/metric_name_counts"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
-	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/series_counts"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/estimate"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	// Experimental streaming search endpoints, gated by
 	// -querier.experimental-search-api-enabled. Mirrors Prometheus PR #18573.
