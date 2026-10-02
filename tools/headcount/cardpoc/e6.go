@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E6: per-metric-name series counts are exact below a series threshold and, above it,
+// a p=11 HLL sketch keeps the p95 relative error within 5%.
+
 import (
 	"sort"
 
