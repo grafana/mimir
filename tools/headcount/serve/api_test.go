@@ -178,6 +178,7 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 	t.Run("breakdown", func(t *testing.T) {
 		var out struct {
 			Values      int        `json:"values"`
+			SetValues   int        `json:"set_values"`
 			TruthValues int        `json:"truth_values"`
 			Total       int        `json:"total"`
 			TruthTotal  int        `json:"truth_total"`
@@ -185,6 +186,7 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 		}
 		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/breakdown?start=%d&end=%d&label=pod&limit=100&metric=%s", at(0), at(1), metric), &out))
 		assert.Equal(t, out.TruthValues, out.Values)
+		assert.Equal(t, out.Values, out.SetValues, "every series of the metric has a pod label")
 		assert.Equal(t, out.TruthTotal, out.Total)
 		for _, r := range out.Rows {
 			assert.Equal(t, r.Truth, r.Count)
@@ -247,4 +249,11 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 		assert.Equal(t, http.StatusBadGateway, getJSON(t, s, fmt.Sprintf("/api/names?start=%d&end=%d", at(1), at(2)), &out))
 		assert.Equal(t, http.StatusBadGateway, getJSON(t, s, fmt.Sprintf("/api/buckets?start=%d&end=%d&metric=%s", at(0), at(1), metric), &out))
 	})
+}
+
+func TestSetValues(t *testing.T) {
+	assert.Equal(t, 0, setValues(map[string]int{}))
+	assert.Equal(t, 0, setValues(map[string]int{"": 30}), "only series without the label")
+	assert.Equal(t, 2, setValues(map[string]int{"a": 1, "b": 2}))
+	assert.Equal(t, 2, setValues(map[string]int{"": 5, "a": 1, "b": 2}))
 }

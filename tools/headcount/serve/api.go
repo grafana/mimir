@@ -360,6 +360,7 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 		"window":       win(minT, maxT),
 		"rows":         sortedValues(res.Counts, truth, intParam(r, "limit", 5)),
 		"values":       len(res.Counts),
+		"set_values":   setValues(res.Counts),
 		"total":        sumCounts(res.Counts),
 		"lower_bound":  res.LowerBound,
 		"truth_values": len(truth),
@@ -372,9 +373,19 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 			mimirErr(w, prev.Err)
 			return
 		}
-		out["previous"], out["prev_values"] = win(pMinT, pMaxT), len(prev.Counts)
+		out["previous"], out["prev_values"], out["prev_set_values"] = win(pMinT, pMaxT), len(prev.Counts), setValues(prev.Counts)
 	}
 	writeJSON(w, out)
+}
+
+// setValues counts the label values other than the empty one, which stands
+// for series that don't have the label.
+func setValues(counts map[string]int) int {
+	n := len(counts)
+	if _, ok := counts[""]; ok {
+		n--
+	}
+	return n
 }
 
 // handlePromQLBreakdown asks the same breakdown with PromQL, with an
