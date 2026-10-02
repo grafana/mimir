@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Querier, store-gateway: experimental `/api/v1/cardinality/estimate` route that counts series per label value for a time window from the store-gateways' index, without reading chunks: every metric name over one block range from the index-headers, any selector or window from series entries and chunk metas, deduplicated across block ranges by label-set hash with an HLL sketch above `sketch_above` series, bounded by `max_index_bytes`. Gated by `-querier.cardinality-estimate.enabled` (default false); `-querier.cardinality-estimate.max-dedup-series` and `-querier.cardinality-estimate.max-metric-names` bound the querier's memory and the store-gateways' response. The ingester is not consulted yet, so recent data is not counted. #TBD
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
 * [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544

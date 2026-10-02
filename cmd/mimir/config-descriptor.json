@@ -2523,6 +2523,60 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "block",
+          "name": "cardinality_estimate",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "If set to true, enables the experimental /api/v1/cardinality/estimate route, which counts series per label value from the store-gateways' index without reading chunks.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.cardinality-estimate.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "compare_enabled",
+              "required": false,
+              "desc": "If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.cardinality-estimate.compare-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_dedup_series",
+              "required": false,
+              "desc": "Maximum number of series hashes a cardinality estimate may hold in the querier while deduplicating across block ranges, 8 bytes each. A request over it fails. 0 means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000,
+              "fieldFlag": "querier.cardinality-estimate.max-dedup-series",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_metric_names",
+              "required": false,
+              "desc": "Maximum number of distinct metric names a store-gateway may return for one cardinality estimate read from the index-headers. A request over it fails. 0 means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000,
+              "fieldFlag": "querier.cardinality-estimate.max-metric-names",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,

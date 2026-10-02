@@ -741,9 +741,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		extractor,
 	)
 
-	// Experimental: cardinality estimates from the store-gateways' index-headers and full index.
-	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
-		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, bq)
+	// Experimental: cardinality estimates from the store-gateways' index-headers and full index, behind
+	// -querier.cardinality-estimate.enabled. The label-access middleware below wraps this route too, so
+	// the policies are in the context when the handler runs.
+	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok && t.Cfg.Querier.CardinalityEstimate.Enabled {
+		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, bq, t.Cfg.Querier.CardinalityEstimate, t.Cfg.LabelAccessControlEnabled)
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {

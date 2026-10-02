@@ -75,6 +75,9 @@ type Config struct {
 	// Mirrors Prometheus PR #18573's experimental.search-api feature flag.
 	ExperimentalSearchAPIEnabled bool `yaml:"experimental_search_api_enabled" category:"experimental"`
 
+	// CardinalityEstimate configures the experimental /api/v1/cardinality/estimate route.
+	CardinalityEstimate CardinalityEstimateConfig `yaml:"cardinality_estimate" category:"experimental"`
+
 	// MaxConcurrentRemoteReadQueries limits the number of remote read queries that execute concurrently.
 	// 0 or negative values mean unlimited concurrency.
 	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
@@ -119,6 +122,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.ExperimentalSearchAPIEnabled, "querier.experimental-search-api-enabled", false, "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.")
 
+	cfg.CardinalityEstimate.RegisterFlags(f)
 	cfg.EngineConfig.RegisterFlags(f)
 }
 

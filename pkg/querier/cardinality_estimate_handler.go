@@ -3,10 +3,12 @@
 package querier
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"slices"
@@ -18,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -72,29 +75,47 @@ type estimateCheck struct {
 // bytes the request reads (over it the request fails with 422 and nothing is
 // counted), sketch_above to send an HLL sketch instead of hashes for a group
 // with more series than that when deduplicating across block ranges
-// (default 10000, 0 for always exact), limit to keep the largest groups, and snap=true to widen a
-// window inside one block range to that range. With a step, a group's count
-// is its largest bucket. read in the response says how it was answered. With
-// compare=true it also answers the request by loading chunks, as a PromQL
-// count would, and reports whether the two agree and what each cost.
+// (default 10000, 0 for always exact), min_count to drop groups below a
+// count, limit to keep the largest groups, and snap=true to widen a window
+// inside one block range to that range. With a step, a group's count is its
+// largest bucket. read in the response says how it was answered. With
+// compare=true, allowed only when cfg.CompareEnabled, it also answers the
+// request by loading chunks, as a PromQL count would, and reports whether
+// the two agree and what each cost.
+//
+// Errors: 400 when the request can't be answered as asked, 422 when a limit
+// refused it, 500 otherwise. With label-based access control enabled, the
+// request's enforced selector is added to the matchers; a policy with more
+// than one selector is refused, as the other cardinality endpoints do.
 // Experimental.
-func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
+func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		req, limit, err := parseCardinalityEstimateRequest(r)
+		req, opts, err := parseCardinalityEstimateRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		limit := opts.limit
+		if opts.compare && !cfg.CompareEnabled {
+			http.Error(w, "compare=true is disabled; enable -querier.cardinality-estimate.compare-enabled", http.StatusBadRequest)
+			return
+		}
+		if labelAccessControlEnabled {
+			if err := applyLabelAccessPolicies(r.Context(), tenantID, &req); err != nil {
+				http.Error(w, err.Error(), estimateHTTPStatus(err))
+				return
+			}
 		}
 
 		start := time.Now()
 		res, err := q.CardinalityEstimate(r.Context(), tenantID, &req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
 		}
 		elapsed := time.Since(start)
@@ -115,10 +136,13 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 			if req.Step > 0 {
 				g.Counts = counts
 			}
-			out.Counts = append(out.Counts, g)
 			out.Series += g.Count
+			if g.Count < opts.minCount {
+				continue
+			}
+			out.Counts = append(out.Counts, g)
 		}
-		if r.FormValue("compare") == "true" {
+		if opts.compare {
 			out.Compare = compareWithChunks(r.Context(), q, req, res)
 		}
 		slices.SortFunc(out.Counts, func(a, b estimateGroup) int {
@@ -134,10 +158,69 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 			out.Counts = out.Counts[:limit]
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(out); err != nil {
+		if err := writeEstimateResponse(w, &out); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+// applyLabelAccessPolicies adds the tenant's enforced selector to req, so
+// the count covers only the series the caller may read. The selector forces
+// the full-index read, since the index-header count can't apply matchers.
+func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) error {
+	policies, err := labelaccess.ExtractLabelMatchersContext(ctx)
+	if err != nil {
+		return fmt.Errorf("label-based access control: %w", err)
+	}
+	selectors := policies[tenantID]
+	switch len(selectors) {
+	case 0:
+		return nil
+	case 1:
+		req.Matchers = append(req.Matchers, selectors[0].Selector...)
+		return nil
+	default:
+		return badEstimateRequest("the cardinality estimate endpoint doesn't support access policies with more than one selector")
+	}
+}
+
+// writeEstimateResponse writes the header fields in one JSON object and then
+// the groups one at a time, so a table of millions of names is never
+// marshalled as one value.
+func writeEstimateResponse(w io.Writer, out *estimateResponse) error {
+	head, err := json.Marshal(struct {
+		*estimateResponse
+		Counts []estimateGroup `json:"counts,omitempty"`
+	}{estimateResponse: out})
+	if err != nil {
+		return err
+	}
+	bw := bufio.NewWriter(w)
+	// head ends with "}", which the counts array replaces.
+	if _, err := bw.Write(head[:len(head)-1]); err != nil {
+		return err
+	}
+	if _, err := bw.WriteString(`,"counts":[`); err != nil {
+		return err
+	}
+	for i := range out.Counts {
+		if i > 0 {
+			if err := bw.WriteByte(','); err != nil {
+				return err
+			}
+		}
+		b, err := json.Marshal(&out.Counts[i])
+		if err != nil {
+			return err
+		}
+		if _, err := bw.Write(b); err != nil {
+			return err
+		}
+	}
+	if _, err := bw.WriteString("]}\n"); err != nil {
+		return err
+	}
+	return bw.Flush()
 }
 
 // compareWithChunks reports a chunks-path failure, such as a query limit,
@@ -163,21 +246,33 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req Cardina
 	return check
 }
 
-func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateRequest, int, error) {
-	var req CardinalityEstimateRequest
-	var err error
+// estimateRequestOptions are the route's parameters that shape the response
+// rather than the count.
+type estimateRequestOptions struct {
+	limit    int
+	minCount int64
+	compare  bool
+}
+
+func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateRequest, estimateRequestOptions, error) {
+	var (
+		req  CardinalityEstimateRequest
+		opts estimateRequestOptions
+		err  error
+	)
 	if req.MinT, err = util.ParseTime(r.FormValue("start")); err != nil {
-		return req, 0, fmt.Errorf("start: %w", err)
+		return req, opts, fmt.Errorf("start: %w", err)
 	}
 	if req.MaxT, err = util.ParseTime(r.FormValue("end")); err != nil || req.MaxT <= req.MinT {
-		return req, 0, errors.New("end must be a timestamp after start")
+		return req, opts, errors.New("end must be a timestamp after start")
 	}
 	req.Snap = r.FormValue("snap") == "true"
+	opts.compare = r.FormValue("compare") == "true"
 	if sel := r.Form["match[]"]; len(sel) > 1 {
-		return req, 0, errors.New("at most one match[] selector")
+		return req, opts, errors.New("at most one match[] selector")
 	} else if len(sel) == 1 {
 		if req.Matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(sel[0]); err != nil {
-			return req, 0, fmt.Errorf("match[]: %w", err)
+			return req, opts, fmt.Errorf("match[]: %w", err)
 		}
 	}
 	req.GroupBy = r.FormValue("group_by")
@@ -187,28 +282,32 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 	if v := r.FormValue("step"); v != "" {
 		d, err := model.ParseDuration(v)
 		if err != nil || d <= 0 {
-			return req, 0, errors.New("step must be a positive duration such as 1h")
+			return req, opts, errors.New("step must be a positive duration such as 1h")
 		}
 		req.Step = time.Duration(d).Milliseconds()
 	}
 	if v := r.FormValue("max_index_bytes"); v != "" {
 		if req.MaxIndexBytes, err = strconv.ParseInt(v, 10, 64); err != nil || req.MaxIndexBytes < 0 {
-			return req, 0, errors.New("max_index_bytes must be a non-negative integer")
+			return req, opts, errors.New("max_index_bytes must be a non-negative integer")
 		}
 	}
 	req.SketchAbove = defaultSketchAbove
 	if v := r.FormValue("sketch_above"); v != "" {
 		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove < 0 {
-			return req, 0, errors.New("sketch_above must be a non-negative integer")
+			return req, opts, errors.New("sketch_above must be a non-negative integer")
 		}
 	}
-	limit := 0
+	if v := r.FormValue("min_count"); v != "" {
+		if opts.minCount, err = strconv.ParseInt(v, 10, 64); err != nil || opts.minCount < 0 {
+			return req, opts, errors.New("min_count must be a non-negative integer")
+		}
+	}
 	if v := r.FormValue("limit"); v != "" {
-		if limit, err = strconv.Atoi(v); err != nil || limit < 0 {
-			return req, 0, errors.New("limit must be a non-negative integer")
+		if opts.limit, err = strconv.Atoi(v); err != nil || opts.limit < 0 {
+			return req, opts, errors.New("limit must be a non-negative integer")
 		}
 	}
-	return req, limit, nil
+	return req, opts, nil
 }
 
 // defaultSketchAbove is the design's switch from exact hashes to a sketch.
@@ -216,8 +315,8 @@ const defaultSketchAbove = 10_000
 
 // WithCardinalityEstimateRoute serves CardinalityEstimateHandler on
 // prefix/api/v1/cardinality/estimate and passes every other request to next.
-func WithCardinalityEstimateRoute(next http.Handler, prefix string, q *BlocksStoreQueryable) http.Handler {
-	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), CardinalityEstimateHandler(q)
+func WithCardinalityEstimateRoute(next http.Handler, prefix string, q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), CardinalityEstimateHandler(q, cfg, labelAccessControlEnabled)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == route && (r.Method == http.MethodGet || r.Method == http.MethodPost) {
 			h.ServeHTTP(w, r)

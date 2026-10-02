@@ -2079,6 +2079,34 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
+cardinality_estimate:
+  # (experimental) If set to true, enables the experimental
+  # /api/v1/cardinality/estimate route, which counts series per label value from
+  # the store-gateways' index without reading chunks.
+  # CLI flag: -querier.cardinality-estimate.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) If set to true, the experimental cardinality estimate route
+  # accepts compare=true, which also answers the request by loading chunks
+  # through the store-gateways, like a PromQL count, and reports whether the two
+  # agree. The comparison runs with the query limits of the request context
+  # only, so it is meant for testing, not for tenants.
+  # CLI flag: -querier.cardinality-estimate.compare-enabled
+  [compare_enabled: <boolean> | default = false]
+
+  # (experimental) Maximum number of series hashes a cardinality estimate may
+  # hold in the querier while deduplicating across block ranges, 8 bytes each. A
+  # request over it fails. 0 means no limit.
+  # CLI flag: -querier.cardinality-estimate.max-dedup-series
+  [max_dedup_series: <int> | default = 10000000]
+
+  # (experimental) Maximum number of distinct metric names a store-gateway may
+  # return for one cardinality estimate read from the index-headers. A request
+  # over it fails. 0 means no limit.
+  # CLI flag: -querier.cardinality-estimate.max-metric-names
+  [max_metric_names: <int> | default = 10000000]
+
+
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
