@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -506,17 +507,20 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["fetched_chunk_bytes"])
 				require.EqualValues(t, 0, msg["fetched_chunks_count"])
 				require.EqualValues(t, 0, msg["fetched_index_bytes"])
-				require.EqualValues(t, 0, msg["sharded_queries"])
-				require.EqualValues(t, 0, msg["split_queries"])
-				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
-				require.EqualValues(t, 0, msg["remote_execution_request_count"])
 				require.NotZero(t, msg["root_query_id"])
 				require.EqualValues(t, 0, msg["retries"])
-				require.EqualValues(t, 0, msg["response_series_count"])
-				require.EqualValues(t, 0, msg["response_samples_count"])
 				require.EqualValues(t, 0, msg["equivalent_samples_read"])
 				require.EqualValues(t, 0, msg["physical_samples_read"])
+
+				metricsQueryOnlyFields := []string{"sharded_queries", "split_queries", "estimated_series_count", "remote_execution_request_count", "response_series_count", "response_samples_count"}
+				for _, field := range metricsQueryOnlyFields {
+					if req.URL.Path == "/api/v1/read" {
+						require.NotContains(t, msg, field)
+					} else {
+						require.EqualValues(t, 0, msg[field], field)
+					}
+				}
 
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, "success", msg["status"])
@@ -1113,6 +1117,163 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 			continue
 		}
 		assert.Contains(t, queryStatsSection, "- "+field, "field %q logged in 'query stats' is not documented in the runbook", field)
+	}
+}
+
+func TestHandler_QueryStatsLogFieldsPerEndpoint(t *testing.T) {
+	alwaysLoggedFields := []string{responseTime, responseSizeBytes, queryWallTimeSeconds, queueTimeSeconds, "retries"}
+
+	fetchedSeries := []string{fetchedSeriesCount}
+	fetchedIndex := []string{fetchedIndexBytes}
+	fetchedChunks := []string{fetchedChunkBytes, fetchedChunksCount}
+	samplesRead := []string{"equivalent_samples_read", "physical_samples_read"}
+	sharded := []string{shardedQueries}
+	resultsCacheBytes := []string{resultsCacheHitBytes, resultsCacheMissBytes}
+	metricsQueryOnly := []string{
+		splitQueries, "spun_off_subqueries", "split_range_vectors", estimatedSeriesCount, encodeTimeSeconds,
+		remoteExecutionRequestCount, "samples_processed", "results_cache_hit_count", "results_cache_miss_count",
+		"results_cache_set_count", "response_series_count", "response_samples_count",
+	}
+	allOptionalFields := slices.Concat(fetchedSeries, fetchedIndex, fetchedChunks, samplesRead, sharded, resultsCacheBytes, metricsQueryOnly)
+
+	for _, tc := range []struct {
+		path           string
+		expectedFields []string
+	}{
+		{path: "/prometheus/api/v1/query_range", expectedFields: allOptionalFields},
+		{path: "/prometheus/api/v1/query", expectedFields: allOptionalFields},
+		{path: "/prometheus/api/v1/read", expectedFields: slices.Concat(fetchedSeries, fetchedIndex, fetchedChunks, samplesRead)},
+		{path: "/prometheus/api/v1/series", expectedFields: slices.Concat(fetchedSeries, fetchedIndex)},
+		{path: "/prometheus/api/v1/cardinality/active_series", expectedFields: slices.Concat(fetchedSeries, sharded)},
+		{path: "/prometheus/api/v1/cardinality/active_native_histogram_metrics", expectedFields: slices.Concat(fetchedSeries, sharded)},
+		{path: "/prometheus/api/v1/cardinality/label_names", expectedFields: resultsCacheBytes},
+		{path: "/prometheus/api/v1/cardinality/label_values", expectedFields: resultsCacheBytes},
+		{path: "/prometheus/api/v1/labels", expectedFields: resultsCacheBytes},
+		{path: "/prometheus/api/v1/label/__name__/values", expectedFields: resultsCacheBytes},
+		// A path that queryStatsFieldsForPath does not know keeps every field.
+		{path: "/prometheus/api/v1/metadata", expectedFields: allOptionalFields},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+			logger := &testLogger{}
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true}, roundTripper, logger, prometheus.NewPedanticRegistry())
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			require.Len(t, logger.logMessages, 1)
+			msg := logger.logMessages[0]
+			require.Equal(t, "query stats", msg["msg"])
+			require.Empty(t, logger.duplicates)
+
+			for _, field := range alwaysLoggedFields {
+				require.Contains(t, msg, field)
+			}
+			for _, field := range allOptionalFields {
+				if slices.Contains(tc.expectedFields, field) {
+					require.Contains(t, msg, field)
+				} else {
+					require.NotContains(t, msg, field)
+				}
+			}
+		})
+	}
+}
+
+type orderedKeysLogger struct {
+	keys [][]string
+}
+
+func (l *orderedKeysLogger) Log(keyvals ...interface{}) error {
+	keys := make([]string, 0, len(keyvals)/2)
+	for i := 0; i < len(keyvals); i += 2 {
+		keys = append(keys, keyvals[i].(string))
+	}
+	l.keys = append(l.keys, keys)
+	return nil
+}
+
+func TestHandler_QueryStatsLogKeyOrderForMetricsQueries(t *testing.T) {
+	// This is the key order of the query stats log line before the field groups were added.
+	expectedKeys := []string{
+		"level", "user", "msg", "component", "method", "path", "route_name", "user_agent", "status_code",
+		"response_time", "response_size_bytes", "query_wall_time_seconds", "fetched_series_count",
+		"fetched_chunk_bytes", "fetched_chunks_count", "fetched_index_bytes", "sharded_queries",
+		"split_queries", "spun_off_subqueries", "split_range_vectors", "estimated_series_count",
+		"queue_time_seconds", "encode_time_seconds", "remote_execution_request_count", "retries",
+		"samples_processed", "equivalent_samples_read", "physical_samples_read", "root_query_id",
+		"length", "time_since_min_time", "time_since_max_time", "results_cache_hit_bytes",
+		"results_cache_miss_bytes", "results_cache_hit_count", "results_cache_miss_count",
+		"results_cache_set_count", "response_series_count", "response_samples_count",
+		"header_cache_control", "status",
+	}
+
+	for _, path := range []string{"/prometheus/api/v1/query_range", "/prometheus/api/v1/query"} {
+		t.Run(path, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				details := querydetails.QueryDetailsFromContext(req.Context())
+				details.MinT = time.Now().Add(-time.Hour)
+				details.MaxT = time.Now()
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+			logger := &orderedKeysLogger{}
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true}, roundTripper, logger, prometheus.NewPedanticRegistry())
+
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			require.Len(t, logger.keys, 1)
+			require.Equal(t, expectedKeys, logger.keys[0])
+		})
+	}
+}
+
+func TestHandler_QueryStatsLogFieldsOnFailedRoundTripWithoutDetails(t *testing.T) {
+	// With query stats disabled, a failed request is still logged, but has no QueryDetails.
+	for _, tc := range []struct {
+		path            string
+		expectedPresent []string
+		expectedAbsent  []string
+	}{
+		{
+			path:            "/prometheus/api/v1/query_range",
+			expectedPresent: []string{fetchedSeriesCount, shardedQueries, splitQueries, "samples_processed"},
+			expectedAbsent:  []string{resultsCacheHitBytes, "response_series_count"},
+		},
+		{
+			path:           "/prometheus/api/v1/label/__name__/values",
+			expectedAbsent: []string{fetchedSeriesCount, shardedQueries, splitQueries, "samples_processed", resultsCacheHitBytes, "response_series_count"},
+		},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return nil, httpgrpc.Errorf(http.StatusInternalServerError, "downstream failure")
+			})
+			logger := &testLogger{}
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: false}, roundTripper, logger, prometheus.NewPedanticRegistry())
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			require.Len(t, logger.logMessages, 1)
+			msg := logger.logMessages[0]
+			require.Equal(t, "query stats", msg["msg"])
+			require.Equal(t, "failed", msg["status"])
+			for _, field := range []string{responseTime, queryWallTimeSeconds, queueTimeSeconds, "retries"} {
+				require.Contains(t, msg, field)
+			}
+			for _, field := range tc.expectedPresent {
+				require.Contains(t, msg, field)
+			}
+			for _, field := range tc.expectedAbsent {
+				require.NotContains(t, msg, field)
+			}
+		})
 	}
 }
 
