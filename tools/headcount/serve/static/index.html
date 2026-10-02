@@ -46,7 +46,10 @@
   .bound { background: var(--amber-bg); } .bound h3 { color: var(--amber-ink); }
   .wrong { background: var(--panel); border: 2px dashed var(--red); } .wrong h3 { color: var(--red); }
   .wrong.agrees { border-color: var(--line); } .wrong.agrees h3 { color: var(--muted); }
-  .headline { font-size: 15px; font-weight: bold; margin: 0 0 10px; }
+  .headline { font-size: 20px; font-weight: bold; margin: 0 0 10px; line-height: 1.3; }
+  .who { color: var(--muted); font-size: 12px; margin: -6px 0 10px; }
+  .problem { padding: 0 24px 10px; max-width: 72em; }
+  @media (max-width: 900px) { .problem { padding-left: 16px; padding-right: 16px; } }
   .group { grid-column: 1 / -1; margin: 6px 0 -6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; grid-column: 1 / -1; }
   .pair-wide { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
@@ -82,8 +85,9 @@
 <body>
 <header>
   <h1>Headcount</h1>
-  <span class="sub" id="sub">how many series, straight from the index</span>
+  <span class="sub" id="sub">How many series, straight from the index</span>
 </header>
+<p class="problem">Today Mimir's cardinality API sees only ingester memory and takes no time range, so every consumer that needs more downloads every series and counts it. Headcount counts from the index Mimir already keeps: no new storage, no chunk reads, one bounded request.</p>
 <div class="controls">
   <label>Preset <select id="preset"></select></label>
   <label>Start <input id="start" type="datetime-local" step="3600"></label>
@@ -105,6 +109,7 @@
   <div class="group">Find it</div>
   <section style="grid-column: 1 / -1">
     <div class="ph"><h2 id="g-title">1. Which metric grew?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+    <div class="who">Asked by Adaptive Metrics (a count for every metric name), Historical Cardinality and support.</div>
     <div class="info" hidden><p><b>Question:</b> which metric names gained the most series in the window, compared with the window of the same length just before it?</p><p><b>In Mimir</b> picks the cheapest read for the window. A window that is exactly one day (one block range) is read from the index-headers: for every name the index records where its list of series starts and ends, and each entry is 4 bytes, so the length is the count. Any other window reads series entries and chunk metas from the full index, and a window across days removes duplicates. The cost column says which read was used.</p><p><b>Baseline</b> is <code>count by (__name__)</code> over the window, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count, before → window. Click a row to use that metric in panels 2 to 4.</p><p><b>The cost column</b> is the same ranking answered both ways. Both count every metric name in the window and in the window before it. Compare latency and what was read. Headcount never reads chunks.</p></div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
       <div>
@@ -121,13 +126,18 @@
   <div class="pair">
     <section>
       <div class="ph"><h2 id="bd-title">2. Which label exploded?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="who">Asked by Historical Cardinality's label drawer and Adaptive Metrics' aggregation suggestions.</div>
       <div class="info" hidden><p><b>Question:</b> the metric grew, but which label is to blame? Every label of the metric is counted by distinct values, in the window and in the window before it, and ranked by growth. The top label is then shown as bars, with its largest values.</p><p><b>In Mimir</b> looks up the metric's series in the index and counts them per label value. It reads series labels but no chunks.</p><p><b>Baseline</b> is <code>count by (&lt;label&gt;)</code>, which loads the chunks too.</p></div>
       <div class="scroll"><table id="lbl"></table></div>
       <div id="bd-bars" style="margin-top:10px"></div>
-      <p id="bd-note" class="muted"></p>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:10px" class="win-grid">
+        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL count by label</h3><code id="bd-q"></code><div id="bd-today" class="kv"></div></div>
+        <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount: series labels from the index</h3><div id="bd-hc" class="kv"></div></div>
+      </div>
     </section>
     <section>
       <div class="ph"><h2 id="hr-title">3. When did it start?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="who">Asked by support and customers. Bars are Headcount, dots are PromQL.</div>
       <div class="info" hidden><p><b>Question:</b> within the window, when did the selected metric start growing? The window is cut into buckets of the Step: auto picks hours for a window of a day or less and days otherwise. This is the API's <code>step</code>, and matches a PromQL range query whose step equals its range selector.</p><p><b>In Mimir</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in a bucket if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with the same step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
       <svg id="hr-chart" viewBox="0 0 720 240" style="width:100%;height:auto" role="img" aria-label="Series per bucket"></svg><p id="hr-note" class="muted"></p>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px" class="win-grid">
@@ -140,14 +150,16 @@
   <div class="pair pair-wide">
     <section>
       <div class="ph"><h2 id="lim-title">4. Too big to answer: refused before the work</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="who">The bound that the seven production events lacked: the cost is known before any series entry is read.</div>
       <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> the limit is index bytes for the whole request (the "Headcount index limit" box), split evenly across the store-gateways. Each store-gateway first resolves the postings it already holds, which says how many series match, and prices the request at the planner's estimate of 512 bytes per series entry. Over the limit, it refuses before reading a single series entry and says what it would have read. If entries turn out larger than the estimate, it stops once it passes the limit. Either way the answer is an error, never a partial count.</p><p><b>Baseline</b> with a series limit (the "PromQL series limit" box) fails too. It stops before reading chunks as well, but only after the store-gateways have read the matching series entries for each of its query shards. The two limits are in different units, so compare what each read before it stopped, from the store-gateways' own metrics. Change either limit and press Run.</p></div>
       <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with a series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
       <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the index limit</h3><div id="lim-hc" class="kv"></div></div>
     </section>
     <section>
       <div class="ph"><h2 id="win-title">5. Distinct series over the whole window</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="who">Why per-day counts cannot be added: one series lives in a block per day, so it is counted once per day.</div>
       <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window?</p><p>Each day is a separate block range (here split by the compactor into several shard blocks). A series that lives on two days is in both ranges, so <b>adding each day's count counts it twice</b>. That is the dashed card, too high on purpose to show the problem.</p><p><b>In Mimir</b> removes the duplicates: each store-gateway returns a hash of every series' labels and the querier counts distinct hashes, which is exact. A name with more series than the "Exact below" box is sent as a HyperLogLog sketch instead (precision 11, about 2 KB, a standard error of about 2.3%), so the payload stays a fixed size whatever the series count; those rows carry an HLL tag and their error against the truth. Set the box to 0 to make every name exact.</p><p>If the window is inside one day, there is nothing to deduplicate and both agree. Pick a window across days to see the difference.</p></div>
-      <div id="win-one" hidden><p class="muted">The window is inside one day, so there is nothing to deduplicate: Headcount, adding the days and the truth all read <b id="win-one-total"></b> series. The difference only shows across days.</p><button class="link-btn" id="win-across">Show it across the day before and the spike day</button></div>
+      <div id="win-one" hidden class="card bound"><p class="muted" style="margin:0 0 8px">The window is inside one day, so there is nothing to deduplicate: Headcount, adding the days and the truth all read <b id="win-one-total"></b> series. The difference only shows across days.</p><button class="link-btn" id="win-across">Show it across the day before and the spike day</button></div>
       <div id="win-many" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px" class="win-grid">
         <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
         <div>
@@ -175,11 +187,12 @@ const toInput = s => new Date(s * 1000).toISOString().slice(0, 16);
 const fromInput = v => Math.round(Date.parse(v + ":00Z") / 1000);
 const label = s => new Date(s * 1000).toISOString().slice(0, 16).replace("T", " ");
 const span = w => `${label(w.start)} to ${label(w.end)}`;
+const hours = w => { const h = Math.round((w.end - w.start) / H); return h % 24 === 0 ? `${h / 24} day${h === 24 ? "" : "s"}` : `${h} hours`; };
 const win = () => `start=${fromInput($("start").value)}&end=${fromInput($("end").value)}`;
 // Passed only where Mimir deduplicates across days, the one place a sketch can answer.
 const sk = () => `&sketch_above=${Math.max(0, Math.round(Number($("sk").value) || 0))}`;
 const pct = (est, truth) => truth ? `${est >= truth ? "+" : ""}${(100 * (est - truth) / truth).toFixed(1)}%` : "";
-const tagHLL = `<span class="tag tag-wrong" style="margin:0 0 0 6px">HLL</span>`;
+const tagHLL = `<span class="tag tag-wrong" style="margin:0 0 0 6px" title="Above the Exact-below threshold this name was counted from a 2 KB HyperLogLog sketch instead of one hash per series; standard error about 2.3%">HLL</span>`;
 const stepParam = () => $("step").value ? `&step=${$("step").value}` : "";
 
 async function get(path) {
@@ -214,7 +227,7 @@ function mimirPairs(r, extra = []) {
   if (r.calls > 1) p.push(["calls", r.calls]);
   p.push(["blocks", r.blocks], ["store-gateways", r.store_gateways]);
   if (r.route === "full_index") {
-    p.push(["series read", fmt(r.series_read)], ["index decoded", r.index_bytes ? bytes(r.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(r.bucket_bytes)]);
+    p.push(["series counted, index only", fmt(r.series_read)], ["index decoded", r.index_bytes ? bytes(r.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(r.bucket_bytes)]);
   }
   if (r.hash_bytes || r.sketch_bytes) {
     p.push(["dedup payload", `${bytes(r.hash_bytes || 0)} of hashes, ${bytes(r.sketch_bytes || 0)} of sketches`]);
@@ -232,7 +245,7 @@ function addRead(a, b) {
 
 async function init() {
   meta = await get("api/meta");
-  $("sub").textContent = `how many series, straight from the index. Synthetic tenant: ${fmt(meta.names)} metric names, ${fmt(meta.series)} series from ${label(meta.start)} to ${label(meta.end)} UTC, one block range per day, compacted and split into shard blocks by a real Mimir compactor.`;
+  $("sub").textContent = `How many series, straight from the index. Synthetic tenant: ${fmt(meta.names)} metric names, ${fmt(meta.series)} series from ${label(meta.start)} to ${label(meta.end)} UTC, one block range per day, compacted and split into shard blocks by a real Mimir compactor. Names are padded to 40 to 60 bytes to match real metric-name lengths.`;
   for (const el of [$("start"), $("end")]) { el.min = toInput(meta.start); el.max = toInput(meta.end); }
   const d = meta.block_ranges[meta.spike_day].start, day = 24 * H;
   presets = [
@@ -262,7 +275,10 @@ async function run() {
     $("status").textContent = "In Mimir...";
     const g = await get(`api/names?${win()}${sk()}&limit=10`);
     const prevLen = g.previous.end > g.previous.start;
-    $("winline").innerHTML = `Window <b>${span(g.window)}</b>` + (prevLen ? `, compared with the window before it, ${span(g.previous)}.` : `. There is no data before it, so growth is from zero.`);
+    const clipped = prevLen && (g.previous.end - g.previous.start) < (g.window.end - g.window.start);
+    $("winline").innerHTML = `Window <b>${span(g.window)}</b>` + (prevLen
+      ? clipped ? `, compared with the ${hours(g.previous)} before it, ${span(g.previous)}, which is all the data before this window; growth is against a shorter window.` : `, compared with the window before it, ${span(g.previous)}.`
+      : `. There is no data before it, so growth is from zero.`);
     $("g-title").textContent = "1. Which metric grew?";
     const exactCell = r => r.day === r.truth_day && r.base === r.truth_base
       ? `<span class="ok">✓</span>${r.estimated ? tagHLL : ""}`
@@ -400,8 +416,12 @@ async function drill(name) {
     (top.prev !== null ? bar("window before", top.prev) : "") + bar("window", top.now) +
     `<div class="muted" style="margin-top:8px">largest values in the window: ${vals(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
   const pq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=8`);
-  $("bd-note").textContent = `Baseline, PromQL count by (${lbl}): ${pq.result.error ? "error: " + briefError(pq.result.error) : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}. ` +
-    `In Mimir: ${fmt(b.values)} values, ${fmt(b.total)} series (truth ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series), ${secs(b.read.elapsed_ms)}, ${fmt(b.read.series_read)} series labels read, ${b.read.index_bytes ? bytes(b.read.index_bytes) : "0 B (cached)"} of index decoded, no chunks.`;
+  $("bd-q").textContent = pq.query || `count by (${lbl}) (...)`;
+  kv($("bd-today"), pq.result.error
+    ? [["result", briefError(pq.result.error), "err"], ["failed after", secs(pq.result.latency_ms)]]
+    : [["values", fmt(pq.values)], ...baselinePairs(pq.result), ["same values as Headcount", pq.values === b.values ? "yes" : "no", pq.values === b.values ? "ok" : "err"]]);
+  const bdExact = b.values === b.truth_values && b.total === b.truth_total;
+  kv($("bd-hc"), mimirPairs(b.read, [["values", `${fmt(b.values)} (${fmt(b.total)} series)`], ["equals truth", bdExact ? "yes" : `no: ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series`, bdExact ? "ok" : "err"]]));
 
   $("status").textContent = "Buckets...";
   await runBuckets(name);
@@ -435,7 +455,7 @@ async function drill(name) {
       ["answer", `${fmt(lb.total)} series, exact, under the limit`, "ok"],
       ["limit", `${bytes(maxIndexBytes)} of index for the request`],
       ["index read", lb.read.index_bytes ? bytes(lb.read.index_bytes) : "0 B (cached)"],
-      ["series read", fmt(lb.read.series_read)],
+      ["series counted, index only", fmt(lb.read.series_read)],
       ["latency", secs(lb.read.elapsed_ms)],
       ["chunks read", "0 B", "ok"],
     ]);
