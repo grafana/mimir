@@ -223,7 +223,6 @@ type mimirSeriesCounts struct {
 	// Read is how Mimir answered: index_header or full_index.
 	Read          string
 	Dedup         bool
-	LowerBound    bool
 	Blocks        int
 	StoreGateways int
 	SeriesCounted int
@@ -234,12 +233,11 @@ type mimirSeriesCounts struct {
 }
 
 // estimate asks Mimir for series counts over [minT, maxT). params may set
-// match[], group_by, step and budget. Mimir picks the read.
+// match[], group_by, step and max_index_bytes. Mimir picks the read.
 func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts {
 	var parsed struct {
 		Read                 string `json:"read"`
 		Dedup                bool   `json:"dedup"`
-		LowerBound           bool   `json:"lower_bound"`
 		Blocks               int    `json:"blocks"`
 		StoreGateways        int    `json:"store_gateways"`
 		SeriesCounted        int    `json:"series_counted"`
@@ -256,7 +254,7 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 	if res.Latency, res.Err = m.getRoute("estimate", minT, maxT, params, &parsed); res.Err != "" {
 		return res
 	}
-	res.Read, res.Dedup, res.LowerBound = parsed.Read, parsed.Dedup, parsed.LowerBound
+	res.Read, res.Dedup = parsed.Read, parsed.Dedup
 	res.Blocks, res.StoreGateways, res.SeriesCounted = parsed.Blocks, parsed.StoreGateways, parsed.SeriesCounted
 	res.IndexBytes, res.BucketBytes = parsed.IndexBytes, parsed.PostingsFetchedBytes+parsed.SeriesFetchedBytes
 	res.Counts = make(map[string]int, len(parsed.Counts))
