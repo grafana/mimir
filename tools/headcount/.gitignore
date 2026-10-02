@@ -1,0 +1,6 @@
+# Binaries that `go build` leaves in each main package directory.
+/serve/serve
+/spike/spike
+/cardgen/cmd/cmd
+/cardpoc/cmd/cmd
+/fixtures/cmd/cmd
