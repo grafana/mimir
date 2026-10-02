@@ -141,10 +141,11 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	t.Run("a store-gateway over max_index_bytes fails the request", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		over := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes")
+			return nil, status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
 		}}
 		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway 1.1.1.1: the request would read about 5000 index bytes")
+		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway 1.1.1.1: the request would read about 5000 index bytes, more than max_index_bytes 1000")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	})
 
 	t.Run("fails if a block is not counted", func(t *testing.T) {
@@ -177,7 +178,8 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	parse := func(query string) (CardinalityEstimateRequest, int, error) {
 		r := httptest.NewRequest(http.MethodGet, "/x?"+query, nil)
 		require.NoError(t, r.ParseForm())
-		return parseCardinalityEstimateRequest(r)
+		req, opts, err := parseCardinalityEstimateRequest(r)
+		return req, opts.limit, err
 	}
 	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&max_index_bytes=100&limit=5`)
 	require.NoError(t, err)
@@ -217,7 +219,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
 		}}): {{b1}},
 	}
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", seriesCountsQueryable(0, dayMs, blocks, clients))
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", seriesCountsQueryable(0, dayMs, blocks, clients), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
