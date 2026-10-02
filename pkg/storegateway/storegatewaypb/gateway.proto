@@ -33,9 +33,10 @@ service StoreGateway {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
-  // MetricNameCounts returns every metric name's series count in the given blocks, read from the blocks'
-  // index-headers. Experimental: the caller is responsible for asking only for blocks that share no series.
-  rpc MetricNameCounts(MetricNameCountsRequest) returns (MetricNameCountsResponse);
+  // MetricNameCounts streams every metric name's series count in the given blocks, read from the blocks'
+  // index-headers, in batches of names. Every message carries block_ids; counts are spread over the messages.
+  // Experimental: the caller is responsible for asking only for blocks that share no series.
+  rpc MetricNameCounts(MetricNameCountsRequest) returns (stream MetricNameCountsResponse);
 
   // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
   // grouped by one label. Unlike MetricNameCounts it reads series entries from the full index, so it can filter by
@@ -48,6 +49,8 @@ service StoreGateway {
 message MetricNameCountsRequest {
   // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
   repeated string block_ids = 1;
+  // Refuse with RESOURCE_EXHAUSTED when the blocks hold more distinct metric names than this. 0 means no limit.
+  int64 max_names = 2;
 }
 
 message MetricNameCount {
@@ -56,9 +59,9 @@ message MetricNameCount {
 }
 
 message MetricNameCountsResponse {
-  // Per-name series counts summed over the counted blocks.
+  // Per-name series counts summed over the counted blocks, a batch of the whole table.
   repeated MetricNameCount counts = 1;
-  // Blocks that were counted.
+  // Blocks that were counted. Set on every message of the stream.
   repeated string block_ids = 2;
 }
 
