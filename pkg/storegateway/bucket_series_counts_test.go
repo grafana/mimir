@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -122,6 +123,24 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		assert.Empty(t, resp.Groups[0].Counts)
 	})
 
+	t.Run("a hash set above sketch_above becomes a sketch", func(t *testing.T) {
+		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 3})
+		require.NoError(t, err)
+		require.Len(t, resp.Groups, 1)
+		g := resp.Groups[0]
+		assert.Empty(t, g.Hashes)
+		require.NotEmpty(t, g.Sketch)
+		sk, err := hyperloglog.NewSketch(SeriesCountsSketchPrecision, false)
+		require.NoError(t, err)
+		require.NoError(t, sk.UnmarshalBinary(g.Sketch))
+		assert.Equal(t, uint64(4), sk.Estimate(), "four distinct series, small enough for HLL to count exactly")
+
+		resp, err = store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 4})
+		require.NoError(t, err)
+		assert.Len(t, resp.Groups[0].Hashes, 4, "at the threshold the group keeps its hashes")
+		assert.Empty(t, resp.Groups[0].Sketch)
+	})
+
 	t.Run("max_index_bytes rejects before reading series", func(t *testing.T) {
 		// Four series at the planner's 512-byte estimate are more than 1,000 bytes.
 		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1000})
@@ -152,6 +171,7 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		"bad block ID":             {MinTime: 0, MaxTime: 4 * hourMs, BlockIds: []string{"x"}},
 		"negative step":            {MinTime: 0, MaxTime: 4 * hourMs, StepMs: -1},
 		"negative max_index_bytes": {MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: -1},
+		"negative sketch_above":    {MinTime: 0, MaxTime: 4 * hourMs, SketchAbove: -1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := store.SeriesCounts(ctx, req)
