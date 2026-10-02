@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E7: counts series live in an arbitrary time window, once by snapping to the block range
+// and once by checking chunk metas, and checks both against the truth.
+
 import (
 	"context"
 	"fmt"

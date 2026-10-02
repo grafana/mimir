@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E9 TPUT: the same top-N question as E9 with a TPUT-shaped threshold protocol,
+// with and without cross-gateway dedup of shared series.
+
 import (
 	"github.com/grafana/mimir/tools/headcount/model"
 )

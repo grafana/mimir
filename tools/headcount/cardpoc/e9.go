@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E9: top-N metric names across K simulated store-gateways with the sum-of-cutoffs
+// protocol, checked against the population's true top N.
+
 import (
 	"encoding/binary"
 	"sort"

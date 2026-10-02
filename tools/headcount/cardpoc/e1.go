@@ -4,6 +4,9 @@
 // generated fixtures.
 package cardpoc
 
+// E1: the series count derived from a postings list's byte span in the index-header
+// equals a real postings walk over the full index, for every label value in every block.
+
 import (
 	"context"
 	"fmt"

@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E10: breaks one metric down by a label's values and checks that a series budget stops
+// the work early with every count at or below the truth.
+
 import (
 	"context"
 	"fmt"
