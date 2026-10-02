@@ -204,11 +204,13 @@ type BlocksStoreQueryable struct {
 	// when compartments are disabled, in which case all queries go to the single compartment.
 	router *compartments.Router
 
-	consistency              *BlocksConsistency
-	logger                   log.Logger
-	queryStoreAfter          time.Duration
-	metrics                  *blocksStoreQueryableMetrics
-	limits                   BlocksStoreLimits
+	consistency     *BlocksConsistency
+	logger          log.Logger
+	queryStoreAfter time.Duration
+	metrics         *blocksStoreQueryableMetrics
+	limits          BlocksStoreLimits
+	// estimateCfg bounds the experimental cardinality estimate route.
+	estimateCfg              CardinalityEstimateConfig
 	streamingChunksBatchSize uint64
 
 	// Subservices manager.
@@ -390,7 +392,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	q, err := NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	q.estimateCfg = querierCfg.CardinalityEstimate
+	return q, nil
 }
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its
