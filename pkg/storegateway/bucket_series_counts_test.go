@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -83,7 +85,6 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, countsByGroup(resp))
 		assert.Equal(t, []string{b1.String()}, resp.BlockIds)
-		assert.False(t, resp.LowerBound)
 		assert.Positive(t, resp.SeriesFetchedBytes, "the first read of a block comes from the bucket")
 		// The bucket read is a whole partition, so on a block this small it's
 		// far larger than the series entries actually decoded.
@@ -121,23 +122,19 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		assert.Empty(t, resp.Groups[0].Counts)
 	})
 
-	t.Run("max_series stops early", func(t *testing.T) {
-		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxSeries: 2})
-		require.NoError(t, err)
-		assert.True(t, resp.LowerBound)
-		assert.Equal(t, int64(2), resp.SeriesCounted)
-		assert.Empty(t, resp.BlockIds, "the block was not finished")
-		total := int64(0)
-		for _, c := range countsByGroup(resp) {
-			total += c[0]
-		}
-		assert.Equal(t, int64(2), total)
+	t.Run("max_index_bytes rejects before reading series", func(t *testing.T) {
+		// Four series at the planner's 512-byte estimate are more than 1,000 bytes.
+		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1000})
+		require.Error(t, err)
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+		assert.Contains(t, err.Error(), "then 4 series at an estimated 512 bytes each")
 	})
 
-	t.Run("max_series equal to the series count is exact", func(t *testing.T) {
-		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxSeries: 4})
+	t.Run("max_index_bytes above the plan is exact", func(t *testing.T) {
+		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1 << 20})
 		require.NoError(t, err)
-		assert.False(t, resp.LowerBound)
+		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, countsByGroup(resp))
+		assert.LessOrEqual(t, resp.IndexBytes, int64(1<<20))
 	})
 
 	t.Run("unknown blocks are skipped", func(t *testing.T) {
@@ -148,16 +145,30 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 	})
 
 	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
-		"empty window":        {MinTime: 10, MaxTime: 10},
-		"step doesn't divide": {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 3 * hourMs},
-		"hashes with step":    {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, Hashes: true},
-		"too many buckets":    {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 1},
-		"bad block ID":        {MinTime: 0, MaxTime: 4 * hourMs, BlockIds: []string{"x"}},
-		"negative step":       {MinTime: 0, MaxTime: 4 * hourMs, StepMs: -1},
+		"empty window":             {MinTime: 10, MaxTime: 10},
+		"step doesn't divide":      {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 3 * hourMs},
+		"hashes with step":         {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, Hashes: true},
+		"too many buckets":         {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 1},
+		"bad block ID":             {MinTime: 0, MaxTime: 4 * hourMs, BlockIds: []string{"x"}},
+		"negative step":            {MinTime: 0, MaxTime: 4 * hourMs, StepMs: -1},
+		"negative max_index_bytes": {MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: -1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := store.SeriesCounts(ctx, req)
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
+	c := &seriesCounts{maxIndexBytes: 2000}
+	require.NoError(t, c.checkPlan(900, 2), "900 + 2 x 512 is under the limit")
+	err := c.checkPlan(1000, 2)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
+	require.NoError(t, c.checkRead(2000))
+	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
+
+	unlimited := &seriesCounts{}
+	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20))
+	require.NoError(t, unlimited.checkRead(1<<40))
 }
