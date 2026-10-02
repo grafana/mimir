@@ -6,11 +6,15 @@
 package ingester
 
 import (
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
+
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 // userMetricsMetadata allows metric metadata of a tenant to be held by the ingester.
@@ -156,6 +160,60 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 		numMetrics++
 	}
 	return r
+}
+
+// searchHelp matches filter against the HELP text of every metadata record
+// held for each metric name, and returns the matching names as search
+// results, honoring order, resumeAfter and limit.
+//
+// A metric name matches if ANY of its (possibly several, conflicting) HELP
+// records match filter: HELP text is informational only, so a tenant
+// searching for a term in HELP expects to find the metric name regardless of
+// which scrape target's record happened to hold the matching text.
+func (mm *userMetricsMetadata) searchHelp(filter storage.Filter, order storage.Ordering, resumeAfter string, limit int) storage.SearchResultSet {
+	// Copy out the names and HELP strings under RLock, then release the lock
+	// before running the (possibly O(N*M)) filter evaluation. add() takes
+	// mtx.Lock() on every Push-touching-metadata write, so holding RLock
+	// across the scan would stall writes for this tenant.
+	mm.mtx.RLock()
+	helpsByName := make(map[string][]string, len(mm.metricToMetadata))
+	names := make([]string, 0, len(mm.metricToMetadata))
+	for name, set := range mm.metricToMetadata {
+		helps := make([]string, 0, len(set))
+		for metadata := range set {
+			helps = append(helps, metadata.Help)
+		}
+		helpsByName[name] = helps
+		names = append(names, name)
+	}
+	mm.mtx.RUnlock()
+
+	slices.Sort(names)
+
+	wrapped := streaminglabelvalues.ApplyResumeAfter(&helpMatchFilter{helpsByName: helpsByName, inner: filter}, resumeAfter, order)
+	results := storage.ApplySearchHints(names, &storage.SearchHints{Filter: wrapped, OrderBy: order, Limit: limit})
+	return storage.NewSearchResultSetFromSlice(results, nil)
+}
+
+// helpMatchFilter adapts a HELP-text storage.Filter into a Filter over metric
+// names: Accept(name) matches if inner matches any of name's HELP records.
+// A nil inner accepts every name, matching BuildFilter's own nil-filter
+// convention.
+type helpMatchFilter struct {
+	helpsByName map[string][]string
+	inner       storage.Filter
+}
+
+func (f *helpMatchFilter) Accept(name string) (bool, float64) {
+	if f.inner == nil {
+		return true, 1.0
+	}
+	for _, help := range f.helpsByName[name] {
+		if accepted, score := f.inner.Accept(help); accepted {
+			return true, score
+		}
+	}
+	return false, 0
 }
 
 type metricMetadataSet map[mimirpb.MetricMetadata]time.Time
