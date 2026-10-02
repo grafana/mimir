@@ -54,68 +54,68 @@ func getJSON(t *testing.T, s *server, path string, out any) int {
 	return rec.Code
 }
 
-// fakeMimir answers Mimir's two prototype routes from the model's truth,
-// the way the real routes do on these blocks. Like the real series_counts,
-// it reports dedup when the window spans more than one block range.
+// fakeMimir answers Mimir's cardinality/estimate route from the model's
+// truth, picking the read the way the querier does: index-headers for every
+// name over exactly one block range, the full index otherwise, with dedup
+// when the window spans more than one block range.
 func fakeMimir(t *testing.T, s *server) *httptest.Server {
 	parseT := func(v string) int64 {
 		f, err := strconv.ParseFloat(v, 64)
 		require.NoError(t, err)
 		return int64(f*1000 + 0.5)
 	}
+	isBlockRange := func(minT, maxT int64) bool {
+		for _, r := range s.ranges {
+			if r.MinT == minT && r.MaxT == maxT {
+				return true
+			}
+		}
+		return false
+	}
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/prometheus/api/v1/cardinality/estimate" {
+			http.NotFound(w, r)
+			return
+		}
 		q := r.URL.Query()
 		minT, maxT := parseT(q.Get("start")), parseT(q.Get("end"))
-		switch r.URL.Path {
-		case "/prometheus/api/v1/cardinality/metric_name_counts":
-			type count struct {
-				Name  string `json:"name"`
-				Count int    `json:"count"`
-			}
-			out := struct {
-				Blocks int     `json:"blocks"`
-				Counts []count `json:"counts"`
-			}{Blocks: 1}
-			for name, n := range s.pop.TruthBy(nil, "__name__", minT, maxT) {
-				out.Counts = append(out.Counts, count{name, n})
-			}
-			_ = json.NewEncoder(w).Encode(out)
-		case "/prometheus/api/v1/cardinality/series_counts":
-			var matchers []*labels.Matcher
-			if sel := q.Get("match[]"); sel != "" {
-				matchers = matchName(strings.TrimSuffix(strings.TrimPrefix(sel, `{__name__="`), `"}`))
-			}
-			groupBy := q.Get("group_by")
-			if groupBy == "" {
-				groupBy = "__name__"
-			}
-			type group struct {
-				Value  string `json:"value"`
-				Count  int    `json:"count"`
-				Counts []int  `json:"counts,omitempty"`
-			}
-			var out struct {
-				Dedup  bool    `json:"dedup"`
-				Counts []group `json:"counts"`
-			}
-			out.Dedup = len(s.pieces(minT, maxT)) > 1
-			var stepMs int64
-			if v := q.Get("step"); v != "" {
-				d, err := time.ParseDuration(v)
-				require.NoError(t, err)
-				stepMs = d.Milliseconds()
-			}
-			for v, n := range s.pop.TruthBy(matchers, groupBy, minT, maxT) {
-				g := group{Value: v, Count: n}
-				for b := minT; stepMs > 0 && b < maxT; b += stepMs {
-					g.Counts = append(g.Counts, s.pop.TruthBy(matchers, groupBy, b, b+stepMs)[v])
-				}
-				out.Counts = append(out.Counts, g)
-			}
-			_ = json.NewEncoder(w).Encode(out)
-		default:
-			http.NotFound(w, r)
+		var matchers []*labels.Matcher
+		if sel := q.Get("match[]"); sel != "" {
+			matchers = matchName(strings.TrimSuffix(strings.TrimPrefix(sel, `{__name__="`), `"}`))
 		}
+		groupBy := q.Get("group_by")
+		if groupBy == "" {
+			groupBy = "__name__"
+		}
+		type group struct {
+			Value  string `json:"value"`
+			Count  int    `json:"count"`
+			Counts []int  `json:"counts,omitempty"`
+		}
+		var out struct {
+			Read   string  `json:"read"`
+			Dedup  bool    `json:"dedup"`
+			Counts []group `json:"counts"`
+		}
+		out.Read = "full_index"
+		if matchers == nil && groupBy == "__name__" && q.Get("step") == "" && isBlockRange(minT, maxT) {
+			out.Read = "index_header"
+		}
+		out.Dedup = out.Read == "full_index" && len(s.pieces(minT, maxT)) > 1
+		var stepMs int64
+		if v := q.Get("step"); v != "" {
+			d, err := time.ParseDuration(v)
+			require.NoError(t, err)
+			stepMs = d.Milliseconds()
+		}
+		for v, n := range s.pop.TruthBy(matchers, groupBy, minT, maxT) {
+			g := group{Value: v, Count: n}
+			for b := minT; stepMs > 0 && b < maxT; b += stepMs {
+				g.Counts = append(g.Counts, s.pop.TruthBy(matchers, groupBy, b, b+stepMs)[v])
+			}
+			out.Counts = append(out.Counts, g)
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	}))
 	t.Cleanup(fake.Close)
 	return fake
@@ -152,7 +152,7 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 			Read       readInfo    `json:"read"`
 		}
 		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/names?start=%d&end=%d", at(1), at(2)), &out))
-		assert.Equal(t, "metric_name_counts", out.Read.Route)
+		assert.Equal(t, "index_header", out.Read.Route)
 		assert.Equal(t, windowJSON{at(0), at(1)}, out.Previous, "the hour before")
 		assert.Equal(t, out.Names, out.NamesExact)
 		require.NotEmpty(t, out.Rows)
@@ -169,7 +169,7 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 			Read       readInfo   `json:"read"`
 		}
 		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/names?start=%d&end=%d", at(1), at(3)), &out))
-		assert.Equal(t, "series_counts", out.Read.Route)
+		assert.Equal(t, "full_index", out.Read.Route)
 		assert.Contains(t, out.Read.Method, "dedup")
 		assert.Equal(t, windowJSON{at(0), at(1)}, out.Previous, "clipped to the data")
 		assert.Equal(t, out.Names, out.NamesExact)
