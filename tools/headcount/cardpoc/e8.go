@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E8: counts series per step-sized time bucket of a block range from chunk metas,
+// so a short spike shows up, and checks every bucket against the truth.
+
 import (
 	"context"
 	"fmt"
