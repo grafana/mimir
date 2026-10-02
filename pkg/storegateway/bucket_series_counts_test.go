@@ -34,6 +34,23 @@ func chunkAt(minT, maxT int64) chunks.Meta {
 // prepareSeriesCountsStore builds a store over two four-hour blocks whose
 // chunk times are set by hand, and returns it with the blocks' IDs.
 func prepareSeriesCountsStore(t *testing.T) (*BucketStore, ulid.ULID, ulid.ULID) {
+	return prepareSeriesCountsStoreWithStrategy(t, nil)
+}
+
+// keepFirstGroupStrategy fetches only the first matcher's postings and
+// leaves the other matchers pending, so the series have to be filtered after
+// loading.
+type keepFirstGroupStrategy struct{}
+
+func (keepFirstGroupStrategy) name() string { return "keepFirstGroup" }
+func (keepFirstGroupStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	return groups[:1], groups[1:]
+}
+
+func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelectionStrategy) (*BucketStore, ulid.ULID, ulid.ULID) {
 	bkt, err := filesystem.NewBucket(t.TempDir())
 	require.NoError(t, err)
 	dir := t.TempDir()
@@ -64,6 +81,9 @@ func prepareSeriesCountsStore(t *testing.T) (*BucketStore, ulid.ULID, ulid.ULID)
 
 	cfg := defaultPrepareStoreConfig(t)
 	cfg.numBlocks = 0 // only the blocks uploaded above
+	if strategy != nil {
+		cfg.postingsStrategy = strategy
+	}
 	s := prepareStoreWithTestBlocks(t, bkt, cfg)
 	return s.store, ids[0], ids[1]
 }
@@ -91,6 +111,32 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		// far larger than the series entries actually decoded.
 		assert.Positive(t, resp.IndexBytes)
 		assert.Less(t, resp.IndexBytes, resp.PostingsFetchedBytes+resp.SeriesFetchedBytes)
+	})
+
+	t.Run("no matchers reads the all-postings list and counts every series", func(t *testing.T) {
+		all, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
+		require.NoError(t, err)
+		anyName := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: "__name__", Value: ".+"}}
+		viaNames, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: anyName, MinTime: 0, MaxTime: 4 * hourMs})
+		require.NoError(t, err)
+		assert.Equal(t, countsByGroup(viaNames), countsByGroup(all))
+		assert.Equal(t, int64(4), all.SeriesCounted)
+		assert.LessOrEqual(t, all.PostingsFetchedBytes, viaNames.PostingsFetchedBytes, "one all-postings list costs no more than one list per name")
+	})
+
+	t.Run("a matcher left pending by the postings strategy is applied to the series", func(t *testing.T) {
+		// A store whose strategy fetches only the first matcher's postings
+		// leaves the second matcher pending, so the filtering iterator has to
+		// apply it to the loaded series.
+		lazyStore, lb1, _ := prepareSeriesCountsStoreWithStrategy(t, keepFirstGroupStrategy{})
+		upOnP1P2 := []*storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"},
+			{Type: storepb.LabelMatcher_RE, Name: "pod", Value: "p[12]"},
+		}
+		resp, err := lazyStore.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{lb1.String()}, Matchers: upOnP1P2, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"p1": {1}, "p2": {1}}, countsByGroup(resp), "p3 is filtered out by the pending matcher")
+		assert.Equal(t, int64(2), resp.SeriesCounted)
 	})
 
 	t.Run("window inside the block", func(t *testing.T) {
