@@ -50,7 +50,7 @@ std.manifestYamlDoc({
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
     (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
-    self.store_gateways(2) +
+    self.store_gateways +
     self.compactor +
     //    self.rulers(2) +
     //    self.alertmanagers(3) +
@@ -175,27 +175,45 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  store_gateways(count):: {
+  // Two store-gateways in each of two zones. With zone-awareness and RF 2, each zone has one replica of each block,
+  // so each store-gateway owns about half of the blocks.
+  // If grpc-tee is enabled, store-gateway-5 is the secondary backend of grpc-tee (refer to store_gateway_mirror).
+  store_gateways:: {
     ['store-gateway-%d' % id]: mimirService({
       name: 'store-gateway-' + id,
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
-      // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee-1 address in the ring,
-      // so queriers connect through grpc-tee-1.
-      // store-gateway-2 is the secondary backend of grpc-tee. It joins a separate ring, so queriers don't see it,
-      // and it owns all blocks because it is the only member of that ring.
-      extraArguments:
+      extraArguments: [
+        '-store-gateway.sharding-ring.instance-availability-zone=%s' % ['zone-a', 'zone-b'][std.floor((id - 1) / 2)],
+      ] + (
+        // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee-1 address in the ring,
+        // so queriers connect through grpc-tee-1.
         if $._config.enable_grpc_tee && id == 1 then [
           '-store-gateway.sharding-ring.instance-addr=grpc-tee-1',
           '-store-gateway.sharding-ring.instance-port=9095',
-        ]
-        else if $._config.enable_grpc_tee && id == 2 then [
-          '-store-gateway.sharding-ring.prefix=secondary/',
-        ]
-        else [],
+        ] else []
+      ),
     })
-    for id in std.range(1, count)
+    for id in std.range(1, 4)
+  } + (if $._config.enable_grpc_tee then self.store_gateway_mirror else {}),
+
+  // store-gateway-5 joins a separate ring, so queriers don't see it.
+  // It runs in mirror mode, so it loads the same blocks as store-gateway-1.
+  store_gateway_mirror:: {
+    'store-gateway-5': mimirService({
+      name: 'store-gateway-5',
+      target: 'store-gateway',
+      httpPort: 8015,
+      jaegerApp: 'store-gateway-5',
+      extraArguments: [
+        '-store-gateway.sharding-ring.prefix=secondary/',
+        '-store-gateway.sharding-ring.instance-id=store-gateway-1',
+        '-store-gateway.sharding-ring.instance-availability-zone=zone-a',
+        '-store-gateway.mirror.enabled=true',
+        '-store-gateway.mirror.ring-kvstore-prefix=collectors/',
+      ],
+    }),
   },
 
   continuous_test:: {
@@ -507,23 +525,25 @@ std.manifestYamlDoc({
       local flags = [
         '-server.grpc-listen-address=:%d' % grpcPort,
         '-server.http-listen-address=:%d' % httpPort,
-        // grpc-tee sends each call to store-gateway-1 (primary) and store-gateway-2 (secondary), and compares the responses.
+        // grpc-tee sends each call to store-gateway-1 (primary) and store-gateway-5 (secondary), and compares the responses.
         // It reads each store-gateway ring the same way as the querier. These values match config/mimir.yaml.
         '-backend.primary.name=store-gateway-1',
         '-backend.primary.type=store-gateway',
         '-backend.primary.address=store-gateway-1:9011',
         '-backend.primary.ring.key=store-gateway',
         '-backend.primary.ring.store=memberlist',
-        '-backend.primary.ring.replication-factor=3',
+        '-backend.primary.ring.replication-factor=2',
         '-backend.primary.ring.heartbeat-timeout=15s',
-        '-backend.secondary.name=store-gateway-2',
+        '-backend.primary.ring.zone-awareness-enabled=true',
+        '-backend.secondary.name=store-gateway-5',
         '-backend.secondary.type=store-gateway',
-        '-backend.secondary.address=store-gateway-2:9012',
+        '-backend.secondary.address=store-gateway-5:9015',
         '-backend.secondary.ring.key=store-gateway',
         '-backend.secondary.ring.prefix=secondary/',
         '-backend.secondary.ring.store=memberlist',
-        '-backend.secondary.ring.replication-factor=3',
+        '-backend.secondary.ring.replication-factor=2',
         '-backend.secondary.ring.heartbeat-timeout=15s',
+        '-backend.secondary.ring.zone-awareness-enabled=true',
         // grpc-tee joins its own ring (key "grpc-tee") over the same memberlist cluster as Mimir.
         '-ring.store=memberlist',
         '-ring.instance-id=%s' % name,
@@ -543,7 +563,7 @@ std.manifestYamlDoc({
       else flags,
       hostname: name,
       ports: ['%d:%d' % [grpcPort, grpcPort], '%d:%d' % [httpPort, httpPort]] + (if useDelve then ['%d:%d' % [debugPort, debugPort]] else []),
-      depends_on: ['distributor-1', 'store-gateway-1', 'store-gateway-2'],
+      depends_on: ['distributor-1', 'store-gateway-1', 'store-gateway-5'],
     }
     for id in std.range(1, count)
   },

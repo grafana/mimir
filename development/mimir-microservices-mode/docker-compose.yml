@@ -114,16 +114,18 @@
       - "-backend.primary.address=store-gateway-1:9011"
       - "-backend.primary.ring.key=store-gateway"
       - "-backend.primary.ring.store=memberlist"
-      - "-backend.primary.ring.replication-factor=3"
+      - "-backend.primary.ring.replication-factor=2"
       - "-backend.primary.ring.heartbeat-timeout=15s"
-      - "-backend.secondary.name=store-gateway-2"
+      - "-backend.primary.ring.zone-awareness-enabled=true"
+      - "-backend.secondary.name=store-gateway-5"
       - "-backend.secondary.type=store-gateway"
-      - "-backend.secondary.address=store-gateway-2:9012"
+      - "-backend.secondary.address=store-gateway-5:9015"
       - "-backend.secondary.ring.key=store-gateway"
       - "-backend.secondary.ring.prefix=secondary/"
       - "-backend.secondary.ring.store=memberlist"
-      - "-backend.secondary.ring.replication-factor=3"
+      - "-backend.secondary.ring.replication-factor=2"
       - "-backend.secondary.ring.heartbeat-timeout=15s"
+      - "-backend.secondary.ring.zone-awareness-enabled=true"
       - "-ring.store=memberlist"
       - "-ring.instance-id=grpc-tee-1"
       - "-ring.instance-addr=grpc-tee-1"
@@ -133,7 +135,7 @@
     "depends_on":
       - "distributor-1"
       - "store-gateway-1"
-      - "store-gateway-2"
+      - "store-gateway-5"
     "hostname": "grpc-tee-1"
     "image": "grpc-tee"
     "ports":
@@ -161,16 +163,18 @@
       - "-backend.primary.address=store-gateway-1:9011"
       - "-backend.primary.ring.key=store-gateway"
       - "-backend.primary.ring.store=memberlist"
-      - "-backend.primary.ring.replication-factor=3"
+      - "-backend.primary.ring.replication-factor=2"
       - "-backend.primary.ring.heartbeat-timeout=15s"
-      - "-backend.secondary.name=store-gateway-2"
+      - "-backend.primary.ring.zone-awareness-enabled=true"
+      - "-backend.secondary.name=store-gateway-5"
       - "-backend.secondary.type=store-gateway"
-      - "-backend.secondary.address=store-gateway-2:9012"
+      - "-backend.secondary.address=store-gateway-5:9015"
       - "-backend.secondary.ring.key=store-gateway"
       - "-backend.secondary.ring.prefix=secondary/"
       - "-backend.secondary.ring.store=memberlist"
-      - "-backend.secondary.ring.replication-factor=3"
+      - "-backend.secondary.ring.replication-factor=2"
       - "-backend.secondary.ring.heartbeat-timeout=15s"
+      - "-backend.secondary.ring.zone-awareness-enabled=true"
       - "-ring.store=memberlist"
       - "-ring.instance-id=grpc-tee-2"
       - "-ring.instance-addr=grpc-tee-2"
@@ -180,7 +184,7 @@
     "depends_on":
       - "distributor-1"
       - "store-gateway-1"
-      - "store-gateway-2"
+      - "store-gateway-5"
     "hostname": "grpc-tee-2"
     "image": "grpc-tee"
     "ports":
@@ -421,7 +425,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-addr=grpc-tee-1 -store-gateway.sharding-ring.instance-port=9095"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-availability-zone=zone-a -store-gateway.sharding-ring.instance-addr=grpc-tee-1 -store-gateway.sharding-ring.instance-port=9095"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -447,7 +451,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18012 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 -usage-stats.enabled=false -store-gateway.sharding-ring.prefix=secondary/"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18012 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-availability-zone=zone-a"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -463,6 +467,84 @@
       - "8012:8012"
       - "10012:10012"
       - "18012:18012"
+    "volumes":
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
+  "store-gateway-3":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "/bin/sh"
+      - "-c"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18013 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/tmp/activity/store-gateway-8013 -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-availability-zone=zone-b"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=store-gateway-3"
+    "hostname": "store-gateway-3"
+    "image": "mimir"
+    "ports":
+      - "8013:8013"
+      - "10013:10013"
+      - "18013:18013"
+    "volumes":
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
+  "store-gateway-4":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "/bin/sh"
+      - "-c"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18014 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filepath=/tmp/activity/store-gateway-8014 -memberlist.nodename=store-gateway-4 -memberlist.bind-port=10014 -usage-stats.enabled=false -store-gateway.sharding-ring.instance-availability-zone=zone-b"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=store-gateway-4"
+    "hostname": "store-gateway-4"
+    "image": "mimir"
+    "ports":
+      - "8014:8014"
+      - "10014:10014"
+      - "18014:18014"
+    "volumes":
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
+  "store-gateway-5":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "/bin/sh"
+      - "-c"
+      - "sleep 3 && exec /bin/dlv exec /bin/mimir --listen=:18015 --headless=true --api-version=2 --accept-multiclient --continue --  -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8015 -server.grpc-listen-port=9015 -activity-tracker.filepath=/tmp/activity/store-gateway-8015 -memberlist.nodename=store-gateway-5 -memberlist.bind-port=10015 -usage-stats.enabled=false -store-gateway.sharding-ring.prefix=secondary/ -store-gateway.sharding-ring.instance-id=store-gateway-1 -store-gateway.sharding-ring.instance-availability-zone=zone-a -store-gateway.mirror.enabled=true -store-gateway.mirror.ring-kvstore-prefix=collectors/"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=store-gateway-5"
+    "hostname": "store-gateway-5"
+    "image": "mimir"
+    "ports":
+      - "8015:8015"
+      - "10015:10015"
+      - "18015:18015"
     "volumes":
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"

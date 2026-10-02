@@ -58,6 +58,7 @@ type blocksPageContents struct {
 	IndexUpdatedAt time.Time `json:"index_updated_at,omitempty"`
 
 	TotalBlocks         int `json:"total_blocks"`
+	LoadedBlocks        int `json:"loaded_blocks"`
 	HiddenDeletedBlocks int `json:"-"`
 	MatchedBlocks       int `json:"matched_blocks"`
 	BlocksRead          int `json:"blocks_read"`
@@ -127,6 +128,7 @@ type blocksPageOptions struct {
 	ScanBucket    bool `json:"-"`
 	ShowDetails   bool `json:"-"`
 	ShowNoCompact bool `json:"-"`
+	LoadedOnly    bool `json:"-"`
 
 	Page     int `json:"-"`
 	PageSize int `json:"page_size"`
@@ -165,7 +167,8 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	deleteMarkerDetails, noCompactMarkerDetails := data.deleteMarks, data.noCompactMarks
 
-	matched := opts.filterBlocks(data.metas, deleteMarkerDetails)
+	loaded := g.loadedBlocks(tenantID)
+	matched := opts.filterBlocks(data.metas, deleteMarkerDetails, loaded)
 
 	if !data.metasAreComplete && opts.needsBlockDetails() && (opts.PageSize <= 0 || opts.PageSize > blocksPageMaxDetailBlocks) {
 		opts.PageSize = blocksPageMaxDetailBlocks
@@ -280,6 +283,7 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		IndexUpdatedAt: data.indexUpdatedAt,
 
 		TotalBlocks:         len(data.metas),
+		LoadedBlocks:        len(loaded),
 		HiddenDeletedBlocks: hiddenDeleted,
 		MatchedBlocks:       len(matched),
 		BlocksRead:          data.blocksRead,
@@ -302,6 +306,7 @@ func parseBlocksPageOptions(form url.Values, now time.Time, defaultPageSize int,
 		ScanBucket:    blocksPageCheckbox(form, "scan_bucket", defaultScanBucket),
 		ShowDetails:   form.Get("show_details") == "on",
 		ShowNoCompact: form.Get("show_no_compact") == "on",
+		LoadedOnly:    form.Get("loaded_only") == "on",
 	}
 
 	var err error
@@ -386,7 +391,8 @@ func (o blocksPageOptions) needsBlockDetails() bool {
 	return o.ShowDetails || o.ShowSources || o.ShowParents
 }
 
-func (o blocksPageOptions) filterBlocks(metas []*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark) []*block.Meta {
+// filterBlocks returns the blocks that match the filters. loaded holds the blocks that this store-gateway loaded.
+func (o blocksPageOptions) filterBlocks(metas []*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, loaded map[ulid.ULID]struct{}) []*block.Meta {
 	minTime, maxTime := o.MinTime.Time.UnixMilli(), o.MaxTime.Time.UnixMilli()
 	createdAfter, createdBefore := ulid.Timestamp(o.CreatedAfter.Time), ulid.Timestamp(o.CreatedBefore.Time)
 
@@ -396,6 +402,9 @@ func (o blocksPageOptions) filterBlocks(metas []*block.Meta, deleteMarkerDetails
 			continue
 		}
 		if o.BlockID != "" && !strings.EqualFold(m.ULID.String(), o.BlockID) {
+			continue
+		}
+		if _, ok := loaded[m.ULID]; o.LoadedOnly && !ok {
 			continue
 		}
 		if o.MinTime.isSet() && m.MinTime < minTime {
@@ -436,6 +445,21 @@ func (o blocksPageOptions) pageBlocks(matched []*block.Meta, page int) []*block.
 
 	start := min((page-1)*o.PageSize, len(matched))
 	return matched[start:min(start+o.PageSize, len(matched))]
+}
+
+// loadedBlocks returns the blocks of the tenant that this store-gateway loaded and serves.
+func (g *StoreGateway) loadedBlocks(tenantID string) map[ulid.ULID]struct{} {
+	store := g.stores.getStore(tenantID)
+	if store == nil {
+		return map[ulid.ULID]struct{}{}
+	}
+
+	ids := store.blockSet.openBlocksULIDs()
+	loaded := make(map[ulid.ULID]struct{}, len(ids))
+	for _, id := range ids {
+		loaded[id] = struct{}{}
+	}
+	return loaded
 }
 
 type blocksPageData struct {

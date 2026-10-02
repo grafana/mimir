@@ -15592,6 +15592,38 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "mirror",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "If true, the store-gateway does not shard the blocks with the ring that it joins. It loads the same blocks as the instance with the same instance ID in the mirrored ring. The mirrored ring uses the same KV store and sharding ring options, but a different KV prefix.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "store-gateway.mirror.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "ring_kvstore_prefix",
+              "required": false,
+              "desc": "The KV store prefix of the mirrored ring. It must be different from the prefix of the ring that the store-gateway joins.",
+              "fieldValue": null,
+              "fieldDefaultValue": "collectors/",
+              "fieldFlag": "store-gateway.mirror.ring-kvstore-prefix",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "enabled_tenants",
           "required": false,

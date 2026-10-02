@@ -1095,6 +1095,7 @@
   "store-gateway.sharding-ring.unregister-on-shutdown": true,
   "store-gateway.dynamic-replication.max-time-threshold": 90000000000000,
   "store-gateway.dynamic-replication.multiple": 5,
+  "store-gateway.mirror.ring-kvstore-prefix": "collectors/",
   "store-gateway.enabled-tenants": "",
   "store-gateway.disabled-tenants": "",
   "tenant-federation.max-concurrent": 16,
