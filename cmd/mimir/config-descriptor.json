@@ -9962,6 +9962,28 @@
             },
             {
               "kind": "field",
+              "name": "producer_metadata_min_age",
+              "required": false,
+              "desc": "Minimum age of cached metadata before an ordinary Kafka writer metadata refresh. 0 uses the default of 10s; otherwise must be between 10ms and 10s. Immediate refreshes can bypass this minimum. Lower values can speed up recovery from write errors but increase metadata requests and connection churn. Does not change the 10s periodic refresh or reader clients. Only supported with backend=kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-metadata-min-age",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "producer_diagnostic_logging_enabled",
+              "required": false,
+              "desc": "Log Kafka writer Produce, Metadata and connection transport events at debug level. Requires -log.level=debug. Each event group is limited to 100 events per second with a burst of 100, per writer; suppressed events are counted. Events do not identify individual batches or establish protocol success. Only supported with backend=kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.producer-diagnostic-logging-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "wait_strong_read_consistency_timeout",
               "required": false,
               "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",

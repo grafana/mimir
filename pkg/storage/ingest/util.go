@@ -168,8 +168,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		//    the cluster metadata is updated the Kafka client will create a new connection for each partition,
 		//    leading to a high connections churn rate.
 		//
-		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
-		// there are errors or not, the metadata requests frequency doesn't change.
+		// Match the default minimum age to the periodic interval to limit ordinary error-triggered refreshes.
+		// Immediate refreshes can bypass this minimum. Writers may override the minimum independently.
 		kgo.MetadataMinAge(DefaultMetadataRefreshInterval),
 		kgo.MetadataMaxAge(DefaultMetadataRefreshInterval),
 

@@ -23,17 +23,20 @@ const (
 	// defaultProducerLinger is the producer-side batching delay.
 	defaultProducerLinger = 50 * time.Millisecond
 
-	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
-	// list and partition leaders) is refreshed. It is used for both the
-	// minimum and maximum metadata age so the metadata request frequency
-	// stays constant regardless of errors.
+	// DefaultMetadataRefreshInterval is the periodic metadata refresh interval
+	// and the default minimum metadata age. Writers can override the minimum.
 	DefaultMetadataRefreshInterval = 10 * time.Second
 )
+
+var kafkaWriterClientSequence atomic.Uint64
 
 // newKafkaProducerForBackend selects and constructs the producer
 // implementation based on cfg.Backend. The caller owns the lifecycle of the
 // returned producer and must call Close() when done.
 func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Logger, reg prometheus.Registerer) (*KafkaProducer, error) {
+	if err := cfg.validateKafkaWriterSettings(); err != nil {
+		return nil, err
+	}
 	var producerClient KafkaProducerClient
 
 	switch cfg.Backend {
@@ -88,6 +91,10 @@ func WithDisableDefaultTopic() KafkaWriterClientOption {
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
 func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer, opts ...KafkaWriterClientOption) (*kgo.Client, error) {
+	if err := kafkaCfg.validateKafkaWriterSettings(); err != nil {
+		return nil, err
+	}
+	logger = log.With(logger, "kafka_writer_client_id", kafkaWriterClientSequence.Inc())
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -106,6 +113,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
 		// when we produce records. We expect the input prometheus.Registered to be wrapped with a prefix.
 		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
+		kgo.WithHooks(newKafkaWriterRequestMetrics(reg)),
 
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 
@@ -154,6 +162,13 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 	)
 
 	var options kafkaWriterClientOptions
+	if kafkaCfg.ProducerMetadataMinAge != 0 {
+		kgoOpts = append(kgoOpts, kgo.MetadataMinAge(kafkaCfg.ProducerMetadataMinAge))
+	}
+	if kafkaCfg.ProducerDiagnosticLoggingEnabled {
+		kgoOpts = append(kgoOpts, kgo.WithHooks(newKafkaWriterDiagnostics(logger, reg)))
+	}
+
 	for _, o := range opts {
 		o(&options)
 	}
