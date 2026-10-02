@@ -55,6 +55,7 @@ var tracer = otel.Tracer("pkg/storegateway")
 type Config struct {
 	ShardingRing       RingConfig               `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
 	DynamicReplication DynamicReplicationConfig `yaml:"dynamic_replication" doc:"description=Experimental dynamic replication configuration." category:"experimental"`
+	Mirror             MirrorConfig             `yaml:"mirror" doc:"description=Experimental mirror mode configuration." category:"experimental"`
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -70,6 +71,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	cfg.DynamicReplication.RegisterFlagsWithPrefix(f, "store-gateway.")
+	cfg.Mirror.RegisterFlagsWithPrefix(f, "store-gateway.")
 
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
@@ -83,6 +85,10 @@ func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartmen
 	}
 
 	if err := cfg.DynamicReplication.Validate(); err != nil {
+		return err
+	}
+
+	if err := cfg.Mirror.Validate(cfg.ShardingRing); err != nil {
 		return err
 	}
 
@@ -119,9 +125,11 @@ type StoreGateway struct {
 	stores     *BucketStores
 	tracker    activityTracker
 
-	// Ring used for sharding blocks.
+	// Ring that the store-gateway joins.
 	ringLifecycler *ring.BasicLifecycler
 	ring           *ring.Ring
+	// Ring used for sharding blocks. It is the same as ring, unless mirror mode is enabled.
+	shardingRing *ring.Ring
 
 	// Subservices manager (ring, lifecycler)
 	subservices        *services.Manager
@@ -150,10 +158,31 @@ func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	return newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, limits, logger, reg, tracker)
+	var mirrorRingStore kv.Client
+	if gatewayCfg.Mirror.Enabled {
+		mirrorKVCfg := gatewayCfg.ShardingRing.KVStore
+		mirrorKVCfg.Prefix = gatewayCfg.Mirror.RingKVPrefix
+		mirrorRingStore, err = kv.NewClient(
+			mirrorKVCfg,
+			ring.GetCodec(),
+			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), mirrorRingName),
+			logger,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "create KV store client for the mirrored ring")
+		}
+	}
+
+	return newStoreGatewayWithMirror(gatewayCfg, storageCfg, bucketClient, ringStore, mirrorRingStore, limits, logger, reg, tracker)
 }
 
 func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, bucketClient objstore.Bucket, ringStore kv.Client, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
+	return newStoreGatewayWithMirror(gatewayCfg, storageCfg, bucketClient, ringStore, nil, limits, logger, reg, tracker)
+}
+
+// newStoreGatewayWithMirror makes a new StoreGateway. mirrorRingStore is the KV store of the mirrored ring,
+// and it must not be nil if mirror mode is enabled.
+func newStoreGatewayWithMirror(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, bucketClient objstore.Bucket, ringStore, mirrorRingStore kv.Client, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
 	var err error
 
 	g := &StoreGateway{
@@ -211,6 +240,23 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create ring client")
 	}
 
+	g.shardingRing = g.ring
+	if gatewayCfg.Mirror.Enabled {
+		if mirrorRingStore == nil {
+			return nil, errors.New("mirror mode is enabled but there is no KV store for the mirrored ring")
+		}
+		mirrorRingCfg := ringCfg
+		mirrorRingCfg.KVStore.Prefix = gatewayCfg.Mirror.RingKVPrefix
+		mirrorName := mirrorRingName
+		if gatewayCfg.Compartments.Enabled {
+			mirrorName = compartments.WithReadCompartmentSuffix(mirrorRingName, gatewayCfg.ReadCompartmentID)
+		}
+		g.shardingRing, err = ring.NewWithStoreClientAndStrategy(mirrorRingCfg, mirrorName, ringKey, mirrorRingStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "create mirrored ring client")
+		}
+	}
+
 	var dynamicReplication DynamicReplication = NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = NewMaxTimeDynamicReplication(
@@ -221,7 +267,12 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		)
 	}
 
-	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, logger)
+	if gatewayCfg.Mirror.Enabled {
+		level.Info(logger).Log("msg", "store-gateway mirror mode is enabled, the store-gateway loads the blocks of the instance with the same ID in the mirrored ring", "instance_id", lifecyclerCfg.ID, "mirrored_ring_prefix", gatewayCfg.Mirror.RingKVPrefix)
+		shardingStrategy = NewMirrorShuffleShardingStrategy(g.shardingRing, lifecyclerCfg.ID, dynamicReplication, limits, logger)
+	} else {
+		shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, logger)
+	}
 
 	allowedTenants := util.NewAllowList(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
 	if len(gatewayCfg.EnabledTenants) > 0 {
@@ -273,7 +324,11 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 
 	// First of all we register the instance in the ring and wait
 	// until the lifecycler successfully started.
-	if g.subservices, err = services.NewManager(g.ringLifecycler, g.ring); err != nil {
+	subservices := []services.Service{g.ringLifecycler, g.ring}
+	if g.shardingRing != g.ring {
+		subservices = append(subservices, g.shardingRing)
+	}
+	if g.subservices, err = services.NewManager(subservices...); err != nil {
 		return errors.Wrap(err, "unable to start store-gateway dependencies")
 	}
 
@@ -302,7 +357,7 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 		maxWaiting := g.gatewayCfg.ShardingRing.WaitStabilityMaxDuration
 
 		level.Info(g.logger).Log("msg", "waiting until store-gateway ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
-		if err := ring.WaitRingTokensStability(ctx, g.ring, BlocksOwnerSync, minWaiting, maxWaiting); err != nil {
+		if err := ring.WaitRingTokensStability(ctx, g.shardingRing, BlocksOwnerSync, minWaiting, maxWaiting); err != nil {
 			level.Warn(g.logger).Log("msg", "store-gateway ring topology is not stable after the max waiting time, proceeding anyway")
 		} else {
 			level.Info(g.logger).Log("msg", "store-gateway ring topology is stable")
@@ -342,7 +397,7 @@ func (g *StoreGateway) running(ctx context.Context) error {
 	syncTicker := time.NewTicker(util.DurationWithJitter(g.storageCfg.BucketStore.SyncInterval, 0.2))
 	defer syncTicker.Stop()
 
-	ringLastState, _ := g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
+	ringLastState, _ := g.shardingRing.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
 	ringTicker := time.NewTicker(util.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
 	defer ringTicker.Stop()
 
@@ -353,7 +408,7 @@ func (g *StoreGateway) running(ctx context.Context) error {
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
-			currRingState, _ := g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
+			currRingState, _ := g.shardingRing.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState

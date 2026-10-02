@@ -3857,6 +3857,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 5)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+  -store-gateway.mirror.enabled
+    	[experimental] If true, the store-gateway does not shard the blocks with the ring that it joins. It loads the same blocks as the instance with the same instance ID in the mirrored ring. The mirrored ring uses the same KV store and sharding ring options, but a different KV prefix.
+  -store-gateway.mirror.ring-kvstore-prefix string
+    	[experimental] The KV store prefix of the mirrored ring. It must be different from the prefix of the ring that the store-gateway joins. (default "collectors/")
   -store-gateway.sharding-ring.auto-forget-enabled
     	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
   -store-gateway.sharding-ring.auto-forget-unhealthy-periods int

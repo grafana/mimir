@@ -66,7 +66,7 @@ receivers:
                 container: 'query-scheduler'
         - job_name: mimir-microservices-mode/store-gateway
           static_configs:
-            - targets: ['store-gateway-1:8011', 'store-gateway-2:8012', 'store-gateway-3:8013']
+            - targets: ['store-gateway-1:8011', 'store-gateway-2:8012', 'store-gateway-3:8013', 'store-gateway-4:8014', 'store-gateway-5:8015']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'

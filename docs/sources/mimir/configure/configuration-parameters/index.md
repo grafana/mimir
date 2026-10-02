@@ -7218,6 +7218,20 @@ dynamic_replication:
   # CLI flag: -store-gateway.dynamic-replication.multiple
   [multiple: <int> | default = 5]
 
+# Experimental mirror mode configuration.
+mirror:
+  # (experimental) If true, the store-gateway does not shard the blocks with the
+  # ring that it joins. It loads the same blocks as the instance with the same
+  # instance ID in the mirrored ring. The mirrored ring uses the same KV store
+  # and sharding ring options, but a different KV prefix.
+  # CLI flag: -store-gateway.mirror.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) The KV store prefix of the mirrored ring. It must be
+  # different from the prefix of the ring that the store-gateway joins.
+  # CLI flag: -store-gateway.mirror.ring-kvstore-prefix
+  [ring_kvstore_prefix: <string> | default = "collectors/"]
+
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by
 # the store-gateway, otherwise all tenants can be loaded. Subject to sharding.

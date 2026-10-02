@@ -47,9 +47,10 @@ type ShardingLimits interface {
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
-	r                  *ring.Ring
-	instanceID         string
-	instanceAddr       string
+	r          *ring.Ring
+	instanceID string
+	// instanceAddr returns the address of the instance in the ring.
+	instanceAddr       func() string
 	dynamicReplication DynamicReplication
 	limits             ShardingLimits
 	logger             log.Logger
@@ -57,6 +58,25 @@ type ShuffleShardingStrategy struct {
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
 func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+	return newShuffleShardingStrategy(r, instanceID, func() string { return instanceAddr }, dynamicReplication, limits, logger)
+}
+
+// NewMirrorShuffleShardingStrategy makes a ShuffleShardingStrategy for a store-gateway in mirror mode.
+// The strategy selects the same users and blocks as the instance with instanceID in the mirrored ring r.
+// The address of that instance changes when it restarts, so the strategy reads it from r on each call.
+// If the instance is not in r, the address is empty. Then the strategy behaves the same as on an unhealthy instance.
+func NewMirrorShuffleShardingStrategy(r *ring.Ring, instanceID string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+	instanceAddr := func() string {
+		inst, err := r.GetInstance(instanceID)
+		if err != nil {
+			return ""
+		}
+		return inst.Addr
+	}
+	return newShuffleShardingStrategy(r, instanceID, instanceAddr, dynamicReplication, limits, logger)
+}
+
+func newShuffleShardingStrategy(r *ring.Ring, instanceID string, instanceAddr func() string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
 		r:                  r,
 		instanceID:         instanceID,
@@ -74,7 +94,7 @@ func (s *ShuffleShardingStrategy) FilterUsers(_ context.Context, userIDs []strin
 	// instance, because of the auto-forget feature.
 	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil {
 		return nil, err
-	} else if !set.Includes(s.instanceAddr) {
+	} else if !set.Includes(s.instanceAddr()) {
 		return nil, errStoreGatewayUnhealthy
 	}
 
@@ -97,7 +117,8 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	// As a protection, ensure the store-gateway instance is healthy in the ring. If it's unhealthy because it's failing
 	// to heartbeat or get updates from the ring, or even removed from the ring because of the auto-forget feature, then
 	// keep the previously loaded blocks.
-	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil || !set.Includes(s.instanceAddr) {
+	instanceAddr := s.instanceAddr()
+	if set, err := s.r.GetAllHealthy(BlocksOwnerSync); err != nil || !set.Includes(instanceAddr) {
 		for blockID := range metas {
 			if _, ok := loaded[blockID]; ok {
 				level.Warn(s.logger).Log("msg", "store-gateway is unhealthy in the ring but block is kept because was previously loaded", "block", blockID.String(), "err", err)
@@ -143,7 +164,7 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		}
 
 		// Keep the block if it is owned by the store-gateway.
-		if set.Includes(s.instanceAddr) {
+		if set.Includes(instanceAddr) {
 			continue
 		}
 

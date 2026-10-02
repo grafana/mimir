@@ -51,6 +51,7 @@ type blocksPageTestResponse struct {
 	} `json:"metas"`
 	Source        string `json:"source"`
 	TotalBlocks   int    `json:"total_blocks"`
+	LoadedBlocks  int    `json:"loaded_blocks"`
 	MatchedBlocks int    `json:"matched_blocks"`
 	BlocksRead    int    `json:"blocks_read"`
 	Page          int    `json:"page"`
@@ -280,6 +281,28 @@ func TestStoreGateway_BlocksHandler(t *testing.T) {
 				assert.Equal(t, http.StatusBadRequest, recorder.Code)
 			})
 		}
+	})
+
+	t.Run("loaded_only keeps the blocks that this store-gateway loaded", func(t *testing.T) {
+		res := requestBlocksPageJSON(t, gateway, "loaded_only=on")
+		assert.Empty(t, res.blockIDs())
+		assert.Equal(t, 0, res.LoadedBlocks)
+
+		setBlocksPageLoadedBlocks(t, gateway, first, noCompact)
+		t.Cleanup(func() { gateway.stores.stores = nil })
+
+		res = requestBlocksPageJSON(t, gateway, "loaded_only=on")
+		assert.Equal(t, []string{first, noCompact}, res.blockIDs())
+		assert.Equal(t, 2, res.LoadedBlocks)
+
+		res = requestBlocksPageJSON(t, gateway, "")
+		assert.Equal(t, []string{first, second, noCompact}, res.blockIDs())
+		assert.Equal(t, 2, res.LoadedBlocks)
+
+		body := requestBlocksPage(t, gateway, "loaded_only=on", "").Body.String()
+		assert.Contains(t, body, `id="loaded-only" name="loaded_only" type="checkbox" checked`)
+		assert.Contains(t, body, "This store-gateway loaded 2 blocks of this tenant.")
+		assert.NotContains(t, body, second)
 	})
 
 	t.Run("HTML rendering", func(t *testing.T) {
@@ -517,4 +540,15 @@ func requestBlocksPageJSON(t *testing.T, gateway *StoreGateway, query string) bl
 	var res blocksPageTestResponse
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &res))
 	return res
+}
+
+// setBlocksPageLoadedBlocks makes the store-gateway serve the blocks with the given IDs for the test tenant.
+func setBlocksPageLoadedBlocks(t *testing.T, g *StoreGateway, ids ...string) {
+	set := newBucketBlockSet()
+	for _, id := range ids {
+		blockID, err := ulid.Parse(id)
+		require.NoError(t, err)
+		require.NoError(t, set.add(&bucketBlock{meta: &block.Meta{BlockMeta: prom_tsdb.BlockMeta{ULID: blockID}}}))
+	}
+	g.stores.stores = map[string]*BucketStore{blocksPageTestTenant: {blockSet: set}}
 }

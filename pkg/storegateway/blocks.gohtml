@@ -74,6 +74,10 @@
             <input id="show-deleted" name="show_deleted" type="checkbox" {{ if .ShowDeleted }}checked{{ end }}>
             <label for="show-deleted">Include blocks marked for deletion</label>
         </div>
+        <div>
+            <input id="loaded-only" name="loaded_only" type="checkbox" {{ if .LoadedOnly }}checked{{ end }}>
+            <label for="loaded-only">Only blocks loaded by this store-gateway</label>
+        </div>
     </fieldset>
 
     <fieldset>
@@ -125,6 +129,7 @@
     {{ if ne .MatchedBlocks .TotalBlocks }}
         {{ .TotalBlocks }} blocks before the filters{{ if .HiddenDeletedBlocks }}, including {{ .HiddenDeletedBlocks }} marked for deletion{{ end }}.
     {{ end }}
+    This store-gateway loaded {{ .LoadedBlocks }} blocks of this tenant.
     {{ if gt .TotalPages 1 }}
         Page {{ .Page }} of {{ .TotalPages }}:
         {{ range $i, $link := .PageLinks }}

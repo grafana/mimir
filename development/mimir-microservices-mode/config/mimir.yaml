@@ -52,12 +52,13 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    sync_interval: 1m
+    sync_interval: 30s
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
     # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
-    ignore_blocks_within: 2m
+    ignore_blocks_within: 1m
+    block_sync_concurrency: 16
 
     # Uncomment index_header and index_header_cache for experimental bucket-based index-header reader
     #index_header:
@@ -147,7 +148,8 @@ compactor:
 
 store_gateway:
   sharding_ring:
-    replication_factor: 3
+    replication_factor: 2
+    zone_awareness_enabled: true
     heartbeat_period:   5s
     heartbeat_timeout:  15s
     wait_stability_min_duration: 0

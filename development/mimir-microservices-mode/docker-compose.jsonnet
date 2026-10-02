@@ -2,14 +2,14 @@ std.manifestYamlDoc({
   _config:: {
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
-    debug: false,
+    debug: true,
 
     // When debug is true, controls which targets run under Delve.
     // If empty, all components run under Delve.
     // If non-empty, only the listed components run under Delve.
     // Example: ['querier', 'ingester'] to debug only querier and ingester.
-    // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test.
-    debug_targets: [],
+    // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test, grpc-tee.
+    debug_targets: ['querier', 'grpc-tee', 'store-gateway'],
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
@@ -17,7 +17,7 @@ std.manifestYamlDoc({
     // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
     ruler_use_remote_execution: false,
 
-    enable_continuous_test: true,
+    enable_continuous_test: false,
 
     // If true, a load generator is started.
     enable_load_generator: false,
@@ -36,6 +36,9 @@ std.manifestYamlDoc({
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
 
+    // If true, grpc-tee instances are started in front of store-gateway-1.
+    enable_grpc_tee: true,
+
     // If true, a secondary query path is started.
     enable_secondary_query_path: false,
     secondary_query_path_extra_args: [],
@@ -47,10 +50,10 @@ std.manifestYamlDoc({
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
     (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
-    self.store_gateways(3) +
+    self.store_gateways +
     self.compactor +
-    self.rulers(2) +
-    self.alertmanagers(3) +
+    //    self.rulers(2) +
+    //    self.alertmanagers(3) +
     self.nginx +
     self.minio +
     (if $._config.enable_continuous_test then self.continuous_test else {}) +
@@ -63,6 +66,7 @@ std.manifestYamlDoc({
     self.memcached +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
+    (if $._config.enable_grpc_tee then self.grpc_tees(2) else {}) +
     {},
 
   distributor:: {
@@ -171,14 +175,45 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  store_gateways(count):: {
+  // Two store-gateways in each of two zones. With zone-awareness and RF 2, each zone has one replica of each block,
+  // so each store-gateway owns about half of the blocks.
+  // If grpc-tee is enabled, store-gateway-5 is the secondary backend of grpc-tee (refer to store_gateway_mirror).
+  store_gateways:: {
     ['store-gateway-%d' % id]: mimirService({
       name: 'store-gateway-' + id,
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
+      extraArguments: [
+        '-store-gateway.sharding-ring.instance-availability-zone=%s' % ['zone-a', 'zone-b'][std.floor((id - 1) / 2)],
+      ] + (
+        // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee-1 address in the ring,
+        // so queriers connect through grpc-tee-1.
+        if $._config.enable_grpc_tee && id == 1 then [
+          '-store-gateway.sharding-ring.instance-addr=grpc-tee-1',
+          '-store-gateway.sharding-ring.instance-port=9095',
+        ] else []
+      ),
     })
-    for id in std.range(1, count)
+    for id in std.range(1, 4)
+  } + (if $._config.enable_grpc_tee then self.store_gateway_mirror else {}),
+
+  // store-gateway-5 joins a separate ring, so queriers don't see it.
+  // It runs in mirror mode, so it loads the same blocks as store-gateway-1.
+  store_gateway_mirror:: {
+    'store-gateway-5': mimirService({
+      name: 'store-gateway-5',
+      target: 'store-gateway',
+      httpPort: 8015,
+      jaegerApp: 'store-gateway-5',
+      extraArguments: [
+        '-store-gateway.sharding-ring.prefix=secondary/',
+        '-store-gateway.sharding-ring.instance-id=store-gateway-1',
+        '-store-gateway.sharding-ring.instance-availability-zone=zone-a',
+        '-store-gateway.mirror.enabled=true',
+        '-store-gateway.mirror.ring-kvstore-prefix=collectors/',
+      ],
+    }),
   },
 
   continuous_test:: {
@@ -299,10 +334,10 @@ std.manifestYamlDoc({
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
         'distributor-1',
-        'alertmanager-1',
-        'ruler-1',
+        //        'alertmanager-1',
+        //        'ruler-1',
         'query-frontend',
-        'compactor',
+        //        'compactor',
         'grafana',
       ],
       environment: [
@@ -477,6 +512,60 @@ std.manifestYamlDoc({
       hostname: 'query-tee',
       ports: ['9999:80'],
     },
+  },
+
+  grpc_tees(count):: {
+    local useDelve = $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, 'grpc-tee')),
+
+    ['grpc-tee-%d' % id]: {
+      local name = 'grpc-tee-%d' % id,
+      local grpcPort = 9094 + id,
+      local httpPort = 8094 + id,
+      local debugPort = 19094 + id,
+      local flags = [
+        '-server.grpc-listen-address=:%d' % grpcPort,
+        '-server.http-listen-address=:%d' % httpPort,
+        // grpc-tee sends each call to store-gateway-1 (primary) and store-gateway-5 (secondary), and compares the responses.
+        // It reads each store-gateway ring the same way as the querier. These values match config/mimir.yaml.
+        '-backend.primary.name=store-gateway-1',
+        '-backend.primary.type=store-gateway',
+        '-backend.primary.address=store-gateway-1:9011',
+        '-backend.primary.ring.key=store-gateway',
+        '-backend.primary.ring.store=memberlist',
+        '-backend.primary.ring.replication-factor=2',
+        '-backend.primary.ring.heartbeat-timeout=15s',
+        '-backend.primary.ring.zone-awareness-enabled=true',
+        '-backend.secondary.name=store-gateway-5',
+        '-backend.secondary.type=store-gateway',
+        '-backend.secondary.address=store-gateway-5:9015',
+        '-backend.secondary.ring.key=store-gateway',
+        '-backend.secondary.ring.prefix=secondary/',
+        '-backend.secondary.ring.store=memberlist',
+        '-backend.secondary.ring.replication-factor=2',
+        '-backend.secondary.ring.heartbeat-timeout=15s',
+        '-backend.secondary.ring.zone-awareness-enabled=true',
+        // grpc-tee joins its own ring (key "grpc-tee") over the same memberlist cluster as Mimir.
+        '-ring.store=memberlist',
+        '-ring.instance-id=%s' % name,
+        '-ring.instance-addr=%s' % name,
+        '-ring.instance-port=%d' % grpcPort,
+        '-memberlist.nodename=%s' % name,
+        '-memberlist.join=distributor-1:10000',
+      ],
+
+      image: 'grpc-tee',
+      build: {
+        context: '../../tools/grpc-tee',
+        [if useDelve then 'dockerfile']: 'dev.dockerfile',
+      },
+      command: if useDelve
+      then ['/bin/dlv', 'exec', '/bin/grpc-tee', '--listen=:%d' % debugPort, '--headless=true', '--api-version=2', '--accept-multiclient', '--continue', '--'] + flags
+      else flags,
+      hostname: name,
+      ports: ['%d:%d' % [grpcPort, grpcPort], '%d:%d' % [httpPort, httpPort]] + (if useDelve then ['%d:%d' % [debugPort, debugPort]] else []),
+      depends_on: ['distributor-1', 'store-gateway-1', 'store-gateway-5'],
+    }
+    for id in std.range(1, count)
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
