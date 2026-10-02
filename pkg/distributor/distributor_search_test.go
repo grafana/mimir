@@ -463,6 +463,62 @@ func TestBuildSearchMetricsMetadataRequest(t *testing.T) {
 	assert.Equal(t, int64(42), req.Limit)
 }
 
+func TestDistributor_SearchMetricsMetadata_WarningsPropagated(t *testing.T) {
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      1,
+		happyIngesters:    1,
+		replicationFactor: 1,
+		searchMetricsMetadataHook: func(_ int, _ *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch {
+			return []*client.SearchResultBatch{
+				{Results: []client.SearchResultBatch_Result{{Value: "x"}}, Warnings: []string{"replica-warn"}},
+			}
+		},
+	})
+	rs := ds[0].SearchMetricsMetadata(
+		user.InjectOrgID(context.Background(), "user-1"),
+		nil,
+		&storage.SearchHints{Limit: 10},
+	)
+	defer rs.Close()
+	for rs.Next() {
+		_ = rs.At()
+	}
+	require.NoError(t, rs.Err())
+	msgs := make([]string, 0, 1)
+	for _, w := range rs.Warnings() {
+		msgs = append(msgs, w.Error())
+	}
+	assert.Equal(t, []string{"replica-warn"}, msgs)
+}
+
+func TestDistributor_SearchMetricsMetadata_QuorumShortCircuit(t *testing.T) {
+	// RF=3 with all replicas serving identical metric metadata — DoUntilQuorum
+	// short-circuits the third. Quorum-reached replicas' values must
+	// survive merge+dedup.
+	shared := []string{"alpha", "beta", "gamma"}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		numIngesters:    3,
+		happyIngesters:  3,
+		searchMetricsMetadataHook: func(_ int, _ *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch {
+			return makeSearchBatches(shared)
+		},
+	})
+	rs := ds[0].SearchMetricsMetadata(
+		user.InjectOrgID(context.Background(), "user-1"),
+		nil,
+		&storage.SearchHints{Limit: 100, OrderBy: storage.OrderByValueAsc},
+	)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.ElementsMatch(t, shared, got, "every value returned by the quorum-reached replicas must survive merge+dedup")
+}
+
 func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
 	// Replicas return pre-filtered, pre-scored results.
 	replicaResponses := map[int][]scoredValue{
