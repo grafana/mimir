@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/axiomhq/hyperloglog"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,6 +22,10 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
+
+// SeriesCountsSketchPrecision is the HLL precision of a group's sketch:
+// 2^11 registers, a standard error of about 2.3%.
+const SeriesCountsSketchPrecision = 11
 
 // maxSeriesCountsBuckets caps step_ms so a request can't ask for a huge
 // count slice per group.
@@ -36,6 +41,8 @@ type seriesCounts struct {
 	hashes     bool
 	// maxIndexBytes caps postings plus series entry bytes read, 0 for none.
 	maxIndexBytes int64
+	// sketchAbove turns a hash set larger than this into an HLL sketch.
+	sketchAbove int64
 
 	counted int
 	counts  map[string][]int64
@@ -67,6 +74,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		groupBy:       req.GroupBy,
 		hashes:        req.Hashes,
 		maxIndexBytes: req.MaxIndexBytes,
+		sketchAbove:   req.SketchAbove,
 		counts:        map[string][]int64{},
 		sets:          map[string]map[uint64]struct{}{},
 	}
@@ -91,6 +99,9 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	}
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
+	}
+	if c.sketchAbove < 0 {
+		return nil, errors.New("sketch_above can't be negative")
 	}
 	return c, nil
 }
@@ -177,20 +188,34 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	}
 }
 
-func (c *seriesCounts) groups() []*storegatewaypb.SeriesCountGroup {
+func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 	out := make([]*storegatewaypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
 	for v, counts := range c.counts {
 		out = append(out, &storegatewaypb.SeriesCountGroup{Value: v, Counts: counts})
 	}
 	for v, set := range c.sets {
-		g := &storegatewaypb.SeriesCountGroup{Value: v, Hashes: make([]uint64, 0, len(set))}
-		for h := range set {
-			g.Hashes = append(g.Hashes, h)
+		g := &storegatewaypb.SeriesCountGroup{Value: v}
+		if c.sketchAbove > 0 && int64(len(set)) > c.sketchAbove {
+			sk, err := hyperloglog.NewSketch(SeriesCountsSketchPrecision, false)
+			if err != nil {
+				return nil, err
+			}
+			for h := range set {
+				sk.InsertHash(h)
+			}
+			if g.Sketch, err = sk.MarshalBinary(); err != nil {
+				return nil, err
+			}
+		} else {
+			g.Hashes = make([]uint64, 0, len(set))
+			for h := range set {
+				g.Hashes = append(g.Hashes, h)
+			}
 		}
 		out = append(out, g)
 	}
 	slices.SortFunc(out, func(a, b *storegatewaypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
-	return out
+	return out, nil
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
@@ -259,7 +284,9 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		}
 		resp.BlockIds = append(resp.BlockIds, o.b.meta.ULID.String())
 	}
-	resp.Groups = c.groups()
+	if resp.Groups, err = c.groups(); err != nil {
+		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
+	}
 	resp.SeriesCounted = int64(c.counted)
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
