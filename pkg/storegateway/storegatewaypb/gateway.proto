@@ -82,6 +82,9 @@ message SeriesCountsRequest {
   // response. Checked before any series entry is read, from the matching postings times an estimated series size,
   // and again while reading. 0 means no limit.
   int64 max_index_bytes = 9;
+  // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
+  // hashes, so its payload is a fixed size. 0 means always hashes.
+  int64 sketch_above = 10;
 }
 
 message SeriesCountGroup {
@@ -89,6 +92,8 @@ message SeriesCountGroup {
   // One count per bucket, or a single count when there is no step.
   repeated int64 counts = 2;
   repeated uint64 hashes = 3;
+  // A marshalled axiomhq/hyperloglog sketch of the group's label-set hashes, set instead of hashes above sketch_above.
+  bytes sketch = 4;
 }
 
 message SeriesCountsResponse {

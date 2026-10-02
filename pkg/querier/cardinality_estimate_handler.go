@@ -26,6 +26,8 @@ type estimateGroup struct {
 	Value  string  `json:"value"`
 	Count  int64   `json:"count"`
 	Counts []int64 `json:"counts,omitempty"`
+	// Estimated is set when the count comes from an HLL sketch.
+	Estimated bool `json:"estimated,omitempty"`
 }
 
 type estimateResponse struct {
@@ -44,6 +46,9 @@ type estimateResponse struct {
 	PostingsFetchedBytes int64           `json:"postings_fetched_bytes"`
 	SeriesFetchedBytes   int64           `json:"series_fetched_bytes"`
 	IndexBytes           int64           `json:"index_bytes"`
+	EstimatedGroups      int             `json:"estimated_groups"`
+	HashBytes            int64           `json:"hash_bytes"`
+	SketchBytes          int64           `json:"sketch_bytes"`
 	ElapsedMS            float64         `json:"elapsed_ms"`
 	Counts               []estimateGroup `json:"counts"`
 	Compare              *estimateCheck  `json:"compare,omitempty"`
@@ -65,7 +70,9 @@ type estimateCheck struct {
 // takes start, end, an optional match[] selector, group_by (default
 // __name__), step for per-bucket counts, max_index_bytes to cap the index
 // bytes the request reads (over it the request fails with 422 and nothing is
-// counted), limit to keep the largest groups, and snap=true to widen a
+// counted), sketch_above to send an HLL sketch instead of hashes for a group
+// with more series than that when deduplicating across block ranges
+// (default 10000, 0 for always exact), limit to keep the largest groups, and snap=true to widen a
 // window inside one block range to that range. With a step, a group's count
 // is its largest bucket. read in the response says how it was answered. With
 // compare=true it also answers the request by loading chunks, as a PromQL
@@ -99,11 +106,12 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
+			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
 			Counts:    make([]estimateGroup, 0, len(res.Counts)),
 		}
 		for v, counts := range res.Counts {
-			g := estimateGroup{Value: v, Count: slices.Max(counts)}
+			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
 			if req.Step > 0 {
 				g.Counts = counts
 			}
@@ -188,6 +196,12 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 			return req, 0, errors.New("max_index_bytes must be a non-negative integer")
 		}
 	}
+	req.SketchAbove = defaultSketchAbove
+	if v := r.FormValue("sketch_above"); v != "" {
+		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove < 0 {
+			return req, 0, errors.New("sketch_above must be a non-negative integer")
+		}
+	}
 	limit := 0
 	if v := r.FormValue("limit"); v != "" {
 		if limit, err = strconv.Atoi(v); err != nil || limit < 0 {
@@ -196,6 +210,9 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 	}
 	return req, limit, nil
 }
+
+// defaultSketchAbove is the design's switch from exact hashes to a sketch.
+const defaultSketchAbove = 10_000
 
 // WithCardinalityEstimateRoute serves CardinalityEstimateHandler on
 // prefix/api/v1/cardinality/estimate and passes every other request to next.
