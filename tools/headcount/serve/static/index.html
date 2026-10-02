@@ -201,8 +201,12 @@ async function get(path) {
   return r.json();
 }
 
+// esc makes text safe to put in innerHTML: error messages and metric names
+// come from the server and may contain markup characters.
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
 function kv(el, pairs) {
-  el.innerHTML = pairs.map(([k, v, cls]) => `<span>${k}</span><span class="${cls || ""}">${v}</span>`).join("");
+  el.innerHTML = pairs.map(([k, v, cls]) => `<span>${esc(k)}</span><span class="${cls || ""}">${esc(v)}</span>`).join("");
 }
 
 // briefError keeps the innermost gRPC description up to Mimir's advice text.
@@ -285,9 +289,9 @@ async function run() {
       : r.estimated ? `<span class="muted">${pct(r.day, r.truth_day)} vs truth</span>${tagHLL}`
       : `<span class="err">✗ truth ${fmt(r.truth_base)} → ${fmt(r.truth_day)}</span>`;
     $("growth").innerHTML = `<tr><th>metric</th><th class="num">before</th><th class="num">window</th><th class="num">growth</th><th class="num">equals truth</th></tr>` +
-      g.rows.map(r => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${exactCell(r)}</td></tr>`).join("");
+      g.rows.map(r => `<tr class="click" data-name="${esc(r.name)}"><td title="${esc(r.name)}">${esc(short(r.name))}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${exactCell(r)}</td></tr>`).join("");
     $("growth-note").innerHTML = `${fmt(g.changed)} of ${fmt(g.names)} names changed; ${fmt(g.names_exact)} of ${fmt(g.names)} are exact against the truth in both windows. Tenant total ${fmt(g.total_prev)} → ${fmt(g.total)} series. Click a row to drill down.` +
-      (g.falls && g.falls.length ? `<br>Largest falls: ${g.falls.map(r => `${short(r.name)} ${fmt(r.base)} → ${fmt(r.day)}`).join(", ")}.` : "");
+      (g.falls && g.falls.length ? `<br>Largest falls: ${g.falls.map(r => `${esc(short(r.name))} ${fmt(r.base)} → ${fmt(r.day)}`).join(", ")}.` : "");
     const hcRead = addRead(g.read, g.prev_read);
     kv($("growth-hc"), mimirPairs(hcRead));
     $("cost-headline").textContent = "";
@@ -321,7 +325,7 @@ async function run() {
     await runWindow();
     $("status").textContent = "";
   } catch (e) {
-    $("status").innerHTML = `<span class="err">${e.message}</span>`;
+    $("status").innerHTML = `<span class="err">${esc(e.message)}</span>`;
   } finally {
     $("run").disabled = $("preset").disabled = false;
   }
@@ -338,7 +342,7 @@ async function runWindow() {
   $("win-sum-card").classList.toggle("agrees", !many);
   const errCell = (est, truth, estimated) => est === truth ? `<span class="ok">0%</span>${estimated ? tagHLL : ""}` : `${pct(est, truth)}${estimated ? tagHLL : ""}`;
   $("win").innerHTML = `<tr><th>metric</th><th class="num">dedup (In Mimir)</th><th class="num">truth</th><th class="num">error</th><th class="num">adding the days</th></tr>` +
-    w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td><td class="num">${errCell(r.exact, r.truth, r.estimated)}</td><td class="num">${fmt(r.summed)}</td></tr>`).join("") +
+    w.rows.map(r => `<tr><td title="${esc(r.name)}">${esc(short(r.name))}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td><td class="num">${errCell(r.exact, r.truth, r.estimated)}</td><td class="num">${fmt(r.summed)}</td></tr>`).join("") +
     `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td><td class="num"><b>${pct(w.exact_total, w.truth_total) === "+0.0%" ? "0%" : pct(w.exact_total, w.truth_total)}</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td></tr>`;
   const est = w.rows.filter(r => r.estimated);
   const over = w.exact_total ? (100 * (w.summed_total - w.exact_total) / w.exact_total).toFixed(0) : 0;
@@ -407,12 +411,12 @@ async function drill(name) {
   byLabel.sort((a, b) => b.growth - a.growth || b.now - a.now);
   const hasPrev = byLabel[0].prev !== null;
   $("lbl").innerHTML = `<tr><th>label</th>${hasPrev ? `<th class="num">values before</th>` : ""}<th class="num">values in window</th><th class="num">growth</th></tr>` +
-    byLabel.map((x, i) => `<tr${i === 0 ? ` class="sel"` : ""}><td>${x.now === 0 && !x.prev ? `<span class="muted">${x.label} (not on this metric)</span>` : `<b>${x.label}</b>`}</td>${hasPrev ? `<td class="num">${fmt(x.prev)}</td>` : ""}<td class="num">${fmt(x.now)}</td><td class="num">${x.growth >= 0 ? "+" : ""}${fmt(x.growth)}</td></tr>`).join("");
+    byLabel.map((x, i) => `<tr${i === 0 ? ` class="sel"` : ""}><td>${x.now === 0 && !x.prev ? `<span class="muted">${esc(x.label)} (not on this metric)</span>` : `<b>${esc(x.label)}</b>`}</td>${hasPrev ? `<td class="num">${fmt(x.prev)}</td>` : ""}<td class="num">${fmt(x.now)}</td><td class="num">${x.growth >= 0 ? "+" : ""}${fmt(x.growth)}</td></tr>`).join("");
   const top = byLabel[0], b = top.b, lbl = top.label;
   const maxV = Math.max(top.prev || 0, top.now, 1);
   const bar = (t, n) => `<div style="display:grid;grid-template-columns:9em 1fr 6em;gap:8px;align-items:center;margin:6px 0"><span>${t}</span><div class="bar" style="width:${Math.max(0.5, 100 * n / maxV)}%"></div><span class="num">${fmt(n)}</span></div>`;
-  const vals = rows => rows.map(r => `${lbl}=${r.value || "(none)"}: ${fmt(r.count)}`).join(", ");
-  $("bd-bars").innerHTML = `<div class="muted">distinct <b>${lbl}</b> values</div>` +
+  const vals = rows => rows.map(r => `${esc(lbl)}=${esc(r.value || "(none)")}: ${fmt(r.count)}`).join(", ");
+  $("bd-bars").innerHTML = `<div class="muted">distinct <b>${esc(lbl)}</b> values</div>` +
     (top.prev !== null ? bar("window before", top.prev) : "") + bar("window", top.now) +
     `<div class="muted" style="margin-top:8px">largest values in the window: ${vals(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
   const pq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=8`);
@@ -470,8 +474,8 @@ for (const b of document.querySelectorAll(".info-btn")) {
   };
 }
 $("run").onclick = run;
-$("step").onchange = () => { if (selected) runBuckets(selected).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; }); };
-init().then(run).catch(e => { $("status").innerHTML = `<span class="err">${e.message}</span>`; });
+$("step").onchange = () => { if (selected) runBuckets(selected).catch(e => { $("status").innerHTML = `<span class="err">${esc(e.message)}</span>`; }); };
+init().then(run).catch(e => { $("status").innerHTML = `<span class="err">${esc(e.message)}</span>`; });
 </script>
 </body>
 </html>

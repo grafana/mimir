@@ -137,6 +137,10 @@ func overlapping(metas []*block.Meta, minT, maxT int64) []*block.Meta {
 	return out
 }
 
+// maxBuckets caps Step so a request can't ask for a huge count slice per
+// group, the same cap as the store-gateway's.
+const maxBuckets = 1440
+
 // counter reads series entries and chunk metas from full indexes.
 type counter struct {
 	req     CardinalityEstimateRequest
@@ -150,11 +154,17 @@ type counter struct {
 
 func newCounter(req CardinalityEstimateRequest, dedup bool) (*counter, error) {
 	c := &counter{req: req, dedup: dedup, buckets: 1, counts: map[string][]int{}, sets: map[string]map[uint64]struct{}{}}
+	if req.Step < 0 {
+		return nil, errors.New("step can't be negative")
+	}
 	if req.Step > 0 {
 		if (req.MaxT-req.MinT)%req.Step != 0 {
 			return nil, fmt.Errorf("step %d doesn't divide the window [%d, %d)", req.Step, req.MinT, req.MaxT)
 		}
 		c.buckets = int((req.MaxT - req.MinT) / req.Step)
+		if c.buckets > maxBuckets {
+			return nil, fmt.Errorf("the window has %d buckets of step, more than %d", c.buckets, maxBuckets)
+		}
 	}
 	c.seen = make([]bool, c.buckets)
 	return c, nil

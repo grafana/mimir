@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Command serve runs the Headcount demo: an HTTP API that answers
-// cardinality questions from the blocks of one compacted snapshot, using
-// the cardpoc library, and a single page that puts each answer next to the
-// same question asked of a running Mimir through PromQL.
+// cardinality questions through a running Mimir's experimental
+// /api/v1/cardinality/estimate route, checks each answer against the
+// synthetic population's known truth, and serves a single page that puts
+// each answer next to the same question asked of that Mimir through PromQL.
+// The cardpoc library is used only to read the snapshot's block ranges.
 package main
 
 import (
