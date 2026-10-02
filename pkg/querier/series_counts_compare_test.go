@@ -33,12 +33,12 @@ func TestCountSeriesSamples(t *testing.T) {
 		})
 	}
 
-	counts, err := countSeriesSamples(newSet(), SeriesCountsRequest{MinT: 2, MaxT: 22, Step: 10})
+	counts, err := countSeriesSamples(newSet(), CardinalityEstimateRequest{MinT: 2, MaxT: 22, Step: 10})
 	require.NoError(t, err)
 	// Buckets [2, 12) and [12, 22).
 	assert.Equal(t, map[string][]int64{"up": {1, 2}, "errors_total": {0, 1}}, counts)
 
-	counts, err = countSeriesSamples(newSet(), SeriesCountsRequest{MinT: 2, MaxT: 22, GroupBy: "pod"})
+	counts, err = countSeriesSamples(newSet(), CardinalityEstimateRequest{MinT: 2, MaxT: 22, GroupBy: "pod"})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, counts)
 }
