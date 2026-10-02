@@ -311,19 +311,27 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 }
 
 // paramsToProto returns nil for nil/empty Params — the ingester treats a
-// nil filter as accept-all.
+// nil filter as accept-all. A ResumeAfter-only Params is not empty: a cursor
+// walk with no search[]/search_expr still needs search_after pushed down.
 func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil || (!p.HasSearchTerms() && p.ResumeAfter == "") {
 		return nil
 	}
 	wf := &ingester_client.SearchFilter{
 		Terms:           p.Terms,
+		Expression:      p.Expression(),
 		CaseInsensitive: !p.CaseSensitive,
 		FuzzThreshold:   int32(p.FuzzThreshold),
+		ResumeAfter:     p.ResumeAfter,
+		ScoreAfter:      p.ScoreAfter,
 	}
 	switch p.FuzzAlg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_JARO_WINKLER
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING_LEFT
+	case streaminglabelvalues.FuzzAlgSubstring:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING
 	default:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSEQUENCE
 	}

@@ -520,6 +520,17 @@ func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *st
 	if hints != nil {
 		hintsCopy = *hints
 	}
+	// Compose the cursor-resume exclusion on top of the params filter, the
+	// same way the ingester and store-gateway leaves do, so a cursor walk
+	// over the synthetic ID label does not re-serve already-seen values.
+	// Uses hintsCopy.OrderBy because hints itself may be nil.
+	if params != nil {
+		if hintsCopy.OrderBy == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, hintsCopy.OrderBy)
+		}
+	}
 	hintsCopy.Filter = filter
 	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
 }

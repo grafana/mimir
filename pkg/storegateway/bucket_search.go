@@ -250,6 +250,13 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 	if err != nil {
 		return nil, err
 	}
+	if params != nil {
+		if order == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, order)
+		}
+	}
 	results := storage.ApplySearchHints(values, &storage.SearchHints{
 		Filter:  filter,
 		OrderBy: order,
@@ -262,16 +269,38 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 }
 
 // storepbToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// streaminglabelvalues.Params via NewParams or NewExpressionParams. A nil
+// input returns (nil, nil). Terms and Expression are mutually exclusive on
+// every boundary, including direct gRPC callers that bypass the HTTP handler.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
-		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	if len(wf.Terms) > 0 && wf.Expression != "" {
+		return nil, streaminglabelvalues.ErrTermsAndExpression
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	alg := streaminglabelvalues.FuzzAlgSubsequence
+	switch wf.FuzzAlg {
+	case storepb.FUZZ_ALG_JARO_WINKLER:
+		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case storepb.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case storepb.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
+	}
+	var params *streaminglabelvalues.Params
+	var err error
+	if wf.Expression != "" {
+		params, err = streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	} else {
+		params, err = streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	}
+	if err != nil {
+		return nil, err
+	}
+	params.ResumeAfter = wf.ResumeAfter
+	params.ScoreAfter = wf.ScoreAfter
+	return params, nil
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.

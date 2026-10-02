@@ -410,6 +410,9 @@ func TestDistributor_SearchLabelValues_PassesLabelName(t *testing.T) {
 }
 
 func TestParamsToProto(t *testing.T) {
+	expressionParams, err := streaminglabelvalues.NewExpressionParams("foo AND NOT bar", true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
 	cases := []struct {
 		name string
 		in   *streaminglabelvalues.Params
@@ -436,6 +439,53 @@ func TestParamsToProto(t *testing.T) {
 			name: "Subsequence is the default (zero-value FuzzAlg)",
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzThreshold: 50},
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, FuzzThreshold: 50},
+		},
+		{
+			name: "expression-only params are not dropped",
+			in:   expressionParams,
+			want: &client.SearchFilter{Expression: "foo AND NOT bar", CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "SubstringLeft fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstringLeft},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+		},
+		{
+			name: "Substring fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstring},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+		},
+		{
+			name: "ResumeAfter rides on the wire filter",
+			in: func() *streaminglabelvalues.Params {
+				p := &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true}
+				p.ResumeAfter = "bar"
+				return p
+			}(),
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, ResumeAfter: "bar"},
+		},
+		{
+			// A cursor walk with no search[] and no search_expr still needs
+			// resume_after pushed down, so a ResumeAfter-only Params must
+			// not be dropped as "empty".
+			name: "ResumeAfter alone keeps the wire filter",
+			in: func() *streaminglabelvalues.Params {
+				p := &streaminglabelvalues.Params{}
+				p.ResumeAfter = "foo"
+				return p
+			}(),
+			want: &client.SearchFilter{CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, ResumeAfter: "foo"},
+		},
+		{
+			name: "term-less ScoreAfter rides on the wire filter alongside ResumeAfter",
+			in: func() *streaminglabelvalues.Params {
+				p, err := streaminglabelvalues.NewParams(nil, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+				require.NoError(t, err)
+				p.ResumeAfter = "bar"
+				p.ScoreAfter = 0.75
+				return p
+			}(),
+			want: &client.SearchFilter{CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, ResumeAfter: "bar", ScoreAfter: 0.75},
 		},
 	}
 	for _, tc := range cases {

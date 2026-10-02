@@ -1707,6 +1707,121 @@ func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsLimit(t *test
 	assert.Equal(t, []string{"team-a", "team-b"}, drainSearchResultSet(t, rs))
 }
 
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsResumeAfter
+// pins the cursor-resume pushdown on the synthetic-ID path. This is the
+// querier's own in-process search, so there is no rolling-upgrade angle: if
+// ApplyResumeAfter is not applied here, a cursor walk over __tenant_id__
+// re-serves values the caller has already seen.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsResumeAfter(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "team-b"
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-c", "team-d"}, drainSearchResultSet(t, rs),
+		"values at or before ResumeAfter must be excluded")
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsResumeAfterDesc
+// pins the same exclusion for descending order, where the resume boundary
+// inverts.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsResumeAfterDesc(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "team-c"
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueDesc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-b", "team-a"}, drainSearchResultSet(t, rs),
+		"values at or after ResumeAfter must be excluded when ordering descending")
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsScoreAfter
+// mirrors TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsResumeAfter
+// for sort_by=score. No search term is set, so BuildFilter returns nil (a
+// nil inner filter implies score 1.0 for every candidate, matching
+// ApplyScoreResumeAfter's own nil-inner convention) — every candidate ties
+// at score 1.0, so the (Score desc, Value asc) exclusion rule reduces to a
+// pure value-based tie-break at that score. This exercises
+// ApplyScoreResumeAfter's tie-break branch specifically, not just its
+// score-greater-than branch.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsScoreAfter(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "team-b"
+	params.ScoreAfter = 1.0
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByScoreDesc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-c", "team-d"}, drainSearchResultSet(t, rs),
+		"values tied at score 1.0 at or before ResumeAfter must be excluded")
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsScoreAfterExcludesAll
+// proves the OrderByScoreDesc branch in searchSyntheticIDs actually calls
+// ApplyScoreResumeAfter rather than falling through to ApplyResumeAfter's
+// value-only fallback. RespectsScoreAfter above cannot make that
+// distinction on its own: with no search term every candidate ties at score
+// 1.0, and at that tie ApplyScoreResumeAfter's (score, value) exclusion
+// reduces to exactly the same value<=after comparison as ApplyResumeAfter's
+// ascending fallback, so the two implementations produce an identical
+// result for that input. Here ScoreAfter is set below the uniform tied
+// score, so the score-greater-than rule rejects every candidate regardless
+// of ResumeAfter; the fallback would instead retain "team-c" and "team-d",
+// so only the correct wiring passes.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsScoreAfterExcludesAll(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "team-b"
+	params.ScoreAfter = 0.5
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByScoreDesc})
+	defer rs.Close()
+	assert.Empty(t, drainSearchResultSet(t, rs),
+		"every candidate ties at score 1.0, which exceeds ScoreAfter, so all must be excluded via the score-greater-than rule")
+}
+
 // TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_BypassNotInjected
 // pins the bypass contract: with bypassWithSingleID=true and a single
 // tenant, the synthetic label is NOT injected — the request is forwarded
