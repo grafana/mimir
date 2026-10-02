@@ -253,8 +253,76 @@ func warningsToStrings(a annotations.Annotations) []string {
 	return out
 }
 
-// SearchMetricsMetadata is a stub for the new metric metadata search RPC.
-// The actual implementation will be added in a follow-up task.
-func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) error {
-	return status.Error(codes.Unimplemented, "SearchMetricsMetadata is not yet implemented")
+// SearchMetricsMetadata streams metric names whose HELP text matches the
+// search filter.
+func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) (err error) {
+	// See SearchLabelNames for why validation runs ahead of the deferred mapper.
+	filter, order, resumeAfter, limit, err := buildMetadataSearchHints(req.Filter, req.Ordering, req.Limit)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+
+	ctx := stream.Context()
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return err
+	}
+
+	userMetadata := i.getUserMetadata(userID)
+	var rs storage.SearchResultSet
+	if userMetadata == nil {
+		// No metadata pushed yet for this tenant: equivalent to a search
+		// that matched nothing, not an error.
+		rs = storage.NewSearchResultSetFromSlice(nil, nil)
+	} else {
+		rs = userMetadata.searchHelp(filter, order, resumeAfter, limit)
+	}
+	defer rs.Close()
+	return streamSearchResults(ctx, rs, stream.Send)
+}
+
+// buildMetadataSearchHints converts the wire request fields into the
+// (filter, order, resumeAfter, limit) tuple taken directly by
+// userMetricsMetadata.searchHelp. Unlike buildSearchHints, it does not apply
+// ApplyResumeAfter itself: searchHelp wraps the name-keyed filter with the
+// resume cursor internally, since the cursor here is a metric name rather
+// than the value being filtered (HELP text).
+//
+// ORDER_BY_SCORE_DESC is rejected: every match under FuzzAlgSubstring scores
+// identically, so score ordering carries no information for this endpoint.
+// This is already decided at the HTTP layer, but is re-checked here as
+// defense in depth against direct gRPC callers, mirroring protoToParams's
+// terms/expression mutual-exclusivity recheck.
+func buildMetadataSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit int64) (filter storage.Filter, order storage.Ordering, resumeAfter string, hintsLimit int, err error) {
+	if ord == client.ORDER_BY_SCORE_DESC {
+		return nil, 0, "", 0, fmt.Errorf("sort_by=score is not supported for metric metadata search")
+	}
+	params, err := protoToParams(wf)
+	if err != nil {
+		return nil, 0, "", 0, err
+	}
+	filter, err = streaminglabelvalues.BuildFilter(params)
+	if err != nil {
+		return nil, 0, "", 0, err
+	}
+	order = protoToOrdering(ord)
+	if limit < 0 {
+		return nil, 0, "", 0, fmt.Errorf("limit must be >= 0, got %d", limit)
+	}
+	hintsLimit = int(limit)
+	if limit > int64(math.MaxInt) {
+		hintsLimit = math.MaxInt
+	}
+	// params is nil when wf is nil (protoToParams's documented nil-input
+	// contract); guard the field access rather than pass an empty
+	// ResumeAfter, since searchHelp treats "" as "no cursor" anyway.
+	if params != nil {
+		resumeAfter = params.ResumeAfter
+	}
+	return filter, order, resumeAfter, hintsLimit, nil
 }

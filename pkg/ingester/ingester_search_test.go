@@ -156,6 +156,156 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 	}
 }
 
+type mockSearchMetricsMetadataStream struct {
+	client.Ingester_SearchMetricsMetadataServer
+	ctx  context.Context
+	sent []*client.SearchResultBatch
+}
+
+func (m *mockSearchMetricsMetadataStream) Send(b *client.SearchResultBatch) error {
+	m.sent = append(m.sent, b)
+	return nil
+}
+func (m *mockSearchMetricsMetadataStream) Context() context.Context { return m.ctx }
+
+// pushMetadataToIngester pushes metric metadata only (no series).
+func pushMetadataToIngester(ctx context.Context, t testing.TB, i *Ingester, metadata []*mimirpb.MetricMetadata) {
+	t.Helper()
+	_, err := i.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, metadata, mimirpb.API))
+	require.NoError(t, err)
+}
+
+// collectSearchMetricsMetadataValues drains a mockSearchMetricsMetadataStream
+// into a slice of result values, in the order batches and results were sent.
+func collectSearchMetricsMetadataValues(s *mockSearchMetricsMetadataStream) []string {
+	var got []string
+	for _, b := range s.sent {
+		for _, r := range b.Results {
+			got = append(got, r.Value)
+		}
+	}
+	return got
+}
+
+func TestIngesterSearchMetricsMetadata(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "cpu_seconds_total", Help: "Total CPU time", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "memory_bytes", Help: "Current memory usage in bytes", Type: mimirpb.GAUGE},
+		{MetricFamilyName: "disk_io_time", Help: "Cumulative disk IO time", Type: mimirpb.COUNTER},
+	})
+
+	tests := []struct {
+		name        string
+		filterTerms []string
+		caseInsens  bool
+		ordering    client.SearchOrdering
+		limit       int64
+		want        []string
+	}{
+		{name: "no filter returns all names", want: []string{"cpu_seconds_total", "disk_io_time", "memory_bytes"}},
+		{name: "substring 'memory' matches HELP text", filterTerms: []string{"memory"}, want: []string{"memory_bytes"}},
+		{name: "case-insensitive 'cpu' matches HELP text", filterTerms: []string{"cpu"}, caseInsens: true, want: []string{"cpu_seconds_total"}},
+		{name: "limit 1", limit: 1, want: []string{"cpu_seconds_total"}},
+		{name: "value desc", ordering: client.ORDER_BY_VALUE_DESC, want: []string{"memory_bytes", "disk_io_time", "cpu_seconds_total"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &client.SearchMetricsMetadataRequest{
+				Filter:   &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
+				Ordering: tc.ordering,
+				Limit:    tc.limit,
+			}
+			s := &mockSearchMetricsMetadataStream{ctx: ctx}
+			require.NoError(t, i.SearchMetricsMetadata(req, s))
+			assert.Equal(t, tc.want, collectSearchMetricsMetadataValues(s))
+		})
+	}
+}
+
+// TestIngesterSearchMetricsMetadataRejectsScoreOrderingAsInvalidArgument
+// locks in that ORDER_BY_SCORE_DESC is rejected server-side, not just at the
+// HTTP layer: every FuzzAlgSubstring match scores identically, so score
+// ordering carries no information for this endpoint.
+func TestIngesterSearchMetricsMetadataRejectsScoreOrderingAsInvalidArgument(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "cpu_seconds_total", Help: "Total CPU time", Type: mimirpb.COUNTER},
+	})
+
+	req := &client.SearchMetricsMetadataRequest{
+		Filter:   &client.SearchFilter{Terms: []string{"cpu"}},
+		Ordering: client.ORDER_BY_SCORE_DESC,
+	}
+	s := &mockSearchMetricsMetadataStream{ctx: ctx}
+	err := i.SearchMetricsMetadata(req, s)
+	require.Error(t, err)
+	st, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "ORDER_BY_SCORE_DESC must be rejected as codes.InvalidArgument")
+}
+
+// TestIngesterSearchMetricsMetadataWithNoMetadataReturnsEmptyStream covers
+// the case where getUserMetadata(userID) returns nil because the tenant has
+// pushed series but no metadata yet: this must behave identically to a
+// search that matched nothing, not as an error or a nil-pointer panic.
+func TestIngesterSearchMetricsMetadataWithNoMetadataReturnsEmptyStream(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchMetricsMetadataRequest{}
+	s := &mockSearchMetricsMetadataStream{ctx: ctx}
+	require.NoError(t, i.SearchMetricsMetadata(req, s))
+	assert.Empty(t, collectSearchMetricsMetadataValues(s))
+}
+
+// TestIngesterSearchMetricsMetadataResumeCursorPagination exercises
+// resume-cursor pagination through the full RPC handler, not just
+// userMetricsMetadata.searchHelp in isolation (that's covered by
+// user_metrics_metadata_search_test.go). Paging by metric name, one page at
+// a time, must reconstruct the same sequence as a single unlimited search.
+func TestIngesterSearchMetricsMetadataResumeCursorPagination(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "metric_a", Help: "alpha help", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_b", Help: "beta help", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_c", Help: "gamma help", Type: mimirpb.COUNTER},
+		{MetricFamilyName: "metric_d", Help: "delta help", Type: mimirpb.COUNTER},
+	})
+
+	fullReq := &client.SearchMetricsMetadataRequest{}
+	fullStream := &mockSearchMetricsMetadataStream{ctx: ctx}
+	require.NoError(t, i.SearchMetricsMetadata(fullReq, fullStream))
+	want := collectSearchMetricsMetadataValues(fullStream)
+	require.Equal(t, []string{"metric_a", "metric_b", "metric_c", "metric_d"}, want)
+
+	var got []string
+	resumeAfter := ""
+	for {
+		req := &client.SearchMetricsMetadataRequest{
+			Filter: &client.SearchFilter{ResumeAfter: resumeAfter},
+			Limit:  1,
+		}
+		s := &mockSearchMetricsMetadataStream{ctx: ctx}
+		require.NoError(t, i.SearchMetricsMetadata(req, s))
+		page := collectSearchMetricsMetadataValues(s)
+		if len(page) == 0 {
+			break
+		}
+		require.Len(t, page, 1, "limit=1 must return at most one result per page")
+		got = append(got, page...)
+		resumeAfter = page[len(page)-1]
+	}
+	assert.Equal(t, want, got)
+}
+
 // fakeSearchResultSet is a test SearchResultSet backed by an in-memory slice
 // plus an optional terminal error and pre-populated annotations. Used to
 // exercise streamSearchResults without spinning up a real TSDB.
