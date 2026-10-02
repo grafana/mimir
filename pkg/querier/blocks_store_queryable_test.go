@@ -3348,11 +3348,30 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
-func (m *storeGatewayClientMock) MetricNameCounts(_ context.Context, req *storegatewaypb.MetricNameCountsRequest, _ ...grpc.CallOption) (*storegatewaypb.MetricNameCountsResponse, error) {
+// MetricNameCounts streams the mocked response as one message, then EOF.
+func (m *storeGatewayClientMock) MetricNameCounts(_ context.Context, req *storegatewaypb.MetricNameCountsRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_MetricNameCountsClient, error) {
 	if m.mockedMetricNameCounts == nil {
 		return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 	}
-	return m.mockedMetricNameCounts(req)
+	resp, err := m.mockedMetricNameCounts(req)
+	if err != nil {
+		return nil, err
+	}
+	return &metricNameCountsClientMock{resp: resp}, nil
+}
+
+type metricNameCountsClientMock struct {
+	grpc.ClientStream
+	resp *storegatewaypb.MetricNameCountsResponse
+	done bool
+}
+
+func (m *metricNameCountsClientMock) Recv() (*storegatewaypb.MetricNameCountsResponse, error) {
+	if m.done {
+		return nil, io.EOF
+	}
+	m.done = true
+	return m.resp, nil
 }
 
 func (m *storeGatewayClientMock) SeriesCounts(_ context.Context, req *storegatewaypb.SeriesCountsRequest, _ ...grpc.CallOption) (*storegatewaypb.SeriesCountsResponse, error) {
@@ -3461,7 +3480,7 @@ func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *stor
 	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
 }
 
-func (m *cancelerStoreGatewayClientMock) MetricNameCounts(context.Context, *storegatewaypb.MetricNameCountsRequest, ...grpc.CallOption) (*storegatewaypb.MetricNameCountsResponse, error) {
+func (m *cancelerStoreGatewayClientMock) MetricNameCounts(context.Context, *storegatewaypb.MetricNameCountsRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_MetricNameCountsClient, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 }
 
