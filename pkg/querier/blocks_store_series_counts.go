@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/axiomhq/hyperloglog"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -29,6 +31,10 @@ type CardinalityEstimateRequest struct {
 	// MaxIndexBytes caps the index bytes the whole request reads, 0 for
 	// none. It is split evenly across the store-gateway calls.
 	MaxIndexBytes int64
+	// SketchAbove has each store-gateway send an HLL sketch instead of
+	// hashes for a group with more series than this, when deduplicating.
+	// 0 keeps every group exact.
+	SketchAbove int64
 	// Snap widens a window inside one block range to that range.
 	Snap bool
 }
@@ -49,6 +55,10 @@ type CardinalityEstimateResult struct {
 	SeriesFetchedBytes   int64
 	// IndexBytes is measured the way the Series call measures it.
 	IndexBytes int64
+	// Estimated holds the groups counted from an HLL sketch, not exactly.
+	Estimated map[string]bool
+	// HashBytes and SketchBytes are the dedup payload the store-gateways sent.
+	HashBytes, SketchBytes int64
 }
 
 // SeriesCounts counts the matching series with a chunk in the window, from
@@ -93,13 +103,33 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		mtx      sync.Mutex
 		gateways = map[string]bool{}
 		hashes   = map[string]map[uint64]struct{}{}
+		sketches = map[string]*hyperloglog.Sketch{}
 		counted  = map[ulid.ULID]bool{}
 	)
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
 		defer mtx.Unlock()
 		for _, g := range resp.Groups {
+			if res.Dedup && len(g.Sketch) > 0 {
+				sk, err := hyperloglog.NewSketch(storegateway.SeriesCountsSketchPrecision, false)
+				if err != nil {
+					return err
+				}
+				if err := sk.UnmarshalBinary(g.Sketch); err != nil {
+					return fmt.Errorf("store-gateway %s returned a bad sketch for %q: %w", addr, g.Value, err)
+				}
+				if into := sketches[g.Value]; into != nil {
+					if err := into.Merge(sk); err != nil {
+						return err
+					}
+				} else {
+					sketches[g.Value] = sk
+				}
+				res.SketchBytes += int64(len(g.Sketch))
+				continue
+			}
 			if res.Dedup {
+				res.HashBytes += 8 * int64(len(g.Hashes))
 				set := hashes[g.Value]
 				if set == nil {
 					set = map[uint64]struct{}{}
@@ -176,6 +206,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 					GroupBy:       req.GroupBy,
 					Hashes:        res.Dedup,
 					MaxIndexBytes: perCall,
+					SketchAbove:   req.SketchAbove,
 				})
 				if status.Code(err) == codes.ResourceExhausted {
 					return fmt.Errorf("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: store-gateway %s: %s", req.MaxIndexBytes, perCall, len(calls), cl.client.RemoteAddress(), status.Convert(err).Message())
@@ -197,8 +228,23 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		}
 		res.Blocks = append(res.Blocks, b.ID)
 	}
+	// A group that any store-gateway sent as a sketch is estimated: the other
+	// store-gateways' hashes for it go into the same sketch.
 	for v, set := range hashes {
+		if sk := sketches[v]; sk != nil {
+			for h := range set {
+				sk.InsertHash(h)
+			}
+			continue
+		}
 		res.Counts[v] = []int64{int64(len(set))}
+	}
+	for v, sk := range sketches {
+		if res.Estimated == nil {
+			res.Estimated = map[string]bool{}
+		}
+		res.Estimated[v] = true
+		res.Counts[v] = []int64{int64(sk.Estimate())}
 	}
 	res.StoreGateways = len(gateways)
 	return res, nil
