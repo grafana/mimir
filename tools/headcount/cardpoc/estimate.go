@@ -24,10 +24,10 @@ const (
 	ReadFullIndex   = "full_index"
 )
 
-// EstimateRequest is the library's version of Mimir's cardinality/estimate
+// CardinalityEstimateRequest is the library's version of Mimir's cardinality/estimate
 // route: series matching Matchers with a chunk in [MinT, MaxT), grouped by
 // GroupBy (metric name when empty), optionally per Step-wide bucket.
-type EstimateRequest struct {
+type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
 	Step       int64
@@ -52,12 +52,12 @@ type Estimate struct {
 	Elapsed    time.Duration
 }
 
-// EstimateCardinality answers req from the blocks in bucketDir the way the
+// CardinalityEstimate answers req from the blocks in bucketDir the way the
 // querier does: every metric name over exactly one block range of
 // series-disjoint blocks, with no matchers and no step, from the
 // index-headers; anything else from the full index, with dedup by label-set
 // hash when the blocks may share series.
-func EstimateCardinality(bucketDir string, req EstimateRequest) (Estimate, error) {
+func CardinalityEstimate(bucketDir string, req CardinalityEstimateRequest) (Estimate, error) {
 	if req.MaxT <= req.MinT {
 		return Estimate{}, errors.New("MaxT must be after MinT")
 	}
@@ -139,7 +139,7 @@ func overlapping(metas []*block.Meta, minT, maxT int64) []*block.Meta {
 
 // counter reads series entries and chunk metas from full indexes.
 type counter struct {
-	req     EstimateRequest
+	req     CardinalityEstimateRequest
 	dedup   bool
 	buckets int
 	read    int
@@ -148,7 +148,7 @@ type counter struct {
 	seen    []bool
 }
 
-func newCounter(req EstimateRequest, dedup bool) (*counter, error) {
+func newCounter(req CardinalityEstimateRequest, dedup bool) (*counter, error) {
 	c := &counter{req: req, dedup: dedup, buckets: 1, counts: map[string][]int{}, sets: map[string]map[uint64]struct{}{}}
 	if req.Step > 0 {
 		if (req.MaxT-req.MinT)%req.Step != 0 {
