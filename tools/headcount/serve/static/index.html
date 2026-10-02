@@ -139,7 +139,7 @@
   <div class="pair pair-wide">
     <section>
       <div class="ph"><h2 id="lim-title">4. Too big to answer: refused before the work</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-      <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> the limit is index bytes for the whole request (the "Headcount index limit" box), split evenly across the store-gateways. Each store-gateway first resolves the postings it already holds, which says how many series match, and prices the request at the planner's estimate of 512 bytes per series entry. Over the limit, it refuses before reading a single series entry and says what it would have read. If entries turn out larger than the estimate, it stops once it passes the limit. Either way the answer is an error, never a partial count.</p><p><b>Baseline</b> with a series limit (the "PromQL series limit" box) fails too, after it has started fetching. Change either limit and press Run.</p></div>
+      <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> the limit is index bytes for the whole request (the "Headcount index limit" box), split evenly across the store-gateways. Each store-gateway first resolves the postings it already holds, which says how many series match, and prices the request at the planner's estimate of 512 bytes per series entry. Over the limit, it refuses before reading a single series entry and says what it would have read. If entries turn out larger than the estimate, it stops once it passes the limit. Either way the answer is an error, never a partial count.</p><p><b>Baseline</b> with a series limit (the "PromQL series limit" box) fails too. It stops before reading chunks as well, but only after the store-gateways have read the matching series entries for each of its query shards. The two limits are in different units, so compare what each read before it stopped, from the store-gateways' own metrics. Change either limit and press Run.</p></div>
       <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with a series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
       <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the index limit</h3><div id="lim-hc" class="kv"></div></div>
     </section>
@@ -394,7 +394,14 @@ async function drill(name) {
   const lq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&series_limit=${seriesLimit}`);
   $("lim-q").textContent = lq.query + `\nwith max_fetched_series_per_query=${fmt(seriesLimit)}, enforced per query shard`;
   const shards = lq.result.sharded_queries ? [["query shards", lq.result.sharded_queries]] : [];
-  kv($("lim-today"), (lq.result.error ? [["result", briefError(lq.result.error), "err"], ["latency", secs(lq.result.latency_ms)]] : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
+  // What the store-gateways read before the request stopped, from their own metrics.
+  const readRows = (sg, verb) => sg ? [
+    [`index read before ${verb}`, sg.index_bytes ? bytes(sg.index_bytes) : "0 B (postings from cache)"],
+    [`chunks read before ${verb}`, bytes(sg.chunk_bytes), sg.chunk_bytes ? "" : "ok"],
+  ] : [];
+  kv($("lim-today"), (lq.result.error
+    ? [["result", briefError(lq.result.error), "err"], ["failed after", secs(lq.result.latency_ms)], ...readRows(lq.store_gateway_read, "failing")]
+    : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
   const lb = await get(`api/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&max_index_bytes=${maxIndexBytes}`);
   if (lb.refused) {
     const est = /would read about (\d+) index bytes/.exec(lb.error);
@@ -402,9 +409,8 @@ async function drill(name) {
       ["result", /would read about/.test(lb.error) ? "refused before reading any series entry" : "stopped at the limit while reading", "ok"],
       ["limit", `${bytes(maxIndexBytes)} of index for the request`],
       ...(est ? [["Mimir's estimate", `about ${bytes(Number(est[1]))}`]] : []),
-      ["series entries read", "0", "ok"],
-      ["chunks read", "0 B", "ok"],
       ["refused after", secs(lb.latency_ms)],
+      ...readRows(lb.store_gateway_read, "refusing"),
       ["without the limit", `${fmt(lb.truth_total)} series, exact (panel 2)`],
     ]);
   } else {
