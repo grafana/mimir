@@ -735,6 +735,16 @@ When `include_metadata=true`, each result can also carry the metric's `type`, `h
 
 Metadata is served only by ingesters, which hold it in memory keyed by metric name and sourced from the metadata records included in remote write requests. It isn't served by store-gateways, so metric names returned from long-term storage carry no metadata. As a result, metadata is returned for only a subset of the returned metric names.
 
+Metadata is matched by the exact metric name first, then by the metric family name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the individual series. For example, `http_request_duration_seconds_bucket` is reported with type `histogram`. When a metric family has metadata with more than one type, only one of them is used, so a suffixed metric name might not match.
+
 #### Search label names
 
 ```bash
