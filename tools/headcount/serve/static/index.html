@@ -28,7 +28,7 @@
   button { font: inherit; font-weight: bold; background: var(--orange); color: #1d1e24; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
   main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding: 0 24px 24px; }
-  @media (max-width: 900px) { .win-grid { grid-template-columns: minmax(0, 1fr) !important; } main { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; } header, .controls { padding-left: 16px; padding-right: 16px; } }
+  @media (max-width: 900px) { .win-grid, .pair { grid-template-columns: minmax(0, 1fr) !important; } main { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; } header, .controls { padding-left: 16px; padding-right: 16px; } }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
   section h2 { margin: 0 0 10px; font-size: 15px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -44,6 +44,13 @@
   .today { background: var(--red-bg); } .today h3 { color: var(--red); }
   .hc { background: var(--green-bg); } .hc h3 { color: var(--green); }
   .bound { background: var(--amber-bg); } .bound h3 { color: var(--amber-ink); }
+  .wrong { background: var(--panel); border: 2px dashed var(--red); } .wrong h3 { color: var(--red); }
+  .wrong.agrees { border-color: var(--line); } .wrong.agrees h3 { color: var(--muted); }
+  .headline { font-size: 15px; font-weight: bold; margin: 0 0 10px; }
+  .group { grid-column: 1 / -1; margin: 6px 0 -6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; grid-column: 1 / -1; }
+  .pair-wide { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+  .link-btn { background: var(--amber); padding: 6px 12px; margin-top: 8px; }
   .tag { display: inline-block; font-size: 11px; font-weight: bold; line-height: 1.5; padding: 0 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; color: #fff; }
   .tag-base { background: var(--red); } .tag-wrong { background: var(--amber-ink); } .tag-mimir { background: var(--green); }
   @media (prefers-color-scheme: dark) { .tag { color: #16171c; } }
@@ -69,6 +76,7 @@
   #hr-chart .dot-q { fill: var(--red); }
   #hr-chart text { fill: var(--muted); font-size: 11px; }
   #hr-chart line { stroke: var(--line); }
+  #hr-chart text.jump { fill: var(--ink); font-weight: bold; }
 </style>
 </head>
 <body>
@@ -87,58 +95,65 @@
 </div>
 <div class="winline" id="winline"></div>
 <div class="legend">
-  <span>Times are UTC, whole hours. The window is [Start, End), the same as the API. The (i) on each panel says what it shows.</span>
+  <span>Times are UTC, whole hours. The window is [Start, End), the same as the API. The (i) on each panel says what it shows. "Index decoded 0 B (cached)" means an earlier call already decoded that part of the index; the first run after start shows the cold cost.</span>
   <span><span class="tag tag-base">Baseline</span>PromQL <code>count</code> through Mimir today, which loads every matching chunk</span>
   <span><span class="tag tag-mimir">In Mimir</span>Headcount through Mimir's prototype routes: query-frontend, querier, store-gateways, no chunks</span>
 </div>
 <main>
+  <div class="group">Find it</div>
   <section>
     <div class="ph"><h2 id="g-title">1. Which metric grew?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> which metric names gained the most series in the window, compared with the window of the same length just before it?</p><p><b>In Mimir</b> picks the cheapest read for the window. A window that is exactly one block (one day here) is read from the index-headers: for every name the index records where its list of series starts and ends, and each entry is 4 bytes, so the length is the count. Any other window reads series entries and chunk metas from the full index, and a window across days removes duplicates. The cost card says which read was used.</p><p><b>Baseline</b> is <code>count by (__name__)</code> over the window, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count. Click a row to use that metric in panels 2, 3 and 5.</p></div>
+    <div class="info" hidden><p><b>Question:</b> which metric names gained the most series in the window, compared with the window of the same length just before it?</p><p><b>In Mimir</b> picks the cheapest read for the window. A window that is exactly one day (one block range) is read from the index-headers: for every name the index records where its list of series starts and ends, and each entry is 4 bytes, so the length is the count. Any other window reads series entries and chunk metas from the full index, and a window across days removes duplicates. The cost card says which read was used.</p><p><b>Baseline</b> is <code>count by (__name__)</code> over the window, which loads every series and its chunks.</p><p><b>Truth</b> is the generator's own count, before → window. Click a row to use that metric in panels 2 to 4.</p></div>
     <div class="scroll"><table id="growth"></table></div>
     <p id="growth-note" class="muted"></p>
   </section>
   <section>
     <div class="ph"><h2>Cost of answering it</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
     <div class="info" hidden><p>The same ranking answered both ways, for the window and the window before it. Compare latency and what was read. Headcount never reads chunks.</p></div>
+    <p class="headline" id="cost-headline"></p>
     <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL count</h3><code id="growth-q"></code><div id="growth-today" class="kv"></div></div>
     <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount</h3><div id="growth-hc" class="kv"></div></div>
   </section>
-  <section>
-    <div class="ph"><h2 id="bd-title">2. Which label value exploded?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> the metric grew, but which label is to blame? Here: how many distinct <code>pod</code> values it has in the window, and in the window before it.</p><p><b>In Mimir</b> looks up the metric's series in the index and counts them per pod value. It reads series labels but no chunks.</p><p><b>Baseline</b> is <code>count by (pod)</code>, which loads the chunks too.</p></div>
-    <div id="bd-bars"></div>
-    <p id="bd-note" class="muted"></p>
-  </section>
-  <section>
-    <div class="ph"><h2>3. It can't become an incident</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> each store-gateway stops after the budget (the "Budget and series limit" box) and returns what it counted so far, marked as a lower bound. You get a partial answer, not an outage.</p><p><b>Baseline</b> with the same series limit fails with an error. Change the budget and press Run to see both move.</p></div>
-    <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
-    <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
-  </section>
-  <section style="grid-column: 1 / -1">
-    <div class="ph"><h2 id="win-title">4. Distinct series over the whole window</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window?</p><p>Each day is a separate block. A series that lives on two days is in both blocks, so <b>adding each block's count counts it twice</b>. That is the last card, too high on purpose to show the problem.</p><p><b>In Mimir</b> removes the duplicates: each store-gateway returns a hash of every series' labels and the querier counts distinct hashes. It should equal the truth and the baseline.</p><p>If the window is inside one day, there is nothing to deduplicate and both cards agree. Pick a window across days to see the difference.</p></div>
-    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
-      <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
-      <div>
-        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL over the window</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
-        <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount: dedup across blocks</h3><div id="win-exact" class="kv"></div></div>
-        <div class="card bound"><h3><span class="tag tag-wrong">Wrong way</span>Adding each block's count</h3><div id="win-sum" class="kv"></div></div>
-      </div>
-    </div>
-  </section>
-  <section style="grid-column: 1 / -1">
-    <div class="ph"><h2 id="hr-title">5. When did it start?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-    <div class="info" hidden><p><b>Question:</b> within the window, when did the selected metric start growing? The window is cut into buckets of the Step: auto picks hours for a window of a day or less and days otherwise. This is the API's <code>step</code>, and matches a PromQL range query whose step equals its range selector.</p><p><b>In Mimir</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in a bucket if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with the same step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
-    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px" class="win-grid">
-      <div><svg id="hr-chart" viewBox="0 0 720 220" style="width:100%;height:auto" role="img" aria-label="Series per bucket"></svg><p id="hr-note" class="muted"></p></div>
-      <div>
-        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL, a range query with the same step</h3><code id="hr-q"></code><div id="hr-today" class="kv"></div></div>
+  <div class="pair">
+    <section>
+      <div class="ph"><h2 id="bd-title">2. Which label exploded?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="info" hidden><p><b>Question:</b> the metric grew, but which label is to blame? Every label of the metric is counted by distinct values, in the window and in the window before it, and ranked by growth. The top label is then shown as bars, with its largest values.</p><p><b>In Mimir</b> looks up the metric's series in the index and counts them per label value. It reads series labels but no chunks.</p><p><b>Baseline</b> is <code>count by (&lt;label&gt;)</code>, which loads the chunks too.</p></div>
+      <div class="scroll"><table id="lbl"></table></div>
+      <div id="bd-bars" style="margin-top:10px"></div>
+      <p id="bd-note" class="muted"></p>
+    </section>
+    <section>
+      <div class="ph"><h2 id="hr-title">3. When did it start?</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="info" hidden><p><b>Question:</b> within the window, when did the selected metric start growing? The window is cut into buckets of the Step: auto picks hours for a window of a day or less and days otherwise. This is the API's <code>step</code>, and matches a PromQL range query whose step equals its range selector.</p><p><b>In Mimir</b> uses chunk metas: the index records each chunk's first and last timestamp, so a series counts in a bucket if one of its chunks overlaps it. The chunks themselves are not read.</p><p><b>Baseline</b> is a PromQL range query with the same step. Bars are Headcount, dots are the baseline; they should sit on each other.</p></div>
+      <svg id="hr-chart" viewBox="0 0 720 240" style="width:100%;height:auto" role="img" aria-label="Series per bucket"></svg><p id="hr-note" class="muted"></p>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px" class="win-grid">
+        <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL range query, same step</h3><code id="hr-q"></code><div id="hr-today" class="kv"></div></div>
         <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount: chunk metas per bucket</h3><div id="hr-hc" class="kv"></div></div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
+  <div class="group">Why you can trust it</div>
+  <div class="pair pair-wide">
+    <section>
+      <div class="ph"><h2 id="lim-title">4. It can't become an incident</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="info" hidden><p><b>Question:</b> what happens when a request is too big to answer cheaply?</p><p><b>In Mimir</b> each store-gateway stops after the budget (the "Budget and series limit" box) and returns what it counted so far, marked as a lower bound. You get a partial answer, not an outage. The budget applies per store-gateway, so with several store-gateways the lower bound can be up to the budget times their number.</p><p><b>Baseline</b> with the same series limit fails with an error. Change the budget and press Run to see both move.</p></div>
+      <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL with the same series limit</h3><code id="lim-q"></code><div id="lim-today" class="kv"></div></div>
+      <div class="card bound"><h3><span class="tag tag-mimir">In Mimir</span>Headcount, same breakdown with the budget</h3><div id="lim-hc" class="kv"></div></div>
+    </section>
+    <section>
+      <div class="ph"><h2 id="win-title">5. Distinct series over the whole window</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
+      <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window?</p><p>Each day is a separate block range (here split by the compactor into several shard blocks). A series that lives on two days is in both ranges, so <b>adding each day's count counts it twice</b>. That is the dashed card, too high on purpose to show the problem.</p><p><b>In Mimir</b> removes the duplicates: each store-gateway returns a hash of every series' labels and the querier counts distinct hashes. It should equal the truth and the baseline.</p><p>If the window is inside one day, there is nothing to deduplicate and both agree. Pick a window across days to see the difference.</p></div>
+      <div id="win-one" hidden><p class="muted">The window is inside one day, so there is nothing to deduplicate: Headcount, adding the days and the truth all read <b id="win-one-total"></b> series. The difference only shows across days.</p><button class="link-btn" id="win-across">Show it across the day before and the spike day</button></div>
+      <div id="win-many" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px" class="win-grid">
+        <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
+        <div>
+          <div class="card today"><h3><span class="tag tag-base">Baseline</span>PromQL over the window</h3><code id="win-q"></code><div id="win-today" class="kv"></div></div>
+          <div class="card hc"><h3><span class="tag tag-mimir">In Mimir</span>Headcount: dedup across days</h3><div id="win-exact" class="kv"></div></div>
+          <div class="card wrong" id="win-sum-card"><h3><span class="tag tag-wrong">Wrong way</span>Adding each day's count</h3><div id="win-sum" class="kv"></div></div>
+        </div>
+      </div>
+    </section>
+  </div>
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -147,7 +162,9 @@ const bytes = n => { n = Number(n); if (!n) return "0 B"; const u = ["B","KB","M
 const secs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(0) + " ms";
 const short = n => n.replace(/^(metric_\d{6})_.*/, "$1");
 const H = 3600;
-let meta = null, selected = null;
+let meta = null, selected = null, presets = [];
+// The generator's labels besides __name__; panel 2 ranks them by growth.
+const LABELS = ["pod", "instance"];
 
 // Times are whole hours in UTC; the inputs hold them without a zone.
 const toInput = s => new Date(s * 1000).toISOString().slice(0, 16);
@@ -203,10 +220,10 @@ function addRead(a, b) {
 
 async function init() {
   meta = await get("api/meta");
-  $("sub").textContent = `how many series, straight from the index. Synthetic tenant: ${fmt(meta.names)} metric names, ${fmt(meta.series)} series from ${label(meta.start)} to ${label(meta.end)} UTC, one block per day from a real Mimir compactor.`;
+  $("sub").textContent = `how many series, straight from the index. Synthetic tenant: ${fmt(meta.names)} metric names, ${fmt(meta.series)} series from ${label(meta.start)} to ${label(meta.end)} UTC, one block range per day, compacted and split into shard blocks by a real Mimir compactor.`;
   for (const el of [$("start"), $("end")]) { el.min = toInput(meta.start); el.max = toInput(meta.end); }
   const d = meta.block_ranges[meta.spike_day].start, day = 24 * H;
-  const presets = [
+  presets = [
     ["The spike day, one block", d, d + day],
     ["12:00 to 18:00 on the spike day", d + 12 * H, d + 18 * H],
     ["The day before and the spike day", d - day, d + day],
@@ -218,6 +235,9 @@ async function init() {
     const p = presets[$("preset").value];
     if (p) { $("start").value = toInput(p[1]); $("end").value = toInput(p[2]); run(); }
   };
+  const across = presets.findIndex(p => p[0] === "The day before and the spike day");
+  $("win-across").hidden = across < 0;
+  $("win-across").onclick = () => { $("preset").value = String(across); $("preset").onchange(); };
   for (const el of [$("start"), $("end")]) el.onchange = () => { $("preset").value = ""; };
   $("preset").value = "0";
   $("start").value = toInput(presets[0][1]);
@@ -232,11 +252,15 @@ async function run() {
     const prevLen = g.previous.end > g.previous.start;
     $("winline").innerHTML = `Window <b>${span(g.window)}</b>` + (prevLen ? `, compared with the window before it, ${span(g.previous)}.` : `. There is no data before it, so growth is from zero.`);
     $("g-title").textContent = "1. Which metric grew?";
-    $("growth").innerHTML = `<tr><th>metric</th><th class="num">before</th><th class="num">window</th><th class="num">growth</th><th class="num">truth</th><th class="num">error</th></tr>` +
-      g.rows.map(r => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${fmt(r.truth_day)}</td><td class="num">${r.day === r.truth_day && r.base === r.truth_base ? "0%" : "≠"}</td></tr>`).join("");
+    const exactCell = r => r.day === r.truth_day && r.base === r.truth_base
+      ? `<span class="ok">✓</span>` : `<span class="err">✗ truth ${fmt(r.truth_base)} → ${fmt(r.truth_day)}</span>`;
+    $("growth").innerHTML = `<tr><th>metric</th><th class="num">before</th><th class="num">window</th><th class="num">growth</th><th class="num">equals truth</th></tr>` +
+      g.rows.map(r => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${exactCell(r)}</td></tr>`).join("");
     $("growth-note").innerHTML = `${fmt(g.changed)} of ${fmt(g.names)} names changed; ${fmt(g.names_exact)} of ${fmt(g.names)} are exact against the truth in both windows. Tenant total ${fmt(g.total_prev)} → ${fmt(g.total)} series. Click a row to drill down.` +
       (g.falls && g.falls.length ? `<br>Largest falls: ${g.falls.map(r => `${short(r.name)} ${fmt(r.base)} → ${fmt(r.day)}`).join(", ")}.` : "");
-    kv($("growth-hc"), mimirPairs(addRead(g.read, g.prev_read)));
+    const hcRead = addRead(g.read, g.prev_read);
+    kv($("growth-hc"), mimirPairs(hcRead));
+    $("cost-headline").textContent = "";
     for (const tr of document.querySelectorAll("#growth tr.click")) tr.onclick = () => drill(tr.dataset.name);
 
     $("status").textContent = "Baseline...";
@@ -250,11 +274,16 @@ async function run() {
       fetched_index_bytes: (+p.window.fetched_index_bytes || 0) + (+(p.previous || {}).fetched_index_bytes || 0),
     };
     const pairs = baselinePairs(both);
+    let same = null;
     if (p.rows) {
-      const same = p.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
+      same = p.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
       pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
     }
     kv($("growth-today"), pairs);
+    $("cost-headline").textContent = both.error
+      ? `The baseline failed after ${secs(both.latency_ms)}; Headcount answered in ${secs(hcRead.elapsed_ms)} without reading chunks.`
+      : `${Math.max(1, Math.round(both.latency_ms / hcRead.elapsed_ms))}x faster · chunks read ${bytes(both.fetched_chunk_bytes)} → 0 B` +
+        (same === null ? "" : same ? " · same top 10" : " · different top 10");
     await drill(g.rows.length ? g.rows[0].name : meta.spike_name);
     await runWindow();
     $("status").textContent = "";
@@ -268,13 +297,18 @@ async function run() {
 async function runWindow() {
   $("status").textContent = "Window...";
   const w = await get(`api/window?${win()}&limit=8`);
-  $("win-title").textContent = `4. Distinct series over the whole window, ${span(w.window)}`;
-  $("win").innerHTML = `<tr><th>metric</th><th class="num">dedup (In Mimir)</th><th class="num">truth</th><th class="num">adding the blocks</th></tr>` +
+  $("win-title").textContent = `5. Distinct series over the whole window, ${span(w.window)}`;
+  const many = w.pieces > 1;
+  $("win-one").hidden = many;
+  $("win-many").style.display = many ? "grid" : "none";
+  $("win-one-total").textContent = fmt(w.exact_total);
+  $("win-sum-card").classList.toggle("agrees", !many);
+  $("win").innerHTML = `<tr><th>metric</th><th class="num">dedup (In Mimir)</th><th class="num">truth</th><th class="num">adding the days</th></tr>` +
     w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td><td class="num">${fmt(r.summed)}</td></tr>`).join("") +
     `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td></tr>`;
   const over = w.exact_total ? (100 * (w.summed_total - w.exact_total) / w.exact_total).toFixed(0) : 0;
   $("win-note").textContent = w.pieces > 1
-    ? `The window covers ${w.pieces} blocks. Adding their counts overcounts the tenant by ${over}%. Dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.`
+    ? `The window covers ${w.pieces} days (block ranges). Adding their counts overcounts the tenant by ${over}%. Dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.`
     : `The window is inside one block, so there is nothing to deduplicate and the two agree. Pick a window across days to see the difference.`;
   kv($("win-exact"), mimirPairs(w.exact_read, [["tenant total", fmt(w.exact_total), "ok"]]));
   kv($("win-sum"), mimirPairs(w.summed_read, [["tenant total", `${fmt(w.summed_total)}` + (w.pieces > 1 ? ` (+${over}%)` : ""), w.pieces > 1 ? "err" : ""]]));
@@ -294,13 +328,19 @@ async function runBuckets(name) {
   const [h, q] = await Promise.all([get(`api/buckets?${win()}${stepParam()}&metric=${m}`), get(`api/promql/buckets?${win()}${stepParam()}&metric=${m}`)]);
   const hourly = h.step_s < 24 * H;
   const stepName = h.step_s % (24 * H) === 0 ? `${h.step_s / (24 * H)}d` : `${h.step_s / H}h`;
-  $("hr-title").textContent = `5. When did it start? ${short(name)} per ${stepName}`;
-  const W = 720, Ht = 220, L = 56, B = 24, n = h.counts.length, max = Math.max(...h.counts, ...q.counts, 1);
-  const bw = (W - L - 8) / n, y = v => Ht - B - (Ht - B - 10) * v / max;
+  $("hr-title").textContent = `3. When did it start? ${short(name)} per ${stepName}`;
+  const W = 720, Ht = 240, L = 56, B = 24, T = 30, n = h.counts.length, max = Math.max(...h.counts, ...q.counts, 1);
+  const bw = (W - L - 8) / n, y = v => Ht - B - (Ht - B - T) * v / max;
   const tick = s => hourly ? label(s).slice(11) : label(s).slice(5, 10);
   const every = Math.max(1, Math.ceil(n / 8));
-  let svg = `<line x1="${L}" y1="${Ht - B}" x2="${W}" y2="${Ht - B}"/>` +
-    `<text x="${L - 6}" y="${y(max) + 4}" text-anchor="end">${fmt(max)}</text><text x="${L - 6}" y="${Ht - B}" text-anchor="end">0</text>`;
+  let first = -1;
+  for (let i = 1; i < n; i++) if (h.counts[i] > 2 * h.counts[i - 1] && first < 0) first = i;
+  let svg = `<line x1="${L}" y1="${Ht - B}" x2="${W}" y2="${Ht - B}"/><line x1="${L}" y1="${y(max / 2)}" x2="${W}" y2="${y(max / 2)}" stroke-dasharray="3 3"/>` +
+    `<text x="${L - 6}" y="${y(max) + 4}" text-anchor="end">${fmt(max)}</text><text x="${L - 6}" y="${y(max / 2) + 4}" text-anchor="end">${fmt(Math.round(max / 2))}</text><text x="${L - 6}" y="${Ht - B}" text-anchor="end">0</text>`;
+  if (first >= 0) {
+    const x = L + first * bw;
+    svg += `<text class="jump" x="${x}" y="${Math.max(12, y(h.counts[first]) - 10)}" text-anchor="${first > n / 2 ? "end" : "start"}">${label(h.starts[first] / 1000).slice(hourly ? 11 : 5, hourly ? 16 : 10)}: ${fmt(h.counts[first - 1])} → ${fmt(h.counts[first])}</text>`;
+  }
   h.counts.forEach((c, i) => {
     const x = L + i * bw, s = h.starts[i] / 1000;
     svg += `<rect class="bar-hc" x="${x + 1}" y="${y(c)}" width="${Math.max(1, bw - 2)}" height="${Ht - B - y(c)}"><title>${label(s)} Headcount ${fmt(c)}, PromQL ${fmt(q.counts[i])}, truth ${fmt(h.truth[i])}</title></rect>`;
@@ -309,8 +349,6 @@ async function runBuckets(name) {
   });
   $("hr-chart").innerHTML = svg;
   const same = h.counts.every((c, i) => c === q.counts[i]);
-  let first = -1;
-  for (let i = 1; i < n; i++) if (h.counts[i] > 2 * h.counts[i - 1] && first < 0) first = i;
   $("hr-note").textContent = `Bars: Headcount in Mimir; dots: the baseline. ${h.exact ? "Every bucket equals the truth." : "Some buckets differ from the truth."}` +
     (first >= 0 ? ` The count jumps at ${label(h.starts[first] / 1000)}, from ${fmt(h.counts[first - 1])} to ${fmt(h.counts[first])}.` : "");
   $("hr-q").textContent = q.query + `\nstep ${stepName}, each step at the bucket's end minus 1 ms`;
@@ -323,31 +361,43 @@ async function drill(name) {
   for (const tr of document.querySelectorAll("#growth tr.click")) tr.classList.toggle("sel", tr.dataset.name === name);
   const budget = $("budget").value, m = encodeURIComponent(name);
   $("status").textContent = "Breakdown...";
-  $("bd-title").textContent = `2. Which label value exploded? ${short(name)} by pod`;
-  const b = await get(`api/breakdown?${win()}&metric=${m}&label=pod&limit=5`);
-  const prevN = b.prev_values === undefined ? null : b.prev_values;
-  const maxV = Math.max(prevN || 0, b.values, 1);
-  const bar = (lbl, n) => `<div style="display:grid;grid-template-columns:12em 1fr 7em;gap:8px;align-items:center;margin:6px 0"><span>${lbl}</span><div class="bar" style="width:${Math.max(0.5, 100 * n / maxV)}%"></div><span class="num">${fmt(n)}</span></div>`;
-  const top = rows => rows.map(r => `pod=${r.value || "(none)"}: ${fmt(r.count)}`).join(", ");
-  $("bd-bars").innerHTML = `<div class="muted">distinct pod values</div>` +
-    (prevN !== null ? bar("window before", prevN) : "") + bar("window", b.values) +
-    `<div class="muted" style="margin-top:8px">largest values in the window: ${top(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
-  const pq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=pod&limit=8`);
-  $("bd-note").textContent = `Baseline, PromQL count by (pod): ${pq.result.error ? "error: " + pq.result.error : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}. ` +
+  $("bd-title").textContent = `2. Which label exploded? ${short(name)}`;
+  const byLabel = await Promise.all(LABELS.map(l => get(`api/breakdown?${win()}&metric=${m}&label=${l}&limit=5`).then(b => ({label: l, b}))));
+  for (const x of byLabel) {
+    x.now = x.b.set_values;
+    x.prev = x.b.prev_set_values === undefined ? null : x.b.prev_set_values;
+    x.growth = x.now - (x.prev || 0);
+  }
+  byLabel.sort((a, b) => b.growth - a.growth || b.now - a.now);
+  const hasPrev = byLabel[0].prev !== null;
+  $("lbl").innerHTML = `<tr><th>label</th>${hasPrev ? `<th class="num">values before</th>` : ""}<th class="num">values in window</th><th class="num">growth</th></tr>` +
+    byLabel.map((x, i) => `<tr${i === 0 ? ` class="sel"` : ""}><td>${x.now === 0 && !x.prev ? `<span class="muted">${x.label} (not on this metric)</span>` : `<b>${x.label}</b>`}</td>${hasPrev ? `<td class="num">${fmt(x.prev)}</td>` : ""}<td class="num">${fmt(x.now)}</td><td class="num">${x.growth >= 0 ? "+" : ""}${fmt(x.growth)}</td></tr>`).join("");
+  const top = byLabel[0], b = top.b, lbl = top.label;
+  const maxV = Math.max(top.prev || 0, top.now, 1);
+  const bar = (t, n) => `<div style="display:grid;grid-template-columns:9em 1fr 6em;gap:8px;align-items:center;margin:6px 0"><span>${t}</span><div class="bar" style="width:${Math.max(0.5, 100 * n / maxV)}%"></div><span class="num">${fmt(n)}</span></div>`;
+  const vals = rows => rows.map(r => `${lbl}=${r.value || "(none)"}: ${fmt(r.count)}`).join(", ");
+  $("bd-bars").innerHTML = `<div class="muted">distinct <b>${lbl}</b> values</div>` +
+    (top.prev !== null ? bar("window before", top.prev) : "") + bar("window", top.now) +
+    `<div class="muted" style="margin-top:8px">largest values in the window: ${vals(b.rows)}${b.values > b.rows.length ? ", …" : ""}</div>`;
+  const pq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=8`);
+  $("bd-note").textContent = `Baseline, PromQL count by (${lbl}): ${pq.result.error ? "error: " + briefError(pq.result.error) : fmt(pq.values) + " values, " + secs(pq.result.latency_ms) + ", " + fmt(pq.result.fetched_series_count) + " series fetched, " + bytes(pq.result.fetched_chunk_bytes) + " of chunks"}. ` +
     `In Mimir: ${fmt(b.values)} values, ${fmt(b.total)} series (truth ${fmt(b.truth_values)} values, ${fmt(b.truth_total)} series), ${secs(b.read.elapsed_ms)}, ${fmt(b.read.series_read)} series labels read, ${b.read.index_bytes ? bytes(b.read.index_bytes) : "0 B (cached)"} of index decoded, no chunks.`;
 
   $("status").textContent = "Buckets...";
   await runBuckets(name);
 
   $("status").textContent = "Budget...";
-  const lq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=pod&limit=1&series_limit=${budget}`);
+  $("lim-title").textContent = `4. It can't become an incident: ${short(name)} by ${lbl}`;
+  const lq = await get(`api/promql/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&series_limit=${budget}`);
   $("lim-q").textContent = lq.query + `\nwith max_fetched_series_per_query=${fmt(budget)}, enforced per query shard`;
   const shards = lq.result.sharded_queries ? [["query shards", lq.result.sharded_queries]] : [];
   kv($("lim-today"), (lq.result.error ? [["result", briefError(lq.result.error), "err"], ["latency", secs(lq.result.latency_ms)]] : [["result", `${fmt(lq.values)} values, limit not reached`], ["latency", secs(lq.result.latency_ms)], ["series fetched", fmt(lq.result.fetched_series_count)]]).concat(shards));
-  const lb = await get(`api/breakdown?${win()}&metric=${m}&label=pod&limit=1&budget=${budget}`);
+  const lb = await get(`api/breakdown?${win()}&metric=${m}&label=${lbl}&limit=1&budget=${budget}`);
   kv($("lim-hc"), [
     ["answer", lb.lower_bound ? `≥ ${fmt(lb.total)} series (lower bound)` : `${fmt(lb.total)} series (exact, under budget)`, lb.lower_bound ? "" : "ok"],
-    ["values seen", fmt(lb.values)],
+    ["truth", `${fmt(lb.truth_total)} series`],
+    ["budget", `${fmt(budget)} series per store-gateway`],
+    ["store-gateways", lb.read.store_gateways],
     ["stopped after", `${fmt(lb.read.series_read)} series`],
     ["latency", secs(lb.read.elapsed_ms)],
     ["chunks read", "0 B", "ok"],
