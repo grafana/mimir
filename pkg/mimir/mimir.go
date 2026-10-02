@@ -1073,6 +1073,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.BlockBuilderScheduler/AssignJob",
 			"/schedulerpb.BlockBuilderScheduler/UpdateJob",
 			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
+			"/usagetrackerpb.UsageTracker/GetTenantBands",
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 			"/cortex.Ingester/HashRangeStats",
 			"/cortex.Ingester/SetHashRanges",

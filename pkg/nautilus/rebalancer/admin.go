@@ -79,6 +79,7 @@ type adminState struct {
 	lastStats         map[partitionRangeKey]rangeStatsView
 	lastPartitionL    map[int32]int64
 	lastPartitionRate map[int32]float64
+	bandPage          bandPage
 
 	// lastReadcacheRound is the most recent readcache slicer round's
 	// output. Empty before the first round, or when the readcache
@@ -715,6 +716,10 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch {
 	case sub == "" || sub == "/":
 		r.serveAdminHTMLForTenant(w, req.URL.Query().Get("tenant"))
+	case sub == "/bands" || sub == "/bands/":
+		r.serveBandsHTML(w, req)
+	case sub == "/bands.json":
+		r.serveBandsJSON(w, req)
 	case sub == "/rounds.json":
 		r.serveRoundsList(w)
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):

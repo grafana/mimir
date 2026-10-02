@@ -37,6 +37,9 @@ type TrackSeriesRequest struct {
 	Partition int32 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
 	// The hashes of the series to track.
 	SeriesHashes []uint64 `protobuf:"varint,3,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`
+	// Optional Nautilus locality hash of each series, parallel to seriesHashes.
+	// Either empty or the same length as seriesHashes. 0 means unknown.
+	LocalityHashes []uint32 `protobuf:"varint,4,rep,packed,name=localityHashes,proto3" json:"localityHashes,omitempty"`
 }
 
 func (m *TrackSeriesRequest) Reset()      { *m = TrackSeriesRequest{} }
@@ -92,6 +95,13 @@ func (m *TrackSeriesRequest) GetSeriesHashes() []uint64 {
 	return nil
 }
 
+func (m *TrackSeriesRequest) GetLocalityHashes() []uint32 {
+	if m != nil {
+		return m.LocalityHashes
+	}
+	return nil
+}
+
 type TrackSeriesResponse struct {
 	// The hashes of the series that have been rejected because the tenant is over the limit.
 	RejectedSeriesHashes []uint64 `protobuf:"varint,1,rep,packed,name=rejectedSeriesHashes,proto3" json:"rejectedSeriesHashes,omitempty"`
@@ -141,6 +151,9 @@ type TrackSeriesBatchUser struct {
 	UserID string `protobuf:"bytes,1,opt,name=userID,proto3" json:"userID,omitempty"`
 	// The hashes of the series to track.
 	SeriesHashes []uint64 `protobuf:"varint,2,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`
+	// Optional Nautilus locality hash of each series, parallel to seriesHashes.
+	// Either empty or the same length as seriesHashes. 0 means unknown.
+	LocalityHashes []uint32 `protobuf:"varint,3,rep,packed,name=localityHashes,proto3" json:"localityHashes,omitempty"`
 }
 
 func (m *TrackSeriesBatchUser) Reset()      { *m = TrackSeriesBatchUser{} }
@@ -185,6 +198,13 @@ func (m *TrackSeriesBatchUser) GetUserID() string {
 func (m *TrackSeriesBatchUser) GetSeriesHashes() []uint64 {
 	if m != nil {
 		return m.SeriesHashes
+	}
+	return nil
+}
+
+func (m *TrackSeriesBatchUser) GetLocalityHashes() []uint32 {
+	if m != nil {
+		return m.LocalityHashes
 	}
 	return nil
 }
@@ -441,6 +461,9 @@ type SeriesCreatedEvent struct {
 	Timestamp int64 `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// The hashes of the series to track.
 	SeriesHashes []uint64 `protobuf:"varint,3,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`
+	// Optional Nautilus locality hash of each series, parallel to seriesHashes.
+	// Either empty or the same length as seriesHashes. 0 means unknown.
+	LocalityHashes []uint32 `protobuf:"varint,4,rep,packed,name=localityHashes,proto3" json:"localityHashes,omitempty"`
 }
 
 func (m *SeriesCreatedEvent) Reset()      { *m = SeriesCreatedEvent{} }
@@ -492,6 +515,13 @@ func (m *SeriesCreatedEvent) GetTimestamp() int64 {
 func (m *SeriesCreatedEvent) GetSeriesHashes() []uint64 {
 	if m != nil {
 		return m.SeriesHashes
+	}
+	return nil
+}
+
+func (m *SeriesCreatedEvent) GetLocalityHashes() []uint32 {
+	if m != nil {
+		return m.LocalityHashes
 	}
 	return nil
 }
@@ -755,6 +785,211 @@ func (m *GetUsersCloseToLimitResponse) GetPartition() int32 {
 	return 0
 }
 
+type GetTenantBandsRequest struct {
+	// Partition to query. Must be served by the instance receiving the request.
+	Partition int32 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
+	// Optional tenant filter. Empty returns every tenant on the partition.
+	UserID string `protobuf:"bytes,2,opt,name=userID,proto3" json:"userID,omitempty"`
+}
+
+func (m *GetTenantBandsRequest) Reset()      { *m = GetTenantBandsRequest{} }
+func (*GetTenantBandsRequest) ProtoMessage() {}
+func (*GetTenantBandsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{14}
+}
+func (m *GetTenantBandsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetTenantBandsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetTenantBandsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetTenantBandsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetTenantBandsRequest.Merge(m, src)
+}
+func (m *GetTenantBandsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetTenantBandsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetTenantBandsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetTenantBandsRequest proto.InternalMessageInfo
+
+func (m *GetTenantBandsRequest) GetPartition() int32 {
+	if m != nil {
+		return m.Partition
+	}
+	return 0
+}
+
+func (m *GetTenantBandsRequest) GetUserID() string {
+	if m != nil {
+		return m.UserID
+	}
+	return ""
+}
+
+type TenantBands struct {
+	// The tenant owning the series.
+	UserID string `protobuf:"bytes,1,opt,name=userID,proto3" json:"userID,omitempty"`
+	// Number of active series this partition tracks for the tenant.
+	TotalSeries uint64 `protobuf:"varint,2,opt,name=totalSeries,proto3" json:"totalSeries,omitempty"`
+	// Number of those series that carried a non-zero locality hash. The band
+	// counts below sum to at most this value.
+	LocalitySeries uint64 `protobuf:"varint,3,opt,name=localitySeries,proto3" json:"localitySeries,omitempty"`
+	// Retained bands (top 16 bits of the locality hash), hottest first, and the
+	// estimated active series in each. Parallel arrays.
+	Bands  []uint32 `protobuf:"varint,4,rep,packed,name=bands,proto3" json:"bands,omitempty"`
+	Counts []uint64 `protobuf:"varint,5,rep,packed,name=counts,proto3" json:"counts,omitempty"`
+}
+
+func (m *TenantBands) Reset()      { *m = TenantBands{} }
+func (*TenantBands) ProtoMessage() {}
+func (*TenantBands) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{15}
+}
+func (m *TenantBands) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TenantBands) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TenantBands.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *TenantBands) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TenantBands.Merge(m, src)
+}
+func (m *TenantBands) XXX_Size() int {
+	return m.Size()
+}
+func (m *TenantBands) XXX_DiscardUnknown() {
+	xxx_messageInfo_TenantBands.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TenantBands proto.InternalMessageInfo
+
+func (m *TenantBands) GetUserID() string {
+	if m != nil {
+		return m.UserID
+	}
+	return ""
+}
+
+func (m *TenantBands) GetTotalSeries() uint64 {
+	if m != nil {
+		return m.TotalSeries
+	}
+	return 0
+}
+
+func (m *TenantBands) GetLocalitySeries() uint64 {
+	if m != nil {
+		return m.LocalitySeries
+	}
+	return 0
+}
+
+func (m *TenantBands) GetBands() []uint32 {
+	if m != nil {
+		return m.Bands
+	}
+	return nil
+}
+
+func (m *TenantBands) GetCounts() []uint64 {
+	if m != nil {
+		return m.Counts
+	}
+	return nil
+}
+
+type GetTenantBandsResponse struct {
+	// The partition that was queried.
+	Partition int32 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
+	// Total number of usage-tracker partitions. Each partition holds roughly
+	// 1/partitions of every tenant's series, so a caller scales counts by this.
+	Partitions int32 `protobuf:"varint,2,opt,name=partitions,proto3" json:"partitions,omitempty"`
+	// Unix timestamp (seconds) at which the response was built.
+	Timestamp int64          `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Tenants   []*TenantBands `protobuf:"bytes,4,rep,name=tenants,proto3" json:"tenants,omitempty"`
+}
+
+func (m *GetTenantBandsResponse) Reset()      { *m = GetTenantBandsResponse{} }
+func (*GetTenantBandsResponse) ProtoMessage() {}
+func (*GetTenantBandsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{16}
+}
+func (m *GetTenantBandsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetTenantBandsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetTenantBandsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetTenantBandsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetTenantBandsResponse.Merge(m, src)
+}
+func (m *GetTenantBandsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetTenantBandsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetTenantBandsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetTenantBandsResponse proto.InternalMessageInfo
+
+func (m *GetTenantBandsResponse) GetPartition() int32 {
+	if m != nil {
+		return m.Partition
+	}
+	return 0
+}
+
+func (m *GetTenantBandsResponse) GetPartitions() int32 {
+	if m != nil {
+		return m.Partitions
+	}
+	return 0
+}
+
+func (m *GetTenantBandsResponse) GetTimestamp() int64 {
+	if m != nil {
+		return m.Timestamp
+	}
+	return 0
+}
+
+func (m *GetTenantBandsResponse) GetTenants() []*TenantBands {
+	if m != nil {
+		return m.Tenants
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*TrackSeriesRequest)(nil), "usagetrackerpb.TrackSeriesRequest")
 	proto.RegisterType((*TrackSeriesResponse)(nil), "usagetrackerpb.TrackSeriesResponse")
@@ -770,54 +1005,67 @@ func init() {
 	proto.RegisterType((*SnapshotFile)(nil), "usagetrackerpb.SnapshotFile")
 	proto.RegisterType((*GetUsersCloseToLimitRequest)(nil), "usagetrackerpb.GetUsersCloseToLimitRequest")
 	proto.RegisterType((*GetUsersCloseToLimitResponse)(nil), "usagetrackerpb.GetUsersCloseToLimitResponse")
+	proto.RegisterType((*GetTenantBandsRequest)(nil), "usagetrackerpb.GetTenantBandsRequest")
+	proto.RegisterType((*TenantBands)(nil), "usagetrackerpb.TenantBands")
+	proto.RegisterType((*GetTenantBandsResponse)(nil), "usagetrackerpb.GetTenantBandsResponse")
 }
 
 func init() { proto.RegisterFile("usagetracker.proto", fileDescriptor_24aa1621a7eb7fd6) }
 
 var fileDescriptor_24aa1621a7eb7fd6 = []byte{
-	// 661 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x55, 0x3d, 0x6f, 0x13, 0x4d,
-	0x10, 0xf6, 0xda, 0x49, 0xf4, 0x7a, 0xe2, 0xe4, 0x45, 0x8b, 0x45, 0x8c, 0x09, 0xab, 0xe8, 0x40,
-	0xc1, 0x08, 0x08, 0x92, 0x69, 0x10, 0x74, 0x49, 0xf8, 0xb0, 0x84, 0x44, 0xb4, 0xf9, 0x28, 0x68,
-	0xa2, 0x8d, 0x6f, 0x1c, 0x1f, 0xb1, 0x6f, 0x9d, 0xdd, 0x35, 0x25, 0xe2, 0x27, 0xf0, 0x33, 0xf8,
-	0x19, 0x94, 0x94, 0x29, 0x53, 0x21, 0x72, 0x69, 0x28, 0xf3, 0x13, 0xd0, 0x7d, 0x39, 0x77, 0x17,
-	0xfb, 0xec, 0xee, 0x76, 0x76, 0xe6, 0x99, 0x99, 0x67, 0x9e, 0xb9, 0x05, 0x3a, 0xd4, 0xe2, 0x18,
-	0x8d, 0x12, 0xed, 0x13, 0x54, 0x1b, 0x03, 0x25, 0x8d, 0xa4, 0xcb, 0x49, 0xdb, 0xe0, 0xa8, 0x5e,
-	0x3d, 0x96, 0xc7, 0x32, 0xb8, 0x7a, 0xee, 0x7f, 0x85, 0x5e, 0x96, 0x0b, 0x74, 0xcf, 0x77, 0xd9,
-	0x45, 0xe5, 0xa0, 0xe6, 0x78, 0x3a, 0x44, 0x6d, 0xe8, 0x1d, 0x58, 0x18, 0x6a, 0x54, 0xad, 0xed,
-	0x1a, 0x59, 0x23, 0x8d, 0x32, 0x8f, 0x4e, 0x74, 0x15, 0xca, 0x03, 0xa1, 0x8c, 0x63, 0x1c, 0xe9,
-	0xd6, 0x8a, 0x6b, 0xa4, 0x31, 0xcf, 0xaf, 0x0d, 0xd4, 0x82, 0x8a, 0x0e, 0x60, 0xde, 0x0b, 0xdd,
-	0x45, 0x5d, 0x2b, 0xad, 0x95, 0x1a, 0x73, 0x3c, 0x65, 0xb3, 0x5a, 0x70, 0x3b, 0x95, 0x4f, 0x0f,
-	0xa4, 0xab, 0x91, 0x36, 0xa1, 0xaa, 0xf0, 0x33, 0xb6, 0x0d, 0xda, 0xbb, 0x49, 0x08, 0x12, 0x40,
-	0x8c, 0xbd, 0xb3, 0x38, 0x54, 0x13, 0x50, 0x9b, 0xc2, 0xb4, 0xbb, 0xfb, 0x1a, 0xd5, 0xc4, 0xe2,
-	0xb3, 0xe5, 0x15, 0xc7, 0x94, 0x37, 0x84, 0xbb, 0x59, 0xcc, 0x9d, 0x51, 0x7f, 0xa9, 0xee, 0x49,
-	0xb6, 0xfb, 0x57, 0x30, 0xef, 0x27, 0x0a, 0x71, 0x17, 0x9b, 0x0f, 0x37, 0xd2, 0xfc, 0x6f, 0x8c,
-	0xab, 0x95, 0x87, 0x21, 0x96, 0x0d, 0x2b, 0xd9, 0xeb, 0x78, 0x14, 0x2d, 0x80, 0x51, 0x8e, 0x90,
-	0x8f, 0xc5, 0xe6, 0xe3, 0x69, 0xd8, 0xa3, 0x9a, 0x79, 0x22, 0xd8, 0x3a, 0x81, 0xfb, 0x37, 0xb3,
-	0xf8, 0xc4, 0x3a, 0xd2, 0xcd, 0x65, 0x6e, 0xd2, 0x74, 0x8a, 0x39, 0xd3, 0xf9, 0x7a, 0x93, 0xc9,
-	0x51, 0xb2, 0x29, 0x4c, 0x6e, 0xa5, 0x99, 0x7c, 0x36, 0xad, 0xdb, 0x54, 0x13, 0x31, 0xa5, 0x08,
-	0xb5, 0x9b, 0x7e, 0x91, 0xda, 0x5a, 0x00, 0x2a, 0x8e, 0x99, 0x99, 0xd3, 0x51, 0x16, 0x9e, 0x08,
-	0xf6, 0xf7, 0x27, 0xf4, 0xd9, 0x52, 0x28, 0x0c, 0xda, 0x6f, 0xbe, 0xa0, 0x9b, 0xbb, 0x3f, 0xc6,
-	0xe9, 0xa3, 0x36, 0xa2, 0x3f, 0x08, 0xf6, 0xa7, 0xc4, 0xaf, 0x0d, 0x33, 0xed, 0xcf, 0x6f, 0x02,
-	0xcb, 0xbb, 0xae, 0x18, 0xe8, 0xae, 0x34, 0x1c, 0xdb, 0x52, 0xd9, 0x69, 0x50, 0x92, 0x05, 0x5d,
-	0x85, 0x72, 0xc7, 0xe9, 0xa1, 0x2b, 0xfa, 0xd1, 0xc0, 0xca, 0xfc, 0xda, 0x40, 0x0f, 0x60, 0xbd,
-	0x27, 0xb4, 0x09, 0xaa, 0xfe, 0xd8, 0xe9, 0x68, 0x34, 0x3b, 0xc3, 0xa3, 0x9e, 0xa3, 0xbb, 0x68,
-	0x6f, 0x62, 0x47, 0x2a, 0x8c, 0x73, 0xd5, 0x4a, 0x01, 0xf0, 0x8c, 0xde, 0xf4, 0x25, 0xac, 0xf8,
-	0x9e, 0xf1, 0x39, 0x11, 0x51, 0x9b, 0x0b, 0x80, 0x26, 0x5d, 0x5b, 0x2d, 0x58, 0x4a, 0x99, 0xa7,
-	0xb4, 0x57, 0x87, 0xff, 0xe2, 0x6e, 0x02, 0x42, 0xcb, 0x7c, 0x74, 0xb6, 0x2c, 0xa8, 0xc4, 0x50,
-	0x6f, 0x9d, 0x1e, 0x52, 0x0a, 0x73, 0xb6, 0x30, 0x22, 0x18, 0x78, 0x85, 0x07, 0xdf, 0xd6, 0x6b,
-	0xb8, 0xf7, 0x0e, 0x8d, 0x2f, 0x1c, 0xbd, 0xd5, 0x93, 0x1a, 0xf7, 0xe4, 0x07, 0xa7, 0xef, 0x98,
-	0x78, 0xfb, 0x72, 0x85, 0x6a, 0xd9, 0xb0, 0x3a, 0x3e, 0x38, 0xd2, 0xd9, 0x3a, 0xfc, 0xaf, 0xa5,
-	0x32, 0x68, 0x1f, 0xfa, 0xf3, 0x3f, 0x74, 0xec, 0x50, 0x6c, 0x65, 0xbe, 0x14, 0x9a, 0xfd, 0xc8,
-	0x96, 0xad, 0xf3, 0x7f, 0xab, 0xcd, 0x9f, 0x45, 0xa8, 0xec, 0xfb, 0xda, 0xdc, 0x0b, 0xb5, 0x49,
-	0x0f, 0x60, 0x31, 0x21, 0x4e, 0x6a, 0xe5, 0x28, 0x37, 0xea, 0xa3, 0xfe, 0x20, 0xd7, 0x27, 0x2a,
-	0x17, 0xe1, 0x56, 0x56, 0xf4, 0xf4, 0xd1, 0xf4, 0xb5, 0x08, 0x33, 0x34, 0xa6, 0x3b, 0x46, 0x69,
-	0x4e, 0xa1, 0x3a, 0x8e, 0x35, 0xfa, 0x24, 0x8b, 0x90, 0x33, 0x98, 0xfa, 0xd3, 0xd9, 0x9c, 0xc3,
-	0x94, 0x9b, 0xdb, 0x67, 0x17, 0xac, 0x70, 0x7e, 0xc1, 0x0a, 0x57, 0x17, 0x8c, 0x7c, 0xf3, 0x18,
-	0xf9, 0xe1, 0x31, 0xf2, 0xcb, 0x63, 0xe4, 0xcc, 0x63, 0xe4, 0x8f, 0xc7, 0xc8, 0x5f, 0x8f, 0x15,
-	0xae, 0x3c, 0x46, 0xbe, 0x5f, 0xb2, 0xc2, 0xd9, 0x25, 0x2b, 0x9c, 0x5f, 0xb2, 0xc2, 0xa7, 0xcc,
-	0x0b, 0x7a, 0xb4, 0x10, 0x3c, 0x99, 0x2f, 0xfe, 0x05, 0x00, 0x00, 0xff, 0xff, 0xe7, 0x23, 0x01,
-	0xff, 0x6e, 0x07, 0x00, 0x00,
+	// 826 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x56, 0x41, 0x6f, 0xd3, 0x48,
+	0x14, 0xce, 0xc4, 0x49, 0x77, 0xf3, 0x92, 0x66, 0x57, 0xb3, 0xd9, 0x36, 0x9b, 0x76, 0xad, 0xc8,
+	0xbb, 0x9b, 0xcd, 0x6a, 0xa1, 0x48, 0x41, 0x48, 0x08, 0x6e, 0x69, 0xa1, 0x44, 0x02, 0x51, 0xb9,
+	0x69, 0x0f, 0x5c, 0xaa, 0x49, 0x3c, 0x69, 0x4c, 0x1d, 0x4f, 0xea, 0x99, 0x20, 0xc1, 0x01, 0xf1,
+	0x13, 0x38, 0x71, 0xe3, 0xc0, 0x0d, 0x89, 0x3f, 0xc2, 0xb1, 0xc7, 0x9e, 0x10, 0x4d, 0x2f, 0x1c,
+	0xfb, 0x13, 0x90, 0xc7, 0x76, 0x6a, 0x3b, 0x89, 0x93, 0x03, 0x37, 0xcf, 0x9b, 0xef, 0xbd, 0x6f,
+	0xde, 0x7b, 0xdf, 0x7b, 0x32, 0xe0, 0x11, 0x27, 0xc7, 0x54, 0x38, 0xa4, 0x7b, 0x42, 0x9d, 0xad,
+	0xa1, 0xc3, 0x04, 0xc3, 0xc5, 0xb0, 0x6d, 0xd8, 0xa9, 0x94, 0x8e, 0xd9, 0x31, 0x93, 0x57, 0xb7,
+	0xdc, 0x2f, 0x0f, 0xa5, 0xbd, 0x43, 0x80, 0xdb, 0x2e, 0x66, 0x9f, 0x3a, 0x26, 0xe5, 0x3a, 0x3d,
+	0x1d, 0x51, 0x2e, 0xf0, 0x1a, 0xac, 0x8c, 0x38, 0x75, 0x5a, 0x3b, 0x65, 0x54, 0x45, 0xf5, 0x9c,
+	0xee, 0x9f, 0xf0, 0x26, 0xe4, 0x86, 0xc4, 0x11, 0xa6, 0x30, 0x99, 0x5d, 0x4e, 0x57, 0x51, 0x3d,
+	0xab, 0x5f, 0x1b, 0xb0, 0x06, 0x05, 0x2e, 0xc3, 0x3c, 0x22, 0xbc, 0x4f, 0x79, 0x59, 0xa9, 0x2a,
+	0xf5, 0x8c, 0x1e, 0xb1, 0xe1, 0x1a, 0x14, 0x2d, 0xd6, 0x25, 0x96, 0x29, 0x5e, 0xfa, 0xa8, 0x4c,
+	0x55, 0xa9, 0xaf, 0xea, 0x31, 0xab, 0xd6, 0x82, 0xdf, 0x22, 0xef, 0xe2, 0x43, 0x66, 0x73, 0x8a,
+	0x1b, 0x50, 0x72, 0xe8, 0x73, 0xda, 0x15, 0xd4, 0xd8, 0x0f, 0x53, 0x21, 0x49, 0x35, 0xf3, 0x4e,
+	0x7b, 0x05, 0xa5, 0x50, 0xa8, 0x26, 0x11, 0xdd, 0xfe, 0x01, 0xa7, 0xce, 0xdc, 0x24, 0xe3, 0x69,
+	0xa4, 0x97, 0x4a, 0x43, 0x99, 0x99, 0xc6, 0x08, 0xfe, 0x88, 0x73, 0xef, 0x4d, 0xea, 0x15, 0xa9,
+	0x26, 0x8a, 0x57, 0xf3, 0x1e, 0x64, 0xdd, 0x07, 0x79, 0xfc, 0xf9, 0xc6, 0xdf, 0x5b, 0xd1, 0x86,
+	0x6e, 0xcd, 0xca, 0x49, 0xf7, 0x5c, 0x34, 0x03, 0xd6, 0xe3, 0xd7, 0x41, 0x6b, 0x5b, 0x00, 0x13,
+	0x0e, 0xaf, 0x6e, 0xf9, 0xc6, 0x7f, 0x8b, 0x62, 0x4f, 0xde, 0xac, 0x87, 0x9c, 0xb5, 0x13, 0xf8,
+	0x73, 0x9a, 0xc5, 0x6d, 0x80, 0xc9, 0xec, 0xc4, 0x0a, 0xcf, 0xeb, 0x62, 0x3a, 0xa1, 0x8b, 0xaf,
+	0xa7, 0x2b, 0x39, 0x21, 0x5b, 0x50, 0xc9, 0xed, 0x68, 0x25, 0x6f, 0x2e, 0xca, 0x36, 0x92, 0x44,
+	0x50, 0x52, 0x0a, 0xe5, 0x69, 0x9c, 0xaf, 0xca, 0x16, 0x80, 0x13, 0xf8, 0x2c, 0x5d, 0xd3, 0x09,
+	0x8b, 0x1e, 0x72, 0x96, 0x03, 0xe9, 0x81, 0xb6, 0x1d, 0x4a, 0x04, 0x35, 0x1e, 0xbc, 0xa0, 0x76,
+	0xe2, 0x40, 0x0a, 0x73, 0x40, 0xb9, 0x20, 0x83, 0xa1, 0x1c, 0x48, 0x45, 0xbf, 0x36, 0xfc, 0xd0,
+	0x81, 0xfc, 0x82, 0xa0, 0xb8, 0x6f, 0x93, 0x21, 0xef, 0x33, 0xa1, 0xd3, 0x2e, 0x73, 0x8c, 0x28,
+	0x39, 0x8a, 0x93, 0x6f, 0x42, 0xae, 0x67, 0x5a, 0xd4, 0x26, 0x03, 0xbf, 0xb3, 0x39, 0xfd, 0xda,
+	0x80, 0x0f, 0xa1, 0x66, 0x11, 0x2e, 0x64, 0x76, 0x4f, 0x7b, 0x3d, 0x4e, 0xc5, 0xde, 0xa8, 0x63,
+	0x99, 0xbc, 0x4f, 0x8d, 0x26, 0xed, 0x31, 0x87, 0x06, 0x5c, 0x65, 0x45, 0x06, 0x5e, 0x12, 0x8d,
+	0xef, 0xc2, 0xba, 0x8b, 0x0c, 0xce, 0x21, 0x8f, 0x72, 0x46, 0x06, 0x9a, 0x77, 0xad, 0xb5, 0x60,
+	0x35, 0x62, 0x5e, 0x90, 0x5e, 0x05, 0x7e, 0x0e, 0xb2, 0x91, 0x85, 0xcf, 0xe9, 0x93, 0xb3, 0xa6,
+	0x41, 0x21, 0x08, 0xf5, 0xd0, 0xb4, 0x28, 0xc6, 0x90, 0x31, 0x88, 0x20, 0x52, 0x19, 0x05, 0x5d,
+	0x7e, 0x6b, 0xf7, 0x61, 0x63, 0x97, 0x0a, 0x57, 0x61, 0x7c, 0xdb, 0x62, 0x9c, 0xb6, 0xd9, 0x63,
+	0x73, 0x60, 0x8a, 0x60, 0x4c, 0x13, 0x15, 0xad, 0x19, 0xb0, 0x39, 0xdb, 0xd9, 0x17, 0x64, 0x0d,
+	0x7e, 0xe1, 0xcc, 0x11, 0xd4, 0x38, 0x72, 0x75, 0x72, 0x64, 0x1a, 0x9e, 0x2a, 0x73, 0xfa, 0xaa,
+	0x67, 0x76, 0x3d, 0x5b, 0x06, 0x4f, 0xde, 0xe7, 0xda, 0x13, 0xf8, 0x7d, 0x97, 0x8a, 0x36, 0xb5,
+	0x89, 0x2d, 0x9a, 0xc4, 0x36, 0xf8, 0x52, 0x8f, 0x0b, 0x69, 0x35, 0x1d, 0xd6, 0xaa, 0xf6, 0x1e,
+	0x41, 0x3e, 0x14, 0x6c, 0xae, 0xa6, 0xab, 0x90, 0x17, 0x4c, 0x10, 0xcb, 0x1b, 0x03, 0x19, 0x24,
+	0xa3, 0x87, 0x4d, 0x61, 0xcd, 0xfa, 0x20, 0x45, 0x82, 0x62, 0x56, 0x5c, 0x82, 0x6c, 0xc7, 0xa5,
+	0xf2, 0x25, 0xed, 0x1d, 0x5c, 0xde, 0x2e, 0x1b, 0xd9, 0x82, 0x97, 0xb3, 0x72, 0x1e, 0xfc, 0x93,
+	0xf6, 0x09, 0xc1, 0x5a, 0x3c, 0x5f, 0xbf, 0x9e, 0xc9, 0x09, 0xab, 0x91, 0x95, 0xea, 0x95, 0x31,
+	0x64, 0x89, 0x0a, 0x49, 0x89, 0x0b, 0xe9, 0x0e, 0xfc, 0x24, 0x24, 0xa5, 0xf7, 0xcc, 0x7c, 0x63,
+	0x63, 0x6a, 0x73, 0x84, 0x5e, 0x14, 0x60, 0x1b, 0x1f, 0x14, 0x28, 0x1c, 0xb8, 0xb8, 0xb6, 0x87,
+	0xc3, 0x87, 0x90, 0x0f, 0xad, 0x18, 0xac, 0x25, 0xec, 0x1f, 0xbf, 0x8f, 0x95, 0xbf, 0x12, 0x31,
+	0x7e, 0xee, 0x14, 0x7e, 0x8d, 0xaf, 0x2e, 0xfc, 0xef, 0xe2, 0xe5, 0xe6, 0x31, 0xd4, 0x17, 0x03,
+	0x7d, 0x9a, 0x53, 0x28, 0xcd, 0x92, 0x34, 0xfe, 0x3f, 0x1e, 0x21, 0x61, 0x6a, 0x2a, 0x37, 0x96,
+	0x03, 0xfb, 0x94, 0x47, 0x50, 0x8c, 0xf6, 0x1b, 0xff, 0x33, 0xc3, 0x7f, 0x5a, 0xff, 0x95, 0xda,
+	0x22, 0x98, 0x47, 0xd0, 0xdc, 0x39, 0xbb, 0x50, 0x53, 0xe7, 0x17, 0x6a, 0xea, 0xea, 0x42, 0x45,
+	0x6f, 0xc6, 0x2a, 0xfa, 0x38, 0x56, 0xd1, 0xe7, 0xb1, 0x8a, 0xce, 0xc6, 0x2a, 0xfa, 0x3a, 0x56,
+	0xd1, 0xb7, 0xb1, 0x9a, 0xba, 0x1a, 0xab, 0xe8, 0xed, 0xa5, 0x9a, 0x3a, 0xbb, 0x54, 0x53, 0xe7,
+	0x97, 0x6a, 0xea, 0x59, 0xec, 0xcf, 0xad, 0xb3, 0x22, 0x7f, 0xd5, 0x6e, 0x7f, 0x0f, 0x00, 0x00,
+	0xff, 0xff, 0x24, 0x85, 0x89, 0x35, 0xe6, 0x09, 0x00, 0x00,
 }
 
 func (this *TrackSeriesRequest) Equal(that interface{}) bool {
@@ -850,6 +1098,14 @@ func (this *TrackSeriesRequest) Equal(that interface{}) bool {
 	}
 	for i := range this.SeriesHashes {
 		if this.SeriesHashes[i] != that1.SeriesHashes[i] {
+			return false
+		}
+	}
+	if len(this.LocalityHashes) != len(that1.LocalityHashes) {
+		return false
+	}
+	for i := range this.LocalityHashes {
+		if this.LocalityHashes[i] != that1.LocalityHashes[i] {
 			return false
 		}
 	}
@@ -911,6 +1167,14 @@ func (this *TrackSeriesBatchUser) Equal(that interface{}) bool {
 	}
 	for i := range this.SeriesHashes {
 		if this.SeriesHashes[i] != that1.SeriesHashes[i] {
+			return false
+		}
+	}
+	if len(this.LocalityHashes) != len(that1.LocalityHashes) {
+		return false
+	}
+	for i := range this.LocalityHashes {
+		if this.LocalityHashes[i] != that1.LocalityHashes[i] {
 			return false
 		}
 	}
@@ -1103,6 +1367,14 @@ func (this *SeriesCreatedEvent) Equal(that interface{}) bool {
 			return false
 		}
 	}
+	if len(this.LocalityHashes) != len(that1.LocalityHashes) {
+		return false
+	}
+	for i := range this.LocalityHashes {
+		if this.LocalityHashes[i] != that1.LocalityHashes[i] {
+			return false
+		}
+	}
 	return true
 }
 func (this *SnapshotRecord) Equal(that interface{}) bool {
@@ -1255,15 +1527,127 @@ func (this *GetUsersCloseToLimitResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *GetTenantBandsRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetTenantBandsRequest)
+	if !ok {
+		that2, ok := that.(GetTenantBandsRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Partition != that1.Partition {
+		return false
+	}
+	if this.UserID != that1.UserID {
+		return false
+	}
+	return true
+}
+func (this *TenantBands) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*TenantBands)
+	if !ok {
+		that2, ok := that.(TenantBands)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.UserID != that1.UserID {
+		return false
+	}
+	if this.TotalSeries != that1.TotalSeries {
+		return false
+	}
+	if this.LocalitySeries != that1.LocalitySeries {
+		return false
+	}
+	if len(this.Bands) != len(that1.Bands) {
+		return false
+	}
+	for i := range this.Bands {
+		if this.Bands[i] != that1.Bands[i] {
+			return false
+		}
+	}
+	if len(this.Counts) != len(that1.Counts) {
+		return false
+	}
+	for i := range this.Counts {
+		if this.Counts[i] != that1.Counts[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *GetTenantBandsResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetTenantBandsResponse)
+	if !ok {
+		that2, ok := that.(GetTenantBandsResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Partition != that1.Partition {
+		return false
+	}
+	if this.Partitions != that1.Partitions {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if len(this.Tenants) != len(that1.Tenants) {
+		return false
+	}
+	for i := range this.Tenants {
+		if !this.Tenants[i].Equal(that1.Tenants[i]) {
+			return false
+		}
+	}
+	return true
+}
 func (this *TrackSeriesRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&usagetrackerpb.TrackSeriesRequest{")
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
 	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "SeriesHashes: "+fmt.Sprintf("%#v", this.SeriesHashes)+",\n")
+	s = append(s, "LocalityHashes: "+fmt.Sprintf("%#v", this.LocalityHashes)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1281,10 +1665,11 @@ func (this *TrackSeriesBatchUser) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
+	s := make([]string, 0, 7)
 	s = append(s, "&usagetrackerpb.TrackSeriesBatchUser{")
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
 	s = append(s, "SeriesHashes: "+fmt.Sprintf("%#v", this.SeriesHashes)+",\n")
+	s = append(s, "LocalityHashes: "+fmt.Sprintf("%#v", this.LocalityHashes)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1353,11 +1738,12 @@ func (this *SeriesCreatedEvent) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&usagetrackerpb.SeriesCreatedEvent{")
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
 	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
 	s = append(s, "SeriesHashes: "+fmt.Sprintf("%#v", this.SeriesHashes)+",\n")
+	s = append(s, "LocalityHashes: "+fmt.Sprintf("%#v", this.LocalityHashes)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1416,6 +1802,46 @@ func (this *GetUsersCloseToLimitResponse) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *GetTenantBandsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.GetTenantBandsRequest{")
+	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
+	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *TenantBands) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&usagetrackerpb.TenantBands{")
+	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
+	s = append(s, "TotalSeries: "+fmt.Sprintf("%#v", this.TotalSeries)+",\n")
+	s = append(s, "LocalitySeries: "+fmt.Sprintf("%#v", this.LocalitySeries)+",\n")
+	s = append(s, "Bands: "+fmt.Sprintf("%#v", this.Bands)+",\n")
+	s = append(s, "Counts: "+fmt.Sprintf("%#v", this.Counts)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GetTenantBandsResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&usagetrackerpb.GetTenantBandsResponse{")
+	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
+	s = append(s, "Partitions: "+fmt.Sprintf("%#v", this.Partitions)+",\n")
+	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
+	if this.Tenants != nil {
+		s = append(s, "Tenants: "+fmt.Sprintf("%#v", this.Tenants)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringUsagetracker(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -1440,6 +1866,12 @@ type UsageTrackerClient interface {
 	TrackSeries(ctx context.Context, in *TrackSeriesRequest, opts ...grpc.CallOption) (*TrackSeriesResponse, error)
 	TrackSeriesBatch(ctx context.Context, in *TrackSeriesBatchRequest, opts ...grpc.CallOption) (*TrackSeriesBatchResponse, error)
 	GetUsersCloseToLimit(ctx context.Context, in *GetUsersCloseToLimitRequest, opts ...grpc.CallOption) (*GetUsersCloseToLimitResponse, error)
+	// GetTenantBands returns, for one usage-tracker partition, the hottest
+	// locality bands of every tenant (or of one tenant). A band is the top 16
+	// bits of the Nautilus locality hash. Counts cover only the series this
+	// partition tracks, so a caller scales by the partition count to estimate
+	// the tenant-wide figure.
+	GetTenantBands(ctx context.Context, in *GetTenantBandsRequest, opts ...grpc.CallOption) (*GetTenantBandsResponse, error)
 }
 
 type usageTrackerClient struct {
@@ -1477,11 +1909,26 @@ func (c *usageTrackerClient) GetUsersCloseToLimit(ctx context.Context, in *GetUs
 	return out, nil
 }
 
+func (c *usageTrackerClient) GetTenantBands(ctx context.Context, in *GetTenantBandsRequest, opts ...grpc.CallOption) (*GetTenantBandsResponse, error) {
+	out := new(GetTenantBandsResponse)
+	err := c.cc.Invoke(ctx, "/usagetrackerpb.UsageTracker/GetTenantBands", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UsageTrackerServer is the server API for UsageTracker service.
 type UsageTrackerServer interface {
 	TrackSeries(context.Context, *TrackSeriesRequest) (*TrackSeriesResponse, error)
 	TrackSeriesBatch(context.Context, *TrackSeriesBatchRequest) (*TrackSeriesBatchResponse, error)
 	GetUsersCloseToLimit(context.Context, *GetUsersCloseToLimitRequest) (*GetUsersCloseToLimitResponse, error)
+	// GetTenantBands returns, for one usage-tracker partition, the hottest
+	// locality bands of every tenant (or of one tenant). A band is the top 16
+	// bits of the Nautilus locality hash. Counts cover only the series this
+	// partition tracks, so a caller scales by the partition count to estimate
+	// the tenant-wide figure.
+	GetTenantBands(context.Context, *GetTenantBandsRequest) (*GetTenantBandsResponse, error)
 }
 
 // UnimplementedUsageTrackerServer can be embedded to have forward compatible implementations.
@@ -1496,6 +1943,9 @@ func (*UnimplementedUsageTrackerServer) TrackSeriesBatch(ctx context.Context, re
 }
 func (*UnimplementedUsageTrackerServer) GetUsersCloseToLimit(ctx context.Context, req *GetUsersCloseToLimitRequest) (*GetUsersCloseToLimitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetUsersCloseToLimit not implemented")
+}
+func (*UnimplementedUsageTrackerServer) GetTenantBands(ctx context.Context, req *GetTenantBandsRequest) (*GetTenantBandsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTenantBands not implemented")
 }
 
 func RegisterUsageTrackerServer(s *grpc.Server, srv UsageTrackerServer) {
@@ -1556,6 +2006,24 @@ func _UsageTracker_GetUsersCloseToLimit_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UsageTracker_GetTenantBands_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTenantBandsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsageTrackerServer).GetTenantBands(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/usagetrackerpb.UsageTracker/GetTenantBands",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsageTrackerServer).GetTenantBands(ctx, req.(*GetTenantBandsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _UsageTracker_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "usagetrackerpb.UsageTracker",
 	HandlerType: (*UsageTrackerServer)(nil),
@@ -1571,6 +2039,10 @@ var _UsageTracker_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUsersCloseToLimit",
 			Handler:    _UsageTracker_GetUsersCloseToLimit_Handler,
+		},
+		{
+			MethodName: "GetTenantBands",
+			Handler:    _UsageTracker_GetTenantBands_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1597,10 +2069,10 @@ func (m *TrackSeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.SeriesHashes) > 0 {
-		dAtA2 := make([]byte, len(m.SeriesHashes)*10)
+	if len(m.LocalityHashes) > 0 {
+		dAtA2 := make([]byte, len(m.LocalityHashes)*10)
 		var j1 int
-		for _, num := range m.SeriesHashes {
+		for _, num := range m.LocalityHashes {
 			for num >= 1<<7 {
 				dAtA2[j1] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
@@ -1612,6 +2084,24 @@ func (m *TrackSeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= j1
 		copy(dAtA[i:], dAtA2[:j1])
 		i = encodeVarintUsagetracker(dAtA, i, uint64(j1))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.SeriesHashes) > 0 {
+		dAtA4 := make([]byte, len(m.SeriesHashes)*10)
+		var j3 int
+		for _, num := range m.SeriesHashes {
+			for num >= 1<<7 {
+				dAtA4[j3] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j3++
+			}
+			dAtA4[j3] = uint8(num)
+			j3++
+		}
+		i -= j3
+		copy(dAtA[i:], dAtA4[:j3])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j3))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -1651,20 +2141,20 @@ func (m *TrackSeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	var l int
 	_ = l
 	if len(m.RejectedSeriesHashes) > 0 {
-		dAtA4 := make([]byte, len(m.RejectedSeriesHashes)*10)
-		var j3 int
+		dAtA6 := make([]byte, len(m.RejectedSeriesHashes)*10)
+		var j5 int
 		for _, num := range m.RejectedSeriesHashes {
 			for num >= 1<<7 {
-				dAtA4[j3] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j3++
+				j5++
 			}
-			dAtA4[j3] = uint8(num)
-			j3++
+			dAtA6[j5] = uint8(num)
+			j5++
 		}
-		i -= j3
-		copy(dAtA[i:], dAtA4[:j3])
-		i = encodeVarintUsagetracker(dAtA, i, uint64(j3))
+		i -= j5
+		copy(dAtA[i:], dAtA6[:j5])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j5))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1691,21 +2181,39 @@ func (m *TrackSeriesBatchUser) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.LocalityHashes) > 0 {
+		dAtA8 := make([]byte, len(m.LocalityHashes)*10)
+		var j7 int
+		for _, num := range m.LocalityHashes {
+			for num >= 1<<7 {
+				dAtA8[j7] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j7++
+			}
+			dAtA8[j7] = uint8(num)
+			j7++
+		}
+		i -= j7
+		copy(dAtA[i:], dAtA8[:j7])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j7))
+		i--
+		dAtA[i] = 0x1a
+	}
 	if len(m.SeriesHashes) > 0 {
-		dAtA6 := make([]byte, len(m.SeriesHashes)*10)
-		var j5 int
+		dAtA10 := make([]byte, len(m.SeriesHashes)*10)
+		var j9 int
 		for _, num := range m.SeriesHashes {
 			for num >= 1<<7 {
-				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA10[j9] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j5++
+				j9++
 			}
-			dAtA6[j5] = uint8(num)
-			j5++
+			dAtA10[j9] = uint8(num)
+			j9++
 		}
-		i -= j5
-		copy(dAtA[i:], dAtA6[:j5])
-		i = encodeVarintUsagetracker(dAtA, i, uint64(j5))
+		i -= j9
+		copy(dAtA[i:], dAtA10[:j9])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j9))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -1819,20 +2327,20 @@ func (m *TrackSeriesBatchRejectionUser) MarshalToSizedBuffer(dAtA []byte) (int, 
 	var l int
 	_ = l
 	if len(m.RejectedSeriesHashes) > 0 {
-		dAtA8 := make([]byte, len(m.RejectedSeriesHashes)*10)
-		var j7 int
+		dAtA12 := make([]byte, len(m.RejectedSeriesHashes)*10)
+		var j11 int
 		for _, num := range m.RejectedSeriesHashes {
 			for num >= 1<<7 {
-				dAtA8[j7] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA12[j11] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j7++
+				j11++
 			}
-			dAtA8[j7] = uint8(num)
-			j7++
+			dAtA12[j11] = uint8(num)
+			j11++
 		}
-		i -= j7
-		copy(dAtA[i:], dAtA8[:j7])
-		i = encodeVarintUsagetracker(dAtA, i, uint64(j7))
+		i -= j11
+		copy(dAtA[i:], dAtA12[:j11])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j11))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -1945,21 +2453,39 @@ func (m *SeriesCreatedEvent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.LocalityHashes) > 0 {
+		dAtA14 := make([]byte, len(m.LocalityHashes)*10)
+		var j13 int
+		for _, num := range m.LocalityHashes {
+			for num >= 1<<7 {
+				dAtA14[j13] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j13++
+			}
+			dAtA14[j13] = uint8(num)
+			j13++
+		}
+		i -= j13
+		copy(dAtA[i:], dAtA14[:j13])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j13))
+		i--
+		dAtA[i] = 0x22
+	}
 	if len(m.SeriesHashes) > 0 {
-		dAtA10 := make([]byte, len(m.SeriesHashes)*10)
-		var j9 int
+		dAtA16 := make([]byte, len(m.SeriesHashes)*10)
+		var j15 int
 		for _, num := range m.SeriesHashes {
 			for num >= 1<<7 {
-				dAtA10[j9] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA16[j15] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j9++
+				j15++
 			}
-			dAtA10[j9] = uint8(num)
-			j9++
+			dAtA16[j15] = uint8(num)
+			j15++
 		}
-		i -= j9
-		copy(dAtA[i:], dAtA10[:j9])
-		i = encodeVarintUsagetracker(dAtA, i, uint64(j9))
+		i -= j15
+		copy(dAtA[i:], dAtA16[:j15])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j15))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -2157,6 +2683,169 @@ func (m *GetUsersCloseToLimitResponse) MarshalToSizedBuffer(dAtA []byte) (int, e
 	return len(dAtA) - i, nil
 }
 
+func (m *GetTenantBandsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetTenantBandsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetTenantBandsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.UserID) > 0 {
+		i -= len(m.UserID)
+		copy(dAtA[i:], m.UserID)
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Partition != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *TenantBands) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TenantBands) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *TenantBands) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Counts) > 0 {
+		dAtA18 := make([]byte, len(m.Counts)*10)
+		var j17 int
+		for _, num := range m.Counts {
+			for num >= 1<<7 {
+				dAtA18[j17] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j17++
+			}
+			dAtA18[j17] = uint8(num)
+			j17++
+		}
+		i -= j17
+		copy(dAtA[i:], dAtA18[:j17])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j17))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.Bands) > 0 {
+		dAtA20 := make([]byte, len(m.Bands)*10)
+		var j19 int
+		for _, num := range m.Bands {
+			for num >= 1<<7 {
+				dAtA20[j19] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j19++
+			}
+			dAtA20[j19] = uint8(num)
+			j19++
+		}
+		i -= j19
+		copy(dAtA[i:], dAtA20[:j19])
+		i = encodeVarintUsagetracker(dAtA, i, uint64(j19))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.LocalitySeries != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.LocalitySeries))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.TotalSeries != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.TotalSeries))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.UserID) > 0 {
+		i -= len(m.UserID)
+		copy(dAtA[i:], m.UserID)
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GetTenantBandsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetTenantBandsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetTenantBandsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Tenants) > 0 {
+		for iNdEx := len(m.Tenants) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Tenants[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintUsagetracker(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Partitions != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partitions))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Partition != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintUsagetracker(dAtA []byte, offset int, v uint64) int {
 	offset -= sovUsagetracker(v)
 	base := offset
@@ -2184,6 +2873,13 @@ func (m *TrackSeriesRequest) Size() (n int) {
 	if len(m.SeriesHashes) > 0 {
 		l = 0
 		for _, e := range m.SeriesHashes {
+			l += sovUsagetracker(uint64(e))
+		}
+		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
+	if len(m.LocalityHashes) > 0 {
+		l = 0
+		for _, e := range m.LocalityHashes {
 			l += sovUsagetracker(uint64(e))
 		}
 		n += 1 + sovUsagetracker(uint64(l)) + l
@@ -2220,6 +2916,13 @@ func (m *TrackSeriesBatchUser) Size() (n int) {
 	if len(m.SeriesHashes) > 0 {
 		l = 0
 		for _, e := range m.SeriesHashes {
+			l += sovUsagetracker(uint64(e))
+		}
+		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
+	if len(m.LocalityHashes) > 0 {
+		l = 0
+		for _, e := range m.LocalityHashes {
 			l += sovUsagetracker(uint64(e))
 		}
 		n += 1 + sovUsagetracker(uint64(l)) + l
@@ -2333,6 +3036,13 @@ func (m *SeriesCreatedEvent) Size() (n int) {
 		}
 		n += 1 + sovUsagetracker(uint64(l)) + l
 	}
+	if len(m.LocalityHashes) > 0 {
+		l = 0
+		for _, e := range m.LocalityHashes {
+			l += sovUsagetracker(uint64(e))
+		}
+		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
 	return n
 }
 
@@ -2421,6 +3131,79 @@ func (m *GetUsersCloseToLimitResponse) Size() (n int) {
 	return n
 }
 
+func (m *GetTenantBandsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Partition != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Partition))
+	}
+	l = len(m.UserID)
+	if l > 0 {
+		n += 1 + l + sovUsagetracker(uint64(l))
+	}
+	return n
+}
+
+func (m *TenantBands) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.UserID)
+	if l > 0 {
+		n += 1 + l + sovUsagetracker(uint64(l))
+	}
+	if m.TotalSeries != 0 {
+		n += 1 + sovUsagetracker(uint64(m.TotalSeries))
+	}
+	if m.LocalitySeries != 0 {
+		n += 1 + sovUsagetracker(uint64(m.LocalitySeries))
+	}
+	if len(m.Bands) > 0 {
+		l = 0
+		for _, e := range m.Bands {
+			l += sovUsagetracker(uint64(e))
+		}
+		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
+	if len(m.Counts) > 0 {
+		l = 0
+		for _, e := range m.Counts {
+			l += sovUsagetracker(uint64(e))
+		}
+		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
+	return n
+}
+
+func (m *GetTenantBandsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Partition != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Partition))
+	}
+	if m.Partitions != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Partitions))
+	}
+	if m.Timestamp != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Timestamp))
+	}
+	if len(m.Tenants) > 0 {
+		for _, e := range m.Tenants {
+			l = e.Size()
+			n += 1 + l + sovUsagetracker(uint64(l))
+		}
+	}
+	return n
+}
+
 func sovUsagetracker(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -2435,6 +3218,7 @@ func (this *TrackSeriesRequest) String() string {
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
 		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`LocalityHashes:` + fmt.Sprintf("%v", this.LocalityHashes) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2456,6 +3240,7 @@ func (this *TrackSeriesBatchUser) String() string {
 	s := strings.Join([]string{`&TrackSeriesBatchUser{`,
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
 		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`LocalityHashes:` + fmt.Sprintf("%v", this.LocalityHashes) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2541,6 +3326,7 @@ func (this *SeriesCreatedEvent) String() string {
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
 		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
 		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`LocalityHashes:` + fmt.Sprintf("%v", this.LocalityHashes) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2596,6 +3382,49 @@ func (this *GetUsersCloseToLimitResponse) String() string {
 	s := strings.Join([]string{`&GetUsersCloseToLimitResponse{`,
 		`SortedUserIds:` + fmt.Sprintf("%v", this.SortedUserIds) + `,`,
 		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetTenantBandsRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GetTenantBandsRequest{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *TenantBands) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&TenantBands{`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`TotalSeries:` + fmt.Sprintf("%v", this.TotalSeries) + `,`,
+		`LocalitySeries:` + fmt.Sprintf("%v", this.LocalitySeries) + `,`,
+		`Bands:` + fmt.Sprintf("%v", this.Bands) + `,`,
+		`Counts:` + fmt.Sprintf("%v", this.Counts) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetTenantBandsResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForTenants := "[]*TenantBands{"
+	for _, f := range this.Tenants {
+		repeatedStringForTenants += strings.Replace(f.String(), "TenantBands", "TenantBands", 1) + ","
+	}
+	repeatedStringForTenants += "}"
+	s := strings.Join([]string{`&GetTenantBandsResponse{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`Partitions:` + fmt.Sprintf("%v", this.Partitions) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Tenants:` + repeatedStringForTenants + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2763,6 +3592,82 @@ func (m *TrackSeriesRequest) Unmarshal(dAtA []byte) error {
 				}
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field SeriesHashes", wireType)
+			}
+		case 4:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.LocalityHashes = append(m.LocalityHashes, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.LocalityHashes) == 0 {
+					m.LocalityHashes = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowUsagetracker
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.LocalityHashes = append(m.LocalityHashes, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field LocalityHashes", wireType)
 			}
 		default:
 			iNdEx = preIndex
@@ -3047,6 +3952,82 @@ func (m *TrackSeriesBatchUser) Unmarshal(dAtA []byte) error {
 				}
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field SeriesHashes", wireType)
+			}
+		case 3:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.LocalityHashes = append(m.LocalityHashes, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.LocalityHashes) == 0 {
+					m.LocalityHashes = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowUsagetracker
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.LocalityHashes = append(m.LocalityHashes, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field LocalityHashes", wireType)
 			}
 		default:
 			iNdEx = preIndex
@@ -3757,6 +4738,82 @@ func (m *SeriesCreatedEvent) Unmarshal(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field SeriesHashes", wireType)
 			}
+		case 4:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.LocalityHashes = append(m.LocalityHashes, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.LocalityHashes) == 0 {
+					m.LocalityHashes = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowUsagetracker
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.LocalityHashes = append(m.LocalityHashes, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field LocalityHashes", wireType)
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipUsagetracker(dAtA[iNdEx:])
@@ -4249,6 +5306,520 @@ func (m *GetUsersCloseToLimitResponse) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetTenantBandsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetTenantBandsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetTenantBandsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
+			}
+			m.Partition = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Partition |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UserID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.UserID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *TenantBands) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TenantBands: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TenantBands: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UserID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.UserID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TotalSeries", wireType)
+			}
+			m.TotalSeries = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TotalSeries |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LocalitySeries", wireType)
+			}
+			m.LocalitySeries = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LocalitySeries |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.Bands = append(m.Bands, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.Bands) == 0 {
+					m.Bands = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowUsagetracker
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.Bands = append(m.Bands, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field Bands", wireType)
+			}
+		case 5:
+			if wireType == 0 {
+				var v uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.Counts = append(m.Counts, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowUsagetracker
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthUsagetracker
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.Counts) == 0 {
+					m.Counts = make([]uint64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowUsagetracker
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.Counts = append(m.Counts, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field Counts", wireType)
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetTenantBandsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetTenantBandsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetTenantBandsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
+			}
+			m.Partition = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Partition |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Partitions", wireType)
+			}
+			m.Partitions = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Partitions |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
+			}
+			m.Timestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Timestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Tenants", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Tenants = append(m.Tenants, &TenantBands{})
+			if err := m.Tenants[len(m.Tenants)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipUsagetracker(dAtA[iNdEx:])

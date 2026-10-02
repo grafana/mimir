@@ -59,7 +59,7 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 	for tenantID := 0; tenantID < tenantsCount; tenantID++ {
 		// Need to copy series refs to tenantRefs because trackSeries modifies the input slice.
 		copy(tenantRefs, seriesRefs[tenantID*seriesPerTenant:(tenantID+1)*seriesPerTenant])
-		_, err := t.trackSeries(context.Background(), strconv.Itoa(tenantID), tenantRefs, now())
+		_, err := t.trackSeries(context.Background(), strconv.Itoa(tenantID), tenantRefs, nil, now())
 		require.NoError(b, err)
 	}
 	b.ResetTimer()
@@ -85,7 +85,7 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 			refsStart := tenantID*seriesPerTenant + rand.Intn(seriesPerTenant-seriesPerRequest)
 			// Copy refs because trackSeries modifies them.
 			copy(refs, seriesRefs[refsStart:refsStart+seriesPerRequest])
-			_, err := t.trackSeries(context.Background(), tenant, refs, now())
+			_, err := t.trackSeries(context.Background(), tenant, refs, nil, now())
 			require.NoError(b, err)
 			if cleanupsEnabled {
 				if seconds := nowSeconds.Inc(); seconds%60 == 0 {
@@ -145,7 +145,7 @@ func generateSnapshot(b *testing.B, tenantsCount int, totalSeries int, now time.
 				for j := range series {
 					series[j] = deterministicRand.Uint64()
 				}
-				_, err := t.trackSeries(context.Background(), tenant, series, timestamp)
+				_, err := t.trackSeries(context.Background(), tenant, series, nil, timestamp)
 				require.NoError(b, err)
 			}
 		}

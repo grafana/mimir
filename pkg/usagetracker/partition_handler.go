@@ -622,7 +622,7 @@ func (p *partitionHandler) processSeriesCreatedEventRecord(r *kgo.Record) {
 		return
 	}
 
-	p.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, time.Unix(ev.Timestamp, 0), time.Now())
+	p.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, ev.LocalityHashes, time.Unix(ev.Timestamp, 0), time.Now())
 	level.Debug(p.logger).Log("msg", "processed series created event", "offset", r.Offset, "series", len(ev.SeriesHashes))
 }
 
@@ -923,6 +923,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 		return err
 	}
 
+	p.store.lastSnapshotBytes.Store(int64(totalDataLen))
 	level.Info(p.logger).Log("msg", "wrote snapshot files and published events", "files", len(filenames), "filenames", strings.Join(filenames, ","), "elapsed", time.Since(t0), "total_bytes", totalDataLen)
 
 	record := &usagetrackerpb.SnapshotRecord{

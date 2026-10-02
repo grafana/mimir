@@ -23,9 +23,9 @@ func TestTrackerStore_ShardStats(t *testing.T) {
 
 	store := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
-	_, err := store.trackSeries(context.Background(), "user-b", []uint64{1, 2, 3, 4, 5}, now)
+	_, err := store.trackSeries(context.Background(), "user-b", []uint64{1, 2, 3, 4, 5}, nil, now)
 	require.NoError(t, err)
-	_, err = store.trackSeries(context.Background(), "user-a", []uint64{10, 20, 30}, now)
+	_, err = store.trackSeries(context.Background(), "user-a", []uint64{10, 20, 30}, nil, now)
 	require.NoError(t, err)
 
 	rows := store.shardStats()

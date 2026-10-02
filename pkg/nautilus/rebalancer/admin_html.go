@@ -80,6 +80,7 @@ details>summary::-webkit-details-marker{display:none}
 </head>
 <body>
 <h1>Nautilus Rebalancer</h1>
+<p class="meta"><a href="{{.AdminPathPrefix}}/bands">Locality bands (shadow)</a></p>
 
 {{if eq .NumPartitions 0}}
 <div class="no-data">No assignment data yet. Waiting for first rebalance round.</div>

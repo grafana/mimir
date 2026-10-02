@@ -228,6 +228,12 @@ type Config struct {
 	// AutoCreateTopicDefaultPartitions fields are overridden with
 	// KafkaTopic/PartitionCount before the create call.
 	Kafka ingest.KafkaConfig `yaml:"-"`
+
+	// BandShadowEnabled reads one usage-tracker partition every BandReadInterval,
+	// scales its locality-band counts, and records the cut it would make.
+	// It does not split, move, or reject.
+	BandShadowEnabled bool          `yaml:"band_shadow_enabled" category:"experimental"`
+	BandReadInterval  time.Duration `yaml:"band_read_interval" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -250,6 +256,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
 	f.Var(&asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
 	f.Var(&asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K); when 0 it uses -nautilus-rebalancer.partition-count. Must be <= -nautilus-rebalancer.partition-count when both are set.")
+	f.BoolVar(&cfg.BandShadowEnabled, prefix+"band-shadow-enabled", false, "Read locality bands from one usage-tracker partition and show the cut the rebalancer would make. Does not split, move, or reject.")
+	f.DurationVar(&cfg.BandReadInterval, prefix+"band-read-interval", 15*time.Second, "How often the rebalancer reads one usage-tracker partition's locality bands when -nautilus-rebalancer.band-shadow-enabled is set.")
 	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
 	cfg.ReadcacheClient.RegisterFlagsWithPrefix(prefix+"readcache-client.", f)
 }
@@ -337,6 +345,11 @@ type Rebalancer struct {
 	// disabled (empty DataDir). Written by rebalance() on rounds
 	// that armed or pruned at least one cooldown.
 	cooldownsFile *logFile
+
+	// bands, when set, is read on bandInterval. The read is shadow-only.
+	bands        bandReader
+	bandInterval time.Duration
+	bandService  services.Service
 
 	// partitionRoles tracks recent Phase 3 source/destination roles so
 	// different ranges cannot make the same partition reverse direction
@@ -447,11 +460,33 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		spotlights:          newSpotlightStore(time.Now().UnixNano(), defaultSpotlightSampleRate, defaultSpotlightDuration),
 	}
 
-	r.Service = services.NewBasicService(r.starting, r.running, nil)
+	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
 	return r, nil
 }
 
+// SetBandReader attaches the usage-tracker read used by the shadow loop.
+// svc is started and stopped with the rebalancer. reader may be the same value.
+func (r *Rebalancer) SetBandReader(svc services.Service, reader bandReader, interval time.Duration) {
+	r.bandService = svc
+	r.bands = reader
+	if interval > 0 {
+		r.bandInterval = interval
+	}
+}
+
+func (r *Rebalancer) stopping(_ error) error {
+	if r.bandService == nil {
+		return nil
+	}
+	return services.StopAndAwaitTerminated(context.Background(), r.bandService)
+}
+
 func (r *Rebalancer) starting(_ context.Context) error {
+	if r.bandService != nil {
+		if err := services.StartAndAwaitRunning(context.Background(), r.bandService); err != nil {
+			return fmt.Errorf("starting usage-tracker band reader: %w", err)
+		}
+	}
 	level.Info(r.logger).Log("msg", "nautilus rebalancer starting",
 		"lease_duration", r.cfg.LeaseDuration,
 		"lease_lookahead", r.cfg.LeaseLookahead,
@@ -533,6 +568,16 @@ func (r *Rebalancer) running(ctx context.Context) error {
 	defer timer.Stop()
 	slotViewTicker := time.NewTicker(readcacheassignment.SlotViewRefreshInterval)
 	defer slotViewTicker.Stop()
+	var bandC <-chan time.Time
+	if r.bands != nil {
+		interval := r.bandInterval
+		if interval <= 0 {
+			interval = 15 * time.Second
+		}
+		bandTicker := time.NewTicker(interval)
+		defer bandTicker.Stop()
+		bandC = bandTicker.C
+	}
 
 	for {
 		select {
@@ -540,6 +585,8 @@ func (r *Rebalancer) running(ctx context.Context) error {
 			return nil
 		case <-slotViewTicker.C:
 			r.refreshSlotView()
+		case <-bandC:
+			r.observeBands(ctx)
 		case <-timer.C:
 			if err := r.rebalance(ctx); err != nil {
 				level.Warn(r.logger).Log("msg", "rebalance round failed", "err", err)

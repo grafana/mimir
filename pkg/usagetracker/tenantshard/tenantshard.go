@@ -50,6 +50,20 @@ type Map interface {
 	// were removed. limit is the tenant-wide series limit, and may be nil.
 	Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int
 
+	// SetLocality records the Nautilus locality hash of an existing key.
+	// previous is the hash stored before this call, and found is false when the key is absent.
+	// A zero locality means unknown. The caller holds the map lock.
+	SetLocality(key uint64, locality uint32) (previous uint32, found bool)
+
+	// SetRemoveHook installs a callback invoked with the locality hash of each series Cleanup
+	// removes. Nil disables it. The caller holds the map lock, and the hook runs under that lock.
+	SetRemoveHook(fn func(locality uint32))
+
+	// Localities returns an iterator over (series hash, locality hash) for live series.
+	// Like Items, it clones under the caller's lock and the iterator reads the clone.
+	// A zero locality means the series was tracked without one.
+	Localities() iter.Seq2[uint64, uint32]
+
 	// EnsureCapacity makes sure that the map can store n elements without growing.
 	EnsureCapacity(n uint32)
 

@@ -47,7 +47,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 
 	{
 		// Push 2 series, both are accepted.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker.seriesCountsForTests())
@@ -57,7 +57,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	now = now.Add(idleTimeout / 2)
 	{
 		// Push 2 more series, one is accepted, one is rejected.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 1)
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCountsForTests())
@@ -69,7 +69,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 	{
 		// Push only series 2, series 1 will expire.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{2}, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCountsForTests())
@@ -82,7 +82,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 	{
 		// Pushing 3, 4 works now.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCountsForTests())
@@ -99,7 +99,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 
 	{
 		// Push 10 series, 5 of them are rejected because current limit is 5.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 5)
 		require.Equal(t, map[string]uint64{testUser1: 5}, tracker.seriesCountsForTests())
@@ -107,7 +107,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 
 	{
 		// Push them again, same amount is rejected.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 5)
 		require.Equal(t, map[string]uint64{testUser1: 5}, tracker.seriesCountsForTests())
@@ -119,14 +119,14 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 
 	{
 		// Push 10, 2 of them are rejected because current limit is 8.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 2)
 		require.Equal(t, map[string]uint64{testUser1: 8}, tracker.seriesCountsForTests())
 	}
 	{
 		// Push them again, same amount is rejected.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 2)
 		require.Equal(t, map[string]uint64{testUser1: 8}, tracker.seriesCountsForTests())
@@ -137,7 +137,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 	now = now.Add(idleTimeout / 2)
 	{
 		// Push them again, none are rejected now.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 1)
 		require.Equal(t, map[string]uint64{testUser1: 9}, tracker.seriesCountsForTests())
@@ -148,7 +148,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 	now = now.Add(idleTimeout / 2)
 	{
 		// Push them again, none are rejected now.
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 10}, tracker.seriesCountsForTests())
@@ -171,7 +171,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 
 	{
 		// Push 2 series to tracker 1, both accepted.
-		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker1.seriesCountsForTests())
@@ -185,7 +185,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	{
 		// Push 2 more series to the tracker 1.
 		// Don't transmit them yet.
-		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{3, 4}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 1) // We can't know which one is rejected, it's racy.
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCountsForTests())
@@ -196,7 +196,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	{
 		// Push 2 different series to the tracker 2.
 		// Don't transmit them yet.
-		rejected, err := tracker2.trackSeries(context.Background(), testUser1, []uint64{5, 6}, now)
+		rejected, err := tracker2.trackSeries(context.Background(), testUser1, []uint64{5, 6}, nil, now)
 		require.NoError(t, err)
 		require.Len(t, rejected, 1) // We can't know which one is rejected, it's racy.
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCountsForTests())
@@ -245,11 +245,11 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	for i := 0; i < 60; i++ {
-		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, nil, now)
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
-		rejected, err = tracker1.trackSeries(context.Background(), testUser2, []uint64{uint64(i * 1000), uint64(i * 10000)}, now)
+		rejected, err = tracker1.trackSeries(context.Background(), testUser2, []uint64{uint64(i * 1000), uint64(i * 10000)}, nil, now)
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
@@ -315,7 +315,7 @@ func TestTrackerStore_Snapshot_Size(t *testing.T) {
 			series[i] = uint64(r.Int63() << math_bits.TrailingZeros(shards)) // all on the same shard.
 		}
 
-		rejected, err := tr.trackSeries(t.Context(), userID, series, now)
+		rejected, err := tr.trackSeries(t.Context(), userID, series, nil, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 	}
@@ -337,13 +337,13 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, nil, now)
 	require.Empty(t, rejected)
 	require.NoError(t, err)
 
 	now = now.Add(time.Minute)
 
-	rejected, err = tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser1, []uint64{2}, nil, now)
 	require.Empty(t, rejected)
 	require.NoError(t, err)
 
@@ -362,7 +362,7 @@ func TestTrackerStore_Cleanup_MinTimeBetweenShardsCleanup(t *testing.T) {
 
 	// Track a single series for a single tenant, so each shard's cleanup is trivial
 	// and the per-shard delay dominates the cleanup duration.
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -387,11 +387,11 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
 	// Push 2 series to testUser1, both are accepted.
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 	// Push 2 series to testUser2, both are accepted.
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -399,7 +399,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	lastUpdate := now
 
 	// Update series 1, 2 for testUser2. Series 3 will expire.
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -458,7 +458,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 					// Nobody is waiting there.
 				}
 				seriesID := uint64(rand.Int63n(maxSeriesRange))
-				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, now())
+				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, nil, now())
 			}
 		}
 	}()
@@ -494,7 +494,7 @@ type createdSeriesCounter struct {
 	count *atomic.Uint64
 }
 
-func (c createdSeriesCounter) publishCreatedSeries(_ context.Context, _ string, series []uint64, _ time.Time) error {
+func (c createdSeriesCounter) publishCreatedSeries(_ context.Context, _ string, series []uint64, _ []uint32, _ time.Time) error {
 	c.count.Add(uint64(len(series)))
 	return nil
 }
@@ -511,10 +511,10 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
 
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -528,7 +528,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 	now = now.Add(defaultIdleTimeout / 2)
 
 	// Update series 1, 2 for testUser2. Series 3 will expire.
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -560,7 +560,7 @@ func (l limiterMock) zonesCount() uint64 { return 2 }
 
 type noopEvents struct{}
 
-func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64, _ time.Time) error {
+func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64, _ []uint32, _ time.Time) error {
 	return nil
 }
 
@@ -575,7 +575,7 @@ type createdSeriesEvent struct {
 	timestamp time.Time
 }
 
-func (ep *eventsPipe) publishCreatedSeries(_ context.Context, tenantID string, series []uint64, timestamp time.Time) error {
+func (ep *eventsPipe) publishCreatedSeries(_ context.Context, tenantID string, series []uint64, locality []uint32, timestamp time.Time) error {
 	ep.events = append(ep.events, createdSeriesEvent{tenantID, series, timestamp})
 	return nil
 }
@@ -583,7 +583,7 @@ func (ep *eventsPipe) publishCreatedSeries(_ context.Context, tenantID string, s
 func (ep *eventsPipe) transmit() {
 	for _, t := range ep.listeners {
 		for _, ev := range ep.events {
-			t.processCreatedSeriesEvent(ev.tenantID, slices.Clone(ev.series), ev.timestamp, ev.timestamp)
+			t.processCreatedSeriesEvent(ev.tenantID, slices.Clone(ev.series), nil, ev.timestamp, ev.timestamp)
 		}
 	}
 	ep.events = nil
@@ -678,10 +678,10 @@ func TestTrackerStore_VerboseSeriesMetrics_Enabled(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
 
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -701,7 +701,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Enabled(t *testing.T) {
 
 	now = now.Add(defaultIdleTimeout / 2)
 	// Update series 1, 2 for testUser2. Series 3 will expire.
-	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -733,7 +733,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
 
-	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, nil, now)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 
@@ -743,6 +743,9 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
 		# TYPE cortex_usage_tracker_active_series gauge
+		# HELP cortex_usage_tracker_last_snapshot_bytes Size in bytes of the most recent snapshot written by this tracker partition.
+		# TYPE cortex_usage_tracker_last_snapshot_bytes gauge
+		cortex_usage_tracker_last_snapshot_bytes 0
 	`)))
 }
 
@@ -750,7 +753,7 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
-	require.Equal(t, uint8(snapshotEncodingVersion), version)
+	require.Contains(t, []uint8{snapshotEncodingVersion, snapshotEncodingVersionV1}, version)
 	shard := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
 	require.True(t, shard < shards)
@@ -776,6 +779,10 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 			require.NoError(t, snapshot.Err())
 			ts := clock.Minutes(snapshot.Byte())
 			require.NoError(t, snapshot.Err())
+			if version == snapshotEncodingVersion {
+				_ = snapshot.Be32()
+				require.NoError(t, snapshot.Err())
+			}
 			shard[series] = ts
 		}
 		res[tenantID] = shard
@@ -796,7 +803,7 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				groupByModuloShards(inputs[i])
+				groupByModuloShards(inputs[i], nil)
 			}
 		})
 	}
@@ -805,7 +812,7 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 func TestGroupByModuloShards(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		var series []uint64
-		groupByModuloShards(series)
+		groupByModuloShards(series, nil)
 		requireGroupedByModuloShards(t, series)
 		require.Empty(t, series)
 	})
@@ -813,7 +820,7 @@ func TestGroupByModuloShards(t *testing.T) {
 	t.Run("single element", func(t *testing.T) {
 		series := []uint64{42}
 		original := slices.Clone(series)
-		groupByModuloShards(series)
+		groupByModuloShards(series, nil)
 		requireGroupedByModuloShards(t, series)
 		require.ElementsMatch(t, series, original)
 	})
@@ -821,7 +828,7 @@ func TestGroupByModuloShards(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 		original := slices.Clone(series)
-		groupByModuloShards(series)
+		groupByModuloShards(series, nil)
 		requireGroupedByModuloShards(t, series)
 		require.ElementsMatch(t, series, original)
 	})
@@ -834,7 +841,7 @@ func TestGroupByModuloShards(t *testing.T) {
 				series[i] = r.Uint64()
 			}
 			original := slices.Clone(series)
-			groupByModuloShards(series)
+			groupByModuloShards(series, nil)
 			requireGroupedByModuloShards(t, series)
 			require.ElementsMatch(t, series, original)
 		}

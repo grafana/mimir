@@ -35,13 +35,17 @@ const (
 type Map struct {
 	sync.Mutex
 
-	index []index
-	keys  []keys
-	data  []data
+	index    []index
+	keys     []keys
+	data     []data
+	locality []localities
 
 	resident uint32
 	dead     uint32
 	limit    uint32
+
+	// onRemove, when set, is called with the locality hash of each series Cleanup removes.
+	onRemove func(uint32)
 
 	// rehashes is only counted for testing purposes.
 	rehashes uint32
@@ -53,6 +57,10 @@ type Map struct {
 type index [groupSize]prefix
 
 type keys [groupSize]uint64
+
+// localities holds the Nautilus locality hash of each slot, parallel to keys.
+// Zero means the series was tracked without one.
+type localities [groupSize]uint32
 
 // data is a group of groupSize xorData entries.
 type data [groupSize]xorData
@@ -81,9 +89,10 @@ type suffix uint64
 func New(sz uint32) (m *Map) {
 	groups := numGroups(sz)
 	return &Map{
-		index: make([]index, groups),
-		keys:  make([]keys, groups),
-		data:  make([]data, groups),
+		index:    make([]index, groups),
+		keys:     make([]keys, groups),
+		data:     make([]data, groups),
+		locality: make([]localities, groups),
 
 		limit: groups * maxAvgGroupLoad,
 	}
@@ -132,7 +141,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 				}
 				series.Inc()
 			}
-			m.insert(key, pfx, xor(value), i, matches)
+			m.insert(key, pfx, xor(value), 0, i, matches)
 			return true, false
 		}
 		i++ // linear probing
@@ -142,11 +151,12 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	}
 }
 
-func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bitset) {
+func (m *Map) insert(key uint64, pfx prefix, entry xorData, loc uint32, i uint32, matches bitset) {
 	s := nextMatch(&matches)
 	m.index[i][s] = pfx
 	m.keys[i][s] = key
 	m.data[i][s] = entry
+	m.locality[i][s] = loc
 	m.resident++
 }
 
@@ -162,14 +172,49 @@ func (m *Map) Load(key uint64, value clock.Minutes) {
 		panic("value is too large")
 	}
 
-	m.load(key, xor(value))
+	m.load(key, xor(value), 0)
+}
+
+// SetLocality records the Nautilus locality hash of an existing key.
+func (m *Map) SetLocality(key uint64, locality uint32) (previous uint32, found bool) {
+	pfx, sfx := splitHash(key)
+	i := probeStart(sfx, len(m.index))
+	for {
+		matches := m.index[i].match(pfx)
+		for matches != 0 {
+			j := nextMatch(&matches)
+			if key == m.keys[i][j] {
+				previous = m.locality[i][j]
+				m.locality[i][j] = locality
+				return previous, true
+			}
+		}
+		if m.index[i].matchEmpty() != 0 {
+			return 0, false
+		}
+		i++
+		if i >= uint32(len(m.index)) {
+			i = 0
+		}
+	}
+}
+
+// SetRemoveHook installs the callback Cleanup uses when it drops a series.
+func (m *Map) SetRemoveHook(fn func(uint32)) {
+	m.onRemove = fn
+}
+
+func (m *Map) removed(loc uint32) {
+	if m.onRemove != nil {
+		m.onRemove(loc)
+	}
 }
 
 // load inserts |key| and |entry| into the map without checking if it already exists.
 // No limits are checked, and series count should be incremented by the caller.
 // This also assumes that map has enough capacity to hold the new element, and that the element is valid.
 // This is only expected to be called from rehash().
-func (m *Map) load(key uint64, entry xorData) {
+func (m *Map) load(key uint64, entry xorData, loc uint32) {
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	looped := false
@@ -177,7 +222,7 @@ func (m *Map) load(key uint64, entry xorData) {
 		// Find an empty slot and insert without checking if it already exists.
 		matches := m.index[i].matchEmpty()
 		if matches != 0 { // insert
-			m.insert(key, pfx, entry, i, matches)
+			m.insert(key, pfx, entry, loc, i, matches)
 			return
 		}
 		i++ // linear probing
@@ -240,6 +285,7 @@ groups:
 			}
 			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
 				removed++
+				loc := m.locality[i][j]
 
 				// We want to avoid creating tombstones. Every time we create a tombstone, we get closer to the rehash of the map.
 				// Rehash of the map is slow and creates garbage, slowing down the entire service.
@@ -248,12 +294,14 @@ groups:
 					// If there's an empty slot in this group, it means that no elements that were originally targeting this group
 					// have been written to a next group, which in turn means that we can safely move the elements in this group.
 					m.resident--
+					m.removed(loc)
 					e := nextMatch(&emptySlots)
 					if e == j+1 {
 						// This is the last element in the group, just mark it as empty and move to the next group.
 						m.index[i][j] = empty
 						m.keys[i][j] = 0
 						m.data[i][j] = empty
+						m.locality[i][j] = 0
 						continue groups
 					}
 
@@ -262,15 +310,18 @@ groups:
 					m.index[i][j], m.index[i][e-1] = m.index[i][e-1], empty
 					m.keys[i][j], m.keys[i][e-1] = m.keys[i][e-1], 0
 					m.data[i][j], m.data[i][e-1] = m.data[i][e-1], empty
+					m.locality[i][j], m.locality[i][e-1] = m.locality[i][e-1], 0
 
 					// Continue checking the same position again.
 					continue
 				}
 
 				// Bad luck, the group is full, just set a tombstone and keep checking.
+				m.removed(loc)
 				m.index[i][j] = tombstone
 				m.keys[i][j] = 0
 				m.data[i][j] = tombstone
+				m.locality[i][j] = 0
 				m.dead++
 			}
 			j++
@@ -318,17 +369,18 @@ func (m *Map) nextSize(limit uint64) uint32 {
 func (m *Map) rehash(n uint32) {
 	m.rehashes++
 
-	indices, ks, datas := m.index, m.keys, m.data
+	indices, ks, datas, locs := m.index, m.keys, m.data, m.locality
 	m.index = make([]index, n)
 	m.keys = make([]keys, n)
 	m.data = make([]data, n)
+	m.locality = make([]localities, n)
 	m.limit = n * maxAvgGroupLoad
 	m.resident, m.dead = 0, 0
 	for g := range indices {
 		for s := range indices[g] {
 			c := indices[g][s]
 			if c != empty && c != tombstone {
-				m.load(ks[g][s], datas[g][s])
+				m.load(ks[g][s], datas[g][s], locs[g][s])
 			}
 		}
 	}
@@ -362,8 +414,9 @@ func fastModN(x, n uint32) uint32 {
 }
 
 var (
-	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
-	dataPool = &sync.Pool{New: func() any { return new([]data) }}
+	keysPool     = &sync.Pool{New: func() any { return new([]keys) }}
+	dataPool     = &sync.Pool{New: func() any { return new([]data) }}
+	localityPool = &sync.Pool{New: func() any { return new([]localities) }}
 )
 
 func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
@@ -401,5 +454,34 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 
 		keysPool.Put(keysClone)
 		dataPool.Put(dataClone)
+	}
+}
+
+// Localities returns (series hash, locality hash) for each live series.
+func (m *Map) Localities() iter.Seq2[uint64, uint32] {
+	keysClone := pooledClone(m.keys, keysPool)
+	dataClone := pooledClone(m.data, dataPool)
+	locClone := pooledClone(m.locality, localityPool)
+	count := m.Count()
+
+	return func(yield func(uint64, uint32) bool) {
+		defer func() {
+			keysPool.Put(keysClone)
+			dataPool.Put(dataClone)
+			localityPool.Put(locClone)
+		}()
+		if count == 0 {
+			return
+		}
+		for i, g := range *dataClone {
+			for j, entry := range g {
+				if entry == empty || entry == tombstone {
+					continue
+				}
+				if !yield((*keysClone)[i][j], (*locClone)[i][j]) {
+					return
+				}
+			}
+		}
 	}
 }

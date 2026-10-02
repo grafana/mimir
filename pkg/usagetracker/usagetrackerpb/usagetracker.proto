@@ -14,6 +14,12 @@ service UsageTracker {
   rpc TrackSeries(TrackSeriesRequest) returns (TrackSeriesResponse);
   rpc TrackSeriesBatch(TrackSeriesBatchRequest) returns (TrackSeriesBatchResponse);
   rpc GetUsersCloseToLimit(GetUsersCloseToLimitRequest) returns (GetUsersCloseToLimitResponse);
+  // GetTenantBands returns, for one usage-tracker partition, the hottest
+  // locality bands of every tenant (or of one tenant). A band is the top 16
+  // bits of the Nautilus locality hash. Counts cover only the series this
+  // partition tracks, so a caller scales by the partition count to estimate
+  // the tenant-wide figure.
+  rpc GetTenantBands(GetTenantBandsRequest) returns (GetTenantBandsResponse);
 }
 
 message TrackSeriesRequest {
@@ -25,6 +31,10 @@ message TrackSeriesRequest {
 
   // The hashes of the series to track.
   repeated uint64 seriesHashes = 3;
+
+  // Optional Nautilus locality hash of each series, parallel to seriesHashes.
+  // Either empty or the same length as seriesHashes. 0 means unknown.
+  repeated uint32 localityHashes = 4;
 }
 
 message TrackSeriesResponse {
@@ -38,6 +48,10 @@ message TrackSeriesBatchUser {
 
   // The hashes of the series to track.
   repeated uint64 seriesHashes = 2;
+
+  // Optional Nautilus locality hash of each series, parallel to seriesHashes.
+  // Either empty or the same length as seriesHashes. 0 means unknown.
+  repeated uint32 localityHashes = 3;
 }
 
 message TrackSeriesBatchPartition {
@@ -81,6 +95,10 @@ message SeriesCreatedEvent {
 
   // The hashes of the series to track.
   repeated uint64 seriesHashes = 3;
+
+  // Optional Nautilus locality hash of each series, parallel to seriesHashes.
+  // Either empty or the same length as seriesHashes. 0 means unknown.
+  repeated uint32 localityHashes = 4;
 }
 
 message SnapshotRecord {
@@ -112,4 +130,43 @@ message GetUsersCloseToLimitResponse {
 
   // The partition that was queried.
   int32 partition = 2;
+}
+
+message GetTenantBandsRequest {
+  // Partition to query. Must be served by the instance receiving the request.
+  int32 partition = 1;
+
+  // Optional tenant filter. Empty returns every tenant on the partition.
+  string userID = 2;
+}
+
+message TenantBands {
+  // The tenant owning the series.
+  string userID = 1;
+
+  // Number of active series this partition tracks for the tenant.
+  uint64 totalSeries = 2;
+
+  // Number of those series that carried a non-zero locality hash. The band
+  // counts below sum to at most this value.
+  uint64 localitySeries = 3;
+
+  // Retained bands (top 16 bits of the locality hash), hottest first, and the
+  // estimated active series in each. Parallel arrays.
+  repeated uint32 bands = 4;
+  repeated uint64 counts = 5;
+}
+
+message GetTenantBandsResponse {
+  // The partition that was queried.
+  int32 partition = 1;
+
+  // Total number of usage-tracker partitions. Each partition holds roughly
+  // 1/partitions of every tenant's series, so a caller scales counts by this.
+  int32 partitions = 2;
+
+  // Unix timestamp (seconds) at which the response was built.
+  int64 timestamp = 3;
+
+  repeated TenantBands tenants = 4;
 }

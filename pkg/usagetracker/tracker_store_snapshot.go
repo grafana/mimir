@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"fmt"
+	"iter"
 	"maps"
 	"runtime"
 	"time"
@@ -14,7 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
-const snapshotEncodingVersion = 1
+const (
+	snapshotEncodingVersion   = 2
+	snapshotEncodingVersionV1 = 1
+)
 
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.mtx.RLock()
@@ -22,8 +26,19 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	clonedTenants := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
+	// Stay on v1 until some series actually carries a locality hash. A v2
+	// snapshot cannot be loaded by a usage-tracker that has not been upgraded,
+	// so a rolling deploy with the distributor flag still off keeps today's format.
+	version := byte(snapshotEncodingVersionV1)
+	for tenantID := range clonedTenants {
+		if t.shardHasLocality(tenantID, shard) {
+			version = snapshotEncodingVersion
+			break
+		}
+	}
+
 	snapshot := encoding.Encbuf{B: buf[:0]}
-	snapshot.PutByte(snapshotEncodingVersion)
+	snapshot.PutByte(version)
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
 	snapshot.PutUvarint64(uint64(len(clonedTenants)))
@@ -34,13 +49,28 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 		m := tenant.shards[shard]
 		m.Lock()
 		length, series := m.Items()
+		var localities iter.Seq2[uint64, uint32]
+		if version == snapshotEncodingVersion {
+			localities = m.Localities()
+		}
 		m.Unlock()
 		// Once we have the series iterator we don't need to hold the mutex anymore.
 		tenant.RUnlock()
+		locBySeries := make(map[uint64]uint32, length)
+		if localities != nil {
+			for hash, loc := range localities {
+				if loc != 0 {
+					locBySeries[hash] = loc
+				}
+			}
+		}
 		snapshot.PutUvarint64(uint64(length))
 		for s, ts := range series {
 			snapshot.PutBE64(s)
 			snapshot.PutByte(byte(ts))
+			if version == snapshotEncodingVersion {
+				snapshot.PutBE32(locBySeries[s])
+			}
 		}
 	}
 	return snapshot.Get()
@@ -49,6 +79,23 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 // loadSnapshots loads the snapshots from the given shards concurrently with GOMAXPROCS workers.
 // This speeds up the snapshot loading process as each shard can be loaded independently.
 // This reduces the amount of time track requests spend waiting on shard locks.
+// shardHasLocality reports whether this tenant's shard holds any series with a
+// non-zero locality hash. It releases the tenant lock it takes.
+func (t *trackerStore) shardHasLocality(tenantID string, shard uint8) bool {
+	tenant := t.getOrCreateTenant(tenantID)
+	m := tenant.shards[shard]
+	m.Lock()
+	localities := m.Localities()
+	m.Unlock()
+	tenant.RUnlock()
+	for _, loc := range localities {
+		if loc != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *trackerStore) loadSnapshots(shards [][]byte, now time.Time) error {
 	if len(shards) == 0 {
 		return nil
@@ -90,7 +137,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, expected version: %w", err)
 	}
-	if version != snapshotEncodingVersion {
+	if version != snapshotEncodingVersion && version != snapshotEncodingVersionV1 {
 		return fmt.Errorf("unexpected snapshot version %d", version)
 	}
 	shard := snapshot.Byte()
@@ -133,6 +180,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		type refTimestamp struct {
 			Ref       uint64
 			Timestamp clock.Minutes
+			Locality  uint32
 		}
 
 		refs := make([]refTimestamp, 0, seriesLen)
@@ -146,11 +194,18 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			if err := snapshot.Err(); err != nil {
 				return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
 			}
+			var loc uint32
+			if version == snapshotEncodingVersion {
+				loc = snapshot.Be32()
+				if err := snapshot.Err(); err != nil {
+					return fmt.Errorf("failed to read series locality %d: %w", i, err)
+				}
+			}
 			if expirationWatermark.GreaterThan(snapshotTs) {
 				// We're not interested in this series, it was about to be evicted.
 				continue
 			}
-			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
+			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs, Locality: loc})
 		}
 
 		tenant := t.getOrCreateTenant(tenantID)
@@ -165,11 +220,13 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		if m.Count() == 0 {
 			for _, ref := range refs {
 				m.Load(ref.Ref, ref.Timestamp)
+				t.noteLocality(tenant, m, ref.Ref, ref.Locality)
 			}
 			tenant.series.Add(uint64(len(refs)))
 		} else {
 			for _, ref := range refs {
 				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+				t.noteLocality(tenant, m, ref.Ref, ref.Locality)
 			}
 		}
 		m.Unlock()

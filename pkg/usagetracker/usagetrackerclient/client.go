@@ -160,6 +160,7 @@ type UsageTrackerClient struct {
 
 	syncBatchFlushes        *prometheus.CounterVec
 	syncBatchSeriesPerFlush prometheus.Histogram
+	localityHashBytes       prometheus.Counter
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer, rejectionObserver UsageTrackerRejectionObserver) *UsageTrackerClient {
@@ -208,6 +209,10 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
+		localityHashBytes: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_client_locality_hash_bytes_total",
+			Help: "Extra bytes sent to the usage-tracker for Nautilus locality hashes, counted as 4 bytes per hash.",
 		}),
 	}
 
@@ -288,7 +293,20 @@ func (c *UsageTrackerClient) stopping(_ error) error {
 	return nil
 }
 
-func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) (_ []uint64, returnErr error) {
+func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error) {
+	return c.trackSeries(ctx, userID, series, nil)
+}
+
+// TrackSeriesWithLocality is TrackSeries with a Nautilus locality hash per series.
+// locality is either nil or the same length as series. A zero hash means unknown.
+func (c *UsageTrackerClient) TrackSeriesWithLocality(ctx context.Context, userID string, series []uint64, locality []uint32) ([]uint64, error) {
+	if len(locality) > 0 && len(locality) != len(series) {
+		return nil, errors.Errorf("locality hashes length %d does not match series length %d", len(locality), len(series))
+	}
+	return c.trackSeries(ctx, userID, series, locality)
+}
+
+func (c *UsageTrackerClient) trackSeries(ctx context.Context, userID string, series []uint64, locality []uint32) (_ []uint64, returnErr error) {
 	// Nothing to do if there are no series to track.
 	if len(series) == 0 {
 		return nil, nil
@@ -312,6 +330,9 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 			statusCode = "error"
 		}
 		c.trackSeriesDuration.WithLabelValues(statusCode).Observe(time.Since(startTime).Seconds())
+		if returnErr == nil && len(locality) > 0 {
+			c.localityHashBytes.Add(float64(4 * len(locality)))
+		}
 	}()
 
 	// Create the partition ring view as late as possible, because we want to get the most updated
@@ -326,7 +347,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 	}
 
 	if c.cfg.UseSyncBatchedTracking {
-		return c.trackSeriesSyncBatched(ctx, userID, series, keys, partitionBatchRing, batchOptions)
+		return c.trackSeriesSyncBatched(ctx, userID, series, locality, keys, partitionBatchRing, batchOptions)
 	}
 
 	err := ring.DoBatchWithOptions(ctx, trackerop.TrackSeriesOp, partitionBatchRing, keys,
@@ -339,12 +360,19 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 			// Build the list of series hashes that belong to this partition.
 			partitionSeries := make([]uint64, len(indexes))
+			var partitionLocality []uint32
+			if len(locality) > 0 {
+				partitionLocality = make([]uint32, len(indexes))
+			}
 			for i, idx := range indexes {
 				partitionSeries[i] = series[idx]
+				if partitionLocality != nil {
+					partitionLocality[i] = locality[idx]
+				}
 			}
 
 			// Track the series for this partition.
-			partitionRejected, err := c.trackSeriesPerPartition(ctx, userID, int32(partitionID), partitionSeries)
+			partitionRejected, err := c.trackSeriesPerPartition(ctx, userID, int32(partitionID), partitionSeries, partitionLocality)
 			if err != nil {
 				return errors.Wrapf(err, "partition %d", partitionID)
 			}
@@ -385,7 +413,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 // then blocks until every partition's batch has been flushed and its response received. The series
 // rejected for this specific caller are recovered from the per-user rejection set returned by the
 // batch RPC.
-func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID string, series []uint64, keys []uint32, partitionBatchRing *ring.ActivePartitionBatchRing, batchOptions ring.DoBatchOptions) ([]uint64, error) {
+func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID string, series []uint64, locality []uint32, keys []uint32, partitionBatchRing *ring.ActivePartitionBatchRing, batchOptions ring.DoBatchOptions) ([]uint64, error) {
 	var (
 		waitMx sync.Mutex
 		waits  []chan syncTrackResult
@@ -401,12 +429,19 @@ func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID 
 
 			// Build the list of series hashes that belong to this partition.
 			partitionSeries := make([]uint64, len(indexes))
+			var partitionLocality []uint32
+			if len(locality) > 0 {
+				partitionLocality = make([]uint32, len(indexes))
+			}
 			for i, idx := range indexes {
 				partitionSeries[i] = series[idx]
+				if partitionLocality != nil {
+					partitionLocality[i] = locality[idx]
+				}
 			}
 
 			// Enqueue the series for this partition. The actual RPC happens when the batch is flushed.
-			ch := c.syncBatcher.trackSeries(int32(partitionID), userID, partitionSeries)
+			ch := c.syncBatcher.trackSeries(int32(partitionID), userID, partitionSeries, partitionLocality)
 
 			waitMx.Lock()
 			waits = append(waits, ch)
@@ -449,7 +484,7 @@ func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID 
 	return rejected, nil
 }
 
-func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
+func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64, locality []uint32) ([]uint64, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackerop.TrackSeriesOp)
 	if err != nil {
@@ -458,9 +493,10 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 
 	// Prepare the request.
 	req := &usagetrackerpb.TrackSeriesRequest{
-		UserID:       userID,
-		Partition:    partitionID,
-		SeriesHashes: series,
+		UserID:         userID,
+		Partition:      partitionID,
+		SeriesHashes:   series,
+		LocalityHashes: locality,
 	}
 
 	cfg := ring.DoUntilQuorumConfig{
@@ -512,7 +548,19 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 
 // TrackSeriesAsync tracks series asynchronously. It will batch the series by partition and user
 // and flush the batches when the batch size or batch delay is reached.
-func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) (returnErr error) {
+func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error {
+	return c.trackSeriesAsync(ctx, userID, series, nil)
+}
+
+// TrackSeriesAsyncWithLocality is TrackSeriesAsync with a Nautilus locality hash per series.
+func (c *UsageTrackerClient) TrackSeriesAsyncWithLocality(ctx context.Context, userID string, series []uint64, locality []uint32) error {
+	if len(locality) > 0 && len(locality) != len(series) {
+		return errors.Errorf("locality hashes length %d does not match series length %d", len(locality), len(series))
+	}
+	return c.trackSeriesAsync(ctx, userID, series, locality)
+}
+
+func (c *UsageTrackerClient) trackSeriesAsync(ctx context.Context, userID string, series []uint64, locality []uint32) (returnErr error) {
 	// Nothing to do if there are no series to track.
 	if len(series) == 0 {
 		return nil
@@ -535,7 +583,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 		keys[i] = uint32(hash)
 	}
 
-	return ring.DoBatchWithOptions(ctx, trackerop.TrackSeriesOp, partitionBatchRing, keys,
+	returnErr = ring.DoBatchWithOptions(ctx, trackerop.TrackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
@@ -545,14 +593,25 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 
 			// Build the list of series hashes that belong to this partition.
 			partitionSeries := make([]uint64, len(indexes))
+			var partitionLocality []uint32
+			if len(locality) > 0 {
+				partitionLocality = make([]uint32, len(indexes))
+			}
 			for i, idx := range indexes {
 				partitionSeries[i] = series[idx]
+				if partitionLocality != nil {
+					partitionLocality[i] = locality[idx]
+				}
 			}
 
-			c.batcher.trackSeries(int32(partitionID), userID, partitionSeries)
+			c.batcher.trackSeries(int32(partitionID), userID, partitionSeries, partitionLocality)
 			return nil
 		}, batchOptions,
 	)
+	if returnErr == nil && len(locality) > 0 {
+		c.localityHashBytes.Add(float64(4 * len(locality)))
+	}
+	return returnErr
 }
 
 // trackSeriesPerPartitionBatch tracks series per partition batch. It is called
@@ -810,7 +869,7 @@ func (c *batcher) flusher() {
 }
 
 // trackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
-func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
+func (c *batcher) trackSeries(partition int32, userID string, series []uint64, locality []uint32) {
 	// Since c.batchers doesn't change much, prefer to fetch it with a shared
 	// read lock, falling back to a write lock only if needed.
 
@@ -835,7 +894,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 		c.batchersMtx.Unlock()
 	}
 
-	b.trackSeries(userID, series)
+	b.trackSeries(userID, series, locality)
 }
 
 // getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
@@ -942,7 +1001,7 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logg
 
 // trackSeries adds a user and their series to this partition's current batch,
 // flushing it if it exceeds the size threshold.
-func (b *partitionBatcher) trackSeries(userID string, series []uint64) {
+func (b *partitionBatcher) trackSeries(userID string, series []uint64, locality []uint32) {
 	select {
 	case <-b.stoppingChan:
 		return
@@ -951,8 +1010,9 @@ func (b *partitionBatcher) trackSeries(userID string, series []uint64) {
 
 	b.usersMtx.Lock()
 	b.userSeries = append(b.userSeries, &usagetrackerpb.TrackSeriesBatchUser{
-		UserID:       userID,
-		SeriesHashes: series,
+		UserID:         userID,
+		SeriesHashes:   series,
+		LocalityHashes: locality,
 	})
 	b.seriesCount += len(series)
 	needsFlush := b.maxSeriesPerBatch > 0 && b.seriesCount >= b.maxSeriesPerBatch
@@ -1046,9 +1106,10 @@ const (
 // syncTrackRequest is a single caller's request accumulated in a synchronous batch. The flush
 // delivers its result on the result channel exactly once.
 type syncTrackRequest struct {
-	userID string
-	series []uint64
-	result chan syncTrackResult
+	userID   string
+	series   []uint64
+	locality []uint32
+	result   chan syncTrackResult
 }
 
 type syncTrackResult struct {
@@ -1118,7 +1179,7 @@ func (c *syncBatcher) signalAll() {
 
 // trackSeries enqueues the series for a user in a partition and returns a channel that will receive
 // exactly one result once the partition's batch is flushed.
-func (c *syncBatcher) trackSeries(partition int32, userID string, series []uint64) chan syncTrackResult {
+func (c *syncBatcher) trackSeries(partition int32, userID string, series []uint64, locality []uint32) chan syncTrackResult {
 	// Since c.batchers doesn't change much, prefer to fetch it with a shared
 	// read lock, falling back to a write lock only if needed.
 
@@ -1143,7 +1204,7 @@ func (c *syncBatcher) trackSeries(partition int32, userID string, series []uint6
 		c.batchersMtx.Unlock()
 	}
 
-	return b.trackSeries(userID, series)
+	return b.trackSeries(userID, series, locality)
 }
 
 // getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
@@ -1258,11 +1319,12 @@ func newSyncPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay 
 // trackSeries adds a user and their series to this partition's current batch and returns a channel
 // that will receive exactly one result once the batch is flushed. The linger timer is armed when the
 // batch transitions from empty to non-empty.
-func (b *syncPartitionBatcher) trackSeries(userID string, series []uint64) chan syncTrackResult {
+func (b *syncPartitionBatcher) trackSeries(userID string, series []uint64, locality []uint32) chan syncTrackResult {
 	req := &syncTrackRequest{
-		userID: userID,
-		series: series,
-		result: make(chan syncTrackResult, 1),
+		userID:   userID,
+		series:   series,
+		locality: locality,
+		result:   make(chan syncTrackResult, 1),
 	}
 
 	b.requestsMtx.Lock()
@@ -1380,8 +1442,9 @@ func (b *syncPartitionBatcher) flush(requests []*syncTrackRequest) {
 	for i, req := range requests {
 		seriesCount += len(req.series)
 		users[i] = &usagetrackerpb.TrackSeriesBatchUser{
-			UserID:       req.userID,
-			SeriesHashes: req.series,
+			UserID:         req.userID,
+			SeriesHashes:   req.series,
+			LocalityHashes: req.locality,
 		}
 	}
 	b.trackerClient.syncBatchSeriesPerFlush.Observe(float64(seriesCount))

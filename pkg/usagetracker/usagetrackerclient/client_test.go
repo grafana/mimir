@@ -1745,6 +1745,6 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		batcher.trackSeries("user-1", series)
+		batcher.trackSeries("user-1", series, nil)
 	}
 }

@@ -704,7 +704,11 @@ func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.Trac
 		return nil, err
 	}
 
-	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
+	locality := req.LocalityHashes
+	if len(locality) > 0 && len(locality) != len(req.SeriesHashes) {
+		return nil, fmt.Errorf("locality hashes length %d does not match series length %d", len(locality), len(req.SeriesHashes))
+	}
+	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, locality, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -718,6 +722,7 @@ var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []ui
 type mergedUser struct {
 	userID       string
 	seriesHashes []uint64
+	locality     []uint32
 }
 
 // iterMergedUsers sorts users by UserID and yields one mergedUser per distinct
@@ -739,7 +744,7 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 
 			if j == i+1 {
 				// Single entry for this user; use its hashes directly.
-				if !yield(mergedUser{userID: userID, seriesHashes: users[i].SeriesHashes}) {
+				if !yield(mergedUser{userID: userID, seriesHashes: users[i].SeriesHashes, locality: localityFor(users[i])}) {
 					return
 				}
 				i = j
@@ -752,13 +757,22 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 			}
 
 			s := seriesHashesPool.Get(total)[:total]
+			locs := make([]uint32, total)
 			off := 0
+			anyLocality := false
 			for k := i; k < j; k++ {
 				copy(s[off:], users[k].SeriesHashes)
+				if loc := localityFor(users[k]); loc != nil {
+					copy(locs[off:], loc)
+					anyLocality = true
+				}
 				off += len(users[k].SeriesHashes)
 			}
+			if !anyLocality {
+				locs = nil
+			}
 
-			if !yield(mergedUser{userID: userID, seriesHashes: s}) {
+			if !yield(mergedUser{userID: userID, seriesHashes: s, locality: locs}) {
 				seriesHashesPool.Put(s)
 				return
 			}
@@ -766,6 +780,18 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 			i = j
 		}
 	}
+}
+
+// localityFor returns the request's locality hashes when they line up with its
+// series hashes, and nil otherwise. A nil result means "no locality on this batch".
+func localityFor(u *usagetrackerpb.TrackSeriesBatchUser) []uint32 {
+	if u == nil || len(u.LocalityHashes) == 0 {
+		return nil
+	}
+	if len(u.LocalityHashes) != len(u.SeriesHashes) {
+		return nil
+	}
+	return u.LocalityHashes
 }
 
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
@@ -785,7 +811,7 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, now)
+			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, entry.locality, now)
 			if err != nil {
 				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, entry.userID)
 			}
@@ -806,6 +832,39 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 	}
 
 	return &response, nil
+}
+
+// GetTenantBands implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) GetTenantBands(_ context.Context, req *usagetrackerpb.GetTenantBandsRequest) (*usagetrackerpb.GetTenantBandsResponse, error) {
+	p, err := t.runningPartition(req.Partition)
+	if err != nil {
+		return nil, err
+	}
+	views := p.store.tenantBands(req.UserID)
+	tenants := make([]*usagetrackerpb.TenantBands, 0, len(views))
+	for _, view := range views {
+		slices.SortFunc(view.counts, func(a, b bandCount) int {
+			return cmp.Compare(b.count, a.count)
+		})
+		tb := &usagetrackerpb.TenantBands{
+			UserID:         view.userID,
+			TotalSeries:    view.total,
+			LocalitySeries: view.localitySeries,
+			Bands:          make([]uint32, len(view.counts)),
+			Counts:         make([]uint64, len(view.counts)),
+		}
+		for i, c := range view.counts {
+			tb.Bands[i] = uint32(c.band)
+			tb.Counts[i] = c.count
+		}
+		tenants = append(tenants, tb)
+	}
+	return &usagetrackerpb.GetTenantBandsResponse{
+		Partition:  req.Partition,
+		Partitions: int32(t.cfg.Partitions),
+		Timestamp:  time.Now().Unix(),
+		Tenants:    tenants,
+	}, nil
 }
 
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
@@ -886,13 +945,14 @@ type chanEventsPublisher struct {
 	events chan []byte
 }
 
-func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
+func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, locality []uint32, timestamp time.Time) error {
 	defer refsPool.Put(series)
 
 	ev := usagetrackerpb.SeriesCreatedEvent{
-		UserID:       userID,
-		Timestamp:    timestamp.Unix(),
-		SeriesHashes: series,
+		UserID:         userID,
+		Timestamp:      timestamp.Unix(),
+		SeriesHashes:   series,
+		LocalityHashes: locality,
 	}
 	data, err := proto.Marshal(&ev)
 	if err != nil {

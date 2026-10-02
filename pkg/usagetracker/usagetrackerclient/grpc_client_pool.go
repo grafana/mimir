@@ -105,6 +105,7 @@ func (c *usageTrackerClient) RemoteAddress() string {
 func grpcclientInstrument(requestDuration *prometheus.HistogramVec, instrumentationLabelOptions ...middleware.InstrumentationOption) ([]grpc.UnaryClientInterceptor, []grpc.StreamClientInterceptor) {
 	noAuthMethods := map[string]bool{
 		"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit": true,
+		"/usagetrackerpb.UsageTracker/GetTenantBands":       true,
 		"/usagetrackerpb.UsageTracker/TrackSeriesBatch":     true,
 	}
 	var (

@@ -115,7 +115,7 @@ func TestPartitionHandler(t *testing.T) {
 	t.Run("create and load snapshots", func(t *testing.T) {
 		for maxFileSize, expectedSnapshotFiles := range map[int]int{
 			10e3: 1,
-			100:  4, // If the snapshot file change, we need to update this value.
+			100:  4, // If the snapshot file changes, update this value.
 		} {
 			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
 				t.Parallel()
@@ -558,7 +558,7 @@ func TestPartitionHandler(t *testing.T) {
 
 func requireTrackSeries(t *testing.T, p *partitionHandler, id string, series, rejected []uint64) {
 	t.Helper()
-	actualRejected, err := p.store.trackSeries(t.Context(), id, series, time.Now())
+	actualRejected, err := p.store.trackSeries(t.Context(), id, series, nil, time.Now())
 	require.NoError(t, err, "failed to track series for tenant %s in partition %d", id, p.partitionID)
 	if len(rejected) == 0 && len(actualRejected) == 0 {
 		return // No series tracked, no rejected series.

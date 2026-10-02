@@ -464,6 +464,11 @@ type Config struct {
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
+	// UsageTrackerLocalityHashEnabled sends the Nautilus locality hash of every
+	// tracked series to the usage-tracker. It applies only to tenants whose
+	// ingest routing is nautilus. A hash of 0 is left unset.
+	UsageTrackerLocalityHashEnabled bool `yaml:"usage_tracker_locality_hash_enabled" category:"experimental"`
+
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 
 	// NautilusRebalancerAddress is the gRPC address of the nautilus
@@ -540,6 +545,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
+	f.BoolVar(&cfg.UsageTrackerLocalityHashEnabled, "distributor.usage-tracker-locality-hash-enabled", false, "Send the Nautilus locality hash of every tracked series to the usage-tracker. Applies only to tenants whose ingest routing is nautilus.")
 	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
@@ -2359,6 +2365,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, series.Labels, &nonCopiedLabels)
 			seriesHashes[idx] = labels.StableHash(nonCopiedLabels)
 		}
+		localityHashes := d.seriesLocalityHashes(userID, req.Timeseries)
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
@@ -2369,11 +2376,11 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
 			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
+				if err := d.trackSeriesAsync(ctx, limitsKey, seriesHashes, localityHashes); err != nil {
 					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 				}
 			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes, localityHashes)
 				pushReq.AddCleanup(cleanup)
 			}
 
@@ -2381,7 +2388,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
+		rejectedHashes, err := d.trackSeries(ctx, limitsKey, seriesHashes, localityHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
@@ -2420,13 +2427,56 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 	})
 }
 
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
+// localityHashTracker is implemented by the production usage-tracker client.
+// Test mocks keep the narrower usageTrackerGenericClient and ignore locality.
+type localityHashTracker interface {
+	TrackSeriesWithLocality(ctx context.Context, userID string, series []uint64, locality []uint32) ([]uint64, error)
+	TrackSeriesAsyncWithLocality(ctx context.Context, userID string, series []uint64, locality []uint32) error
+}
+
+func (d *Distributor) trackSeries(ctx context.Context, userID string, series []uint64, locality []uint32) ([]uint64, error) {
+	if len(locality) > 0 {
+		if tracker, ok := d.usageTrackerClient.(localityHashTracker); ok {
+			return tracker.TrackSeriesWithLocality(ctx, userID, series, locality)
+		}
+	}
+	return d.usageTrackerClient.TrackSeries(ctx, userID, series)
+}
+
+func (d *Distributor) trackSeriesAsync(ctx context.Context, userID string, series []uint64, locality []uint32) error {
+	if len(locality) > 0 {
+		if tracker, ok := d.usageTrackerClient.(localityHashTracker); ok {
+			return tracker.TrackSeriesAsyncWithLocality(ctx, userID, series, locality)
+		}
+	}
+	return d.usageTrackerClient.TrackSeriesAsync(ctx, userID, series)
+}
+
+// seriesLocalityHashes returns one Nautilus locality hash per series when the
+// distributor flag is on and the tenant is nautilus-routed. The salt is the
+// raw tenant ID, the same one nautilus routing uses. A zero hash stays zero,
+// which the tracker treats as unset.
+func (d *Distributor) seriesLocalityHashes(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+	if !d.cfg.UsageTrackerLocalityHashEnabled || d.limits == nil {
+		return nil
+	}
+	if d.limits.NautilusIngestRouting(userID) != validation.NautilusIngestRoutingNautilus {
+		return nil
+	}
+	out := make([]uint32, len(series))
+	for i := range series {
+		out[i] = nautilusTokenForLabels(userID, series[i].Labels)
+	}
+	return out
+}
+
+func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64, locality []uint32) func() {
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 	go func() {
 		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
+		rejected, err := d.trackSeries(asyncTrackingCtx, limitsKey, seriesHashes, locality)
 		if err != nil {
 			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 		}

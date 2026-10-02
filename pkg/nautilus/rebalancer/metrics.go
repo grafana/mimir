@@ -90,6 +90,10 @@ type metrics struct {
 	watchSentMessages   *prometheus.CounterVec // stream, kind
 	watchSentEntries    *prometheus.CounterVec // stream, kind
 	watchSentBytes      *prometheus.CounterVec // stream, kind
+
+	bandReadDuration prometheus.Histogram
+	bandReadBytes    prometheus.Gauge
+	bandReadFailures prometheus.Counter
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
@@ -154,6 +158,19 @@ func newMetrics(r prometheus.Registerer) *metrics {
 			Name: "cortex_nautilus_rebalancer_watch_sent_bytes_total",
 			Help: "Marshaled proto bytes of sent watch messages, by stream type and kind. Approximates the rebalancer's outbound stream bandwidth (excludes gRPC framing/compression).",
 		}, []string{"stream", "kind"}),
+		bandReadDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_nautilus_rebalancer_band_read_duration_seconds",
+			Help:                        "Time to read one usage-tracker partition's locality bands.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		bandReadBytes: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_nautilus_rebalancer_band_read_bytes",
+			Help: "Marshaled size of the most recent locality-band response from one usage-tracker partition.",
+		}),
+		bandReadFailures: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_band_read_failures_total",
+			Help: "Failed reads of usage-tracker locality bands.",
+		}),
 	}
 	return m
 }

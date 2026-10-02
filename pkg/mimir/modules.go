@@ -1773,6 +1773,13 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "nautilus rebalancer init")
 	}
+	if t.Cfg.NautilusRebalancer.BandShadowEnabled {
+		if t.UsageTrackerPartitionRing == nil || t.UsageTrackerInstanceRing == nil {
+			level.Warn(util_log.Logger).Log("msg", "nautilus band shadow is enabled but the usage-tracker rings are not; the shadow read will not run")
+		} else {
+			t.NautilusRebalancer.AttachUsageTracker(t.Cfg.Distributor.UsageTrackerClient, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer)
+		}
+	}
 	rebalancer.RegisterNautilusRebalancerServer(t.Server.GRPC, t.NautilusRebalancer)
 
 	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
@@ -1940,7 +1947,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		MemberlistKV:                     {API, Vault},
-		NautilusRebalancer:               {API, ReadcacheInstanceRing},
+		NautilusRebalancer:               {API, ReadcacheInstanceRing, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
