@@ -2,6 +2,9 @@
 
 package cardpoc
 
+// E13: measures how many bytes of the index-header's postings offset table each metric
+// name costs, which is what a store-gateway reads to list every name's count.
+
 import (
 	"fmt"
 	"os"
