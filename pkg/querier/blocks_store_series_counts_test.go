@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/axiomhq/hyperloglog"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
@@ -97,6 +99,32 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		require.ErrorContains(t, err, "inside one block range")
 	})
 
+	t.Run("a sketch from one store-gateway absorbs the other's hashes", func(t *testing.T) {
+		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
+		sk, err := hyperloglog.NewSketch(storegateway.SeriesCountsSketchPrecision, false)
+		require.NoError(t, err)
+		for _, h := range []uint64{0x1111111111111111, 0x2222222222222222, 0x3333333333333333} {
+			sk.InsertHash(h)
+		}
+		sketch, err := sk.MarshalBinary()
+		require.NoError(t, err)
+		var got *storegatewaypb.SeriesCountsRequest
+		clients := map[BlocksStoreClient][][]ulid.ULID{
+			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Sketch: sketch}}}): {{b1}},
+			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{
+				{Value: "up", Hashes: []uint64{0x3333333333333333, 0x4444444444444444}},
+				{Value: "down", Hashes: []uint64{0x5555555555555555}},
+			}}): {{b2}},
+		}
+		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, SketchAbove: 2})
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), got.SketchAbove)
+		assert.Equal(t, map[string][]int64{"up": {4}, "down": {1}}, res.Counts, "four distinct up series, one shared")
+		assert.Equal(t, map[string]bool{"up": true}, res.Estimated)
+		assert.Equal(t, int64(len(sketch)), res.SketchBytes)
+		assert.Equal(t, int64(24), res.HashBytes, "three hashes of 8 bytes")
+	})
+
 	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
 		var got1, got2 *storegatewaypb.SeriesCountsRequest
@@ -162,6 +190,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 
 	req, _, err = parse("start=0&end=10")
 	require.NoError(t, err)
+	assert.Equal(t, int64(10_000), req.SketchAbove, "the design's default")
 	assert.Equal(t, "__name__", req.GroupBy)
 	assert.Empty(t, req.Matchers)
 
@@ -172,6 +201,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&match[]=a&match[]=b",
 		"start=0&end=10&step=0s",
 		"start=0&end=10&max_index_bytes=-1",
+		"start=0&end=10&sketch_above=-1",
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)
