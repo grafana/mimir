@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -95,15 +97,26 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		require.ErrorContains(t, err, "inside one block range")
 	})
 
-	t.Run("lower bound when a store-gateway hits its budget", func(t *testing.T) {
-		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+		var got1, got2 *storegatewaypb.SeriesCountsRequest
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}, LowerBound: true, SeriesCounted: 5, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}}): {{b1}},
+			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{}): {{b1}},
+			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{}): {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxSeries: 5})
-		require.NoError(t, err, "an unfinished block is expected under a budget")
-		assert.True(t, res.LowerBound)
-		assert.Equal(t, int64(5), res.SeriesCounted)
+		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.NoError(t, err)
+		assert.Equal(t, int64(500), got1.MaxIndexBytes)
+		assert.Equal(t, int64(500), got2.MaxIndexBytes)
+	})
+
+	t.Run("a store-gateway over max_index_bytes fails the request", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		over := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes")
+		}}
+		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway 1.1.1.1: the request would read about 5000 index bytes")
 	})
 
 	t.Run("fails if a block is not counted", func(t *testing.T) {
@@ -138,12 +151,12 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		require.NoError(t, r.ParseForm())
 		return parseCardinalityEstimateRequest(r)
 	}
-	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&budget=100&limit=5`)
+	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&max_index_bytes=100&limit=5`)
 	require.NoError(t, err)
 	assert.Equal(t, int64(86400000), req.MaxT)
 	assert.Equal(t, "pod", req.GroupBy)
 	assert.Equal(t, int64(3600000), req.Step)
-	assert.Equal(t, int64(100), req.MaxSeries)
+	assert.Equal(t, int64(100), req.MaxIndexBytes)
 	assert.Equal(t, 5, limit)
 	require.Len(t, req.Matchers, 1)
 
@@ -158,7 +171,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
 		"start=0&end=10&step=0s",
-		"start=0&end=10&budget=-1",
+		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)
@@ -242,4 +255,11 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSplitIndexBytes(t *testing.T) {
+	assert.Equal(t, int64(0), splitIndexBytes(0, 4), "unlimited stays unlimited")
+	assert.Equal(t, int64(1000), splitIndexBytes(1000, 1))
+	assert.Equal(t, int64(333), splitIndexBytes(1000, 3))
+	assert.Equal(t, int64(1), splitIndexBytes(3, 8), "a positive limit never becomes unlimited")
 }

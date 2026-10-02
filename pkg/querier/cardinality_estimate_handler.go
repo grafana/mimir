@@ -36,7 +36,6 @@ type estimateResponse struct {
 	GroupBy              string          `json:"group_by"`
 	Read                 string          `json:"read"`
 	Dedup                bool            `json:"dedup"`
-	LowerBound           bool            `json:"lower_bound"`
 	Blocks               int             `json:"blocks"`
 	StoreGateways        int             `json:"store_gateways"`
 	Groups               int             `json:"groups"`
@@ -64,8 +63,9 @@ type estimateCheck struct {
 // CardinalityEstimateHandler serves series counts from the store-gateways
 // without loading chunks (see BlocksStoreQueryable.CardinalityEstimate). It
 // takes start, end, an optional match[] selector, group_by (default
-// __name__), step for per-bucket counts, budget for a series cap per
-// store-gateway, limit to keep the largest groups, and snap=true to widen a
+// __name__), step for per-bucket counts, max_index_bytes to cap the index
+// bytes the request reads (over it the request fails with 422 and nothing is
+// counted), limit to keep the largest groups, and snap=true to widen a
 // window inside one block range to that range. With a step, a group's count
 // is its largest bucket. read in the response says how it was answered. With
 // compare=true it also answers the request by loading chunks, as a PromQL
@@ -96,7 +96,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 		}
 		out := estimateResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
-			Dedup: res.Dedup, LowerBound: res.LowerBound, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
+			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
@@ -135,10 +135,6 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 // compareWithChunks reports a chunks-path failure, such as a query limit,
 // in Skipped rather than failing the request, since that is a result too.
 func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req CardinalityEstimateRequest, res CardinalityEstimateResult) *estimateCheck {
-	if res.LowerBound {
-		// A partial answer can't be compared with a full one.
-		return &estimateCheck{Skipped: "the index read stopped at the budget"}
-	}
 	start := time.Now()
 	chunks, cost, err := q.SeriesCountsFromChunks(ctx, req)
 	check := &estimateCheck{ElapsedMS: float64(time.Since(start).Microseconds()) / 1000, Cost: cost}
@@ -187,9 +183,9 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 		}
 		req.Step = time.Duration(d).Milliseconds()
 	}
-	if v := r.FormValue("budget"); v != "" {
-		if req.MaxSeries, err = strconv.ParseInt(v, 10, 64); err != nil || req.MaxSeries < 0 {
-			return req, 0, errors.New("budget must be a non-negative integer")
+	if v := r.FormValue("max_index_bytes"); v != "" {
+		if req.MaxIndexBytes, err = strconv.ParseInt(v, 10, 64); err != nil || req.MaxIndexBytes < 0 {
+			return req, 0, errors.New("max_index_bytes must be a non-negative integer")
 		}
 	}
 	limit := 0
