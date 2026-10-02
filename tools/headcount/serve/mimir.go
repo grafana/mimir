@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -287,11 +288,18 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 // setSeriesLimit rewrites the runtime config for the tenant and waits for
 // Mimir to report the new value, unless it is already in effect.
 func (m *mimir) setSeriesLimit(limit int) error {
-	if m.runtimeConfig == "" || (m.limitKnown && m.lastLimit == limit) {
+	if m.runtimeConfig == "" {
+		if limit != defaultLimits {
+			return errors.New("a PromQL series limit needs -mimir-runtime-config, so the demo can set the tenant's max_fetched_series_per_query")
+		}
+		return nil
+	}
+	if m.limitKnown && m.lastLimit == limit {
 		return nil
 	}
 	cfg := fmt.Sprintf("overrides:\n  anonymous:\n    max_fetched_chunks_per_query: 0\n    max_fetched_chunk_bytes_per_query: 0\n    max_fetched_series_per_query: %d\n", limit)
-	want := fmt.Sprintf("max_fetched_series_per_query: %d", limit)
+	// Match the whole line, so a new limit of 10 is not confused with an old one of 1000.
+	want := fmt.Sprintf("max_fetched_series_per_query: %d\n", limit)
 	if limit == defaultLimits {
 		cfg, want = "overrides: {}\n", ""
 	}

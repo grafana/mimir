@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -338,12 +339,16 @@ func sortedValues(counts, truth map[string]int, limit int) []valueRow {
 	return rows[:min(limit, len(rows))]
 }
 
+// plainNameRE is a Prometheus metric or label name, the only thing that is
+// safe to put unquoted in a PromQL expression.
+var plainNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+
 // plainName reads a metric or label name parameter that is safe to put in a
-// PromQL selector.
+// PromQL selector or a by clause.
 func plainName(r *http.Request, key string) (string, error) {
 	v := r.URL.Query().Get(key)
-	if v == "" || strings.ContainsAny(v, `"{}\`) {
-		return "", fmt.Errorf("%s is required and must be a plain name", key)
+	if !plainNameRE.MatchString(v) {
+		return "", fmt.Errorf("%s is required and must be a plain metric or label name", key)
 	}
 	return v, nil
 }
@@ -556,8 +561,10 @@ func (s *server) handlePromQLWindow(w http.ResponseWriter, r *http.Request) {
 }
 
 // bucketStep reads the step parameter, in seconds, or picks one hour for a
-// window of a day or less and one day otherwise. A given step must be whole
-// hours and divide the window.
+// window of a day or less and one day otherwise, falling back to one hour
+// when a day does not divide the window. A step must be whole hours and
+// divide the window, so every bucket is whole and the PromQL range query
+// evaluates once per bucket.
 func bucketStep(r *http.Request, minT, maxT int64) (int64, error) {
 	if v := r.URL.Query().Get("step"); v != "" {
 		sec, err := strconv.ParseInt(v, 10, 64)
@@ -567,10 +574,10 @@ func bucketStep(r *http.Request, minT, maxT int64) (int64, error) {
 		}
 		return step, nil
 	}
-	if maxT-minT <= 24*hourMs {
-		return hourMs, nil
+	if maxT-minT > 24*hourMs && (maxT-minT)%(24*hourMs) == 0 {
+		return 24 * hourMs, nil
 	}
-	return 24 * hourMs, nil
+	return hourMs, nil
 }
 
 // handleBuckets counts one metric per bucket of the window. Each block
@@ -614,9 +621,14 @@ func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
 				mimirErr(w, res.Err)
 				return
 			}
+			want := int((p[1] - p[0]) / step)
 			c := res.Buckets[metric]
-			if c == nil {
-				c = make([]int, (p[1]-p[0])/step)
+			if len(c) != want {
+				if len(c) != 0 {
+					mimirErr(w, fmt.Sprintf("Mimir returned %d buckets for [%d, %d) at step %ds, expected %d", len(c), p[0], p[1], step/1000, want))
+					return
+				}
+				c = make([]int, want)
 			}
 			counts = append(counts, c...)
 			read = read.add(seriesCountsInfo(res, true))
