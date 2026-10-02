@@ -325,7 +325,7 @@ func plainName(r *http.Request, key string) (string, error) {
 }
 
 // handleBreakdown breaks one metric down by one label over the window, with
-// an optional series budget, and gives the previous window's value count.
+// an optional index-bytes limit, and gives the previous window's value count.
 func (s *server) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 	minT, maxT, err := s.window(r)
 	if err != nil {
@@ -344,13 +344,22 @@ func (s *server) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT int64, metric, label string) {
-	budget := intParam(r, "budget", 0)
+	maxIndexBytes := intParam(r, "max_index_bytes", 0)
 	match := fmt.Sprintf(`{__name__=%q}`, metric)
 	params := url.Values{"match[]": {match}, "group_by": {label}}
-	if budget > 0 {
-		params.Set("budget", strconv.Itoa(budget))
+	if maxIndexBytes > 0 {
+		params.Set("max_index_bytes", strconv.Itoa(maxIndexBytes))
 	}
 	res := s.mimir.estimate(minT, maxT, params)
+	if res.Err != "" && maxIndexBytes > 0 && strings.Contains(res.Err, "max_index_bytes") {
+		// Mimir refused the request at the limit: that is the answer.
+		truth := s.pop.TruthBy(matchName(metric), label, minT, maxT)
+		writeJSON(w, map[string]any{
+			"window": win(minT, maxT), "refused": true, "error": res.Err, "latency_ms": ms(res.Latency),
+			"truth_values": len(truth), "truth_total": sumCounts(truth),
+		})
+		return
+	}
 	if res.Err != "" {
 		mimirErr(w, res.Err)
 		return
@@ -362,12 +371,11 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 		"values":       len(res.Counts),
 		"set_values":   setValues(res.Counts),
 		"total":        sumCounts(res.Counts),
-		"lower_bound":  res.LowerBound,
 		"truth_values": len(truth),
 		"truth_total":  sumCounts(truth),
 		"read":         seriesCountsInfo(res, false),
 	}
-	if pMinT, pMaxT := s.previous(minT, maxT); pMaxT > pMinT && budget == 0 {
+	if pMinT, pMaxT := s.previous(minT, maxT); pMaxT > pMinT && maxIndexBytes == 0 {
 		prev := s.mimir.estimate(pMinT, pMaxT, url.Values{"match[]": {match}, "group_by": {label}})
 		if prev.Err != "" {
 			mimirErr(w, prev.Err)
