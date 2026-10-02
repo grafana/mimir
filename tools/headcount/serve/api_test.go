@@ -277,3 +277,18 @@ func TestSetValues(t *testing.T) {
 	assert.Equal(t, 2, setValues(map[string]int{"a": 1, "b": 2}))
 	assert.Equal(t, 2, setValues(map[string]int{"": 5, "a": 1, "b": 2}))
 }
+
+func TestParseStoreGatewayRead(t *testing.T) {
+	page := `# HELP x
+cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway",data_type="postings",stage=""} 100
+cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway",data_type="series",stage=""} 1.5e+06
+cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway",data_type="chunks",stage="processed"} 999
+cortex_bucket_store_series_data_size_fetched_bytes_sum{component="store-gateway",data_type="chunks",stage="fetched"} 2000
+cortex_bucket_store_series_data_size_fetched_bytes_sum{component="store-gateway",data_type="series",stage="fetched"} 7
+cortex_bucket_store_series_data_size_touched_bytes_count{component="store-gateway",data_type="series",stage=""} 3
+`
+	got, err := parseStoreGatewayRead(strings.NewReader(page))
+	require.NoError(t, err)
+	assert.Equal(t, storeGatewayRead{IndexBytes: 1_500_100, ChunkBytes: 2000}, got)
+	assert.Equal(t, storeGatewayRead{IndexBytes: 1_500_000, ChunkBytes: 0}, got.sub(storeGatewayRead{IndexBytes: 100, ChunkBytes: 2000}))
+}
