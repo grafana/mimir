@@ -395,7 +395,6 @@ func BenchmarkRuntimeConfigLoader_Load(b *testing.B) {
 			loader := &runtimeConfigLoader{}
 
 			b.ReportAllocs()
-			b.SetBytes(int64(len(data)))
 			for b.Loop() {
 				if _, err := loader.load(bytes.NewReader(data)); err != nil {
 					b.Fatal(err)
