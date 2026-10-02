@@ -11,6 +11,8 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -24,9 +26,9 @@ type CardinalityEstimateRequest struct {
 	MinT, MaxT int64
 	Step       int64
 	GroupBy    string
-	// MaxSeries is applied by each store-gateway on its own, so the total
-	// can reach MaxSeries times the number of store-gateways.
-	MaxSeries int64
+	// MaxIndexBytes caps the index bytes the whole request reads, 0 for
+	// none. It is split evenly across the store-gateway calls.
+	MaxIndexBytes int64
 	// Snap widens a window inside one block range to that range.
 	Snap bool
 }
@@ -42,7 +44,6 @@ type CardinalityEstimateResult struct {
 	Dedup                bool
 	Blocks               []ulid.ULID
 	StoreGateways        int
-	LowerBound           bool
 	SeriesCounted        int64
 	PostingsFetchedBytes int64
 	SeriesFetchedBytes   int64
@@ -128,7 +129,6 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 			}
 			counted[parsed] = true
 		}
-		res.LowerBound = res.LowerBound || resp.LowerBound
 		res.SeriesCounted += resp.SeriesCounted
 		res.PostingsFetchedBytes += resp.PostingsFetchedBytes
 		res.SeriesFetchedBytes += resp.SeriesFetchedBytes
@@ -136,6 +136,13 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		return nil
 	}
 
+	// Find every call first, so max_index_bytes can be split across them.
+	type call struct {
+		p      found
+		client BlocksStoreClient
+		ids    []ulid.ULID
+	}
+	var calls []call
 	for _, p := range parts {
 		if len(p.blocks) == 0 {
 			continue
@@ -144,27 +151,40 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
-		g, gCtx := errgroup.WithContext(grpcContextWithBucketStoreRequestMeta(ctx, tenantID, p.indexMeta))
 		for client, partitions := range clients {
 			gateways[client.RemoteAddress()] = true
 			for _, ids := range partitions {
-				g.Go(func() error {
-					resp, err := client.SeriesCounts(gCtx, &storegatewaypb.SeriesCountsRequest{
-						BlockIds:  convertULIDsToString(ids),
-						Matchers:  pbMatchers,
-						MinTime:   req.MinT,
-						MaxTime:   req.MaxT,
-						StepMs:    req.Step,
-						GroupBy:   req.GroupBy,
-						Hashes:    res.Dedup,
-						MaxSeries: req.MaxSeries,
-					})
-					if err != nil {
-						return fmt.Errorf("store-gateway %s: %w", client.RemoteAddress(), err)
-					}
-					return merge(client.RemoteAddress(), resp)
-				})
+				calls = append(calls, call{p, client, ids})
 			}
+		}
+	}
+	perCall := splitIndexBytes(req.MaxIndexBytes, len(calls))
+
+	for _, p := range parts {
+		g, gCtx := errgroup.WithContext(grpcContextWithBucketStoreRequestMeta(ctx, tenantID, p.indexMeta))
+		for _, cl := range calls {
+			if cl.p.c != p.c {
+				continue
+			}
+			g.Go(func() error {
+				resp, err := cl.client.SeriesCounts(gCtx, &storegatewaypb.SeriesCountsRequest{
+					BlockIds:      convertULIDsToString(cl.ids),
+					Matchers:      pbMatchers,
+					MinTime:       req.MinT,
+					MaxTime:       req.MaxT,
+					StepMs:        req.Step,
+					GroupBy:       req.GroupBy,
+					Hashes:        res.Dedup,
+					MaxIndexBytes: perCall,
+				})
+				if status.Code(err) == codes.ResourceExhausted {
+					return fmt.Errorf("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: store-gateway %s: %s", req.MaxIndexBytes, perCall, len(calls), cl.client.RemoteAddress(), status.Convert(err).Message())
+				}
+				if err != nil {
+					return fmt.Errorf("store-gateway %s: %w", cl.client.RemoteAddress(), err)
+				}
+				return merge(cl.client.RemoteAddress(), resp)
+			})
 		}
 		if err := g.Wait(); err != nil {
 			return CardinalityEstimateResult{}, err
@@ -172,8 +192,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 	}
 
 	for _, b := range all {
-		// A store-gateway that stopped at max_series leaves blocks unfinished.
-		if !counted[b.ID] && !res.LowerBound {
+		if !counted[b.ID] {
 			return CardinalityEstimateResult{}, fmt.Errorf("block %s was not counted by the store-gateway it was sent to", b.ID)
 		}
 		res.Blocks = append(res.Blocks, b.ID)
@@ -183,6 +202,15 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 	}
 	res.StoreGateways = len(gateways)
 	return res, nil
+}
+
+// splitIndexBytes gives each of n calls an equal share of limit, at least one
+// byte, so the request's total stays under limit. 0 stays unlimited.
+func splitIndexBytes(limit int64, n int) int64 {
+	if limit <= 0 || n <= 1 {
+		return limit
+	}
+	return max(1, limit/int64(n))
 }
 
 // inOneRangeWithoutSharedSeries reports whether every block covers the same
