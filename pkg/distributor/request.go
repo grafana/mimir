@@ -25,8 +25,10 @@ type Request struct {
 
 	getRequest supplierFunc
 
-	request *mimirpb.WriteRequest
-	err     error
+	request         *mimirpb.WriteRequest
+	err             error
+	requestCleanup  func()
+	requestReleased bool
 
 	// group is the value of the configured `group` label for the customer metrics.
 	group string
@@ -73,13 +75,17 @@ func NewParsedRequest(r *mimirpb.WriteRequest, uncompressedBodySize int) *Reques
 // initWriteRequest initializes the write request by calling the supplier function.
 // It is safe to call multiple times; the supplier is only invoked once.
 func (r *Request) initWriteRequest() {
-	if r.request == nil && r.err == nil {
+	if r.getRequest != nil {
 		var cleanup func()
 		r.request, cleanup, r.uncompressedBodySize, r.err = r.getRequest()
+		r.getRequest = nil
 		if r.request == nil && r.err == nil {
 			r.err = fmt.Errorf("push.Request supplierFunc returned a nil body and a nil error, either should be non-nil")
 		}
-		r.AddCleanup(cleanup)
+		if cleanup != nil {
+			r.requestCleanup = cleanup
+			r.AddCleanup(r.releaseWriteRequest)
+		}
 		if r.onInit != nil {
 			r.onInit()
 		}
@@ -87,10 +93,29 @@ func (r *Request) initWriteRequest() {
 }
 
 // WriteRequest returns request from supplier function. Function is only called once,
-// and subsequent calls to WriteRequest return the same value.
+// and subsequent calls return the same value until the decoded request is released.
 func (r *Request) WriteRequest() (*mimirpb.WriteRequest, error) {
+	if r.requestReleased {
+		return nil, fmt.Errorf("decoded write request has been released")
+	}
 	r.initWriteRequest()
 	return r.request, r.err
+}
+
+// releaseWriteRequest releases decoded data without finishing admission accounting
+// or other callbacks that must wait for backend completion.
+func (r *Request) releaseWriteRequest() {
+	if r.requestReleased {
+		return
+	}
+	r.requestReleased = true
+	cleanup := r.requestCleanup
+	r.requestCleanup = nil
+	if cleanup != nil {
+		cleanup()
+	}
+	r.request = nil
+	r.getRequest = nil
 }
 
 // UncompressedBodySize returns the uncompressed request body size (wire bytes before any conversion).
@@ -112,7 +137,9 @@ func (r *Request) AddCleanup(f func()) {
 // each called cleanup function from the list of cleanups. So subsequent calls to CleanUp will not invoke the same cleanup functions.
 func (r *Request) CleanUp() {
 	for i := len(r.cleanups) - 1; i >= 0; i-- {
-		r.cleanups[i]()
+		cleanup := r.cleanups[i]
+		r.cleanups[i] = nil
+		cleanup()
 	}
 	r.cleanups = r.cleanups[:0]
 }
