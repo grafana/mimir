@@ -28,7 +28,7 @@ type chunksPathCost struct {
 // SeriesCountsFromChunks answers req the way a PromQL count does: it selects
 // the matching series with their chunks through the store-gateways' Series
 // call and counts a series in a bucket if it has a sample there. compare=true
-// on the series_counts route checks SeriesCounts against it.
+// on the cardinality/estimate route checks the estimate against it.
 func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req SeriesCountsRequest) (map[string][]int64, chunksPathCost, error) {
 	st, ctx := querier_stats.ContextWithEmptyStats(ctx)
 	// Select needs these in the context; the PromQL query path adds them.
