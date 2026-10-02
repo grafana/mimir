@@ -1963,6 +1963,8 @@ Usage of ./cmd/mimir/mimir:
     	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
   -ingester.partition-ring.consul.watch-rate-limit float
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.partition-ring.create-partitions-with-derived-tokens
+    	[experimental] When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring.
   -ingester.partition-ring.delete-inactive-partition-after duration
     	How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. (default 13h0m0s)
   -ingester.partition-ring.etcd.dial-timeout duration
@@ -2413,6 +2415,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
   -overrides-exporter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
+  -partition-ring.max-derived-token-partitions int
+    	[experimental] The number of partition IDs, starting from 0, that can use derived tokens. Only supported by the ingester partition ring for now. Components that read the ring generate the tokens of these partitions at startup.
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
