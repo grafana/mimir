@@ -114,6 +114,10 @@ type readInfo struct {
 	SeriesRead    int     `json:"series_read,omitempty"`
 	IndexBytes    int64   `json:"index_bytes,omitempty"`
 	BucketBytes   int64   `json:"bucket_bytes,omitempty"`
+	// The dedup payload, and how many groups came from an HLL sketch.
+	HashBytes       int64 `json:"hash_bytes,omitempty"`
+	SketchBytes     int64 `json:"sketch_bytes,omitempty"`
+	EstimatedGroups int   `json:"estimated_groups,omitempty"`
 }
 
 func (a readInfo) add(b readInfo) readInfo {
@@ -127,6 +131,9 @@ func (a readInfo) add(b readInfo) readInfo {
 	a.SeriesRead += b.SeriesRead
 	a.IndexBytes += b.IndexBytes
 	a.BucketBytes += b.BucketBytes
+	a.HashBytes += b.HashBytes
+	a.SketchBytes += b.SketchBytes
+	a.EstimatedGroups += b.EstimatedGroups
 	return a
 }
 
@@ -146,13 +153,26 @@ func seriesCountsInfo(res mimirSeriesCounts, step bool) readInfo {
 		Method: method, Route: res.Read, ElapsedMS: ms(res.Latency), Calls: 1,
 		Blocks: res.Blocks, StoreGateways: res.StoreGateways,
 		SeriesRead: res.SeriesCounted, IndexBytes: res.IndexBytes, BucketBytes: res.BucketBytes,
+		HashBytes: res.HashBytes, SketchBytes: res.SketchBytes, EstimatedGroups: len(res.Estimated),
 	}
 }
 
-// nameCounts asks Mimir for every metric name's count over [minT, maxT).
-func (s *server) nameCounts(minT, maxT int64) (map[string]int, readInfo, string) {
-	res := s.mimir.estimate(minT, maxT, nil)
-	return res.Counts, seriesCountsInfo(res, false), res.Err
+// nameCounts asks Mimir for every metric name's count over [minT, maxT),
+// with the request's sketch_above passed on. estimated holds the names
+// counted from an HLL sketch.
+func (s *server) nameCounts(r *http.Request, minT, maxT int64) (counts map[string]int, read readInfo, estimated map[string]bool, msg string) {
+	res := s.mimir.estimate(minT, maxT, sketchParams(r))
+	return res.Counts, seriesCountsInfo(res, false), res.Estimated, res.Err
+}
+
+// sketchParams passes sketch_above on to Mimir when the request sets it;
+// 0 means every group exact.
+func sketchParams(r *http.Request) url.Values {
+	v := r.URL.Query().Get("sketch_above")
+	if n, err := strconv.Atoi(v); err != nil || n < 0 {
+		return nil
+	}
+	return url.Values{"sketch_above": {v}}
 }
 
 // previous is the window of the same length just before [minT, maxT),
@@ -175,6 +195,8 @@ type growthRow struct {
 	Growth    int    `json:"growth"`
 	TruthBase int    `json:"truth_base"`
 	TruthDay  int    `json:"truth_day"`
+	// Estimated is set when either window's count came from an HLL sketch.
+	Estimated bool `json:"estimated,omitempty"`
 }
 
 // growthRows returns every name in either map with its growth, largest
@@ -210,15 +232,16 @@ func (s *server) handleNames(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := intParam(r, "limit", 10)
 	pMinT, pMaxT := s.previous(minT, maxT)
-	counts, read, msg := s.nameCounts(minT, maxT)
+	counts, read, estimated, msg := s.nameCounts(r, minT, maxT)
 	if msg != "" {
 		mimirErr(w, msg)
 		return
 	}
 	prev := map[string]int{}
 	var prevRead readInfo
+	prevEstimated := map[string]bool{}
 	if pMaxT > pMinT {
-		if prev, prevRead, msg = s.nameCounts(pMinT, pMaxT); msg != "" {
+		if prev, prevRead, prevEstimated, msg = s.nameCounts(r, pMinT, pMaxT); msg != "" {
 			mimirErr(w, msg)
 			return
 		}
@@ -240,6 +263,7 @@ func (s *server) handleNames(w http.ResponseWriter, r *http.Request) {
 		out := append([]growthRow(nil), rs...)
 		for i := range out {
 			out[i].TruthBase, out[i].TruthDay = prevTruth[out[i].Name], truth[out[i].Name]
+			out[i].Estimated = estimated[out[i].Name] || prevEstimated[out[i].Name]
 		}
 		return out
 	}
@@ -436,6 +460,8 @@ type windowRow struct {
 	Summed int    `json:"summed"`
 	Exact  int    `json:"exact"`
 	Truth  int    `json:"truth"`
+	// Estimated is set when Mimir counted the name from an HLL sketch.
+	Estimated bool `json:"estimated,omitempty"`
 }
 
 // pieces cuts [minT, maxT) at block range boundaries.
@@ -463,7 +489,8 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 	var summedRead readInfo
 	pieces := s.pieces(minT, maxT)
 	for _, p := range pieces {
-		counts, read, msg := s.nameCounts(p[0], p[1])
+		// One block range needs no dedup, so no sketch either.
+		counts, read, _, msg := s.nameCounts(r, p[0], p[1])
 		if msg != "" {
 			mimirErr(w, msg)
 			return
@@ -473,7 +500,7 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 		}
 		summedRead = summedRead.add(read)
 	}
-	res := s.mimir.estimate(minT, maxT, nil)
+	res := s.mimir.estimate(minT, maxT, sketchParams(r))
 	if res.Err != "" {
 		mimirErr(w, res.Err)
 		return
@@ -482,7 +509,7 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 	rows := make([]windowRow, 0, len(res.Counts))
 	exactNames := 0
 	for name, n := range res.Counts {
-		rows = append(rows, windowRow{Name: name, Summed: summed[name], Exact: n, Truth: truth[name]})
+		rows = append(rows, windowRow{Name: name, Summed: summed[name], Exact: n, Truth: truth[name], Estimated: res.Estimated[name]})
 		if n == truth[name] {
 			exactNames++
 		}
