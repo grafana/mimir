@@ -14,9 +14,11 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -33,6 +35,8 @@ const maxSeriesCountsBuckets = 1440
 
 // seriesCounts accumulates one SeriesCounts request over several blocks.
 type seriesCounts struct {
+	// matchers is empty when every series is wanted; then the block's all-postings list is read directly
+	// instead of fetching one postings list per metric name.
 	matchers   []*labels.Matcher
 	minT, maxT int64 // [minT, maxT)
 	step       int64
@@ -58,9 +62,6 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	matchers, err := storepb.MatchersToPromMatchers(reqMatchers...)
 	if err != nil {
 		return nil, err
-	}
-	if len(matchers) == 0 {
-		matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+")}
 	}
 	if req.MaxTime <= req.MinTime {
 		return nil, fmt.Errorf("max_time %d must be after min_time %d", req.MaxTime, req.MinTime)
@@ -266,7 +267,12 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	for i := range blocks {
 		o := &blocks[i]
 		o.b.ensureIndexHeaderLoaded(ctx, stats)
-		if o.postings, o.pending, err = o.indexr.ExpandedPostings(ctx, c.matchers, stats); err != nil {
+		if len(c.matchers) == 0 {
+			o.postings, err = allPostingsForBlock(ctx, o.indexr, stats)
+		} else {
+			o.postings, o.pending, err = o.indexr.ExpandedPostings(ctx, c.matchers, stats)
+		}
+		if err != nil {
 			return nil, status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
 		}
 		series += len(o.postings)
@@ -314,4 +320,37 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 		}
 	}
 	return it.Err()
+}
+
+// allPostingsForBlock reads a block's all-postings list, one range read, which is
+// what a request with no matchers needs. A matcher such as __name__=~".+"
+// would instead fetch every metric name's postings list.
+func allPostingsForBlock(ctx context.Context, indexr *bucketIndexReader, stats *safeQueryStats) ([]storage.SeriesRef, error) {
+	off, err := indexr.indexHeaderReader.PostingsOffset(ctx, allPostingsKey.Name, allPostingsKey.Value)
+	if errors.Is(err, indexheader.NotFoundRangeErr) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("all postings offset: %w", err)
+	}
+	ps, err := indexr.fetchPostings(ctx, []labelPostingOffset{{Label: allPostingsKey, off: off}}, stats)
+	if err != nil {
+		return nil, fmt.Errorf("fetch all postings: %w", err)
+	}
+	refs, err := index.ExpandPostings(ps[0])
+	if err != nil {
+		return nil, err
+	}
+	// As in ExpandedPostings: from index version 2 on, series entries are 16-byte aligned and the postings
+	// hold the entry offset divided by 16.
+	version, err := indexr.indexHeaderReader.IndexVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get index version: %w", err)
+	}
+	if version >= 2 {
+		for i, id := range refs {
+			refs[i] = id * 16
+		}
+	}
+	return refs, nil
 }
