@@ -88,9 +88,10 @@ func fakeMimir(t *testing.T, s *server) *httptest.Server {
 			groupBy = "__name__"
 		}
 		type group struct {
-			Value  string `json:"value"`
-			Count  int    `json:"count"`
-			Counts []int  `json:"counts,omitempty"`
+			Value     string `json:"value"`
+			Count     int    `json:"count"`
+			Counts    []int  `json:"counts,omitempty"`
+			Estimated bool   `json:"estimated,omitempty"`
 		}
 		var out struct {
 			Read   string  `json:"read"`
@@ -114,8 +115,13 @@ func fakeMimir(t *testing.T, s *server) *httptest.Server {
 			require.NoError(t, err)
 			stepMs = d.Milliseconds()
 		}
+		sketchAbove, _ := strconv.Atoi(q.Get("sketch_above"))
 		for v, n := range s.pop.TruthBy(matchers, groupBy, minT, maxT) {
 			g := group{Value: v, Count: n}
+			if out.Dedup && sketchAbove > 0 && n > sketchAbove {
+				// Like an HLL estimate: close to, not equal to, the truth.
+				g.Count, g.Estimated = n+1, true
+			}
 			for b := minT; stepMs > 0 && b < maxT; b += stepMs {
 				g.Counts = append(g.Counts, s.pop.TruthBy(matchers, groupBy, b, b+stepMs)[v])
 			}
@@ -224,6 +230,16 @@ func TestHandlers_AgainstTruth(t *testing.T) {
 		assert.Equal(t, 3, out.Pieces)
 		assert.Equal(t, out.TruthTotal, out.ExactTotal)
 		assert.Greater(t, out.SummedTotal, out.ExactTotal)
+	})
+
+	t.Run("window: a name above sketch_above is estimated", func(t *testing.T) {
+		var out struct {
+			Rows []windowRow `json:"rows"`
+		}
+		require.Equal(t, http.StatusOK, getJSON(t, s, fmt.Sprintf("/api/window?start=%d&end=%d&limit=1&sketch_above=1", at(0), at(3)), &out))
+		require.Len(t, out.Rows, 1)
+		assert.True(t, out.Rows[0].Estimated)
+		assert.Equal(t, out.Rows[0].Truth+1, out.Rows[0].Exact)
 	})
 
 	t.Run("buckets", func(t *testing.T) {
