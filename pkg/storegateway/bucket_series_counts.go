@@ -12,9 +12,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -32,7 +34,8 @@ type seriesCounts struct {
 	buckets    int
 	groupBy    string
 	hashes     bool
-	maxSeries  int
+	// maxIndexBytes caps postings plus series entry bytes read, 0 for none.
+	maxIndexBytes int64
 
 	counted int
 	counts  map[string][]int64
@@ -56,16 +59,16 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		return nil, fmt.Errorf("max_time %d must be after min_time %d", req.MaxTime, req.MinTime)
 	}
 	c := &seriesCounts{
-		matchers:  matchers,
-		minT:      req.MinTime,
-		maxT:      req.MaxTime,
-		step:      req.StepMs,
-		buckets:   1,
-		groupBy:   req.GroupBy,
-		hashes:    req.Hashes,
-		maxSeries: int(req.MaxSeries),
-		counts:    map[string][]int64{},
-		sets:      map[string]map[uint64]struct{}{},
+		matchers:      matchers,
+		minT:          req.MinTime,
+		maxT:          req.MaxTime,
+		step:          req.StepMs,
+		buckets:       1,
+		groupBy:       req.GroupBy,
+		hashes:        req.Hashes,
+		maxIndexBytes: req.MaxIndexBytes,
+		counts:        map[string][]int64{},
+		sets:          map[string]map[uint64]struct{}{},
 	}
 	if c.groupBy == "" {
 		c.groupBy = labels.MetricName
@@ -86,7 +89,40 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		}
 		c.seen = make([]bool, c.buckets)
 	}
+	if c.maxIndexBytes < 0 {
+		return nil, errors.New("max_index_bytes can't be negative")
+	}
 	return c, nil
+}
+
+// indexBytes is the index read so far, measured as the response's index_bytes.
+func indexBytes(stats *safeQueryStats) int64 {
+	st := stats.export()
+	return int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
+}
+
+// checkPlan rejects the request before any series entry is read when the
+// postings already read plus the matching series at the planner's p99 series
+// size would pass max_index_bytes.
+func (c *seriesCounts) checkPlan(read int64, series int) error {
+	if c.maxIndexBytes == 0 {
+		return nil
+	}
+	estimate := read + int64(series)*tsdb.EstimatedSeriesP99Size
+	if estimate <= c.maxIndexBytes {
+		return nil
+	}
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings read, then %d series at an estimated %d bytes each), more than max_index_bytes %d",
+		estimate, read, series, tsdb.EstimatedSeriesP99Size, c.maxIndexBytes)
+}
+
+// checkRead stops the request once it has read more than max_index_bytes,
+// which happens when series entries are larger than the plan assumed.
+func (c *seriesCounts) checkRead(read int64) error {
+	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
+		return nil
+	}
+	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes after %d series, more than max_index_bytes %d", read, c.counted, c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block. A block that
@@ -158,8 +194,9 @@ func (c *seriesCounts) groups() []*storegatewaypb.SeriesCountGroup {
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
-// Blocks are read one at a time in block-ID order, so a request that hits
-// max_series always stops at the same series.
+// It resolves every block's postings first, so max_index_bytes is checked
+// against the whole request before any series entry is read, then reads the
+// blocks one at a time in block-ID order.
 func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 	c, err := newSeriesCounts(req)
 	if err != nil {
@@ -175,14 +212,16 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	}
 
 	type openBlock struct {
-		b      *bucketBlock
-		indexr *bucketIndexReader
+		b        *bucketBlock
+		indexr   *bucketIndexReader
+		postings []storage.SeriesRef
+		pending  []*labels.Matcher
 	}
 	var blocks []openBlock
 	// Taking the index reader here keeps the block open until we're done.
 	s.blockSet.forEach(func(b *bucketBlock) {
 		if want[b.meta.ULID] {
-			blocks = append(blocks, openBlock{b, b.indexReader(s.postingsStrategy)})
+			blocks = append(blocks, openBlock{b: b, indexr: b.indexReader(s.postingsStrategy)})
 		}
 	})
 	defer func() {
@@ -198,15 +237,25 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		s.recordPostingsStats(st)
 		s.recordSeriesStats(st)
 	}()
+	series := 0
+	for i := range blocks {
+		o := &blocks[i]
+		o.b.ensureIndexHeaderLoaded(ctx, stats)
+		if o.postings, o.pending, err = o.indexr.ExpandedPostings(ctx, c.matchers, stats); err != nil {
+			return nil, status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
+		}
+		series += len(o.postings)
+	}
+	if err := c.checkPlan(indexBytes(stats), series); err != nil {
+		return nil, err
+	}
 	resp := &storegatewaypb.SeriesCountsResponse{}
 	for _, o := range blocks {
-		finished, err := s.addBlockSeriesCounts(ctx, o.b, o.indexr, c, stats)
-		if err != nil {
+		if err := s.addBlockSeriesCounts(ctx, o.b, o.indexr, o.postings, o.pending, c, stats); err != nil {
+			if _, ok := status.FromError(err); ok {
+				return nil, err
+			}
 			return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
-		}
-		if !finished {
-			resp.LowerBound = true
-			break
 		}
 		resp.BlockIds = append(resp.BlockIds, o.b.meta.ULID.String())
 	}
@@ -219,14 +268,9 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	return resp, nil
 }
 
-// addBlockSeriesCounts adds one block's matching series to c. It returns
-// false if max_series was reached before the block was finished.
-func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, c *seriesCounts, stats *safeQueryStats) (bool, error) {
-	b.ensureIndexHeaderLoaded(ctx, stats)
-	postings, pending, err := indexr.ExpandedPostings(ctx, c.matchers, stats)
-	if err != nil {
-		return false, fmt.Errorf("expanded postings: %w", err)
-	}
+// addBlockSeriesCounts adds one block's matching series to c, from postings
+// already resolved, and fails once max_index_bytes is passed.
+func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, c *seriesCounts, stats *safeQueryStats) error {
 	var it iterator[seriesChunkRefsSet] = newLoadingSeriesChunkRefsSetIterator(
 		ctx, newPostingsSetsIterator(postings, s.maxSeriesPerBatch), indexr, b.indexCache, stats, b.meta,
 		nil, nil, c.strategy(b.meta), c.minT, c.maxT-1, b.userID, b.logger,
@@ -236,11 +280,11 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 	}
 	for it.Next() {
 		for _, series := range it.At().series {
-			if c.maxSeries > 0 && c.counted >= c.maxSeries {
-				return false, nil
-			}
 			c.add(series)
 		}
+		if err := c.checkRead(indexBytes(stats)); err != nil {
+			return err
+		}
 	}
-	return true, it.Err()
+	return it.Err()
 }
