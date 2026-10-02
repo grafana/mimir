@@ -179,13 +179,12 @@ Metadata is keyed by metric family name (e.g. `http_request_duration_seconds`),
 but the search returns series names, which for classic histograms and summaries
 are the `_bucket`/`_count`/`_sum` sub-series. So for each name with a suffix that
 a metric type allows (`_total`, `_bucket`, `_sum`, `_count`, `_gsum`, `_gcount`,
-`_info`), the enricher also fetches the name without that suffix. The exception
-is a name such as `x_total_total` or `x_info_info`, where the name without the
-suffix still ends with that same suffix: Prometheus doesn't treat it as a series
-of the `x_total` or `x_info` family, so it isn't fetched. The join
-uses the exact name first, then the family name if the family's type allows
-the suffix. This follows Prometheus `metadataForMetric`/`typeAllowsSuffix` in
-`web/api/v1/search.go`.
+`_info`), the enricher also fetches the name without that final suffix. The family
+name may itself end with the same suffix: `requests_total_total` can use metadata
+from `requests_total`, and `build_info_info` from `build_info`. Only one suffix is
+stripped. The join uses the exact name first, then the family name if the family's
+type allows the suffix. This follows Prometheus
+`metadataForMetric`/`typeAllowsSuffix` in `web/api/v1/search.go`.
 
 The enricher does not fetch metadata for the extra result the handler reads
 past `limit` to detect `has_more`, because that result is not emitted.

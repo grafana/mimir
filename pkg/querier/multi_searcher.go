@@ -349,14 +349,7 @@ func metadataForMetric(md map[string]metadata.Metadata, name string) (metadata.M
 	return metadata.Metadata{}, false
 }
 
-// metricFamilyName splits a metric name into the family name and the suffix,
-// when the suffix is one that typeAllowsSuffix can accept.
-//
-// A family name that already ends with _total or _info is not returned for the
-// same suffix: Prometheus allows a counter family named x_total and an info
-// family named x_info, whose series have the same name as the family and
-// match exactly. So x_total_total is not a series of the x_total family, as in
-// isSeriesPartOfFamily in Prometheus scrape/scrape.go.
+// metricFamilyName splits off one final suffix that typeAllowsSuffix can accept.
 func metricFamilyName(name string) (family, suffix string, ok bool) {
 	i := strings.LastIndexByte(name, '_')
 	if i <= 0 {
@@ -364,12 +357,7 @@ func metricFamilyName(name string) (family, suffix string, ok bool) {
 	}
 	family, suffix = name[:i], name[i:]
 	switch suffix {
-	case "_total", "_info":
-		if strings.HasSuffix(family, suffix) {
-			return "", "", false
-		}
-		return family, suffix, true
-	case "_bucket", "_sum", "_count", "_gsum", "_gcount":
+	case "_total", "_info", "_bucket", "_sum", "_count", "_gsum", "_gcount":
 		return family, suffix, true
 	default:
 		return "", "", false
