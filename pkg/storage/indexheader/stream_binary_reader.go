@@ -136,7 +136,7 @@ func NewStreamBinaryReader(
 	if err != nil {
 		level.Warn(spanLog).Log(
 			"msg", "error while cleaning up index headers, disk space may not have been freed",
-			"err", "list index-headers on disk: %w",
+			"err", fmt.Errorf("list index-headers on disk: %w", err),
 		)
 	}
 
