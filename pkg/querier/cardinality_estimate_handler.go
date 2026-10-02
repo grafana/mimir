@@ -78,7 +78,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		req, limit, err := parseSeriesCountsRequest(r)
+		req, limit, err := parseCardinalityEstimateRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -134,7 +134,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable) http.Handler {
 
 // compareWithChunks reports a chunks-path failure, such as a query limit,
 // in Skipped rather than failing the request, since that is a result too.
-func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesCountsRequest, res SeriesCountsResult) *estimateCheck {
+func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req CardinalityEstimateRequest, res CardinalityEstimateResult) *estimateCheck {
 	if res.LowerBound {
 		// A partial answer can't be compared with a full one.
 		return &estimateCheck{Skipped: "the index read stopped at the budget"}
@@ -159,8 +159,8 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req SeriesC
 	return check
 }
 
-func parseSeriesCountsRequest(r *http.Request) (SeriesCountsRequest, int, error) {
-	var req SeriesCountsRequest
+func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateRequest, int, error) {
+	var req CardinalityEstimateRequest
 	var err error
 	if req.MinT, err = util.ParseTime(r.FormValue("start")); err != nil {
 		return req, 0, fmt.Errorf("start: %w", err)
