@@ -140,6 +140,7 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
+  - Per-tenant histogram chunk encoding selection (`-blocks-storage.tsdb.histogram-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
