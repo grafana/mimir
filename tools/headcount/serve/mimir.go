@@ -216,44 +216,12 @@ func (m *mimir) getRoute(route string, minT, maxT int64, params url.Values, out 
 	return latency, ""
 }
 
-// storeGatewayCounts is one call to the metric_name_counts route, which
-// reads index-headers only.
-type storeGatewayCounts struct {
-	Err           string
-	Latency       time.Duration
-	Blocks        int
-	StoreGateways int
-	Counts        map[string]int
-}
-
-// metricNameCounts asks Mimir for every metric name's count over one block
-// range [minT, maxT); the querier fans out to the store-gateways.
-func (m *mimir) metricNameCounts(minT, maxT int64) storeGatewayCounts {
-	var parsed struct {
-		Blocks        int `json:"blocks"`
-		StoreGateways int `json:"store_gateways"`
-		Counts        []struct {
-			Name  string `json:"name"`
-			Count int    `json:"count"`
-		} `json:"counts"`
-	}
-	res := storeGatewayCounts{}
-	if res.Latency, res.Err = m.getRoute("metric_name_counts", minT, maxT, nil, &parsed); res.Err != "" {
-		return res
-	}
-	res.Blocks, res.StoreGateways = parsed.Blocks, parsed.StoreGateways
-	res.Counts = make(map[string]int, len(parsed.Counts))
-	for _, c := range parsed.Counts {
-		res.Counts[c.Name] = c.Count
-	}
-	return res
-}
-
-// mimirSeriesCounts is one call to the series_counts route, which reads
-// series entries and chunk metas from the full index.
+// mimirSeriesCounts is one call to the cardinality/estimate route.
 type mimirSeriesCounts struct {
-	Err           string
-	Latency       time.Duration
+	Err     string
+	Latency time.Duration
+	// Read is how Mimir answered: index_header or full_index.
+	Read          string
 	Dedup         bool
 	LowerBound    bool
 	Blocks        int
@@ -265,18 +233,19 @@ type mimirSeriesCounts struct {
 	Buckets       map[string][]int // only with a step
 }
 
-// seriesCounts asks Mimir for series counts over [minT, maxT). params may
-// set match[], group_by, step and budget.
-func (m *mimir) seriesCounts(minT, maxT int64, params url.Values) mimirSeriesCounts {
+// estimate asks Mimir for series counts over [minT, maxT). params may set
+// match[], group_by, step and budget. Mimir picks the read.
+func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts {
 	var parsed struct {
-		Dedup                bool  `json:"dedup"`
-		LowerBound           bool  `json:"lower_bound"`
-		Blocks               int   `json:"blocks"`
-		StoreGateways        int   `json:"store_gateways"`
-		SeriesCounted        int   `json:"series_counted"`
-		IndexBytes           int64 `json:"index_bytes"`
-		PostingsFetchedBytes int64 `json:"postings_fetched_bytes"`
-		SeriesFetchedBytes   int64 `json:"series_fetched_bytes"`
+		Read                 string `json:"read"`
+		Dedup                bool   `json:"dedup"`
+		LowerBound           bool   `json:"lower_bound"`
+		Blocks               int    `json:"blocks"`
+		StoreGateways        int    `json:"store_gateways"`
+		SeriesCounted        int    `json:"series_counted"`
+		IndexBytes           int64  `json:"index_bytes"`
+		PostingsFetchedBytes int64  `json:"postings_fetched_bytes"`
+		SeriesFetchedBytes   int64  `json:"series_fetched_bytes"`
 		Counts               []struct {
 			Value  string `json:"value"`
 			Count  int    `json:"count"`
@@ -284,10 +253,10 @@ func (m *mimir) seriesCounts(minT, maxT int64, params url.Values) mimirSeriesCou
 		} `json:"counts"`
 	}
 	res := mimirSeriesCounts{}
-	if res.Latency, res.Err = m.getRoute("series_counts", minT, maxT, params, &parsed); res.Err != "" {
+	if res.Latency, res.Err = m.getRoute("estimate", minT, maxT, params, &parsed); res.Err != "" {
 		return res
 	}
-	res.Dedup, res.LowerBound = parsed.Dedup, parsed.LowerBound
+	res.Read, res.Dedup, res.LowerBound = parsed.Read, parsed.Dedup, parsed.LowerBound
 	res.Blocks, res.StoreGateways, res.SeriesCounted = parsed.Blocks, parsed.StoreGateways, parsed.SeriesCounted
 	res.IndexBytes, res.BucketBytes = parsed.IndexBytes, parsed.PostingsFetchedBytes+parsed.SeriesFetchedBytes
 	res.Counts = make(map[string]int, len(parsed.Counts))
