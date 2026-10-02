@@ -4,16 +4,14 @@ package querier
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -68,27 +66,19 @@ type CardinalityEstimateResult struct {
 // returns label-set hashes and the counts are the size of their union.
 // Per-bucket counts need the first case.
 func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	type found struct {
-		c         blocksStoreCompartment
-		blocks    bucketindex.Blocks
-		indexMeta *bucketindex.Metadata
+	parts, all, err := q.estimateParts(ctx, tenantID, req.MinT, req.MaxT)
+	if err != nil {
+		return CardinalityEstimateResult{}, err
 	}
-	var (
-		all   bucketindex.Blocks
-		parts []found
-	)
-	for _, c := range q.compartments {
-		blocks, indexMeta, err := c.finder.GetBlocks(ctx, tenantID, req.MinT, req.MaxT-1)
-		if err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-		all = append(all, blocks...)
-		parts = append(parts, found{c, blocks, indexMeta})
-	}
+	return q.seriesCounts(ctx, tenantID, req, parts, all)
+}
 
+// seriesCounts answers req from the blocks in parts (all is the same blocks
+// flattened).
+func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks) (CardinalityEstimateResult, error) {
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: !inOneRangeWithoutSharedSeries(all)}
 	if res.Dedup && req.Step > 0 {
-		return CardinalityEstimateResult{}, errors.New("per-bucket counts need a window inside one block range whose blocks share no series")
+		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts need a window inside one block range whose blocks share no series")
 	}
 	matchers, err := storepb.PromMatchersToMatchers(req.Matchers...)
 	if err != nil {
@@ -103,6 +93,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 		mtx      sync.Mutex
 		gateways = map[string]bool{}
 		hashes   = map[string]map[uint64]struct{}{}
+		held     int64 // hashes held across every group, bounded by the config
 		sketches = map[string]*hyperloglog.Sketch{}
 		counted  = map[ulid.ULID]bool{}
 	)
@@ -136,7 +127,13 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 					hashes[g.Value] = set
 				}
 				for _, h := range g.Hashes {
-					set[h] = struct{}{}
+					if _, dup := set[h]; !dup {
+						set[h] = struct{}{}
+						held++
+					}
+				}
+				if limit := q.estimateCfg.MaxDedupSeries; limit > 0 && held > limit {
+					return refusedEstimate("deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", limit)
 				}
 				continue
 			}
@@ -168,7 +165,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 
 	// Find every call first, so max_index_bytes can be split across them.
 	type call struct {
-		p      found
+		p      estimatePart
 		client BlocksStoreClient
 		ids    []ulid.ULID
 	}
@@ -208,11 +205,12 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 					MaxIndexBytes: perCall,
 					SketchAbove:   req.SketchAbove,
 				})
-				if status.Code(err) == codes.ResourceExhausted {
-					return fmt.Errorf("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: store-gateway %s: %s", req.MaxIndexBytes, perCall, len(calls), cl.client.RemoteAddress(), status.Convert(err).Message())
-				}
 				if err != nil {
-					return fmt.Errorf("store-gateway %s: %w", cl.client.RemoteAddress(), err)
+					err = classifyStoreGatewayError(cl.client.RemoteAddress(), err)
+					if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.MaxIndexBytes > 0 {
+						return refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, len(calls), err)
+					}
+					return err
 				}
 				return merge(cl.client.RemoteAddress(), resp)
 			})
@@ -284,7 +282,7 @@ const (
 // no series, asked for every metric name with no matchers and no step, is
 // counted from the index-headers. Anything else reads the full index.
 func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	blocks, err := q.blocksFor(ctx, tenantID, req.MinT, req.MaxT)
+	parts, blocks, err := q.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -296,13 +294,13 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 		}
 		snapped = lo != req.MinT || hi != req.MaxT
 		req.MinT, req.MaxT = lo, hi
-		if blocks, err = q.blocksFor(ctx, tenantID, lo, hi); err != nil {
+		if parts, blocks, err = q.estimateBlocks(ctx, tenantID, lo, hi); err != nil {
 			return CardinalityEstimateResult{}, err
 		}
 	}
 	byName := req.GroupBy == "" || req.GroupBy == labels.MetricName
 	if byName && len(req.Matchers) == 0 && req.Step == 0 && len(blocks) > 0 && checkMetricNameCountsBlocks(blocks, req.MinT, req.MaxT) == nil {
-		mc, err := q.MetricNameCounts(ctx, tenantID, req.MinT, req.MaxT)
+		mc, err := q.metricNameCounts(ctx, tenantID, parts)
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
@@ -312,22 +310,33 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 		}
 		return res, nil
 	}
-	res, err := q.SeriesCounts(ctx, tenantID, *req)
+	res, err := q.seriesCounts(ctx, tenantID, *req, parts, blocks)
 	res.Read, res.Snapped = readFullIndex, snapped
 	return res, err
 }
 
-// blocksFor returns every compartment's blocks for [minT, maxT).
-func (q *BlocksStoreQueryable) blocksFor(ctx context.Context, tenantID string, minT, maxT int64) (bucketindex.Blocks, error) {
-	var all bucketindex.Blocks
-	for _, c := range q.compartments {
-		blocks, _, err := c.finder.GetBlocks(ctx, tenantID, minT, maxT-1)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, blocks...)
+// estimateBlocks finds the blocks for [minT, maxT). When they do not form
+// one block range of series-disjoint blocks, but do once the blocks marked
+// for deletion are left out, the marked blocks are dropped: right after a
+// compaction the finder lists both the sources and their compacted output
+// for -blocks-storage.bucket-store.ignore-deletion-marks-delay, and the
+// output holds every series of the sources.
+func (q *BlocksStoreQueryable) estimateBlocks(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
+	parts, blocks, err := q.estimateParts(ctx, tenantID, minT, maxT)
+	if err != nil {
+		return nil, nil, err
 	}
-	return all, nil
+	if inOneRangeWithoutSharedSeries(blocks) {
+		return parts, blocks, nil
+	}
+	kept, keptBlocks, dropped, err := q.withoutMarkedForDeletion(ctx, tenantID, parts)
+	if err != nil {
+		return nil, nil, err
+	}
+	if dropped > 0 && len(keptBlocks) > 0 && inOneRangeWithoutSharedSeries(keptBlocks) {
+		return kept, keptBlocks, nil
+	}
+	return parts, blocks, nil
 }
 
 func blockRangeHolding(blocks bucketindex.Blocks, minT, maxT int64) (int64, int64, error) {
@@ -337,11 +346,11 @@ func blockRangeHolding(blocks bucketindex.Blocks, minT, maxT int64) (int64, int6
 	lo, hi := blocks[0].MinTime, blocks[0].MaxTime
 	for _, b := range blocks {
 		if b.MinTime != lo || b.MaxTime != hi {
-			return 0, 0, fmt.Errorf("the window [%d, %d) touches more than one block range, so it can't be snapped to one", minT, maxT)
+			return 0, 0, badEstimateRequest("the window [%d, %d) touches more than one block range, so it can't be snapped to one", minT, maxT)
 		}
 	}
 	if lo > minT || hi < maxT {
-		return 0, 0, fmt.Errorf("the blocks cover [%d, %d), which doesn't hold the whole window [%d, %d)", lo, hi, minT, maxT)
+		return 0, 0, badEstimateRequest("the blocks cover [%d, %d), which doesn't hold the whole window [%d, %d)", lo, hi, minT, maxT)
 	}
 	return lo, hi, nil
 }
