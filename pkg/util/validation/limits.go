@@ -223,7 +223,7 @@ type Limits struct {
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 
 	// Float chunk encoding.
-	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
+	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
