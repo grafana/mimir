@@ -211,7 +211,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, 0, rewriteOptions{}, false, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", `/api/v1/query?query=up`, nil)
 			rec := httptest.NewRecorder()
@@ -280,7 +280,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, false, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -395,7 +395,7 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, tt.writeFactor, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, tt.writeFactor, rewriteOptions{}, false, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -490,7 +490,7 @@ func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 			route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}}
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, tt.ampAll, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, false, tt.ampAll, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -559,7 +559,7 @@ func TestProxyEndpoint_StrongConsistency(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 			// factor 3 -> 2 copies; strong-consistency-instant-fraction 1.0 -> every copy sampled.
-			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 1.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, 0, rewriteOptions{}, false, amplifyAllReplicasConfig{}, 1.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", tt.route.Path+"?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -594,6 +594,125 @@ func TestProxyEndpoint_StrongConsistency(t *testing.T) {
 				require.Equal(t, 0, copiesWithHeader)
 				require.Equal(t, 0.0, metricVal)
 			}
+		})
+	}
+}
+
+// TestProxyEndpoint_ScopeOriginalToBase verifies that the synchronously forwarded original is scoped to
+// the base series when enabled, so selectors that would otherwise match every write replica don't.
+func TestProxyEndpoint_ScopeOriginalToBase(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	tests := []struct {
+		name          string
+		scope         bool
+		noLabel       bool
+		factor        float64
+		method        string
+		query         string
+		expectedQuery map[string]int
+		expectedErrs  float64
+	}{
+		{
+			name:          "disabled sends the original verbatim",
+			factor:        1.0,
+			method:        "GET",
+			query:         `rate(cortex_x[2m])`,
+			expectedQuery: map[string]int{`rate(cortex_x[2m])`: 1},
+		},
+		{
+			name:          "no amp replica label sends the original verbatim",
+			scope:         true,
+			noLabel:       true,
+			factor:        1.0,
+			method:        "GET",
+			query:         `rate(cortex_x[2m])`,
+			expectedQuery: map[string]int{`rate(cortex_x[2m])`: 1},
+		},
+		{
+			name:          "bare metric name is scoped to the base series",
+			scope:         true,
+			factor:        1.0,
+			method:        "GET",
+			query:         `rate(cortex_x[2m])`,
+			expectedQuery: map[string]int{`rate(cortex_x{__amp__=""}[2m])`: 1},
+		},
+		{
+			name:          "every selector in a POST form query is scoped",
+			scope:         true,
+			factor:        1.0,
+			method:        "POST",
+			query:         `sum by (pod) (a{image!=""}) / b`,
+			expectedQuery: map[string]int{`sum by (pod) (a{__amp__="",image!=""}) / b{__amp__=""}`: 1},
+		},
+		{
+			name:   "copies keep their own replica scoping",
+			scope:  true,
+			factor: 3.0,
+			method: "GET",
+			query:  `up{job="api"}`,
+			expectedQuery: map[string]int{
+				`up{__amp__="",job="api"}`:       1,
+				`up{__amp__="1",job="api_amp1"}`: 1,
+				`up{__amp__="2",job="api_amp2"}`: 1,
+			},
+		},
+		{
+			name:          "unparseable query is sent verbatim and counted",
+			scope:         true,
+			factor:        1.0,
+			method:        "GET",
+			query:         `up{`,
+			expectedQuery: map[string]int{`up{`: 1},
+			expectedErrs:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
+
+			var mu sync.Mutex
+			queries := map[string]int{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, r.ParseForm())
+				mu.Lock()
+				queries[r.Form.Get("query")]++
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
+
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
+			route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET", "POST"}}
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+			opts := rewriteOptions{ampReplicaLabel: "__amp__", excludeAmplifiedNegative: true}
+			if tt.noLabel {
+				opts.ampReplicaLabel = ""
+			}
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, opts, tt.scope, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
+
+			var req *http.Request
+			if tt.method == "POST" {
+				req = httptest.NewRequest("POST", "/api/v1/query", strings.NewReader("query="+url.QueryEscape(tt.query)))
+				req.Header.Set("Content-Type", formContentType)
+			} else {
+				req = httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(tt.query), nil)
+			}
+			rec := httptest.NewRecorder()
+
+			endpoint.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			asyncDispatcher.Stop()
+			asyncDispatcher.Await()
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, tt.expectedQuery, queries)
+			require.Equal(t, tt.expectedErrs, testutil.ToFloat64(metrics.rewriteErrorsTotal.WithLabelValues("api_v1_query")))
 		})
 	}
 }

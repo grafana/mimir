@@ -55,6 +55,7 @@ type ProxyEndpoint struct {
 	amplificationFactor       float64
 	writeAmplificationFactor  int
 	rewriteOpts               rewriteOptions
+	scopeOriginalToBase       bool
 	ampAll                    amplifyAllReplicasConfig
 	strongConsistencyFraction float64
 	asyncDispatcher           *AsyncBackendDispatcher
@@ -62,7 +63,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, writeAmplificationFactor int, rewriteOpts rewriteOptions, ampAll amplifyAllReplicasConfig, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, writeAmplificationFactor int, rewriteOpts rewriteOptions, scopeOriginalToBase bool, ampAll amplifyAllReplicasConfig, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
 		backend:                   backend,
 		route:                     route,
@@ -71,6 +72,7 @@ func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, 
 		amplificationFactor:       amplificationFactor,
 		writeAmplificationFactor:  writeAmplificationFactor,
 		rewriteOpts:               rewriteOpts,
+		scopeOriginalToBase:       scopeOriginalToBase,
 		ampAll:                    ampAll,
 		strongConsistencyFraction: strongConsistencyFraction,
 		asyncDispatcher:           asyncDispatcher,
@@ -112,7 +114,8 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.dispatchAmplifiedRequests(ctx, r, body, logger)
 
 	// Send the ORIGINAL request to the backend synchronously and return its response.
-	res := p.executeOriginalRequest(ctx, r, body)
+	origReq, origBody := p.prepareOriginalRequest(ctx, r, body, logger)
+	res := p.executeOriginalRequest(ctx, origReq, origBody)
 
 	// Return the backend's response to the client
 	if res.err != nil {
@@ -198,6 +201,54 @@ type amplifiedRequestSource struct {
 	hasFormParams bool
 }
 
+// newAmplifiedRequestSource parses the amplifiable params from the URL query (GET) and from the form
+// body (POST form). Each location is rewritten independently and only where the params appear.
+func newAmplifiedRequestSource(orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) amplifiedRequestSource {
+	urlValues := orig.URL.Query()
+	src := amplifiedRequestSource{
+		orig:         orig,
+		urlValues:    urlValues,
+		hasURLParams: urlValues.Has(queryParam) || urlValues.Has(matchParam),
+	}
+
+	if isFormContentType(orig.Header.Get("Content-Type")) {
+		if parsed, err := url.ParseQuery(string(origBody)); err == nil {
+			src.formValues = parsed
+			src.hasFormParams = parsed.Has(queryParam) || parsed.Has(matchParam)
+		} else {
+			level.Warn(logger).Log("msg", "Unable to parse POST form body for rewriting; sending request with unmodified body", "err", err)
+		}
+	}
+	return src
+}
+
+// prepareOriginalRequest returns the request and body to forward synchronously. With
+// scopeOriginalToBase set, the original is rewritten as the base variant (replica 0), which appends
+// <amp-replica-label>="" to every selector so it reads only the base series, exactly as wide as the
+// mirrored source. Without an amp replica label there is nothing to scope to, so the original (also
+// returned if the rewrite fails) is sent unchanged.
+func (p *ProxyEndpoint) prepareOriginalRequest(ctx context.Context, orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) (*http.Request, []byte) {
+	if !p.scopeOriginalToBase || p.rewriteOpts.ampReplicaLabel == "" {
+		return orig, origBody
+	}
+
+	src := newAmplifiedRequestSource(orig, origBody, logger)
+	if !src.hasURLParams && !src.hasFormParams {
+		return orig, origBody
+	}
+
+	a, err := p.rewriteRequest(ctx, src, 0, p.rewriteOpts)
+	if err != nil {
+		p.metrics.rewriteErrorsTotal.WithLabelValues(p.route.RouteName).Inc()
+		level.Warn(logger).Log("msg", "Failed to scope original query to base series; sending it unmodified", "route", p.route.RouteName, "err", err)
+		return orig, origBody
+	}
+	if !src.hasFormParams {
+		a.body = origBody
+	}
+	return a.req, a.body
+}
+
 // prepareAmplifiedRequests builds the rewritten copies of the original read request. It builds N-1
 // per-replica copies (amplified replicas _amp1.._amp{N-1}, where N is the integer part of the
 // amplification factor), each with its query and match[] parameters suffixed _amp{k}. When the
@@ -214,29 +265,7 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 		return nil
 	}
 
-	// Parse params from the URL query (GET) and from the form body (POST form). We rewrite each
-	// location independently and only where the amplifiable params actually appear.
-	urlValues := orig.URL.Query()
-	hasURLParams := urlValues.Has(queryParam) || urlValues.Has(matchParam)
-
-	var formValues url.Values
-	hasFormParams := false
-	if isFormContentType(orig.Header.Get("Content-Type")) {
-		if parsed, err := url.ParseQuery(string(origBody)); err == nil {
-			formValues = parsed
-			hasFormParams = formValues.Has(queryParam) || formValues.Has(matchParam)
-		} else {
-			level.Warn(logger).Log("msg", "Unable to parse POST form body for amplification; sending copies with unmodified body", "err", err)
-		}
-	}
-
-	src := amplifiedRequestSource{
-		orig:          orig,
-		urlValues:     urlValues,
-		hasURLParams:  hasURLParams,
-		formValues:    formValues,
-		hasFormParams: hasFormParams,
-	}
+	src := newAmplifiedRequestSource(orig, origBody, logger)
 
 	result := make([]amplifiedRequest, 0, n-1)
 	for k := 1; k <= n-1; k++ {
@@ -282,33 +311,11 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 // buildCopy clones the original request and rewrites its query/match[] params for the given replica
 // using opts. It returns false (and counts a rewrite error) if any param fails to rewrite.
 func (p *ProxyEndpoint) buildCopy(ctx context.Context, src amplifiedRequestSource, replica int, opts rewriteOptions, logger *spanlogger.SpanLogger) (amplifiedRequest, bool) {
-	clone := src.orig.Clone(ctx)
-	// RequestURI is only valid on server-received requests; must be cleared before reuse.
-	clone.RequestURI = ""
-
-	// Rewrite URL query params in place (if present).
-	if src.hasURLParams {
-		rewritten, err := rewriteParams(src.urlValues, replica, opts)
-		if err != nil {
-			return p.rewriteFailed(replica, logger)
-		}
-		clone.URL.RawQuery = rewritten.Encode()
+	a, err := p.rewriteRequest(ctx, src, replica, opts)
+	if err != nil {
+		return p.rewriteFailed(replica, logger)
 	}
-
-	// Rewrite POST form body params in place (if present).
-	var cloneBody []byte
-	if src.hasFormParams {
-		rewritten, err := rewriteParams(src.formValues, replica, opts)
-		if err != nil {
-			return p.rewriteFailed(replica, logger)
-		}
-		encoded := rewritten.Encode()
-		cloneBody = []byte(encoded)
-		clone.Body = io.NopCloser(bytes.NewReader(cloneBody))
-		clone.ContentLength = int64(len(cloneBody))
-		clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
-		clone.Header.Set("Content-Type", formContentType)
-	}
+	clone := a.req
 
 	// Independently per copy, request strong read consistency on a sampled fraction of instant-query
 	// copies. This mirrors the ruler (which runs instant queries) and only affects copies, never the
@@ -318,7 +325,40 @@ func (p *ProxyEndpoint) buildCopy(ctx context.Context, src amplifiedRequestSourc
 		p.metrics.strongConsistencyCopiesTotal.WithLabelValues(p.route.RouteName).Inc()
 	}
 
-	return amplifiedRequest{req: clone, body: cloneBody}, true
+	return a, true
+}
+
+// rewriteRequest clones the original request and rewrites its query/match[] params (URL and POST
+// form body) for the given replica using opts. The returned body is nil unless the form was rewritten.
+func (p *ProxyEndpoint) rewriteRequest(ctx context.Context, src amplifiedRequestSource, replica int, opts rewriteOptions) (amplifiedRequest, error) {
+	clone := src.orig.Clone(ctx)
+	// RequestURI is only valid on server-received requests; must be cleared before reuse.
+	clone.RequestURI = ""
+
+	// Rewrite URL query params in place (if present).
+	if src.hasURLParams {
+		rewritten, err := rewriteParams(src.urlValues, replica, opts)
+		if err != nil {
+			return amplifiedRequest{}, err
+		}
+		clone.URL.RawQuery = rewritten.Encode()
+	}
+
+	// Rewrite POST form body params in place (if present).
+	var cloneBody []byte
+	if src.hasFormParams {
+		rewritten, err := rewriteParams(src.formValues, replica, opts)
+		if err != nil {
+			return amplifiedRequest{}, err
+		}
+		cloneBody = []byte(rewritten.Encode())
+		clone.Body = io.NopCloser(bytes.NewReader(cloneBody))
+		clone.ContentLength = int64(len(cloneBody))
+		clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
+		clone.Header.Set("Content-Type", formContentType)
+	}
+
+	return amplifiedRequest{req: clone, body: cloneBody}, nil
 }
 
 func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger) (amplifiedRequest, bool) {
@@ -373,8 +413,9 @@ func isFormContentType(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), formContentType)
 }
 
-// executeOriginalRequest sends the original (unmodified) request to the backend synchronously
-// and returns its response.
+// executeOriginalRequest sends the original request (scoped to the base series when
+// scopeOriginalToBase is set, otherwise unmodified) to the backend synchronously and returns its
+// response.
 func (p *ProxyEndpoint) executeOriginalRequest(ctx context.Context, req *http.Request, body []byte) *backendResponse {
 	b := p.backend
 
@@ -386,7 +427,7 @@ func (p *ProxyEndpoint) executeOriginalRequest(ctx context.Context, req *http.Re
 	logger.SetSpanAndLogTag("backend", b.Name())
 	logger.SetSpanAndLogTag("method", req.Method)
 
-	// Send the original query untouched (no rewrite); we synchronously wait for its response.
+	// Send the original query; we synchronously wait for its response.
 	elapsed, status, respBody, headers, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(body)))
 
 	// Set a default Content-Type if the backend didn't provide one

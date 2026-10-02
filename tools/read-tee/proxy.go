@@ -38,6 +38,7 @@ type ProxyConfig struct {
 	AmplificationFactor                 float64
 	WriteAmplificationFactor            int
 	AmpReplicaLabel                     string
+	ScopeOriginalToBase                 bool
 	NegativeMatchersExcludeAllAmpValues bool
 	AmplifyAllReplicasFraction          float64
 	AmplifyAllReplicasFactor            int
@@ -106,6 +107,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 		"When set (e.g. __amp__), every amplified copy additionally gets an equality matcher <name>=<replica number> appended to its selectors, and base-variant copies get <name>=\"\" (label absent). "+
 			"Requires write-tee to stamp the same label on its replicas (-backend.amp-replica-label there). "+
 			"This scopes every copy to exactly one replica's series regardless of query shape - including queries with no label matchers, which otherwise match the base plus every replica at once. Empty disables it.",
+	)
+	f.BoolVar(&cfg.ScopeOriginalToBase, "backend.scope-original-to-base", true,
+		"Rewrite the original (synchronously forwarded) read so its selectors match only the base series, by appending <amp-replica-label>=\"\" like a base-variant copy. "+
+			"When disabled the original is sent verbatim, so any selector that does not pin a label value with = (a bare metric name, !=, !~, or a loose =~) also matches every write-tee replica, and its width grows with the write amplification factor. "+
+			"Only applies when -backend.amp-replica-label is set. If the original fails to rewrite it is sent verbatim and counted in rewrite errors.",
 	)
 	f.BoolVar(&cfg.NegativeMatchersExcludeAllAmpValues, "backend.negative-matchers-exclude-all-amp-values", true,
 		"When rewriting a query copy, make negative matchers (!=, !~) exclude the value in all its forms - the base value and every _amp{N} variant (value plus the optional _amp{N} suffix) - instead of only the single _amp{replica} form. A != becomes a !~ with its value regex-quoted, since a single != can only exclude one exact string. "+
@@ -276,7 +282,7 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, p.cfg.ScopeOriginalToBase, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -287,7 +293,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, p.cfg.ScopeOriginalToBase, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.
