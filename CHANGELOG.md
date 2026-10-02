@@ -36,11 +36,15 @@
 * [ENHANCEMENT] Compactor scheduler: Add per-lane queue metrics. #16489
 * [ENHANCEMENT] Query-frontend: Allocate a unique ID for incoming queries which is passed through to all sub-requests. This `root_query_id` will be included in related query-frontend, query-scheduler and querier logs, and in the `Server-Timing` response header when the caller asks for query stats. The ID is a random UUID, so it is globally unique. #16593
 * [ENHANCEMENT] Ruler: Add the experimental `-ruler.ring-change-debounce` flag to delay a ring-change-triggered rule sync until the ring has stopped changing for the configured duration. Disabled (`0`) by default, which preserves syncing immediately on every detected ring change. Must be less than the new `-ruler.ring-change-max-debounce` flag, which caps how long continuous ring churn can keep postponing the sync and defaults to 15s. #16662
+* [ENHANCEMENT] Activity tracker: Include `root_query_id` for queries in activity tracker log lines. #16743
+* [ENHANCEMENT] MQE: Move `originalExpression` to end of `evaluation stats` log line to improve readability. #16743
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
 * [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572
 * [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
+* [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
+* [BUGFIX] Continuous-test: Apply `-tests.read-timeout` to metadata requests. Previously a metadata request could block indefinitely if the server never responded. #16728
 * [BUGFIX] Query-frontend: Wait for the querier ring to be populated during startup, up to 30 seconds, before reporting the query-frontend as ready. Previously a query-frontend could become ready before it had seen any querier in the ring and fail every query it received until the ring was populated. Only applies when remote execution is enabled, and can be disabled with the experimental `-query-frontend.wait-for-querier-ring-on-startup=false`. #16333
 * [BUGFIX] Query-frontend: Fail queries with a clear error, rather than planning them against an invalid maximum supported query plan version, when the querier ring contains only unhealthy queriers. #16333
 * [BUGFIX] Query-frontend: Fix `cortex_query_frontend_queries_in_progress` drifting permanently below zero. The response body returned to the middleware chain is closed more than once, and every close decremented the gauge against a single increment. #16429
@@ -73,6 +77,7 @@
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Ruler: Return HTTP 499 from the ruler API when the client cancels the request. Previously, client cancellations were reported as 500 by the Prometheus rules and alerts endpoints and the rule group write and delete endpoints, and as 400 by the rule group read endpoints. #16726
+* [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
 
 ### Mixin
 
@@ -112,6 +117,7 @@
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
 * [ENHANCEMENT] Clarify that `/ingester/prepare-partition-downscale` is only available in the ingest storage architecture and `/ingester/prepare-instance-ring-downscale` only in the classic architecture. #16469
 * [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
+* [BUGFIX] Remove reference to Alertmanager UI. #16719
 
 ### Tools
 

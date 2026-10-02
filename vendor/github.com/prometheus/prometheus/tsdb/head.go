@@ -1721,7 +1721,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), true); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -1841,6 +1841,8 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
+// Its readers, and queriers over it, are not safe for concurrent use from
+// multiple goroutines.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
