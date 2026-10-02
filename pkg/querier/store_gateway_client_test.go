@@ -112,8 +112,8 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 	return nil, nil
 }
 
-func (m *mockStoreGatewayServer) MetricNameCounts(context.Context, *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
+func (m *mockStoreGatewayServer) MetricNameCounts(*storegatewaypb.MetricNameCountsRequest, storegatewaypb.StoreGateway_MetricNameCountsServer) error {
+	return status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 }
 
 func (m *mockStoreGatewayServer) SeriesCounts(context.Context, *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
