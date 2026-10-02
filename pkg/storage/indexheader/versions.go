@@ -13,6 +13,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+// match the on-disk index-header filename shape, for a versioned name index-header-vN, or for format v1, which lacks the -vN suffix.
+var indexHeaderFilenamePattern = regexp.MustCompile(`^` + regexp.QuoteMeta(block.IndexHeaderFilename) + `(?:-v([0-9]+))?$`)
+
 func indexHeaderFilename(version int) string {
 	if version == BinaryFormatV1 {
 		return block.IndexHeaderFilename
@@ -49,8 +52,6 @@ func IndexHeadersOnDisk(blockDir string) ([]OnDiskIndexHeader, error) {
 			continue
 		}
 
-		// match the on-disk index-header filename shape, for a versioned name index-header-vN, or for format v1, which lacks the -vN suffix.
-		indexHeaderFilenamePattern := regexp.MustCompile(`^` + regexp.QuoteMeta(block.IndexHeaderFilename) + `(?:-v([0-9]+))?$`)
 		match := indexHeaderFilenamePattern.FindStringSubmatch(entry.Name())
 		if match == nil {
 			continue
