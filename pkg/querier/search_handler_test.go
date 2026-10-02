@@ -1308,17 +1308,30 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 				missing:  []string{"process_cpu_seconds"},
 			},
 			{
-				// x_total_total is not a series of the x_total family.
-				name:     "Prometheus counter with doubled suffix",
-				stored:   map[string][]metadata.Metadata{"process_cpu_seconds_total": {counter}},
-				matching: map[string]metadata.Metadata{"process_cpu_seconds_total": counter},
-				missing:  []string{"process_cpu_seconds_total_total"},
+				name:     "counter family ending in _total",
+				stored:   map[string][]metadata.Metadata{"requests_total": {counter}},
+				matching: map[string]metadata.Metadata{"requests_total_total": counter},
 			},
 			{
-				name:     "info with doubled suffix",
+				name:     "info family ending in _info",
 				stored:   map[string][]metadata.Metadata{"build_info": {info}},
-				matching: map[string]metadata.Metadata{"build_info": info},
-				missing:  []string{"build_info_info"},
+				matching: map[string]metadata.Metadata{"build_info_info": info},
+			},
+			{
+				name: "exact metadata for doubled suffix takes precedence",
+				stored: map[string][]metadata.Metadata{
+					"requests_total_total": {{Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+					"requests_total":       {counter},
+				},
+				matching: map[string]metadata.Metadata{"requests_total_total": {Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+			},
+			{
+				name: "incompatible types for doubled suffixes",
+				stored: map[string][]metadata.Metadata{
+					"requests_total": {gauge},
+					"build_info":     {gauge},
+				},
+				missing: []string{"requests_total_total", "build_info_info"},
 			},
 			{
 				// The ingester returns one record per family, so the first one wins.
