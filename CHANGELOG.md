@@ -77,7 +77,7 @@
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
-* [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search `/api/v1/search/metric_names?include_metadata=true`. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #TODO
+* [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search `/api/v1/search/metric_names?include_metadata=true`. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #16759
 
 ### Mixin
 
