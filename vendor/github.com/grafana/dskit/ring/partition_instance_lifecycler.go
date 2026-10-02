@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,9 +33,16 @@ type PartitionInstanceLifecyclerConfig struct {
 	// PartitionID is the ID of the partition managed by the lifecycler.
 	PartitionID int32
 
+	// CreatePartitionsWithDerivedTokens creates new partitions using PartitionTokensSmt512, without stored tokens.
+	// Creating a partition with an ID at or above MaxDerivedTokenPartitions fails.
+	// The option only applies when this lifecycler creates the partition; an existing partition is not changed.
+	CreatePartitionsWithDerivedTokens bool
+
+	// MaxDerivedTokenPartitions is the number of partition IDs, from 0, that can be created with derived tokens.
+	MaxDerivedTokenPartitions int32
+
 	// InstanceID is the ID of the instance managed by the lifecycler.
 	InstanceID string
-
 	// MultiPartitionOwnership is the flag that indicates whether the lifecycler should allow owning multiple partitions.
 	// This changes the InstanceID used to register the owner in the ring.
 	MultiPartitionOwnership bool
@@ -282,7 +290,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 
 		partitionDesc, exists := ring.Partitions[l.cfg.PartitionID]
 		if exists {
-			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()))
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID, "state", partitionDesc.GetState(), "state_timestamp", partitionDesc.GetState().String(), "tokens", len(partitionDesc.GetTokens()), "token_scheme", partitionDesc.GetTokenScheme())
 		} else {
 			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
 		}
@@ -290,7 +298,14 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 		if !exists {
 			// The partition doesn't exist, so we create a new one. A new partition should always be created
 			// in PENDING state.
-			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			if l.cfg.CreatePartitionsWithDerivedTokens {
+				if l.cfg.PartitionID >= l.cfg.MaxDerivedTokenPartitions {
+					return false, fmt.Errorf("cannot create partition %d with derived tokens: the maximum is %d partitions", l.cfg.PartitionID, l.cfg.MaxDerivedTokenPartitions)
+				}
+				ring.AddPartitionWithDerivedTokens(l.cfg.PartitionID, PartitionPending, now)
+			} else {
+				ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
+			}
 			changed = true
 		}
 
