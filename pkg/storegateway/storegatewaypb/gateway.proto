@@ -77,8 +77,11 @@ message SeriesCountsRequest {
   // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them
   // across blocks that share series. Not allowed with step_ms.
   bool hashes = 7;
-  // Stop after this many series and mark the response as a lower bound. 0 means no limit.
-  int64 max_series = 8;
+  reserved 8; // was max_series
+  // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes in the
+  // response. Checked before any series entry is read, from the matching postings times an estimated series size,
+  // and again while reading. 0 means no limit.
+  int64 max_index_bytes = 9;
 }
 
 message SeriesCountGroup {
@@ -92,8 +95,7 @@ message SeriesCountsResponse {
   repeated SeriesCountGroup groups = 1;
   // Blocks that were fully counted.
   repeated string block_ids = 2;
-  // Set when max_series was reached. Counts are then at or below the real ones.
-  bool lower_bound = 3;
+  reserved 3; // was lower_bound
   int64 series_counted = 4;
   // Bytes of postings and series entries read from the bucket, not from a cache.
   int64 postings_fetched_bytes = 5;
