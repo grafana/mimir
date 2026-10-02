@@ -130,44 +130,28 @@ func (a readInfo) add(b readInfo) readInfo {
 	return a
 }
 
-// isBlockRange reports whether [minT, maxT) is exactly one block range.
-func (s *server) isBlockRange(minT, maxT int64) bool {
-	for _, r := range s.ranges {
-		if r.MinT == minT && r.MaxT == maxT {
-			return true
-		}
-	}
-	return false
-}
-
-// seriesCountsInfo describes one series_counts answer.
+// seriesCountsInfo describes one estimate answer from the read Mimir
+// reports.
 func seriesCountsInfo(res mimirSeriesCounts, step bool) readInfo {
-	method := "chunk metas inside one block range"
+	method := "full index: chunk metas inside one block range"
 	switch {
+	case res.Read == "index_header":
+		method = "index-headers only, one block range"
 	case res.Dedup:
 		method = "full index, dedup across block ranges"
 	case step:
-		method = "chunk metas, per bucket"
+		method = "full index: chunk metas, per bucket"
 	}
 	return readInfo{
-		Method: method, Route: "series_counts", ElapsedMS: ms(res.Latency), Calls: 1,
+		Method: method, Route: res.Read, ElapsedMS: ms(res.Latency), Calls: 1,
 		Blocks: res.Blocks, StoreGateways: res.StoreGateways,
 		SeriesRead: res.SeriesCounted, IndexBytes: res.IndexBytes, BucketBytes: res.BucketBytes,
 	}
 }
 
-// nameCounts asks Mimir for every metric name's count over [minT, maxT). A
-// window of exactly one block range is read from the index-headers; any
-// other window from the full index.
+// nameCounts asks Mimir for every metric name's count over [minT, maxT).
 func (s *server) nameCounts(minT, maxT int64) (map[string]int, readInfo, string) {
-	if s.isBlockRange(minT, maxT) {
-		res := s.mimir.metricNameCounts(minT, maxT)
-		return res.Counts, readInfo{
-			Method: "index-headers only, one block range", Route: "metric_name_counts", ElapsedMS: ms(res.Latency), Calls: 1,
-			Blocks: res.Blocks, StoreGateways: res.StoreGateways,
-		}, res.Err
-	}
-	res := s.mimir.seriesCounts(minT, maxT, nil)
+	res := s.mimir.estimate(minT, maxT, nil)
 	return res.Counts, seriesCountsInfo(res, false), res.Err
 }
 
@@ -366,7 +350,7 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 	if budget > 0 {
 		params.Set("budget", strconv.Itoa(budget))
 	}
-	res := s.mimir.seriesCounts(minT, maxT, params)
+	res := s.mimir.estimate(minT, maxT, params)
 	if res.Err != "" {
 		mimirErr(w, res.Err)
 		return
@@ -383,7 +367,7 @@ func (s *server) breakdown(w http.ResponseWriter, r *http.Request, minT, maxT in
 		"read":         seriesCountsInfo(res, false),
 	}
 	if pMinT, pMaxT := s.previous(minT, maxT); pMaxT > pMinT && budget == 0 {
-		prev := s.mimir.seriesCounts(pMinT, pMaxT, url.Values{"match[]": {match}, "group_by": {label}})
+		prev := s.mimir.estimate(pMinT, pMaxT, url.Values{"match[]": {match}, "group_by": {label}})
 		if prev.Err != "" {
 			mimirErr(w, prev.Err)
 			return
@@ -460,7 +444,7 @@ func (s *server) handleWindow(w http.ResponseWriter, r *http.Request) {
 		}
 		summedRead = summedRead.add(read)
 	}
-	res := s.mimir.seriesCounts(minT, maxT, nil)
+	res := s.mimir.estimate(minT, maxT, nil)
 	if res.Err != "" {
 		mimirErr(w, res.Err)
 		return
@@ -534,7 +518,7 @@ func bucketStep(r *http.Request, minT, maxT int64) (int64, error) {
 }
 
 // handleBuckets counts one metric per bucket of the window. Each block
-// range the window covers gets one series_counts call with a step, unless a
+// range the window covers gets one estimate call with a step, unless a
 // bucket crosses a block boundary: then each bucket gets its own call, which
 // Mimir answers with dedup.
 func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
@@ -569,7 +553,7 @@ func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
 	}
 	if aligned {
 		for _, p := range pieces {
-			res := s.mimir.seriesCounts(p[0], p[1], url.Values{"match[]": {match}, "step": {fmt.Sprintf("%ds", step/1000)}})
+			res := s.mimir.estimate(p[0], p[1], url.Values{"match[]": {match}, "step": {fmt.Sprintf("%ds", step/1000)}})
 			if res.Err != "" {
 				mimirErr(w, res.Err)
 				return
@@ -582,11 +566,11 @@ func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
 			read = read.add(seriesCountsInfo(res, true))
 		}
 		if len(pieces) > 1 {
-			read.Method = "chunk metas, per bucket, one call per block range"
+			read.Method = "full index: chunk metas, per bucket, one call per block range"
 		}
 	} else {
 		for _, b := range starts {
-			res := s.mimir.seriesCounts(b, min(b+step, maxT), url.Values{"match[]": {match}})
+			res := s.mimir.estimate(b, min(b+step, maxT), url.Values{"match[]": {match}})
 			if res.Err != "" {
 				mimirErr(w, res.Err)
 				return
@@ -594,7 +578,7 @@ func (s *server) handleBuckets(w http.ResponseWriter, r *http.Request) {
 			counts = append(counts, res.Counts[metric])
 			read = read.add(seriesCountsInfo(res, false))
 		}
-		read.Method = "one call per bucket, since buckets cross block boundaries"
+		read.Method = "full index: one call per bucket, since buckets cross block boundaries"
 	}
 	truth := make([]int, len(starts))
 	exact := true
