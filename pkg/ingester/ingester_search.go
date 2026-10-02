@@ -252,3 +252,9 @@ func warningsToStrings(a annotations.Annotations) []string {
 	}
 	return out
 }
+
+// SearchMetricsMetadata is a stub for the new metric metadata search RPC.
+// The actual implementation will be added in a follow-up task.
+func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) error {
+	return status.Error(codes.Unimplemented, "SearchMetricsMetadata is not yet implemented")
+}

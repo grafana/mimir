@@ -280,6 +280,10 @@ func (i *ProfilingWrapper) SearchLabelValues(request *client.SearchLabelValuesRe
 	return i.ing.SearchLabelValues(request, server)
 }
 
+func (i *ProfilingWrapper) SearchMetricsMetadata(request *client.SearchMetricsMetadataRequest, server client.Ingester_SearchMetricsMetadataServer) error {
+	return i.ing.SearchMetricsMetadata(request, server)
+}
+
 func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if isTraceSampled(ctx) {

@@ -44,6 +44,12 @@ service Ingester {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
+  // SearchMetricsMetadata streams metric names whose HELP text matches the
+  // search filter. Unlike SearchLabelNames/SearchLabelValues, there is no
+  // time range or label matchers: metric metadata is keyed by metric name
+  // only, with no attached series/label set.
+  rpc SearchMetricsMetadata(SearchMetricsMetadataRequest) returns (stream SearchResultBatch) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -189,6 +195,15 @@ message SearchLabelValuesRequest {
   // metric metadata. Enrichment now happens on the querier, so the field was
   // removed.
   reserved 8;
+}
+
+message SearchMetricsMetadataRequest {
+  SearchFilter filter = 1;
+  // Ordering is ORDER_BY_VALUE_ASC/DESC only; ORDER_BY_SCORE_DESC is
+  // rejected server-side — every FuzzAlgSubstring match scores 1.0, so
+  // score ordering carries no information.
+  SearchOrdering ordering = 2;
+  int64 limit = 3;
 }
 
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming

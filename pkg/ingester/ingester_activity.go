@@ -321,3 +321,7 @@ func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
 	sb.WriteString(m.Value)
 	sb.WriteString(",}")
 }
+
+func (w *ActivityTrackerWrapper) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) error {
+	return w.ing.SearchMetricsMetadata(req, stream)
+}
