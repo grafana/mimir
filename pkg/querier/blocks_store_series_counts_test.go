@@ -166,7 +166,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	}
 }
 
-func TestSeriesCountsHandler(t *testing.T) {
+func TestCardinalityEstimateHandler(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	clients := map[BlocksStoreClient][][]ulid.ULID{
@@ -174,22 +174,72 @@ func TestSeriesCountsHandler(t *testing.T) {
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
 		}}): {{b1}},
 	}
-	h := WithCardinalityCountsRoutes(http.NotFoundHandler(), "/prometheus", seriesCountsQueryable(0, dayMs, blocks, clients))
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", seriesCountsQueryable(0, dayMs, blocks, clients))
 
-	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/series_counts?start=0&end=86400&limit=2", nil)
+	// A matcher sends it to the full index.
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	var out seriesCountsResponse
+	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, readFullIndex, out.Read)
 	assert.Equal(t, 3, out.Groups)
 	assert.Equal(t, int64(7), out.Series)
-	assert.Equal(t, []seriesCountGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts)
+	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts)
 
 	// Other paths go to next.
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/query", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	day := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	gateway := &storeGatewayClientMock{
+		remoteAddr: "1.1.1.1",
+		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		},
+		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+		},
+	}
+	queryable := func(windows ...[2]int64) *BlocksStoreQueryable {
+		finder := &blocksFinderMock{}
+		for _, w := range windows {
+			finder.On("GetBlocks", mock.Anything, "user-1", w[0], w[1]-1).Return(day, &bucketindex.Metadata{}, nil)
+		}
+		clients := map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}}
+		return &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{clients, clients}}}}}
+	}
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+
+	for name, tc := range map[string]struct {
+		req     SeriesCountsRequest
+		read    string
+		counts  map[string][]int64
+		snapped bool
+	}{
+		"every name over one block range": {SeriesCountsRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
+		"a matcher":                       {SeriesCountsRequest{MinT: 0, MaxT: dayMs, Matchers: up}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"a window inside the block":       {SeriesCountsRequest{MinT: 0, MaxT: dayMs / 2}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"snapped to the block":            {SeriesCountsRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, readIndexHeader, map[string][]int64{"up": {3}}, true},
+		"grouped by another label":        {SeriesCountsRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readFullIndex, map[string][]int64{"up": {2}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := tc.req
+			res, err := queryable([2]int64{req.MinT, req.MaxT}, [2]int64{0, dayMs}).CardinalityEstimate(context.Background(), "user-1", &req)
+			require.NoError(t, err)
+			assert.Equal(t, tc.read, res.Read)
+			assert.Equal(t, tc.counts, res.Counts)
+			assert.Equal(t, tc.snapped, res.Snapped)
+			if tc.snapped {
+				assert.Equal(t, dayMs, req.MaxT, "the request says what was counted")
+			}
+		})
+	}
 }

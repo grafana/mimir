@@ -741,9 +741,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		extractor,
 	)
 
-	// Experimental: series counts from the store-gateways' index-headers and full index.
+	// Experimental: cardinality estimates from the store-gateways' index-headers and full index.
 	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
-		internalQuerierRouter = querier.WithCardinalityCountsRoutes(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, bq)
+		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, bq)
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
