@@ -91,6 +91,7 @@
   <label>Step <select id="step"><option value="">auto</option><option value="3600">1h</option><option value="10800">3h</option><option value="21600">6h</option><option value="86400">1d</option></select></label>
   <label>PromQL series limit <input id="slimit" type="number" min="1" step="500" value="1000" style="width:7em"> series</label>
   <label>Headcount index limit <input id="blimit" type="number" min="0.1" step="0.5" value="1" style="width:5em"> MB</label>
+  <label>Exact below <input id="sk" type="number" min="0" step="1000" value="10000" style="width:7em"> series, HLL above</label>
   <button id="run">Run</button>
   <span id="status" class="muted"></span>
 </div>
@@ -145,7 +146,7 @@
     </section>
     <section>
       <div class="ph"><h2 id="win-title">5. Distinct series over the whole window</h2><button class="info-btn" aria-expanded="false" title="What is this panel?">i</button></div>
-      <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window?</p><p>Each day is a separate block range (here split by the compactor into several shard blocks). A series that lives on two days is in both ranges, so <b>adding each day's count counts it twice</b>. That is the dashed card, too high on purpose to show the problem.</p><p><b>In Mimir</b> removes the duplicates: each store-gateway returns a hash of every series' labels and the querier counts distinct hashes. It should equal the truth and the baseline.</p><p>If the window is inside one day, there is nothing to deduplicate and both agree. Pick a window across days to see the difference.</p></div>
+      <div class="info" hidden><p><b>Question:</b> how many distinct series existed over the whole window?</p><p>Each day is a separate block range (here split by the compactor into several shard blocks). A series that lives on two days is in both ranges, so <b>adding each day's count counts it twice</b>. That is the dashed card, too high on purpose to show the problem.</p><p><b>In Mimir</b> removes the duplicates: each store-gateway returns a hash of every series' labels and the querier counts distinct hashes, which is exact. A name with more series than the "Exact below" box is sent as a HyperLogLog sketch instead (precision 11, about 2 KB, a standard error of about 2.3%), so the payload stays a fixed size whatever the series count; those rows carry an HLL tag and their error against the truth. Set the box to 0 to make every name exact.</p><p>If the window is inside one day, there is nothing to deduplicate and both agree. Pick a window across days to see the difference.</p></div>
       <div id="win-one" hidden><p class="muted">The window is inside one day, so there is nothing to deduplicate: Headcount, adding the days and the truth all read <b id="win-one-total"></b> series. The difference only shows across days.</p><button class="link-btn" id="win-across">Show it across the day before and the spike day</button></div>
       <div id="win-many" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px" class="win-grid">
         <div class="scroll"><table id="win"></table><p id="win-note" class="muted"></p></div>
@@ -175,6 +176,10 @@ const fromInput = v => Math.round(Date.parse(v + ":00Z") / 1000);
 const label = s => new Date(s * 1000).toISOString().slice(0, 16).replace("T", " ");
 const span = w => `${label(w.start)} to ${label(w.end)}`;
 const win = () => `start=${fromInput($("start").value)}&end=${fromInput($("end").value)}`;
+// Passed only where Mimir deduplicates across days, the one place a sketch can answer.
+const sk = () => `&sketch_above=${Math.max(0, Math.round(Number($("sk").value) || 0))}`;
+const pct = (est, truth) => truth ? `${est >= truth ? "+" : ""}${(100 * (est - truth) / truth).toFixed(1)}%` : "";
+const tagHLL = `<span class="tag tag-wrong" style="margin:0 0 0 6px">HLL</span>`;
 const stepParam = () => $("step").value ? `&step=${$("step").value}` : "";
 
 async function get(path) {
@@ -211,6 +216,10 @@ function mimirPairs(r, extra = []) {
   if (r.route === "full_index") {
     p.push(["series read", fmt(r.series_read)], ["index decoded", r.index_bytes ? bytes(r.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(r.bucket_bytes)]);
   }
+  if (r.hash_bytes || r.sketch_bytes) {
+    p.push(["dedup payload", `${bytes(r.hash_bytes || 0)} of hashes, ${bytes(r.sketch_bytes || 0)} of sketches`]);
+    if (r.estimated_groups) p.push(["groups from a sketch", fmt(r.estimated_groups)]);
+  }
   p.push(["chunks read", "0 B", "ok"]);
   return p;
 }
@@ -218,7 +227,7 @@ function mimirPairs(r, extra = []) {
 function addRead(a, b) {
   if (!b || !b.calls) return a;
   return {...a, elapsed_ms: a.elapsed_ms + b.elapsed_ms, calls: a.calls + b.calls, blocks: a.blocks + b.blocks,
-    series_read: (a.series_read || 0) + (b.series_read || 0), index_bytes: (a.index_bytes || 0) + (b.index_bytes || 0), bucket_bytes: (a.bucket_bytes || 0) + (b.bucket_bytes || 0)};
+    series_read: (a.series_read || 0) + (b.series_read || 0), hash_bytes: (a.hash_bytes || 0) + (b.hash_bytes || 0), sketch_bytes: (a.sketch_bytes || 0) + (b.sketch_bytes || 0), estimated_groups: (a.estimated_groups || 0) + (b.estimated_groups || 0), index_bytes: (a.index_bytes || 0) + (b.index_bytes || 0), bucket_bytes: (a.bucket_bytes || 0) + (b.bucket_bytes || 0)};
 }
 
 async function init() {
@@ -251,12 +260,14 @@ async function run() {
   $("run").disabled = $("preset").disabled = true;
   try {
     $("status").textContent = "In Mimir...";
-    const g = await get(`api/names?${win()}&limit=10`);
+    const g = await get(`api/names?${win()}${sk()}&limit=10`);
     const prevLen = g.previous.end > g.previous.start;
     $("winline").innerHTML = `Window <b>${span(g.window)}</b>` + (prevLen ? `, compared with the window before it, ${span(g.previous)}.` : `. There is no data before it, so growth is from zero.`);
     $("g-title").textContent = "1. Which metric grew?";
     const exactCell = r => r.day === r.truth_day && r.base === r.truth_base
-      ? `<span class="ok">✓</span>` : `<span class="err">✗ truth ${fmt(r.truth_base)} → ${fmt(r.truth_day)}</span>`;
+      ? `<span class="ok">✓</span>${r.estimated ? tagHLL : ""}`
+      : r.estimated ? `<span class="muted">${pct(r.day, r.truth_day)} vs truth</span>${tagHLL}`
+      : `<span class="err">✗ truth ${fmt(r.truth_base)} → ${fmt(r.truth_day)}</span>`;
     $("growth").innerHTML = `<tr><th>metric</th><th class="num">before</th><th class="num">window</th><th class="num">growth</th><th class="num">equals truth</th></tr>` +
       g.rows.map(r => `<tr class="click" data-name="${r.name}"><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.day)}</td><td class="num">${r.growth >= 0 ? "+" : ""}${fmt(r.growth)}</td><td class="num">${exactCell(r)}</td></tr>`).join("");
     $("growth-note").innerHTML = `${fmt(g.changed)} of ${fmt(g.names)} names changed; ${fmt(g.names_exact)} of ${fmt(g.names)} are exact against the truth in both windows. Tenant total ${fmt(g.total_prev)} → ${fmt(g.total)} series. Click a row to drill down.` +
@@ -279,14 +290,17 @@ async function run() {
     const pairs = baselinePairs(both);
     let same = null;
     if (p.rows) {
-      same = p.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name && r.growth === g.rows[i].growth);
-      pairs.push(["same top 10 as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
+      same = p.rows.every((r, i) => g.rows[i] && r.name === g.rows[i].name);
+      const off = p.rows.filter((r, i) => g.rows[i] && r.growth !== g.rows[i].growth).length;
+      const sketched = g.rows.filter(r => r.estimated).length;
+      pairs.push(["same top 10 names as Headcount", same ? "yes" : "no", same ? "ok" : "err"]);
+      if (off) pairs.push(["growth differs", `${off} of 10${sketched ? `, ${sketched} counted from an HLL sketch` : ""}`]);
     }
     kv($("growth-today"), pairs);
     $("cost-headline").textContent = both.error
       ? `The baseline failed after ${secs(both.latency_ms)}; Headcount answered in ${secs(hcRead.elapsed_ms)} without reading chunks.`
       : `${Math.max(1, Math.round(both.latency_ms / hcRead.elapsed_ms))}x faster · chunks read ${bytes(both.fetched_chunk_bytes)} → 0 B` +
-        (same === null ? "" : same ? " · same top 10" : " · different top 10");
+        (same === null ? "" : same ? " · same top 10 names" : " · different top 10 names");
     await drill(g.rows.length ? g.rows[0].name : meta.spike_name);
     await runWindow();
     $("status").textContent = "";
@@ -299,21 +313,24 @@ async function run() {
 
 async function runWindow() {
   $("status").textContent = "Window...";
-  const w = await get(`api/window?${win()}&limit=8`);
+  const w = await get(`api/window?${win()}${sk()}&limit=8`);
   $("win-title").textContent = `5. Distinct series over the whole window, ${span(w.window)}`;
   const many = w.pieces > 1;
   $("win-one").hidden = many;
   $("win-many").style.display = many ? "grid" : "none";
   $("win-one-total").textContent = fmt(w.exact_total);
   $("win-sum-card").classList.toggle("agrees", !many);
-  $("win").innerHTML = `<tr><th>metric</th><th class="num">dedup (In Mimir)</th><th class="num">truth</th><th class="num">adding the days</th></tr>` +
-    w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td><td class="num">${fmt(r.summed)}</td></tr>`).join("") +
-    `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td></tr>`;
+  const errCell = (est, truth, estimated) => est === truth ? `<span class="ok">0%</span>${estimated ? tagHLL : ""}` : `${pct(est, truth)}${estimated ? tagHLL : ""}`;
+  $("win").innerHTML = `<tr><th>metric</th><th class="num">dedup (In Mimir)</th><th class="num">truth</th><th class="num">error</th><th class="num">adding the days</th></tr>` +
+    w.rows.map(r => `<tr><td title="${r.name}">${short(r.name)}</td><td class="num">${fmt(r.exact)}</td><td class="num">${fmt(r.truth)}</td><td class="num">${errCell(r.exact, r.truth, r.estimated)}</td><td class="num">${fmt(r.summed)}</td></tr>`).join("") +
+    `<tr><td><b>tenant</b></td><td class="num"><b>${fmt(w.exact_total)}</b></td><td class="num"><b>${fmt(w.truth_total)}</b></td><td class="num"><b>${pct(w.exact_total, w.truth_total) === "+0.0%" ? "0%" : pct(w.exact_total, w.truth_total)}</b></td><td class="num"><b>${fmt(w.summed_total)}</b></td></tr>`;
+  const est = w.rows.filter(r => r.estimated);
   const over = w.exact_total ? (100 * (w.summed_total - w.exact_total) / w.exact_total).toFixed(0) : 0;
   $("win-note").textContent = w.pieces > 1
-    ? `The window covers ${w.pieces} days (block ranges). Adding their counts overcounts the tenant by ${over}%. Dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.`
+    ? `The window covers ${w.pieces} days (block ranges). Adding their counts overcounts the tenant by ${over}%. Dedup matches the truth for ${fmt(w.names_exact)} of ${fmt(w.names)} names.` +
+      (w.exact_read.estimated_groups ? ` ${fmt(w.exact_read.estimated_groups)} names above the threshold were counted from a ${bytes(w.exact_read.sketch_bytes / Math.max(1, w.exact_read.estimated_groups))} sketch each instead of 8 bytes per series${est.length ? `; in this table their error is ${est.map(r => pct(r.exact, r.truth)).join(", ")}` : ""}.` : "")
     : `The window is inside one block, so there is nothing to deduplicate and the two agree. Pick a window across days to see the difference.`;
-  kv($("win-exact"), mimirPairs(w.exact_read, [["tenant total", fmt(w.exact_total), "ok"]]));
+  kv($("win-exact"), mimirPairs(w.exact_read, [["tenant total", fmt(w.exact_total) + (w.exact_total === w.truth_total ? "" : ` (${pct(w.exact_total, w.truth_total)} vs truth)`), w.exact_total === w.truth_total ? "ok" : ""]]));
   kv($("win-sum"), mimirPairs(w.summed_read, [["tenant total", `${fmt(w.summed_total)}` + (w.pieces > 1 ? ` (+${over}%)` : ""), w.pieces > 1 ? "err" : ""]]));
   $("status").textContent = "Window, baseline...";
   const [d, u] = [await get(`api/promql/window?${win()}&limits=default`), await get(`api/promql/window?${win()}`)];
