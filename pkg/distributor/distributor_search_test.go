@@ -335,6 +335,134 @@ func TestDistributor_SearchLabelNames_ContextCancelledMidStream(t *testing.T) {
 	}
 }
 
+func TestDistributor_SearchMetricsMetadata_FanOutAndMerge(t *testing.T) {
+	// Metadata search is not matcher-sharded: every ingester in the
+	// tenant's replication set is queried, and the same metric name coming
+	// back from more than one of them (e.g. two ingesters holding the same
+	// tenant's metadata) must be deduplicated at merge time — mirroring the
+	// SearchLabelNames fan-out/dedup test above.
+	replicaResponses := map[int][]scoredValue{
+		0: {{"foo", 1.0}, {"footer", 1.0}},
+		1: {{"foo", 1.0}, {"foobar", 1.0}},
+		2: {{"foobar", 1.0}},
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      3,
+		happyIngesters:    3,
+		replicationFactor: 1,
+		searchMetricsMetadataHook: func(ingesterIdx int, _ *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch {
+			return makeScoredSearchBatches(replicaResponses[ingesterIdx])
+		},
+	})
+	params := &streaminglabelvalues.Params{
+		Terms:         []string{"fo"},
+		CaseSensitive: true,
+		FuzzAlg:       streaminglabelvalues.FuzzAlgJaroWinkler,
+		FuzzThreshold: 0,
+	}
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	require.NoError(t, err)
+	hints := &storage.SearchHints{Filter: filter, OrderBy: storage.OrderByValueAsc, Limit: 100}
+
+	rs := ds[0].SearchMetricsMetadata(user.InjectOrgID(context.Background(), "user-1"), params, hints)
+	defer rs.Close()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	// Cross-replica dedup; scores carried verbatim.
+	assert.Equal(t, []storage.SearchResult{
+		{Value: "foo", Score: 1.0},
+		{Value: "foobar", Score: 1.0},
+		{Value: "footer", Score: 1.0},
+	}, got)
+}
+
+func TestDistributor_SearchMetricsMetadata_AllReplicasFail(t *testing.T) {
+	ds, _, _, _ := prepare(t, prepConfig{numDistributors: 1, numIngesters: 3, happyIngesters: 0})
+	rs := ds[0].SearchMetricsMetadata(
+		user.InjectOrgID(context.Background(), "user-1"),
+		nil,
+		&storage.SearchHints{Limit: 10},
+	)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	assert.Error(t, rs.Err())
+}
+
+// TestDistributor_SearchMetricsMetadata_ContextCancelledMidStream mirrors
+// TestDistributor_SearchLabelNames_ContextCancelledMidStream: continued
+// iteration must terminate, and Close must return promptly, after the
+// caller cancels ctx mid-stream.
+func TestDistributor_SearchMetricsMetadata_ContextCancelledMidStream(t *testing.T) {
+	// >256 results forces producer to block on ch <- r once the prefetch
+	// channel fills; the cancel-cause path is the only way for it to exit.
+	const total = 1024
+	scored := make([]scoredValue, total)
+	for i := range total {
+		scored[i] = scoredValue{value: fmt.Sprintf("v%04d", i), score: 1.0}
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      1,
+		happyIngesters:    1,
+		replicationFactor: 1,
+		searchMetricsMetadataHook: func(_ int, _ *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch {
+			return makeScoredSearchBatches(scored)
+		},
+	})
+
+	ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "user-1"))
+	rs := ds[0].SearchMetricsMetadata(
+		ctx,
+		nil,
+		&storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: total + 1},
+	)
+
+	// Read a few results, then cancel mid-stream.
+	for range 5 {
+		require.True(t, rs.Next())
+	}
+	cancel()
+
+	// Continued iteration must terminate within a deadline; otherwise the
+	// prefetcher would have leaked its producer goroutine indefinitely.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for rs.Next() { //nolint:revive // intentional drain after cancel
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rs.Next did not terminate within 5s after ctx cancel")
+	}
+
+	// Close must not hang — it depends on the producer goroutine exiting.
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- rs.Close() }()
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("rs.Close hung after ctx cancel")
+	}
+}
+
+func TestBuildSearchMetricsMetadataRequest(t *testing.T) {
+	params := &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true}
+	hints := &storage.SearchHints{OrderBy: storage.OrderByValueDesc, Limit: 42}
+
+	req := buildSearchMetricsMetadataRequest(params, hints)
+
+	assert.Equal(t, paramsToProto(params), req.Filter)
+	assert.Equal(t, client.ORDER_BY_VALUE_DESC, req.Ordering)
+	assert.Equal(t, int64(42), req.Limit)
+}
+
 func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
 	// Replicas return pre-filtered, pre-scored results.
 	replicaResponses := map[int][]scoredValue{

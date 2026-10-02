@@ -1507,6 +1507,10 @@ func (m *errDistributor) SearchLabelValues(context.Context, model.Time, model.Ti
 	return storage.ErrSearchResultSet(errDistributorError)
 }
 
+func (m *errDistributor) SearchMetricsMetadata(context.Context, *streaminglabelvalues.Params, *storage.SearchHints) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
+}
+
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string

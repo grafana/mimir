@@ -6161,6 +6161,8 @@ type prepConfig struct {
 	searchLabelNamesHook func(ingesterIdx int, req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
 	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
 	searchLabelValuesHook func(ingesterIdx int, req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
+	// searchMetricsMetadataHook is the analogous hook for SearchMetricsMetadata.
+	searchMetricsMetadataHook func(ingesterIdx int, req *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch
 
 	replicationFactor                  int
 	enableTracker                      bool
@@ -6338,6 +6340,13 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			ingesterIdx := i
 			hook := cfg.searchLabelValuesHook
 			ingester.searchLabelValuesHook = func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+				return hook(ingesterIdx, req)
+			}
+		}
+		if cfg.searchMetricsMetadataHook != nil {
+			ingesterIdx := i
+			hook := cfg.searchMetricsMetadataHook
+			ingester.searchMetricsMetadataHook = func(req *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch {
 				return hook(ingesterIdx, req)
 			}
 		}
@@ -7015,6 +7024,8 @@ type mockIngester struct {
 	searchLabelNamesHook func(req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
 	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
 	searchLabelValuesHook func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
+	// searchMetricsMetadataHook is the analogous hook for SearchMetricsMetadata.
+	searchMetricsMetadataHook func(req *client.SearchMetricsMetadataRequest) []*client.SearchResultBatch
 }
 
 func (i *mockIngester) registerBeforePushHook(fn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)) {
@@ -7727,9 +7738,30 @@ func (i *mockIngester) SearchLabelValues(ctx context.Context, req *client.Search
 	return &mockSearchStream{batches: batches}, nil
 }
 
-// mockSearchStream satisfies both Ingester_SearchLabelNamesClient and
-// Ingester_SearchLabelValuesClient — both share the same Recv signature
-// and embed grpc.ClientStream.
+func (i *mockIngester) SearchMetricsMetadata(ctx context.Context, req *client.SearchMetricsMetadataRequest, _ ...grpc.CallOption) (client.Ingester_SearchMetricsMetadataClient, error) {
+	i.trackCall("SearchMetricsMetadata", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	var batches []*client.SearchResultBatch
+	if i.searchMetricsMetadataHook != nil {
+		batches = i.searchMetricsMetadataHook(req)
+	}
+	return &mockSearchStream{batches: batches}, nil
+}
+
+// mockSearchStream satisfies Ingester_SearchLabelNamesClient,
+// Ingester_SearchLabelValuesClient, and Ingester_SearchMetricsMetadataClient
+// — all three share the same Recv signature and embed grpc.ClientStream.
 type mockSearchStream struct {
 	grpc.ClientStream
 	batches []*client.SearchResultBatch

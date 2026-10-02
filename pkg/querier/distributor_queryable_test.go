@@ -905,6 +905,14 @@ func (m *mockDistributor) SearchLabelValues(ctx context.Context, from, to model.
 	return storage.EmptySearchResultSet()
 }
 
+// SearchMetricsMetadata is a compile-time stub: no test in this package
+// exercises the distributor's metadata-search fan-out (that is covered at
+// the pkg/distributor layer); the HTTP handler wiring that would call this
+// through distributorQuerier is a later task.
+func (m *mockDistributor) SearchMetricsMetadata(context.Context, *streaminglabelvalues.Params, *storage.SearchHints) storage.SearchResultSet {
+	return storage.EmptySearchResultSet()
+}
+
 type mockConfigProvider struct {
 	queryIngestersWithin time.Duration
 	seenUserIDs          []string

@@ -86,6 +86,28 @@ func (d *Distributor) SearchLabelValues(
 	return storage.MergeSearchResultSets(sources, hints)
 }
 
+// SearchMetricsMetadata mirrors SearchLabelNames; metadata search has no
+// time range or matcher concept, so it fans out to every ingester holding
+// data for the tenant rather than a matcher-sharded subset.
+func (d *Distributor) SearchMetricsMetadata(
+	ctx context.Context,
+	params *streaminglabelvalues.Params,
+	hints *storage.SearchHints,
+) storage.SearchResultSet {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	req := buildSearchMetricsMetadataRequest(params, hints)
+	sources, err := d.openIngesterSearchStreams(ctx, replicationSets, func(rpcCtx context.Context, c ingester_client.IngesterClient) (searchStream, error) {
+		return c.SearchMetricsMetadata(rpcCtx, req)
+	})
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.MergeSearchResultSets(sources, hints)
+}
+
 // searchStream is the Recv surface shared by Ingester_SearchLabelNamesClient
 // and Ingester_SearchLabelValuesClient.
 type searchStream interface {
@@ -308,6 +330,20 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 		req.Limit = int64(hints.Limit)
 	}
 	return req, nil
+}
+
+// buildSearchMetricsMetadataRequest mirrors buildSearchLabelNamesRequest,
+// minus the time range and matchers: metadata search is keyed on metric name
+// only, so there is no time range or matcher concept to carry on the wire.
+func buildSearchMetricsMetadataRequest(params *streaminglabelvalues.Params, hints *storage.SearchHints) *ingester_client.SearchMetricsMetadataRequest {
+	req := &ingester_client.SearchMetricsMetadataRequest{
+		Filter:   paramsToProto(params),
+		Ordering: orderingToProto(hints),
+	}
+	if hints != nil {
+		req.Limit = int64(hints.Limit)
+	}
+	return req
 }
 
 // paramsToProto returns nil for nil/empty Params — the ingester treats a

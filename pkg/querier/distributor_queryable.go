@@ -47,6 +47,7 @@ type Distributor interface {
 	ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error)
 	SearchLabelNames(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
 	SearchLabelValues(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	SearchMetricsMetadata(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet
 }
 
 func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
