@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/tools/headcount/model"
 )
 
-func TestEstimateCardinality(t *testing.T) {
+func TestCardinalityEstimate(t *testing.T) {
 	start := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 	pop, err := model.New(model.Config{
 		Seed:        1,
@@ -48,14 +48,14 @@ func TestEstimateCardinality(t *testing.T) {
 	}
 
 	t.Run("every name over one block range reads index-headers", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{MinT: r1.MinT, MaxT: r1.MaxT})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: r1.MinT, MaxT: r1.MaxT})
 		require.NoError(t, err)
 		assert.Equal(t, ReadIndexHeader, e.Read)
 		assert.Equal(t, pop.TruthBy(nil, "__name__", r1.MinT, r1.MaxT), flat(e))
 	})
 
 	t.Run("a matcher and another label read the full index", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, GroupBy: "pod"})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, GroupBy: "pod"})
 		require.NoError(t, err)
 		assert.Equal(t, ReadFullIndex, e.Read)
 		assert.False(t, e.Dedup)
@@ -63,35 +63,35 @@ func TestEstimateCardinality(t *testing.T) {
 	})
 
 	t.Run("across block ranges it dedups", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{MinT: r0.MinT, MaxT: r1.MaxT})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: r0.MinT, MaxT: r1.MaxT})
 		require.NoError(t, err)
 		assert.Equal(t, ReadFullIndex, e.Read)
 		assert.True(t, e.Dedup)
 		assert.Equal(t, pop.TruthBy(nil, "__name__", r0.MinT, r1.MaxT), flat(e))
 
-		_, err = EstimateCardinality(bucket, EstimateRequest{MinT: r0.MinT, MaxT: r1.MaxT, Step: r0.MaxT - r0.MinT})
+		_, err = CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: r0.MinT, MaxT: r1.MaxT, Step: r0.MaxT - r0.MinT})
 		require.ErrorContains(t, err, "inside one block range")
 	})
 
 	t.Run("buckets inside one block range", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, Step: r1.MaxT - r1.MinT})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, Step: r1.MaxT - r1.MinT})
 		require.NoError(t, err)
 		assert.Equal(t, []int{pop.Truth(bySpike, r1.MinT, r1.MaxT)}, e.Counts[spike])
 	})
 
 	t.Run("snap widens a window to its block range", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{MinT: r1.MinT, MaxT: r1.MinT + 10*60*1000, Snap: true})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: r1.MinT, MaxT: r1.MinT + 10*60*1000, Snap: true})
 		require.NoError(t, err)
 		assert.True(t, e.Snapped)
 		assert.Equal(t, ReadIndexHeader, e.Read)
 		assert.Equal(t, r1.MaxT, e.MaxT)
 
-		_, err = EstimateCardinality(bucket, EstimateRequest{MinT: r0.MaxT - 1, MaxT: r1.MinT + 1, Snap: true})
+		_, err = CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: r0.MaxT - 1, MaxT: r1.MinT + 1, Snap: true})
 		require.ErrorContains(t, err, "more than one block range")
 	})
 
 	t.Run("the budget gives a lower bound", func(t *testing.T) {
-		e, err := EstimateCardinality(bucket, EstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, GroupBy: "pod", MaxSeries: 5})
+		e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{Matchers: bySpike, MinT: r1.MinT, MaxT: r1.MaxT, GroupBy: "pod", MaxSeries: 5})
 		require.NoError(t, err)
 		assert.True(t, e.LowerBound)
 		assert.Equal(t, 5, e.SeriesRead)
@@ -102,7 +102,7 @@ func TestEstimateCardinality(t *testing.T) {
 	})
 }
 
-func TestEstimateCardinality_BlocksThatMayShareSeries(t *testing.T) {
+func TestCardinalityEstimate_BlocksThatMayShareSeries(t *testing.T) {
 	start := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 	pop, err := model.New(model.Config{
 		Seed: 1, Start: start, End: start.Add(time.Hour), MetricNames: 10,
@@ -119,7 +119,7 @@ func TestEstimateCardinality_BlocksThatMayShareSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ranges, 1)
 
-	e, err := EstimateCardinality(bucket, EstimateRequest{MinT: ranges[0].MinT, MaxT: ranges[0].MaxT})
+	e, err := CardinalityEstimate(bucket, CardinalityEstimateRequest{MinT: ranges[0].MinT, MaxT: ranges[0].MaxT})
 	require.NoError(t, err)
 	assert.Equal(t, ReadFullIndex, e.Read, "index-header counts can't be added for these blocks")
 	assert.True(t, e.Dedup)
