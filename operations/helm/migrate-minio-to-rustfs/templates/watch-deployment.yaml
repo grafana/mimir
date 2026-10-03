@@ -1,0 +1,91 @@
+{{- if .Values.watch.enabled }}
+# Continuous tail: re-syncs the delta until deleted before the flip.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "migrate.fullname" . }}-watch
+  labels:
+    {{- include "migrate.labels" . | nindent 4 }}
+    app: rclone-minio-to-rustfs-watch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rclone-minio-to-rustfs-watch
+  template:
+    metadata:
+      labels:
+        app: rclone-minio-to-rustfs-watch
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rclone
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              while true; do
+                rclone sync minio:{{ .Values.buckets.tsdb }} rustfs:{{ .Values.buckets.tsdb }} --checksum --s3-no-check-bucket -q $EXTRA_SYNC_ARGS
+                # Ruler bucket: always a full copy, never filtered (see sync-job.yaml).
+                rclone sync minio:{{ .Values.buckets.ruler }} rustfs:{{ .Values.buckets.ruler }} --checksum --s3-no-check-bucket -q
+                sleep {{ .Values.watch.intervalSeconds }}
+              done
+          env:
+            # EXTRA_SYNC_ARGS applies to the tsdb sync only; must match the bulk Job.
+            - name: EXTRA_SYNC_ARGS
+              value: {{ .Values.extraSyncArgs | quote }}
+            - name: RCLONE_CONFIG_MINIO_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_MINIO_PROVIDER
+              value: Minio
+            - name: RCLONE_CONFIG_MINIO_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_MINIO_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_ENDPOINT
+            - name: RCLONE_CONFIG_MINIO_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_ACCESS_KEY_ID
+            - name: RCLONE_CONFIG_MINIO_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_SECRET_ACCESS_KEY
+            - name: RCLONE_CONFIG_RUSTFS_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_RUSTFS_PROVIDER
+              value: Minio
+            - name: RCLONE_CONFIG_RUSTFS_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_RUSTFS_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_ENDPOINT
+            - name: RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_ACCESS_KEY_ID
+            - name: RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_SECRET_ACCESS_KEY
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

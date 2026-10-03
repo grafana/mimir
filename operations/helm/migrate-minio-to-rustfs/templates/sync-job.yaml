@@ -1,0 +1,93 @@
+# One-shot S3-to-S3 copy of both Mimir buckets (MinIO → RustFS).
+# Re-install for the final delta pass right before flipping mimir structuredConfig.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "migrate.fullname" . }}-sync
+  labels:
+    {{- include "migrate.labels" . | nindent 4 }}
+    app: rclone-minio-to-rustfs
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: rclone-minio-to-rustfs
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rclone
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              rclone mkdir rustfs:{{ .Values.buckets.tsdb }}
+              rclone mkdir rustfs:{{ .Values.buckets.ruler }}
+              rclone sync minio:{{ .Values.buckets.tsdb }} rustfs:{{ .Values.buckets.tsdb }} \
+                -v --checksum --fast-list --checkers {{ .Values.checkers }} --transfers {{ .Values.transfers }} --s3-no-check-bucket $EXTRA_SYNC_ARGS
+              # The ruler bucket is always copied whole (rule groups are mutable
+              # live config: age is not a proxy for expendability), so no filter flags here.
+              rclone sync minio:{{ .Values.buckets.ruler }} rustfs:{{ .Values.buckets.ruler }} \
+                -v --checksum --fast-list --checkers {{ .Values.checkers }} --transfers {{ .Values.transfers }} --s3-no-check-bucket
+          env:
+            # Optional extra flags for the tsdb sync only,
+            # e.g. "--max-age 30d" for a filtered migration. Empty by default (full copy).
+            # Must match the watch Deployment: an unfiltered tail backfills
+            # tsdb objects a filtered bulk copy skipped.
+            - name: EXTRA_SYNC_ARGS
+              value: {{ .Values.extraSyncArgs | quote }}
+            - name: RCLONE_CONFIG_MINIO_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_MINIO_PROVIDER
+              value: Minio
+            - name: RCLONE_CONFIG_MINIO_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_MINIO_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_ENDPOINT
+            - name: RCLONE_CONFIG_MINIO_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_ACCESS_KEY_ID
+            - name: RCLONE_CONFIG_MINIO_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: MINIO_SECRET_ACCESS_KEY
+            - name: RCLONE_CONFIG_RUSTFS_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_RUSTFS_PROVIDER
+              value: Minio
+            - name: RCLONE_CONFIG_RUSTFS_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_RUSTFS_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_ENDPOINT
+            - name: RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_ACCESS_KEY_ID
+            - name: RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "migrate.secretName" . }}
+                  key: RUSTFS_SECRET_ACCESS_KEY
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
