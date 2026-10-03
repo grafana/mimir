@@ -25,6 +25,57 @@ type ProduceResult struct {
 	err  error
 }
 
+// scopedProduceResult is a read-only view of one shared flush's result,
+// restricted to the partitions sent by one attempt.
+type scopedProduceResult struct {
+	raw ProduceResult
+	own map[topicPartition]struct{}
+	err error
+	// allOwned means every entry in raw.resp belongs to own, so repeated
+	// ownership checks can skip the map lookup.
+	allOwned bool
+}
+
+func scopeProduceResultToPartitions(res ProduceResult, own map[topicPartition]struct{}) scopedProduceResult {
+	scoped := scopedProduceResult{
+		raw:      res,
+		own:      own,
+		err:      res.err,
+		allOwned: res.resp != nil,
+	}
+	if res.resp == nil {
+		if scoped.err == nil {
+			scoped.err = errEmptyProduceResult
+		}
+		return scoped
+	}
+	for _, t := range res.resp.Topics {
+		for _, p := range t.Partitions {
+			if _, ok := own[topicPartition{topic: t.Topic, partition: p.Partition}]; !ok {
+				scoped.allOwned = false
+				continue
+			}
+			if scoped.err == nil && p.ErrorCode != kerrNoError {
+				scoped.err = kerr.ErrorForCode(p.ErrorCode)
+			}
+		}
+	}
+	return scoped
+}
+
+// error returns the error visible to this attempt's partitions.
+func (r scopedProduceResult) error() error {
+	return r.err
+}
+
+func (r scopedProduceResult) owns(tp topicPartition) bool {
+	if r.allOwned {
+		return true
+	}
+	_, ok := r.own[tp]
+	return ok
+}
+
 // succeeded reports whether ProduceResult is fully-successful.
 func (r ProduceResult) succeeded() bool {
 	// error() is the single predicate: it returns nil only for a fully-successful result
@@ -152,29 +203,33 @@ func (a *produceResultAccumulator) remaining() []encodedTopicPartitionRecords {
 	return out
 }
 
-// accumulate folds one produce attempt's outcome into the merged state.
-func (a *produceResultAccumulator) accumulate(res ProduceResult) {
+// accumulate folds one produce attempt's outcome into the merged state. The
+// scoped view prevents another attempt's entries from affecting this one.
+func (a *produceResultAccumulator) accumulate(res scopedProduceResult) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if !res.succeeded() {
+	if resErr := res.error(); resErr != nil {
 		// On failure nothing is resolved (whole-call failure under the
 		// all-or-nothing assumption); record the err and abort when
 		// it's non-retriable so the caller can stop retrying.
-		a.lastErr = getProduceResultErr(res.error())
+		a.lastErr = getProduceResultErr(resErr)
 		if !a.lastErr.retriable {
 			a.aborted = true
 		}
 		// Capture per-partition error entries so response() can surface
 		// the actual error each agent reported for partitions that end
 		// up exhausting their retry budget.
-		if res.resp != nil {
-			for _, t := range res.resp.Topics {
+		if res.raw.resp != nil {
+			for _, t := range res.raw.resp.Topics {
 				for _, entry := range t.Partitions {
 					if entry.ErrorCode == kerrNoError {
 						continue
 					}
 					tp := topicPartition{topic: t.Topic, partition: entry.Partition}
+					if !res.owns(tp) {
+						continue
+					}
 					// Only track partitions we're still waiting on; a stray
 					// partition the broker returned but we never requested
 					// would never resolve, so it must not enter failed.
@@ -194,27 +249,29 @@ func (a *produceResultAccumulator) accumulate(res ProduceResult) {
 	// client steers load via hedging/demotion, not by sleeping on a
 	// broker-requested throttle.
 	if a.responseVersion == 0 {
-		a.responseVersion = res.resp.Version
+		a.responseVersion = res.raw.resp.Version
 	}
-	a.responseThrottleMillis = max(a.responseThrottleMillis, res.resp.ThrottleMillis)
-	for _, t := range res.resp.Topics {
-		if t.TopicID == ([16]byte{}) {
-			continue
-		}
-		if _, ok := a.responseTopicIDs[t.Topic]; !ok {
-			a.responseTopicIDs[t.Topic] = t.TopicID
-		}
-	}
+	a.responseThrottleMillis = max(a.responseThrottleMillis, res.raw.resp.ThrottleMillis)
 
 	// Resolve every partition in the response. A success also drops
 	// any prior failed entry — success supersedes a previously-
 	// reported failure.
-	for _, t := range res.resp.Topics {
+	for _, t := range res.raw.resp.Topics {
+		ownedTopic := false
 		for _, entry := range t.Partitions {
 			tp := topicPartition{topic: t.Topic, partition: entry.Partition}
+			if !res.owns(tp) {
+				continue
+			}
+			ownedTopic = true
 			a.resolved[tp] = entry
 			delete(a.pending, tp)
 			delete(a.failed, tp)
+		}
+		if ownedTopic && t.TopicID != ([16]byte{}) {
+			if _, ok := a.responseTopicIDs[t.Topic]; !ok {
+				a.responseTopicIDs[t.Topic] = t.TopicID
+			}
 		}
 	}
 }

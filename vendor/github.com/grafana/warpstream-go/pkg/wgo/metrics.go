@@ -50,6 +50,7 @@ type metrics struct {
 	produceRecordsFailedTotal   prometheus.Counter
 	produceRecordsRejectedTotal *prometheus.CounterVec
 
+	agentPoolLeaderDroppedTotal prometheus.Counter
 	metadataRefreshResultsTotal *prometheus.CounterVec
 
 	clusterStatsAvailable     prometheus.Gauge
@@ -236,6 +237,10 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "warpstream_produce_records_rejected_total",
 			Help: "Total number of records rejected by the client before any wire dispatch, by reason (record_too_large, no_agent_assigned).",
 		}, []string{"reason"}),
+		agentPoolLeaderDroppedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "warpstream_agentpool_leader_dropped_total",
+			Help: "Partition leaders excluded from the assignment map because their NodeID was absent from that Metadata response's broker list. One increment per excluded leader, including the constructor refresh. Topic-level Metadata errors are not counted. A partition Leader below 0 is not counted.",
+		}),
 		metadataRefreshResultsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "warpstream_metadata_refresh_results_total",
 			Help: "Total number of live AgentPool Metadata refreshes, by trigger (periodic, on_demand) and result (membership_changed, unchanged, failed). membership_changed is the sorted Agent NodeID set only; leader-only or topic-only updates are unchanged. The constructor Refresh is not counted.",
