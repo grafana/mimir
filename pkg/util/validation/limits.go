@@ -26,6 +26,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -44,6 +45,7 @@ const (
 	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
+	MaxLabelValueBytesPerLabelNameFlag          = "ingester.max-global-label-value-bytes-per-label-name"
 	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
@@ -56,6 +58,7 @@ const (
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                     = "validation.max-length-label-value"
 	LabelValueLengthOverLimitStrategyFlag       = "validation.label-value-length-over-limit-strategy"
+	BlockedLabelNamesForLabelValueBytesFlag     = "validation.blocked-label-names-for-label-value-bytes"
 	MaxMetadataLengthFlag                       = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag               = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
@@ -191,6 +194,7 @@ type Limits struct {
 	MaxLabelNameLength                  int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                 int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
 	LabelValueLengthOverLimitStrategy   LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	BlockedLabelNamesForLabelValueBytes flagext.StringSliceCSV            `yaml:"blocked_label_names_for_label_value_bytes" json:"blocked_label_names_for_label_value_bytes" category:"experimental"`
 	MaxLabelNamesPerSeries              int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries          int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                   int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -210,6 +214,8 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	// Label values
+	MaxGlobalLabelValueBytesPerLabelName int `yaml:"max_global_label_value_bytes_per_label_name" json:"max_global_label_value_bytes_per_label_name" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -408,6 +414,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
+	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+MaxLabelValueBytesPerLabelNameFlag+" have exceeded the limit. Series carrying a value for one of these label names are rejected.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -438,6 +445,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalLabelValueBytesPerLabelName, MaxLabelValueBytesPerLabelNameFlag, 0, fmt.Sprintf("The maximum total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication. Only values longer than %d bytes are counted, and each distinct value is counted once. 0 to disable.", index.LabelValueBytesMinLength))
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -994,6 +1002,12 @@ func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueL
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
 }
 
+// BlockedLabelNamesForLabelValueBytes returns the label names for which series are rejected
+// because their distinct label value bytes have exceeded the limit.
+func (o *Overrides) BlockedLabelNamesForLabelValueBytes(userID string) []string {
+	return o.getOverridesForUser(userID).BlockedLabelNamesForLabelValueBytes
+}
+
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
 func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelNamesPerSeries
@@ -1066,6 +1080,12 @@ func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
+}
+
+// MaxGlobalLabelValueBytesPerLabelName returns the maximum total size in bytes of the distinct
+// values of a single label name, per tenant, across the cluster.
+func (o *Overrides) MaxGlobalLabelValueBytesPerLabelName(userID string) int {
+	return o.getOverridesForUser(userID).MaxGlobalLabelValueBytesPerLabelName
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.

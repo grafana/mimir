@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
@@ -228,6 +229,8 @@ func (i *Ingester) updateUsageStats() {
 }
 
 func (i *Ingester) updateLimitMetrics() {
+	overLimit := 0
+
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -246,5 +249,35 @@ func (i *Ingester) updateLimitMetrics() {
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
+
+		overLimit += i.updateLabelValueBytesMetrics(userID, db)
 	}
+
+	i.metrics.labelNamesOverValueBytesLimit.Set(float64(overLimit))
+}
+
+// updateLabelValueBytesMetrics reports the tenant's label names whose distinct value bytes are
+// over the local per-label-name bytes limit, and returns how many there are.
+func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (overLimit int) {
+	// Drop the previously reported label names, as the set changes over time and stale entries
+	// would otherwise linger.
+	i.metrics.labelValueBytesOverLimit.DeletePartialMatch(prometheus.Labels{"user": userID})
+
+	// Reporting is driven by the limit, so there is nothing to report while it is disabled.
+	if i.limits.MaxGlobalLabelValueBytesPerLabelName(userID) <= 0 {
+		return 0
+	}
+
+	for labelName, bytes := range db.Head().LabelValuesBytes() {
+		// A label name keeps its entry after its long values are gone if short ones remain.
+		if bytes == 0 {
+			continue
+		}
+		if !i.limiter.IsWithinMaxLabelValueBytesPerLabelName(userID, bytes) {
+			overLimit++
+			i.metrics.labelValueBytesOverLimit.WithLabelValues(userID, labelName).Set(1)
+		}
+	}
+
+	return overLimit
 }

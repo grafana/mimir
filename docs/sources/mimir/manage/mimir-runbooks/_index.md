@@ -2707,6 +2707,21 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-label-value-bytes-blocked-label
+
+This non-critical error occurs when Mimir receives a write request that contains a series with a value for a label name that is blocked for the tenant.
+A label name gets blocked after the total size of its distinct values held in memory exceeds the limit configured with `-ingester.max-global-label-value-bytes-per-label-name`, which usually means the label carries large payloads, such as log lines, instead of identifying information.
+The ingesters report such label names through the `cortex_ingester_label_value_bytes_over_limit` metric. The blocked label names are configured per-tenant with the `blocked_label_names_for_label_value_bytes` option in the runtime configuration file, or for all tenants with the `-validation.blocked-label-names-for-label-value-bytes` option.
+
+How to **fix** it:
+
+- Stop sending large or highly variable data as values for the blocked label name. For example, move log lines to a logging system.
+- Once the label name is no longer over the limit, remove it from `blocked_label_names_for_label_value_bytes`. The label name isn't unblocked automatically.
+
+{{< admonition type="note" >}}
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-duplicate-label-names
 
 This non-critical error occurs when Mimir receives a write request that contains a series with the same label name two or more times.
