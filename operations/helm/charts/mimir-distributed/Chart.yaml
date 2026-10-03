@@ -1,6 +1,6 @@
 apiVersion: v2
-version: 6.3.0-weekly.413
-appVersion: r413-149c8f79
+version: 6.3.0-weekly.414
+appVersion: r414-e58bddf0
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
