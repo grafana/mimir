@@ -18,6 +18,7 @@ import (
 
 //node:generate
 type NumberLiteral struct {
+	NodeIdentifier
 	*NumberLiteralDetails
 }
 

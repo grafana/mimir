@@ -30,6 +30,7 @@ func init() {
 
 //node:generate
 type Duplicate struct {
+	core.NodeIdentifier
 	*DuplicateDetails
 	Inner planning.Node `node:"child"`
 }
@@ -161,6 +162,7 @@ func (d *ScalarDuplicationConsumerOperatorFactory) Produce() (types.Operator, er
 
 //node:generate
 type DuplicateFilter struct {
+	core.NodeIdentifier
 	*DuplicateFilterDetails
 	Inner *Duplicate `node:"child"`
 }

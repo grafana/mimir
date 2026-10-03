@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -31,6 +32,7 @@ func init() {
 
 //node:generate
 type RemoteExecutionGroup struct {
+	core.NodeIdentifier
 	*RemoteExecutionGroupDetails `node:"hints=EagerLoad"`
 	Nodes                        []planning.Node `node:"children,min=1,labelfmt=node %d,nocollapse"`
 }
@@ -90,6 +92,7 @@ func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) 
 
 //node:generate
 type RemoteExecutionConsumer struct {
+	core.NodeIdentifier
 	*RemoteExecutionConsumerDetails
 	Group *RemoteExecutionGroup `node:"child"`
 }
