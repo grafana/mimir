@@ -1,6 +1,11 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
 kubeVersionOverride: "1.32"
 
+# Opt the chart-managed service account out of token auto-mounting.
+# This ensures that the test scenario validates pods using Vault Agent injection get the auto-mount re-enabled.
+serviceAccount:
+  automountServiceAccountToken: false
+
 vaultAgent:
   enabled: true
   roleName: "test-role-name"
