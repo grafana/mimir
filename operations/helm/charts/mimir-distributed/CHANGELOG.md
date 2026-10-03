@@ -27,9 +27,9 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## main / unreleased
+## 6.2.1 / unreleased
 
-
+* [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
 
 ## 6.2.0
 
