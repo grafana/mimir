@@ -133,7 +133,7 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		oooMergeShards: oooMergeShards,
 		splitGroups:    splitGroups,
 	}
-	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, cfgOverride)
+	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, c.compactorCfg.SkipElapsedIntermediateBlockRanges, cfgOverride)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to compute compaction jobs from bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to compute compaction jobs from bucket index")
