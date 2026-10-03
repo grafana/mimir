@@ -26,9 +26,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Alertmanager_HandleRequest_FullMethodName = "/alertmanagerpb.Alertmanager/HandleRequest"
-	Alertmanager_UpdateState_FullMethodName   = "/alertmanagerpb.Alertmanager/UpdateState"
-	Alertmanager_ReadState_FullMethodName     = "/alertmanagerpb.Alertmanager/ReadState"
+	Alertmanager_HandleRequest_FullMethodName     = "/alertmanagerpb.Alertmanager/HandleRequest"
+	Alertmanager_UpdateState_FullMethodName       = "/alertmanagerpb.Alertmanager/UpdateState"
+	Alertmanager_ReadState_FullMethodName         = "/alertmanagerpb.Alertmanager/ReadState"
+	Alertmanager_ReadTenantDigests_FullMethodName = "/alertmanagerpb.Alertmanager/ReadTenantDigests"
 )
 
 // AlertmanagerClient is the client API for Alertmanager service.
@@ -40,6 +41,7 @@ type AlertmanagerClient interface {
 	HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
 	UpdateState(ctx context.Context, in *clusterpb.Part, opts ...grpc.CallOption) (*UpdateStateResponse, error)
 	ReadState(ctx context.Context, in *ReadStateRequest, opts ...grpc.CallOption) (*ReadStateResponse, error)
+	ReadTenantDigests(ctx context.Context, in *TenantDigestsRequest, opts ...grpc.CallOption) (*TenantDigestsResponse, error)
 }
 
 type alertmanagerClient struct {
@@ -80,6 +82,16 @@ func (c *alertmanagerClient) ReadState(ctx context.Context, in *ReadStateRequest
 	return out, nil
 }
 
+func (c *alertmanagerClient) ReadTenantDigests(ctx context.Context, in *TenantDigestsRequest, opts ...grpc.CallOption) (*TenantDigestsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TenantDigestsResponse)
+	err := c.cc.Invoke(ctx, Alertmanager_ReadTenantDigests_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AlertmanagerServer is the server API for Alertmanager service.
 // All implementations should embed UnimplementedAlertmanagerServer
 // for forward compatibility.
@@ -89,6 +101,7 @@ type AlertmanagerServer interface {
 	HandleRequest(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 	UpdateState(context.Context, *clusterpb.Part) (*UpdateStateResponse, error)
 	ReadState(context.Context, *ReadStateRequest) (*ReadStateResponse, error)
+	ReadTenantDigests(context.Context, *TenantDigestsRequest) (*TenantDigestsResponse, error)
 }
 
 // UnimplementedAlertmanagerServer should be embedded to have
@@ -106,6 +119,9 @@ func (UnimplementedAlertmanagerServer) UpdateState(context.Context, *clusterpb.P
 }
 func (UnimplementedAlertmanagerServer) ReadState(context.Context, *ReadStateRequest) (*ReadStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadState not implemented")
+}
+func (UnimplementedAlertmanagerServer) ReadTenantDigests(context.Context, *TenantDigestsRequest) (*TenantDigestsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadTenantDigests not implemented")
 }
 func (UnimplementedAlertmanagerServer) testEmbeddedByValue() {}
 
@@ -181,6 +197,24 @@ func _Alertmanager_ReadState_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Alertmanager_ReadTenantDigests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TenantDigestsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertmanagerServer).ReadTenantDigests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Alertmanager_ReadTenantDigests_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertmanagerServer).ReadTenantDigests(ctx, req.(*TenantDigestsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Alertmanager_ServiceDesc is the grpc.ServiceDesc for Alertmanager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -199,6 +233,10 @@ var Alertmanager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReadState",
 			Handler:    _Alertmanager_ReadState_Handler,
+		},
+		{
+			MethodName: "ReadTenantDigests",
+			Handler:    _Alertmanager_ReadTenantDigests_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

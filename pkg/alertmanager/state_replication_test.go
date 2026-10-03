@@ -96,6 +96,7 @@ type fakeAlertStore struct {
 	alertstore.AlertStore
 
 	states map[string]*alertspb.FullStateDesc
+	getErr error
 }
 
 func newFakeAlertStore() *fakeAlertStore {
@@ -105,6 +106,9 @@ func newFakeAlertStore() *fakeAlertStore {
 }
 
 func (f *fakeAlertStore) GetFullState(_ context.Context, user string) (*alertspb.FullStateDesc, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	if result, ok := f.states[user]; ok {
 		return result, nil
 	}
@@ -223,8 +227,10 @@ func TestStateReplication_Settle(t *testing.T) {
 		replicationFactor            int
 		read                         readStateResult
 		storeStates                  map[string]*alertspb.FullStateDesc
+		storeErr                     error
 		results                      map[string][][]byte
 		fetchReplicaStateFailedTotal int
+		initialSyncFailed            bool
 	}{
 		{
 			name:              "with a replication factor of <= 1, no state can be read from peers.",
@@ -322,6 +328,18 @@ func TestStateReplication_Settle(t *testing.T) {
 			fetchReplicaStateFailedTotal: 1,
 		},
 		{
+			name:              "when reading from replicas and from storage errors, still become ready but without a completed initial sync.",
+			replicationFactor: 3,
+			read:              readStateResult{err: errors.New("Read Error 1")},
+			storeErr:          errors.New("Store Error 1"),
+			results: map[string][][]byte{
+				"key1": nil,
+				"key2": nil,
+			},
+			fetchReplicaStateFailedTotal: 1,
+			initialSyncFailed:            true,
+		},
+		{
 			name:              "when user not found in all replicas and storage, read not counted as failure and still become ready.",
 			replicationFactor: 3,
 			read:              readStateResult{err: errAllReplicasUserNotFound},
@@ -353,6 +371,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			replicator.read = tt.read
 			store := newFakeAlertStore()
 			store.states = tt.storeStates
+			store.getErr = tt.storeErr
 			s := newReplicatedStates("user-1", tt.replicationFactor, replicator, store, 0, log.NewNopLogger(), reg)
 
 			key1State := &fakeState{}
@@ -371,6 +390,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			})
 
 			assert.True(t, s.Ready())
+			assert.Equal(t, !tt.initialSyncFailed, s.InitialSyncDone())
 
 			// Note: We don't actually test beyond Merge() here, just that all data is forwarded.
 			assert.Equal(t, tt.results["key1"], key1State.merges)
