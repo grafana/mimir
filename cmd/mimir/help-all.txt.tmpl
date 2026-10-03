@@ -32,7 +32,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.azure.max-idle-connections-per-host int
@@ -70,7 +70,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
@@ -116,7 +116,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
@@ -418,7 +418,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.azure.max-idle-connections-per-host int
@@ -720,7 +720,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
@@ -764,7 +764,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
@@ -962,7 +962,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.azure.max-idle-connections-per-host int
@@ -1000,7 +1000,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
@@ -1044,7 +1044,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
@@ -3162,7 +3162,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.azure.max-idle-connections-per-host int
@@ -3242,7 +3242,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
@@ -3288,7 +3288,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
