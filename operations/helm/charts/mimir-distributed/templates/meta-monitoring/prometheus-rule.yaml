@@ -1,0 +1,16 @@
+{{- if .Values.metaMonitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "mimir.fullname" . }}-meta-monitoring
+  labels:
+    {{- include "mimir.labels" . | nindent 4 }}
+    {{- with .Values.metaMonitoring.prometheusRule.additionalRuleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+  - name: mimir-meta-monitoring
+    rules:
+    # ... rules content ...
+{{- end }}
