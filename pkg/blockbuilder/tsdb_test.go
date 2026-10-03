@@ -65,7 +65,7 @@ func floatSample(ts int64, val float64) []mimirpb.Sample {
 
 func histogramSample(ts int64) []mimirpb.Histogram {
 	return []mimirpb.Histogram{
-		mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts))),
+		mimirpb.FromHistogramToHistogramProto(ts, 0, test.GenerateTestHistogram(int(ts))),
 	}
 }
 
@@ -553,7 +553,7 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 				actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram(nil)
-				hp := mimirpb.FromHistogramToHistogramProto(ts, h)
+				hp := mimirpb.FromHistogramToHistogramProto(ts, 0, h)
 				hp.ResetHint = 0
 				actHistograms = append(actHistograms, hp)
 			default:

@@ -129,8 +129,8 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	t.Run("merges samples across identical label sets", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(lbls, makeSamples(10, 1), nil, nil),
-			makeTimeseries(lbls, makeSamples(20, 2), nil, nil),
+			makeTimeseries(lbls, makeSamples(10, 0, 1), nil, nil),
+			makeTimeseries(lbls, makeSamples(20, 0, 2), nil, nil),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -145,8 +145,8 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	t.Run("merges histograms and exemplars and keeps exemplar labels valid after pooled reuse", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(lbls, makeSamples(10, 1), makeHistograms(11, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "a"}, 1, 1)),
-			makeTimeseries(lbls, makeSamples(20, 2), makeHistograms(21, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "b"}, 1, 1)),
+			makeTimeseries(lbls, makeSamples(10, 0, 1), makeHistograms(11, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "a"}, 1, 1)),
+			makeTimeseries(lbls, makeSamples(20, 0, 2), makeHistograms(21, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "b"}, 1, 1)),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -178,7 +178,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		// duplicate removed.
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(lbls, makeSamples(10, 1), nil, nil),
+			makeTimeseries(lbls, makeSamples(10, 0, 1), nil, nil),
 			makeTimeseries(lbls, nil, makeHistograms(21, generateTestHistogram(1)), nil),
 		}}
 
@@ -192,8 +192,8 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	t.Run("merges identical label sets sharing a created timestamp", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 42),
-			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 42, 1), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 42, 2), 42),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -211,9 +211,9 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		// each still triggers its own zero-sample ingestion downstream.
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 10),
-			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 20),
-			makeTimeseriesWithCT(lbls, makeSamples(300, 3), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 10, 1), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 20, 2), 20),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 10, 3), 10),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -232,10 +232,10 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		seriesA := []string{model.MetricNameLabel, "series_a"}
 		seriesB := []string{model.MetricNameLabel, "series_b"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries(seriesA, makeSamples(1, 1), nil, nil),
-			makeTimeseries(seriesB, makeSamples(2, 2), nil, nil),
-			makeTimeseries(seriesA, makeSamples(3, 3), nil, nil),
-			makeTimeseries(seriesA, makeSamples(4, 4), nil, nil),
+			makeTimeseries(seriesA, makeSamples(1, 0, 1), nil, nil),
+			makeTimeseries(seriesB, makeSamples(2, 0, 2), nil, nil),
+			makeTimeseries(seriesA, makeSamples(3, 0, 3), nil, nil),
+			makeTimeseries(seriesA, makeSamples(4, 0, 4), nil, nil),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -250,9 +250,9 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		// different labels also produce different hashes; the same-hash collision
 		// case is covered by "merges duplicates whose label sets share a hash".
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(1, 1), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(2, 2), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "series_1", "zone", "a"}, makeSamples(3, 3), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(1, 0, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(2, 0, 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_1", "zone", "a"}, makeSamples(3, 0, 3), nil, nil),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -274,7 +274,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 			// so returning a removed duplicate to the pool can't corrupt a survivor.
 			return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 				Labels:  slices.Clone(lbls),
-				Samples: makeSamples(ts, 1),
+				Samples: makeSamples(ts, 0, 1),
 			}}
 		}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
@@ -298,7 +298,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 
 	t.Run("passes through single-series request unchanged", func(t *testing.T) {
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(10, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(10, 0, 1), nil, nil),
 		}}
 
 		got := runPrePushMerge(t, d, req)
@@ -329,8 +329,8 @@ func TestDistributor_prePushMergeMiddleware_Disabled(t *testing.T) {
 
 	lbls := []string{model.MetricNameLabel, "series_1"}
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-		makeTimeseries(lbls, makeSamples(10, 1), nil, nil),
-		makeTimeseries(lbls, makeSamples(20, 2), nil, nil),
+		makeTimeseries(lbls, makeSamples(10, 0, 1), nil, nil),
+		makeTimeseries(lbls, makeSamples(20, 0, 2), nil, nil),
 	}}
 
 	got := runPrePushMerge(t, d, req)
@@ -353,8 +353,8 @@ func TestDistributor_prePushMergeMiddleware_InterleavedDuplicates(t *testing.T) 
 	for s := 0; s < numSeries; s++ {
 		lbls := []string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}
 		ts = append(ts,
-			makeTimeseries(lbls, makeSamples(int64(s), 1), nil, nil),
-			makeTimeseries(lbls, makeSamples(int64(1000+s), 2), nil, nil),
+			makeTimeseries(lbls, makeSamples(int64(s), 0, 1), nil, nil),
+			makeTimeseries(lbls, makeSamples(int64(1000+s), 0, 2), nil, nil),
 		)
 	}
 
@@ -426,7 +426,7 @@ func TestDistributor_prePushMergeMiddleware_BoundsCollisionScan(t *testing.T) {
 		// returning a removed duplicate to the pool can't corrupt a survivor.
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 			Labels:  slices.Clone(lbls),
-			Samples: makeSamples(ts, 1),
+			Samples: makeSamples(ts, 0, 1),
 		}}
 	}
 
@@ -510,7 +510,7 @@ func TestDistributor_prePushMergeMiddleware_DoesNotPoolOversizedSeenMaps(t *test
 			ts := make([]mimirpb.PreallocTimeseries, 0, tc.numSeries)
 			for s := 0; s < tc.numSeries; s++ {
 				lbls := []string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}
-				ts = append(ts, makeTimeseries(lbls, makeSamples(int64(s), 1), nil, nil))
+				ts = append(ts, makeTimeseries(lbls, makeSamples(int64(s), 0, 1), nil, nil))
 			}
 
 			got := runPrePushMerge(t, newMergeTestDistributor(t, true), &mimirpb.WriteRequest{Timeseries: ts})
@@ -544,8 +544,8 @@ func TestDistributor_prePushMergeMiddleware_InvalidatesMarshalCache(t *testing.T
 	// The first series carries only a sample; the second additionally carries a
 	// histogram and an exemplar, so the merge exercises every slice type.
 	src := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-		makeTimeseries(lbls, makeSamples(10, 1), nil, nil),
-		makeTimeseries(lbls, makeSamples(20, 2), makeHistograms(21, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "b"}, 1, 1)),
+		makeTimeseries(lbls, makeSamples(10, 0, 1), nil, nil),
+		makeTimeseries(lbls, makeSamples(20, 0, 2), makeHistograms(21, generateTestHistogram(1)), makeExemplars([]string{"trace_id", "b"}, 1, 1)),
 	}}
 
 	// Prime the per-timeseries marshal cache: marshal, then unmarshal into a
@@ -609,8 +609,8 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 
 			lbls := []string{model.MetricNameLabel, "series_1"}
 			req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 1), createdTS),
-				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, 2), createdTS),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, createdTS, 1), createdTS),
+				makeTimeseriesWithCT(lbls, makeSamples(duplicateTS, createdTS, 2), createdTS),
 			}}
 
 			_, err := ds[0].Push(ctx, req)
@@ -676,7 +676,7 @@ func BenchmarkDistributor_prePushMergeMiddleware(b *testing.B) {
 		return []string{model.MetricNameLabel, fmt.Sprintf("series_%d", seed)}
 	}
 	floatPayload := func(s int) ([]mimirpb.Sample, []mimirpb.Histogram) {
-		return makeSamples(int64(s), float64(s)), nil
+		return makeSamples(int64(s), 0, float64(s)), nil
 	}
 	histogramPayload := func(s int) ([]mimirpb.Sample, []mimirpb.Histogram) {
 		return nil, makeHistograms(int64(s), generateTestHistogram(s))
@@ -800,7 +800,7 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 		buildOne := func(offset int) mimirpb.PreallocTimeseries {
 			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
 			for i := 0; i < histogramsPerSeries; i++ {
-				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), 0, generateTestHistogram(i))
 			}
 			return makeTimeseries(lbls, nil, histograms, nil)
 		}
@@ -820,7 +820,7 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 			}
 			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
 			for i := 0; i < histogramsPerSeries; i++ {
-				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), 0, generateTestHistogram(i))
 			}
 			return makeTimeseries(lbls, samples, histograms, nil)
 		}
@@ -868,10 +868,10 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 		buildOne := func(diffValueOffset int) mimirpb.PreallocTimeseries {
 			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
 			for i := 0; i < sameValueCount/2; i++ {
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(0)))
 			}
 			for i := 0; i < diffValueCount/2; i++ {
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(diffValueOffset+i+1)))
 			}
 			return makeTimeseries(lbls, nil, histograms, nil)
 		}
@@ -887,11 +887,11 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
 			for i := 0; i < sameValueCount/2; i++ {
 				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: sharedValue})
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(0)))
 			}
 			for i := 0; i < diffValueCount/2; i++ {
 				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: float64(diffValueOffset + i + 1)})
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(diffValueOffset+i+1)))
 			}
 			return makeTimeseries(lbls, samples, histograms, nil)
 		}

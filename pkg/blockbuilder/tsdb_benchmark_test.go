@@ -125,7 +125,7 @@ func benchmarkCompactAndUpload(
 				histograms := make([]mimirpb.Histogram, samplesPerSeries)
 				for j := 0; j < samplesPerSeries; j++ {
 					ts := startTs + int64(j*1000)
-					histograms[j] = mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts)))
+					histograms[j] = mimirpb.FromHistogramToHistogramProto(ts, 0, test.GenerateTestHistogram(int(ts)))
 				}
 				req = createWriteRequest(fmt.Sprintf("bench_%d", seriesID), nil, histograms)
 			} else {
