@@ -950,8 +950,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
-            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
+            # Match the current server_error reason and legacy error or missing reason, but not client_error.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(server_error|error|^$)"}[%(rate_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(rate_interval)s]))
             ) > 1
@@ -972,8 +972,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
+            # Match the current server_error reason and legacy error or missing reason, but not client_error.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(server_error|error|^$)"}[%(rate_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(rate_interval)s]))
             ) > 1
