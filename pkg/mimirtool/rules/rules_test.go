@@ -268,10 +268,53 @@ func TestLintExpressions(t *testing.T) {
 			err: "",
 		},
 		{
-			name:     "with a complex expression",
-			expr:     `sum by (cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1000000000 / 5 * 1 > (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1000000000)`,
-			expected: `sum by (cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1000000000 / 5 * 1 > (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1000000000)`,
-			count:    1, modified: 0,
+			name: "with a complex expression",
+			expr: `sum by (cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1000000000 / 5 * 1 > (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1000000000)`,
+			expected: `        sum by (cluster, namespace) (
+          sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])
+        )
+      /
+        1000000000
+    /
+      5
+  *
+    1
+>
+  (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1000000000)`,
+			count: 1, modified: 1,
+			err: "",
+		},
+		{
+			name: "it merges a short multi-line expression into one line",
+			expr: `  instance_path:request_failures:rate5m{job="myjob"}
+/
+  instance_path:requests:rate5m{job="myjob"}`,
+			expected: `instance_path:request_failures:rate5m{job="myjob"} / instance_path:requests:rate5m{job="myjob"}`,
+			count:    1, modified: 1,
+			err: "",
+		},
+		{
+			name: "it keeps a long multi-line expression on multiple lines",
+			expr: `sum by (x) (
+  instance_path:request_failures:rate5m{job="myjob"}
+  /
+  instance_path:requests:rate5m{job="myjob"}
+)`,
+			expected: `sum by (x) (
+  instance_path:request_failures:rate5m{job="myjob"} / instance_path:requests:rate5m{job="myjob"}
+)`,
+			count: 1, modified: 1,
+			err: "",
+		},
+		{
+			name: "with an already formatted multi-line expression",
+			expr: `sum by (x) (
+  instance_path:request_failures:rate5m{job="myjob"} / instance_path:requests:rate5m{job="myjob"}
+)`,
+			expected: `sum by (x) (
+  instance_path:request_failures:rate5m{job="myjob"} / instance_path:requests:rate5m{job="myjob"}
+)`,
+			count: 1, modified: 0,
 			err: "",
 		},
 		{
