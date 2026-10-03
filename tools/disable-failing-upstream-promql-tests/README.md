@@ -1,0 +1,9 @@
+This tool comments out every enabled upstream PromQL test case that Mimir's engine does not run successfully - whether because the feature is unsupported or the result diverges from upstream - so that `TestUpstreamTestCases` stays green after a mimir-prometheus bump. It is the second half of the automated vendoring sync, run after [`sync-upstream-promql-tests`](../sync-upstream-promql-tests).
+
+It runs `TestUpstreamTestCases` once with `go test -json`, reads the failing per-case subtests to learn exactly which eval commands failed, and comments those blocks out. A single run reports every failing case, so there is no per-case isolation or iteration.
+
+Disabled cases are split by cause (unsupported vs divergent result) and, when `MIMIR_SYNC_BASELINE_REF` is set to a commit from before the sync, by origin: an existing case that passed before, a new upstream case, or a case that was already disabled but that the sync re-enabled because upstream changed it or the lines next to it. Cases are matched by their eval command line. The list is printed, and also written to `MIMIR_SYNC_REPORT` when that is set. The cases that were not already disabled are written to `MIMIR_SYNC_DISABLED` when that is set.
+
+Run this tool with `go run .` in this directory, or via `make disable-failing-upstream-promql-tests` from the repository root, for example `make disable-failing-upstream-promql-tests MIMIR_SYNC_BASELINE_REF=HEAD~1` after committing the re-sync. For how both tools are used to fix a failing vendoring PR, see [Fixing a failing mimir-prometheus vendoring PR](../sync-upstream-promql-tests/README.md#fixing-a-failing-mimir-prometheus-vendoring-pr).
+
+See [these docs](../../pkg/streamingpromql/testdata/upstream/README.md) for more information, and the inverse tool [`check-for-disabled-but-supported-mqe-test-cases`](../check-for-disabled-but-supported-mqe-test-cases).
