@@ -133,7 +133,14 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	}
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
-	infoMatchers, skipQueryingInfo := f.generateInfoMatchers(innerMetadata)
+	// Info series among the inner series are not enriched, so they must not contribute their
+	// identifying labels to the info fetch matchers.
+	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	infoMatchers, skipQueryingInfo := f.generateInfoMatchers(innerMetadata, ignoreSeries)
 	if !skipQueryingInfo {
 		// If the info selector contains only negative __name__ matchers, add a synthetic
 		// positive __name__=~".+_info" matcher to prevent non-info metrics from being fetched.
@@ -153,10 +160,6 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 	}
 
-	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
-	if err != nil {
-		return nil, err
-	}
 	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries); err != nil {
 		return nil, err
 	}
@@ -189,8 +192,9 @@ func filterInfoInnerMatchers(matchers, dataLabelMatchers types.Matchers) types.M
 
 // generateInfoMatchers creates matchers based on job and instance labels from inner series
 // to avoid selecting all info series unnecessarily.
-func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata) (types.Matchers, bool) {
-	if len(innerMetadata) == 0 {
+func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) (types.Matchers, bool) {
+	total := len(innerMetadata) - len(ignoreSeries)
+	if total == 0 {
 		return nil, true
 	}
 
@@ -200,7 +204,10 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		identifyingLabelValues[labelName] = make(map[string]struct{})
 	}
 
-	for _, metadata := range innerMetadata {
+	for i, metadata := range innerMetadata {
+		if _, ignore := ignoreSeries[i]; ignore {
+			continue
+		}
 		for _, labelName := range identifyingLabels {
 			if value := metadata.Labels.Get(labelName); value != "" {
 				identifyingLabelValues[labelName][value] = struct{}{}
@@ -223,7 +230,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		// When a label is present on only some inner series, info series that lack it (matching an
 		// inner series on the other identifying label) must still be fetched, so the matcher also
 		// accepts the empty value. Extra cross-pairs are removed by the signature join below.
-		mixed := identifyingLabelPresent[labelName] < len(innerMetadata)
+		mixed := identifyingLabelPresent[labelName] < total
 
 		if len(values) == 1 && !mixed {
 			for value := range values {
