@@ -1,6 +1,7 @@
 # Changelog
 
 ## main / unreleased
+[BUGFIX] Block-builder-scheduler: Prevent silent data loss during startup recovery when partition has no committed offset by skipping unanchored observations. #16345
 
 ### Grafana Mimir
 
