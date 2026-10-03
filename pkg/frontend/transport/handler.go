@@ -443,7 +443,9 @@ func (f *Handler) reportQueryStats(
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
-	// Log stats.
+	// Log stats. The appends below are interleaved so that range and instant queries keep the
+	// key order they had before the field groups were added. Do not reorder them.
+	fields := queryStatsFieldsForPath(r.URL.Path)
 	logMessage := []any{
 		"msg", "query stats",
 		"component", "query-frontend",
@@ -455,22 +457,46 @@ func (f *Handler) reportQueryStats(
 		responseTime, queryResponseTime,
 		responseSizeBytes, queryResponseSizeBytes,
 		queryWallTimeSeconds, wallTime.Seconds(),
-		fetchedSeriesCount, numSeries,
-		fetchedChunkBytes, numBytes,
-		fetchedChunksCount, numChunks,
-		fetchedIndexBytes, numIndexBytes,
-		shardedQueries, stats.LoadShardedQueries(),
-		splitQueries, stats.LoadSplitQueries(),
-		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		"split_range_vectors", stats.LoadSplitRangeVectors(),
-		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
-		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
-		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
-		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
-		"retries", stats.LoadRetries(),
-		"samples_processed", samplesProcessed,
-		"equivalent_samples_read", equivalentSamplesRead,
-		"physical_samples_read", physicalSamplesRead,
+	}
+	if fields&fetchedSeriesFields != 0 {
+		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
+	}
+	if fields&fetchedChunksFields != 0 {
+		logMessage = append(logMessage,
+			fetchedChunkBytes, numBytes,
+			fetchedChunksCount, numChunks,
+		)
+	}
+	if fields&fetchedIndexFields != 0 {
+		logMessage = append(logMessage, fetchedIndexBytes, numIndexBytes)
+	}
+	if fields&shardedQueriesFields != 0 {
+		logMessage = append(logMessage, shardedQueries, stats.LoadShardedQueries())
+	}
+	if fields&metricsQueryFields != 0 {
+		logMessage = append(logMessage,
+			splitQueries, stats.LoadSplitQueries(),
+			"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
+			"split_range_vectors", stats.LoadSplitRangeVectors(),
+			estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
+		)
+	}
+	logMessage = append(logMessage, queueTimeSeconds, stats.LoadQueueTime().Seconds())
+	if fields&metricsQueryFields != 0 {
+		logMessage = append(logMessage,
+			encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+			remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
+		)
+	}
+	logMessage = append(logMessage, "retries", stats.LoadRetries())
+	if fields&metricsQueryFields != 0 {
+		logMessage = append(logMessage, "samples_processed", samplesProcessed)
+	}
+	if fields&samplesReadFields != 0 {
+		logMessage = append(logMessage,
+			"equivalent_samples_read", equivalentSamplesRead,
+			"physical_samples_read", physicalSamplesRead,
+		)
 	}
 
 	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
@@ -487,15 +513,21 @@ func (f *Handler) reportQueryStats(
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
-		logMessage = append(logMessage,
-			resultsCacheHitBytes, details.ResultsCacheHitBytes,
-			resultsCacheMissBytes, details.ResultsCacheMissBytes,
-			"results_cache_hit_count", details.ResultsCacheHitCount,
-			"results_cache_miss_count", details.ResultsCacheMissCount,
-			"results_cache_set_count", details.ResultsCacheSetCount,
-			"response_series_count", details.ResponseSeriesCount,
-			"response_samples_count", details.ResponseSamplesCount,
-		)
+		if fields&resultsCacheBytesFields != 0 {
+			logMessage = append(logMessage,
+				resultsCacheHitBytes, details.ResultsCacheHitBytes,
+				resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			)
+		}
+		if fields&metricsQueryFields != 0 {
+			logMessage = append(logMessage,
+				"results_cache_hit_count", details.ResultsCacheHitCount,
+				"results_cache_miss_count", details.ResultsCacheMissCount,
+				"results_cache_set_count", details.ResultsCacheSetCount,
+				"response_series_count", details.ResponseSeriesCount,
+				"response_samples_count", details.ResponseSamplesCount,
+			)
+		}
 	}
 
 	// Log the read consistency only when explicitly defined.
@@ -534,6 +566,46 @@ func (f *Handler) reportQueryStats(
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
+}
+
+// queryStatsFields is a set of optional field groups in the "query stats" log line.
+// Each group holds stats that only some endpoints can set. A group is not logged for an
+// endpoint that never sets it, because there its value is always zero.
+type queryStatsFields uint8
+
+const (
+	fetchedSeriesFields queryStatsFields = 1 << iota
+	fetchedIndexFields
+	fetchedChunksFields
+	samplesReadFields
+	shardedQueriesFields
+	resultsCacheBytesFields
+	metricsQueryFields
+
+	allQueryStatsFields = fetchedSeriesFields | fetchedIndexFields | fetchedChunksFields | samplesReadFields |
+		shardedQueriesFields | resultsCacheBytesFields | metricsQueryFields
+)
+
+// queryStatsFieldsForPath returns the field groups that the code which serves path can set.
+// A path that is not known here gets all groups, so that its log line does not lose a stat.
+// Update this function when a stat starts to be set for one more endpoint.
+func queryStatsFieldsForPath(path string) queryStatsFields {
+	switch {
+	// Range and instant queries are the most frequent requests. Check them first, so that they
+	// do not run the regular expression in IsLabelValuesQuery.
+	case querymiddleware.IsRangeQuery(path), querymiddleware.IsInstantQuery(path):
+		return allQueryStatsFields
+	case querymiddleware.IsRemoteReadQuery(path):
+		return fetchedSeriesFields | fetchedIndexFields | fetchedChunksFields | samplesReadFields
+	case querymiddleware.IsSeriesQuery(path):
+		return fetchedSeriesFields | fetchedIndexFields
+	case querymiddleware.IsActiveSeriesQuery(path), querymiddleware.IsActiveNativeHistogramMetricsQuery(path):
+		return fetchedSeriesFields | shardedQueriesFields
+	case querymiddleware.IsCardinalityQuery(path), querymiddleware.IsLabelsQuery(path):
+		return resultsCacheBytesFields
+	default:
+		return allQueryStatsFields
+	}
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.

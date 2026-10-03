@@ -3982,6 +3982,8 @@ Use `evaluation stats` when asking:
 - Which shard/time-chunk is causing problems?
 - Was the expression modified from what the user submitted?
 
+Range and instant queries log every stat attribute in the list below. Remote read, series, cardinality, active series, and label requests log only the stats that their code paths can set. For example, label names and label values requests do not log `fetched_series_count`, `sharded_queries`, or `samples_processed`, but do log `results_cache_hit_bytes` and `results_cache_miss_bytes`. Other endpoints log every stat attribute.
+
 When looking at `msg="query stats"` consider the following attributes;
 
 - status, err — indicates success or failure with an error message indicating the failure reason
