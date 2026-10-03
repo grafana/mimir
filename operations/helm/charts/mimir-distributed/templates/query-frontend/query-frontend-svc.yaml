@@ -19,6 +19,13 @@ spec:
   {{- if .Values.query_frontend.service.trafficDistribution }}
   trafficDistribution: {{ .Values.query_frontend.service.trafficDistribution }}
   {{- end }}
+  {{- with .Values.query_frontend.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.query_frontend.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP

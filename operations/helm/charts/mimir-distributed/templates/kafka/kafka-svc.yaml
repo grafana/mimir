@@ -13,6 +13,13 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: {{ .Values.kafka.service.type }}
+  {{- with .Values.kafka.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.kafka.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ .Values.kafka.service.port }}
       protocol: TCP

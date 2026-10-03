@@ -16,6 +16,13 @@ spec:
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.ruler.service.internalTrafficPolicy }}
   {{- end }}
+  {{- with .Values.ruler.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.ruler.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" . }}
       protocol: TCP

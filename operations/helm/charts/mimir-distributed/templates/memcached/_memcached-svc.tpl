@@ -19,6 +19,13 @@ metadata:
 spec:
   type: ClusterIP
   clusterIP: None
+  {{- with .service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - name: memcached-client
       port: {{ .port }}

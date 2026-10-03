@@ -28,6 +28,13 @@ spec:
   {{- if .Values.store_gateway.service.trafficDistribution }}
   trafficDistribution: {{ .Values.store_gateway.service.trafficDistribution }}
   {{- end }}
+  {{- with .Values.store_gateway.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.store_gateway.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" . }}
       protocol: TCP
