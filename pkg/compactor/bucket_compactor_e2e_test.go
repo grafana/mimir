@@ -38,7 +38,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -242,8 +241,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		cfg := indexheader.Config{VerifyOnLoad: true}
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -516,13 +514,12 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		reg := prometheus.NewPedanticRegistry()
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, reg)
-		cfg := indexheader.Config{VerifyOnLoad: true}
 
 		// The merged block will have ~104 symbols with on-disk symbol table ~1400 bytes.
 		// This threshold sits below it.
 		const testSymbolTableSizeThreshold = 500
 
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Generate 50 series per block with distinct label values to produce enough symbols.
