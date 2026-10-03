@@ -80,6 +80,10 @@ spec:
       dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         {{- with .extraVolumes }}
         {{- toYaml . | nindent 8 }}

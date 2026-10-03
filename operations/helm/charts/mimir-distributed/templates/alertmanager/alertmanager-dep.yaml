@@ -46,6 +46,10 @@ spec:
         - name: {{ . }}
       {{- end}}
       {{- end }}
+      {{ with .Values.alertmanager.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: alertmanager
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "alertmanager") }}

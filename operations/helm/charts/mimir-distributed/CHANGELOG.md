@@ -42,6 +42,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Gateway: use the distributor ClusterIP Service when `distributor.service.trafficDistribution` is configured so that Kubernetes traffic distribution can take effect. #16448
 * [BUGFIX] Alertmanager: Render priorityClassName in Deployment based on the `alertmanager` per-component value. Historically the value from `query_frontend` was being mistakenly rendered. #16537
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
+* [ENHANCEMENT] Add support for `hostAliases` for all components. #16446
 
 ## 6.2.0
 
