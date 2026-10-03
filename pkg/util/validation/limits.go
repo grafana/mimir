@@ -761,7 +761,7 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
+	if !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
 	}
 
@@ -1461,9 +1461,8 @@ func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
-// -blocks-storage.tsdb.float-chunk-encoding limit, which is never empty: tsdb.DB.ApplyConfig() reads an empty
-// chunk encoding as "keep the encoding resolved at startup", so a tenant that clears the limit has
-// to be handed DefaultFloatChunkEncodingValue explicitly to fall back to it.
+// -blocks-storage.tsdb.float-chunk-encoding limit. It falls back to DefaultFloatChunkEncodingValue
+// for invalid values, so tsdb.DB.ApplyConfig() always receives a concrete encoding.
 func (o *Overrides) FloatChunkEncodingValue(userID string) string {
 	value := o.getOverridesForUser(userID).FloatChunkEncoding
 	if _, ok := floatChunkEncodings[value]; ok {
