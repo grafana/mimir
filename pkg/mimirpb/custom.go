@@ -13,6 +13,7 @@ import (
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
@@ -194,22 +195,46 @@ type MessageWithBufferRef interface {
 
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
 type BufferHolder struct {
+	state *bufferHolderState
+}
+
+type bufferHolderState struct {
 	buffer mem.Buffer
+	// holding is pointer-reachable state so BufferHolder can be copied by value without copying an atomic value.
+	holding atomic.Bool
 }
 
 func (m *BufferHolder) Buffer() mem.Buffer {
-	return m.buffer
+	state := m.state
+	if state == nil || !state.holding.Load() {
+		return nil
+	}
+	return state.buffer
 }
 
 func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
+	if buf == nil {
+		m.state = nil
+		return
+	}
+
+	state := &bufferHolderState{buffer: buf}
+	state.holding.Store(true)
+	m.state = state
 }
 
 func (m *BufferHolder) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
+	state := m.state
+	if state == nil {
+		return // Never had a buffer, no-op.
 	}
+	if !state.holding.CompareAndSwap(true, false) {
+		panic("BufferHolder.FreeBuffer called on already-freed buffer")
+	}
+
+	buf := state.buffer
+	state.buffer = nil
+	buf.Free()
 }
 
 var _ MessageWithBufferRef = &BufferHolder{}
@@ -602,7 +627,9 @@ func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
 		return
 	}
 	buf.Ref()
-	m.sourceBufferHolders[key] = BufferHolder{buffer: buf}
+	var holder BufferHolder
+	holder.SetBuffer(buf)
+	m.sourceBufferHolders[key] = holder
 }
 
 // bufferKey returns a unique key for the buffer based on the address of its underlying data.
