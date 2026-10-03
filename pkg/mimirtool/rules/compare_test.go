@@ -129,6 +129,19 @@ func Test_rulesEqual(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "rule_node_keep_firing_for_diff",
+			a: &rulefmt.Rule{
+				Alert: "one",
+				Expr:  "up == 0",
+			},
+			b: &rulefmt.Rule{
+				Alert:         "one",
+				Expr:          "up == 0",
+				KeepFiringFor: model.Duration(15 * time.Minute),
+			},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
