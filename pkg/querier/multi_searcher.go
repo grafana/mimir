@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/web/api/v1/search.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 
 package querier
 
@@ -6,10 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
@@ -195,6 +200,10 @@ func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations,
 // sets it, then streams the enriched batch out — so metadata is fetched exactly
 // one response batch at a time, preserving the streaming contract.
 //
+// The fetch also includes the metric family name of each suffixed result (x for
+// x_bucket), because metadata is stored by family name. Results past the
+// handler's limit are not enriched.
+//
 // Metadata is best-effort: a fetch error does not fail the search, it just
 // leaves that batch un-enriched (metadata is optional per result), so no
 // warning is surfaced.
@@ -203,16 +212,23 @@ type metadataEnrichingSearchResultSet struct {
 	inner     storage.SearchResultSet
 	fetch     func(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
 	batchSize int
-	logger    log.Logger
+	// limit is the number of results the handler emits, 0 means no limit.
+	limit  int
+	logger log.Logger
 
 	buf            []storage.SearchResult
 	bufNextReadIdx int
 	innerDone      bool
 	warnedFetchErr bool
+	// read is the number of results read from inner before the current batch.
+	read int
+
+	// requested is reused across batches to dedupe the names to fetch.
+	requested map[string]struct{}
 }
 
-func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int, logger log.Logger) *metadataEnrichingSearchResultSet {
-	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize, logger: logger}
+func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize, limit int, logger log.Logger) *metadataEnrichingSearchResultSet {
+	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize, limit: limit, logger: logger}
 }
 
 func (s *metadataEnrichingSearchResultSet) Next() bool {
@@ -239,15 +255,51 @@ func (s *metadataEnrichingSearchResultSet) Next() bool {
 	if len(s.buf) == 0 {
 		return false
 	}
-	s.enrich()
+	// The handler reads one result past the limit only to detect has_more and
+	// does not emit it, so do not enrich it. When that result is alone in its
+	// batch, this saves a metadata fetch from all ingesters.
+	n := len(s.buf)
+	if s.limit > 0 {
+		n = min(n, max(s.limit-s.read, 0))
+	}
+	s.read += len(s.buf)
+	if n > 0 {
+		s.enrich(s.buf[:n])
+	}
 
 	return true
 }
 
-func (s *metadataEnrichingSearchResultSet) enrich() {
-	names := make([]string, len(s.buf))
-	for i := range s.buf {
-		names[i] = s.buf[i].Value
+func (s *metadataEnrichingSearchResultSet) enrich(batch []storage.SearchResult) {
+	// Metadata is stored by metric family name, so a suffixed name such as
+	// x_bucket also needs its family name x in the fetch. Result values are
+	// unique, but family names can repeat or equal another result value.
+	//
+	// names is not reused across batches: the fetch request holds it, and
+	// ingester calls that lost the quorum race can still be sending it after
+	// fetch returns. Capacity is increased to accommodate family names being
+	// added to this slice.
+	names := make([]string, 0, 2*len(batch))
+	if s.requested == nil {
+		s.requested = make(map[string]struct{}, 2*len(batch))
+	}
+	defer clear(s.requested)
+
+	for i := range batch {
+		val := batch[i].Value
+		names = append(names, val)
+		s.requested[val] = struct{}{}
+	}
+	for i := range batch {
+		family, _, ok := metricFamilyName(batch[i].Value)
+		if !ok {
+			continue
+		}
+		if _, ok := s.requested[family]; ok {
+			continue
+		}
+		names = append(names, family)
+		s.requested[family] = struct{}{}
 	}
 
 	md, err := s.fetch(s.ctx, names)
@@ -262,11 +314,88 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 		return
 	}
 
-	for i := range s.buf {
-		if m, ok := md[s.buf[i].Value]; ok {
-			mm := m
-			s.buf[i].Metadata = &mm
+	// Store the metadata of the batch in one slice instead of one allocation
+	// per result. It is allocated at the first match, with room for every
+	// remaining result, so it never grows and the pointers into it stay valid.
+	var mds []metadata.Metadata
+	for i := range batch {
+		m, ok := metadataForMetric(md, batch[i].Value)
+		if !ok {
+			continue
 		}
+		if mds == nil {
+			mds = make([]metadata.Metadata, 0, len(batch)-i)
+		}
+		mds = append(mds, m)
+		batch[i].Metadata = &mds[len(mds)-1]
+	}
+}
+
+// metadataForMetric returns the metadata of the metric family a metric name
+// belongs to. An exact match on the family name wins. Otherwise the last
+// suffix is stripped and the metadata is returned if the family type allows
+// that suffix.
+func metadataForMetric(md map[string]metadata.Metadata, name string) (metadata.Metadata, bool) {
+	if m, ok := md[name]; ok {
+		return m, true
+	}
+	family, suffix, ok := metricFamilyName(name)
+	if !ok {
+		return metadata.Metadata{}, false
+	}
+	if m, ok := md[family]; ok && typeAllowsSuffix(m.Type, suffix) {
+		return m, true
+	}
+	return metadata.Metadata{}, false
+}
+
+// metricFamilyName splits a metric name into the family name and the suffix,
+// when the suffix is one that typeAllowsSuffix can accept.
+//
+// A family name that already ends with _total or _info is not returned for the
+// same suffix: Prometheus allows a counter family named x_total and an info
+// family named x_info, whose series have the same name as the family and
+// match exactly. So x_total_total is not a series of the x_total family, as in
+// isSeriesPartOfFamily in Prometheus scrape/scrape.go.
+func metricFamilyName(name string) (family, suffix string, ok bool) {
+	i := strings.LastIndexByte(name, '_')
+	if i <= 0 {
+		return "", "", false
+	}
+	family, suffix = name[:i], name[i:]
+	switch suffix {
+	case "_total", "_info":
+		if strings.HasSuffix(family, suffix) {
+			return "", "", false
+		}
+		return family, suffix, true
+	case "_bucket", "_sum", "_count", "_gsum", "_gcount":
+		return family, suffix, true
+	default:
+		return "", "", false
+	}
+}
+
+// typeAllowsSuffix reports whether series of a metric family with the given
+// type can be named with the given suffix. It follows isSeriesPartOfFamily in
+// Prometheus scrape/scrape.go and additionally accepts _sum and _count for
+// gauge histograms, which is how the protobuf parser names them. The _created
+// suffix is not accepted because that series holds a timestamp, not a value of
+// the family type.
+func typeAllowsSuffix(typ model.MetricType, suffix string) bool {
+	switch suffix {
+	case "_total":
+		return typ == model.MetricTypeCounter
+	case "_bucket":
+		return typ == model.MetricTypeHistogram || typ == model.MetricTypeGaugeHistogram
+	case "_sum", "_count":
+		return typ == model.MetricTypeHistogram || typ == model.MetricTypeGaugeHistogram || typ == model.MetricTypeSummary
+	case "_gsum", "_gcount":
+		return typ == model.MetricTypeGaugeHistogram
+	case "_info":
+		return typ == model.MetricTypeInfo
+	default:
+		return false
 	}
 }
 

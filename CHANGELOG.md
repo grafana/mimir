@@ -79,6 +79,7 @@
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Ruler: Return HTTP 499 from the ruler API when the client cancels the request. Previously, client cancellations were reported as 500 by the Prometheus rules and alerts endpoints and the rule group write and delete endpoints, and as 400 by the rule group read endpoints. #16726
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
+* [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search `/api/v1/search/metric_names?include_metadata=true`. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #16759
 
 ### Mixin
 
