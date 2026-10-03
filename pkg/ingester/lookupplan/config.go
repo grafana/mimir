@@ -35,6 +35,15 @@ type CostConfig struct {
 	// RetrievedPostingListCost accounts for the cost of retrieving the posting list from disk or from memory.
 	RetrievedPostingListCost float64 `yaml:"retrieved_posting_list_cost" category:"advanced"`
 
+	// PrefixScanOptimisation, when true, reduces the estimated index scan cost for
+	// regexp matchers that have a non-empty prefix. The store-gateway's
+	// PostingsOffsetsTableV2.LabelValuesOffsets uses the prefix to binary-search
+	// the sparse offset table, scanning only the prefix-bounded region.
+	// Prometheus's TSDB index.Reader has no equivalent optimisation
+	// (https://github.com/prometheus/prometheus/issues/16889),
+	// so this must remain false for the ingester.
+	PrefixScanOptimisation bool `yaml:"prefix_scan_optimisation" category:"advanced"`
+
 	// MinSeriesPerBlockForQueryPlanning is the minimum number of series a block must have for query planning to be used.
 	MinSeriesPerBlockForQueryPlanning uint64 `yaml:"min_series_per_block_for_query_planning" category:"advanced"`
 
