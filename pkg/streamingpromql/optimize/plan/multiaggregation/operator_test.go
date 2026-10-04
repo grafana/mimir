@@ -127,7 +127,7 @@ func TestOperator_Finalize(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func TestOperator_SharedDenseSumInput(t *testing.T) {
+func TestOperator_SharedContiguousSumInput(t *testing.T) {
 	for _, sumFirst := range []bool{true, false} {
 		name := "sum last"
 		if sumFirst {

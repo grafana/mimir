@@ -111,7 +111,7 @@ func assertFloat64State(t testing.TB, want, got []float64) {
 	}
 }
 
-func TestSumAggregationGroupDenseArithmetic(t *testing.T) {
+func TestSumAggregationGroupContiguousArithmetic(t *testing.T) {
 	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
 	testAccumulateFloat64sWithT(t, func(t *testing.T, values, sums, compensations []float64) {
 		tr := sumIntegrationTimeRange(len(sums))
@@ -211,7 +211,7 @@ func TestSumAggregationGroupEmptyAndMixedHistograms(t *testing.T) {
 
 func TestSumAggregationGroupMemoryFailures(t *testing.T) {
 	tr := sumIntegrationTimeRange(129)
-	data := newSumBenchmarkFixture(sumBenchmarkCase{129, 1, "dense", "positive"}).series[0]
+	data := newSumBenchmarkFixture(sumBenchmarkCase{129, 1, "full_range", "positive"}).series[0]
 	// Pools round 129 steps to 256; limits must use bucket capacity.
 	stateBytes := uint64(256) * (2*types.Float64Size + types.BoolSize)
 	for _, limit := range []uint64{1, 256 * 8, 256 * 16, stateBytes - 1} {
@@ -251,7 +251,7 @@ func TestSumAggregationGroupMemoryFailures(t *testing.T) {
 	}
 }
 
-func TestSumAggregationGroupDenseReusesStateBudget(t *testing.T) {
+func TestSumAggregationGroupContiguousInputReusesStateBudget(t *testing.T) {
 	tr := sumIntegrationTimeRange(257)
 	stateBytes := uint64(512) * (2*types.Float64Size + types.BoolSize)
 	tracker := limiter.NewMemoryConsumptionTracker(t.Context(), stateBytes, prometheus.NewCounter(prometheus.CounterOpts{Name: "sum_memory_rejections"}), "")
@@ -266,7 +266,7 @@ func TestSumAggregationGroupDenseReusesStateBudget(t *testing.T) {
 	}
 	require.NoError(t, g.AccumulateSeries(types.InstantVectorSeriesData{Floats: points}, tr, tracker, nil, 2, false))
 	sums, compensations, present := slices.Clone(g.floatSums), slices.Clone(g.floatCompensatingValues), slices.Clone(g.floatPresent)
-	data := newSumBenchmarkFixture(sumBenchmarkCase{257, 1, "dense", "positive"}).series[0]
+	data := newSumBenchmarkFixture(sumBenchmarkCase{257, 1, "full_range", "positive"}).series[0]
 	for _, point := range data.Floats {
 		step := tr.PointIndex(point.T)
 		sums[step], compensations[step] = floats.KahanSumInc(point.F, sums[step], compensations[step])
@@ -439,60 +439,60 @@ func reportSumBenchmarkMetrics(b *testing.B, fixture sumBenchmarkFixture, tracke
 }
 
 type sumBenchmarkCase struct {
-	steps  int
-	series int
-	layout string
-	values string
+	steps    int
+	series   int
+	coverage string
+	values   string
 }
 
 func (c sumBenchmarkCase) name() string {
-	return fmt.Sprintf("steps=%d/series=%d/layout=%s/values=%s", c.steps, c.series, c.layout, c.values)
+	return fmt.Sprintf("steps=%d/series=%d/coverage=%s/values=%s", c.steps, c.series, c.coverage, c.values)
 }
 
 func sumBenchmarkCases() []sumBenchmarkCase {
 	var cases []sumBenchmarkCase
 	for _, steps := range []int{1, 8, 128, 1000} {
 		for _, series := range []int{1, 16, 256} {
-			cases = append(cases, sumBenchmarkCase{steps, series, "dense", "positive"})
+			cases = append(cases, sumBenchmarkCase{steps, series, "full_range", "positive"})
 		}
 	}
 	for _, series := range []int{16, 256} {
-		cases = append(cases, sumBenchmarkCase{10000, series, "dense", "positive"})
+		cases = append(cases, sumBenchmarkCase{10000, series, "full_range", "positive"})
 	}
 	for _, steps := range []int{128, 1000} {
 		for _, series := range []int{16, 256} {
-			for _, layout := range []string{"partial", "gaps"} {
-				cases = append(cases, sumBenchmarkCase{steps, series, layout, "positive"})
+			for _, coverage := range []string{"partial_range", "gaps"} {
+				cases = append(cases, sumBenchmarkCase{steps, series, coverage, "positive"})
 			}
 		}
 	}
 	for _, steps := range []int{8, 128, 1000} {
 		for _, series := range []int{16, 256} {
-			cases = append(cases, sumBenchmarkCase{steps, series, "dense", "mixed_magnitude"})
+			cases = append(cases, sumBenchmarkCase{steps, series, "full_range", "mixed_magnitude"})
 		}
 	}
 	for _, steps := range []int{2, 4, 16, 32, 64, 127, 129, 1001} {
 		for _, series := range []int{1, 16, 256} {
-			cases = append(cases, sumBenchmarkCase{steps, series, "dense", "positive"})
+			cases = append(cases, sumBenchmarkCase{steps, series, "full_range", "positive"})
 		}
 	}
 	for _, steps := range []int{128, 1000} {
 		for _, series := range []int{16, 256} {
 			for _, values := range []string{"mixed_sign", "metric_like"} {
-				cases = append(cases, sumBenchmarkCase{steps, series, "dense", values})
+				cases = append(cases, sumBenchmarkCase{steps, series, "full_range", values})
 			}
 		}
 	}
 	for _, steps := range []int{8, 32, 64} {
 		for _, series := range []int{1, 16, 256} {
 			for _, values := range []string{"mixed_sign", "metric_like"} {
-				cases = append(cases, sumBenchmarkCase{steps, series, "dense", values})
+				cases = append(cases, sumBenchmarkCase{steps, series, "full_range", values})
 			}
 		}
 	}
 	for _, steps := range []int{32, 64} {
 		for _, series := range []int{16, 256} {
-			cases = append(cases, sumBenchmarkCase{steps, series, "dense", "mixed_magnitude"})
+			cases = append(cases, sumBenchmarkCase{steps, series, "full_range", "mixed_magnitude"})
 		}
 	}
 	return cases
@@ -523,21 +523,21 @@ func newSumBenchmarkFixture(c sumBenchmarkCase) sumBenchmarkFixture {
 	present := make([]bool, c.steps)
 	for seriesIdx := range c.series {
 		first, end := 0, c.steps
-		if c.layout == "partial" {
+		if c.coverage == "partial_range" {
 			offset := seriesIdx % max(1, c.steps/16)
 			first = c.steps/4 + offset
 			end = c.steps - c.steps/4 - offset
 		}
 		points := make([]promql.FPoint, 0, end-first)
 		for step := first; step < end; step++ {
-			switch c.layout {
-			case "dense", "partial":
+			switch c.coverage {
+			case "full_range", "partial_range":
 			case "gaps":
 				if step%8 == 7 || step%4 == seriesIdx%3 {
 					continue
 				}
 			default:
-				panic("unknown benchmark layout")
+				panic("unknown benchmark coverage")
 			}
 
 			units := int64(1 + (step*17+seriesIdx*13)%63)

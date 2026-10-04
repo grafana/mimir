@@ -74,10 +74,10 @@ func TestAccumulateFloat64sSIMDRandom(t *testing.T) {
 	testAccumulateFloat64sRandom(t, accumulateFloat64sSIMD)
 }
 
-func BenchmarkSumAggregationDenseScalar(b *testing.B) {
+func BenchmarkSumAggregationPrepackedWithPresenceScalar(b *testing.B) {
 	runSumAggregationBenchmarks(b, func(b *testing.B, fixture sumBenchmarkFixture) {
 		requireSumBenchmarkContiguous(b, fixture)
-		inputs := makeSumDenseBenchmarkInputs(fixture)
+		inputs := makeSumPrepackedBenchmarkInputs(fixture)
 		g, tracker := newSumBenchmarkState(b, fixture)
 
 		for b.Loop() {
@@ -105,10 +105,10 @@ func BenchmarkSumAggregationDenseScalar(b *testing.B) {
 	})
 }
 
-func BenchmarkSumAggregationDenseSIMD(b *testing.B) {
+func BenchmarkSumAggregationPrepackedWithPresenceSIMD(b *testing.B) {
 	runSumAggregationBenchmarks(b, func(b *testing.B, fixture sumBenchmarkFixture) {
 		requireSumBenchmarkContiguous(b, fixture)
-		inputs := makeSumDenseBenchmarkInputs(fixture)
+		inputs := makeSumPrepackedBenchmarkInputs(fixture)
 		g, tracker := newSumBenchmarkState(b, fixture)
 
 		for b.Loop() {
@@ -147,7 +147,7 @@ func BenchmarkSumAggregationKernelSIMD(b *testing.B) {
 func benchmarkSumAggregationKernel(b *testing.B, accumulate func([]float64, []float64, []float64)) {
 	runSumAggregationBenchmarks(b, func(b *testing.B, fixture sumBenchmarkFixture) {
 		requireSumBenchmarkContiguous(b, fixture)
-		inputs := makeSumDenseBenchmarkInputs(fixture)
+		inputs := makeSumPrepackedBenchmarkInputs(fixture)
 		g, tracker := newSumBenchmarkState(b, fixture)
 
 		for b.Loop() {
@@ -171,13 +171,13 @@ func benchmarkSumAggregationKernel(b *testing.B, accumulate func([]float64, []fl
 	})
 }
 
-type sumDenseBenchmarkInput struct {
+type sumPrepackedBenchmarkInput struct {
 	first  int
 	values []float64
 }
 
-func makeSumDenseBenchmarkInputs(fixture sumBenchmarkFixture) []sumDenseBenchmarkInput {
-	inputs := make([]sumDenseBenchmarkInput, len(fixture.series))
+func makeSumPrepackedBenchmarkInputs(fixture sumBenchmarkFixture) []sumPrepackedBenchmarkInput {
+	inputs := make([]sumPrepackedBenchmarkInput, len(fixture.series))
 	for i, data := range fixture.series {
 		inputs[i].first = int(fixture.timeRange.PointIndex(data.Floats[0].T))
 		inputs[i].values = make([]float64, len(data.Floats))
@@ -193,7 +193,7 @@ func requireSumBenchmarkContiguous(t testing.TB, fixture sumBenchmarkFixture) {
 	for _, data := range fixture.series {
 		points := data.Floats
 		if len(points) == 0 || points[len(points)-1].T-points[0].T != int64(len(points)-1)*fixture.timeRange.IntervalMilliseconds {
-			t.Skip("dense kernel requires contiguous input")
+			t.Skip("prepacked benchmarks require contiguous input")
 		}
 	}
 }
