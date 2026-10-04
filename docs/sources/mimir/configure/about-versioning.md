@@ -93,6 +93,8 @@ The following features are currently experimental:
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
   - `-ruler.min-rule-evaluation-interval`
+  - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
+    - `-ruler.query-frontend.enable-rule-detail-headers`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)

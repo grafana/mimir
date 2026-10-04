@@ -3118,6 +3118,14 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+  # (experimental) Set to true to attach headers identifying the rule being
+  # evaluated to the queries sent to the query-frontend: X-Rule-Name,
+  # X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it
+  # together with -query-frontend.log-query-request-headers to attribute rule
+  # queries in the query-frontend logs.
+  # CLI flag: -ruler.query-frontend.enable-rule-detail-headers
+  [enable_rule_detail_headers: <boolean> | default = false]
+
 distributor:
   # (experimental) gRPC listen address of the distributor(s) to push rule-result
   # series to. If empty, the ruler writes using the internal distributor. Use a

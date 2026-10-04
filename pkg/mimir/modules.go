@@ -1329,7 +1329,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, ruler.WithOrgIDMiddleware)
+		middlewares := []ruler.Middleware{ruler.WithOrgIDMiddleware}
+		if t.Cfg.Ruler.QueryFrontend.EnableRuleDetailHeaders {
+			middlewares = append(middlewares, ruler.WithRuleDetailMiddleware)
+		}
+		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, middlewares...)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,

@@ -72,6 +72,8 @@ type QueryFrontendConfig struct {
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
 	MaxRetriesRate float64 `yaml:"max_retries_rate"`
+
+	EnableRuleDetailHeaders bool `yaml:"enable_rule_detail_headers" category:"experimental"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -89,6 +91,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
+	f.BoolVar(&c.EnableRuleDetailHeaders, "ruler.query-frontend.enable-rule-detail-headers", false, "Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.")
 }
 
 func (c *QueryFrontendConfig) Validate() error {
