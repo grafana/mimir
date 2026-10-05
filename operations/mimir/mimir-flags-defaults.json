@@ -1055,6 +1055,7 @@
   "compactor-scheduler.bbolt.dir": "./data-compactor-scheduler",
   "compactor-scheduler.bbolt.shard-count": 16,
   "compactor-scheduler.lane-policy.policy": "simple",
+  "compactor-scheduler.discovery-polls": "blocks",
   "store-gateway.sharding-ring.store": "memberlist",
   "store-gateway.sharding-ring.prefix": "collectors/",
   "store-gateway.sharding-ring.consul.hostname": "localhost:8500",

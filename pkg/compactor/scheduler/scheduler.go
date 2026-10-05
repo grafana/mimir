@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,18 +41,19 @@ var (
 )
 
 type Config struct {
-	MaxLeases                                   int              `yaml:"max_leases" category:"experimental"`
-	LeaseDuration                               time.Duration    `yaml:"lease_duration" category:"experimental"`
-	PlanningInterval                            time.Duration    `yaml:"planning_interval" category:"experimental"`
-	MaintenanceInterval                         time.Duration    `yaml:"maintenance_interval" category:"experimental"`
-	MaintenanceIntervalsBeforeLeaseExpiration   int              `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
-	MaintenanceIntervalsBeforeColdStartPlanning int              `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
-	TenantDiscoveryInterval                     time.Duration    `yaml:"tenant_discovery_interval" category:"experimental"`
-	TenantDiscoveryBackoff                      backoff.Config   `yaml:"tenant_discovery_backoff"`
-	PersistenceType                             string           `yaml:"persistence_type" category:"experimental"`
-	RepeatedFailureReportThreshold              int              `yaml:"repeated_failure_report_threshold" category:"experimental"`
-	Bbolt                                       BboltConfig      `yaml:"bbolt"`
-	LanePolicy                                  LanePolicyConfig `yaml:"lane_policy"`
+	MaxLeases                                   int                    `yaml:"max_leases" category:"experimental"`
+	LeaseDuration                               time.Duration          `yaml:"lease_duration" category:"experimental"`
+	PlanningInterval                            time.Duration          `yaml:"planning_interval" category:"experimental"`
+	MaintenanceInterval                         time.Duration          `yaml:"maintenance_interval" category:"experimental"`
+	MaintenanceIntervalsBeforeLeaseExpiration   int                    `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
+	MaintenanceIntervalsBeforeColdStartPlanning int                    `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
+	TenantDiscoveryInterval                     time.Duration          `yaml:"tenant_discovery_interval" category:"experimental"`
+	TenantDiscoveryBackoff                      backoff.Config         `yaml:"tenant_discovery_backoff"`
+	PersistenceType                             string                 `yaml:"persistence_type" category:"experimental"`
+	RepeatedFailureReportThreshold              int                    `yaml:"repeated_failure_report_threshold" category:"experimental"`
+	Bbolt                                       BboltConfig            `yaml:"bbolt"`
+	LanePolicy                                  LanePolicyConfig       `yaml:"lane_policy"`
+	DiscoveryPolls                              flagext.StringSliceCSV `yaml:"discovery_polls" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -66,6 +68,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit.")
 	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
+	cfg.DiscoveryPolls = []string{discoveryPollBlocks}
+	f.Var(&cfg.DiscoveryPolls, "compactor-scheduler.discovery-polls", fmt.Sprintf("Comma-separated list of polls used to discover tenants. A tenant is tracked while it is found by any poll. Valid values: %s, %s", discoveryPollBlocks, discoveryPollBackfills))
 	cfg.LanePolicy.RegisterFlagsWithPrefix("compactor-scheduler.lane-policy", f)
 }
 
@@ -93,23 +97,30 @@ func (cfg *Config) Validate() error {
 			return err
 		}
 	}
+	if len(cfg.DiscoveryPolls) == 0 {
+		return errors.New("compactor-scheduler.discovery-polls must not be empty")
+	}
+	for _, poll := range cfg.DiscoveryPolls {
+		if poll != discoveryPollBlocks && poll != discoveryPollBackfills {
+			return fmt.Errorf("compactor-scheduler.discovery-polls has unknown poll %q", poll)
+		}
+	}
 	return nil
 }
 
 type Scheduler struct {
 	services.Service
 
-	running            *atomic.Bool
-	cfg                Config
-	lanePolicy         lanePolicy
-	allowList          *util.AllowList
-	jpm                JobPersistenceManager
-	rotator            *Rotator
-	tenantDiscoverer   *TenantDiscoverer
-	subservicesManager *services.Manager
-	metrics            *schedulerMetrics
-	logger             log.Logger
-	clock              clock.Clock
+	running          *atomic.Bool
+	cfg              Config
+	lanePolicy       lanePolicy
+	allowList        *util.AllowList
+	jpm              JobPersistenceManager
+	rotator          *Rotator
+	tenantDiscoverer *TenantDiscoverer
+	metrics          *schedulerMetrics
+	logger           log.Logger
+	clock            clock.Clock
 }
 
 func NewCompactorScheduler(
@@ -176,12 +187,6 @@ func newCompactorScheduler(
 		clock:            clock.New(),
 	}
 
-	subservicesManager, err := services.NewManager(scheduler.rotator, scheduler.tenantDiscoverer)
-	if err != nil {
-		return nil, err
-	}
-	scheduler.subservicesManager = subservicesManager
-
 	svc := services.NewBasicService(scheduler.start, scheduler.run, scheduler.stop)
 	scheduler.Service = svc
 
@@ -189,7 +194,7 @@ func newCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+	return NewJobTracker(jp, tenant, 0, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -200,11 +205,12 @@ func (s *Scheduler) start(ctx context.Context) error {
 	s.rotator.RecoverFrom(jobTrackers, s.jpm.CreationTime())
 	s.tenantDiscoverer.RecoverFrom(jobTrackers)
 
-	if err := s.subservicesManager.StartAsync(ctx); err != nil {
-		return fmt.Errorf("unable to start compactor scheduler subservices: %w", err)
+	// Discovery verifies recovered tenants before the rotator performs maintenance
+	if err := services.StartAndAwaitRunning(ctx, s.tenantDiscoverer); err != nil {
+		return fmt.Errorf("unable to start compactor scheduler tenant discovery: %w", err)
 	}
-	if err := s.subservicesManager.AwaitHealthy(ctx); err != nil {
-		return fmt.Errorf("compactor scheduler subservices not healthy: %w", err)
+	if err := services.StartAndAwaitRunning(ctx, s.rotator); err != nil {
+		return fmt.Errorf("unable to start compactor scheduler rotator: %w", err)
 	}
 	return nil
 }
@@ -221,7 +227,10 @@ func (s *Scheduler) stop(_ error) error {
 	errs := multierror.New()
 
 	// We want the other services to stop first since they may also use the database
-	errs.Add(services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager))
+	s.tenantDiscoverer.StopAsync()
+	s.rotator.StopAsync()
+	errs.Add(s.tenantDiscoverer.AwaitTerminated(context.Background()))
+	errs.Add(s.rotator.AwaitTerminated(context.Background()))
 
 	// Prepare for shutdown by making sure no more persist operations are possible.
 	// We know after the rotator is cleared all subsequent calls will see an empty state.

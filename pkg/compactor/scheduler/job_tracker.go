@@ -14,6 +14,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
@@ -42,6 +43,8 @@ type JobTracker struct {
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
 	metrics                        *trackerMetrics
 
+	discoveredBy atomic.Uint32 // the discovery polls that last found this tenant
+
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
 	active                 *list.List               // ordered by oldest lease first
@@ -51,7 +54,7 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, discoveredBy discoverySources, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
 	pending := make(map[lane]*list.List)
 	for _, l := range lanePolicy.AllLanes() {
 		pending[l] = list.New()
@@ -73,6 +76,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
+	jt.discoveredBy.Store(uint32(discoveredBy))
 	return jt
 }
 
@@ -365,6 +369,10 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
 	if _, ok := jt.incompleteJobs[planJobId]; ok {
 		// There is already a plan job
+		return nil
+	}
+	if discoverySources(jt.discoveredBy.Load())&discoveredByBlocks == 0 {
+		// Only tenants found in the blocks bucket have anything to compact
 		return nil
 	}
 

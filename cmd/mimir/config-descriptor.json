@@ -15013,6 +15013,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "discovery_polls",
+          "required": false,
+          "desc": "Comma-separated list of polls used to discover tenants. A tenant is tracked while it is found by any poll. Valid values: blocks, backfills",
+          "fieldValue": null,
+          "fieldDefaultValue": "blocks",
+          "fieldFlag": "compactor-scheduler.discovery-polls",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
