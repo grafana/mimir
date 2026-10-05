@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,7 +22,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
@@ -42,13 +42,13 @@ const backfillV2RequestMaxAttempts = 10
 func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
 	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(backfillV2EndpointPrefix, "start"), nil)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to start backfill job")
+		return "", fmt.Errorf("failed to start backfill job: %w", err)
 	}
 	defer drainAndCloseBody(resp)
 
 	var res backfillJobStartResult
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", errors.Wrap(err, "failed to decode backfill job start response")
+		return "", fmt.Errorf("failed to decode backfill job start response: %w", err)
 	}
 	if res.JobID == "" {
 		return "", errors.New("backfill job start response has no job ID")
@@ -59,7 +59,7 @@ func (c *MimirClient) StartBackfillJob(ctx context.Context) (string, error) {
 func (c *MimirClient) FinishBackfillJob(ctx context.Context, jobID string) error {
 	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "finish"), nil)
 	if err != nil {
-		return errors.Wrapf(err, "failed to finish backfill job %s", jobID)
+		return fmt.Errorf("failed to finish backfill job %s: %w", jobID, err)
 	}
 	drainAndCloseBody(resp)
 	return nil
@@ -98,12 +98,12 @@ func (c *MimirClient) UploadBackfillBlocks(ctx context.Context, jobID string, bl
 func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir string, logger log.Logger) error {
 	bkt, err := filesystem.NewBucket(filepath.Dir(blockDir))
 	if err != nil {
-		return errors.Wrap(err, "failed to create filesystem bucket")
+		return fmt.Errorf("failed to create filesystem bucket: %w", err)
 	}
 
 	blockID, err := ulid.Parse(filepath.Base(blockDir))
 	if err != nil {
-		return errors.Wrap(err, "failed to parse block ID from path")
+		return fmt.Errorf("failed to parse block ID from path: %w", err)
 	}
 
 	meta, err := GetBlockMeta(ctx, bkt, blockID)
@@ -113,7 +113,7 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
-		return errors.Wrap(err, "failed to JSON encode block meta")
+		return fmt.Errorf("failed to JSON encode block meta: %w", err)
 	}
 
 	blockPath := path.Join(backfillV2EndpointPrefix, url.PathEscape(jobID), "block", meta.ULID.String())
@@ -122,7 +122,7 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	level.Info(logger).Log("msg", "starting block upload")
 	resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(blockPath, "start"), bytesRequestBody(metaJSON))
 	if err != nil {
-		return errors.Wrap(err, "request to start block upload failed")
+		return fmt.Errorf("request to start block upload failed: %w", err)
 	}
 	drainAndCloseBody(resp)
 
@@ -136,14 +136,14 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 		filePath := fmt.Sprintf("%s?path=%s", path.Join(blockPath, "files"), url.QueryEscape(f.RelPath))
 		resp, err := c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, filePath, bucketObjectRequestBody(ctx, bkt, path.Join(blockID.String(), f.RelPath), f.SizeBytes))
 		if err != nil {
-			return errors.Wrapf(err, "request to upload file %q failed", f.RelPath)
+			return fmt.Errorf("request to upload file %q failed: %w", f.RelPath, err)
 		}
 		drainAndCloseBody(resp)
 	}
 
 	resp, err = c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(blockPath, "finish"), nil)
 	if err != nil {
-		return errors.Wrap(err, "request to finish block upload failed")
+		return fmt.Errorf("request to finish block upload failed: %w", err)
 	}
 	drainAndCloseBody(resp)
 
@@ -191,7 +191,7 @@ func (c *MimirClient) doBackfillV2Request(ctx context.Context, method, path stri
 	retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError
 	if err := c.checkResponse(resp); err != nil {
 		_ = resp.Body.Close()
-		return nil, retryable, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+		return nil, retryable, fmt.Errorf("%s request to %s failed: %w", req.Method, req.URL.String(), err)
 	}
 	return resp, false, nil
 }
@@ -216,7 +216,7 @@ func bucketObjectRequestBody(ctx context.Context, bkt objstore.BucketReader, nam
 	return func() (io.ReadCloser, int64, error) {
 		r, err := bkt.Get(ctx, name)
 		if err != nil {
-			return nil, 0, errors.Wrapf(err, "failed to read %q", name)
+			return nil, 0, fmt.Errorf("failed to read %q: %w", name, err)
 		}
 		return r, size, nil
 	}
