@@ -1173,32 +1173,39 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          // Alert if there's no available memberlist-bridge pod in any of the zones where it's deployed.
+          // Alert if there's no ready memberlist-bridge pod in any of the zones where it's deployed.
+          //
+          // Both operands read the Deployment object, so a kube-state-metrics shard that stops
+          // exporting drops them together and the `and` yields nothing. Comparing the Deployment
+          // against Pod-object series instead lets the two sides fail independently, and an
+          // absent right-hand side would make an `unless` vacuous and fire every zone.
           alert: $.alertName('MemberlistBridgeZoneUnavailable'),
           expr: |||
-            # Find the expected memberlist-bridge zonal deployments.
-            count by (%(alert_aggregation_labels)s, zone) (
+            # Find the zonal memberlist-bridge deployments with no ready pod.
+            max by (%(alert_aggregation_labels)s, zone) (
                 label_replace(
-                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    kube_deployment_status_replicas_ready{deployment=~"memberlist-bridge-zone-[abc]"},
                     "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
                 )
-            )
-            # Excluding zones where there is at least 1 healthy memberlist-bridge.
-            unless (
-                count by(%(alert_aggregation_labels)s, zone) (
-                    label_replace(
-                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
-                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
-                    )
-                ) > 0
-            )
+            ) == 0
+            # Restricted to deployments that are expected to be running.
+            and on (%(alert_aggregation_labels)s, zone)
+            max by (%(alert_aggregation_labels)s, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"},
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            ) > 0
           ||| % $._config,
           'for': '10m',
           labels: {
-            severity: 'critical',
+            // Losing every bridge in a zone does not partition gossip. The memberlist client
+            // detects it and reverts to full-mesh node selection, so the consequence is
+            // inter-AZ data transfer rather than lost updates.
+            severity: 'warning',
           },
           annotations: {
-            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no available pods.' % $._config,
+            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no ready pods.' % $._config,
           },
         },
         {
