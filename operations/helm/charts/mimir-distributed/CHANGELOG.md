@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
 * [CHANGE] Stop restarting every pod on a chart version bump: the `checksum/config` and `checksum/alertmanager-fallback-config` annotations now hash only the data of the ConfigMap or Secret, and `helm.sh/chart` is no longer set on the pod labels. The chart version remains on the objects themselves. Adopting this release recomputes the annotations once, so the pods roll a single time on this specific upgrade. #16571
@@ -42,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Gateway: use the distributor ClusterIP Service when `distributor.service.trafficDistribution` is configured so that Kubernetes traffic distribution can take effect. #16448
 * [BUGFIX] Alertmanager: Render priorityClassName in Deployment based on the `alertmanager` per-component value. Historically the value from `query_frontend` was being mistakenly rendered. #16537
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
+* [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values. #16761
 
 ## 6.2.0
 
