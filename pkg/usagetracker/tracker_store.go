@@ -24,9 +24,10 @@ import (
 var refsPool zeropool.Pool[[]uint64]
 
 // groupScratch holds the per-shard scratch counters that groupByModuloShards needs.
-// See the note there for why it is pooled and why it is one array rather than two.
+// They are sized for MaxNumShards to hold any configured shard count, and pooled so that
+// every write doesn't have to put them on its stack.
 type groupScratch struct {
-	buf [2 * tenantshard.MaxNumShards]int
+	counts, pos [tenantshard.MaxNumShards]int
 }
 
 var groupScratchPool = sync.Pool{New: func() any { return &groupScratch{} }}
@@ -448,21 +449,12 @@ func (t *trackerStore) shardMask() uint64 {
 // It arranges the series hashes into contiguous groups of hashes of same modulo numShards.
 // This is O(N), specifically it iterates all series twice, and makes the re-arrangement in place.
 //
-// Two things here exist to keep a runtime shard count as cheap as the compile-time constant it
-// replaced, because this runs on every write:
-//
-//   - numShards is a power of 2, which the configuration enforces, so the modulo is a mask.
-//     With a runtime count the compiler can't turn a modulo into a mask itself, and the divide
-//     it emits instead nearly doubles the cost of this function.
-//   - The scratch counters live in one pooled array instead of two stack ones. They have to be
-//     sized for MaxNumShards to hold any configured count, and two 2KB stack arrays cost about a
-//     third of this function even though only their first numShards entries are ever used. The
-//     cost is locality, not the zeroing: pooling alone changed nothing, and what recovered it was
-//     carving both windows out of one array so they sit adjacent. At the default shard count that
-//     is 256 contiguous bytes instead of two 128-byte windows 2KB apart.
+// numShards is a power of 2, which the configuration enforces, so the modulo is a mask. This runs on
+// every write, and with a runtime shard count the compiler can't turn a modulo into a mask itself:
+// the divide it emits instead nearly doubles the cost of this function.
 func groupByModuloShards(series []uint64, numShards int) {
 	scratch := groupScratchPool.Get().(*groupScratch)
-	counts, pos := scratch.buf[:numShards], scratch.buf[numShards:2*numShards]
+	counts, pos := scratch.counts[:numShards], scratch.pos[:numShards]
 	clear(counts)
 	clear(pos)
 
