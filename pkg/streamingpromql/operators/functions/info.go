@@ -41,8 +41,7 @@ type labelSetsHashID uint32
 
 const innerSeriesHashID labelSetsHashID = 0
 
-// infoSeries is an info series whose samples are kept until the last inner series it can enrich has been read.
-// Keeping the pooled samples is much cheaper than keeping a per-timestamp summary of them.
+// infoSeries is an info series whose samples are kept until all info series with its signature have been read.
 type infoSeries struct {
 	labels labels.Labels
 	// metricIndex identifies the info metric name. At each timestamp, only one series per info metric is used.
@@ -50,20 +49,34 @@ type infoSeries struct {
 	floats      []promql.FPoint
 }
 
-// infoSignature holds the info series that have the same labels-only signature, in the order that the info
-// selector returned them.
+// infoSignature holds what is known about the info series that have the same labels-only signature.
 type infoSignature struct {
+	// series holds the info series read so far, in the order that the info selector returned them. The
+	// samples are only needed until the last of them has been read, when the transitions can be found.
 	series []infoSeries
+	// remainingSeries is the number of info series with this signature that have not been read yet.
+	remainingSeries int
 
-	// lastInnerSeriesIndex is the index of the last inner series with this signature. After it has been read,
-	// the samples of the info series are not needed anymore.
-	lastInnerSeriesIndex int
+	// labelSetsByHash holds the distinct groups of info series: label sets hash:info series labels.
+	// It is nil if no info series with this signature has a sample, and once SeriesMetadata has returned.
+	labelSetsByHash map[string][]labels.Labels
+	// transitions records the timestamps where the group of info series changes. From each transition's
+	// timestamp until the next transition, inner series with this signature are enriched with that group.
+	// This is much smaller than the samples, as the group usually only changes a few times in a query.
+	transitions []infoGroupTransition
 }
 
 func (s *infoSignature) returnSamplesToPool(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for i := range s.series {
 		types.FPointSlicePool.Put(&s.series[i].floats, memoryConsumptionTracker)
 	}
+}
+
+// infoGroupTransition records that, from timestamp t until the next transition, inner series with a signature are
+// enriched with the group of info series identified by hashID. innerSeriesHashID means they are not enriched.
+type infoGroupTransition struct {
+	t      int64
+	hashID labelSetsHashID
 }
 
 // infoGroupWalker walks the samples of the info series of one signature in timestamp order. At each timestamp where
@@ -167,54 +180,30 @@ func (w *infoGroupWalker) next() (t int64, changed bool, ok bool, err error) {
 // infoGroupLookup returns the label sets hash ID of the group of info series of one signature, for each of an
 // increasing sequence of timestamps.
 type infoGroupLookup struct {
-	walker  infoGroupWalker
-	hashIDs map[string]labelSetsHashID
-
-	hasNext    bool
-	nextT      int64
-	nextHashID labelSetsHashID
+	transitions []infoGroupTransition
+	next        int
+	hashID      labelSetsHashID
 }
 
 // reset prepares to look up the groups of signature, which is nil if no info series can enrich the inner series.
-func (l *infoGroupLookup) reset(signature *infoSignature, metricCount int) error {
-	if signature == nil {
-		l.hasNext = false
-		return nil
+func (l *infoGroupLookup) reset(signature *infoSignature) {
+	l.transitions = nil
+	if signature != nil {
+		l.transitions = signature.transitions
 	}
-
-	l.walker.reset(signature, metricCount)
-	return l.advance()
-}
-
-func (l *infoGroupLookup) advance() error {
-	t, changed, ok, err := l.walker.next()
-	if err != nil {
-		return err
-	}
-
-	l.hasNext = ok
-	l.nextT = t
-	if changed {
-		l.nextHashID = l.hashIDs[l.walker.hash]
-	}
-
-	return nil
+	l.next = 0
+	l.hashID = innerSeriesHashID
 }
 
 // at returns the label sets hash ID of the group at t, or innerSeriesHashID if no info series has a sample at t.
 // t must not be less than t in the previous call.
-func (l *infoGroupLookup) at(t int64) (labelSetsHashID, error) {
-	for l.hasNext && l.nextT < t {
-		if err := l.advance(); err != nil {
-			return 0, err
-		}
+func (l *infoGroupLookup) at(t int64) labelSetsHashID {
+	for l.next < len(l.transitions) && l.transitions[l.next].t <= t {
+		l.hashID = l.transitions[l.next].hashID
+		l.next++
 	}
 
-	if l.hasNext && l.nextT == t {
-		return l.nextHashID, nil
-	}
-
-	return innerSeriesHashID, nil
+	return l.hashID
 }
 
 type InfoFunction struct {
@@ -228,20 +217,20 @@ type InfoFunction struct {
 	// dedicated buffer and scratch builder for signature
 	sigBuf []byte
 	sigLb  labels.ScratchBuilder
-	// signature:info series, for the signatures of inner series that can be enriched
-	infoSignatures map[string]*infoSignature
+	// signature:index in signatures, for the signatures of inner series that can be enriched; nil once SeriesMetadata
+	// has returned
+	signatureIndexes map[string]int
+	signatures       []infoSignature
 	// number of distinct info metric names among the info series
 	infoMetricCount int
 	// looks up the group of info series for each sample of the current inner series
 	groups infoGroupLookup
 	// label sets hash ID:label sets hash; index zero is innerSeriesKey.
 	labelSetsHashesByID []string
-	// signature:(label sets hash:array of info series labels)
-	labelSets map[string]map[string][]labels.Labels
 	// inner series index - (info series label sets hash: index for ordering)
 	labelSetsOrder []map[string]int
-	// inner series index - inner series signature
-	innerSig []string
+	// inner series index - signature of the inner series, or nil if it can't be enriched
+	innerSignatures []*infoSignature
 	// stored series results for current inner series
 	storedSeriesResults []types.InstantVectorSeriesData
 
@@ -435,7 +424,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// matching Prometheus (which fetches info series per inner-series presence pattern). This avoids
 	// both enriching label-less series and spurious "duplicate series for info metric" errors from
 	// over-fetched cross-signature series.
-	f.infoSignatures = make(map[string]*infoSignature, len(innerMetadata))
+	f.signatureIndexes = make(map[string]int, len(innerMetadata))
 	for i, metadata := range innerMetadata {
 		if _, ignore := ignoreSeries[i]; ignore {
 			continue
@@ -444,22 +433,57 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			continue
 		}
 
-		sig := string(f.signature(metadata.Labels))
-		signature, exists := f.infoSignatures[sig]
-		if !exists {
-			signature = &infoSignature{}
-			f.infoSignatures[sig] = signature
+		sig := f.signature(metadata.Labels)
+		if _, exists := f.signatureIndexes[string(sig)]; !exists {
+			f.signatureIndexes[string(sig)] = len(f.signatureIndexes)
 		}
-		signature.lastInnerSeriesIndex = i
+	}
+	f.signatures = make([]infoSignature, len(f.signatureIndexes))
+
+	// Find the signature and info metric of each info series before reading any samples, so that the samples of
+	// a signature's info series can be returned to the pool as soon as the last of them has been read.
+	type infoSeriesRef struct {
+		signatureIndex int // -1 if the info series can't enrich any inner series.
+		metricIndex    int
+	}
+	refs := make([]infoSeriesRef, len(infoMetadata))
+	metricIndexes := make(map[string]int)
+	enrichingSeriesCount := 0
+
+	for i, metadata := range infoMetadata {
+		signatureIndex, exists := f.signatureIndexes[string(f.signature(metadata.Labels))]
+		if !exists {
+			refs[i].signatureIndex = -1
+			continue
+		}
+
+		metricName := metadata.Labels.Get(model.MetricNameLabel)
+		metricIndex, exists := metricIndexes[metricName]
+		if !exists {
+			metricIndex = len(metricIndexes)
+			metricIndexes[metricName] = metricIndex
+		}
+
+		refs[i] = infoSeriesRef{signatureIndex: signatureIndex, metricIndex: metricIndex}
+		f.signatures[signatureIndex].remainingSeries++
+		enrichingSeriesCount++
 	}
 
-	// Signatures in the order that their first info series was read, so that errors are reported deterministically.
-	var signatureOrder []string
-	metricIndexes := make(map[string]int)
+	f.infoMetricCount = len(metricIndexes)
 
-	for _, metadata := range infoMetadata {
-		sig := f.signature(metadata.Labels)
+	// Share one allocation between the series of all signatures.
+	allSeries := make([]infoSeries, enrichingSeriesCount)
+	for i := range f.signatures {
+		signature := &f.signatures[i]
+		signature.series = allSeries[:0:signature.remainingSeries]
+		allSeries = allSeries[signature.remainingSeries:]
+	}
 
+	f.labelSetsHashesByID = []string{innerSeriesKey}
+	hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
+	var walker infoGroupWalker
+
+	for i, metadata := range infoMetadata {
 		// Read all samples for this info series.
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
@@ -468,8 +492,8 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		// Drop info series that match no enrichable inner series. Samples were read above to keep
 		// the info series stream aligned with infoMetadata.
-		signature, exists := f.infoSignatures[string(sig)]
-		if !exists {
+		ref := refs[i]
+		if ref.signatureIndex < 0 {
 			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 			continue
 		}
@@ -481,61 +505,83 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		}
 
 		types.HPointSlicePool.Put(&d.Histograms, f.MemoryConsumptionTracker)
+		signature := &f.signatures[ref.signatureIndex]
 		if len(d.Floats) == 0 {
 			types.FPointSlicePool.Put(&d.Floats, f.MemoryConsumptionTracker)
-			continue
+		} else {
+			signature.series = append(signature.series, infoSeries{labels: metadata.Labels, metricIndex: ref.metricIndex, floats: d.Floats})
 		}
 
-		metricName := metadata.Labels.Get(model.MetricNameLabel)
-		metricIndex, exists := metricIndexes[metricName]
-		if !exists {
-			metricIndex = len(metricIndexes)
-			metricIndexes[metricName] = metricIndex
-		}
-
-		if len(signature.series) == 0 {
-			signatureOrder = append(signatureOrder, string(sig))
-		}
-		signature.series = append(signature.series, infoSeries{labels: metadata.Labels, metricIndex: metricIndex, floats: d.Floats})
-	}
-
-	f.infoMetricCount = len(metricIndexes)
-
-	// Find the distinct groups of info series for each signature, and intern their hashes, so that
-	// NextSeries only has to compare compact IDs.
-	f.labelSetsHashesByID = []string{innerSeriesKey}
-	hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
-	f.labelSets = make(map[string]map[string][]labels.Labels, len(signatureOrder))
-
-	var walker infoGroupWalker
-	for _, sig := range signatureOrder {
-		walker.reset(f.infoSignatures[sig], f.infoMetricCount)
-		labelSetsByHash := make(map[string][]labels.Labels)
-		f.labelSets[sig] = labelSetsByHash
-
-		for {
-			_, changed, ok, err := walker.next()
-			if err != nil {
+		signature.remainingSeries--
+		if signature.remainingSeries == 0 {
+			if err := f.completeSignature(signature, &walker, hashIDs); err != nil {
 				return err
 			}
-			if !ok {
-				break
-			}
-			if !changed {
-				continue
-			}
-
-			if _, exists := hashIDs[walker.hash]; !exists {
-				hashIDs[walker.hash] = labelSetsHashID(len(f.labelSetsHashesByID))
-				f.labelSetsHashesByID = append(f.labelSetsHashesByID, walker.hash)
-			}
-			if _, exists := labelSetsByHash[walker.hash]; !exists {
-				labelSetsByHash[walker.hash] = slices.Clone(walker.labelSets)
-			}
 		}
 	}
 
-	f.groups.hashIDs = hashIDs
+	return nil
+}
+
+// completeSignature finds the groups of info series of signature once all of its info series have been read,
+// records where the group changes, and returns the samples of the info series to the pool.
+func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoGroupWalker, hashIDs map[string]labelSetsHashID) error {
+	if len(signature.series) == 0 {
+		return nil
+	}
+
+	walker.reset(signature, f.infoMetricCount)
+	signature.labelSetsByHash = make(map[string][]labels.Labels)
+	// Most signatures have one transition where the info series start and one after they end.
+	signature.transitions = make([]infoGroupTransition, 0, 2)
+	interval := f.timeRange.IntervalMilliseconds
+	hashID := innerSeriesHashID
+	previousT := int64(0)
+	started := false
+
+	for {
+		t, changed, ok, err := walker.next()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			break
+		}
+
+		// Info series samples are at steps of the query, so there is a gap if the previous sample was not at the
+		// previous step. Inner series samples in the gap are not enriched.
+		gap := started && t > previousT+interval
+		if gap {
+			signature.transitions = append(signature.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
+		}
+
+		if changed {
+			var exists bool
+			if hashID, exists = hashIDs[walker.hash]; !exists {
+				hashID = labelSetsHashID(len(f.labelSetsHashesByID))
+				hashIDs[walker.hash] = hashID
+				f.labelSetsHashesByID = append(f.labelSetsHashesByID, walker.hash)
+			}
+			if _, exists := signature.labelSetsByHash[walker.hash]; !exists {
+				signature.labelSetsByHash[walker.hash] = slices.Clone(walker.labelSets)
+			}
+		}
+
+		if changed || gap {
+			signature.transitions = append(signature.transitions, infoGroupTransition{t: t, hashID: hashID})
+		}
+
+		previousT = t
+		started = true
+	}
+
+	if started {
+		// Inner series samples after the last info series sample are not enriched.
+		signature.transitions = append(signature.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
+	}
+
+	signature.returnSamplesToPool(f.MemoryConsumptionTracker)
+	signature.series = nil
 
 	return nil
 }
@@ -687,7 +733,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
-	f.innerSig = make([]string, len(innerMetadata))
+	f.innerSignatures = make([]*infoSignature, len(innerMetadata))
 
 	// The output has at least one series per inner series in the common case, so seed the result
 	// slice at that size and grow it from the pool as needed. This lets us produce the final
@@ -725,13 +771,15 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		sig := f.signature(innerSeries.Labels)
-		f.innerSig[i] = string(sig)
-		labelSetsMap, exists := f.labelSets[string(sig)]
+		var labelSetsMap map[string][]labels.Labels
+		if signatureIndex, exists := f.signatureIndexes[string(f.signature(innerSeries.Labels))]; exists {
+			f.innerSignatures[i] = &f.signatures[signatureIndex]
+			labelSetsMap = f.signatures[signatureIndex].labelSetsByHash
+		}
 		// If this inner series doesn't match the identifying labels of any info series, pass
 		// the original series metadata along unchanged, unless a data label matcher doesn't
 		// match the empty string (e.g. {data=~".+"}), in which case we skip the series.
-		if !exists {
+		if labelSetsMap == nil {
 			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
@@ -777,6 +825,12 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 				return nil, err
 			}
 		}
+	}
+
+	// These are only needed to build the series metadata, so don't keep them for the rest of the query.
+	f.signatureIndexes = nil
+	for i := range f.signatures {
+		f.signatures[i].labelSetsByHash = nil
 	}
 
 	return result, nil
@@ -878,22 +932,16 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		}
 
 		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
-		signature := f.infoSignatures[f.innerSig[f.nextInnerSeriesIndex]]
+		signature := f.innerSignatures[f.nextInnerSeriesIndex]
 		storedSeriesResults := make(map[string]types.InstantVectorSeriesData)
 
 		lenFloats := len(result.Floats)
 		lenHistograms := len(result.Histograms)
 
 		// Go timestamp by timestamp and sort samples into the correct split series by copying.
-		if err := f.groups.reset(signature, f.infoMetricCount); err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
+		f.groups.reset(signature)
 		for _, point := range result.Floats {
-			hashID, err := f.groups.at(point.T)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(hashID, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(f.groups.at(point.T), storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
 				for _, data := range storedSeriesResults {
 					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
@@ -909,17 +957,9 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		}
 
 		// Histogram samples are read separately from float samples, so start again from the earliest timestamp.
-		if lenHistograms > 0 {
-			if err := f.groups.reset(signature, f.infoMetricCount); err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-		}
+		f.groups.reset(signature)
 		for _, point := range result.Histograms {
-			hashID, err := f.groups.at(point.T)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(hashID, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(f.groups.at(point.T), storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
 				for _, data := range storedSeriesResults {
 					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
@@ -950,11 +990,6 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 
 		// Return the inner series data to the pool now that we've copied all needed data.
 		types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
-
-		if signature != nil && signature.lastInnerSeriesIndex == f.nextInnerSeriesIndex {
-			// No later inner series has this signature, so its info series samples are not needed anymore.
-			signature.returnSamplesToPool(f.MemoryConsumptionTracker)
-		}
 
 		// Go to the next inner series when we're ready.
 		f.nextInnerSeriesIndex++
@@ -1030,11 +1065,11 @@ func (f *InfoFunction) Finalize(ctx context.Context) (*types.OperatorEvaluationS
 }
 
 func (f *InfoFunction) Close() {
-	// Return the samples of info series whose last inner series was not read, e.g. if the query was aborted.
-	for _, signature := range f.infoSignatures {
-		signature.returnSamplesToPool(f.MemoryConsumptionTracker)
+	// Return the samples of info series of signatures that were not completed, e.g. if reading the info series failed.
+	for i := range f.signatures {
+		f.signatures[i].returnSamplesToPool(f.MemoryConsumptionTracker)
 	}
-	f.infoSignatures = nil
+	f.signatures = nil
 
 	if f.Inner != nil {
 		f.Inner.Close()

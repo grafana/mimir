@@ -3,15 +3,19 @@
 package functions
 
 import (
+	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	model_timestamp "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestFilterInfoInnerMatchers(t *testing.T) {
@@ -167,42 +171,129 @@ func TestInfoGroupWalker(t *testing.T) {
 	}
 }
 
-func TestInfoGroupLookup(t *testing.T) {
+func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
 	targetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "prod")
 	updatedTargetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "staging")
-	signature := &infoSignature{series: []infoSeries{
-		{labels: targetInfo, metricIndex: 0, floats: []promql.FPoint{{T: 1000, F: 0}, {T: 2000, F: 1}}},
-		{labels: updatedTargetInfo, metricIndex: 0, floats: []promql.FPoint{{T: 2000, F: 2}, {T: 4000, F: 4}}},
-	}}
+	buildInfo := labels.FromStrings("__name__", "build_info", "instance", "a", "job", "1", "version", "1")
 
-	const targetInfoHashID, updatedTargetInfoHashID labelSetsHashID = 1, 2
-	lookup := infoGroupLookup{hashIDs: map[string]labelSetsHashID{
-		makeLabelSetsHash([]labels.Labels{targetInfo}):        targetInfoHashID,
-		makeLabelSetsHash([]labels.Labels{updatedTargetInfo}): updatedTargetInfoHashID,
-	}}
-
-	expected := map[int64]labelSetsHashID{
-		0:    innerSeriesHashID,
-		1000: targetInfoHashID,
-		2000: updatedTargetInfoHashID,
-		3000: innerSeriesHashID,
-		4000: updatedTargetInfoHashID,
-		5000: innerSeriesHashID,
+	type series struct {
+		labels      labels.Labels
+		metricIndex int
+		lag         int64 // Original sample timestamps are t/1000 - lag seconds.
+		timestamps  []int64
 	}
 
-	// Look up every timestamp, and a subset of timestamps, as NextSeries does for inner series with gaps.
-	for _, timestamps := range [][]int64{{0, 1000, 2000, 3000, 4000, 5000}, {0, 3000, 4000}, {4000}} {
-		require.NoError(t, lookup.reset(signature, 1))
-		for _, ts := range timestamps {
-			hashID, err := lookup.at(ts)
-			require.NoError(t, err)
-			require.Equal(t, expected[ts], hashID, "timestamp %d", ts)
-		}
+	testCases := map[string]struct {
+		series      []series
+		metricCount int
+		// expected is the group at each step of the query, from 0 to 6000: nil if inner series are not enriched.
+		expected map[int64][]labels.Labels
+	}{
+		"no info series with samples": {
+			metricCount: 1,
+			expected:    map[int64][]labels.Labels{},
+		},
+		"one series present at consecutive steps": {
+			series:      []series{{labels: targetInfo, timestamps: []int64{1000, 2000, 3000}}},
+			metricCount: 1,
+			expected: map[int64][]labels.Labels{
+				1000: {targetInfo},
+				2000: {targetInfo},
+				3000: {targetInfo},
+			},
+		},
+		"one series with a gap": {
+			series:      []series{{labels: targetInfo, timestamps: []int64{1000, 2000, 5000}}},
+			metricCount: 1,
+			expected: map[int64][]labels.Labels{
+				1000: {targetInfo},
+				2000: {targetInfo},
+				5000: {targetInfo},
+			},
+		},
+		"series of the same info metric replacing each other": {
+			series: []series{
+				{labels: targetInfo, lag: 1, timestamps: []int64{1000, 2000}},
+				{labels: updatedTargetInfo, timestamps: []int64{2000, 3000}},
+			},
+			metricCount: 1,
+			expected: map[int64][]labels.Labels{
+				1000: {targetInfo},
+				2000: {updatedTargetInfo},
+				3000: {updatedTargetInfo},
+			},
+		},
+		"series of different info metrics": {
+			series: []series{
+				{labels: targetInfo, timestamps: []int64{1000, 2000, 3000}},
+				{labels: buildInfo, metricIndex: 1, timestamps: []int64{2000, 4000}},
+			},
+			metricCount: 2,
+			expected: map[int64][]labels.Labels{
+				1000: {targetInfo},
+				2000: {targetInfo, buildInfo},
+				3000: {targetInfo},
+				4000: {buildInfo},
+			},
+		},
 	}
 
-	// A nil signature means no info series can enrich the inner series.
-	require.NoError(t, lookup.reset(nil, 1))
-	hashID, err := lookup.at(1000)
-	require.NoError(t, err)
-	require.Equal(t, innerSeriesHashID, hashID)
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			f := &InfoFunction{
+				MemoryConsumptionTracker: tracker,
+				timeRange:                types.NewRangeQueryTimeRange(model_timestamp.Time(0), model_timestamp.Time(6000), time.Second),
+				infoMetricCount:          testCase.metricCount,
+				labelSetsHashesByID:      []string{innerSeriesKey},
+			}
+
+			signature := &infoSignature{}
+			for _, s := range testCase.series {
+				floats, err := types.FPointSlicePool.Get(len(s.timestamps), tracker)
+				require.NoError(t, err)
+				for _, ts := range s.timestamps {
+					floats = append(floats, promql.FPoint{T: ts, F: float64(ts/1000 - s.lag)})
+				}
+				signature.series = append(signature.series, infoSeries{labels: s.labels, metricIndex: s.metricIndex, floats: floats})
+			}
+
+			hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
+			var walker infoGroupWalker
+			require.NoError(t, f.completeSignature(signature, &walker, hashIDs))
+
+			// The samples are not needed after the transitions have been found.
+			require.Nil(t, signature.series)
+			require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			expectedHashID := func(ts int64) labelSetsHashID {
+				group, exists := testCase.expected[ts]
+				if !exists {
+					return innerSeriesHashID
+				}
+				hashID, exists := hashIDs[makeLabelSetsHash(group)]
+				require.True(t, exists, "group at timestamp %d not interned", ts)
+				return hashID
+			}
+
+			for _, group := range testCase.expected {
+				require.Contains(t, signature.labelSetsByHash, makeLabelSetsHash(group))
+			}
+
+			// Look up every step, and subsets of steps, as NextSeries does for inner series with gaps.
+			var lookup infoGroupLookup
+			for _, timestamps := range [][]int64{{0, 1000, 2000, 3000, 4000, 5000, 6000}, {0, 3000, 4000}, {2000, 6000}, {5000}} {
+				lookup.reset(signature)
+				for _, ts := range timestamps {
+					require.Equal(t, expectedHashID(ts), lookup.at(ts), "timestamp %d", ts)
+				}
+			}
+		})
+	}
+
+	t.Run("nil signature", func(t *testing.T) {
+		var lookup infoGroupLookup
+		lookup.reset(nil)
+		require.Equal(t, innerSeriesHashID, lookup.at(1000))
+	})
 }
