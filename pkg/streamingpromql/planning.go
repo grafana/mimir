@@ -369,8 +369,6 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
-	plan = p.assignNodeIdentifiers(plan)
-
 	if plan.Version > maximumSupportedQueryPlanVersion {
 		level.Warn(spanLogger).Log(
 			"msg", "generated query plan has version higher than maximum version supported by queriers - this may be OK if the affected nodes will only be evaluated by this query-frontend",
@@ -380,6 +378,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
+
+	plan = p.assignNodeIdentifiers(plan)
 
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
@@ -515,8 +515,8 @@ func (p *QueryPlanner) assignNodeIdentifiers(plan *planning.QueryPlan) *planning
 	id := int64(1)
 
 	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
-		if node.GetPlanningId() == 0 {
-			node.SetPlanningId(id)
+		if node.GetNodeId() == 0 {
+			node.SetNodeId(id)
 			id++
 		}
 

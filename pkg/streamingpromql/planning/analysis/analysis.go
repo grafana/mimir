@@ -252,7 +252,7 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 		planning.QueryPlanEncodingOptions{
 			IncludeDescriptions: true,
 			IncludeDetails:      false,
-			IncludePlanningId:   true,
+			IncludeNodeId:       true,
 		})
 	if err != nil {
 		return err
@@ -277,7 +277,7 @@ func (o *PlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.Query
 		planning.QueryPlanEncodingOptions{
 			IncludeDescriptions: true,
 			IncludeDetails:      false,
-			IncludePlanningId:   true,
+			IncludeNodeId:       true,
 		})
 	if err != nil {
 		return err

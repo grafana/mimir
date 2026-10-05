@@ -248,5 +248,5 @@ message DataLabelSelectorDetails {
 }
 
 message NodeIdentifier {
-  int64 planningId = 1;
+  int64 nodeId = 1;
 }

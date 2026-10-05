@@ -216,12 +216,12 @@ type Node interface {
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
 	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
-	// GetPlanningId returns the ID assigned to this node that uniquely identifies it within a query plan.
+	// GetNodeId returns the ID assigned to this node that uniquely identifies it within a query plan.
 	// The ID is 0 when unset.
-	GetPlanningId() int64
+	GetNodeId() int64
 
-	// SetPlanningId sets the ID for this node that uniquely identifies it within a query plan.
-	SetPlanningId(id int64)
+	// SetNodeId sets the ID for this node that uniquely identifies it within a query plan.
+	SetNodeId(id int64)
 }
 
 // ChildrenIter returns an iterator over all children of n.
@@ -404,12 +404,12 @@ func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (Quer
 
 // DefaultQueryPlanEncodingOptions returns a QueryPlanEncodingOptions suitable for encoding
 // a plan to be sent between query-frontend and querier for remote execution. It does not include
-// descriptions, does include details, and does include planning IDs.
+// descriptions, does include details, and does include node IDs.
 func DefaultQueryPlanEncodingOptions() QueryPlanEncodingOptions {
 	return QueryPlanEncodingOptions{
 		IncludeDescriptions: false,
 		IncludeDetails:      true,
-		IncludePlanningId:   true,
+		IncludeNodeId:       true,
 	}
 }
 
@@ -419,7 +419,7 @@ type QueryPlanEncodingOptions struct {
 	// Include details of nodes, for reconstruction in another process.
 	IncludeDetails bool
 	// Include the unique ID of each node within the plan.
-	IncludePlanningId bool
+	IncludeNodeId bool
 }
 
 type queryPlanEncoder struct {
@@ -476,8 +476,8 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		encoded.ChildrenLabels = n.ChildrenLabels()
 	}
 
-	if e.options.IncludePlanningId {
-		encoded.PlanningId = n.GetPlanningId()
+	if e.options.IncludeNodeId {
+		encoded.NodeId = n.GetNodeId()
 	}
 
 	e.nodes = append(e.nodes, encoded)
@@ -562,7 +562,7 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 	}
 
 	node := nodeFactory()
-	node.SetPlanningId(encodedNode.PlanningId)
+	node.SetNodeId(encodedNode.NodeId)
 
 	if err := proto.Unmarshal(encodedNode.Details, node.Details()); err != nil {
 		return nil, err

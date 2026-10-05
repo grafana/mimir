@@ -309,7 +309,7 @@ func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]
 		planning.QueryPlanEncodingOptions{
 			IncludeDescriptions: false,
 			IncludeDetails:      true,
-			IncludePlanningId:   false,
+			IncludeNodeId:       false,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("encoding %T for splitting cache key: %w", node, err)

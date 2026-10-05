@@ -2,6 +2,6 @@
 
 package core
 
-func (n *NodeIdentifier) SetPlanningId(id int64) {
-	n.PlanningId = id
+func (n *NodeIdentifier) SetNodeId(id int64) {
+	n.NodeId = id
 }
