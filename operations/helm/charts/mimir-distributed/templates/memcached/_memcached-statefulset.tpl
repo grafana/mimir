@@ -64,7 +64,9 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- include "mimir.lib.topologySpreadConstraints" $ | nindent 6 }}
+      {{- /* A cache's own topologySpreadConstraints take precedence over the shared memcached ones. */}}
+      {{- $topologySpreadConstraints := .topologySpreadConstraints | default $.ctx.Values.memcached.topologySpreadConstraints }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $.ctx "component" $.component "topologySpreadConstraints" $topologySpreadConstraints) | nindent 6 }}
       {{- with .tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
