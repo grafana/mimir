@@ -11,8 +11,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
-	v1 "github.com/grafana/mimir/pkg/usagetracker/tenantshard/v1"
-	v2 "github.com/grafana/mimir/pkg/usagetracker/tenantshard/v2"
 )
 
 // forEachImplementation runs test against every Map implementation. Tests here cover the behaviour
@@ -23,7 +21,7 @@ func forEachImplementation(t *testing.T, test func(t *testing.T, newMap Factory)
 	t.Helper()
 	for _, version := range []int{1, 2} {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
-			newMap, err := NewFactory(version)
+			newMap, err := NewFactory(version, DefaultNumShards)
 			require.NoError(t, err)
 			test(t, newMap)
 		})
@@ -41,24 +39,56 @@ func itemsMap(t *testing.T, m Map) map[uint64]clock.Minutes {
 	return got
 }
 
-func TestNumShards(t *testing.T) {
-	// Implementations divide the tenant-wide limit by their own copy of the constant, so all of
-	// them have to agree on its value.
-	require.Equal(t, NumShards, v1.NumShards)
-	require.Equal(t, NumShards, v2.NumShards)
-}
-
 func TestNewFactory(t *testing.T) {
 	t.Run("default version", func(t *testing.T) {
-		newMap, err := NewFactory(DefaultImplVersion)
+		newMap, err := NewFactory(DefaultImplVersion, DefaultNumShards)
 		require.NoError(t, err)
-		require.NotNil(t, newMap(8))
+		require.Equal(t, DefaultNumShards, newMap.NumShards())
+		require.NotNil(t, newMap.New(8))
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {
-		newMap, err := NewFactory(3)
+		newMap, err := NewFactory(3, DefaultNumShards)
 		require.EqualError(t, err, "unsupported tenant shard map implementation version 3, supported versions are 1 and 2")
-		require.Nil(t, newMap)
+		require.Zero(t, newMap.NumShards())
+	})
+
+	t.Run("invalid shard count", func(t *testing.T) {
+		// Out of range, and in range but not a power of 2: the tracker store masks a series hash
+		// to get its shard, so anything but a power of 2 would leave shards unreachable.
+		for _, numShards := range []int{-1, 0, MaxNumShards * 2, 3, 100, 255} {
+			_, err := NewFactory(DefaultImplVersion, numShards)
+			require.EqualError(t, err, fmt.Sprintf("invalid number of tenant shards %d, must be a power of 2 between 1 and %d", numShards, MaxNumShards))
+		}
+	})
+
+	t.Run("shard count is reported back and reaches the maps", func(t *testing.T) {
+		for _, version := range []int{1, 2} {
+			t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+				// The maps turn the tenant-wide limit into a per-shard one by dividing it by the
+				// shard count, so a map built for more shards grows to a smaller size.
+				const totalLimit = 64 * 1024
+
+				few, err := NewFactory(version, 1)
+				require.NoError(t, err)
+				require.Equal(t, 1, few.NumShards())
+
+				many, err := NewFactory(version, MaxNumShards)
+				require.NoError(t, err)
+				require.Equal(t, MaxNumShards, many.NumShards())
+
+				limit := atomic.NewUint64(totalLimit)
+				grow := func(m Map) int {
+					// Put enough series to force at least one limit-aware rehash.
+					for i := uint64(0); i < 1024; i++ {
+						m.Put(i<<7, 1, atomic.NewUint64(0), limit, false)
+					}
+					return m.Stats().Length
+				}
+
+				require.Greater(t, grow(few.New(8)), grow(many.New(8)))
+			})
+		}
 	})
 }
 
@@ -70,7 +100,7 @@ func TestMap(t *testing.T) {
 		limit := atomic.NewUint64(uint64(events * seriesPerEvent))
 
 		// Start small, let rehashing happen.
-		m := newMap(seriesPerEvent)
+		m := newMap.New(seriesPerEvent)
 
 		storedValues := map[uint64]clock.Minutes{}
 		for i := 1; i <= events; i++ {
@@ -120,7 +150,7 @@ func TestMapValues(t *testing.T) {
 	forEachImplementation(t, func(t *testing.T, newMap Factory) {
 		const count = 10e3
 		stored := map[uint64]clock.Minutes{}
-		m := newMap(100)
+		m := newMap.New(100)
 		total := atomic.NewUint64(0)
 		for i := 0; i < count; i++ {
 			key := rand.Uint64()
@@ -141,14 +171,14 @@ func TestMapValues(t *testing.T) {
 func TestMapCleanup(t *testing.T) {
 	forEachImplementation(t, func(t *testing.T, newMap Factory) {
 		t.Run("empty map", func(t *testing.T) {
-			m := newMap(8)
+			m := newMap.New(8)
 			require.Equal(t, 0, m.Cleanup(100, nil))
 			require.Equal(t, 0, m.Count())
 			require.Zero(t, m.Stats().Resident)
 		})
 
 		t.Run("no entries expired", func(t *testing.T) {
-			m := newMap(8)
+			m := newMap.New(8)
 			m.Load(1, 50)
 			m.Load(2, 60)
 			m.Load(3, 70)
@@ -159,7 +189,7 @@ func TestMapCleanup(t *testing.T) {
 		})
 
 		t.Run("all entries expired", func(t *testing.T) {
-			m := newMap(8)
+			m := newMap.New(8)
 			m.Load(1, 10)
 			m.Load(2, 20)
 			m.Load(3, 30)
@@ -170,7 +200,7 @@ func TestMapCleanup(t *testing.T) {
 		})
 
 		t.Run("some entries expired some not", func(t *testing.T) {
-			m := newMap(16)
+			m := newMap.New(16)
 			m.Load(100, 10)
 			m.Load(200, 20)
 			m.Load(300, 30)
@@ -186,7 +216,7 @@ func TestMapCleanup(t *testing.T) {
 		})
 
 		t.Run("survivors findable via put update path", func(t *testing.T) {
-			m := newMap(16)
+			m := newMap.New(16)
 			m.Load(100, 10) // will expire
 			m.Load(200, 50) // will survive
 			m.Load(300, 50) // will survive
@@ -205,7 +235,7 @@ func TestMapCleanup(t *testing.T) {
 		})
 
 		t.Run("count and items consistent after cleanup", func(t *testing.T) {
-			m := newMap(32)
+			m := newMap.New(32)
 			expected := map[uint64]clock.Minutes{}
 			for i := uint64(0); i < 20; i++ {
 				val := clock.Minutes(10)
@@ -224,7 +254,7 @@ func TestMapCleanup(t *testing.T) {
 		t.Run("repeated cleanup at the same watermark is a no-op", func(t *testing.T) {
 			// Removals leave a mark behind that keeps probing going. A scan that mistakes one for a
 			// live entry removes it again on every pass, and the counters drift.
-			m := newMap(16)
+			m := newMap.New(16)
 			survivors := map[uint64]clock.Minutes{}
 			// Sequential keys all probe from the same group, so groups fill up completely and the
 			// removals below have to leave their marks in them.
@@ -247,7 +277,7 @@ func TestMapCleanup(t *testing.T) {
 		})
 
 		t.Run("sequential cleanups with interleaved puts", func(t *testing.T) {
-			m := newMap(32)
+			m := newMap.New(32)
 
 			// Round 1: insert keys with value 10.
 			for i := uint64(0); i < 10; i++ {
@@ -280,7 +310,7 @@ func TestMapCleanup(t *testing.T) {
 		t.Run("large scale correctness", func(t *testing.T) {
 			// Insert many elements with mixed timestamps, cleanup, verify survivors.
 			const n = 10000
-			m := newMap(uint32(n))
+			m := newMap.New(uint32(n))
 			expected := map[uint64]clock.Minutes{}
 			for i := uint64(0); i < n; i++ {
 				val := clock.Minutes(i % 100)
@@ -301,7 +331,7 @@ func TestMapCleanup(t *testing.T) {
 		t.Run("put after cleanup finds correct entries", func(t *testing.T) {
 			// Regression test: after cleanup, Put must still find existing keys and not create
 			// duplicates.
-			m := newMap(32)
+			m := newMap.New(32)
 			series := atomic.NewUint64(0)
 			for i := uint64(0); i < 20; i++ {
 				m.Put(i, clock.Minutes(i%50+1), series, nil, false)

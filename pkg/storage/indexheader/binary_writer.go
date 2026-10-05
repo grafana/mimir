@@ -31,6 +31,10 @@ const (
 	// BinaryFormatV1 represents first version of index-header file.
 	BinaryFormatV1 = 1
 
+	// BinaryFormatV2 represents the second version of the index-header file,
+	// which contains only the symbols table.
+	BinaryFormatV2 = 2
+
 	indexTOCLen  = 6*8 + crc32.Size
 	BinaryTOCLen = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
 	// HeaderLen represents number of bytes reserved of index header for header.
@@ -68,8 +72,10 @@ type BinaryTOC struct {
 	PostingsOffsetTable uint64
 }
 
-// WriteBinary build index-header file from the pieces of index in object storage.
-func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string) (err error) {
+// WriteBinary builds an index-header file of the given format version from the pieces of the index in object storage.
+func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, blockDir string, version int) (err error) {
+	filename := indexHeaderPath(blockDir, version)
+
 	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
@@ -79,7 +85,7 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	// Buffer for copying and encbuffers.
 	// This also will control the size of file writer buffer.
 	buf := make([]byte, 32*1024)
-	bw, err := newBinaryWriter(tmpFilename, buf)
+	bw, err := newBinaryWriter(tmpFilename, buf, version)
 	if err != nil {
 		return errors.Wrap(err, "new binary index header writer")
 	}
@@ -101,12 +107,14 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "flush")
 	}
 
-	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
-		return err
-	}
+	if version != BinaryFormatV2 {
+		if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+			return err
+		}
 
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
+		if err := bw.f.Flush(); err != nil {
+			return errors.Wrap(err, "flush")
+		}
 	}
 
 	if err := bw.WriteTOC(); err != nil {
@@ -122,7 +130,11 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 
 	// Create index-header in atomic way, to avoid partial writes (e.g during restart or crash of store GW).
-	return os.Rename(tmpFilename, filename)
+	if err := os.Rename(tmpFilename, filename); err != nil {
+		return errors.Wrap(err, "rename index header into place")
+	}
+
+	return nil
 }
 
 type chunkedIndexReader struct {
@@ -243,7 +255,7 @@ type binaryWriter struct {
 	crc32 hash.Hash
 }
 
-func newBinaryWriter(fn string, buf []byte) (w *binaryWriter, err error) {
+func newBinaryWriter(fn string, buf []byte, version int) (w *binaryWriter, err error) {
 	df, err := fileutil.OpenDir(filepath.Dir(fn))
 	if err != nil {
 		return nil, err
@@ -274,7 +286,7 @@ func newBinaryWriter(fn string, buf []byte) (w *binaryWriter, err error) {
 
 	w.buf.Reset()
 	w.buf.PutBE32(MagicIndex)
-	w.buf.PutByte(BinaryFormatV1)
+	w.buf.PutByte(byte(version))
 
 	return w, w.f.Write(w.buf.Get())
 }

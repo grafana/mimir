@@ -844,28 +844,27 @@ groups:
             severity: critical
         - alert: MimirMemberlistBridgeZoneUnavailable
           annotations:
-            message: Mimir memberlist-bridge in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.zone }} has no available pods.
+            message: Mimir memberlist-bridge in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.zone }} has no ready pods.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirmemberlistbridgezoneunavailable
           expr: |
-            # Find the expected memberlist-bridge zonal deployments.
-            count by (cluster, namespace, zone) (
+            # Find the zonal memberlist-bridge deployments with no ready pod.
+            max by (cluster, namespace, zone) (
                 label_replace(
-                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    kube_deployment_status_replicas_ready{deployment=~"memberlist-bridge-zone-[abc]"},
                     "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
                 )
-            )
-            # Excluding zones where there is at least 1 healthy memberlist-bridge.
-            unless (
-                count by(cluster, namespace, zone) (
-                    label_replace(
-                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
-                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
-                    )
-                ) > 0
-            )
+            ) == 0
+            # Restricted to deployments that are expected to be running.
+            and on (cluster, namespace, zone)
+            max by (cluster, namespace, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"},
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            ) > 0
           for: 10m
           labels:
-            severity: critical
+            severity: warning
         - alert: MimirMemberlistZoneAwareRoutingAutoFailover
           annotations:
             message: Mimir memberlist in {{ $labels.cluster }}/{{ $labels.namespace }} has automatically temporarily disabled zone-aware routing because it detected missing memberlist bridges.

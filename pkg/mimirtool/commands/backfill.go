@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,7 +40,7 @@ func (l *blockList) Set(value string) error {
 	if !st.IsDir() {
 		return fmt.Errorf("%q must be a directory", value)
 	}
-	*l = append(*l, value)
+	*l = append(*l, filepath.Clean(value))
 	return nil
 }
 

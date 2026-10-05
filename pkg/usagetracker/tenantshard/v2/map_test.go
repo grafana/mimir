@@ -14,12 +14,16 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
+// testNumShards is the shard count the tests build maps with: the map only uses it to turn a
+// tenant-wide series limit into a per-shard one.
+const testNumShards = 16
+
 func TestMapStats(t *testing.T) {
 	series := atomic.NewUint64(0)
 	limit := atomic.NewUint64(1000)
 
 	// Start small so that inserts force a rehash.
-	m := New(8)
+	m := New(8, testNumShards)
 
 	s := m.Stats()
 	require.Equal(t, uint32(0), s.Resident)
@@ -48,7 +52,7 @@ func TestMapStats(t *testing.T) {
 
 func TestNextSize(t *testing.T) {
 	t.Run("no limit grows by 1.25x resident", func(t *testing.T) {
-		m := New(100)
+		m := New(100, testNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
@@ -61,19 +65,19 @@ func TestNextSize(t *testing.T) {
 	})
 
 	t.Run("limit larger than 1.25x resident uses per-shard limit", func(t *testing.T) {
-		m := New(100)
+		m := New(100, testNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
-		// Total limit across all shards, nextSize divides by NumShards.
-		const totalLimit = NumShards * 1000
+		// Total limit across all shards, nextSize divides by testNumShards.
+		const totalLimit = testNumShards * 1000
 		got := m.nextSize(totalLimit)
 		expected := numGroups(1000)
 		require.Equal(t, expected, got)
 	})
 
 	t.Run("limit smaller than 1.25x resident uses 1.25x", func(t *testing.T) {
-		m := New(100)
+		m := New(100, testNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
@@ -86,7 +90,7 @@ func TestNextSize(t *testing.T) {
 func TestMaxSpilledGroups(t *testing.T) {
 	for _, size := range []uint32{1, 8, 100, 1000, 10000} {
 		t.Run(fmt.Sprintf("size %d", size), func(t *testing.T) {
-			m := New(size)
+			m := New(size, testNumShards)
 			groups := uint32(len(m.index))
 
 			// A rehash packs entries at maxAvgGroupLoad per group, so at most limit/groupSize groups
@@ -106,7 +110,7 @@ func TestSpillTriggeredRehashCompacts(t *testing.T) {
 	// slots left behind by Cleanup, so growing would waste memory and shrinking would fight the
 	// growth path. Build the state directly, because spilled only crosses the threshold after
 	// accumulating over several track and cleanup rounds.
-	m := New(groupSize * 2)
+	m := New(groupSize*2, testNumShards)
 	groups := uint32(len(m.index))
 	for g := range m.index {
 		m.index[g][last] = spillmark
@@ -130,7 +134,7 @@ func TestSpillTriggeredRehashCompacts(t *testing.T) {
 
 func TestLimitAwareGrowth(t *testing.T) {
 	const perShard uint64 = 1000
-	m := New(uint32(perShard))
+	m := New(uint32(perShard), testNumShards)
 	total := atomic.NewUint64(0)
 
 	for i := uint64(0); i < perShard; i++ {
@@ -148,13 +152,13 @@ func TestLimitAwareGrowth(t *testing.T) {
 		"expected limit-aware growth to be less than 2x: before=%d after=%d", groupsBefore, groupsAfter)
 
 	// When per-shard limit > 1.25x resident, the limit is used.
-	m2 := New(uint32(perShard))
+	m2 := New(uint32(perShard), testNumShards)
 	for i := uint64(0); i < perShard; i++ {
 		m2.Load(i, 1)
 	}
-	bigLimit := uint64(m2.resident) * 2 * NumShards
+	bigLimit := uint64(m2.resident) * 2 * testNumShards
 	got := m2.nextSize(bigLimit)
-	expected := numGroups(uint32(bigLimit / NumShards))
+	expected := numGroups(uint32(bigLimit / testNumShards))
 	require.Equal(t, expected, got)
 }
 
@@ -173,7 +177,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("spillmark avoidance with empty slots in group", func(t *testing.T) {
 		// With maxAvgGroupLoad=4 and groupSize=8, a small map will have groups
 		// that are partially full, so cleanup should avoid spillmarks.
-		m := New(4) // 1 group, limit=4
+		m := New(4, testNumShards) // 1 group, limit=4
 		m.Load(1, 10)
 		m.Load(2, 50)
 
@@ -186,7 +190,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("element expiring at the beginning of a full group becomes empty again", func(t *testing.T) {
 		// Force a full group by directly populating all 8 slots.
-		m := New(1) // 1 group
+		m := New(1, testNumShards) // 1 group
 		// Fill all groupSize slots directly.
 		for j := uint32(0); j < groupSize; j++ {
 			m.index[0][j] = prefix(j + prefixOffset)
@@ -210,7 +214,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("spillmark created when last group element is expired", func(t *testing.T) {
 		// Force a full group by directly populating all 8 slots.
-		m := New(1) // 1 group
+		m := New(1, testNumShards) // 1 group
 		// Fill all groupSize slots directly.
 		for j := uint32(0); j < groupSize; j++ {
 			m.index[0][j] = prefix(j + prefixOffset)
@@ -235,7 +239,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("expire last element clears to empty", func(t *testing.T) {
 		// Set up a group with 2 elements: slots [0] and [1] occupied, rest empty.
 		// Expire element at slot [1] (the last). This should hit the e == j+1 path.
-		m := New(1)
+		m := New(1, testNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(50) // won't expire
@@ -262,7 +266,7 @@ func TestMapCleanup(t *testing.T) {
 		// Then [1] is checked (survive), then [2] is checked (expire):
 		//   [2] is last element, so e==j+1 path clears it.
 		// Result: 2 elements at [0] and [1].
-		m := New(1)
+		m := New(1, testNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(10) // expire
@@ -288,7 +292,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("expire all elements in partially full group", func(t *testing.T) {
-		m := New(1)
+		m := New(1, testNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(10)
@@ -310,7 +314,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("cleanup shrinks the map when it is far above the limit", func(t *testing.T) {
-		m := New(200) // 50 groups
+		m := New(200, testNumShards) // 50 groups
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 10)
 		}
@@ -321,18 +325,18 @@ func TestMapCleanup(t *testing.T) {
 
 		after := m.Stats()
 		require.Less(t, after.Length, before.Length)
-		require.Equal(t, int(numGroups(1000/NumShards)), after.Length)
+		require.Equal(t, int(numGroups(1000/testNumShards)), after.Length)
 		require.Equal(t, before.Rehashes+1, after.Rehashes)
 	})
 
 	t.Run("cleanup keeps the size when it is within 2x of the limit", func(t *testing.T) {
-		m := New(200) // 50 groups
+		m := New(200, testNumShards) // 50 groups
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 10)
 		}
 		before := m.Stats()
 
-		// 2400/NumShards = 150 series per shard, i.e. 38 groups, and 50 groups is less than 2x that.
+		// 2400/testNumShards = 150 series per shard, i.e. 38 groups, and 50 groups is less than 2x that.
 		require.Equal(t, 200, m.Cleanup(10, atomic.NewUint64(2400)))
 		require.Zero(t, m.Count())
 
@@ -344,13 +348,13 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("cleanup never shrinks below the live entries", func(t *testing.T) {
 		// Load() ignores limits, so a shard can hold more than its share of the series: a limit that
 		// drops must not shrink the map below what is still resident.
-		m := New(2000) // 500 groups
+		m := New(2000, testNumShards) // 500 groups
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 50) // survives the watermark below
 		}
 		before := m.Stats()
 
-		require.Zero(t, m.Cleanup(10, atomic.NewUint64(NumShards))) // 1 series per shard
+		require.Zero(t, m.Cleanup(10, atomic.NewUint64(testNumShards))) // 1 series per shard
 		require.Equal(t, 200, m.Count())
 
 		after := m.Stats()
@@ -371,7 +375,7 @@ func TestMapCleanup(t *testing.T) {
 	// reported as empty by the byte tricks anyway, so it hides the difference.
 	fullGroupWithExpiredLastSlot := func(t *testing.T) (*Map, map[uint64]clock.Minutes) {
 		t.Helper()
-		m := New(groupSize * 2)
+		m := New(groupSize*2, testNumShards)
 		survivors := map[uint64]clock.Minutes{}
 		for i := uint64(0); i < groupSize; i++ {
 			val := clock.Minutes(50)
@@ -417,7 +421,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("spilled accounting", func(t *testing.T) {
-		m := New(groupSize * 2)
+		m := New(groupSize*2, testNumShards)
 		groups := uint32(len(m.index))
 
 		// Nothing is full yet, so nothing has spilled.
@@ -450,7 +454,7 @@ func TestMapCleanup(t *testing.T) {
 func BenchmarkMapRehash(b *testing.B) {
 	for _, size := range []uint32{1e6, 10e6} {
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
-			m := New(size)
+			m := New(size, testNumShards)
 			r := rand.New(rand.NewSource(1))
 			for i := 0; i < int(size); i++ {
 				m.Put(r.Uint64(), clock.Minutes(i%128), nil, nil, false)
@@ -464,26 +468,37 @@ func BenchmarkMapRehash(b *testing.B) {
 }
 
 func BenchmarkMapCleanup(b *testing.B) {
-	now := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
 	const idleTimeout = 20 * time.Minute
 
 	const size = 1e6
 
-	maps := make([]*Map, b.N)
-	for i := range maps {
-		maps[i] = New(size)
-	}
-	r := rand.New(rand.NewSource(1))
-	for _, m := range maps {
-		for i := 0; i < size; i++ {
-			ts := now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
-			m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
-		}
-	}
-	b.ResetTimer()
-	watermark := now.Add(-idleTimeout)
-	for i := 0; i < b.N; i++ {
-		maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+	}{
+		// The watermark and all the series are before the same two-hour boundary.
+		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)},
+		// The watermark is before a two-hour boundary, and the series are on both sides of it.
+		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC)},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			maps := make([]*Map, b.N)
+			for i := range maps {
+				maps[i] = New(size, testNumShards)
+			}
+			r := rand.New(rand.NewSource(1))
+			for _, m := range maps {
+				for i := 0; i < size; i++ {
+					ts := tc.now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+					m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
+				}
+			}
+			b.ResetTimer()
+			watermark := tc.now.Add(-idleTimeout)
+			for i := 0; i < b.N; i++ {
+				maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+			}
+		})
 	}
 }
 
@@ -495,7 +510,7 @@ func BenchmarkMapTrackCleanupGarbage(b *testing.B) {
 		hashes[i] = r.Uint64()
 	}
 
-	m := New(series)
+	m := New(series, testNumShards)
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		t := clock.ToMinutes(now)

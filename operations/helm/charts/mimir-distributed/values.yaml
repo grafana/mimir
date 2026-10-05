@@ -3123,6 +3123,15 @@ minio:
   enabled: true
   mode: standalone
   rootUser: grafana-mimir
+  # Use pgsty/silo image as MinIO is no longer available in public registries.
+  # Silo is a MinIO fork maintained by PGSTY that provides the same S3 API.
+  # The image bundles both the server and the mc client, so mcImage points at it too.
+  image:
+    repository: pgsty/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
+  mcImage:
+    repository: pgsty/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
   buckets:
     - name: mimir-tsdb
       policy: none
