@@ -2703,6 +2703,16 @@ func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *aler
 	return am.server.ReadState(ctx, in)
 }
 
+// ReadTenantDigests mirrors the real gRPC client's mandatory ClientUserHeaderInterceptor, which
+// errors out before ever sending the RPC if ctx has no org ID. Without this check here, a
+// passthrough test could pass while the real client silently failed every call in production.
+func (am *passthroughAlertmanagerClient) ReadTenantDigests(ctx context.Context, in *alertmanagerpb.TenantDigestsRequest, _ ...grpc.CallOption) (*alertmanagerpb.TenantDigestsResponse, error) {
+	if _, err := user.ExtractOrgID(ctx); err != nil {
+		return nil, err
+	}
+	return am.server.ReadTenantDigests(ctx, in)
+}
+
 func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return am.server.HandleRequest(ctx, in)
 }
@@ -2949,4 +2959,584 @@ type mockAlertmanagerServer struct {
 
 func (*mockAlertmanagerServer) HandleRequest(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	return &httpgrpc.HTTPResponse{}, nil
+}
+
+func TestMultitenantAlertmanager_ReadTenantDigests(t *testing.T) {
+	const tenantID = "user-1"
+	const otherTenantID = "user-2"
+
+	ctx := t.Context()
+
+	am := setupSingleMultitenantAlertmanager(t,
+		mockAlertmanagerConfig(t),
+		prepareInMemoryAlertStore(),
+		nil,
+		featurecontrol.NoopFlags{},
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+	for _, userID := range []string{tenantID, otherTenantID} {
+		_, err := am.setConfig(&alertspb.AlertConfigDesc{User: userID, RawConfig: simpleConfigOne})
+		require.NoError(t, err)
+		require.NoError(t, am.alertmanagers[userID].WaitInitialStateSync(ctx))
+	}
+
+	t.Run("reports found=false for a tenant this instance doesn't own", func(t *testing.T) {
+		resp, err := am.ReadTenantDigests(ctx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{"no-such-user"}})
+		require.NoError(t, err)
+		require.Len(t, resp.Digests, 1)
+		assert.False(t, resp.Digests[0].Found)
+		assert.Empty(t, resp.Digests[0].Digests, "a tenant we don't have can't have any authoritative part")
+	})
+
+	t.Run("reports a digest matching this instance's own for an owned tenant", func(t *testing.T) {
+		wantDigest, err := am.alertmanagers[tenantID].silencesDigest(ctx)
+		require.NoError(t, err)
+
+		resp, err := am.ReadTenantDigests(ctx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID}})
+		require.NoError(t, err)
+		require.Len(t, resp.Digests, 1)
+
+		d := resp.Digests[0]
+		assert.True(t, d.Found)
+		assert.Equal(t, tenantID, d.UserId)
+
+		got, sent := silencesDigestFrom(d)
+		require.True(t, sent, "a synced tenant must carry a silences digest")
+		assert.Equal(t, wantDigest, got)
+	})
+
+	t.Run("handles a batch mixing owned and unknown tenants", func(t *testing.T) {
+		resp, err := am.ReadTenantDigests(ctx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID, "no-such-user"}})
+		require.NoError(t, err)
+		require.Len(t, resp.Digests, 2)
+
+		byUser := map[string]*alertmanagerpb.TenantDigest{}
+		for _, d := range resp.Digests {
+			byUser[d.UserId] = d
+		}
+		assert.True(t, byUser[tenantID].Found)
+		assert.False(t, byUser["no-such-user"].Found)
+	})
+
+	t.Run("stops early instead of working through the batch for a caller that gave up", func(t *testing.T) {
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		_, err := am.ReadTenantDigests(cancelled, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID}})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("omits the silences digest while the tenant's own initial sync hasn't finished", func(t *testing.T) {
+		am.alertmanagers[tenantID].state.initialSyncDone.Store(false)
+		t.Cleanup(func() { am.alertmanagers[tenantID].state.initialSyncDone.Store(true) })
+
+		resp, err := am.ReadTenantDigests(ctx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID}})
+		require.NoError(t, err)
+		require.Len(t, resp.Digests, 1)
+
+		d := resp.Digests[0]
+		assert.True(t, d.Found, "the tenant is on this instance, which is all found means")
+		_, sent := silencesDigestFrom(d)
+		assert.False(t, sent, "an unsynced replica's silences aren't authoritative, so it must send no digest for them rather than a hash of what it happens to hold")
+	})
+
+	t.Run("returns the other tenants before the deadline while one is blocked", func(t *testing.T) {
+		blockSilencesDigest(t, am.alertmanagers[tenantID])
+
+		const timeout = 500 * time.Millisecond
+		deadlineCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		start := time.Now()
+		resp, err := am.ReadTenantDigests(deadlineCtx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID, otherTenantID}})
+		require.NoError(t, err)
+		assert.Less(t, time.Since(start), timeout)
+		require.Len(t, resp.Digests, 1)
+		assert.Equal(t, otherTenantID, resp.Digests[0].UserId)
+	})
+
+	t.Run("waits for every tenant when the request has no deadline", func(t *testing.T) {
+		release := blockSilencesDigest(t, am.alertmanagers[tenantID])
+
+		type result struct {
+			resp *alertmanagerpb.TenantDigestsResponse
+			err  error
+		}
+		done := make(chan result, 1)
+		go func() {
+			resp, err := am.ReadTenantDigests(ctx, &alertmanagerpb.TenantDigestsRequest{UserIds: []string{tenantID, otherTenantID}})
+			done <- result{resp, err}
+		}()
+
+		select {
+		case <-done:
+			t.Fatal("returned while a tenant was still blocked")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		release()
+		r := <-done
+		require.NoError(t, r.err)
+		assert.Len(t, r.resp.Digests, 2)
+	})
+}
+
+// dropBroadcasts stops am's silence writes from reaching its peers, as if every delivery was lost.
+// It still moves silencesGeneration, as the real broadcast does, so cached digests stay correct.
+func dropBroadcasts(am *Alertmanager) {
+	am.silences.SetBroadcast(func([]byte) { am.silencesGeneration.Inc() })
+}
+
+// blockSilencesDigest holds am's digest cache lock, which every silencesDigest call takes first,
+// until the returned release is called or the test ends.
+func blockSilencesDigest(t *testing.T, am *Alertmanager) func() {
+	am.silencesDigestCache.mtx.Lock()
+	release := sync.OnceFunc(am.silencesDigestCache.mtx.Unlock)
+	t.Cleanup(release)
+	return release
+}
+
+func TestMultitenantAlertmanager_ReconcileSilences(t *testing.T) {
+	ctx := t.Context()
+	tenants := []string{"user-1", "user-2", "user-3"}
+
+	// setup starts three replicas at replication factor 3, so every replica owns every tenant.
+	setup := func(t *testing.T) ([]*MultitenantAlertmanager, *passthroughAlertmanagerClientPool) {
+		ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+		mockStore := prepareInMemoryAlertStore()
+		for _, userID := range tenants {
+			require.NoError(t, mockStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+				User:      userID,
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{},
+			}))
+		}
+
+		clientPool := newPassthroughAlertmanagerClientPool()
+
+		var instances []*MultitenantAlertmanager
+		var instanceIDs []string
+		for i := 1; i <= 3; i++ {
+			instanceID := fmt.Sprintf("alertmanager-%d", i)
+			instanceIDs = append(instanceIDs, instanceID)
+
+			amConfig := mockAlertmanagerConfig(t)
+			amConfig.ShardingRing.ReplicationFactor = 3
+			amConfig.ShardingRing.Common.InstanceID = instanceID
+			amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+			// This test drives config sync and reconciliation explicitly.
+			amConfig.PollInterval = time.Hour
+			amConfig.ShardingRing.RingCheckPeriod = time.Hour
+			amConfig.SilenceReconcileInterval = 0
+
+			am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), am)) })
+
+			clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
+			am.alertmanagerClientsPool = clientPool
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, am))
+			instances = append(instances, am)
+		}
+
+		waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		for _, am := range instances {
+			for _, id := range instanceIDs {
+				require.NoError(t, ring.WaitInstanceState(waitCtx, am.ring, id, ring.ACTIVE))
+			}
+		}
+
+		for _, am := range instances {
+			require.NoError(t, am.loadAndSyncConfigs(ctx, reasonRingChange))
+			for _, userID := range tenants {
+				require.NoError(t, am.alertmanagers[userID].WaitInitialStateSync(ctx))
+			}
+		}
+		return instances, clientPool
+	}
+
+	addrOf := func(am *MultitenantAlertmanager) string { return am.cfg.ShardingRing.Common.InstanceAddr + ":0" }
+	digestOf := func(t *testing.T, am *MultitenantAlertmanager, userID string) uint64 {
+		d, err := am.alertmanagers[userID].silencesDigest(ctx)
+		require.NoError(t, err)
+		return d
+	}
+	checks := func(am *MultitenantAlertmanager, outcome string) float64 {
+		return testutil.ToFloat64(am.silenceReconcileChecksTotal.WithLabelValues(outcome))
+	}
+	// addMissedSilence adds a silence to one replica without broadcasting it, as if every delivery was lost.
+	addMissedSilence := func(t *testing.T, am *MultitenantAlertmanager, userID string) {
+		dropBroadcasts(am.alertmanagers[userID])
+		addTestSilence(t, am.alertmanagers[userID], "missed by the other replicas")
+	}
+
+	// startReconcile runs am.reconcileSilences in the background, canceled at cleanup, and returns a channel closed when it returns.
+	startReconcile := func(t *testing.T, am *MultitenantAlertmanager) <-chan struct{} {
+		reconcileCtx, cancel := context.WithCancel(ctx)
+		t.Cleanup(cancel)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			am.reconcileSilences(reconcileCtx)
+		}()
+		return done
+	}
+
+	t.Run("repairs a replica missing a silence from the diverging peer only", func(t *testing.T) {
+		instances, clientPool := setup(t)
+		source, other, stale := instances[0], instances[1], instances[2]
+
+		addMissedSilence(t, source, "user-1")
+		require.NotEqual(t, digestOf(t, source, "user-1"), digestOf(t, stale, "user-1"))
+
+		// other sends no digests, so it never diverges.
+		otherReads := &countingReadStateServer{AlertmanagerServer: &digestlessServer{AlertmanagerServer: other}}
+		clientPool.setServer(addrOf(other), otherReads)
+
+		stale.reconcileSilences(ctx)
+
+		assert.Equal(t, digestOf(t, source, "user-1"), digestOf(t, stale, "user-1"), "the missed silence should have been pulled from the diverging peer")
+		assert.Equal(t, float64(1), checks(stale, checkRepaired))
+		assert.Equal(t, float64(2), checks(stale, checkInSync))
+		assert.Equal(t, float64(len(tenants)), checks(stale, checkSkipped))
+		assert.Zero(t, otherReads.calls.Load(), "a peer that didn't diverge must not be read")
+	})
+
+	t.Run("counts a stale peer without changing local silences", func(t *testing.T) {
+		instances, _ := setup(t)
+		source := instances[0]
+
+		addMissedSilence(t, source, "user-1")
+		before := digestOf(t, source, "user-1")
+
+		source.reconcileSilences(ctx)
+
+		assert.Equal(t, before, digestOf(t, source, "user-1"))
+		assert.Equal(t, float64(2), checks(source, checkNoChange), "both peers are the stale ones")
+	})
+
+	t.Run("repairs a tenant whose own initial sync failed and marks it synced", func(t *testing.T) {
+		instances, _ := setup(t)
+		source, stale := instances[0], instances[2]
+
+		addMissedSilence(t, source, "user-1")
+		stale.alertmanagers["user-1"].state.initialSyncDone.Store(false)
+
+		stale.reconcileSilences(ctx)
+
+		assert.Equal(t, digestOf(t, source, "user-1"), digestOf(t, stale, "user-1"), "a replica whose initial sync failed should still pull from a synced peer")
+		assert.Equal(t, float64(1), checks(stale, checkRepaired))
+		assert.True(t, stale.alertmanagers["user-1"].initialStateSynced(), "merging a synced peer's silences makes this replica's authoritative")
+	})
+
+	t.Run("asks peers for digests concurrently", func(t *testing.T) {
+		instances, clientPool := setup(t)
+		source, other, stale := instances[0], instances[1], instances[2]
+
+		addMissedSilence(t, source, "user-1")
+		// Each peer only answers once the other has been asked, so asking one at a time never finishes.
+		sourceAsked, otherAsked := make(chan struct{}), make(chan struct{})
+		clientPool.setServer(addrOf(source), &gatedDigestsServer{AlertmanagerServer: source, entered: sourceAsked, wait: otherAsked})
+		clientPool.setServer(addrOf(other), &gatedDigestsServer{AlertmanagerServer: other, entered: otherAsked, wait: sourceAsked})
+		// Longer than the wait below, so a timed out call can't let the other through.
+		stale.cfg.AlertmanagerClient.RemoteTimeout = time.Minute
+
+		done := startReconcile(t, stale)
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "reconciliation should finish once both peers have been asked")
+		}
+		assert.Equal(t, float64(1), checks(stale, checkRepaired))
+	})
+
+	t.Run("resyncs different tenants concurrently", func(t *testing.T) {
+		instances, clientPool := setup(t)
+		source, stale := instances[0], instances[2]
+
+		addMissedSilence(t, source, "user-1")
+		addMissedSilence(t, source, "user-2")
+		// Each tenant's read only returns once the other's has started, so resyncing one at a time never finishes.
+		reading := map[string]chan struct{}{"user-1": make(chan struct{}), "user-2": make(chan struct{})}
+		clientPool.setServer(addrOf(source), &hookedReadStateServer{AlertmanagerServer: source, before: func(ctx context.Context, userID string) error {
+			other := map[string]string{"user-1": "user-2", "user-2": "user-1"}[userID]
+			close(reading[userID])
+			select {
+			case <-reading[other]:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}})
+
+		done := startReconcile(t, stale)
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "reconciliation should finish once both tenants are being read")
+		}
+		assert.Equal(t, float64(2), checks(stale, checkRepaired))
+	})
+
+	t.Run("resyncs a tenant from one peer at a time and skips a resync the first one made unneeded", func(t *testing.T) {
+		instances, clientPool := setup(t)
+		source, other, stale := instances[0], instances[1], instances[2]
+
+		// Both peers hold a silence stale missed.
+		addMissedSilence(t, source, "user-1")
+		dropBroadcasts(other.alertmanagers["user-1"])
+		other.reconcileSilences(ctx)
+		require.Equal(t, digestOf(t, source, "user-1"), digestOf(t, other, "user-1"))
+
+		// The first read blocks until released, so the resync from the other peer is pending meanwhile.
+		var reads atomic.Int32
+		firstReading, release := make(chan struct{}), make(chan struct{})
+		releaseFirst := sync.OnceFunc(func() { close(release) })
+		t.Cleanup(releaseFirst)
+		blockFirstRead := func(ctx context.Context, _ string) error {
+			if reads.Inc() > 1 {
+				return nil
+			}
+			close(firstReading)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		clientPool.setServer(addrOf(source), &hookedReadStateServer{AlertmanagerServer: source, before: blockFirstRead})
+		clientPool.setServer(addrOf(other), &hookedReadStateServer{AlertmanagerServer: other, before: blockFirstRead})
+
+		done := startReconcile(t, stale)
+
+		<-firstReading
+		assert.Never(t, func() bool { return reads.Load() > 1 }, 200*time.Millisecond, 10*time.Millisecond,
+			"the tenant must not be read from the other peer while the first resync is in flight")
+		releaseFirst()
+		<-done
+
+		assert.Equal(t, digestOf(t, source, "user-1"), digestOf(t, stale, "user-1"))
+		assert.Equal(t, float64(1), checks(stale, checkRepaired))
+		assert.Equal(t, int32(1), reads.Load(), "the tenant was already in sync with the other peer once the first resync finished")
+	})
+
+	t.Run("a tenant stuck on a peer doesn't stop the other tenants syncing", func(t *testing.T) {
+		instances, _ := setup(t)
+		source, stale := instances[0], instances[2]
+
+		addMissedSilence(t, source, "user-2")
+		blockSilencesDigest(t, source.alertmanagers["user-1"])
+
+		select {
+		case <-startReconcile(t, stale):
+		case <-time.After(5 * time.Second):
+			t.Fatal("reconcile run didn't finish")
+		}
+
+		assert.Equal(t, digestOf(t, source, "user-2"), digestOf(t, stale, "user-2"))
+		assert.Equal(t, float64(1), checks(stale, checkRepaired))
+		assert.Equal(t, float64(1), checks(stale, checkSkipped))
+	})
+
+	t.Run("skips a tick while the previous run is still going", func(t *testing.T) {
+		instances, clientPool := setup(t)
+		local, peer := instances[0], instances[1]
+
+		release := make(chan struct{})
+		clientPool.setServer(addrOf(peer), &gatedDigestsServer{AlertmanagerServer: peer, entered: make(chan struct{}), wait: release})
+
+		require.True(t, local.tryReconcileSilencesAsync(ctx), "the first tick should start a run")
+		require.False(t, local.tryReconcileSilencesAsync(ctx), "a tick during a blocked run should be skipped")
+
+		close(release)
+		require.Eventually(t, func() bool { return local.tryReconcileSilencesAsync(ctx) }, time.Second, 10*time.Millisecond,
+			"a tick after the run finished should start a new one")
+	})
+}
+
+// countingReadStateServer counts ReadState calls before delegating to the real server.
+type countingReadStateServer struct {
+	alertmanagerpb.AlertmanagerServer
+	calls atomic.Int32
+}
+
+func (c *countingReadStateServer) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
+	c.calls.Inc()
+	return c.AlertmanagerServer.ReadState(ctx, req)
+}
+
+// digestlessServer reports every tenant as found but attaches no digests, the way a replica that
+// holds the tenant but can't vouch for its silences yet answers.
+type digestlessServer struct {
+	alertmanagerpb.AlertmanagerServer
+}
+
+func (d *digestlessServer) ReadTenantDigests(_ context.Context, req *alertmanagerpb.TenantDigestsRequest) (*alertmanagerpb.TenantDigestsResponse, error) {
+	resp := &alertmanagerpb.TenantDigestsResponse{Digests: make([]*alertmanagerpb.TenantDigest, 0, len(req.UserIds))}
+	for _, userID := range req.UserIds {
+		resp.Digests = append(resp.Digests, &alertmanagerpb.TenantDigest{UserId: userID, Found: true})
+	}
+	return resp, nil
+}
+
+// gatedDigestsServer closes entered on its first ReadTenantDigests call and blocks every call until
+// wait is closed or the call's context ends.
+type gatedDigestsServer struct {
+	alertmanagerpb.AlertmanagerServer
+	entered     chan struct{}
+	enteredOnce sync.Once
+	wait        <-chan struct{}
+}
+
+func (g *gatedDigestsServer) ReadTenantDigests(ctx context.Context, req *alertmanagerpb.TenantDigestsRequest) (*alertmanagerpb.TenantDigestsResponse, error) {
+	g.enteredOnce.Do(func() { close(g.entered) })
+	select {
+	case <-g.wait:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return g.AlertmanagerServer.ReadTenantDigests(ctx, req)
+}
+
+// hookedReadStateServer calls before with the tenant of every ReadState call, failing the call if it errors.
+type hookedReadStateServer struct {
+	alertmanagerpb.AlertmanagerServer
+	before func(ctx context.Context, userID string) error
+}
+
+func (h *hookedReadStateServer) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
+	userID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.before(ctx, userID); err != nil {
+		return nil, err
+	}
+	return h.AlertmanagerServer.ReadState(ctx, req)
+}
+
+// unreachableForBroadcastServer drops every broadcast but serves every other RPC.
+type unreachableForBroadcastServer struct {
+	alertmanagerpb.AlertmanagerServer
+}
+
+func (u *unreachableForBroadcastServer) UpdateState(context.Context, *clusterpb.Part) (*alertmanagerpb.UpdateStateResponse, error) {
+	return nil, errors.New("simulated: peer unreachable for broadcast")
+}
+
+// TestMultitenantAlertmanager_SilenceReconcileIntervalDrivesReconciliation covers the flag actually
+// wired into run()'s own ticker, as opposed to every other reconciliation test, which calls
+// reconcileSilences or tryReconcileSilencesAsync directly and never exercises the ticker at all.
+func TestMultitenantAlertmanager_SilenceReconcileIntervalDrivesReconciliation(t *testing.T) {
+	ctx := t.Context()
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mockStore := prepareInMemoryAlertStore()
+	require.NoError(t, mockStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+		User:      "user-1",
+		RawConfig: simpleConfigOne,
+		Templates: []*alertspb.TemplateDesc{},
+	}))
+
+	clientPool := newPassthroughAlertmanagerClientPool()
+
+	var instances []*MultitenantAlertmanager
+	var stores []*stallingAlertStore
+	var instanceIDs []string
+	for i := 1; i <= 2; i++ {
+		instanceID := fmt.Sprintf("alertmanager-%d", i)
+		instanceIDs = append(instanceIDs, instanceID)
+
+		amConfig := mockAlertmanagerConfig(t)
+		amConfig.ShardingRing.ReplicationFactor = 2
+		amConfig.ShardingRing.Common.InstanceID = instanceID
+		amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+		amConfig.PollInterval = 10 * time.Millisecond
+		amConfig.ShardingRing.RingCheckPeriod = time.Hour
+		// Unlike every other reconciliation test, this is the one thing under test: a real,
+		// running ticker, not a direct call to reconcileSilences/tryReconcileSilencesAsync.
+		amConfig.SilenceReconcileInterval = 20 * time.Millisecond
+
+		store := &stallingAlertStore{AlertStore: mockStore, stalled: make(chan struct{})}
+		stores = append(stores, store)
+		am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), am)) })
+
+		clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
+		am.alertmanagerClientsPool = clientPool
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, am))
+		instances = append(instances, am)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for _, am := range instances {
+		for _, id := range instanceIDs {
+			require.NoError(t, ring.WaitInstanceState(waitCtx, am.ring, id, ring.ACTIVE))
+		}
+	}
+
+	for _, am := range instances {
+		require.NoError(t, am.loadAndSyncConfigs(ctx, reasonRingChange))
+		require.NoError(t, am.alertmanagers["user-1"].WaitInitialStateSync(ctx))
+	}
+
+	// A config sync can block the run loop, so reconciliation must not wait for it.
+	for _, store := range stores {
+		store.stalling.Store(true)
+		select {
+		case <-store.stalled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the periodic config sync should have started and stalled")
+		}
+	}
+
+	inSync, divergent := instances[0], instances[1]
+	if _, ok := inSync.alertmanagers["user-1"]; !ok {
+		inSync, divergent = instances[1], instances[0]
+	}
+
+	// Make ordinary broadcast delivery to divergent fail permanently, so only the reconcile
+	// ticker itself can converge the two replicas, not the pre-existing incremental replication
+	// path racing to deliver the same update on its own.
+	clientPool.setServer(divergent.cfg.ShardingRing.Common.InstanceAddr+":0", &unreachableForBroadcastServer{AlertmanagerServer: divergent})
+
+	addTestSilence(t, inSync.alertmanagers["user-1"], "missed by the other replica")
+
+	inSyncDigest, err := inSync.alertmanagers["user-1"].silencesDigest(ctx)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		afterDigest, err := divergent.alertmanagers["user-1"].silencesDigest(ctx)
+		return err == nil && afterDigest == inSyncDigest
+	}, 2*time.Second, 10*time.Millisecond, "the running service's own ticker should have reconciled this without any direct call to reconcileSilences")
+}
+
+// stallingAlertStore blocks the config sync in ListAllUsers once stalling is set, until the
+// caller's context is canceled.
+type stallingAlertStore struct {
+	alertstore.AlertStore
+	stalling    atomic.Bool
+	stalled     chan struct{}
+	stalledOnce sync.Once
+}
+
+func (s *stallingAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
+	if s.stalling.Load() {
+		s.stalledOnce.Do(func() { close(s.stalled) })
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return s.AlertStore.ListAllUsers(ctx)
 }

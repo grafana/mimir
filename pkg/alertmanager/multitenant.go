@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/time/rate"
 
@@ -76,6 +77,8 @@ type MultitenantAlertmanagerConfig struct {
 	PollInterval     time.Duration    `yaml:"poll_interval" category:"advanced"`
 	MaxRecvMsgSize   int64            `yaml:"max_recv_msg_size" category:"advanced"`
 	StateReadTimeout time.Duration    `yaml:"state_read_timeout" category:"experimental"`
+
+	SilenceReconcileInterval time.Duration `yaml:"silence_reconcile_interval" category:"experimental"`
 
 	// Sharding configuration for the Alertmanager.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
@@ -127,6 +130,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.StringVar(&cfg.DataDir, "alertmanager.storage.path", "./data-alertmanager/", "Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled.")
 	f.DurationVar(&cfg.Retention, "alertmanager.storage.retention", 5*24*time.Hour, "How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted.")
 	f.DurationVar(&cfg.StateReadTimeout, "alertmanager.storage.state-read-timeout", 15*time.Second, "Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout.")
+	f.DurationVar(&cfg.SilenceReconcileInterval, "alertmanager.silence-reconcile-interval", 0, "How often each replica checks its owned tenants' silences against each owning peer's and resyncs on a mismatch. 0 disables this check.")
 	f.Int64Var(&cfg.MaxRecvMsgSize, "alertmanager.max-recv-msg-size", 100<<20, "Maximum size (bytes) of an accepted HTTP request body.")
 
 	_ = cfg.ExternalURL.Set("http://localhost:8080/alertmanager") // set the default
@@ -332,12 +336,21 @@ type MultitenantAlertmanager struct {
 	// This map is used alongside the configured grace period to determine when to shut down idle Alertmanagers.
 	lastRequestTime sync.Map
 
-	registry          prometheus.Registerer
-	ringCheckErrors   prometheus.Counter
-	tenantsOwned      prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	syncTotal         *prometheus.CounterVec
-	syncFailures      *prometheus.CounterVec
+	registry                          prometheus.Registerer
+	ringCheckErrors                   prometheus.Counter
+	tenantsOwned                      prometheus.Gauge
+	tenantsDiscovered                 prometheus.Gauge
+	syncTotal                         *prometheus.CounterVec
+	syncFailures                      *prometheus.CounterVec
+	silenceReconcileChecksTotal       *prometheus.CounterVec
+	silenceReconcilePeerErrorsTotal   prometheus.Counter
+	silenceReconcileRunsTotal         prometheus.Counter
+	silenceReconcileRunDuration       prometheus.Histogram
+	silenceReconcileTicksSkippedTotal prometheus.Counter
+
+	// reconcileRunning guards against a slow reconcile run still going when its next tick fires.
+	reconcileRunning atomic.Bool
+	reconcileWG      sync.WaitGroup
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -424,6 +437,24 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 			Name: "cortex_alertmanager_sync_configs_failed_total",
 			Help: "Total number of times the alertmanager sync operation failed.",
 		}, []string{"reason"}),
+		silenceReconcileChecksTotal: newSilenceReconcileChecksTotal(registerer),
+		silenceReconcilePeerErrorsTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_alertmanager_silence_reconcile_peer_errors_total",
+			Help: "Number of failed requests for silences digests to a peer during silence reconciliation.",
+		}),
+		silenceReconcileRunsTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_alertmanager_silence_reconcile_runs_total",
+			Help: "Number of completed silence reconciliation runs.",
+		}),
+		silenceReconcileRunDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_alertmanager_silence_reconcile_run_duration_seconds",
+			Help:    "Time spent on a silence reconciliation run.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600},
+		}),
+		silenceReconcileTicksSkippedTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_alertmanager_silence_reconcile_ticks_skipped_total",
+			Help: "Number of silence reconciliation ticks skipped because the previous run was still in progress.",
+		}),
 		tenantsDiscovered: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_alertmanager_tenants_discovered",
 			Help: "Number of tenants with an Alertmanager configuration discovered.",
@@ -558,6 +589,27 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 	ringTicker := time.NewTicker(util.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
 	defer ringTicker.Stop()
 
+	// Reconciliation ticks on its own goroutine, since a config sync can block this loop or affect how often it runs.
+	if am.cfg.SilenceReconcileInterval > 0 {
+		reconcileCtx, cancel := context.WithCancelCause(ctx)
+		defer cancel(errors.New("alertmanager run loop stopped"))
+		am.reconcileWG.Add(1)
+		go func() {
+			defer am.reconcileWG.Done()
+			// Jittered, so replicas don't all reconcile, and resync from each other, at the same moment.
+			reconcileTicker := time.NewTicker(util.DurationWithJitter(am.cfg.SilenceReconcileInterval, 0.2))
+			defer reconcileTicker.Stop()
+			for {
+				select {
+				case <-reconcileCtx.Done():
+					return
+				case <-reconcileTicker.C:
+					am.tryReconcileSilencesAsync(reconcileCtx)
+				}
+			}
+		}()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -582,6 +634,26 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// tryReconcileSilencesAsync starts a reconciliation run in the background unless one is still going.
+func (am *MultitenantAlertmanager) tryReconcileSilencesAsync(ctx context.Context) bool {
+	if !am.reconcileRunning.CompareAndSwap(false, true) {
+		am.silenceReconcileTicksSkippedTotal.Inc()
+		level.Warn(am.logger).Log("msg", "skipping silence reconciliation tick, previous run still in progress")
+		return false
+	}
+
+	am.reconcileWG.Add(1)
+	go func() {
+		defer am.reconcileWG.Done()
+		defer am.reconcileRunning.Store(false)
+		start := time.Now()
+		am.reconcileSilences(ctx)
+		am.silenceReconcileRunDuration.Observe(time.Since(start).Seconds())
+		am.silenceReconcileRunsTotal.Inc()
+	}()
+	return true
 }
 
 func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncReason string) error {
@@ -625,6 +697,9 @@ func (am *MultitenantAlertmanager) waitInitialStateSync(ctx context.Context) err
 
 // stopping runs when MultitenantAlertmanager transitions to Stopping state.
 func (am *MultitenantAlertmanager) stopping(_ error) error {
+	// The run context is already canceled, so an in-flight reconcile run returns promptly.
+	am.reconcileWG.Wait()
+
 	am.alertmanagersMtx.Lock()
 	for _, am := range am.alertmanagers {
 		am.StopAndWait()
@@ -1090,11 +1165,13 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 
 		c, err := am.alertmanagerClientsPool.GetClientFor(desc.GetAddr())
 		if err != nil {
+			level.Warn(am.logger).Log("msg", "failed to get client to replicate state", "user", userID, "key", part.Key, "peer", desc.GetAddr(), "err", err)
 			return err
 		}
 
 		resp, err := c.UpdateState(user.InjectOrgID(ctx, userID), part)
 		if err != nil {
+			level.Warn(am.logger).Log("msg", "failed to replicate state to peer", "user", userID, "key", part.Key, "peer", desc.GetAddr(), "err", err)
 			return err
 		}
 
@@ -1286,7 +1363,7 @@ func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 }
 
 // ReadState implements the Alertmanager service.
-func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
+func (am *MultitenantAlertmanager) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -1304,7 +1381,7 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanage
 		}, nil
 	}
 
-	state, err := userAM.getFullState()
+	state, err := userAM.getState(req)
 	if err != nil {
 		return &alertmanagerpb.ReadStateResponse{
 			Status: alertmanagerpb.ReadStateStatus_READ_ERROR,

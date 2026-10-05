@@ -17,6 +17,7 @@ service Alertmanager {
   rpc HandleRequest(httpgrpc.HTTPRequest) returns (httpgrpc.HTTPResponse) {}
   rpc UpdateState(clusterpb.Part) returns (UpdateStateResponse) {}
   rpc ReadState(ReadStateRequest) returns (ReadStateResponse) {}
+  rpc ReadTenantDigests(TenantDigestsRequest) returns (TenantDigestsResponse) {}
 }
 enum UpdateStateStatus {
   OK = 0;
@@ -29,7 +30,10 @@ message UpdateStateResponse {
   string error = 2;
 }
 
-message ReadStateRequest {}
+// If only_silences is false, every part is returned, which is what the initial sync uses.
+message ReadStateRequest {
+  bool only_silences = 1;
+}
 
 enum ReadStateStatus {
   READ_UNSPECIFIED = 0;
@@ -42,4 +46,30 @@ message ReadStateResponse {
   ReadStateStatus status = 1;
   string error = 2;
   clusterpb.FullState state = 3;
+}
+
+message TenantDigestsRequest {
+  repeated string user_ids = 1;
+}
+
+enum DigestType {
+  DIGEST_TYPE_UNSPECIFIED = 0;
+  DIGEST_TYPE_SILENCES = 1;
+}
+
+message Digest {
+  DigestType type = 1;
+  uint64 value = 2;
+}
+
+// TenantDigest lets a peer cheaply check whether its own view of a tenant matches this replica's.
+// A part missing from digests means "no authoritative data", not zero.
+message TenantDigest {
+  string user_id = 1;
+  bool found = 2;
+  repeated Digest digests = 3;
+}
+
+message TenantDigestsResponse {
+  repeated TenantDigest digests = 1;
 }

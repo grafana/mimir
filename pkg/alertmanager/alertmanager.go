@@ -59,8 +59,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -122,6 +124,12 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
+
+	// silencesGeneration moves whenever the silences may have changed, through a local write or a
+	// merge from a peer. It invalidates silencesDigestCache.
+	silencesGeneration atomic.Uint64
+	// Memoized silences digest, maintained entirely by silencesDigest.
+	silencesDigestCache silencesDigestCache
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -235,8 +243,13 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, fmt.Errorf("failed to create silences: %v", err)
 	}
 
-	c = am.state.AddState(silencesStateKeyPrefix+cfg.UserID, am.silences, am.registry)
-	am.silences.SetBroadcast(c.Broadcast)
+	// Every change to the silences either comes from a peer, through the state's Merge, or is a local
+	// write, which the silences broadcast. Both move silencesGeneration.
+	c = am.state.AddState(silencesStateKeyPrefix+cfg.UserID, &generationTrackingState{State: am.silences, generation: &am.silencesGeneration}, am.registry)
+	am.silences.SetBroadcast(func(b []byte) {
+		am.silencesGeneration.Inc()
+		c.Broadcast(b)
+	})
 
 	// State replication needs to be started after the state keys are defined.
 	if err := am.state.StartAsync(context.Background()); err != nil {
@@ -509,8 +522,17 @@ func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
 }
 
-func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
+// getState returns this tenant's state, restricted to what req asks for.
+func (am *Alertmanager) getState(req *alertmanagerpb.ReadStateRequest) (*clusterpb.FullState, error) {
+	if req.GetOnlySilences() {
+		return am.state.GetSilencesState()
+	}
 	return am.state.GetFullState()
+}
+
+// initialStateSynced returns whether the initial state sync completed successfully.
+func (am *Alertmanager) initialStateSynced() bool {
+	return am.state.InitialSyncDone()
 }
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {

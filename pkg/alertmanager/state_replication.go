@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -61,6 +62,11 @@ type state struct {
 	initialSyncTotal         prometheus.Counter
 	initialSyncCompleted     *prometheus.CounterVec
 	initialSyncDuration      prometheus.Histogram
+
+	// initialSyncDone is set once the initial state sync has completed successfully, either because
+	// we obtained the state or because we know there is none to obtain. Until then the state isn't
+	// authoritative, so it must not be offered to peers as a reference to converge on.
+	initialSyncDone atomic.Bool
 
 	msgc  chan *clusterpb.Part
 	stopc chan struct{}
@@ -192,6 +198,25 @@ func (s *state) GetFullState() (*clusterpb.FullState, error) {
 	return all, nil
 }
 
+// GetSilencesState returns only the silences part, marshaling nothing else.
+func (s *state) GetSilencesState() (*clusterpb.FullState, error) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	key := silencesStateKeyPrefix + s.userID
+	st, ok := s.states[key]
+	if !ok {
+		return &clusterpb.FullState{Parts: []*clusterpb.Part{}}, nil
+	}
+
+	b, err := st.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode state for key: %v: %w", key, err)
+	}
+
+	return &clusterpb.FullState{Parts: []*clusterpb.Part{{Key: key, Data: b}}}, nil
+}
+
 // starting waits until the alertmanagers are ready (and sets the appropriate internal state when it is).
 // The idea is that we don't want to start working" before we get a chance to know most of the notifications and/or silences.
 func (s *state) starting(ctx context.Context) error {
@@ -213,7 +238,7 @@ func (s *state) starting(ctx context.Context) error {
 		if err == nil {
 			if err = s.MergeFullStates(fullStates); err == nil {
 				level.Info(s.logger).Log("msg", "state settled; proceeding")
-				s.initialSyncCompleted.WithLabelValues(syncFromReplica).Inc()
+				s.completeInitialSync(syncFromReplica)
 				return nil
 			}
 		}
@@ -240,13 +265,13 @@ func (s *state) starting(ctx context.Context) error {
 	fullState, err := s.store.GetFullState(ctx, s.userID)
 	if errors.Is(err, alertspb.ErrNotFound) {
 		level.Info(s.logger).Log("msg", "no state for user in storage; proceeding")
-		s.initialSyncCompleted.WithLabelValues(syncUserNotFound).Inc()
+		s.completeInitialSync(syncUserNotFound)
 		return nil
 	}
 	if err == nil {
 		if err = s.MergeFullStates([]*clusterpb.FullState{fullState.State}); err == nil {
 			level.Info(s.logger).Log("msg", "state read from storage; proceeding")
-			s.initialSyncCompleted.WithLabelValues(syncFromStorage).Inc()
+			s.completeInitialSync(syncFromStorage)
 			return nil
 		}
 	}
@@ -255,6 +280,23 @@ func (s *state) starting(ctx context.Context) error {
 	s.initialSyncCompleted.WithLabelValues(syncFailed).Inc()
 
 	return nil
+}
+
+// completeInitialSync records that the initial state sync succeeded with the given outcome.
+func (s *state) completeInitialSync(outcome string) {
+	s.initialSyncDone.Store(true)
+	s.initialSyncCompleted.WithLabelValues(outcome).Inc()
+}
+
+// markInitialSyncDone records that the state became authoritative after the initial sync, by
+// merging the state of a replica whose own initial sync succeeded.
+func (s *state) markInitialSyncDone() {
+	s.initialSyncDone.Store(true)
+}
+
+// InitialSyncDone returns whether the initial state sync completed successfully.
+func (s *state) InitialSyncDone() bool {
+	return s.initialSyncDone.Load()
 }
 
 // WaitReady is needed for the pipeline builder to know whenever we've settled and the state is up to date.

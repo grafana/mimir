@@ -1356,6 +1356,7 @@
   "alertmanager.configs.poll-interval": 15000000000,
   "alertmanager.max-recv-msg-size": 104857600,
   "alertmanager.storage.state-read-timeout": 15000000000,
+  "alertmanager.silence-reconcile-interval": 0,
   "alertmanager.sharding-ring.store": "memberlist",
   "alertmanager.sharding-ring.prefix": "alertmanagers/",
   "alertmanager.sharding-ring.consul.hostname": "localhost:8500",

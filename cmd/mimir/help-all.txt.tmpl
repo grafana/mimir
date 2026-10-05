@@ -361,6 +361,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.sharding-ring.zone-awareness-enabled
     	True to enable zone-awareness and replicate alerts across different availability zones.
+  -alertmanager.silence-reconcile-interval duration
+    	[experimental] How often each replica checks its owned tenants' silences against each owning peer's and resyncs on a mismatch. 0 disables this check.
   -alertmanager.storage.path string
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
