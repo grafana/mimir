@@ -245,7 +245,6 @@ func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
 				MemoryConsumptionTracker: tracker,
 				timeRange:                types.NewRangeQueryTimeRange(model_timestamp.Time(0), model_timestamp.Time(6000), time.Second),
 				infoMetricCount:          testCase.metricCount,
-				labelSetsHashesByID:      []string{innerSeriesKey},
 			}
 
 			signature := &infoSignature{}

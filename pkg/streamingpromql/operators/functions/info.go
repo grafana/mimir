@@ -36,7 +36,8 @@ var identifyingLabels = []string{"instance", "job"}
 // inner series (i.e. no matching info series contributes any labels).
 const innerSeriesKey = "inner"
 
-// labelSetsHashID indexes labelSetsHashesByID, i.e. it identifies an interned group hash.
+// labelSetsHashID identifies an interned group hash, so that samples can be routed to output series by comparing
+// integers rather than strings.
 type labelSetsHashID uint32
 
 const innerSeriesHashID labelSetsHashID = 0
@@ -77,6 +78,13 @@ func (s *infoSignature) returnSamplesToPool(memoryConsumptionTracker *limiter.Me
 type infoGroupTransition struct {
 	t      int64
 	hashID labelSetsHashID
+}
+
+// infoOutputIndex maps a group of info series to the output series it produces for one inner series. Each inner
+// series only has a few groups, so looking them up in a slice is cheaper than in a map.
+type infoOutputIndex struct {
+	hashID labelSetsHashID
+	index  int
 }
 
 // infoGroupWalker walks the samples of the info series of one signature in timestamp order. At each timestamp where
@@ -225,14 +233,14 @@ type InfoFunction struct {
 	infoMetricCount int
 	// looks up the group of info series for each sample of the current inner series
 	groups infoGroupLookup
-	// label sets hash ID:label sets hash; index zero is innerSeriesKey.
-	labelSetsHashesByID []string
-	// inner series index - (info series label sets hash: index for ordering)
-	labelSetsOrder []map[string]int
+	// inner series index - output series for each group of info series, in the order returned by SeriesMetadata
+	outputIndexes [][]infoOutputIndex
 	// inner series index - signature of the inner series, or nil if it can't be enriched
 	innerSignatures []*infoSignature
-	// stored series results for current inner series
+	// stored series results for current inner series, by output series index
 	storedSeriesResults []types.InstantVectorSeriesData
+	// whether the slices in storedSeriesResults have been taken from the pool yet, by output series index
+	storedSeriesCreated []bool
 
 	nextInnerSeriesIndex  int
 	nextStoredSeriesIndex int
@@ -289,10 +297,11 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 	}
 
-	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries); err != nil {
+	hashIDs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries)
+	if err != nil {
 		return nil, err
 	}
-	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
+	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers, hashIDs)
 }
 
 // filterInfoInnerMatchers removes matchers for labels that info() can add.
@@ -413,7 +422,9 @@ func (f *InfoFunction) signature(lset labels.Labels) []byte {
 	return f.sigLb.Labels().Bytes(f.sigBuf)
 }
 
-func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) error {
+// processSamplesFromInfoSeries reads the info series and finds their groups for each signature. It returns the
+// interned label sets hash IDs, by label sets hash.
+func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) (map[string]labelSetsHashID, error) {
 	// Initialize dedicated buffer and scratch builder for signature,
 	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
@@ -479,7 +490,6 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		allSeries = allSeries[signature.remainingSeries:]
 	}
 
-	f.labelSetsHashesByID = []string{innerSeriesKey}
 	hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
 	var walker infoGroupWalker
 
@@ -487,7 +497,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		// Read all samples for this info series.
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Drop info series that match no enrichable inner series. Samples were read above to keep
@@ -501,7 +511,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		// Error out if we get histograms for an info metric.
 		if len(d.Histograms) > 0 {
 			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
-			return fmt.Errorf("info(): expected an info metric with float samples, but got %d float samples and %d histogram samples in series %s", len(d.Floats), len(d.Histograms), metadata.Labels)
+			return nil, fmt.Errorf("info(): expected an info metric with float samples, but got %d float samples and %d histogram samples in series %s", len(d.Floats), len(d.Histograms), metadata.Labels)
 		}
 
 		types.HPointSlicePool.Put(&d.Histograms, f.MemoryConsumptionTracker)
@@ -515,12 +525,12 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		signature.remainingSeries--
 		if signature.remainingSeries == 0 {
 			if err := f.completeSignature(signature, &walker, hashIDs); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	return hashIDs, nil
 }
 
 // completeSignature finds the groups of info series of signature once all of its info series have been read,
@@ -558,9 +568,8 @@ func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoG
 		if changed {
 			var exists bool
 			if hashID, exists = hashIDs[walker.hash]; !exists {
-				hashID = labelSetsHashID(len(f.labelSetsHashesByID))
+				hashID = labelSetsHashID(len(hashIDs))
 				hashIDs[walker.hash] = hashID
-				f.labelSetsHashesByID = append(f.labelSetsHashesByID, walker.hash)
 			}
 			if _, exists := signature.labelSetsByHash[walker.hash]; !exists {
 				signature.labelSetsByHash[walker.hash] = slices.Clone(walker.labelSets)
@@ -699,7 +708,7 @@ func syntheticInfoNameMatcher(selectorMatchers types.Matchers) *types.Matcher {
 }
 
 // combineSeriesMetadata combines inner series metadata with info series labels.
-func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers, hashIDs map[string]labelSetsHashID) ([]types.SeriesMetadata, error) {
 	// Store user-specified label matchers in a map for easy retrieval.
 	// Multiple matchers may target the same label name (e.g. {data=~".+", data=~".*"}),
 	// so we store all of them per name to match upstream Prometheus behaviour.
@@ -732,8 +741,11 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
+	f.outputIndexes = make([][]infoOutputIndex, len(innerMetadata))
 	f.innerSignatures = make([]*infoSignature, len(innerMetadata))
+
+	// Shared by all inner series that are passed along unchanged.
+	unchanged := []infoOutputIndex{{hashID: innerSeriesHashID, index: 0}}
 
 	// The output has at least one series per inner series in the common case, so seed the result
 	// slice at that size and grow it from the pool as needed. This lets us produce the final
@@ -764,7 +776,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	for i, innerSeries := range innerMetadata {
 		// If this inner series is an info series, pass the original series metadata along unchanged.
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
+			f.outputIndexes[i] = unchanged
 			if err := appendSeries(i, innerSeries); err != nil {
 				return nil, err
 			}
@@ -783,7 +795,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
-			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
+			f.outputIndexes[i] = unchanged
 			if err := appendSeries(i, innerSeries); err != nil {
 				return nil, err
 			}
@@ -801,13 +813,13 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		f.labelSetsOrder[i] = make(map[string]int, len(labelSetsOrder)+1)
+		outputIndexes := make([]infoOutputIndex, 0, len(labelSetsOrder)+1)
 
 		// Only emit the original (un-enriched) series for timestamps without a matching
 		// info series when all data label matchers match empty string.
 		offset := 0
 		if !hasNonEmptyDataLabelMatcher {
-			f.labelSetsOrder[i][innerSeriesKey] = 0
+			outputIndexes = append(outputIndexes, infoOutputIndex{hashID: innerSeriesHashID, index: 0})
 			offset = 1
 			if err := appendSeries(i, innerSeries); err != nil {
 				return nil, err
@@ -815,8 +827,9 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 
 		for j, labelSetsHash := range labelSetsOrder {
-			f.labelSetsOrder[i][labelSetsHash] = j + offset
+			outputIndexes = append(outputIndexes, infoOutputIndex{hashID: hashIDs[labelSetsHash], index: j + offset})
 		}
+		f.outputIndexes[i] = outputIndexes
 		for _, newLabels := range newLabelSets {
 			if err := appendSeries(i, types.SeriesMetadata{
 				Labels:   newLabels,
@@ -931,9 +944,13 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
+		outputIndexes := f.outputIndexes[f.nextInnerSeriesIndex]
 		signature := f.innerSignatures[f.nextInnerSeriesIndex]
-		storedSeriesResults := make(map[string]types.InstantVectorSeriesData)
+
+		// Cache the results for subsequent calls to NextSeries for this inner series, in the order of SeriesMetadata.
+		// All results for the previous inner series have been returned, so the slices can be reused.
+		f.storedSeriesResults = resizeAndClear(f.storedSeriesResults, len(outputIndexes))
+		f.storedSeriesCreated = resizeAndClear(f.storedSeriesCreated, len(outputIndexes))
 
 		lenFloats := len(result.Floats)
 		lenHistograms := len(result.Histograms)
@@ -941,51 +958,27 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		// Go timestamp by timestamp and sort samples into the correct split series by copying.
 		f.groups.reset(signature)
 		for _, point := range result.Floats {
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(f.groups.at(point.T), storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			i, err := f.storedSeriesIndex(f.groups.at(point.T), outputIndexes, lenFloats, lenHistograms)
 			if err != nil {
-				for _, data := range storedSeriesResults {
-					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
-				}
-				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
-			if skip {
+			if i < 0 {
 				continue
 			}
-			splitResult.Floats = append(splitResult.Floats, promql.FPoint{T: point.T, F: point.F})
-			storedSeriesResults[labelSetsHash] = splitResult
+			f.storedSeriesResults[i].Floats = append(f.storedSeriesResults[i].Floats, promql.FPoint{T: point.T, F: point.F})
 		}
 
 		// Histogram samples are read separately from float samples, so start again from the earliest timestamp.
 		f.groups.reset(signature)
 		for _, point := range result.Histograms {
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(f.groups.at(point.T), storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			i, err := f.storedSeriesIndex(f.groups.at(point.T), outputIndexes, lenFloats, lenHistograms)
 			if err != nil {
-				for _, data := range storedSeriesResults {
-					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
-				}
-				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
-			if skip {
+			if i < 0 {
 				continue
 			}
-			splitResult.Histograms = append(splitResult.Histograms, promql.HPoint{T: point.T, H: point.H.Copy()})
-			storedSeriesResults[labelSetsHash] = splitResult
-		}
-
-		// Arrange stored series results in the correct order to match SeriesMetadata.
-		// Cache the results for subsequent calls to NextSeries for this inner series.
-		f.storedSeriesResults = make([]types.InstantVectorSeriesData, len(labelSetsOrder))
-		for labelSetsHash, i := range labelSetsOrder {
-			storedResults, exists := storedSeriesResults[labelSetsHash]
-			if !exists {
-				storedResults = types.InstantVectorSeriesData{
-					Floats:     nil,
-					Histograms: nil,
-				}
-			}
-			f.storedSeriesResults[i] = storedResults
+			f.storedSeriesResults[i].Histograms = append(f.storedSeriesResults[i].Histograms, promql.HPoint{T: point.T, H: point.H.Copy()})
 		}
 
 		// Return the inner series data to the pool now that we've copied all needed data.
@@ -994,7 +987,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		// Go to the next inner series when we're ready.
 		f.nextInnerSeriesIndex++
 
-		if len(labelSetsOrder) == 0 {
+		if len(outputIndexes) == 0 {
 			continue
 		}
 
@@ -1004,32 +997,31 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 	}
 }
 
-func (f *InfoFunction) getSplitResult(hashID labelSetsHashID, storedSeriesResults map[string]types.InstantVectorSeriesData, labelSetsOrder map[string]int, lenFloats, lenHistograms int) (types.InstantVectorSeriesData, string, bool, error) {
-	labelSetsHash := f.labelSetsHashesByID[hashID]
+// storedSeriesIndex returns the index in storedSeriesResults of the output series for the group of info series with
+// hashID, taking its slices from the pool on first use, or -1 if the group produces no output series.
+func (f *InfoFunction) storedSeriesIndex(hashID labelSetsHashID, outputIndexes []infoOutputIndex, lenFloats, lenHistograms int) (int, error) {
+	for _, o := range outputIndexes {
+		if o.hashID != hashID {
+			continue
+		}
 
-	// If this label sets hash is not in the order map, it means we shouldn't create a series for it.
-	if _, exists := labelSetsOrder[labelSetsHash]; !exists {
-		return types.InstantVectorSeriesData{}, "", true, nil
+		if !f.storedSeriesCreated[o.index] {
+			floats, err := types.FPointSlicePool.Get(lenFloats, f.MemoryConsumptionTracker)
+			if err != nil {
+				return 0, err
+			}
+			hists, err := types.HPointSlicePool.Get(lenHistograms, f.MemoryConsumptionTracker)
+			if err != nil {
+				return 0, err
+			}
+			f.storedSeriesResults[o.index] = types.InstantVectorSeriesData{Floats: floats, Histograms: hists}
+			f.storedSeriesCreated[o.index] = true
+		}
+
+		return o.index, nil
 	}
 
-	splitResult, exists := storedSeriesResults[labelSetsHash]
-	if !exists {
-		// If this hasn't been created yet, create new slices from the pool.
-		floats, err := types.FPointSlicePool.Get(lenFloats, f.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, "", false, err
-		}
-		hists, err := types.HPointSlicePool.Get(lenHistograms, f.MemoryConsumptionTracker)
-		if err != nil {
-			types.FPointSlicePool.Put(&floats, f.MemoryConsumptionTracker)
-			return types.InstantVectorSeriesData{}, "", false, err
-		}
-		splitResult = types.InstantVectorSeriesData{
-			Floats:     floats,
-			Histograms: hists,
-		}
-	}
-	return splitResult, labelSetsHash, false, nil
+	return -1, nil
 }
 
 func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
