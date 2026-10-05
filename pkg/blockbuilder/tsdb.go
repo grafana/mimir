@@ -654,15 +654,23 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 
 // verifyBlocks verifies the integrity of each block in the metas list in the directory, before it is uploaded.
 // On failure, the block's ULID and error are logged and the failure metric is incremented.
-func (b *TSDBBuilder) verifyBlocks(ctx context.Context, partition, dbDir string, metas []tsdb.BlockMeta) error {
+func (b *TSDBBuilder) verifyBlocks(ctx context.Context, partition, dbDir string, metas []tsdb.BlockMeta) (err error) {
 	start := time.Now()
 	defer func() {
+		if errors.Is(err, context.Canceled) {
+			// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
+			return
+		}
 		b.tsdbBuilderMetrics.blockVerificationDuration.WithLabelValues(partition).Observe(time.Since(start).Seconds())
 	}()
 
 	for _, m := range metas {
 		blockDir := filepath.Join(dbDir, m.ULID.String())
 		if err := b.verifyBlock(ctx, b.logger, blockDir, m.MinTime, m.MaxTime, false); err != nil {
+			if errors.Is(err, context.Canceled) {
+				// The job was cancelled (e.g. another tenant failed), the block isn't corrupt.
+				return err
+			}
 			b.tsdbBuilderMetrics.blockVerificationFailed.WithLabelValues(partition).Inc()
 			level.Error(b.logger).Log("msg", "block verification failed", "block", m.ULID.String(), "err", err)
 			return fmt.Errorf("verify block %s: %w", m.ULID.String(), err)

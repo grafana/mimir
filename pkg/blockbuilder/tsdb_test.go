@@ -525,6 +525,42 @@ func TestTSDBBuilder_CompactAndUpload_verificationFail(t *testing.T) {
 	require.Equal(t, 1, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration), "verification duration should still be observed on failure")
 }
 
+func TestTSDBBuilder_CompactAndUpload_verificationCanceled(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = true
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	// The index reader wraps the context error, as happens when a sibling tenant fails and the errgroup cancels the job.
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		return fmt.Errorf("get postings offset entry: %w", context.Canceled)
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	uploaderCalled := false
+	_, err := builder.CompactAndUpload(ctx, func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
+		uploaderCalled = true
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, uploaderCalled, "the uploader must not be called when block verification is cancelled")
+
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationFailed), "a cancelled verification must not be counted as a corrupt block")
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration), "a cancelled verification must not observe a partial duration")
+}
+
 func TestTSDBBuilder_CompactAndUpload_verificationDisabled(t *testing.T) {
 	partitionID := int32(0)
 	userID := "user1"
