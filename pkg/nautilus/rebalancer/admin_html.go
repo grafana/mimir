@@ -76,11 +76,14 @@ h2{font-size:14px;font-weight:600;margin:16px 0 8px;color:#333;border-bottom:1px
 .tenant-table .hash-bound{font-family:"SF Mono",Consolas,monospace}
 details>summary{cursor:pointer;list-style:none}
 details>summary::-webkit-details-marker{display:none}
+.nav{display:flex;gap:8px;margin-bottom:12px}
+.nav a{display:inline-block;background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;color:#1971c2;text-decoration:none}
+.nav a:hover{background:#e7f5ff;border-color:#1971c2}
 </style>
 </head>
 <body>
 <h1>Nautilus Rebalancer</h1>
-<p class="meta"><a href="{{.AdminPathPrefix}}/bands">Locality bands (shadow)</a></p>
+<div class="nav"><a href="{{.AdminPathPrefix}}/usage-tracker" title="What the usage-tracker's locality bands say about each partition, and the moves the rebalancer would book from them. Shadow only.">Signals from Usage Tracker &rarr;</a></div>
 
 {{if eq .NumPartitions 0}}
 <div class="no-data">No assignment data yet. Waiting for first rebalance round.</div>

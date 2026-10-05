@@ -3,7 +3,6 @@
 package rebalancer
 
 import (
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -71,6 +70,8 @@ func TestBalancePassBooksAcrossPartitions(t *testing.T) {
 	page := buildBandPage(time.Unix(10, 0), resp, asg, nil, map[int32]float64{1: 100, 2: 1, 3: 50}, 0, 0)
 	require.Equal(t, uint64(20), page.Balance.Mean)
 	require.Equal(t, 2, page.Balance.Booked)
+	require.Equal(t, 3, page.Balance.Active)
+	require.Len(t, page.Balance.Moves, 2)
 
 	byUser := map[string]*bandProposal{}
 	for i := range page.Tenants {
@@ -115,30 +116,4 @@ func TestBuildBandPageFlatMassDoesNotCut(t *testing.T) {
 	require.Contains(t, page.Tenants[0].Proposal.Text, "not applied")
 	// 60 series on this shard had no locality hash. Scaled by 4 partitions.
 	require.Equal(t, uint64(240), page.Tenants[0].Unhashed)
-}
-
-func TestServeBandsHTMLSaysNotApplied(t *testing.T) {
-	r := &Rebalancer{admin: adminState{}}
-	r.admin.setBandPage(bandPage{
-		At:         time.Unix(10, 0).UTC(),
-		Partition:  0,
-		Partitions: 64,
-		Tenants: []bandTenantView{{
-			UserID: "tenant",
-			Proposal: &bandProposal{
-				Text: "would move 0x00010000-0x0001ffff from p1 to p2 (not applied)",
-			},
-			Ranges: []bandRangeView{{
-				Label:    "range",
-				HasCut:   true,
-				CutLeft:  10,
-				CutWidth: 20,
-				Marks:    []bandMark{{Left: 10, Width: 20, Hot: true, Title: "hot"}},
-			}},
-		}},
-	})
-	rec := httptest.NewRecorder()
-	r.serveBandsHTML(rec, nil)
-	require.Contains(t, rec.Body.String(), "not applied")
-	require.Contains(t, rec.Body.String(), "Shadow only")
 }

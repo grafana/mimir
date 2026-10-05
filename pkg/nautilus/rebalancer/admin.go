@@ -699,6 +699,10 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
 //	GET  /metric                 → metric-name hash range lookup tool
 //	                               (?user=&metric=[&window=][&format=json])
+//	GET  /usage-tracker          → usage-tracker locality signals and the
+//	                               moves the shadow pass would book
+//	                               (?user=[&move=] for one tenant)
+//	GET  /usage-tracker.json     → the same snapshot as JSON
 //	POST /readcache/reset        → force an even-split
 //	                               (partition -> readcache) assignment
 //
@@ -716,10 +720,10 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch {
 	case sub == "" || sub == "/":
 		r.serveAdminHTMLForTenant(w, req.URL.Query().Get("tenant"))
-	case sub == "/bands" || sub == "/bands/":
-		r.serveBandsHTML(w, req)
-	case sub == "/bands.json":
-		r.serveBandsJSON(w, req)
+	case sub == "/usage-tracker" || sub == "/usage-tracker/":
+		r.serveUsageTrackerHTML(w, req)
+	case sub == "/usage-tracker.json":
+		r.serveUsageTrackerJSON(w, req)
 	case sub == "/rounds.json":
 		r.serveRoundsList(w)
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):

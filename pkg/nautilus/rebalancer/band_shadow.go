@@ -48,8 +48,22 @@ type bandPage struct {
 // before the next one is placed.
 type bandBalance struct {
 	Mean       uint64
-	Partitions []bandPartitionFill
+	Partitions []bandPartitionFill // every partition with folded series, by partition id
 	Booked     int
+	Moves      []bandMove // every booked move, in booking order
+	Active     int        // partitions the mean is taken over, listed or not
+}
+
+// bandMove is one booked cut: the piece of a tenant's range that the pass
+// would move, and where. Hot is the band the cut was placed on; for a range
+// narrower than a band the piece is the whole range.
+type bandMove struct {
+	Tenant             string
+	From, To           int32
+	ParentLo, ParentHi uint32
+	Lo, Hi             uint32
+	HotLo, HotHi       uint32
+	Series             uint64
 }
 
 type bandPartitionFill struct {
@@ -95,6 +109,8 @@ type bandRangeView struct {
 	moveSeries uint64
 	moveLo     uint32
 	moveHi     uint32
+	hotLo      uint32
+	hotHi      uint32
 }
 
 type bandMark struct {
@@ -388,6 +404,7 @@ func proposeRange(tenant *usagetrackerpb.TenantBands, scale uint64, entry assign
 	view.canMove = series > 0
 	view.moveSeries = series
 	view.moveLo, view.moveHi = childLo, childHi
+	view.hotLo, view.hotHi = hotLo, hotHi
 	view.Kind = "cut"
 	view.Decision = "dominant band; the pass has not booked it"
 	return view
@@ -428,6 +445,7 @@ func balancePass(tenants []bandTenantView, rates map[int32]float64) bandBalance 
 	skipped := map[[2]int]bool{}
 	stuck := map[int32]bool{}
 	var nBooked int
+	var moves []bandMove
 	for {
 		src := int32(-1)
 		var srcLoad uint64
@@ -482,7 +500,20 @@ func balancePass(tenants []bandTenantView, rates map[int32]float64) bandBalance 
 		loads[dest] += bestSeries
 		booked[[2]int{bestTi, bestRi}] = true
 		nBooked++
-		bookCut(&tenants[bestTi], &tenants[bestTi].Ranges[bestRi], dest, bestSeries, mean)
+		rg := &tenants[bestTi].Ranges[bestRi]
+		bookCut(&tenants[bestTi], rg, dest, bestSeries, mean)
+		moves = append(moves, bandMove{
+			Tenant:   tenants[bestTi].UserID,
+			From:     src,
+			To:       dest,
+			ParentLo: rg.Lo,
+			ParentHi: rg.Hi,
+			Lo:       rg.moveLo,
+			Hi:       rg.moveHi,
+			HotLo:    rg.hotLo,
+			HotHi:    rg.hotHi,
+			Series:   bestSeries,
+		})
 	}
 
 	for ti := range tenants {
@@ -546,13 +577,8 @@ func balancePass(tenants []bandTenantView, rates map[int32]float64) bandBalance 
 			Over:      before[pid] > mean,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Before != out[j].Before {
-			return out[i].Before > out[j].Before
-		}
-		return out[i].Partition < out[j].Partition
-	})
-	return bandBalance{Mean: mean, Partitions: out, Booked: nBooked}
+	// pids is already ascending, so out is by partition id.
+	return bandBalance{Mean: mean, Partitions: out, Booked: nBooked, Moves: moves, Active: len(loads)}
 }
 
 func placePiece(source int32, series uint64, loads map[int32]uint64, mean uint64, pids []int32) int32 {
