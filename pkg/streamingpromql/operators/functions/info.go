@@ -239,8 +239,9 @@ type InfoFunction struct {
 	innerSignatures []*infoSignature
 	// stored series results for current inner series, by output series index
 	storedSeriesResults []types.InstantVectorSeriesData
-	// whether the slices in storedSeriesResults have been taken from the pool yet, by output series index
-	storedSeriesCreated []bool
+	// number of float and histogram samples of each output series for current inner series, by output series index
+	storedFloatCounts     []int
+	storedHistogramCounts []int
 
 	nextInnerSeriesIndex  int
 	nextStoredSeriesIndex int
@@ -950,35 +951,54 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		// Cache the results for subsequent calls to NextSeries for this inner series, in the order of SeriesMetadata.
 		// All results for the previous inner series have been returned, so the slices can be reused.
 		f.storedSeriesResults = resizeAndClear(f.storedSeriesResults, len(outputIndexes))
-		f.storedSeriesCreated = resizeAndClear(f.storedSeriesCreated, len(outputIndexes))
 
-		lenFloats := len(result.Floats)
-		lenHistograms := len(result.Histograms)
+		// The samples of the inner series are split between its output series, so count the samples of each output
+		// series first. This lets each output series get slices of the size it needs, rather than of the size of
+		// the whole inner series, which would count the same samples against the memory limit several times.
+		f.storedFloatCounts = resizeAndClear(f.storedFloatCounts, len(outputIndexes))
+		f.storedHistogramCounts = resizeAndClear(f.storedHistogramCounts, len(outputIndexes))
 
-		// Go timestamp by timestamp and sort samples into the correct split series by copying.
 		f.groups.reset(signature)
 		for _, point := range result.Floats {
-			i, err := f.storedSeriesIndex(f.groups.at(point.T), outputIndexes, lenFloats, lenHistograms)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+			if i := storedSeriesIndex(f.groups.at(point.T), outputIndexes); i >= 0 {
+				f.storedFloatCounts[i]++
 			}
-			if i < 0 {
-				continue
-			}
-			f.storedSeriesResults[i].Floats = append(f.storedSeriesResults[i].Floats, promql.FPoint{T: point.T, F: point.F})
 		}
 
 		// Histogram samples are read separately from float samples, so start again from the earliest timestamp.
 		f.groups.reset(signature)
 		for _, point := range result.Histograms {
-			i, err := f.storedSeriesIndex(f.groups.at(point.T), outputIndexes, lenFloats, lenHistograms)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+			if i := storedSeriesIndex(f.groups.at(point.T), outputIndexes); i >= 0 {
+				f.storedHistogramCounts[i]++
 			}
-			if i < 0 {
-				continue
+		}
+
+		for i := range f.storedSeriesResults {
+			if f.storedFloatCounts[i] > 0 {
+				if f.storedSeriesResults[i].Floats, err = types.FPointSlicePool.Get(f.storedFloatCounts[i], f.MemoryConsumptionTracker); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
-			f.storedSeriesResults[i].Histograms = append(f.storedSeriesResults[i].Histograms, promql.HPoint{T: point.T, H: point.H.Copy()})
+			if f.storedHistogramCounts[i] > 0 {
+				if f.storedSeriesResults[i].Histograms, err = types.HPointSlicePool.Get(f.storedHistogramCounts[i], f.MemoryConsumptionTracker); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+		}
+
+		// Go timestamp by timestamp and sort samples into the correct split series by copying.
+		f.groups.reset(signature)
+		for _, point := range result.Floats {
+			if i := storedSeriesIndex(f.groups.at(point.T), outputIndexes); i >= 0 {
+				f.storedSeriesResults[i].Floats = append(f.storedSeriesResults[i].Floats, promql.FPoint{T: point.T, F: point.F})
+			}
+		}
+
+		f.groups.reset(signature)
+		for _, point := range result.Histograms {
+			if i := storedSeriesIndex(f.groups.at(point.T), outputIndexes); i >= 0 {
+				f.storedSeriesResults[i].Histograms = append(f.storedSeriesResults[i].Histograms, promql.HPoint{T: point.T, H: point.H.Copy()})
+			}
 		}
 
 		// Return the inner series data to the pool now that we've copied all needed data.
@@ -998,30 +1018,15 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 }
 
 // storedSeriesIndex returns the index in storedSeriesResults of the output series for the group of info series with
-// hashID, taking its slices from the pool on first use, or -1 if the group produces no output series.
-func (f *InfoFunction) storedSeriesIndex(hashID labelSetsHashID, outputIndexes []infoOutputIndex, lenFloats, lenHistograms int) (int, error) {
+// hashID, or -1 if the group produces no output series.
+func storedSeriesIndex(hashID labelSetsHashID, outputIndexes []infoOutputIndex) int {
 	for _, o := range outputIndexes {
-		if o.hashID != hashID {
-			continue
+		if o.hashID == hashID {
+			return o.index
 		}
-
-		if !f.storedSeriesCreated[o.index] {
-			floats, err := types.FPointSlicePool.Get(lenFloats, f.MemoryConsumptionTracker)
-			if err != nil {
-				return 0, err
-			}
-			hists, err := types.HPointSlicePool.Get(lenHistograms, f.MemoryConsumptionTracker)
-			if err != nil {
-				return 0, err
-			}
-			f.storedSeriesResults[o.index] = types.InstantVectorSeriesData{Floats: floats, Histograms: hists}
-			f.storedSeriesCreated[o.index] = true
-		}
-
-		return o.index, nil
 	}
 
-	return -1, nil
+	return -1
 }
 
 func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
