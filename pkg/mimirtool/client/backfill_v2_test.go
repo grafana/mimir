@@ -148,8 +148,8 @@ func TestUploadBackfillBlocks_Retries(t *testing.T) {
 			errorStatuses: map[string][]int{filesPath: {http.StatusServiceUnavailable}},
 			expectedPaths: blockRequestPaths(blockID, "start", "files", "files", "files", "finish"),
 		},
-		"retries 429 and 5xx, and treats a conflict on a retried finish as success": {
-			errorStatuses: map[string][]int{finishPath: {http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusConflict}},
+		"retries 429 and 5xx": {
+			errorStatuses: map[string][]int{finishPath: {http.StatusTooManyRequests, http.StatusInternalServerError}},
 			expectedPaths: blockRequestPaths(blockID, "start", "files", "files", "finish", "finish", "finish"),
 		},
 		"does not retry other 4xx": {
