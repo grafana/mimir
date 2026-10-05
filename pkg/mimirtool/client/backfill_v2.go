@@ -142,14 +142,10 @@ func (c *MimirClient) uploadBackfillBlock(ctx context.Context, jobID, blockDir s
 	}
 
 	resp, err = c.doBackfillV2RequestWithRetry(ctx, http.MethodPost, path.Join(blockPath, "finish"), nil)
-	switch {
-	case err == nil:
-		drainAndCloseBody(resp)
-	case errors.Is(err, ErrConflict):
-		level.Debug(logger).Log("msg", "block upload already finished")
-	default:
+	if err != nil {
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
+	drainAndCloseBody(resp)
 
 	level.Info(logger).Log("msg", "block uploaded successfully")
 	return nil
