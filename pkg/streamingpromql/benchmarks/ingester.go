@@ -42,6 +42,37 @@ const NumIntervals = 10000 + int(time.Minute/interval) + 1 // The longest-range 
 
 const UserID = "benchmark-tenant"
 
+const (
+	targetInfoChurnPrefix = "target_info_churn_"
+	targetInfoGappyPrefix = "target_info_gappy_"
+
+	// infoChurnInterval is when target_info_churn series switch from version="old" to version="new". It is close to the
+	// end of the data so that the change is inside the range of every range query, which all end at the last interval.
+	infoChurnInterval = NumIntervals - 50
+
+	// infoGapIntervals is the length of each present and absent period of target_info_gappy series. It must be longer
+	// than the lookback delta (5m, 30 intervals) for the gaps to be visible to queries.
+	infoGapIntervals = 100
+)
+
+// sampleFilter returns a function reporting whether series m has a sample at interval ts, or nil if m has a sample at
+// every interval.
+func sampleFilter(m labels.Labels) func(ts int) bool {
+	name := m.Get("__name__")
+
+	switch {
+	case strings.HasPrefix(name, targetInfoChurnPrefix):
+		if m.Get("version") == "old" {
+			return func(ts int) bool { return ts < infoChurnInterval }
+		}
+		return func(ts int) bool { return ts >= infoChurnInterval }
+	case strings.HasPrefix(name, targetInfoGappyPrefix):
+		return func(ts int) bool { return (ts/infoGapIntervals)%2 == 0 }
+	default:
+		return nil
+	}
+}
+
 type IngesterConfigOption func(*ingester.Config)
 
 func StartIngesterAndLoadData(rootDataDir string, metricSizes []int, opts ...IngesterConfigOption) (string, func(), error) {
@@ -218,14 +249,36 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		// Used only for info() tests
 		infoNameSparse := "info_sparse_" + strconv.Itoa(size)
 		infoNameDense := "info_dense_" + strconv.Itoa(size)
+		infoNameMisaligned := "info_misaligned_" + strconv.Itoa(size)
 		targetInfoName := "target_info_" + strconv.Itoa(size)
+		targetInfoChurnName := targetInfoChurnPrefix + strconv.Itoa(size)
+		targetInfoGappyName := targetInfoGappyPrefix + strconv.Itoa(size)
+		buildInfoName := "build_info_" + strconv.Itoa(size)
 		perTargetMetricCount := int(math.Ceil(float64(size) / 10))
 		for i := 0; i < size; i++ {
 			targetGroup := fmt.Sprintf("%d", i%perTargetMetricCount)
-			metrics = append(metrics, labels.FromStrings("__name__", infoNameSparse, "l", strconv.Itoa(i), "instance", strconv.Itoa(i), "job", strconv.Itoa(i)))
+			instance := strconv.Itoa(i)
+			metrics = append(metrics, labels.FromStrings("__name__", infoNameSparse, "l", strconv.Itoa(i), "instance", instance, "job", instance))
 			metrics = append(metrics, labels.FromStrings("__name__", infoNameDense, "l", strconv.Itoa(i), "instance", targetGroup, "job", targetGroup))
-			metrics = append(metrics, labels.FromStrings("__name__", targetInfoName, "version", strconv.Itoa(i), "instance", strconv.Itoa(i), "job", strconv.Itoa(i)))
+			// cluster sorts before the identifying labels, so these series don't arrive in identifying-label order,
+			// unlike info_sparse and info_dense. This is the common case for real metrics.
+			metrics = append(metrics, labels.FromStrings("__name__", infoNameMisaligned, "cluster", strconv.Itoa(i%7), "l", strconv.Itoa(i), "instance", instance, "job", instance))
+			metrics = append(metrics, labels.FromStrings("__name__", targetInfoName, "version", strconv.Itoa(i), "instance", instance, "job", instance))
+			// A data label change during the query range, as in a rollout: both series are visible within the lookback
+			// delta after the change, so info() has to pick the newer one at each step.
+			metrics = append(metrics, labels.FromStrings("__name__", targetInfoChurnName, "version", "old", "instance", instance, "job", instance))
+			metrics = append(metrics, labels.FromStrings("__name__", targetInfoChurnName, "version", "new", "instance", instance, "job", instance))
+			// Gaps longer than the lookback delta, so the set of matching info series changes many times over the query range.
+			metrics = append(metrics, labels.FromStrings("__name__", targetInfoGappyName, "version", strconv.Itoa(i), "instance", instance, "job", instance))
+			// A second info metric with the same identifying labels, for queries that select several info metrics.
+			metrics = append(metrics, labels.FromStrings("__name__", buildInfoName, "build", strconv.Itoa(i%3), "instance", instance, "job", instance))
 		}
+	}
+
+	// Computed once per series rather than per sample, as there are around 10000 samples per series.
+	sampleFilters := make([]func(ts int) bool, len(metrics))
+	for metricIdx, m := range metrics {
+		sampleFilters[metricIdx] = sampleFilter(m)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -246,10 +299,16 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		sampleCount := end - start
 
 		req := &mimirpb.WriteRequest{
-			Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
+			Timeseries: make([]mimirpb.PreallocTimeseries, 0, len(metrics)),
 		}
 
 		for metricIdx, m := range metrics {
+			filter := sampleFilters[metricIdx]
+			if filter != nil && !hasSampleInRange(filter, start, end) {
+				// Don't push series with no samples in this batch.
+				continue
+			}
+
 			series := mimirpb.PreallocTimeseries{TimeSeries: mimirpb.TimeseriesFromPool()}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(m.Copy())
 
@@ -278,15 +337,21 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 					series.Samples = make([]mimirpb.Sample, sampleCount)
 				}
 
-				series.Samples = series.Samples[:sampleCount]
+				series.Samples = series.Samples[:0]
 
 				for ts := start; ts < end; ts++ {
-					series.Samples[ts-start].TimestampMs = int64(ts) * interval.Milliseconds()
-					series.Samples[ts-start].Value = float64(ts) + float64(metricIdx)/float64(len(metrics))
+					if filter != nil && !filter(ts) {
+						continue
+					}
+
+					series.Samples = append(series.Samples, mimirpb.Sample{
+						TimestampMs: int64(ts) * interval.Milliseconds(),
+						Value:       float64(ts) + float64(metricIdx)/float64(len(metrics)),
+					})
 				}
 			}
 
-			req.Timeseries[metricIdx] = series
+			req.Timeseries = append(req.Timeseries, series)
 		}
 		if _, err := ing.Push(ctx, req); err != nil {
 			return fmt.Errorf("failed to push samples to ingester: %w", err)
@@ -296,4 +361,14 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	}
 
 	return nil
+}
+
+func hasSampleInRange(filter func(ts int) bool, start, end int) bool {
+	for ts := start; ts < end; ts++ {
+		if filter(ts) {
+			return true
+		}
+	}
+
+	return false
 }
