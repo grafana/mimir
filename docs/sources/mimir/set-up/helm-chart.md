@@ -25,11 +25,11 @@ To learn more about the ingest storage architecture and related configuration op
 
 The mimir-distributed Helm chart includes the following example values files:
 
-| File name                                                                                                        | Description                                                                                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File name                                                                                                        | Description                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`values.yaml`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) | Contains default values for testing GEM in non-production environments. Object storage uses the built-in MinIO subchart with `minio.image` and `minio.mcImage` set to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. |
-| [`small.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/small.yaml)   | Contains values for a higher scale than defaults, for ingestion up to approximately one million series. Not suitable for high-availability production use, due to single replicas of key components. |
-| [`large.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/large.yaml)   | Contains values for production use for ingestion up to approximately ten million series.                                                                                                             |
+| [`small.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/small.yaml)   | Contains values for a higher scale than defaults, for ingestion up to approximately one million series. Not suitable for high-availability production use, due to single replicas of key components.             |
+| [`large.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/large.yaml)   | Contains values for production use for ingestion up to approximately ten million series.                                                                                                                         |
 
 ## See also
 
