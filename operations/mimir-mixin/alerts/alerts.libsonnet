@@ -1176,9 +1176,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if there's no ready memberlist-bridge pod in any of the zones where it's deployed.
           //
           // Both operands read the Deployment object, so a kube-state-metrics shard that stops
-          // exporting drops them together and the `and` yields nothing. Comparing the Deployment
-          // against Pod-object series instead lets the two sides fail independently, and an
-          // absent right-hand side would make an `unless` vacuous and fire every zone.
+          // exporting drops them together and the `and` yields nothing.
+          //
+          // Do not compare the Deployment against Pod-object series with `unless`. kube-state-metrics shards by
+          // object, so those two sides can stop being exported independently, and an absent
+          // right-hand side would make an `unless` vacuous and fire every zone.
           alert: $.alertName('MemberlistBridgeZoneUnavailable'),
           expr: |||
             # Find the zonal memberlist-bridge deployments with no ready pod.
