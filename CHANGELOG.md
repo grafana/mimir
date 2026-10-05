@@ -40,6 +40,7 @@
 * [ENHANCEMENT] Ruler: Add the experimental `-ruler.ring-change-debounce` flag to delay a ring-change-triggered rule sync until the ring has stopped changing for the configured duration. Disabled (`0`) by default, which preserves syncing immediately on every detected ring change. Must be less than the new `-ruler.ring-change-max-debounce` flag, which caps how long continuous ring churn can keep postponing the sync and defaults to 15s. #16662
 * [ENHANCEMENT] Activity tracker: Include `root_query_id` for queries in activity tracker log lines. #16743
 * [ENHANCEMENT] MQE: Move `originalExpression` to end of `evaluation stats` log line to improve readability. #16743
+* [ENHANCEMENT] Runtime config: Optimize loading of overrides for many tenants. #16765
 * [ENHANCEMENT] Usage-tracker: Make the per-tenant shard count configurable via `-usage-tracker.num-shards`, which must be a power of 2. #15888
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
 * [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572
