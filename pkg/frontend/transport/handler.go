@@ -459,22 +459,22 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		"retries", stats.LoadRetries(),
 	}
-	if fields&fetchedSeriesFields != 0 {
+	if fields.fetchedSeries {
 		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
 	}
-	if fields&fetchedChunksFields != 0 {
+	if fields.fetchedChunks {
 		logMessage = append(logMessage,
 			fetchedChunkBytes, numBytes,
 			fetchedChunksCount, numChunks,
 		)
 	}
-	if fields&fetchedIndexFields != 0 {
+	if fields.fetchedIndex {
 		logMessage = append(logMessage, fetchedIndexBytes, numIndexBytes)
 	}
-	if fields&shardedQueriesFields != 0 {
+	if fields.shardedQueries {
 		logMessage = append(logMessage, shardedQueries, stats.LoadShardedQueries())
 	}
-	if fields&metricsQueryFields != 0 {
+	if fields.metricsQuery {
 		logMessage = append(logMessage,
 			splitQueries, stats.LoadSplitQueries(),
 			"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
@@ -485,7 +485,7 @@ func (f *Handler) reportQueryStats(
 			"samples_processed", samplesProcessed,
 		)
 	}
-	if fields&samplesReadFields != 0 {
+	if fields.samplesRead {
 		logMessage = append(logMessage,
 			"equivalent_samples_read", equivalentSamplesRead,
 			"physical_samples_read", physicalSamplesRead,
@@ -506,13 +506,13 @@ func (f *Handler) reportQueryStats(
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
-		if fields&resultsCacheBytesFields != 0 {
+		if fields.resultsCacheBytes {
 			logMessage = append(logMessage,
 				resultsCacheHitBytes, details.ResultsCacheHitBytes,
 				resultsCacheMissBytes, details.ResultsCacheMissBytes,
 			)
 		}
-		if fields&metricsQueryFields != 0 {
+		if fields.metricsQuery {
 			logMessage = append(logMessage,
 				"results_cache_hit_count", details.ResultsCacheHitCount,
 				"results_cache_miss_count", details.ResultsCacheMissCount,
@@ -564,20 +564,27 @@ func (f *Handler) reportQueryStats(
 // queryStatsFields is a set of optional field groups in the "query stats" log line.
 // Each group holds stats that only some endpoints can set. A group is not logged for an
 // endpoint that never sets it, because there its value is always zero.
-type queryStatsFields uint8
+type queryStatsFields struct {
+	fetchedSeries     bool
+	fetchedIndex      bool
+	fetchedChunks     bool
+	samplesRead       bool
+	shardedQueries    bool
+	resultsCacheBytes bool
+	metricsQuery      bool
+}
 
-const (
-	fetchedSeriesFields queryStatsFields = 1 << iota
-	fetchedIndexFields
-	fetchedChunksFields
-	samplesReadFields
-	shardedQueriesFields
-	resultsCacheBytesFields
-	metricsQueryFields
-
-	allQueryStatsFields = fetchedSeriesFields | fetchedIndexFields | fetchedChunksFields | samplesReadFields |
-		shardedQueriesFields | resultsCacheBytesFields | metricsQueryFields
-)
+func allQueryStatsFields() queryStatsFields {
+	return queryStatsFields{
+		fetchedSeries:     true,
+		fetchedIndex:      true,
+		fetchedChunks:     true,
+		samplesRead:       true,
+		shardedQueries:    true,
+		resultsCacheBytes: true,
+		metricsQuery:      true,
+	}
+}
 
 // queryStatsFieldsForPath returns the field groups that the code which serves path can set.
 // A path that is not known here gets all groups, so that its log line does not lose a stat.
@@ -587,17 +594,17 @@ func queryStatsFieldsForPath(path string) queryStatsFields {
 	// Range and instant queries are the most frequent requests. Check them first, so that they
 	// do not run the regular expression in IsLabelValuesQuery.
 	case querymiddleware.IsRangeQuery(path), querymiddleware.IsInstantQuery(path):
-		return allQueryStatsFields
+		return allQueryStatsFields()
 	case querymiddleware.IsRemoteReadQuery(path):
-		return fetchedSeriesFields | fetchedIndexFields | fetchedChunksFields | samplesReadFields
+		return queryStatsFields{fetchedSeries: true, fetchedIndex: true, fetchedChunks: true, samplesRead: true}
 	case querymiddleware.IsSeriesQuery(path):
-		return fetchedSeriesFields | fetchedIndexFields
+		return queryStatsFields{fetchedSeries: true, fetchedIndex: true}
 	case querymiddleware.IsActiveSeriesQuery(path), querymiddleware.IsActiveNativeHistogramMetricsQuery(path):
-		return fetchedSeriesFields | shardedQueriesFields
+		return queryStatsFields{fetchedSeries: true, shardedQueries: true}
 	case querymiddleware.IsCardinalityQuery(path), querymiddleware.IsLabelsQuery(path):
-		return resultsCacheBytesFields
+		return queryStatsFields{resultsCacheBytes: true}
 	default:
-		return allQueryStatsFields
+		return allQueryStatsFields()
 	}
 }
 
