@@ -15,6 +15,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
+// TODO: placeholder name, rename before release
+const backfillV2CommandName = "backfill-v2"
+
 type BackfillV2Command struct {
 	clientConfig client.Config
 	jobID        string
@@ -22,7 +25,7 @@ type BackfillV2Command struct {
 }
 
 func (c *BackfillV2Command) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
-	cmd := app.Command("backfill-v2", "Upload Prometheus TSDB blocks to Grafana Mimir with the v2 backfill API. Blocks are uploaded into a backfill job, and finishing the job hands it off for asynchronous processing.")
+	cmd := app.Command(backfillV2CommandName, "Upload Prometheus TSDB blocks to Grafana Mimir with the v2 backfill API. Blocks are uploaded into a backfill job, and finishing the job hands it off for asynchronous processing.")
 
 	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
 		Envar(envVars.Address).
