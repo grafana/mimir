@@ -443,8 +443,7 @@ func (f *Handler) reportQueryStats(
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
-	// Log stats. The appends below are interleaved so that range and instant queries keep the
-	// key order they had before the field groups were added. Do not reorder them.
+	// Log stats.
 	fields := queryStatsFieldsForPath(r.URL.Path)
 	logMessage := []any{
 		"msg", "query stats",
