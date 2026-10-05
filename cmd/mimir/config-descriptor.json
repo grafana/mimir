@@ -17394,6 +17394,17 @@
               "fieldDefaultValue": 170,
               "fieldFlag": "ruler.query-frontend.max-retries-rate",
               "fieldType": "float"
+            },
+            {
+              "kind": "field",
+              "name": "enable_rule_detail_headers",
+              "required": false,
+              "desc": "Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.enable-rule-detail-headers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

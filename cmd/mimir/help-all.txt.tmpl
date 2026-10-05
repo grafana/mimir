@@ -3561,6 +3561,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
   -ruler.query-frontend.address string
     	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
+  -ruler.query-frontend.enable-rule-detail-headers
+    	[experimental] Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration
