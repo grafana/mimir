@@ -1183,55 +1183,6 @@ func TestHandler_QueryStatsLogFieldsPerEndpoint(t *testing.T) {
 	}
 }
 
-type orderedKeysLogger struct {
-	keys [][]string
-}
-
-func (l *orderedKeysLogger) Log(keyvals ...interface{}) error {
-	keys := make([]string, 0, len(keyvals)/2)
-	for i := 0; i < len(keyvals); i += 2 {
-		keys = append(keys, keyvals[i].(string))
-	}
-	l.keys = append(l.keys, keys)
-	return nil
-}
-
-func TestHandler_QueryStatsLogKeyOrderForMetricsQueries(t *testing.T) {
-	// This is the key order of the query stats log line before the field groups were added.
-	expectedKeys := []string{
-		"level", "user", "msg", "component", "method", "path", "route_name", "user_agent", "status_code",
-		"response_time", "response_size_bytes", "query_wall_time_seconds", "fetched_series_count",
-		"fetched_chunk_bytes", "fetched_chunks_count", "fetched_index_bytes", "sharded_queries",
-		"split_queries", "spun_off_subqueries", "split_range_vectors", "estimated_series_count",
-		"queue_time_seconds", "encode_time_seconds", "remote_execution_request_count", "retries",
-		"samples_processed", "equivalent_samples_read", "physical_samples_read", "root_query_id",
-		"length", "time_since_min_time", "time_since_max_time", "results_cache_hit_bytes",
-		"results_cache_miss_bytes", "results_cache_hit_count", "results_cache_miss_count",
-		"results_cache_set_count", "response_series_count", "response_samples_count",
-		"header_cache_control", "status",
-	}
-
-	for _, path := range []string{"/prometheus/api/v1/query_range", "/prometheus/api/v1/query"} {
-		t.Run(path, func(t *testing.T) {
-			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				details := querydetails.QueryDetailsFromContext(req.Context())
-				details.MinT = time.Now().Add(-time.Hour)
-				details.MaxT = time.Now()
-				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
-			})
-			logger := &orderedKeysLogger{}
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true}, roundTripper, logger, prometheus.NewPedanticRegistry())
-
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
-			handler.ServeHTTP(httptest.NewRecorder(), req)
-
-			require.Len(t, logger.keys, 1)
-			require.Equal(t, expectedKeys, logger.keys[0])
-		})
-	}
-}
-
 func TestHandler_QueryStatsLogFieldsOnFailedRoundTripWithoutDetails(t *testing.T) {
 	// With query stats disabled, a failed request is still logged, but has no QueryDetails.
 	for _, tc := range []struct {

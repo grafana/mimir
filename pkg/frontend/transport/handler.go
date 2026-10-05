@@ -456,6 +456,8 @@ func (f *Handler) reportQueryStats(
 		responseTime, queryResponseTime,
 		responseSizeBytes, queryResponseSizeBytes,
 		queryWallTimeSeconds, wallTime.Seconds(),
+		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
+		"retries", stats.LoadRetries(),
 	}
 	if fields&fetchedSeriesFields != 0 {
 		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
@@ -478,18 +480,10 @@ func (f *Handler) reportQueryStats(
 			"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
 			"split_range_vectors", stats.LoadSplitRangeVectors(),
 			estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
-		)
-	}
-	logMessage = append(logMessage, queueTimeSeconds, stats.LoadQueueTime().Seconds())
-	if fields&metricsQueryFields != 0 {
-		logMessage = append(logMessage,
 			encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 			remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
+			"samples_processed", samplesProcessed,
 		)
-	}
-	logMessage = append(logMessage, "retries", stats.LoadRetries())
-	if fields&metricsQueryFields != 0 {
-		logMessage = append(logMessage, "samples_processed", samplesProcessed)
 	}
 	if fields&samplesReadFields != 0 {
 		logMessage = append(logMessage,
