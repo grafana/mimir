@@ -34,7 +34,10 @@ const (
 	// IndexFilename is the known index file for block index.
 	IndexFilename = "index"
 	// IndexHeaderFilename is the canonical name for binary index header file that stores essential information.
+	// It is used for index-header format version 1; later versions carry a "-vN" suffix.
 	IndexHeaderFilename = "index-header"
+	// IndexHeaderFilenameV2 is the canonical name for the version 2 binary index header file.
+	IndexHeaderFilenameV2 = "index-header-v2"
 	// SparseIndexHeaderFilename is the canonical name for sparse index header file that stores abbreviated slices of index-header.
 	SparseIndexHeaderFilename = "sparse-index-header"
 	// ChunksDirname is the known dir name for chunks with compressed samples.

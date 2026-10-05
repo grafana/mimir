@@ -124,6 +124,13 @@ type Head struct {
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
+	wblPinnedSeriesRefsMtx sync.Mutex
+	// Series references that the WBL uses. WAL replay maps each one onto a
+	// series that the head holds under a different reference. The mapping
+	// exists only in memory. The records must stay in the WAL until
+	// out-of-order compaction writes the WBL into a block.
+	wblPinnedSeriesRefs map[chunks.HeadSeriesRef]struct{}
+
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 	pfmc     *PostingsForMatchersCache
@@ -427,6 +434,7 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -937,7 +945,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -971,7 +979,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, lastMmapRef)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -1670,12 +1678,53 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
+// pinWBLSeriesRefs marks series references that the WBL uses. WAL replay maps
+// each one onto a series that the head holds under a different reference. These
+// series records must stay in the WAL until out-of-order compaction writes the
+// WBL into a block. Nothing writes the mapping to disk.
+func (h *Head) pinWBLSeriesRefs(refs map[chunks.HeadSeriesRef]struct{}) {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	for ref := range refs {
+		h.wblPinnedSeriesRefs[ref] = struct{}{}
+	}
+}
+
+// isWBLPinnedSeriesRef reports whether the WBL uses id through a mapping that
+// WAL replay made.
+func (h *Head) isWBLPinnedSeriesRef(id chunks.HeadSeriesRef) bool {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	_, ok := h.wblPinnedSeriesRefs[id]
+	return ok
+}
+
+// releaseWBLPinnedSeriesRefs forgets every pinned reference. Call it only after
+// truncation removes the WBL segments that use them.
+func (h *Head) releaseWBLPinnedSeriesRefs() {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
+}
+
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // mint is the time before which data in the WAL is being truncated.
 func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeriesRef) bool {
 	return func(id chunks.HeadSeriesRef) bool {
 		// Keep the record if the series exists in the head.
 		if h.series.getByID(id) != nil {
+			return true
+		}
+
+		// Keep the record if the WBL uses this reference. The record resolves
+		// the reference, so the out-of-order samples are lost if the WAL drops
+		// it. The mint parameter cannot express this lifetime. An out-of-order
+		// sample has a timestamp below the in-order data that the checkpoint
+		// truncates.
+		if h.isWBLPinnedSeriesRef(id) {
 			return true
 		}
 
@@ -1721,7 +1770,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), true); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -1781,7 +1830,14 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 		return nil
 	}
 
-	return h.wbl.Truncate(lastWBLFile)
+	if err := h.wbl.Truncate(lastWBLFile); err != nil {
+		return err
+	}
+
+	// The truncated segments held every WBL record from before the last replay.
+	// No reference that the replay made is still necessary.
+	h.releaseWBLPinnedSeriesRefs()
+	return nil
 }
 
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
@@ -1841,6 +1897,8 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
+// Its readers, and queriers over it, are not safe for concurrent use from
+// multiple goroutines.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
@@ -2552,8 +2610,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			s.decMmapReady(series.ref)
 		}
 
-		if len(series.mmappedChunks) > 0 {
-			seq, _ := series.mmappedChunks[0].ref.Unpack()
+		// Replay merges in-order chunks by timestamp, which need not match disk file order.
+		for _, ch := range series.mmappedChunks {
+			seq, _ := ch.ref.Unpack()
 			if seq < minMmapFile {
 				minMmapFile = seq
 			}

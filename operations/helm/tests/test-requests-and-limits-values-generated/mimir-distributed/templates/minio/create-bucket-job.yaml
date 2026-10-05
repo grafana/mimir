@@ -31,7 +31,7 @@ spec:
                 name: test-requests-and-limits-values-minio
       containers:
       - name: minio-mc
-        image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
+        image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:
