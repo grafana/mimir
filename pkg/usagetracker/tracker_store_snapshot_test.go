@@ -199,12 +199,17 @@ func TestTrackerStore_LoadSnapshot_Invalid(t *testing.T) {
 		{
 			name:        "zero shard count",
 			data:        encodeSnapshot(snapshotEncodingVersionV2, 0, 0, snapshotTestNow, nil),
-			expectedErr: "invalid snapshot format, shard count 0 out of bounds",
+			expectedErr: "invalid snapshot format, shard count 0 is not a power of 2 between 1 and 256",
 		},
 		{
 			name:        "shard count above the maximum",
 			data:        encodeSnapshot(snapshotEncodingVersionV2, 2*tenantshard.MaxNumShards, 0, snapshotTestNow, nil),
-			expectedErr: "invalid snapshot format, shard count 512 out of bounds",
+			expectedErr: "invalid snapshot format, shard count 512 is not a power of 2 between 1 and 256",
+		},
+		{
+			name:        "shard count not a power of 2",
+			data:        encodeSnapshot(snapshotEncodingVersionV2, 24, 0, snapshotTestNow, nil),
+			expectedErr: "invalid snapshot format, shard count 24 is not a power of 2 between 1 and 256",
 		},
 		{
 			name:        "v2 shard index out of bounds",

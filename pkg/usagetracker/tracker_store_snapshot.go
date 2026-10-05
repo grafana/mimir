@@ -3,11 +3,9 @@
 package usagetracker
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"runtime"
-	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -139,8 +137,9 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("invalid snapshot format, shard count expected: %w", err)
 		}
-		if snapshotNumShards == 0 || snapshotNumShards > tenantshard.MaxNumShards {
-			return fmt.Errorf("invalid snapshot format, shard count %d out of bounds", snapshotNumShards)
+		// Re-sharding relies on both counts being powers of 2, which the configuration enforces.
+		if snapshotNumShards > tenantshard.MaxNumShards || !isPowerOfTwo(int(snapshotNumShards)) {
+			return fmt.Errorf("invalid snapshot format, shard count %d is not a power of 2 between 1 and %d", snapshotNumShards, tenantshard.MaxNumShards)
 		}
 	default:
 		return fmt.Errorf("unexpected snapshot version %d", version)
@@ -154,10 +153,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		return fmt.Errorf("invalid snapshot format, shard %d out of bounds", shard)
 	}
 
-	// The series of a snapshot written with our shard count all belong to the same shard of ours.
-	// Otherwise, they have to be re-sharded.
-	reshard := snapshotNumShards != uint64(t.numShards)
-	if reshard {
+	if snapshotNumShards != uint64(t.numShards) {
 		level.Debug(t.logger).Log("msg", "re-sharding snapshot written with a different shard count", "shard", shard, "snapshot_shards", snapshotNumShards, "configured_shards", t.numShards)
 	}
 
@@ -177,7 +173,15 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	// Some series might have been right on the boundary of being evicted when we took the snapshot.
 	// Don't load them.
 	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
+
+	// The series in this snapshot are the ones with hash % snapshotNumShards == shard. Both counts are
+	// powers of 2, so if we have as many shards as the snapshot or fewer, they all belong to our shard
+	// shard % t.numShards, and the loop below loads them in one pass. If we have more shards, they are
+	// spread over our shards shard, shard+snapshotNumShards, shard+2*snapshotNumShards, and so on, and
+	// the loop loads each of them with a pass over all the series.
 	shardMask := t.shardMask()
+	firstShard := uint64(shard) & shardMask
+	passes := max(1, uint64(t.numShards)/snapshotNumShards)
 
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
@@ -210,19 +214,8 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		}
 
 		tenant := t.getOrCreateTenant(tenantID)
-		if !reshard {
-			loadSnapshotSeries(tenant, shard, refs)
-		} else {
-			// Group the series by our shard, and load each group into its shard.
-			slices.SortFunc(refs, func(a, b refTimestamp) int { return cmp.Compare(a.Ref&shardMask, b.Ref&shardMask) })
-			i0 := 0
-			for i := 1; i <= len(refs); i++ {
-				// Load series if shard changes on the next element or if we're at the end of series.
-				if s := refs[i0].Ref & shardMask; i == len(refs) || s != refs[i].Ref&shardMask {
-					loadSnapshotSeries(tenant, uint8(s), refs[i0:i])
-					i0 = i
-				}
-			}
+		for s := firstShard; s < uint64(t.numShards); s += snapshotNumShards {
+			loadSnapshotSeries(tenant, uint8(s), refs, shardMask, len(refs)/int(passes))
 		}
 		tenant.RUnlock()
 	}
@@ -234,27 +227,34 @@ type refTimestamp struct {
 	Timestamp clock.Minutes
 }
 
-// loadSnapshotSeries loads refs, which all belong to shard, into that shard of tenant.
+// loadSnapshotSeries loads the refs that belong to shard, the ones with ref&shardMask == shard,
+// into that shard of tenant. capacity is how many of the refs are expected to belong to it.
 // It checks if the shard is empty and uses Load() for an empty shard (faster)
 // or Put() for a non-empty one (handles concurrent loads and deduplication).
-func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp) {
+func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp, shardMask uint64, capacity int) {
 	m := tenant.shards[shard]
 	m.Lock()
 	defer m.Unlock()
 	// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
-	m.EnsureCapacity(uint32(len(refs)))
+	m.EnsureCapacity(uint32(capacity))
 
 	// Check if the shard is empty. If it is, we can use the faster Load() method
 	// which doesn't check for duplicates. Otherwise, use Put() which handles
 	// concurrent loads and deduplication.
 	if m.Count() == 0 {
+		loaded := 0
 		for _, ref := range refs {
-			m.Load(ref.Ref, ref.Timestamp)
+			if ref.Ref&shardMask == uint64(shard) {
+				m.Load(ref.Ref, ref.Timestamp)
+				loaded++
+			}
 		}
-		tenant.series.Add(uint64(len(refs)))
+		tenant.series.Add(uint64(loaded))
 	} else {
 		for _, ref := range refs {
-			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+			if ref.Ref&shardMask == uint64(shard) {
+				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+			}
 		}
 	}
 }

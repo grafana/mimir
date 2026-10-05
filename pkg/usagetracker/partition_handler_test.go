@@ -181,8 +181,13 @@ func TestPartitionHandler(t *testing.T) {
 		// First partitionHandler has the default shard count, so it publishes a v1 snapshot.
 		ph := h.newHandler(t)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
-		requireTrackSeries(t, ph, tenantID, slices.Clone(series), noRejected)
-		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, slices.Clone(series)})
+		// Track one series first, so that the snapshot doesn't point at offset 0 of the events topic:
+		// on load, offset 0 means that there's no snapshot, and the events alone would rebuild the state.
+		requireTrackSeries(t, ph, tenantID, series[:1], noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, series[:1]})
+		requireTrackSeries(t, ph, tenantID, slices.Clone(series[1:]), noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, slices.Clone(series[1:])})
+		require.Eventually(t, func() bool { return ph.lastPublishedEventOffset.Load() > 0 }, 5*time.Second, 10*time.Millisecond)
 		require.NoError(t, ph.publishSnapshot(ctx))
 		h.expectEvents(t, expectedSnapshotEvent{})
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
