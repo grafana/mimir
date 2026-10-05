@@ -448,6 +448,43 @@ func TestDropMeaninglessMetadata(t *testing.T) {
 	})
 }
 
+func TestSampleEqual(t *testing.T) {
+	t.Run("equal", func(t *testing.T) {
+		sample1 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5, StartTimestamp: 1234567000}
+		sample2 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5, StartTimestamp: 1234567000}
+
+		require.True(t, SampleEqual(sample1, sample2))
+	})
+
+	t.Run("equal with NaN Value", func(t *testing.T) {
+		sample1 := &mimirpb.Sample{TimestampMs: 1234567890, Value: math.NaN()}
+		sample2 := &mimirpb.Sample{TimestampMs: 1234567890, Value: math.NaN()}
+
+		require.True(t, SampleEqual(sample1, sample2))
+	})
+
+	t.Run("not equal when Value differs", func(t *testing.T) {
+		sample1 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5}
+		sample2 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 43.5}
+
+		require.False(t, SampleEqual(sample1, sample2))
+	})
+
+	t.Run("not equal when TimestampMs differs", func(t *testing.T) {
+		sample1 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5}
+		sample2 := &mimirpb.Sample{TimestampMs: 1234567891, Value: 42.5}
+
+		require.False(t, SampleEqual(sample1, sample2))
+	})
+
+	t.Run("not equal when StartTimestamp differs", func(t *testing.T) {
+		sample1 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5, StartTimestamp: 1234567000}
+		sample2 := &mimirpb.Sample{TimestampMs: 1234567890, Value: 42.5, StartTimestamp: 0}
+
+		require.False(t, SampleEqual(sample1, sample2))
+	})
+}
+
 func TestExemplarEqual(t *testing.T) {
 	t.Run("equal", func(t *testing.T) {
 		exemplar1 := &mimirpb.Exemplar{
@@ -741,6 +778,23 @@ func TestHistogramEqual(t *testing.T) {
 			Count:        &mimirpb.Histogram_CountInt{CountInt: 100},
 			Sum:          42.5,
 			CustomValues: []float64{1.1, 2.2, 3.3},
+		}
+
+		require.False(t, HistogramEqual(histogram1, histogram2))
+	})
+
+	t.Run("not equal when StartTimestamp differs", func(t *testing.T) {
+		histogram1 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			Timestamp:      1234567890,
+			StartTimestamp: 1234567000,
+		}
+		histogram2 := &mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 100},
+			Sum:            42.5,
+			Timestamp:      1234567890,
+			StartTimestamp: 0,
 		}
 
 		require.False(t, HistogramEqual(histogram1, histogram2))
