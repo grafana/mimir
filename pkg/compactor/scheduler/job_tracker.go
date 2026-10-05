@@ -372,7 +372,7 @@ func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Du
 		return nil
 	}
 	if discoverySources(jt.discoveredBy.Load())&discoveredByBlocks == 0 {
-		// Only tenants found in the blocks bucket have anything to compact
+		// Only tenants found in the blocks bucket matter for plan jobs
 		return nil
 	}
 
