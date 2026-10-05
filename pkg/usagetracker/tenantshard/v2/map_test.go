@@ -468,26 +468,37 @@ func BenchmarkMapRehash(b *testing.B) {
 }
 
 func BenchmarkMapCleanup(b *testing.B) {
-	now := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
 	const idleTimeout = 20 * time.Minute
 
 	const size = 1e6
 
-	maps := make([]*Map, b.N)
-	for i := range maps {
-		maps[i] = New(size, testNumShards)
-	}
-	r := rand.New(rand.NewSource(1))
-	for _, m := range maps {
-		for i := 0; i < size; i++ {
-			ts := now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
-			m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
-		}
-	}
-	b.ResetTimer()
-	watermark := now.Add(-idleTimeout)
-	for i := 0; i < b.N; i++ {
-		maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+	}{
+		// The watermark and all the series are before the same two-hour boundary.
+		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)},
+		// The watermark is before a two-hour boundary, and the series are on both sides of it.
+		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC)},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			maps := make([]*Map, b.N)
+			for i := range maps {
+				maps[i] = New(size, testNumShards)
+			}
+			r := rand.New(rand.NewSource(1))
+			for _, m := range maps {
+				for i := 0; i < size; i++ {
+					ts := tc.now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+					m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
+				}
+			}
+			b.ResetTimer()
+			watermark := tc.now.Add(-idleTimeout)
+			for i := 0; i < b.N; i++ {
+				maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+			}
+		})
 	}
 }
 
