@@ -23,13 +23,26 @@ import (
 
 var refsPool zeropool.Pool[[]uint64]
 
-const shards = tenantshard.NumShards
+// groupScratch holds the per-shard scratch counters that groupByModuloShards needs.
+// They are sized for MaxNumShards to hold any configured shard count, and pooled so that
+// every write doesn't have to put them on its stack.
+type groupScratch struct {
+	counts, pos [tenantshard.MaxNumShards]int
+}
+
+var groupScratchPool = sync.Pool{New: func() any { return &groupScratch{} }}
+
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
 // trackerStore should not depend on wall clock: time.Now() should be always injected as a parameter,
 // and timer calls should be made from the outside.
 type trackerStore struct {
+	// numShards is the number of shards each tenant is split into, taken from newShard.
+	// It is fixed for the lifetime of the store. Snapshots record it, so that a snapshot
+	// written with a different shard count can be detected and re-sharded on load.
+	numShards int
+
 	mtx           sync.RWMutex
 	sortedTenants []string
 	tenants       map[string]*trackedTenant
@@ -68,6 +81,7 @@ type events interface {
 
 func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool, minTimeBetweenShardsCleanup time.Duration, newShard tenantshard.Factory) *trackerStore {
 	t := &trackerStore{
+		numShards:                           newShard.NumShards(),
 		tenants:                             make(map[string]*trackedTenant),
 		limiter:                             l,
 		events:                              ev,
@@ -88,16 +102,17 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	groupByModuloShards(series)
+	groupByModuloShards(series, t.numShards)
 
 	now := clock.ToMinutes(timeNow)
+	shardMask := t.shardMask()
 
 	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
 	createdRefs := refsPool.Get()[:0]
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
-		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
+		if shard := uint8(series[i0] & shardMask); i == len(series) || shard != uint8(series[i]&shardMask) {
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
@@ -145,13 +160,14 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	defer tenant.RUnlock()
 
 	// Group series by shard. We're going to accept all of them, so we can start on shard 0 here.
-	groupByModuloShards(series)
+	groupByModuloShards(series, t.numShards)
 
 	timestamp := clock.ToMinutes(eventTimestamp)
+	shardMask := t.shardMask()
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
-		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
+		if shard := uint8(series[i0] & shardMask); i == len(series) || shard != uint8(series[i]&shardMask) {
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
@@ -205,14 +221,15 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 		seriesCreated: atomic.NewUint64(0),
 		seriesRemoved: atomic.NewUint64(0),
 	}
-	capacity := int(limit / shards)
+	capacity := int(limit / uint64(t.numShards))
 	if limit == noLimit || limit == 0 {
 		capacity = 512 // let's be modest.
 	} else if capacity > math.MaxUint32 {
 		capacity = math.MaxUint32
 	}
+	tenant.shards = make([]tenantshard.Map, t.numShards)
 	for i := range tenant.shards {
-		tenant.shards[i] = t.newShard(uint32(capacity))
+		tenant.shards[i] = t.newShard.New(uint32(capacity))
 	}
 
 	t.tenants[tenantID] = tenant
@@ -249,7 +266,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// Cleanup by shards instead of by tenants, to avoid holding the mutex for a single tenant for too long.
 	// See comment below.
-	for s := 0; s < shards; s++ {
+	for s := 0; s < t.numShards; s++ {
 		var timeAfterFirstTenantCleanup time.Time
 		for _, tenant := range tenantsClone {
 			shard := tenant.shards[s]
@@ -375,9 +392,9 @@ func (t *trackerStore) shardStats() []ShardStats {
 	tenantsClone := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
-	rows := make([]ShardStats, 0, len(tenantsClone)*shards)
+	rows := make([]ShardStats, 0, len(tenantsClone)*t.numShards)
 	for tenantID, tenant := range tenantsClone {
-		for s := range shards {
+		for s := range t.numShards {
 			rows = append(rows, ShardStats{
 				Tenant: tenantID,
 				Shard:  s,
@@ -409,7 +426,7 @@ type trackedTenant struct {
 	sync.RWMutex
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
-	shards       [shards]tenantshard.Map
+	shards       []tenantshard.Map
 
 	seriesCreated *atomic.Uint64
 	seriesRemoved *atomic.Uint64
@@ -422,25 +439,40 @@ func zeroAsNoLimit(v uint64) uint64 {
 	return v
 }
 
+// shardMask returns the mask that turns a series hash into its shard index.
+// numShards is a power of 2, so hash&mask == hash%numShards.
+func (t *trackerStore) shardMask() uint64 {
+	return uint64(t.numShards - 1)
+}
+
 // groupByModuloShards sorts series by shard to minimize lock contention by taking mutex once for each shard.
-// It arranges the series hashes into contiguous groups of hashes of same modulo shards.
+// It arranges the series hashes into contiguous groups of hashes of same modulo numShards.
 // This is O(N), specifically it iterates all series twice, and makes the re-arrangement in place.
-func groupByModuloShards(series []uint64) {
-	var counts, pos [shards]int
+//
+// numShards is a power of 2, which the configuration enforces, so the modulo is a mask. This runs on
+// every write, and with a runtime shard count the compiler can't turn a modulo into a mask itself:
+// the divide it emits instead nearly doubles the cost of this function.
+func groupByModuloShards(series []uint64, numShards int) {
+	scratch := groupScratchPool.Get().(*groupScratch)
+	counts, pos := scratch.counts[:numShards], scratch.pos[:numShards]
+	clear(counts)
+	clear(pos)
+
+	mask := uint64(numShards - 1)
 	// count how many series belong to each shard.
 	// This will be later "the number of series from each shard correctly placed"
 	// This is the first O(series)
 	for _, ref := range series {
-		counts[ref%shards]++
+		counts[ref&mask]++
 	}
 	// pos is where each shard's next element should be
 	// We'll update this as we check the elements.
-	for i := 1; i < shards; i++ {
+	for i := 1; i < numShards; i++ {
 		pos[i] = pos[i-1] + counts[i-1]
 	}
 
 	for i := 0; i < len(series); i++ {
-		for mod := series[i] % shards; counts[mod] > 0; mod = series[i] % shards {
+		for mod := series[i] & mask; counts[mod] > 0; mod = series[i] & mask {
 			// put this element where it should be, swap them
 			series[pos[mod]], series[i] = series[i], series[pos[mod]]
 			// if there's next element for this mod, it's on the next position
@@ -449,4 +481,6 @@ func groupByModuloShards(series []uint64) {
 			counts[mod]--
 		}
 	}
+
+	groupScratchPool.Put(scratch)
 }
