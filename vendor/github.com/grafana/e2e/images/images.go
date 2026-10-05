@@ -1,11 +1,17 @@
+// Package images provides Docker image version constants for e2e test services.
 package images
 
 var (
 	// These are variables so that they can be modified.
-	Memcached        = "memcached:1.6.12"
-	Redis            = "redis:7.0.7"
-	Minio            = "minio/minio:RELEASE.2021-10-13T00-23-17Z"
-	KES              = "minio/kes:v0.17.1"
+	Memcached = "memcached:1.6.12"
+	Redis     = "redis:7.0.7"
+	// MinIO archived its community edition and its images were removed from Docker Hub in
+	// September 2026, so minio/minio and minio/kes no longer resolve there; quay.io/minio
+	// serves the same images. Their tags are deliberately left as they were: newer MinIO
+	// releases replaced the MINIO_ACCESS_KEY/MINIO_SECRET_KEY environment variables that
+	// db.NewMinio still sets, so changing the registry is what keeps the existing behaviour.
+	Minio            = "quay.io/minio/minio:RELEASE.2021-10-13T00-23-17Z"
+	KES              = "quay.io/minio/kes:v0.17.1"
 	Consul           = "consul:1.8.15"
 	ETCD             = "gcr.io/etcd-development/etcd:v3.4.13"
 	DynamoDB         = "amazon/dynamodb-local:1.17.0"
@@ -13,4 +19,5 @@ var (
 	Cassandra        = "rinscy/cassandra:3.11.0"
 	SwiftEmulator    = "bouncestorage/swift-aio:55ba4331"
 	Kafka            = "apache/kafka:4.0.0"
+	Dex              = "dexidp/dex:v2.41.1"
 )
