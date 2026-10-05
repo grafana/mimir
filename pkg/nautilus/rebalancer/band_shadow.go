@@ -39,6 +39,24 @@ type bandPage struct {
 	Error       string
 	Tenants     []bandTenantView
 	ByPartition []bandPartitionRow
+	Balance     bandBalance
+}
+
+// bandBalance is one coordinated shadow pass. Series are the retained
+// bands folded through the assignment. A partition sheds only while it
+// is over the mean, and each booked move is added to its destination
+// before the next one is placed.
+type bandBalance struct {
+	Mean       uint64
+	Partitions []bandPartitionFill
+	Booked     int
+}
+
+type bandPartitionFill struct {
+	Partition int32
+	Before    uint64
+	After     uint64
+	Over      bool
 }
 
 type bandTenantView struct {
@@ -54,19 +72,35 @@ type bandTenantView struct {
 }
 
 type bandRangeView struct {
-	Label     string
-	Readcache string
-	Marks     []bandMark
-	CutLeft   float64
-	CutWidth  float64
-	HasCut    bool
-	Partition int32
-	span      float64
+	Label      string
+	Width      string // range width in bands, for people who do not do hex in their head
+	Lo, Hi     uint32
+	Series     int64   // readcache series for the whole range, last slicer snapshot
+	Rate       float64 // readcache samples/s, same snapshot
+	Located    uint64  // estimated series in retained bands overlapping this range
+	HotShare   float64 // hottest band's share of Located, 0..1
+	Decision   string  // what the shadow would do with this range
+	Kind       string  // proposal kind for this range
+	Readcache  string
+	HotCaption string
+	Marks      []bandMark
+	CutLeft    float64
+	CutWidth   float64
+	HasCut     bool
+	Partition  int32
+	span       float64
+	// canMove is a dominant hot band this pass could cut. moveSeries is
+	// the estimated series that cut would take with it.
+	canMove    bool
+	moveSeries uint64
+	moveLo     uint32
+	moveHi     uint32
 }
 
 type bandMark struct {
 	Left      float64
 	Width     float64
+	Lo, Hi    uint32
 	Estimated uint64
 	Hot       bool
 	Title     string
@@ -81,6 +115,8 @@ type bandProposal struct {
 	ParentHi        uint32
 	ChildLo         uint32
 	ChildHi         uint32
+	HotLo           uint32
+	HotHi           uint32
 	EstimatedSeries uint64
 	ReadcacheSeries int64
 	ReadcacheRate   float64
@@ -195,12 +231,15 @@ func buildBandPage(at time.Time, resp *usagetrackerpb.GetTenantBandsResponse, as
 		if tenant.TotalSeries > tenant.LocalitySeries {
 			view.Unhashed = (tenant.TotalSeries - tenant.LocalitySeries) * scale
 		}
-		view.Ranges, view.Proposal = proposeTenant(tenant, scale, asg, stats, rates)
+		view.Ranges, view.Proposal = proposeTenant(tenant, scale, asg, stats)
 		page.Tenants = append(page.Tenants, view)
+	}
+	page.Balance = balancePass(page.Tenants, rates)
+	for _, view := range page.Tenants {
 		for _, rg := range view.Ranges {
 			partRanges[rg.Partition] = append(partRanges[rg.Partition], bandSegment{
 				Width:   rg.span,
-				Label:   tenant.UserID + " " + rg.Label,
+				Label:   view.UserID + " " + rg.Label,
 				Color:   partitionColor(rg.Partition),
 				Outline: rg.HasCut,
 			})
@@ -227,13 +266,7 @@ func buildBandPage(at time.Time, resp *usagetrackerpb.GetTenantBandsResponse, as
 	return page
 }
 
-type tenantRangeDraw struct {
-	bandRangeView
-	partition int32
-	span      float64
-}
-
-func proposeTenant(tenant *usagetrackerpb.TenantBands, scale uint64, asg *assignment.Assignment, stats map[partitionRangeKey]rangeStatsView, rates map[int32]float64) ([]bandRangeView, *bandProposal) {
+func proposeTenant(tenant *usagetrackerpb.TenantBands, scale uint64, asg *assignment.Assignment, stats map[partitionRangeKey]rangeStatsView) ([]bandRangeView, *bandProposal) {
 	if tenant == nil {
 		return nil, nil
 	}
@@ -245,33 +278,29 @@ func proposeTenant(tenant *usagetrackerpb.TenantBands, scale uint64, asg *assign
 			}
 		}
 	}
-	draws := make([]tenantRangeDraw, 0, len(entries))
-	var best *bandProposal
-	for _, entry := range entries {
-		draw, proposal := proposeRange(tenant, scale, entry, stats, rates)
-		draws = append(draws, tenantRangeDraw{bandRangeView: draw, partition: entry.PartitionID, span: float64(entry.Range.Size())})
-		if betterProposal(proposal, best) {
-			best = proposal
-		}
-	}
-	views := make([]bandRangeView, len(draws))
-	for i := range draws {
-		views[i] = draws[i].bandRangeView
-	}
-	if best == nil {
+	if len(entries) == 0 {
 		if len(tenant.Bands) == 0 {
-			best = &bandProposal{Kind: "no-bands", Reason: "no retained bands", Text: "no retained bands"}
-		} else if len(entries) == 0 {
-			best = &bandProposal{Kind: "no-assignment", Reason: "no assignment for this tenant", Text: "no assignment yet"}
+			return nil, &bandProposal{Kind: "no-bands", Reason: "no retained bands", Text: "no retained bands"}
 		}
+		return nil, &bandProposal{Kind: "no-assignment", Reason: "no assignment for this tenant", Text: "no assignment yet"}
 	}
-	return views, best
+	views := make([]bandRangeView, 0, len(entries))
+	for _, entry := range entries {
+		views = append(views, proposeRange(tenant, scale, entry, stats))
+	}
+	sort.SliceStable(views, func(i, j int) bool { return views[i].Lo < views[j].Lo })
+	return views, nil
 }
 
-func proposeRange(tenant *usagetrackerpb.TenantBands, scale uint64, entry assignment.Entry, stats map[partitionRangeKey]rangeStatsView, rates map[int32]float64) (bandRangeView, *bandProposal) {
+func proposeRange(tenant *usagetrackerpb.TenantBands, scale uint64, entry assignment.Entry, stats map[partitionRangeKey]rangeStatsView) bandRangeView {
 	stat := stats[partitionRangeKey{tenantID: tenant.UserID, partitionID: entry.PartitionID, hr: entry.Range}]
 	view := bandRangeView{
 		Label:     formatHexRange(entry.Range.Lo, entry.Range.Hi) + " on p" + itoa(entry.PartitionID),
+		Width:     formatBands(entry.Range.Size()),
+		Lo:        entry.Range.Lo,
+		Hi:        entry.Range.Hi,
+		Series:    stat.Series,
+		Rate:      stat.SampleRate,
 		Readcache: "readcache " + itoa64(stat.Series) + " series, " + strconvFormat(stat.SampleRate) + " samples/s",
 		Partition: entry.PartitionID,
 		span:      float64(entry.Range.Size()),
@@ -318,80 +347,266 @@ func proposeRange(tenant *usagetrackerpb.TenantBands, scale uint64, entry assign
 			}
 		}
 		view.Marks = append(view.Marks, bandMark{
-			Left: left, Width: width, Estimated: estimated, Hot: hotMark,
+			Left: left, Width: width, Lo: ovLo, Hi: ovHi, Estimated: estimated, Hot: hotMark,
 			Title: formatHexRange(ovLo, ovHi) + " ~" + itoa64(int64(estimated)) + " series",
 		})
 	}
-	proposal := &bandProposal{
-		FromPartition:   entry.PartitionID,
-		ParentLo:        entry.Range.Lo,
-		ParentHi:        entry.Range.Hi,
-		EstimatedSeries: hot,
-		ReadcacheSeries: stat.Series,
-		ReadcacheRate:   stat.SampleRate,
+	view.Located = located
+	if located > 0 {
+		view.HotShare = float64(hot) / float64(located)
+	}
+	view.HotCaption = "no retained band overlaps this range"
+	for _, m := range view.Marks {
+		if !m.Hot {
+			continue
+		}
+		n := itoa64(int64(m.Estimated))
+		if m.Width >= 98 {
+			view.HotCaption = "Red fills this bar: the hottest band covers the whole range (~" + n + " series)."
+		} else {
+			view.HotCaption = "Red is the hottest band (~" + n + " series), drawn where it sits in this range. Gray is the rest of the range."
+		}
+		break
 	}
 	if !hotFound || located == 0 {
-		proposal.Kind = "no-bands"
-		proposal.Reason = "no retained band overlaps this range"
-		proposal.Text = proposal.Reason
-		return view, proposal
+		view.Kind = "no-bands"
+		view.Decision = "no retained band overlaps this range"
+		return view
 	}
 	dominates := float64(hot) > bandDominance*float64(located)
-	whole := entry.Range.Size() <= bandWidth
 	if !dominates {
-		proposal.Kind = "flat"
-		proposal.Reason = "retained mass is flat; no cut"
-		proposal.Text = "mass is flat across " + formatHexRange(entry.Range.Lo, entry.Range.Hi) + "; no cut (not applied)"
-		return view, proposal
+		view.Kind = "flat"
+		view.Decision = "mass is flat across " + formatHexRange(entry.Range.Lo, entry.Range.Hi) + "; no cut (not applied)"
+		return view
 	}
 	childLo, childHi := hotLo, hotHi
-	if whole {
+	series := hot
+	if entry.Range.Size() <= bandWidth {
 		childLo, childHi = entry.Range.Lo, entry.Range.Hi
+		series = located
 	}
-	proposal.ChildLo, proposal.ChildHi = childLo, childHi
-	if span > 0 {
-		view.CutLeft = float64(uint64(childLo)-uint64(entry.Range.Lo)) / span * 100
-		view.CutWidth = float64(uint64(childHi)-uint64(childLo)+1) / span * 100
-		view.HasCut = true
-	}
-	dest, colder := coldestOther(entry.PartitionID, rates)
-	if !colder {
-		proposal.Kind = "no-colder"
-		proposal.Reason = "no colder partition"
-		proposal.Text = "would cut " + formatHexRange(childLo, childHi) + " out of " + formatHexRange(entry.Range.Lo, entry.Range.Hi) + " but no colder partition (not applied)"
-		return view, proposal
-	}
-	proposal.Kind = "move"
-	proposal.ToPartition = dest
-	if whole {
-		proposal.Reason = "range is already one band; would move it whole"
-	} else {
-		proposal.Reason = "hottest band dominates; would cut it out and move it"
-	}
-	proposal.Text = "would move " + formatHexRange(childLo, childHi) + " from p" + itoa(entry.PartitionID) + " to p" + itoa(dest) + " (not applied)"
-	return view, proposal
+	view.canMove = series > 0
+	view.moveSeries = series
+	view.moveLo, view.moveHi = childLo, childHi
+	view.Kind = "cut"
+	view.Decision = "dominant band; the pass has not booked it"
+	return view
 }
 
-func coldestOther(source int32, rates map[int32]float64) (int32, bool) {
-	sourceRate, ok := rates[source]
-	best := int32(-1)
-	bestRate := 0.0
-	for pid, rate := range rates {
+// balancePass folds retained-band series onto partitions and books cuts
+// off partitions that sit over the mean. Each booking is visible to the
+// next placement. A piece that fits in some partition's headroom lands on
+// the coldest such partition. A piece bigger than every headroom lands on
+// the current coldest partition, which later pieces then avoid.
+func balancePass(tenants []bandTenantView, rates map[int32]float64) bandBalance {
+	loads := map[int32]uint64{}
+	for pid := range rates {
+		loads[pid] = 0
+	}
+	for ti := range tenants {
+		for _, rg := range tenants[ti].Ranges {
+			loads[rg.Partition] += rg.Located
+		}
+	}
+	if len(loads) == 0 {
+		return bandBalance{}
+	}
+	pids := make([]int32, 0, len(loads))
+	var total uint64
+	for pid, n := range loads {
+		pids = append(pids, pid)
+		total += n
+	}
+	sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
+	mean := total / uint64(len(loads))
+	before := make(map[int32]uint64, len(loads))
+	for pid, n := range loads {
+		before[pid] = n
+	}
+
+	booked := map[[2]int]bool{}
+	skipped := map[[2]int]bool{}
+	stuck := map[int32]bool{}
+	var nBooked int
+	for {
+		src := int32(-1)
+		var srcLoad uint64
+		for _, pid := range pids {
+			if stuck[pid] || loads[pid] <= mean {
+				continue
+			}
+			if src < 0 || loads[pid] > srcLoad {
+				src, srcLoad = pid, loads[pid]
+			}
+		}
+		if src < 0 {
+			break
+		}
+		bestTi, bestRi := -1, -1
+		var bestSeries uint64
+		var bestTenant string
+		var bestLo uint32
+		for ti := range tenants {
+			for ri := range tenants[ti].Ranges {
+				rg := tenants[ti].Ranges[ri]
+				key := [2]int{ti, ri}
+				if rg.Partition != src || !rg.canMove || booked[key] || skipped[key] {
+					continue
+				}
+				if bestTi >= 0 && (rg.moveSeries < bestSeries ||
+					(rg.moveSeries == bestSeries && (tenants[ti].UserID > bestTenant || (tenants[ti].UserID == bestTenant && rg.Lo >= bestLo)))) {
+					continue
+				}
+				bestTi, bestRi = ti, ri
+				bestSeries = rg.moveSeries
+				bestTenant = tenants[ti].UserID
+				bestLo = rg.Lo
+			}
+		}
+		if bestTi < 0 || bestSeries == 0 {
+			stuck[src] = true
+			continue
+		}
+		// A cut bigger than the series still on the partition was
+		// double-counted with one already booked. Try a smaller cut.
+		if bestSeries > loads[src] {
+			skipped[[2]int{bestTi, bestRi}] = true
+			continue
+		}
+		dest := placePiece(src, bestSeries, loads, mean, pids)
+		if dest < 0 {
+			stuck[src] = true
+			continue
+		}
+		loads[src] -= bestSeries
+		loads[dest] += bestSeries
+		booked[[2]int{bestTi, bestRi}] = true
+		nBooked++
+		bookCut(&tenants[bestTi], &tenants[bestTi].Ranges[bestRi], dest, bestSeries, mean)
+	}
+
+	for ti := range tenants {
+		t := &tenants[ti]
+		var reason *bandRangeView
+		for ri := range t.Ranges {
+			rg := &t.Ranges[ri]
+			if booked[[2]int{ti, ri}] {
+				continue
+			}
+			if rg.canMove {
+				if before[rg.Partition] <= mean {
+					rg.Kind = "under"
+					rg.Decision = "p" + itoa(rg.Partition) + " is at or under the mean of " + strconv.FormatUint(mean, 10) + "; not moved"
+				} else if loads[rg.Partition] <= mean {
+					rg.Kind = "shed"
+					rg.Decision = "hotter ranges on p" + itoa(rg.Partition) + " already brought it to the mean; not moved"
+				} else {
+					rg.Kind = "no-room"
+					rg.Decision = "p" + itoa(rg.Partition) + " is still over the mean and this cut has nowhere to go (not applied)"
+				}
+				if reason == nil || !reason.canMove {
+					reason = rg
+				}
+				continue
+			}
+			if reason == nil {
+				reason = rg
+			}
+		}
+		if t.Proposal != nil && t.Proposal.Kind == "move" {
+			continue
+		}
+		if reason == nil {
+			continue
+		}
+		t.Proposal = &bandProposal{
+			Kind:            reason.Kind,
+			Reason:          reason.Decision,
+			FromPartition:   reason.Partition,
+			ParentLo:        reason.Lo,
+			ParentHi:        reason.Hi,
+			HotLo:           reason.moveLo,
+			HotHi:           reason.moveHi,
+			EstimatedSeries: reason.moveSeries,
+			ReadcacheSeries: reason.Series,
+			ReadcacheRate:   reason.Rate,
+			Text:            reason.Decision,
+		}
+	}
+
+	out := make([]bandPartitionFill, 0, len(pids))
+	for _, pid := range pids {
+		if before[pid] == 0 && loads[pid] == 0 {
+			continue
+		}
+		out = append(out, bandPartitionFill{
+			Partition: pid,
+			Before:    before[pid],
+			After:     loads[pid],
+			Over:      before[pid] > mean,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Before != out[j].Before {
+			return out[i].Before > out[j].Before
+		}
+		return out[i].Partition < out[j].Partition
+	})
+	return bandBalance{Mean: mean, Partitions: out, Booked: nBooked}
+}
+
+func placePiece(source int32, series uint64, loads map[int32]uint64, mean uint64, pids []int32) int32 {
+	fit := int32(-1)
+	var fitLoad uint64
+	cold := int32(-1)
+	var coldLoad uint64
+	for _, pid := range pids {
 		if pid == source {
 			continue
 		}
-		if best < 0 || rate < bestRate {
-			best = pid
-			bestRate = rate
+		load := loads[pid]
+		if cold < 0 || load < coldLoad || (load == coldLoad && pid < cold) {
+			cold, coldLoad = pid, load
+		}
+		if load+series <= mean && (fit < 0 || load < fitLoad || (load == fitLoad && pid < fit)) {
+			fit, fitLoad = pid, load
 		}
 	}
-	if best < 0 {
-		return 0, false
+	if fit >= 0 {
+		return fit
 	}
-	if ok && bestRate >= sourceRate {
-		return best, false
+	return cold
+}
+
+func bookCut(t *bandTenantView, rg *bandRangeView, dest int32, series, mean uint64) {
+	rg.HasCut = true
+	rg.Kind = "move"
+	span := float64(uint64(rg.Hi) - uint64(rg.Lo) + 1)
+	if span > 0 {
+		rg.CutLeft = float64(uint64(rg.moveLo)-uint64(rg.Lo)) / span * 100
+		rg.CutWidth = float64(uint64(rg.moveHi)-uint64(rg.moveLo)+1) / span * 100
 	}
-	return best, true
+	text := "would move " + formatHexRange(rg.moveLo, rg.moveHi) + " (" + strconv.FormatUint(series, 10) + " series) from p" + itoa(rg.Partition) + " to p" + itoa(dest) + "; booked against the mean of " + strconv.FormatUint(mean, 10) + " (not applied)"
+	rg.Decision = text
+	p := &bandProposal{
+		Kind:            "move",
+		Reason:          "partition over the mean; cut booked onto a destination",
+		FromPartition:   rg.Partition,
+		ToPartition:     dest,
+		ParentLo:        rg.Lo,
+		ParentHi:        rg.Hi,
+		ChildLo:         rg.moveLo,
+		ChildHi:         rg.moveHi,
+		HotLo:           rg.moveLo,
+		HotHi:           rg.moveHi,
+		EstimatedSeries: series,
+		ReadcacheSeries: rg.Series,
+		ReadcacheRate:   rg.Rate,
+		Text:            text,
+	}
+	if t.Proposal == nil || t.Proposal.Kind != "move" || series > t.Proposal.EstimatedSeries {
+		t.Proposal = p
+	}
 }
 
 func partitionColor(pid int32) string {
@@ -406,28 +621,38 @@ func strconvFormat(f float64) string {
 	return strconv.FormatFloat(f, 'f', 1, 64)
 }
 
+// formatBands says how wide a range is in bands (2^16 hashes each), with
+// the share of the tenant's whole 2^32 hash space.
+func formatBands(size uint64) string {
+	bands := float64(size) / bandWidth
+	share := float64(size) / float64(uint64(1)<<32) * 100
+	var w string
+	switch {
+	case bands >= 100:
+		w = strconv.FormatFloat(bands, 'f', 0, 64) + " bands"
+	case bands >= 1:
+		w = strconv.FormatFloat(bands, 'f', 1, 64) + " bands"
+	default:
+		w = "1/" + strconv.FormatFloat(1/bands, 'f', 0, 64) + " of a band"
+	}
+	var s string
+	switch {
+	case share >= 1:
+		s = strconv.FormatFloat(share, 'f', 1, 64) + "%"
+	case share >= 0.01:
+		s = strconv.FormatFloat(share, 'f', 2, 64) + "%"
+	default:
+		s = "<0.01%"
+	}
+	return w + ", " + s + " of the hash space"
+}
+
 func itoa(v int32) string {
 	return strconvItoa(int64(v))
 }
 
 func itoa64(v int64) string {
 	return strconvItoa(v)
-}
-
-func betterProposal(a, b *bandProposal) bool {
-	if a == nil {
-		return false
-	}
-	if b == nil {
-		return true
-	}
-	if a.Kind == "move" && b.Kind != "move" {
-		return true
-	}
-	if a.Kind != "move" && b.Kind == "move" {
-		return false
-	}
-	return a.EstimatedSeries > b.EstimatedSeries
 }
 
 func strconvItoa(v int64) string {
