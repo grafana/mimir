@@ -32,6 +32,10 @@ const (
 	FuzzAlgSubstringLeft FuzzAlg = 2
 	// FuzzAlgSubstring applies no fuzzy matching. It simply applies a substring match.
 	FuzzAlgSubstring FuzzAlg = 4
+	// FuzzAlgWordPrefix applies no fuzzy matching. It accepts a value that
+	// contains the term at the start of a word, and scores every match 1.0.
+	// Metadata search uses it to match words in HELP text.
+	FuzzAlgWordPrefix FuzzAlg = 5
 )
 
 // Params is the wire-decoupled input to the search call. Each gRPC
@@ -130,7 +134,7 @@ func (p *Params) validate() error {
 		return nil
 	}
 	switch p.FuzzAlg {
-	case FuzzAlgSubsequence, FuzzAlgJaroWinkler, FuzzAlgSubstringLeft, FuzzAlgSubstring:
+	case FuzzAlgSubsequence, FuzzAlgJaroWinkler, FuzzAlgSubstringLeft, FuzzAlgSubstring, FuzzAlgWordPrefix:
 	default:
 		return fmt.Errorf("unknown fuzz algorithm %d", p.FuzzAlg)
 	}

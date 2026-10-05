@@ -59,6 +59,69 @@ func TestFilterContainsRejectsEmptyTerm(t *testing.T) {
 	assert.Contains(t, strings.ToLower(err.Error()), "empty")
 }
 
+func TestFilterWordPrefix(t *testing.T) {
+	tests := []struct {
+		name          string
+		term          string
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+	}{
+		{name: "term inside a word is rejected", term: "ratio", caseSensitive: true, value: "Duration of the operations", wantAccepted: false},
+		{name: "term at start of value", term: "ratio", caseSensitive: true, value: "ratio of series", wantAccepted: true},
+		{name: "term after a space", term: "ratio", caseSensitive: true, value: "Compression ratio (uncompressed)", wantAccepted: true},
+		{name: "term starts a longer word", term: "ratio", caseSensitive: true, value: "the ratios of series", wantAccepted: true},
+		{name: "term after an underscore", term: "ingester", caseSensitive: true, value: "cortex_ingester_queried_series", wantAccepted: true},
+		{name: "term after punctuation", term: "send", caseSensitive: true, value: `{stage="send"}`, wantAccepted: true},
+		{name: "later occurrence starts a word", term: "ratio", caseSensitive: true, value: "Duration ratio", wantAccepted: true},
+		{name: "term after a non-ASCII letter is rejected", term: "ratio", caseSensitive: true, value: "ératio", wantAccepted: false},
+		{name: "term after a digit is rejected", term: "ratio", caseSensitive: true, value: "2ratio", wantAccepted: false},
+		{name: "term that starts with a non-word rune matches anywhere", term: "-seconds", caseSensitive: true, value: "cpu-seconds", wantAccepted: true},
+		{name: "case-sensitive miss on case difference", term: "ratio", caseSensitive: true, value: "Ratio of series", wantAccepted: false},
+		{name: "case-insensitive matches across cases", term: "ratio", caseSensitive: false, value: "Ratio of series", wantAccepted: true},
+		{name: "empty value rejected", term: "ratio", caseSensitive: true, value: "", wantAccepted: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := NewFilterWordPrefix(tt.term, tt.caseSensitive)
+			require.NoError(t, err)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.wantAccepted, gotAccepted)
+			if tt.wantAccepted {
+				assert.Equal(t, 1.0, gotScore)
+			} else {
+				assert.Zero(t, gotScore)
+			}
+		})
+	}
+}
+
+func TestFilterWordPrefixRejectsEmptyTerm(t *testing.T) {
+	_, err := NewFilterWordPrefix("", true)
+	require.EqualError(t, err, "FilterWordPrefix: empty term")
+}
+
+func TestBuildFilterWordPrefixExpression(t *testing.T) {
+	params, err := NewExpressionParams("ingester AND ratio AND NOT test", false, FuzzAlgWordPrefix, 0)
+	require.NoError(t, err)
+	filter, err := BuildFilter(params)
+	require.NoError(t, err)
+
+	tests := map[string]bool{
+		"Ratio of discarded series in the ingester.":              true,
+		"Ingester ratio, measured in the latest tests.":           false,
+		"The ingester startup duration.":                          false,
+		"Ratio of series in the ingester, used in a test.":        false,
+		"Ratio of series in the ingester, used in contested run.": true,
+	}
+	for value, want := range tests {
+		t.Run(value, func(t *testing.T) {
+			accepted, _ := filter.Accept(value)
+			assert.Equal(t, want, accepted)
+		})
+	}
+}
+
 func TestFilterJaroAcceptsAboveThreshold(t *testing.T) {
 	tests := []struct {
 		name          string

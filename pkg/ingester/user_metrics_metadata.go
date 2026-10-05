@@ -162,14 +162,15 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 	return r
 }
 
-// searchHelp matches filter against the HELP text of every metadata record
-// held for each metric name, and returns the matching names as search
-// results, honoring order, resumeAfter and limit.
+// searchHelp matches filter against the metric name together with the HELP
+// text of every metadata record held for it, and returns the matching names
+// as search results, honoring order, resumeAfter and limit.
 //
-// A metric name matches if ANY of its (possibly several, conflicting) HELP
-// records match filter: HELP text is informational only, so a tenant
-// searching for a term in HELP expects to find the metric name regardless of
-// which scrape target's record happened to hold the matching text.
+// A metric name matches if the name together with ANY of its (possibly
+// several, conflicting) HELP records matches filter: HELP text is
+// informational only, so a tenant searching for a term in HELP expects to
+// find the metric name regardless of which scrape target's record happened
+// to hold the matching text.
 func (mm *userMetricsMetadata) searchHelp(filter storage.Filter, order storage.Ordering, resumeAfter string, limit int) storage.SearchResultSet {
 	// Copy out the names and HELP strings under RLock, then release the lock
 	// before running the (possibly O(N*M)) filter evaluation. add() takes
@@ -195,8 +196,13 @@ func (mm *userMetricsMetadata) searchHelp(filter storage.Filter, order storage.O
 	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
-// helpMatchFilter adapts a HELP-text storage.Filter into a Filter over metric
-// names: Accept(name) matches if inner matches any of name's HELP records.
+// helpMatchFilter adapts a storage.Filter over "name\nHELP" text into a
+// Filter over metric names: Accept(name) matches if inner matches the name
+// joined to any of name's HELP records. Joining them lets one expression use
+// terms from both, for example "ingester AND ratio" with "ingester" only in
+// the name. The newline is not a letter or a digit, so the first HELP word
+// starts a word, and a term that holds no newline cannot match across the
+// join.
 // A nil inner accepts every name, matching BuildFilter's own nil-filter
 // convention.
 type helpMatchFilter struct {
@@ -209,7 +215,7 @@ func (f *helpMatchFilter) Accept(name string) (bool, float64) {
 		return true, 1.0
 	}
 	for _, help := range f.helpsByName[name] {
-		if accepted, score := f.inner.Accept(help); accepted {
+		if accepted, score := f.inner.Accept(name + "\n" + help); accepted {
 			return true, score
 		}
 	}

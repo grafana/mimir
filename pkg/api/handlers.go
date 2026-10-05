@@ -345,6 +345,8 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/search/metric_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetricNamesHandler(queryable, querierCfg, limits, logger)))
 	router.Path(path.Join(promPrefix, "/search/label_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelNamesHandler(queryable, querierCfg, limits)))
 	router.Path(path.Join(promPrefix, "/search/label_values")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelValuesHandler(queryable, querierCfg, limits)))
+	// Mimir-only: Prometheus PR #18573 has no metadata search.
+	router.Path(path.Join(promPrefix, "/search/metadata")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetadataHandler(distributor, querierCfg, logger)))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

@@ -167,6 +167,8 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 		alg = streaminglabelvalues.FuzzAlgSubstringLeft
 	case client.FUZZ_ALG_SUBSTRING:
 		alg = streaminglabelvalues.FuzzAlgSubstring
+	case client.FUZZ_ALG_WORD_PREFIX:
+		alg = streaminglabelvalues.FuzzAlgWordPrefix
 	}
 	var (
 		params *streaminglabelvalues.Params
@@ -253,8 +255,8 @@ func warningsToStrings(a annotations.Annotations) []string {
 	return out
 }
 
-// SearchMetricsMetadata streams metric names whose HELP text matches the
-// search filter.
+// SearchMetricsMetadata streams metric names whose name and HELP text,
+// searched together, match the search filter.
 func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataRequest, stream client.Ingester_SearchMetricsMetadataServer) (err error) {
 	// See SearchLabelNames for why validation runs ahead of the deferred mapper.
 	filter, order, resumeAfter, limit, err := buildMetadataSearchHints(req.Filter, req.Ordering, req.Limit)
@@ -293,11 +295,16 @@ func (i *Ingester) SearchMetricsMetadata(req *client.SearchMetricsMetadataReques
 // resume cursor internally, since the cursor here is a metric name rather
 // than the value being filtered (HELP text).
 //
-// ORDER_BY_SCORE_DESC is rejected: every match under FuzzAlgSubstring scores
-// identically, so score ordering carries no information for this endpoint.
+// ORDER_BY_SCORE_DESC is rejected: every match under FuzzAlgWordPrefix (and
+// FuzzAlgSubstring) scores identically, so score ordering carries no
+// information for this endpoint.
 // This is already decided at the HTTP layer, but is re-checked here as
 // defense in depth against direct gRPC callers, mirroring protoToParams's
 // terms/expression mutual-exclusivity recheck.
+//
+// A filter without terms or an expression is also rejected, with the same
+// defense in depth: it would match every metric name that has metadata, and
+// clients that want every record use the legacy metadata API.
 func buildMetadataSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit int64) (filter storage.Filter, order storage.Ordering, resumeAfter string, hintsLimit int, err error) {
 	if ord == client.ORDER_BY_SCORE_DESC {
 		return nil, 0, "", 0, fmt.Errorf("sort_by=score is not supported for metric metadata search")
@@ -305,6 +312,9 @@ func buildMetadataSearchHints(wf *client.SearchFilter, ord client.SearchOrdering
 	params, err := protoToParams(wf)
 	if err != nil {
 		return nil, 0, "", 0, err
+	}
+	if !params.HasSearchTerms() {
+		return nil, 0, "", 0, fmt.Errorf("metric metadata search requires search terms or an expression")
 	}
 	filter, err = streaminglabelvalues.BuildFilter(params)
 	if err != nil {
@@ -318,11 +328,5 @@ func buildMetadataSearchHints(wf *client.SearchFilter, ord client.SearchOrdering
 	if limit > int64(math.MaxInt) {
 		hintsLimit = math.MaxInt
 	}
-	// params is nil when wf is nil (protoToParams's documented nil-input
-	// contract); guard the field access rather than pass an empty
-	// ResumeAfter, since searchHelp treats "" as "no cursor" anyway.
-	if params != nil {
-		resumeAfter = params.ResumeAfter
-	}
-	return filter, order, resumeAfter, hintsLimit, nil
+	return filter, order, params.ResumeAfter, hintsLimit, nil
 }

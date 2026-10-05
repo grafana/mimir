@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -73,6 +75,58 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 	}
 	maxIdx := len(value) - len(f.term)
 	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
+}
+
+// FilterWordPrefix accepts values that contain a fixed term at the start of a
+// word: at the start of the value, or after a rune that is not a letter or a
+// digit. A term that does not start with a letter or a digit has no word to
+// start, so it matches at any position. Every match scores 1.0.
+//
+// caseSensitive is advisory under BuildFilter, as for FilterContains.
+type FilterWordPrefix struct {
+	term          string
+	caseSensitive bool
+	anyPosition   bool
+	firstRuneLen  int
+}
+
+// NewFilterWordPrefix returns a word-prefix filter. Term must be non-empty.
+// When caseSensitive is false the term is lowercased once at construction.
+func NewFilterWordPrefix(term string, caseSensitive bool) (*FilterWordPrefix, error) {
+	if term == "" {
+		return nil, errors.New("FilterWordPrefix: empty term")
+	}
+	if !caseSensitive {
+		term = strings.ToLower(term)
+	}
+	first, size := utf8.DecodeRuneInString(term)
+	return &FilterWordPrefix{term: term, caseSensitive: caseSensitive, anyPosition: !isWordRune(first), firstRuneLen: size}, nil
+}
+
+// Accept returns (true, 1.0) when any occurrence of the term starts a word,
+// and (false, 0) otherwise.
+func (f *FilterWordPrefix) Accept(value string) (bool, float64) {
+	if !f.caseSensitive {
+		value = strings.ToLower(value)
+	}
+	for offset := 0; ; {
+		idx := strings.Index(value[offset:], f.term)
+		if idx < 0 {
+			return false, 0
+		}
+		idx += offset
+		if f.anyPosition || idx == 0 {
+			return true, 1.0
+		}
+		if prev, _ := utf8.DecodeLastRuneInString(value[:idx]); !isWordRune(prev) {
+			return true, 1.0
+		}
+		offset = idx + f.firstRuneLen
+	}
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
@@ -350,6 +404,9 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 			term = strings.ToLower(term)
 		}
 		if negated {
+			if p.FuzzAlg == FuzzAlgWordPrefix {
+				return NewFilterWordPrefix(term, true)
+			}
 			return NewFilterContains(term, p.CaseSensitive, true)
 		}
 		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
@@ -410,6 +467,8 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 		return NewFilterContains(term, caseSensitive, false)
 	case FuzzAlgSubstring:
 		return NewFilterContains(term, caseSensitive, true)
+	case FuzzAlgWordPrefix:
+		return NewFilterWordPrefix(term, caseSensitive)
 	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
 		return NewFilterSubsequence(term, threshold, caseSensitive)
 	}

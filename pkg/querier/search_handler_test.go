@@ -215,7 +215,7 @@ func TestSearchLabelNamesHandler_FlagOff_Returns404(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), Config{ExperimentalSearchAPIEnabled: false}, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
@@ -234,7 +234,7 @@ func TestSearchLabelNamesHandler_HappyPath(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, searchAPIContentType, w.Header().Get("Content-Type"))
@@ -259,7 +259,7 @@ func TestSearchLabelNamesHandler_IncludeScoreEmitsScore(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_score=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&include_score=true"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -282,7 +282,7 @@ func TestSearchLabelNamesHandler_IncludeScoreRoundsToThreeDecimalPlaces(t *testi
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_score=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&include_score=true"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -323,7 +323,7 @@ func TestSearchLabelNamesHandler_BatchBoundaries(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=2"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&batch_size=2"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 4)
@@ -349,7 +349,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=2"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=2"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	require.NotEmpty(t, lines)
@@ -381,7 +381,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit(t *testin
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=2"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=2"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	require.NotEmpty(t, lines)
@@ -400,7 +400,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=10"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	trailer := lines[len(lines)-1]
@@ -431,13 +431,13 @@ func TestSearchHandlers_TrailerReturnedCount(t *testing.T) {
 		wantReturned int
 		wantHasMore  bool
 	}{
-		{name: "no limit counts records across all batches", newHandler: labelNames, url: "/api/v1/search/label_names?limit=0&batch_size=2", results: five, wantReturned: 5},
-		{name: "limit excludes the has_more probe record", newHandler: labelNames, url: "/api/v1/search/label_names?limit=2", results: five, wantReturned: 2, wantHasMore: true},
-		{name: "data exactly fills limit", newHandler: labelNames, url: "/api/v1/search/label_names?limit=5", results: five, wantReturned: 5},
-		{name: "empty result reports zero", newHandler: labelNames, url: "/api/v1/search/label_names", wantReturned: 0},
-		{name: "warning trailer carries the count", newHandler: labelNames, url: "/api/v1/search/label_names", results: five[:1], warns: warns, wantReturned: 1},
+		{name: "no limit counts records across all batches", newHandler: labelNames, url: "/api/v1/search/label_names?search[]=a&limit=0&batch_size=2", results: five, wantReturned: 5},
+		{name: "limit excludes the has_more probe record", newHandler: labelNames, url: "/api/v1/search/label_names?search[]=a&limit=2", results: five, wantReturned: 2, wantHasMore: true},
+		{name: "data exactly fills limit", newHandler: labelNames, url: "/api/v1/search/label_names?search[]=a&limit=5", results: five, wantReturned: 5},
+		{name: "empty result reports zero", newHandler: labelNames, url: "/api/v1/search/label_names?search[]=a", wantReturned: 0},
+		{name: "warning trailer carries the count", newHandler: labelNames, url: "/api/v1/search/label_names?search[]=a", results: five[:1], warns: warns, wantReturned: 1},
 		{name: "label_values", newHandler: labelValues, url: "/api/v1/search/label_values?label=env", results: five[:3], wantReturned: 3},
-		{name: "metric_names", newHandler: metricNames, url: "/api/v1/search/metric_names", results: five[:3], wantReturned: 3},
+		{name: "metric_names", newHandler: metricNames, url: "/api/v1/search/metric_names?search[]=a", results: five[:3], wantReturned: 3},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -484,11 +484,11 @@ func TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=50"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=50"))
 	assert.Equal(t, 51, mq.lastHints.Limit, "user limit must arrive at the searcher as limit+1 (the has_more probe)")
 
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=0"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=0"))
 	assert.Equal(t, 0, mq.lastHints.Limit, "limit=0 (no limit) must pass through unchanged — no probe added")
 }
 
@@ -505,7 +505,7 @@ func TestSearchLabelNamesHandler_HintsLimitAtMaxIntDoesNotOverflow(t *testing.T)
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/label_names?limit=%d", math.MaxInt)))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/label_names?search[]=a&limit=%d", math.MaxInt)))
 	assert.Equal(t, math.MaxInt, mq.lastHints.Limit,
 		"limit=math.MaxInt must not wrap to a negative hints.Limit")
 }
@@ -521,7 +521,7 @@ func TestSearchLabelNamesHandler_WarningsRideOnTrailer(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	trailer := lines[len(lines)-1]
@@ -549,7 +549,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenClampFires(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10000"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=10000"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	trailer := lines[len(lines)-1]
@@ -602,7 +602,7 @@ func TestSearchLabelNamesHandler_UnrelatedLimitErrorDoesNotFlipHasMore(t *testin
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=100"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&limit=100"))
 
 	lines := drainNDJSON(t, w.Body.String())
 	trailer := lines[len(lines)-1]
@@ -630,7 +630,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 			newHandler: func(q storage.Queryable) http.Handler {
 				return SearchLabelNamesHandler(q, enabledSearchConfig(), nil)
 			},
-			url:       "/api/v1/search/label_names?include_score=true",
+			url:       "/api/v1/search/label_names?search[]=a&include_score=true",
 			wantKey:   "name",
 			absentKey: "value",
 		},
@@ -648,7 +648,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 			newHandler: func(q storage.Queryable) http.Handler {
 				return SearchMetricNamesHandler(q, enabledSearchConfig(), nil, log.NewNopLogger())
 			},
-			url:       "/api/v1/search/metric_names?include_score=true",
+			url:       "/api/v1/search/metric_names?search[]=a&include_score=true",
 			wantKey:   "name",
 			absentKey: "value",
 		},
@@ -799,7 +799,7 @@ func TestSearchLabelNamesHandler_MidStreamErrorRendersErrorTrailer(t *testing.T)
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	// HTTP 200 because headers were already on the wire when the error
 	// surfaced; the failure is in the NDJSON trailer instead.
@@ -830,7 +830,7 @@ func TestSearchLabelNamesHandler_PreFlushErrorReturnsJSONEnvelope(t *testing.T) 
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"),
@@ -857,7 +857,7 @@ func TestSearchLabelNamesHandler_PreFlushContextCanceledReturns499(t *testing.T)
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	assert.Equal(t, 499, w.Code)
 	var env map[string]any
@@ -877,7 +877,7 @@ func TestSearchLabelNamesHandler_PreFlushContextDeadlineReturns503(t *testing.T)
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var env map[string]any
@@ -893,23 +893,26 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 		name  string
 		query string
 	}{
-		{name: "invalid fuzz_alg", query: "fuzz_alg=banana"},
-		{name: "invalid fuzz_threshold (non-integer)", query: "fuzz_threshold=abc"},
-		{name: "invalid fuzz_threshold (out of range)", query: "fuzz_threshold=200"},
-		{name: "invalid sort_by", query: "sort_by=cosine"},
+		{name: "invalid fuzz_alg", query: "search[]=foo&fuzz_alg=banana"},
+		{name: "invalid fuzz_threshold (non-integer)", query: "search[]=foo&fuzz_threshold=abc"},
+		{name: "invalid fuzz_threshold (out of range)", query: "search[]=foo&fuzz_threshold=200"},
+		{name: "invalid sort_by", query: "search[]=foo&sort_by=cosine"},
 		// Include a search[] term so parseSortOrder validates the sort_dir+score combination.
 		{name: "sort_dir with sort_by=score rejected", query: "search[]=foo&sort_by=score&sort_dir=asc"},
-		{name: "invalid sort_dir", query: "sort_dir=sideways"},
-		{name: "negative limit", query: "limit=-1"},
-		{name: "negative batch_size", query: "batch_size=-1"},
-		{name: "non-integer batch_size", query: "batch_size=abc"},
-		{name: "batch_size above maximum", query: "batch_size=1000000000"},
-		{name: "sort_by=score without search[]", query: "sort_by=score"},
+		{name: "invalid sort_dir", query: "search[]=foo&sort_dir=sideways"},
+		{name: "negative limit", query: "search[]=foo&limit=-1"},
+		{name: "negative batch_size", query: "search[]=foo&batch_size=-1"},
+		{name: "non-integer batch_size", query: "search[]=foo&batch_size=abc"},
+		{name: "batch_size above maximum", query: "search[]=foo&batch_size=1000000000"},
+		{name: "no search[] or search_expr", query: "limit=5"},
+		{name: "misspelt search_expr", query: "search_expression=foo"},
+		{name: "empty search[]", query: "search[]="},
+		{name: "empty search_expr", query: "search_expr="},
 		{name: "too many search[] terms", query: tooManySearchTerms(maxSearchTermsPerRequest + 1)},
-		{name: "invalid include_score", query: "include_score=maybe"},
-		{name: "invalid case_sensitive", query: "case_sensitive=maybe"},
-		{name: "unparseable start", query: "start=not-a-time"},
-		{name: "invalid match selector", query: "match[]=foo%7Bbar"},
+		{name: "invalid include_score", query: "search[]=foo&include_score=maybe"},
+		{name: "invalid case_sensitive", query: "search[]=foo&case_sensitive=maybe"},
+		{name: "unparseable start", query: "search[]=foo&start=not-a-time"},
+		{name: "invalid match selector", query: "search[]=foo&match[]=foo%7Bbar"},
 		{name: "search[] and search_expr together", query: "search[]=foo&search_expr=bar"},
 		{name: "invalid search_expr syntax", query: "search_expr=foo+AND"},
 		{name: "fuzz_alg=substring rejects a non-100 explicit threshold", query: "search[]=foo&fuzz_alg=substring&fuzz_threshold=50"},
@@ -950,6 +953,49 @@ func TestSearchLabelValuesHandler_ForwardsLabel(t *testing.T) {
 	assert.Equal(t, "env", mq.lastName)
 }
 
+func TestSearchHandlers_RequireSearchParameter(t *testing.T) {
+	const missingErr = "a search[] or search_expr parameter is required"
+	mq := &searchMockQuerier{}
+	queryable := newSearchMockQueryable(mq)
+	labelNames := SearchLabelNamesHandler(queryable, enabledSearchConfig(), nil)
+	metricNames := SearchMetricNamesHandler(queryable, enabledSearchConfig(), nil, log.NewNopLogger())
+	tests := []struct {
+		name    string
+		handler http.Handler
+		target  string
+		wantErr string
+	}{
+		{name: "label_names without search", handler: labelNames, target: "/api/v1/search/label_names", wantErr: missingErr},
+		{name: "label_names with misspelt search_expr", handler: labelNames, target: "/api/v1/search/label_names?search_expression=foo", wantErr: missingErr},
+		{name: "metric_names without search", handler: metricNames, target: "/api/v1/search/metric_names?limit=5", wantErr: missingErr},
+		{name: "metric_names with empty search_expr", handler: metricNames, target: "/api/v1/search/metric_names?search_expr=", wantErr: missingErr},
+		{name: "metric_names with empty search[]", handler: metricNames, target: "/api/v1/search/metric_names?search[]=", wantErr: "invalid search params: search term 0 is empty"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, newSearchHandlerRequest(t, tc.target))
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			lines := drainNDJSON(t, w.Body.String())
+			require.Len(t, lines, 1)
+			assert.Equal(t, tc.wantErr, lines[0]["error"])
+		})
+	}
+}
+
+func TestSearchLabelValuesHandler_DoesNotRequireSearchParameter(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env")
+	req, err := parseSearchRequest(r, searchEndpointLabelValues)
+	require.NoError(t, err)
+	assert.Empty(t, req.params.Terms)
+	assert.Empty(t, req.params.Expression())
+
+	// sort_by=score still needs a term, because there is no other source of a score.
+	r = newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&sort_by=score")
+	_, err = parseSearchRequest(r, searchEndpointLabelValues)
+	require.EqualError(t, err, "sort_by=score requires search[] or search_expr to be set")
+}
+
 func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
@@ -959,7 +1005,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, model.MetricNameLabel, mq.lastName, "metric_names endpoint must search the __name__ label")
 }
@@ -999,7 +1045,7 @@ func TestParseSortOrder_Cases(t *testing.T) {
 func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo")
 	before := time.Now().UnixMilli()
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, searchEndpointLabelNames)
 	after := time.Now().UnixMilli()
 	require.NoError(t, err)
 
@@ -1016,14 +1062,14 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 // message clients are documented to expect, but end == start is fine.
 func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 	t.Run("end before start is rejected", func(t *testing.T) {
-		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=7200&end=3600")
-		_, err := parseSearchRequest(r, false)
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&start=7200&end=3600")
+		_, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "end timestamp must not be before start timestamp")
 	})
 	t.Run("end equal to start is permitted", func(t *testing.T) {
-		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=3600")
-		req, err := parseSearchRequest(r, false)
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&start=3600&end=3600")
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.NoError(t, err)
 		assert.Equal(t, req.startMs, req.endMs)
 	})
@@ -1031,7 +1077,7 @@ func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search[]=bar&case_sensitive=false&fuzz_alg=jarowinkler&fuzz_threshold=75&sort_by=alpha&sort_dir=dsc&include_score=true&limit=42&batch_size=7&match[]={job=\"prom\"}")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, req.params.Terms)
 	assert.False(t, req.params.CaseSensitive)
@@ -1058,7 +1104,7 @@ func TestParseSearchRequest_FuzzAlgSubstringVariants(t *testing.T) {
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&"+tc.query)
-			req, err := parseSearchRequest(r, false)
+			req, err := parseSearchRequest(r, searchEndpointLabelNames)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, req.params.FuzzAlg)
 		})
@@ -1074,42 +1120,42 @@ func TestParseSearchRequest_FuzzAlgSubstringVariants(t *testing.T) {
 func TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering(t *testing.T) {
 	t.Run("defaults fuzz_threshold to 100", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.NoError(t, err)
 		assert.Equal(t, 100, req.params.FuzzThreshold)
 	})
 
 	t.Run("accepts an explicit fuzz_threshold=100", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&fuzz_threshold=100")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.NoError(t, err)
 		assert.Equal(t, 100, req.params.FuzzThreshold)
 	})
 
 	t.Run("rejects an explicit non-100 fuzz_threshold", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&fuzz_threshold=50")
-		_, err := parseSearchRequest(r, false)
+		_, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "fuzz_alg=substring only supports fuzz_threshold=100")
 	})
 
 	t.Run("rejects sort_by=score", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&sort_by=score")
-		_, err := parseSearchRequest(r, false)
+		_, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "sort_by=score is not supported with fuzz_alg=substring")
 	})
 
 	t.Run("fuzz_threshold default 100 does not apply to substring_left", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring_left")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.NoError(t, err)
 		assert.Equal(t, 0, req.params.FuzzThreshold, "substring_left keeps the ordinary default of 0")
 	})
 
 	t.Run("sort_by=score is still allowed for substring_left", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring_left&sort_by=score")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		require.NoError(t, err)
 		assert.Equal(t, storage.OrderByScoreDesc, req.hints.OrderBy)
 	})
@@ -1117,7 +1163,7 @@ func TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering(t *testing.T) {
 
 func TestParseSearchRequest_SearchExprRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND+NOT+bar")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, "foo AND NOT bar", req.params.Expression())
 	assert.Empty(t, req.params.Terms)
@@ -1125,14 +1171,14 @@ func TestParseSearchRequest_SearchExprRoundTrip(t *testing.T) {
 
 func TestParseSearchRequest_RejectsSearchAndSearchExprTogether(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search_expr=bar")
-	_, err := parseSearchRequest(r, false)
+	_, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "search[] and search_expr are mutually exclusive")
 }
 
 func TestParseSearchRequest_RejectsInvalidSearchExpr(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND")
-	_, err := parseSearchRequest(r, false)
+	_, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid search_expr:")
 	assert.Contains(t, err.Error(), "search expression:")
@@ -1143,7 +1189,7 @@ func TestParseSearchRequest_RejectsInvalidSearchExpr(t *testing.T) {
 // require search[] specifically.
 func TestParseSearchRequest_SortByScoreAcceptsSearchExpr(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo&sort_by=score")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, storage.OrderByScoreDesc, req.hints.OrderBy)
 }
@@ -1152,8 +1198,8 @@ func TestParseSearchRequest_SortByScoreAcceptsSearchExpr(t *testing.T) {
 // contract: batch_size=0 means "server-determined" and falls back to
 // searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
 func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
-	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
-	req, err := parseSearchRequest(r, false)
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&batch_size=0")
+	req, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
 }
@@ -1204,7 +1250,7 @@ func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
 	// Deliberately do not inject org ID — searcherForRequest must reject.
 	mq := &searchMockQuerier{}
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/search/label_names", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/search/label_names?search[]=a", nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -1221,7 +1267,7 @@ func TestSearchLabelNamesHandler_QueryableOpenErrorReturns500(t *testing.T) {
 	h := SearchLabelNamesHandler(&erroringQueryable{err: wantErr}, enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	lines := drainNDJSON(t, w.Body.String())
@@ -1235,7 +1281,7 @@ func TestSearchLabelNamesHandler_QuerierNotMimirSearcherReturns500(t *testing.T)
 	h := SearchLabelNamesHandler(plainQueryable{}, enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	lines := drainNDJSON(t, w.Body.String())
@@ -1257,7 +1303,7 @@ func TestSearchLabelNamesHandler_EmptyResultsEmitsTrailerOnly(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 1, "no batch line; only the success trailer")
@@ -1288,7 +1334,7 @@ func TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?match[]={job=%22api%22}&match[]={env=%22prod%22}"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&match[]={job=%22api%22}&match[]={env=%22prod%22}"))
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	lines := drainNDJSON(t, w.Body.String())
@@ -1321,7 +1367,7 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.NotEmpty(t, mq.fetchedNames, "the handler must fetch metadata for the returned names")
 	lines := drainNDJSON(t, w.Body.String())
@@ -1354,7 +1400,7 @@ func TestSearchMetricNamesHandler_MetadataFetchScopedByMatchers(t *testing.T) {
 	}
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
-	target := "/api/v1/search/metric_names?include_metadata=true&" + url.Values{"match[]": {`{job="api"}`}}.Encode()
+	target := "/api/v1/search/metric_names?search[]=a&include_metadata=true&" + url.Values{"match[]": {`{job="api"}`}}.Encode()
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, target))
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -1380,7 +1426,7 @@ func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T)
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -1402,7 +1448,7 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true&include_score=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=true&include_score=true"))
 	lines := drainNDJSON(t, w.Body.String())
 	rec := lines[0]["results"].([]any)[0].(map[string]any)
 	assert.Equal(t, "http_requests_total", rec["name"])
@@ -1450,7 +1496,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 
 		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=true"))
 
 		require.Equal(t, http.StatusOK, w.Code)
 		lines := drainNDJSON(t, w.Body.String())
@@ -1479,7 +1525,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 
 		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=true"))
 
 		require.Equal(t, http.StatusOK, w.Code, "a metadata fetch failure must not fail the request")
 		lines := drainNDJSON(t, w.Body.String())
@@ -1503,7 +1549,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a&include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	rec := lines[0]["results"].([]any)[0].(map[string]any)
@@ -1514,7 +1560,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil, log.NewNopLogger())
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?search[]=a&include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
@@ -1627,7 +1673,7 @@ func BenchmarkSearchLabelNamesHandler_Encoding(b *testing.B) {
 		h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 		// limit must be >= len(fixture) so the iterator emits every result.
-		target := fmt.Sprintf("/api/v1/search/label_names?batch_size=%d&limit=%d", c.batchSize, c.results)
+		target := fmt.Sprintf("/api/v1/search/label_names?search[]=a&batch_size=%d&limit=%d", c.batchSize, c.results)
 		if c.includeScore {
 			target += "&include_score=true"
 		}
@@ -1664,7 +1710,7 @@ func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
 			}
 			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
-			target := fmt.Sprintf("/api/v1/search/metric_names?limit=%d&include_metadata=%t", results, withMetadata)
+			target := fmt.Sprintf("/api/v1/search/metric_names?search[]=a&limit=%d&include_metadata=%t", results, withMetadata)
 			name := fmt.Sprintf("results=%d/include_metadata=%t", results, withMetadata)
 
 			b.Run(name, func(b *testing.B) {
@@ -1705,7 +1751,7 @@ func TestSearchCursorRoundTrip(t *testing.T) {
 	decoded, err := decodeSearchCursor(encoded)
 	require.NoError(t, err)
 
-	got, err := decoded.toSearchRequest(true)
+	got, err := decoded.toSearchRequest(searchEndpointLabelValues)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, got.params.Terms)
 	assert.False(t, got.params.CaseSensitive)
@@ -1739,7 +1785,7 @@ func TestSearchCursorRoundTripWithExpression(t *testing.T) {
 	require.NoError(t, err)
 	decoded, err := decodeSearchCursor(encoded)
 	require.NoError(t, err)
-	got, err := decoded.toSearchRequest(false)
+	got, err := decoded.toSearchRequest(searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, "foo AND NOT bar", got.params.Expression())
 	assert.Empty(t, got.params.Terms)
@@ -1787,7 +1833,7 @@ func TestParseSearchRequest_RejectsCursorWithOtherParams(t *testing.T) {
 	require.NoError(t, err)
 
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor+"&limit=5")
-	_, err = parseSearchRequest(r, false)
+	_, err = parseSearchRequest(r, searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
 }
@@ -1797,7 +1843,7 @@ func TestParseSearchRequest_RejectsCursorWithOtherParams(t *testing.T) {
 // the exclusivity check rather than falling through to ordinary parsing.
 func TestParseSearchRequest_RejectsEmptyCursorWithOtherParams(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor=&limit=5")
-	_, err := parseSearchRequest(r, false)
+	_, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
 }
@@ -1807,21 +1853,21 @@ func TestParseSearchRequest_RejectsEmptyCursorWithOtherParams(t *testing.T) {
 // being silently treated as "no cursor".
 func TestParseSearchRequest_RejectsEmptyCursorAlone(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor=")
-	_, err := parseSearchRequest(r, false)
+	_, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid cursor")
 }
 
 func TestParseSearchRequest_CursorRoundTripThroughHTTP(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&limit=5")
-	first, err := parseSearchRequest(r, false)
+	first, err := parseSearchRequest(r, searchEndpointLabelNames)
 	require.NoError(t, err)
 
 	cursor, err := encodeSearchCursor(first, "kube_pod_status_ready", 0)
 	require.NoError(t, err)
 
 	r2 := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor)
-	second, err := parseSearchRequest(r2, false)
+	second, err := parseSearchRequest(r2, searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, second.params.Terms)
 	assert.Equal(t, "kube_pod_status_ready", second.params.ResumeAfter)
@@ -1855,7 +1901,7 @@ func TestSearchLabelNamesHandler_MultiPageCursorWalk(t *testing.T) {
 	}
 
 	var walked []string
-	names, cursor, hasMore := fetchPage("/api/v1/search/label_names?limit=2")
+	names, cursor, hasMore := fetchPage("/api/v1/search/label_names?search[]=a&limit=2")
 	walked = append(walked, names...)
 	require.True(t, hasMore)
 	require.NotEmpty(t, cursor)
@@ -2032,7 +2078,7 @@ func TestSearchLabelNamesHandler_ReturnedExcludesCursorBackstopDiscards(t *testi
 		return lines[len(lines)-1]
 	}
 
-	page1 := trailerOf("/api/v1/search/label_names?limit=2")
+	page1 := trailerOf("/api/v1/search/label_names?search[]=a&limit=2")
 	assert.Equal(t, float64(2), page1["returned"])
 	cursor, ok := page1["next_cursor"].(string)
 	require.True(t, ok, "page 1 must carry a cursor")
@@ -2053,7 +2099,7 @@ func TestSearchLabelNamesHandler_CursorCorrectDespiteSourceIgnoringResumeAfter(t
 	// Page 1: limit=2, so hints.Limit=3 as the has_more probe. The old
 	// source returns its fixed first-3 window a,b,c. "c" is the probe
 	// record — dropped, but its presence sets has_more=true.
-	names1, cursor1, hasMore1, warnings1 := fetchSearchPage(t, h, "/api/v1/search/label_names?limit=2")
+	names1, cursor1, hasMore1, warnings1 := fetchSearchPage(t, h, "/api/v1/search/label_names?search[]=a&limit=2")
 	assert.Equal(t, []string{"a", "b"}, names1)
 	assert.True(t, hasMore1)
 	assert.NotEmpty(t, cursor1)
@@ -2106,8 +2152,8 @@ func resumeAfterCursor(t *testing.T, cursor, resumeAfter string) string {
 }
 
 func TestSearchCursorToSearchRequest_RejectsBatchSizeOverMax(t *testing.T) {
-	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", BatchSize: maxSearchBatchSize + 1}
-	_, err := c.toSearchRequest(false)
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Terms: []string{"foo"}, BatchSize: maxSearchBatchSize + 1}
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "batch_size")
 }
@@ -2129,7 +2175,7 @@ func TestSearchLabelNamesHandler_NoCursorWhenNothingEmitted(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=a"))
 	require.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	require.NotEmpty(t, lines)
@@ -2144,14 +2190,14 @@ func TestSearchCursorToSearchRequest_RejectsTooManyTerms(t *testing.T) {
 		terms[i] = "x"
 	}
 	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Terms: terms}
-	_, err := c.toSearchRequest(false)
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too many search terms")
 }
 
 func TestSearchCursorToSearchRequest_RejectsNegativeLimit(t *testing.T) {
-	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Limit: -1}
-	_, err := c.toSearchRequest(false)
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Terms: []string{"foo"}, Limit: -1}
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "limit")
 }
@@ -2171,7 +2217,7 @@ func TestSearchCursorRoundTrip_ScoreOrdering(t *testing.T) {
 	decoded, err := decodeSearchCursor(encoded)
 	require.NoError(t, err)
 
-	got, err := decoded.toSearchRequest(false)
+	got, err := decoded.toSearchRequest(searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Equal(t, "kube_pod_status_ready", got.params.ResumeAfter)
 	assert.Equal(t, 0.727906976744186, got.params.ScoreAfter, "cursor must carry the raw, unrounded score")
@@ -2195,7 +2241,7 @@ func TestSearchCursorToSearchRequest_RejectsSortDirWithScoreOrdering(t *testing.
 		Version: searchCursorVersion, SortBy: "score", SortDir: "asc",
 		Terms: []string{"foo"}, ResumeAfter: "bar",
 	}
-	_, err := c.toSearchRequest(false)
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "sort_dir")
 }
@@ -2206,7 +2252,7 @@ func TestSearchCursorToSearchRequest_RejectsFuzzAlgSubstringWithScoreOrdering(t 
 		FuzzAlg: "substring", FuzzThreshold: 100,
 		Terms: []string{"foo"}, ResumeAfter: "bar",
 	}
-	_, err := c.toSearchRequest(false)
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fuzz_alg=substring")
 }
@@ -2216,9 +2262,19 @@ func TestSearchCursorToSearchRequest_RejectsScoreOrderingWithNoTermsOrExpression
 		Version: searchCursorVersion, SortBy: "score",
 		ResumeAfter: "bar",
 	}
-	_, err := c.toSearchRequest(false)
+	_, err := c.toSearchRequest(searchEndpointLabelValues)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "sort_by=score requires")
+}
+
+func TestSearchCursorToSearchRequest_RequireSearch(t *testing.T) {
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", ResumeAfter: "bar"}
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
+	require.EqualError(t, err, "invalid cursor: search terms or an expression are required")
+
+	c = &searchCursor{Version: searchCursorVersion, SortDir: "asc", Label: "env", ResumeAfter: "bar"}
+	_, err = c.toSearchRequest(searchEndpointLabelValues)
+	require.NoError(t, err, "label_values cursors do not need a search term")
 }
 
 func TestSearchCursorToSearchRequest_RejectsScoreAfterOutOfRange(t *testing.T) {
@@ -2227,7 +2283,7 @@ func TestSearchCursorToSearchRequest_RejectsScoreAfterOutOfRange(t *testing.T) {
 			Version: searchCursorVersion, SortBy: "score",
 			Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: bad,
 		}
-		_, err := c.toSearchRequest(false)
+		_, err := c.toSearchRequest(searchEndpointLabelNames)
 		require.Error(t, err, "score_after=%v", bad)
 		assert.Contains(t, err.Error(), "score_after")
 	}
@@ -2238,7 +2294,7 @@ func TestSearchCursorToSearchRequest_RejectsScoreAfterOutOfRangeEvenUnderAlphaOr
 		Version: searchCursorVersion, SortDir: "asc", // alpha ordering (SortBy empty)
 		Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 1e300,
 	}
-	_, err := c.toSearchRequest(false)
+	_, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "score_after")
 }
@@ -2248,7 +2304,7 @@ func TestSearchCursorToSearchRequest_DoesNotAssignScoreAfterUnderAlphaOrdering(t
 		Version: searchCursorVersion, SortDir: "asc",
 		Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.5,
 	}
-	got, err := c.toSearchRequest(false)
+	got, err := c.toSearchRequest(searchEndpointLabelNames)
 	require.NoError(t, err)
 	assert.Zero(t, got.params.ScoreAfter, "ScoreAfter must not be assigned for an alpha-ordered cursor")
 }
@@ -2461,4 +2517,170 @@ func TestSearchLabelNamesHandler_ScoreOrderingCorrectDespiteSourceIgnoringScoreA
 	assert.Empty(t, cursor2, "has_more is false, so no cursor is emitted regardless of lastValue")
 	require.Len(t, warnings2, 1, "disclose that this page may be incomplete, since it doesn't actually claim silent success")
 	assert.Contains(t, warnings2[0], "may not yet support cursor-based resume")
+}
+
+// newSearchMetadataTestDistributor returns a mockDistributor whose
+// SearchMetricsMetadata returns names in ascending order, after the cursor
+// and up to hints.Limit, as the ingesters do. It records the last params.
+func newSearchMetadataTestDistributor(names []string, lastParams **streaminglabelvalues.Params) *mockDistributor {
+	dist := &mockDistributor{}
+	dist.searchMetricsMetadataFn = func(_ context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
+		*lastParams = params
+		var out []storage.SearchResult
+		for _, n := range names {
+			if n <= params.ResumeAfter {
+				continue
+			}
+			if hints.Limit > 0 && len(out) == hints.Limit {
+				break
+			}
+			out = append(out, sr(n, 1))
+		}
+		return storage.NewSearchResultSetFromSlice(out, nil)
+	}
+	dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata{
+		{MetricFamily: "cpu_seconds_total", Type: model.MetricTypeCounter, Help: "Total CPU time", Unit: "seconds"},
+		{MetricFamily: "disk_io_time", Type: model.MetricTypeCounter, Help: "Cumulative disk IO time"},
+	}, nil)
+	return dist
+}
+
+func TestSearchMetadataHandler_ReturnsNamesWithMetadata(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	dist := newSearchMetadataTestDistributor([]string{"cpu_seconds_total", "disk_io_time"}, &params)
+	h := SearchMetadataHandler(dist, enabledSearchConfig(), log.NewNopLogger())
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metadata?search[]=time"))
+	require.Equal(t, http.StatusOK, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 2, "one batch + one trailer")
+	assert.Equal(t, []any{
+		map[string]any{"name": "cpu_seconds_total", "type": "counter", "help": "Total CPU time", "unit": "seconds"},
+		map[string]any{"name": "disk_io_time", "type": "counter", "help": "Cumulative disk IO time"},
+	}, lines[0]["results"])
+	assert.Equal(t, map[string]any{"status": "success", "has_more": false, "returned": float64(2)}, lines[1])
+
+	require.NotNil(t, params)
+	assert.Equal(t, []string{"time"}, params.Terms)
+	assert.Equal(t, streaminglabelvalues.FuzzAlgWordPrefix, params.FuzzAlg, "metadata search always matches at the start of a word")
+	assert.False(t, params.CaseSensitive, "metadata search ignores case by default")
+}
+
+func TestSearchMetadataHandler_ForwardsSearchExpr(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	dist := newSearchMetadataTestDistributor(nil, &params)
+	h := SearchMetadataHandler(dist, enabledSearchConfig(), log.NewNopLogger())
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metadata?search_expr=cpu+AND+NOT+memory&case_sensitive=true"))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, params)
+	assert.Equal(t, "cpu AND NOT memory", params.Expression())
+	assert.True(t, params.CaseSensitive, "an explicit case_sensitive=true is kept")
+	assert.Equal(t, streaminglabelvalues.FuzzAlgWordPrefix, params.FuzzAlg)
+}
+
+func TestSearchMetadataHandler_RejectsInvalidParameters(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	h := SearchMetadataHandler(newSearchMetadataTestDistributor(nil, &params), enabledSearchConfig(), log.NewNopLogger())
+
+	labelNamesCursor, err := encodeSearchCursor(&searchRequest{
+		params: mustNewParams(t, []string{"foo"}, true, streaminglabelvalues.FuzzAlgSubstring, 100),
+		hints:  &storage.SearchHints{OrderBy: storage.OrderByValueAsc},
+		limit:  1, batchSize: searchDefaultBatchSize,
+	}, "a", 0)
+	require.NoError(t, err)
+	wordPrefixCursorWithLabel, err := encodeSearchCursor(&searchRequest{
+		params: mustNewParams(t, []string{"foo"}, true, streaminglabelvalues.FuzzAlgWordPrefix, 0),
+		hints:  &storage.SearchHints{OrderBy: storage.OrderByValueAsc},
+		limit:  1, batchSize: searchDefaultBatchSize, labelName: "env",
+	}, "a", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		query   string
+		wantErr string
+	}{
+		{query: "", wantErr: "a search[] or search_expr parameter is required"},
+		{query: "search_expression=cpu", wantErr: "a search[] or search_expr parameter is required"},
+		{query: "search[]=cpu&match[]=up", wantErr: `parameter "match[]" is not supported by metadata search`},
+		{query: "search[]=cpu&start=0", wantErr: `parameter "start" is not supported by metadata search`},
+		{query: "search[]=cpu&end=0", wantErr: `parameter "end" is not supported by metadata search`},
+		{query: "search[]=cpu&label=env", wantErr: `parameter "label" is not supported by metadata search`},
+		{query: "search[]=cpu&include_metadata=true", wantErr: `parameter "include_metadata" is not supported by metadata search`},
+		{query: "search[]=cpu&include_score=true", wantErr: `parameter "include_score" is not supported by metadata search`},
+		{query: "search[]=cpu&fuzz_alg=substring", wantErr: `parameter "fuzz_alg" is not supported by metadata search`},
+		{query: "search[]=cpu&fuzz_threshold=100", wantErr: `parameter "fuzz_threshold" is not supported by metadata search`},
+		{query: "search[]=cpu&sort_by=score", wantErr: "sort_by=score is not supported by metadata search; every match scores 1.0, use sort_by=alpha"},
+		{query: "cursor=" + labelNamesCursor, wantErr: "invalid cursor: it was not created by this endpoint"},
+		{query: "cursor=" + wordPrefixCursorWithLabel, wantErr: "invalid cursor: it was not created by this endpoint"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metadata?"+tc.query))
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			lines := drainNDJSON(t, w.Body.String())
+			require.Len(t, lines, 1)
+			assert.Equal(t, tc.wantErr, lines[0]["error"])
+		})
+	}
+	assert.Nil(t, params, "no rejected request may reach the distributor")
+}
+
+func TestSearchMetadataHandler_RejectsMultipleTenants(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	h := SearchMetadataHandler(newSearchMetadataTestDistributor(nil, &params), enabledSearchConfig(), log.NewNopLogger())
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/search/metadata?search[]=cpu", nil)
+	r = r.WithContext(user.InjectOrgID(r.Context(), "tenant-a|tenant-b"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Nil(t, params)
+}
+
+func TestSearchMetadataHandler_FlagOff_Returns404(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	h := SearchMetadataHandler(newSearchMetadataTestDistributor(nil, &params), Config{ExperimentalSearchAPIEnabled: false}, log.NewNopLogger())
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metadata?search[]=cpu"))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Nil(t, params)
+}
+
+func TestSearchMetadataHandler_CursorPagination(t *testing.T) {
+	var params *streaminglabelvalues.Params
+	dist := newSearchMetadataTestDistributor([]string{"cpu_seconds_total", "disk_io_time"}, &params)
+	h := SearchMetadataHandler(dist, enabledSearchConfig(), log.NewNopLogger())
+
+	names, cursor, hasMore, _ := fetchSearchPage(t, h, "/api/v1/search/metadata?search[]=time&limit=1")
+	assert.Equal(t, []string{"cpu_seconds_total"}, names)
+	require.True(t, hasMore)
+	require.NotEmpty(t, cursor)
+
+	names, cursor, hasMore, _ = fetchSearchPage(t, h, "/api/v1/search/metadata?cursor="+cursor)
+	assert.Equal(t, []string{"disk_io_time"}, names)
+	assert.False(t, hasMore)
+	assert.Empty(t, cursor)
+	assert.Equal(t, []string{"time"}, params.Terms, "the cursor carries the search terms")
+	assert.Equal(t, streaminglabelvalues.FuzzAlgWordPrefix, params.FuzzAlg)
+	assert.False(t, params.CaseSensitive)
+}
+
+func TestSearchHandlers_RejectMetadataSearchCursor(t *testing.T) {
+	cursor, err := encodeSearchCursor(&searchRequest{
+		params: mustNewParams(t, []string{"ratio"}, false, streaminglabelvalues.FuzzAlgWordPrefix, 0),
+		hints:  &storage.SearchHints{OrderBy: storage.OrderByValueAsc},
+		limit:  1, batchSize: searchDefaultBatchSize,
+	}, "a", 0)
+	require.NoError(t, err)
+
+	for _, endpoint := range []searchEndpoint{searchEndpointMetricNames, searchEndpointLabelNames} {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor)
+		_, err := parseSearchRequest(r, endpoint)
+		require.EqualError(t, err, "invalid cursor: it was not created by this endpoint", "endpoint %d", endpoint)
+	}
 }

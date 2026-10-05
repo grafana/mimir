@@ -62,6 +62,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Search metric names](#search-metric-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/metric_names` |
 | [Search label names](#search-label-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/label_names` |
 | [Search label values](#search-label-values) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/label_values` |
+| [Search metadata](#search-metadata) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/metadata` |
 | [Get metric metadata](#get-metric-metadata) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
 | [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
 | [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
@@ -712,10 +713,10 @@ The query-frontend can return a stale response fetched from the query results ca
 The streaming search API is an [experimental feature](../../configure/about-versioning/#experimental-features).
 {{< /admonition >}}
 
-The streaming search API provides three endpoints that return metric names, label names, and label values matching optional fuzzy search terms and series selectors.
+The streaming search API provides endpoints that return metric names, label names, and label values matching fuzzy search terms and series selectors, and metric names whose name and metadata help text match search terms.
 Unlike the [get label names](#get-label-names) and [get label values](#get-label-values) endpoints, which buffer the full result set and respond with a single JSON document, the search endpoints stream their results as [newline-delimited JSON (NDJSON)](https://github.com/ndjson/ndjson-spec): the response is a sequence of JSON objects separated by newlines, allowing a client to begin processing results before the request completes.
 
-These endpoints mirror the experimental search API proposed in Prometheus [pull request #18573](https://github.com/prometheus/prometheus/pull/18573).
+These endpoints mirror the experimental search API proposed in Prometheus [pull request #18573](https://github.com/prometheus/prometheus/pull/18573), except `search/metadata`, which only Mimir provides.
 
 These endpoints are disabled by default.
 To enable them, set the `-querier.experimental-search-api-enabled` CLI flag (or its respective YAML configuration option) to `true`.
@@ -751,13 +752,34 @@ GET,POST <prometheus-http-prefix>/api/v1/search/label_values
 
 Returns the values of a single label, named by the mandatory `label` parameter, matching the request's [query parameters](#search-query-parameters).
 
+#### Search metadata
+
+```bash
+GET,POST <prometheus-http-prefix>/api/v1/search/metadata
+```
+
+Returns the metric names whose name and metadata help text, searched together, match the request's `search[]` or `search_expr`, together with the metric's `type`, `help`, and `unit` metadata. Each term can match in the name or in the help text: for example, `ingester AND ratio` matches a metric that has `ingester` only in its name and `ratio` only in its help text. A negated term excludes a metric when it matches in either.
+
+Metadata is served only by ingesters, as described in [search metric names](#search-metric-names), so this endpoint searches only the metadata that ingesters hold.
+
+A term matches when it occurs at the start of a word in the name or the help text: at the start of the text, or after a character that isn't a letter or a digit, such as a space or `_`. For example, `ratio` matches `Compression ratio`, `ratios`, and `cortex_compression_ratio`, but not `Duration`, `operations`, or `cortex_sync_duration_seconds`. A term that doesn't start with a letter or a digit matches at any position. Negated `search_expr` terms use the same rule.
+
+This endpoint accepts a subset of the [query parameters](#search-query-parameters):
+
+- One of `search[]` or `search_expr` is mandatory.
+- `case_sensitive` defaults to `false`.
+- `match[]`, `start`, `end`, `label`, `include_metadata`, `include_score`, `fuzz_alg`, `fuzz_threshold`, and `sort_by=score` aren't supported. A request that has one of them returns an HTTP 400.
+- A request for more than one tenant returns an HTTP 400.
+
+To get the metadata of all metrics, use the [get metric metadata](#get-metric-metadata) endpoint.
+
 #### Search query parameters
 
 All three endpoints accept the following parameters, supplied either as URL query parameters (`GET`) or as a URL-encoded form body (`POST`).
 
 - **label** - _mandatory for `search/label_values` only; not used by the other endpoints_ - the name of the label whose values are returned.
-- **search[]** - _optional_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. When no term is supplied, all candidates that match the other parameters are returned. Mutually exclusive with `search_expr`; supplying both returns an HTTP 400.
-- **search_expr** - _optional_ - a boolean search expression over search terms, as an alternative to `search[]`. `NOT` binds most tightly, followed by `AND`, then `OR`; parentheses override precedence. Operators are case-insensitive. Quote a term with `"` when it contains whitespace or is the literal text `AND`, `OR`, or `NOT`; within quotes, `\` escapes the next byte. Every accepting path must contain a positive term, so exclusion-only expressions such as `NOT deprecated` are rejected. Positive terms use the configured fuzzy algorithm, while negated terms exclude literal substring matches and do not affect the relevance score. Expressions are limited to 4096 bytes, 32 terms, and 16 nested `NOT` operators or parenthesized groups. Mutually exclusive with `search[]`; supplying both returns an HTTP 400.
+- **search[]** - _mandatory for `search/metric_names` and `search/label_names` unless `search_expr` is supplied; optional for `search/label_values`_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. Empty terms are rejected with an HTTP 400. A `search/metric_names` or `search/label_names` request that has neither `search[]` nor `search_expr` returns an HTTP 400. For `search/label_values`, when no term is supplied, all values that match the other parameters are returned. Mutually exclusive with `search_expr`; supplying both returns an HTTP 400.
+- **search_expr** - _mandatory for `search/metric_names` and `search/label_names` unless `search[]` is supplied; optional for `search/label_values`_ - a boolean search expression over search terms, as an alternative to `search[]`. `NOT` binds most tightly, followed by `AND`, then `OR`; parentheses override precedence. Operators are case-insensitive. Quote a term with `"` when it contains whitespace or is the literal text `AND`, `OR`, or `NOT`; within quotes, `\` escapes the next byte. Every accepting path must contain a positive term, so exclusion-only expressions such as `NOT deprecated` are rejected. Positive terms use the configured fuzzy algorithm, while negated terms exclude literal substring matches and do not affect the relevance score. Expressions are limited to 4096 bytes, 32 terms, and 16 nested `NOT` operators or parenthesized groups. Mutually exclusive with `search[]`; supplying both returns an HTTP 400.
 - **match[]** - _optional_ - a PromQL series selector that restricts the candidates to those present in matching series. Repeat the parameter to supply multiple selectors, which are combined with `OR` semantics.
 - **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
 - **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
@@ -770,7 +792,7 @@ All three endpoints accept the following parameters, supplied either as URL quer
 - **limit** - _optional_ - the maximum number of results to return. Defaults to `100`. A value of `0` means no limit. The effective limit can be further reduced by the `-querier.max-label-names-limit` and `-querier.max-label-values-limit` per-tenant limits; when this happens, a warning is included in the response trailer.
 - **batch_size** - _optional_ - the maximum number of results carried in each streamed NDJSON batch. Defaults to `100`, and must not exceed `10000`. This parameter controls only the response framing, not the total number of results.
 - **include_score** - _optional_ - whether to include the relevance `score` of each result in the response. Defaults to `false`.
-- **include_metadata** - _optional_ - whether to attach metric metadata (`type`, `help`, and `unit`) to each result. Only meaningful for the `search/metric_names` endpoint; ignored by the others. Defaults to `false`.
+- **include_metadata** - _optional_ - whether to attach metric metadata (`type`, `help`, and `unit`) to each result. Only meaningful for the `search/metric_names` endpoint; ignored by `search/label_names` and `search/label_values`, and rejected by `search/metadata`, which always attaches metadata. Defaults to `false`.
 
 #### Search response format
 
@@ -789,7 +811,7 @@ For the `search/label_values` endpoint, each result uses a `value` key instead o
 { "results": [{ "value": "prometheus" }, { "value": "node" }] }
 ```
 
-When `include_score=true`, each result also carries a `score` field. When `include_metadata=true` on the `search/metric_names` endpoint, each result can also carry `type`, `help`, and `unit` fields.
+When `include_score=true`, each result also carries a `score` field. When `include_metadata=true` on the `search/metric_names` endpoint, and always on the `search/metadata` endpoint, each result can also carry `type`, `help`, and `unit` fields.
 
 The stream always ends with a single trailer object reporting the final status:
 

@@ -204,11 +204,11 @@ func TestIngesterSearchMetricsMetadata(t *testing.T) {
 		limit       int64
 		want        []string
 	}{
-		{name: "no filter returns all names", want: []string{"cpu_seconds_total", "disk_io_time", "memory_bytes"}},
 		{name: "substring 'memory' matches HELP text", filterTerms: []string{"memory"}, want: []string{"memory_bytes"}},
 		{name: "case-insensitive 'cpu' matches HELP text", filterTerms: []string{"cpu"}, caseInsens: true, want: []string{"cpu_seconds_total"}},
-		{name: "limit 1", limit: 1, want: []string{"cpu_seconds_total"}},
-		{name: "value desc", ordering: client.ORDER_BY_VALUE_DESC, want: []string{"memory_bytes", "disk_io_time", "cpu_seconds_total"}},
+		{name: "term in every HELP text returns all names", filterTerms: []string{"e"}, want: []string{"cpu_seconds_total", "disk_io_time", "memory_bytes"}},
+		{name: "limit 1", filterTerms: []string{"e"}, limit: 1, want: []string{"cpu_seconds_total"}},
+		{name: "value desc", filterTerms: []string{"e"}, ordering: client.ORDER_BY_VALUE_DESC, want: []string{"memory_bytes", "disk_io_time", "cpu_seconds_total"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -247,6 +247,83 @@ func TestIngesterSearchMetricsMetadataRejectsScoreOrderingAsInvalidArgument(t *t
 	assert.Equal(t, codes.InvalidArgument, st.Code(), "ORDER_BY_SCORE_DESC must be rejected as codes.InvalidArgument")
 }
 
+func TestIngesterSearchMetricsMetadataWordPrefix(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "compression_ratio", Help: "Compression ratio of requests.", Type: mimirpb.HISTOGRAM},
+		{MetricFamilyName: "discarded_series_ratio", Help: "Ratio of dropped series in the ingester.", Type: mimirpb.HISTOGRAM},
+		{MetricFamilyName: "sync_duration_seconds", Help: "Duration of the sync operations.", Type: mimirpb.HISTOGRAM},
+	})
+
+	tests := map[string]struct {
+		filter *client.SearchFilter
+		want   []string
+	}{
+		"term matches only at the start of a word": {
+			filter: &client.SearchFilter{Terms: []string{"ratio"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"compression_ratio", "discarded_series_ratio"},
+		},
+		"case-sensitive term matches only the same case": {
+			filter: &client.SearchFilter{Terms: []string{"Ratio"}, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"discarded_series_ratio"},
+		},
+		"AND of two words": {
+			filter: &client.SearchFilter{Expression: "ingester AND ratio", CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"discarded_series_ratio"},
+		},
+		"term matches a word in the metric name": {
+			filter: &client.SearchFilter{Terms: []string{"seconds"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"sync_duration_seconds"},
+		},
+		"AND across name and HELP": {
+			filter: &client.SearchFilter{Expression: "compression AND requests", CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"compression_ratio"},
+		},
+		"NOT excludes a word found only in the name": {
+			filter: &client.SearchFilter{Expression: "ratio AND NOT discarded", CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_WORD_PREFIX},
+			want:   []string{"compression_ratio"},
+		},
+		"substring matches inside words": {
+			filter: &client.SearchFilter{Terms: []string{"ratio"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSTRING},
+			want:   []string{"compression_ratio", "discarded_series_ratio", "sync_duration_seconds"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &mockSearchMetricsMetadataStream{ctx: ctx}
+			require.NoError(t, i.SearchMetricsMetadata(&client.SearchMetricsMetadataRequest{Filter: tc.filter}, s))
+			assert.Equal(t, tc.want, collectSearchMetricsMetadataValues(s))
+		})
+	}
+}
+
+func TestIngesterSearchMetricsMetadataRejectsMissingSearchTermsAsInvalidArgument(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	pushMetadataToIngester(ctx, t, i, []*mimirpb.MetricMetadata{
+		{MetricFamilyName: "cpu_seconds_total", Help: "Total CPU time", Type: mimirpb.COUNTER},
+	})
+
+	tests := map[string]*client.SearchFilter{
+		"nil filter":            nil,
+		"empty filter":          {},
+		"resume cursor only":    {ResumeAfter: "a"},
+		"case insensitive only": {CaseInsensitive: true},
+	}
+	for name, filter := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &mockSearchMetricsMetadataStream{ctx: ctx}
+			err := i.SearchMetricsMetadata(&client.SearchMetricsMetadataRequest{Filter: filter}, s)
+			st, ok := grpcutil.ErrorToStatus(err)
+			require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+			assert.Equal(t, "metric metadata search requires search terms or an expression", st.Message())
+			assert.Empty(t, collectSearchMetricsMetadataValues(s))
+		})
+	}
+}
+
 // TestIngesterSearchMetricsMetadataWithNoMetadataReturnsEmptyStream covers
 // the case where getUserMetadata(userID) returns nil because the tenant has
 // pushed series but no metadata yet: this must behave identically to a
@@ -259,7 +336,7 @@ func TestIngesterSearchMetricsMetadataWithNoMetadataReturnsEmptyStream(t *testin
 	ctx := user.InjectOrgID(context.Background(), "test")
 	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
 
-	req := &client.SearchMetricsMetadataRequest{}
+	req := &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"metric"}}}
 	s := &mockSearchMetricsMetadataStream{ctx: ctx}
 	require.NoError(t, i.SearchMetricsMetadata(req, s))
 	assert.Empty(t, collectSearchMetricsMetadataValues(s))
@@ -280,7 +357,7 @@ func TestIngesterSearchMetricsMetadataResumeCursorPagination(t *testing.T) {
 		{MetricFamilyName: "metric_d", Help: "delta help", Type: mimirpb.COUNTER},
 	})
 
-	fullReq := &client.SearchMetricsMetadataRequest{}
+	fullReq := &client.SearchMetricsMetadataRequest{Filter: &client.SearchFilter{Terms: []string{"help"}}}
 	fullStream := &mockSearchMetricsMetadataStream{ctx: ctx}
 	require.NoError(t, i.SearchMetricsMetadata(fullReq, fullStream))
 	want := collectSearchMetricsMetadataValues(fullStream)
@@ -290,7 +367,7 @@ func TestIngesterSearchMetricsMetadataResumeCursorPagination(t *testing.T) {
 	resumeAfter := ""
 	for {
 		req := &client.SearchMetricsMetadataRequest{
-			Filter: &client.SearchFilter{ResumeAfter: resumeAfter},
+			Filter: &client.SearchFilter{Terms: []string{"help"}, ResumeAfter: resumeAfter},
 			Limit:  1,
 		}
 		s := &mockSearchMetricsMetadataStream{ctx: ctx}

@@ -252,7 +252,8 @@ type cursorMatcher struct {
 // fuzzAlgToCursorString and cursorStringToFuzzAlg convert between
 // streaminglabelvalues.FuzzAlg and the same string vocabulary
 // parseSearchRequest already accepts on fuzz_alg, so a cursor's encoding is
-// exactly what a client could have typed.
+// exactly what a client could have typed. The exception is word_prefix: only
+// metadata search uses it, and a client cannot set it.
 func fuzzAlgToCursorString(alg streaminglabelvalues.FuzzAlg) string {
 	switch alg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
@@ -261,6 +262,8 @@ func fuzzAlgToCursorString(alg streaminglabelvalues.FuzzAlg) string {
 		return "substring_left"
 	case streaminglabelvalues.FuzzAlgSubstring:
 		return "substring"
+	case streaminglabelvalues.FuzzAlgWordPrefix:
+		return "word_prefix"
 	default:
 		return "subsequence"
 	}
@@ -276,6 +279,8 @@ func cursorStringToFuzzAlg(s string) (streaminglabelvalues.FuzzAlg, error) {
 		return streaminglabelvalues.FuzzAlgSubstringLeft, nil
 	case "substring":
 		return streaminglabelvalues.FuzzAlgSubstring, nil
+	case "word_prefix":
+		return streaminglabelvalues.FuzzAlgWordPrefix, nil
 	default:
 		return 0, fmt.Errorf("invalid fuzz_alg %q in cursor", s)
 	}
@@ -386,18 +391,51 @@ func decodeSearchCursor(raw string) (*searchCursor, error) {
 	return &c, nil
 }
 
+// searchEndpoint selects the endpoint-specific rules that parseSearchRequest
+// and toSearchRequest apply.
+type searchEndpoint int
+
+const (
+	searchEndpointMetricNames searchEndpoint = iota
+	searchEndpointLabelNames
+	searchEndpointLabelValues
+	searchEndpointMetadata
+)
+
+func (e searchEndpoint) requiresLabelName() bool {
+	return e == searchEndpointLabelValues
+}
+
+// requiresSearch is true for the endpoints where a search[] term or
+// search_expr is mandatory, so a misspelt search parameter fails instead of
+// silently listing every candidate.
+func (e searchEndpoint) requiresSearch() bool {
+	return e != searchEndpointLabelValues
+}
+
 // toSearchRequest rebuilds a *searchRequest from a decoded cursor, routing
 // every field through the same validation a fresh request would use
 // (NewParams/NewExpressionParams, parseSortOrder, limit/batch_size bounds),
 // so a malformed or hand-crafted cursor fails the same way a bad request
 // would. Cursors are unsigned, so any client can hand-craft one; every
 // field must be validated here rather than trusted.
-func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, error) {
+func (c *searchCursor) toSearchRequest(endpoint searchEndpoint) (*searchRequest, error) {
 	alg, err := cursorStringToFuzzAlg(c.FuzzAlg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Only metadata search uses word-prefix matching, and it has no matchers,
+	// label, score or metadata flag, so a cursor from metadata search and a
+	// cursor from another endpoint cannot be swapped.
+	isMetadata := endpoint == searchEndpointMetadata
+	if (alg == streaminglabelvalues.FuzzAlgWordPrefix) != isMetadata ||
+		isMetadata && (len(c.Matchers) > 0 || c.Label != "" || c.IncludeScore || c.IncludeMetadata || c.SortBy == "score") {
+		return nil, errors.New("invalid cursor: it was not created by this endpoint")
+	}
+	if endpoint.requiresSearch() && len(c.Terms) == 0 && c.Expression == "" {
+		return nil, errors.New("invalid cursor: search terms or an expression are required")
+	}
 	if len(c.Terms) > maxSearchTermsPerRequest {
 		return nil, fmt.Errorf("invalid cursor: too many search terms: got %d, maximum is %d", len(c.Terms), maxSearchTermsPerRequest)
 	}
@@ -451,7 +489,7 @@ func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, e
 		return nil, fmt.Errorf("invalid cursor: %w", err)
 	}
 
-	if requireLabelName && c.Label == "" {
+	if endpoint.requiresLabelName() && c.Label == "" {
 		return nil, errors.New(`invalid cursor: missing required parameter "label"`)
 	}
 	if c.EndMs < c.StartMs {
@@ -482,11 +520,10 @@ func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, e
 	}, nil
 }
 
-// parseSearchRequest reads the HTTP request and builds a searchRequest.
-// requireLabelName is true for the label-values endpoint where the `label`
-// parameter is mandatory. Returns a wrapped error suitable for surfacing as
-// HTTP 400.
-func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest, error) {
+// parseSearchRequest reads the HTTP request and builds a searchRequest,
+// applying the rules of endpoint (see searchEndpoint). Returns a wrapped
+// error suitable for surfacing as HTTP 400.
+func parseSearchRequest(r *http.Request, endpoint searchEndpoint) (*searchRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
@@ -505,7 +542,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		if err != nil {
 			return nil, err
 		}
-		return decoded.toSearchRequest(requireLabelName)
+		return decoded.toSearchRequest(endpoint)
 	}
 
 	// Search terms (search[]). Capped at maxSearchTermsPerRequest to bound
@@ -521,15 +558,35 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	if expr != "" && len(terms) > 0 {
 		return nil, errors.New("search[] and search_expr are mutually exclusive")
 	}
+	if endpoint.requiresSearch() && len(terms) == 0 && expr == "" {
+		return nil, errors.New("a search[] or search_expr parameter is required")
+	}
+	if endpoint == searchEndpointMetadata {
+		// Metadata has no time range and no series, its matching rule is fixed,
+		// and its results always carry metadata, so these parameters are
+		// rejected rather than silently ignored.
+		for _, name := range []string{"match[]", "start", "end", "label", "include_metadata", "include_score", "fuzz_alg", "fuzz_threshold"} {
+			if _, ok := q[name]; ok {
+				return nil, fmt.Errorf("parameter %q is not supported by metadata search", name)
+			}
+		}
+	}
 
-	// Case sensitivity defaults to true per Prometheus URL polarity.
-	caseSensitive, err := parseBoolParam(q, "case_sensitive", true)
+	// Case sensitivity defaults to true per Prometheus URL polarity, except
+	// for metadata search: HELP text is prose, where the first word of a
+	// sentence is capitalised.
+	caseSensitive, err := parseBoolParam(q, "case_sensitive", endpoint != searchEndpointMetadata)
 	if err != nil {
 		return nil, err
 	}
 
-	// Fuzz algorithm (default subsequence).
+	// Fuzz algorithm (default subsequence). Metadata search always matches
+	// terms at the start of a word: a plain substring such as "ratio" also
+	// matches "duration" and "operation" in HELP prose.
 	alg := streaminglabelvalues.FuzzAlgSubsequence
+	if endpoint == searchEndpointMetadata {
+		alg = streaminglabelvalues.FuzzAlgWordPrefix
+	}
 	switch q.Get("fuzz_alg") {
 	case "", "subsequence":
 		// keep default
@@ -582,6 +639,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	// alpha ordering makes sense.
 	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgSubstring {
 		return nil, errors.New("sort_by=score is not supported with fuzz_alg=substring; every match scores 1.0, use sort_by=alpha")
+	}
+	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgWordPrefix {
+		return nil, errors.New("sort_by=score is not supported by metadata search; every match scores 1.0, use sort_by=alpha")
 	}
 	sortDir := q.Get("sort_dir")
 	if sortDir == "" {
@@ -668,7 +728,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 
 	// URL param is "label"; required by the label-values endpoint.
 	labelName := q.Get("label")
-	if requireLabelName && labelName == "" {
+	if endpoint.requiresLabelName() && labelName == "" {
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
@@ -889,7 +949,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointLabelNames)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -928,7 +988,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, true)
+		req, err := parseSearchRequest(r, searchEndpointLabelValues)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -968,7 +1028,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, searchEndpointMetricNames)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -1031,15 +1091,55 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		}
 		env := getSearchEnvelope[searchMetricNameRecord](req, &searchMetricNamePool)
 		defer putSearchEnvelope(env, &searchMetricNamePool, req)
-		streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchMetricNameRecord {
-			rec := searchMetricNameRecord{Name: r.Value}
-			if md := r.Metadata; md != nil {
-				rec.Type = string(md.Type)
-				rec.Help = md.Help
-				rec.Unit = md.Unit
-			}
-			return rec
-		})
+		streamSearchNDJSON(w, rs, req, env, newSearchMetricNameRecord)
+	})
+}
+
+func newSearchMetricNameRecord(r storage.SearchResult) searchMetricNameRecord {
+	rec := searchMetricNameRecord{Name: r.Value}
+	if md := r.Metadata; md != nil {
+		rec.Type = string(md.Type)
+		rec.Help = md.Help
+		rec.Unit = md.Unit
+	}
+	return rec
+}
+
+// SearchMetadataHandler returns the handler for GET/POST /api/v1/search/metadata.
+// It returns the metric names whose name and HELP text, searched together,
+// match the search, with their metadata. Only ingesters hold metadata, so it queries the distributor and
+// not the queryable.
+func SearchMetadataHandler(distributor Distributor, querierCfg Config, logger log.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !querierCfg.ExperimentalSearchAPIEnabled {
+			writeSearchFeatureDisabled(w)
+			return
+		}
+		req, err := parseSearchRequest(r, searchEndpointMetadata)
+		if err != nil {
+			writeSearchBadRequest(w, err)
+			return
+		}
+		ctx := r.Context()
+		// Single tenant only. Federation would need a merge that keeps the
+		// metadata of each tenant apart.
+		if _, err := tenant.TenantID(ctx); err != nil {
+			writeSearchBadRequest(w, err)
+			return
+		}
+
+		rs := distributor.SearchMetricsMetadata(ctx, req.params, req.hints)
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
+		fetch := func(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+			return fetchMetricMetadataFromDistributor(ctx, distributor, names)
+		}
+		// See SearchMetricNamesHandler for why the fetch batch size has a floor.
+		rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetch, max(req.batchSize, searchDefaultBatchSize), logger)
+		defer rs.Close()
+
+		env := getSearchEnvelope[searchMetricNameRecord](req, &searchMetricNamePool)
+		defer putSearchEnvelope(env, &searchMetricNamePool, req)
+		streamSearchNDJSON(w, rs, req, env, newSearchMetricNameRecord)
 	})
 }
 

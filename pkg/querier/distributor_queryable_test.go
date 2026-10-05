@@ -829,10 +829,11 @@ type mockDistributor struct {
 	// tests that need to observe the arguments the distributorQuerier forwards
 	// (e.g. assert minT was clamped). If nil, the corresponding method returns
 	// storage.EmptySearchResultSet.
-	searchLabelNamesFn     func(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
-	searchLabelValuesFn    func(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
-	searchLabelNamesCalls  atomic.Int32
-	searchLabelValuesCalls atomic.Int32
+	searchLabelNamesFn      func(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	searchLabelValuesFn     func(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	searchMetricsMetadataFn func(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet
+	searchLabelNamesCalls   atomic.Int32
+	searchLabelValuesCalls  atomic.Int32
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -905,11 +906,10 @@ func (m *mockDistributor) SearchLabelValues(ctx context.Context, from, to model.
 	return storage.EmptySearchResultSet()
 }
 
-// SearchMetricsMetadata is a compile-time stub: no test in this package
-// exercises the distributor's metadata-search fan-out (that is covered at
-// the pkg/distributor layer); the HTTP handler wiring that would call this
-// through distributorQuerier is a later task.
-func (m *mockDistributor) SearchMetricsMetadata(context.Context, *streaminglabelvalues.Params, *storage.SearchHints) storage.SearchResultSet {
+func (m *mockDistributor) SearchMetricsMetadata(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
+	if m.searchMetricsMetadataFn != nil {
+		return m.searchMetricsMetadataFn(ctx, params, hints)
+	}
 	return storage.EmptySearchResultSet()
 }
 

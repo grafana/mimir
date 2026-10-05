@@ -28,6 +28,16 @@ func (f substringFilter) Accept(value string) (bool, float64) {
 	return false, 0
 }
 
+// recordingFilter accepts every value and records it.
+type recordingFilter struct {
+	seen *[]string
+}
+
+func (f recordingFilter) Accept(value string) (bool, float64) {
+	*f.seen = append(*f.seen, value)
+	return true, 1.0
+}
+
 // newSearchHelpTestMM builds a userMetricsMetadata with no limits, so every
 // add() call below is expected to succeed.
 func newSearchHelpTestMM(t *testing.T) *userMetricsMetadata {
@@ -105,6 +115,21 @@ func TestUserMetricsMetadata_searchHelp(t *testing.T) {
 
 		rs := mm.searchHelp(substringFilter{term: "beta"}, storage.OrderByValueAsc, "", 0)
 		require.Empty(t, collectSearchResults(t, rs))
+	})
+
+	t.Run("filter matches the metric name as well as the HELP text", func(t *testing.T) {
+		mm := newFixture(t)
+		rs := mm.searchHelp(substringFilter{term: "metric_a"}, storage.OrderByValueAsc, "", 0)
+		require.Equal(t, []string{"metric_a"}, collectSearchResults(t, rs))
+	})
+
+	t.Run("filter sees the name and one HELP record joined by a newline", func(t *testing.T) {
+		mm := newSearchHelpTestMM(t)
+		mustAdd(t, mm, "metric_c", "first record")
+		var seen []string
+		rs := mm.searchHelp(recordingFilter{seen: &seen}, storage.OrderByValueAsc, "", 0)
+		require.Equal(t, []string{"metric_c"}, collectSearchResults(t, rs))
+		require.Equal(t, []string{"metric_c\nfirst record"}, seen)
 	})
 
 	t.Run("descending order reverses the result", func(t *testing.T) {

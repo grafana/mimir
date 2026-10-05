@@ -346,9 +346,11 @@ func buildSearchMetricsMetadataRequest(params *streaminglabelvalues.Params, hint
 	return req
 }
 
-// paramsToProto returns nil for nil/empty Params — the ingester treats a
-// nil filter as accept-all. A ResumeAfter-only Params is not empty: a cursor
-// walk with no search[]/search_expr still needs search_after pushed down.
+// paramsToProto returns nil for nil/empty Params. SearchLabelNames and
+// SearchLabelValues on the ingester treat a nil filter as accept-all;
+// SearchMetricsMetadata rejects it. A ResumeAfter-only Params is not empty: a
+// label-values cursor walk with no search[]/search_expr still needs
+// resume_after pushed down.
 func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter {
 	if p == nil || (!p.HasSearchTerms() && p.ResumeAfter == "") {
 		return nil
@@ -368,6 +370,8 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING_LEFT
 	case streaminglabelvalues.FuzzAlgSubstring:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING
+	case streaminglabelvalues.FuzzAlgWordPrefix:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_WORD_PREFIX
 	default:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSEQUENCE
 	}

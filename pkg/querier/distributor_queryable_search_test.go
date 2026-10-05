@@ -170,6 +170,14 @@ func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
 		assert.Equal(t, int32(2), gotReq.Limit, "Limit bounds the response to the number of requested names")
 		assert.Equal(t, int32(1), gotReq.LimitPerMetric, "LimitPerMetric=1 keeps the response small")
 		assert.Empty(t, gotReq.Metric, "the single-name Metric field must not be used") //nolint:staticcheck // Asserting the deprecated field stays unset.
+
+		// Calling the extracted helper directly against the same mock distributor
+		// must agree with the method, proving FetchMetricMetadata is just a thin
+		// wrapper around fetchMetricMetadataFromDistributor and not a parallel
+		// reimplementation that could drift from it.
+		gotFromHelper, err := fetchMetricMetadataFromDistributor(user.InjectOrgID(t.Context(), "user-1"), dist, []string{"a", "b"})
+		require.NoError(t, err)
+		assert.Equal(t, got, gotFromHelper)
 	})
 
 	t.Run("propagates the fetch error", func(t *testing.T) {
