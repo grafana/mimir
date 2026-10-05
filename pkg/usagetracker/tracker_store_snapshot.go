@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -26,8 +28,8 @@ const (
 	// snapshotEncodingVersionV2 adds the total shard count right after the version byte:
 	// [version][num shards][shard][time][tenants...]. The count is a uvarint because it can be
 	// up to 256, which doesn't fit in a single byte (unlike the shard index, which is in [0, 256)).
-	// Recording it lets a load detect a snapshot written with a different shard count and discard
-	// it, instead of mis-routing its series: series are placed by hash % count.
+	// Recording it lets a load detect a snapshot written with a different shard count and re-shard
+	// its series, instead of mis-routing them: series are placed by hash % count.
 	snapshotEncodingVersionV2 = 2
 
 	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
@@ -38,8 +40,7 @@ const (
 //
 // V1 can't express a shard count other than the legacy one, but it is what every usage-tracker
 // already in the field can read, so we keep publishing it while the count is the legacy one.
-// Only a non-legacy count needs V2, and an operator who picks one has already accepted that
-// existing snapshots are discarded.
+// Only a non-legacy count needs V2, which a usage-tracker built before V2 existed can't read.
 func snapshotEncodingVersion(numShards int) byte {
 	if numShards == legacySnapshotNumShards {
 		return snapshotEncodingVersionV1
@@ -117,8 +118,11 @@ func (t *trackerStore) loadSnapshots(shardSnapshots [][]byte, now time.Time) err
 
 // loadSnapshot loads the snapshot data into the tracker.
 // It returns an error if the snapshot is invalid.
-// The method checks if each tenant shard is empty and uses Load() for empty shards (faster)
-// or Put() for non-empty shards (handles concurrent loads and deduplication).
+//
+// A snapshot written with a different shard count than this store's is re-sharded: each series is
+// loaded into the shard that this store's count assigns to it. Every series in a snapshot carries
+// its full hash, so this doesn't lose any of them, and the shard count can change without
+// discarding the snapshots that are already in storage.
 func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
@@ -135,29 +139,26 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("invalid snapshot format, shard count expected: %w", err)
 		}
+		if snapshotNumShards == 0 || snapshotNumShards > tenantshard.MaxNumShards {
+			return fmt.Errorf("invalid snapshot format, shard count %d out of bounds", snapshotNumShards)
+		}
 	default:
-		// A snapshot written by a newer binary, or a corrupt one. We can't safely interpret it,
-		// so we discard it rather than failing startup: the state is rebuilt from events.
-		level.Warn(t.logger).Log("msg", "discarding snapshot with unsupported encoding version", "version", version, "supported_versions", fmt.Sprintf("%d, %d", snapshotEncodingVersionV1, snapshotEncodingVersionV2))
-		return nil
-	}
-	if snapshotNumShards != uint64(t.numShards) {
-		// The snapshot was written with a different shard count. Series were placed by
-		// hash % snapshotNumShards, so loading them under hash % t.numShards would route
-		// them to the wrong shards. Discard rather than corrupt; events will rebuild state.
-		level.Warn(t.logger).Log("msg", "discarding snapshot written with a different shard count", "snapshot_shards", snapshotNumShards, "configured_shards", t.numShards)
-		return nil
+		return fmt.Errorf("unexpected snapshot version %d", version)
 	}
 
 	shard := snapshot.Byte()
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, shard expected: %w", err)
 	}
-	if int(shard) >= t.numShards {
-		// Defensive: the shard count matched but the index is out of range, which means the
-		// snapshot is inconsistent. Discard it rather than indexing out of bounds.
-		level.Warn(t.logger).Log("msg", "discarding snapshot with out-of-bounds shard index", "shard", shard, "configured_shards", t.numShards)
-		return nil
+	if uint64(shard) >= snapshotNumShards {
+		return fmt.Errorf("invalid snapshot format, shard %d out of bounds", shard)
+	}
+
+	// The series of a snapshot written with our shard count all belong to the same shard of ours.
+	// Otherwise, they have to be re-sharded.
+	reshard := snapshotNumShards != uint64(t.numShards)
+	if reshard {
+		level.Debug(t.logger).Log("msg", "re-sharding snapshot written with a different shard count", "shard", shard, "snapshot_shards", snapshotNumShards, "configured_shards", t.numShards)
 	}
 
 	snapshotTime := time.Unix(int64(snapshot.Be64()), 0)
@@ -176,6 +177,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	// Some series might have been right on the boundary of being evicted when we took the snapshot.
 	// Don't load them.
 	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
+	shardMask := t.shardMask()
 
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
@@ -187,11 +189,6 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		seriesLen := int(snapshot.Uvarint64())
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("failed to read series len: %w", err)
-		}
-
-		type refTimestamp struct {
-			Ref       uint64
-			Timestamp clock.Minutes
 		}
 
 		refs := make([]refTimestamp, 0, seriesLen)
@@ -213,26 +210,51 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		}
 
 		tenant := t.getOrCreateTenant(tenantID)
-		m := tenant.shards[shard]
-		m.Lock()
-		// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
-		m.EnsureCapacity(uint32(len(refs)))
-
-		// Check if the shard is empty. If it is, we can use the faster Load() method
-		// which doesn't check for duplicates. Otherwise, use Put() which handles
-		// concurrent loads and deduplication.
-		if m.Count() == 0 {
-			for _, ref := range refs {
-				m.Load(ref.Ref, ref.Timestamp)
-			}
-			tenant.series.Add(uint64(len(refs)))
+		if !reshard {
+			loadSnapshotSeries(tenant, shard, refs)
 		} else {
-			for _, ref := range refs {
-				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+			// Group the series by our shard, and load each group into its shard.
+			slices.SortFunc(refs, func(a, b refTimestamp) int { return cmp.Compare(a.Ref&shardMask, b.Ref&shardMask) })
+			i0 := 0
+			for i := 1; i <= len(refs); i++ {
+				// Load series if shard changes on the next element or if we're at the end of series.
+				if s := refs[i0].Ref & shardMask; i == len(refs) || s != refs[i].Ref&shardMask {
+					loadSnapshotSeries(tenant, uint8(s), refs[i0:i])
+					i0 = i
+				}
 			}
 		}
-		m.Unlock()
 		tenant.RUnlock()
 	}
 	return nil
+}
+
+type refTimestamp struct {
+	Ref       uint64
+	Timestamp clock.Minutes
+}
+
+// loadSnapshotSeries loads refs, which all belong to shard, into that shard of tenant.
+// It checks if the shard is empty and uses Load() for an empty shard (faster)
+// or Put() for a non-empty one (handles concurrent loads and deduplication).
+func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp) {
+	m := tenant.shards[shard]
+	m.Lock()
+	defer m.Unlock()
+	// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
+	m.EnsureCapacity(uint32(len(refs)))
+
+	// Check if the shard is empty. If it is, we can use the faster Load() method
+	// which doesn't check for duplicates. Otherwise, use Put() which handles
+	// concurrent loads and deduplication.
+	if m.Count() == 0 {
+		for _, ref := range refs {
+			m.Load(ref.Ref, ref.Timestamp)
+		}
+		tenant.series.Add(uint64(len(refs)))
+	} else {
+		for _, ref := range refs {
+			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+		}
+	}
 }

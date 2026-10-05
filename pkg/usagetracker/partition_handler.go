@@ -141,7 +141,7 @@ func newPartitionHandler(
 
 		snapshotsKafkaWriter: snapshotsKafkaWriter,
 		snapshotsBucket:      snapshotsBucket,
-		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, cfg.NumShards),
+		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, newShard.NumShards()),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 

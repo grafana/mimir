@@ -162,6 +162,51 @@ func TestPartitionHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("snapshot is loaded after the shard count changes", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 0 // no limit.
+
+		const otherNumShards = 2 * shards
+		// Enough series to have some in every shard of every count used below.
+		series := make([]uint64, 4*otherNumShards)
+		for i := range series {
+			series[i] = uint64(i)
+		}
+
+		// First partitionHandler has the default shard count, so it publishes a v1 snapshot.
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requireTrackSeries(t, ph, tenantID, slices.Clone(series), noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, slices.Clone(series)})
+		require.NoError(t, ph.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+
+		// Change the shard count, then change it back, as a rollback of the change would.
+		for _, numShards := range []int{otherNumShards, shards} {
+			ph = h.newHandler(t, func(cfg *Config) { cfg.NumShards = numShards })
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: uint64(len(series))})
+
+			// Every loaded series is in the shard where tracking it looks for it, so only the new
+			// series is created.
+			newSeries := uint64(len(series))
+			requireTrackSeries(t, ph, tenantID, append(slices.Clone(series), newSeries), noRejected)
+			h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{newSeries}})
+			series = append(series, newSeries)
+			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: uint64(len(series))})
+
+			require.NoError(t, ph.publishSnapshot(ctx))
+			h.expectEvents(t, expectedSnapshotEvent{})
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+		}
+	})
+
 	t.Run("snapshot is loaded for the correct partition", func(t *testing.T) {
 		t.Parallel()
 
@@ -669,7 +714,7 @@ func (h *partitionHandlerTestHelper) newHandlerForPartitionID(t *testing.T, part
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
 
-	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, newTestShardFactory(), logger, reg)
+	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, newTestShardFactoryWithShards(cfg.NumShards), logger, reg)
 	require.NoError(t, err)
 	return p
 }

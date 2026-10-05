@@ -38,8 +38,8 @@ const noLimit = math.MaxUint64
 // and timer calls should be made from the outside.
 type trackerStore struct {
 	// numShards is the number of shards each tenant is split into, taken from newShard.
-	// It is fixed for the lifetime of the store, and snapshots record it so that snapshots
-	// written with a different shard count can be detected and discarded on load.
+	// It is fixed for the lifetime of the store. Snapshots record it, so that a snapshot
+	// written with a different shard count can be detected and re-sharded on load.
 	numShards int
 
 	mtx           sync.RWMutex
