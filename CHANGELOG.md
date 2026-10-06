@@ -1,7 +1,8 @@
 # Changelog
 
 ## unreleased
-## main / unreleased
+
+## 3.1.7
 
 * [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16791
 
