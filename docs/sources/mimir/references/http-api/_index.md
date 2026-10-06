@@ -743,6 +743,8 @@ Metadata is matched by the exact metric name first, then by the metric family na
 - `_sum` and `_count` for summaries.
 - `_info` for info metrics.
 
+A metric family name that already ends with `_total` or `_info` isn't matched for the same suffix again. For example, `requests_total_total` doesn't get the metadata of a `requests_total` counter.
+
 The returned `type`, `help`, and `unit` describe the metric family, not the individual series. For example, `http_request_duration_seconds_bucket` is reported with type `histogram`. When a metric family has metadata with more than one type, only one of them is used, so a suffixed metric name might not match.
 
 #### Search label names

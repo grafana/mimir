@@ -1265,7 +1265,7 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		assert.False(t, hasType, "a failed metadata fetch leaves enrichment fields absent")
 	})
 
-	// Ported from the Prometheus search API tests (prometheus/prometheus#19824).
+	// Ported from the Prometheus search API tests (prometheus/prometheus#19824, prometheus/prometheus#19910).
 	t.Run("resolves metric family metadata for suffixed metric names", func(t *testing.T) {
 		gauge := metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines."}
 		counter := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"}
@@ -1319,6 +1319,14 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 				stored:   map[string][]metadata.Metadata{"build_info": {info}},
 				matching: map[string]metadata.Metadata{"build_info": info},
 				missing:  []string{"build_info_info"},
+			},
+			{
+				name: "exact metadata for doubled suffix",
+				stored: map[string][]metadata.Metadata{
+					"requests_total_total": {{Type: model.MetricTypeGauge, Help: "Independent gauge."}},
+					"requests_total":       {{Type: model.MetricTypeCounter, Help: "Requests."}},
+				},
+				matching: map[string]metadata.Metadata{"requests_total_total": {Type: model.MetricTypeGauge, Help: "Independent gauge."}},
 			},
 			{
 				// The ingester returns one record per family, so the first one wins.
