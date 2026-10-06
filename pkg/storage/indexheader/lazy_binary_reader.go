@@ -216,7 +216,7 @@ func ensureIndexHeaderOnDisk(
 	)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, localBlockDir, requiredVersion); err != nil {
+	if err := buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, requiredVersion, headers, logger); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
