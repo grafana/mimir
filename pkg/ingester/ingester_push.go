@@ -541,8 +541,8 @@ type pushSink struct {
 	startAppend        time.Time
 	activeSeries       *activeseries.ActiveSeries
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx    tsdb.IndexReader
-	isOTLP bool
+	idx := mustIndex(i.getTSDB(userID).Head())
+	defer idx.Close()
 
 	outOfOrderWindow                 time.Duration
 	minAppendTimeAvailable           bool

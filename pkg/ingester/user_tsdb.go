@@ -94,8 +94,10 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
-	cfg            *Config
-	db             tenantEngine
+	cfg *Config
+	db  tenantEngine
+	// The directory of the tenant's data, whatever the engine keeps in it.
+	dir            string
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
