@@ -208,10 +208,6 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 	}
 }
 
-func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
-	return u.db.Appender(ctx)
-}
-
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
 	return u.db.Querier(mint, maxt)
