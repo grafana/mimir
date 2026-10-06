@@ -246,14 +246,11 @@ local blockBuilderBaseContainerEnv = env {
   block_builder_container+:: { image: 'block-builder-sentinel' },
   block_builder_scheduler_container+:: { image: 'block-builder-scheduler-sentinel' },
 };
-assert std.all([
-  d.spec.template.spec.containers[0].image == 'block-builder-sentinel'
-  for d in std.objectValues(blockBuilderBaseContainerEnv.block_builder_deployments)
-]) : 'expected a block_builder_container patch to propagate into every compartment block-builder';
-assert std.all([
-  s.spec.template.spec.containers[0].image == 'block-builder-scheduler-sentinel'
-  for s in std.objectValues(blockBuilderBaseContainerEnv.block_builder_scheduler_statefulsets)
-]) : 'expected a block_builder_scheduler_container patch to propagate into every compartment scheduler';
+local containerImages(resources) = std.set([resources[c].spec.template.spec.containers[0].image for c in std.objectFields(resources)]);
+assert containerImages(blockBuilderBaseContainerEnv.block_builder_deployments) == ['block-builder-sentinel'] :
+       'expected a block_builder_container patch to propagate into every compartment block-builder';
+assert containerImages(blockBuilderBaseContainerEnv.block_builder_scheduler_statefulsets) == ['block-builder-scheduler-sentinel'] :
+       'expected a block_builder_scheduler_container patch to propagate into every compartment scheduler';
 assert std.member(
   blockBuilderBaseContainerEnv.block_builder_scheduler_statefulsets.compartment_1.spec.template.spec.containers[0].args,
   '-block-builder-scheduler.consumer-group=block-builder-rc-1',
