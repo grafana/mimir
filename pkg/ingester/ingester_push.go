@@ -396,7 +396,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		activeSeries = db.activeSeries
 	}
 
-	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
+	minAppendTime, minAppendTimeAvailable := db.Head().OldestAppendableTime()
 
 	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
 		userID,

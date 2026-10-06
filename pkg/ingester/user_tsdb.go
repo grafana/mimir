@@ -295,7 +295,7 @@ func (u *userTSDB) setClosingState() {
 //
 // The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
 // in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
-func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) error {
+func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
@@ -308,53 +308,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	// Compact the TSDB head.
-	h := u.Head()
-	for {
-		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedCompactionMaxTime)
-		if !isValid {
-			break
-		}
-
-		if err := u.db.CompactHead(blockMinTime, blockMaxTime); err != nil {
-			return err
-		}
-
-		// Do not check again if it was the last range.
-		if isLast {
-			break
-		}
-	}
-
-	return u.db.CompactOOOHead(context.Background())
-}
-
-// nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
-// is triggered. If the returned isValid is false, then the returned range should not be compacted.
-func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forcedMaxTime int64) (minTime, maxTime int64, isValid, isLast bool) {
-	// Nothing to compact if the head is empty.
-	if headMinTime == math.MaxInt64 || headMaxTime == math.MinInt64 {
-		return 0, 0, false, true
-	}
-
-	// By default we try to compact the whole head, honoring the forcedMaxTime.
-	minTime = headMinTime
-	maxTime = min(headMaxTime, forcedMaxTime)
-
-	// Due to the forcedMaxTime, the range may be empty. In that case we just skip it.
-	if maxTime < minTime {
-		return 0, 0, false, true
-	}
-
-	// Check whether the head compaction range would span across multiple block ranges.
-	// If so, we break it to honor the block range period.
-	if (minTime/blockDuration)*blockDuration != (maxTime/blockDuration)*blockDuration {
-		// Block max time is exclusive, so we do a -1 here.
-		maxTime = ((minTime/blockDuration)+1)*blockDuration - 1
-		return minTime, maxTime, true, false
-	}
-
-	return minTime, maxTime, true, true
+	return u.db.Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 func (u *userTSDB) PreCreation(metric labels.Labels) error {
@@ -777,37 +731,23 @@ func (u *userTSDB) computeOwnedSeries() int {
 	idx := mustIndex(u.Head())
 	defer idx.Close()
 
-	count := 0
+	count, nonOwned := u.Head().Ownership(u.ownedTokenRanges)
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	// Build the non-owned snapshot as a map directly so the reconciliation in
 	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
 	var nonOwnedRefs map[storage.SeriesRef]struct{}
-	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	if trackNonOwned {
-		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
+		nonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(nonOwned))
 	}
-
-	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		// Fast path: when no token range is owned every series in this batch is non-owned.
-		// activeSeries.Clear() above already handled the active-series side.
-		if allNonOwned {
-			if trackNonOwned {
-				for _, ref := range refs {
-					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
-				}
-			}
-			return
+	for _, ref := range nonOwned {
+		// When no token range is owned, activeSeries.Clear() above already handled the active-series side.
+		if !allNonOwned {
+			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
 		}
-		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
-				count++
-				continue
-			}
-			u.activeSeries.Delete(refs[i], idx)
-			if trackNonOwned {
-				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
-			}
+		if trackNonOwned {
+			nonOwnedRefs[ref] = struct{}{}
 		}
-	})
+	}
 
 	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
 	if trackNonOwned {

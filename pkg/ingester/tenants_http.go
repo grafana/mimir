@@ -93,9 +93,10 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		s.PastGracePeriod = i.limits.PastGracePeriod(t) + i.limits.OutOfOrderTimeWindow(t)
 		s.FutureGracePeriod = i.limits.CreationGracePeriod(t)
 
-		minMillis := db.Head().MinTime()
-		s.MinTime = formatMillisTime(db.Head().MinTime())
-		maxMillis := db.Head().MaxTime()
+		bounds := db.Head().TimeBounds()
+		minMillis := bounds.MinTime
+		s.MinTime = formatMillisTime(bounds.MinTime)
+		maxMillis := bounds.MaxTime
 		s.MaxTime = formatMillisTime(maxMillis)
 
 		if delta := maxMillis - nowMillis; delta > s.FutureGracePeriod.Milliseconds() {
@@ -134,6 +135,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	head := db.db.Head()
+	bounds := head.TimeBounds()
 
 	c := tenantTSDBPageContent{
 		Now:    time.Now(),
@@ -141,14 +143,14 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 
 		Head: tenantTSDBHeadPageContent{
 			NumSeries:  head.NumSeries(),
-			MinTime:    formatMillisTime(head.MinTime()),
-			MaxTime:    formatMillisTime(head.MaxTime()),
-			MinOOOTime: formatMillisTime(head.MinOOOTime()),
-			MaxOOOTime: formatMillisTime(head.MaxOOOTime()),
+			MinTime:    formatMillisTime(bounds.MinTime),
+			MaxTime:    formatMillisTime(bounds.MaxTime),
+			MinOOOTime: formatMillisTime(bounds.MinOOOTime),
+			MaxOOOTime: formatMillisTime(bounds.MaxOOOTime),
 		},
 	}
 
-	if m, ok := head.AppendableMinValidTime(); ok {
+	if m, ok := head.OldestAppendableTime(); ok {
 		c.Head.AppendableMinValidTime = formatMillisTime(m)
 	}
 
