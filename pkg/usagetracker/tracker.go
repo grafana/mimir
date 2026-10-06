@@ -155,7 +155,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
 
-	f.IntVar(&c.TenantshardImplVersion, "usage-tracker.tenantshard-impl-version", tenantshard.DefaultImplVersion, "Implementation of the per-tenant shard map to use. Version 1 keeps a tombstone for every series that the idle-series cleanup removes from a full group. Version 2 keeps one mark per group instead, so the cleanup does not write to the series keys.")
+	f.IntVar(&c.TenantshardImplVersion, "usage-tracker.tenantshard-impl-version", tenantshard.DefaultImplVersion, "Implementation of the per-tenant shard map to use. The only supported version is 2, which keeps one mark per group for the series that the idle-series cleanup removes, so the cleanup does not write to the series keys.")
 
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
 
