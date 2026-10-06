@@ -25,9 +25,31 @@ type bitWriter struct {
 	free  uint8
 }
 
+// sizeClasses are some of the allocation sizes of Go's allocator, which open chunks grow through:
+// every size is a step of a quarter to a half, as few allocations as keep the unused space small.
+var sizeClasses = [...]int{16, 32, 48, 64, 96, 128, 160, 192, 256, 320, 384, 512, 640, 768, 1024, 1280}
+
+// push appends a byte, growing the buffer to the next allocation size: doubling leaves up to half
+// of every open chunk unused, and there is one per series.
+func (w *bitWriter) push(b byte) {
+	if len(w.bytes) == cap(w.bytes) {
+		size := len(w.bytes) + len(w.bytes)/4 + 1
+		for _, class := range sizeClasses {
+			if class >= len(w.bytes)+1 {
+				size = class
+				break
+			}
+		}
+		grown := make([]byte, len(w.bytes), size)
+		copy(grown, w.bytes)
+		w.bytes = grown
+	}
+	w.bytes = append(w.bytes, b)
+}
+
 func (w *bitWriter) bit(value bool) {
 	if w.free == 0 {
-		w.bytes = append(w.bytes, 0)
+		w.push(0)
 		w.free = 8
 	}
 	if value {
@@ -38,11 +60,11 @@ func (w *bitWriter) bit(value bool) {
 
 func (w *bitWriter) byte(value byte) {
 	if w.free == 0 {
-		w.bytes = append(w.bytes, value)
+		w.push(value)
 		return
 	}
 	w.bytes[len(w.bytes)-1] |= value >> (8 - w.free)
-	w.bytes = append(w.bytes, value<<w.free)
+	w.push(value << w.free)
 }
 
 // bits writes the low count bits of value, most significant first, filling the last byte's free
@@ -50,7 +72,7 @@ func (w *bitWriter) byte(value byte) {
 func (w *bitWriter) bits(value uint64, count uint) {
 	for count > 0 {
 		if w.free == 0 {
-			w.bytes = append(w.bytes, 0)
+			w.push(0)
 			w.free = 8
 		}
 		take := min(count, uint(w.free))
