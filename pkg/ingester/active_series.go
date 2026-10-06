@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -157,20 +156,6 @@ func matchAllSeries(matchers []*labels.Matcher) bool {
 		return true
 	}
 	return false
-}
-
-// Get postings for all series in one shard. idx must implement ForEachShardHash.
-func getShardedAllPostings(_ context.Context, head engineHead, shardIndex, shardCount uint64) index.Postings {
-	out := make([]storage.SeriesRef, 0, 128)
-	head.ForEachShardHash(func(ref []storage.SeriesRef, shardHash []uint64) {
-		for i := range ref {
-			if shardHash[i]%shardCount == shardIndex {
-				out = append(out, ref[i])
-			}
-		}
-	})
-	slices.Sort(out) // We don't really need this for usage inside this module, but it's safer to conform to Postings norms.
-	return index.NewListPostings(out)
 }
 
 type ZeroBucketCountPostings struct {

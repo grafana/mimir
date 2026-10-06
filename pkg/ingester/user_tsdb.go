@@ -304,53 +304,7 @@ func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	// Compact the TSDB head.
-	h := u.Head()
-	for {
-		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedCompactionMaxTime)
-		if !isValid {
-			break
-		}
-
-		if err := u.db.CompactHead(blockMinTime, blockMaxTime); err != nil {
-			return err
-		}
-
-		// Do not check again if it was the last range.
-		if isLast {
-			break
-		}
-	}
-
-	return u.db.CompactOOOHead(context.Background())
-}
-
-// nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
-// is triggered. If the returned isValid is false, then the returned range should not be compacted.
-func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forcedMaxTime int64) (minTime, maxTime int64, isValid, isLast bool) {
-	// Nothing to compact if the head is empty.
-	if headMinTime == math.MaxInt64 || headMaxTime == math.MinInt64 {
-		return 0, 0, false, true
-	}
-
-	// By default we try to compact the whole head, honoring the forcedMaxTime.
-	minTime = headMinTime
-	maxTime = min(headMaxTime, forcedMaxTime)
-
-	// Due to the forcedMaxTime, the range may be empty. In that case we just skip it.
-	if maxTime < minTime {
-		return 0, 0, false, true
-	}
-
-	// Check whether the head compaction range would span across multiple block ranges.
-	// If so, we break it to honor the block range period.
-	if (minTime/blockDuration)*blockDuration != (maxTime/blockDuration)*blockDuration {
-		// Block max time is exclusive, so we do a -1 here.
-		maxTime = ((minTime/blockDuration)+1)*blockDuration - 1
-		return minTime, maxTime, true, false
-	}
-
-	return minTime, maxTime, true, true
+	return u.db.Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 func (u *userTSDB) PreCreation(metric labels.Labels) error {
@@ -781,12 +735,12 @@ func (u *userTSDB) computeOwnedSeries() int {
 	if trackNonOwned {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(nonOwned))
 	}
-	// When no token range is owned, deactivateAll() above already handled the active-series side.
-	if !allNonOwned {
-		u.deactivateSeries(nonOwned)
-	}
-	if trackNonOwned {
-		for _, ref := range nonOwned {
+	for _, ref := range nonOwned {
+		// When no token range is owned, activeSeries.Clear() above already handled the active-series side.
+		if !allNonOwned {
+			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
+		}
+		if trackNonOwned {
 			nonOwnedRefs[ref] = struct{}{}
 		}
 	}
