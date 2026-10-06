@@ -27,8 +27,9 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## 6.2.1 / unreleased
+## 6.2.1
 
+* [CHANGE] Upgrade Mimir to [3.2.1](https://github.com/grafana/mimir/blob/release-3.2/CHANGELOG.md). #16803
 * [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
 
 ## 6.2.0
