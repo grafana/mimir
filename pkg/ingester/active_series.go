@@ -159,7 +159,7 @@ func matchAllSeries(matchers []*labels.Matcher) bool {
 }
 
 // Get postings for all series in one shard. idx must implement ForEachShardHash.
-func getShardedAllPostings(_ context.Context, head *tsdb.Head, shardIndex, shardCount uint64) index.Postings {
+func getShardedAllPostings(_ context.Context, head engineHead, shardIndex, shardCount uint64) index.Postings {
 	out := make([]storage.SeriesRef, 0, 128)
 	head.ForEachShardHash(func(ref []storage.SeriesRef, shardHash []uint64) {
 		for i := range ref {
