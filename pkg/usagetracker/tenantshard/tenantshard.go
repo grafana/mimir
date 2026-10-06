@@ -3,9 +3,9 @@
 // Package tenantshard holds the map implementations that store the series of one tenant shard,
 // together with the interface the usage-tracker store uses to talk to them.
 //
-// There are two implementations, selected at runtime by the usage-tracker configuration:
-// v1 keeps tombstones for the series that idle-series cleanup removes, while v2 keeps one
-// spillmark per group instead, so cleanup never writes to the keys array.
+// The implementation is selected at runtime by the usage-tracker configuration. The only one left
+// is v2, which keeps one spillmark per group for the series that idle-series cleanup removes, so
+// cleanup never writes to the keys array.
 package tenantshard
 
 import (
@@ -16,7 +16,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
-	v1 "github.com/grafana/mimir/pkg/usagetracker/tenantshard/v1"
 	v2 "github.com/grafana/mimir/pkg/usagetracker/tenantshard/v2"
 )
 
@@ -37,7 +36,7 @@ const (
 	MaxNumShards = 256
 
 	// DefaultImplVersion is the implementation used unless it is configured otherwise.
-	DefaultImplVersion = 1
+	DefaultImplVersion = 2
 )
 
 // Map stores the last time each series of one tenant shard was seen.
@@ -74,11 +73,9 @@ type Map interface {
 // Stats is a point-in-time snapshot of a Map's internal counters, used for debugging.
 // Counters that don't apply to the implementation in use are zero.
 type Stats struct {
-	// Resident is the number of elements held in the map, including the dead ones in v1.
+	// Resident is the number of elements held in the map.
 	Resident uint32 `json:"resident"`
-	// Dead is the number of dead elements (tombstones). Only v1 creates those.
-	Dead uint32 `json:"dead"`
-	// Spilled is the number of groups that spilled to the next one(s). Only v2 counts those.
+	// Spilled is the number of groups that spilled to the next one(s).
 	Spilled uint32 `json:"spilled"`
 	// Limit is the resident count that triggers a rehash when reached.
 	Limit uint32 `json:"limit"`
@@ -116,12 +113,10 @@ func NewFactory(version int, numShards int) (Factory, error) {
 	}
 	f := Factory{numShards: numShards}
 	switch version {
-	case 1:
-		f.newMap = func(size, numShards uint32) Map { return v1Map{v1.New(size, numShards)} }
 	case 2:
 		f.newMap = func(size, numShards uint32) Map { return v2Map{v2.New(size, numShards)} }
 	default:
-		return Factory{}, fmt.Errorf("unsupported tenant shard map implementation version %d, supported versions are 1 and 2", version)
+		return Factory{}, fmt.Errorf("unsupported tenant shard map implementation version %d, the only supported version is 2", version)
 	}
 	return f, nil
 }
@@ -132,22 +127,9 @@ func isPowerOfTwo(n int) bool {
 	return n > 0 && n&(n-1) == 0
 }
 
-// v1Map adapts v1.Map to the Map interface, and v2Map does the same for v2.Map.
-// Only Stats needs adapting: the implementations don't import this package, so they can't return
+// v2Map adapts v2.Map to the Map interface.
+// Only Stats needs adapting: the implementation doesn't import this package, so it can't return
 // its Stats type. Every other method is promoted from the embedded map.
-type v1Map struct{ *v1.Map }
-
-func (m v1Map) Stats() Stats {
-	s := m.Map.Stats()
-	return Stats{
-		Resident: s.Resident,
-		Dead:     s.Dead,
-		Limit:    s.Limit,
-		Length:   s.Length,
-		Rehashes: s.Rehashes,
-	}
-}
-
 type v2Map struct{ *v2.Map }
 
 func (m v2Map) Stats() Stats {
