@@ -107,6 +107,15 @@ func (cfg *Config) Validate() error {
 	return cfg.BucketReader.Validate()
 }
 
+// requiredIndexHeaderVersion returns the index-header format version that cfg requires on disk:
+// BinaryFormatV2 (symbols-only) when the bucket reader is enabled, BinaryFormatV1 otherwise.
+func requiredIndexHeaderVersion(cfg Config) int {
+	if cfg.BucketReader.Enabled {
+		return BinaryFormatV2
+	}
+	return BinaryFormatV1
+}
+
 const (
 	//SectionSymbolsTable        Section = "symbols-table"
 

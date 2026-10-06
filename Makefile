@@ -18,6 +18,10 @@ VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+# Microarchitecture levels for Go builds. Grafana Labs builds its enterprise and cloud binaries with these.
+GOARM64 ?= v8.1
+GOAMD64 ?= v3
+
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
 unexport GOOS
@@ -242,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16623-40c18c3ff3@sha256:5d87e52c090bc9dcd91d5c80d8fb08ec72d4c136fe4f32b0fcc8d97563bd8dd5
+LATEST_BUILD_IMAGE_TAG ?= pr16768-212d714365@sha256:033df74acec5fed3f02b32d5d332c506325b42444fc4ddc1b4ab7fb87f197edc
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -274,19 +278,19 @@ SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
 else
 
 exes: $(EXES)
 
 $(EXES):
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 exes_race: $(EXES_RACE)
 
 $(EXES_RACE):
-	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS) $(PROTO_GRPC_GOS)
@@ -632,19 +636,19 @@ dist: ## Generates binaries for a Mimir release.
 				suffix=".exe" ; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
 			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
 			if [ "$$os" = "windows" ]; then \
 				continue; \
 			fi; \
 			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
 			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
 			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
 			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
 			echo "Building metaconvert for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
@@ -895,7 +899,7 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 		for main in $(IMAGE_EXES); do \
 			dir=$$(dirname $$main); \
 			echo "Warming cache: GOARCH=$$arch $$dir/..."; \
-			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
+			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
 		done; \
 	done
 	# Warm remaining packages for lint tools (golangci-lint, faillint) which type-check

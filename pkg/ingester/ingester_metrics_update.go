@@ -93,7 +93,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
 		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
-		idx := userDB.Head().MustIndex()
+		idx := mustIndex(userDB.Head())
 
 		var oldMatcherNames []string
 		if matchersChanged || catChanged {

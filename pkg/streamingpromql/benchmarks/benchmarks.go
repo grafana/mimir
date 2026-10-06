@@ -24,6 +24,13 @@ import (
 
 var MetricSizes = []int{1, 100, 2000}
 
+// tools/benchmark-query-engine sets this environment variable to "true" to ask the benchmark process to report its own
+// peak RSS on stdout (see TestMain in comparison_test.go), as a line starting with PeakRSSOutputLinePrefix followed by
+// the value in bytes.
+const ReportPeakRSSEnvVar = "MIMIR_PROMQL_ENGINE_BENCHMARK_REPORT_PEAK_RSS"
+
+const PeakRSSOutputLinePrefix = "MIMIR_PROMQL_ENGINE_BENCHMARK_PEAK_RSS_BYTES="
+
 type BenchCase struct {
 	Expr                        string
 	Steps                       int
