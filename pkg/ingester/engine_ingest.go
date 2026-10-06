@@ -20,47 +20,11 @@ import (
 // ingestBatch is what the ingester asks an engine to store: the series of one write request.
 type ingestBatch struct {
 	Series []mimirpb.PreallocTimeseries
-	// Record, when set, is the batch's record as the engine read it with ReadRecord: series are identified by their
-	// index in it as in Series, which is nil. Decoded decodes the series at indices, which are in order, into a slice
-	// of all of them, only those set.
-	Record  ingestRecord
-	Decoded func(indices []int) []mimirpb.PreallocTimeseries
 	// Samples, histograms and exemplars outside [MinTimestampMs, MaxTimestampMs] are rejected.
 	MinTimestampMs, MaxTimestampMs int64
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
 	NativeHistograms bool
 	Exemplars        bool
-	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
-	// records in the series it ingests.
-	IngestedAt time.Time
-	OTLP       bool
-}
-
-// ingestRecord is a Kafka record an engine read itself, to ingest its series without them being decoded.
-type ingestRecord interface {
-	// Len is how many series the record has.
-	Len() int
-	Source() mimirpb.WriteRequest_SourceEnum
-	// Complete reports whether the engine read all of the record: one it didn't is decoded.
-	Complete() bool
-	// MinTimestamp is the oldest timestamp of the record's samples, histograms and exemplars, math.MaxInt64 without
-	// any.
-	MinTimestamp() int64
-	// Metadata is the record's metadata, as decoding it gives.
-	Metadata() []*mimirpb.MetricMetadata
-	// Series returns the labels and floats of the series at index, which refer to the record's content.
-	Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample)
-	// Subset appends to into the content of a record with only the series at indices, which are in order, to decode
-	// them.
-	Subset(indices []int, into []byte) []byte
-	// Release gives back what the record holds once it is ingested.
-	Release()
-}
-
-// recordReader is an engine that reads Kafka records itself: ok is false for a record it doesn't read, which is
-// decoded. The record refers to content, which it must not outlive.
-type recordReader interface {
-	ReadRecord(content []byte, version int) (record ingestRecord, ok bool)
 }
 
 // ingestSink is what the ingester wants to know while an engine ingests a batch: series are identified by their
@@ -73,8 +37,6 @@ type ingestSink interface {
 	Error(series int, err error, timestampMs int64) (soft bool)
 	// ExemplarFailed reports an exemplar that wasn't ingested: err is one of the errors below, or the engine's.
 	ExemplarFailed(series, exemplar int, err error)
-	// NeedsLabels reports whether Ingested uses the labels of the series, which an engine may not have built.
-	NeedsLabels() bool
 	// Ingested reports a series that got a sample or a histogram, with its labels, which are valid only during the
 	// call, its reference, and the bucket count of its last histogram or -1.
 	Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int)
@@ -104,12 +66,8 @@ type extendedAppender interface {
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.Appender(ctx).(extendedAppender), batch, sink)
-}
-
-// ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
-func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, nil, false)
+	app := e.DB.Appender(ctx).(extendedAppender)
+	outcome, err := appendBatch(app, batch, sink)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -125,27 +83,19 @@ func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestS
 	return outcome, nil
 }
 
-// appendBatch adds the batch to the appender, or with subset only the series at those indices, which the sink has
-// been asked to skip or not already. Errors the sink calls soft are reported to it, and any other error is returned.
-func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int, useSubset bool) (ingestOutcome, error) {
+// appendBatch adds the batch to the appender. Errors the sink calls soft are reported to it, and any other error
+// is returned.
+func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
 	)
 
-	count := len(batch.Series)
-	if useSubset {
-		count = len(subset)
-	}
-	for position := range count {
-		si := position
-		if useSubset {
-			si = subset[position]
-		} else if sink.Skip(si) {
+	for si, ts := range batch.Series {
+		if sink.Skip(si) {
 			continue
 		}
-		ts := batch.Series[si]
 
 		// MUST BE COPIED before being retained.
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)

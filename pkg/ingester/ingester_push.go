@@ -408,14 +408,14 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 	sink := &pushSink{
 		i:                                i,
 		userID:                           userID,
-		request:                          req,
+		timeseries:                       req.Timeseries,
 		stats:                            &stats,
 		errProcessor:                     &errProcessor,
 		updateFirstPartial:               updateFirstPartial,
 		startAppend:                      startAppend,
 		activeSeries:                     activeSeries,
 		idx:                              idx,
-		isOTLP:                           req.source() == mimirpb.OTLP,
+		isOTLP:                           req.Source == mimirpb.OTLP,
 		outOfOrderWindow:                 outOfOrderWindow,
 		minAppendTimeAvailable:           minAppendTimeAvailable,
 		minAppendTime:                    minAppendTime,
@@ -424,15 +424,11 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		minTimestampMs:                   minTimestampMs,
 	}
 	outcome, ingestErr := db.db.Ingest(ctx, ingestBatch{
-		Series:           req.series(),
-		Record:           req.record,
-		Decoded:          req.decodedSubset,
+		Series:           req.Timeseries,
 		MinTimestampMs:   minTimestampMs,
 		MaxTimestampMs:   sink.maxTimestampMs,
 		NativeHistograms: nativeHistogramsIngestionEnabled,
 		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
-		IngestedAt:       startAppend,
-		OTLP:             req.source() == mimirpb.OTLP,
 	}, sink)
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars
@@ -534,15 +530,15 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 type pushSink struct {
 	i                  *Ingester
 	userID             string
-	request            *pushRequest
+	timeseries         []mimirpb.PreallocTimeseries
 	stats              *pushStats
 	errProcessor       *mimir_storage.SoftAppendErrorProcessor
 	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
 	startAppend        time.Time
 	activeSeries       *activeseries.ActiveSeries
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx := mustIndex(i.getTSDB(userID).Head())
-	defer idx.Close()
+	idx    tsdb.IndexReader
+	isOTLP bool
 
 	outOfOrderWindow                 time.Duration
 	minAppendTimeAvailable           bool
@@ -557,7 +553,7 @@ type pushSink struct {
 // Skip drops the series whose samples are all too old to be appended, before the engine looks it up: a fast path
 // for when out-of-order support is not enabled.
 func (s *pushSink) Skip(series int) bool {
-	ts := s.request.at(series)
+	ts := s.timeseries[series]
 	i, userID := s.i, s.userID
 
 	// TODO(jesus.vazquez) If we had too many old samples we might want to
@@ -604,11 +600,11 @@ func (s *pushSink) Skip(series int) bool {
 }
 
 func (s *pushSink) Error(series int, err error, timestampMs int64) bool {
-	return s.errProcessor.ProcessErr(err, timestampMs, s.request.at(series).Labels)
+	return s.errProcessor.ProcessErr(err, timestampMs, s.timeseries[series].Labels)
 }
 
 func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
-	ts := s.request.at(series)
+	ts := s.timeseries[series]
 	ex := ts.Exemplars[exemplarIndex]
 
 	// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
@@ -653,27 +649,10 @@ func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
 	}
 }
 
-// NeedsLabels is false: the tracker only needs a series' labels when it doesn't have it yet, which Ingested builds them for.
-func (s *pushSink) NeedsLabels() bool { return false }
-
-// IngestedRef reports whether nothing more than the series' ref is needed: the tracker has it already, or there is none.
-func (s *pushSink) IngestedRef(_ int, ref storage.SeriesRef) bool {
-	return s.activeSeries == nil || s.activeSeries.UpdateSeriesIfTracked(ref, s.startAppend, -1)
-}
-
-func (s *pushSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
-	if s.activeSeries == nil {
-		return
+func (s *pushSink) Ingested(_ int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
+	if s.activeSeries != nil {
+		s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)
 	}
-	if s.activeSeries.UpdateSeriesIfTracked(ref, s.startAppend, histogramBuckets) {
-		return
-	}
-	if lbls.IsEmpty() {
-		// An engine that didn't build them, as they're mostly not needed.
-		var builder labels.ScratchBuilder
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, s.request.at(series).Labels, &lbls)
-	}
-	s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
