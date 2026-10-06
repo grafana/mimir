@@ -8,16 +8,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/go-kit/log/level"
-	"github.com/oklog/ulid/v2"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
@@ -28,6 +29,8 @@ import (
 // series leaving the head go to its own cold blocks, which it queries and expires itself.
 type seriesstoreEngine struct {
 	*store.Engine
+	// The time range of a block, which a flush compacts the head by.
+	blockDuration int64
 	// Head compactions that moved the head's min time, which is when Prometheus writes a block.
 	compactions prometheus.Counter
 }
@@ -85,7 +88,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
 	})
-	return seriesstoreEngine{Engine: engine, compactions: compactions}, nil
+	return seriesstoreEngine{Engine: engine, blockDuration: opts.MinBlockDuration, compactions: compactions}, nil
 }
 
 // countingSeriesCallback counts the series the engine creates and removes, like the TSDB head's metrics.
@@ -104,8 +107,16 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 	c.SeriesLifecycleCallback.PostDeletion(deleted)
 }
 
-func (e seriesstoreEngine) Appender(ctx context.Context) storage.Appender {
-	return e.Engine.Appender(ctx)
+// Ingest appends the batch with the engine's Prometheus-style appender.
+func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+	return ingestThroughAppender(e.Engine.Appender(ctx), batch, sink)
+}
+
+func (e seriesstoreEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	if unordered {
+		return e.Engine.UnorderedChunkQuerier(mint, maxt)
+	}
+	return e.Engine.ChunkQuerier(mint, maxt)
 }
 
 func (e seriesstoreEngine) Compact(ctx context.Context) error {
@@ -113,9 +124,42 @@ func (e seriesstoreEngine) Compact(ctx context.Context) error {
 	return e.Engine.Compact(ctx)
 }
 
-func (e seriesstoreEngine) CompactHead(mint, maxt int64) error {
-	defer e.countCompaction(e.MinTime())
-	return e.Engine.CompactHead(mint, maxt)
+// Flush compacts the head block by block up to upTo, then the out-of-order head.
+func (e seriesstoreEngine) Flush(ctx context.Context, upTo int64) error {
+	for {
+		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(e.blockDuration, e.MinTime(), e.MaxTime(), upTo)
+		if !isValid {
+			break
+		}
+
+		minTimeBefore := e.MinTime()
+		err := e.Engine.CompactHead(blockMinTime, blockMaxTime)
+		e.countCompaction(minTimeBefore)
+		if err != nil {
+			return err
+		}
+
+		// Do not check again if it was the last range.
+		if isLast {
+			break
+		}
+	}
+
+	return e.Engine.CompactOOOHead(ctx)
+}
+
+// Evict compacts the out-of-order head first, which persists the out-of-order data of the series before they
+// leave, then the series themselves. The first failure doesn't stop the second.
+func (e seriesstoreEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
+	oooErr := e.Engine.CompactOOOHead(ctx)
+	if oooErr != nil {
+		oooErr = fmt.Errorf("compact the out-of-order head: %w", oooErr)
+	}
+	selectedErr := e.Engine.CompactSelectedSeries(refs)
+	if selectedErr != nil {
+		selectedErr = fmt.Errorf("compact the selected series: %w", selectedErr)
+	}
+	return errors.Join(oooErr, selectedErr)
 }
 
 func (e seriesstoreEngine) countCompaction(minTimeBefore int64) {
@@ -124,42 +168,61 @@ func (e seriesstoreEngine) countCompaction(minTimeBefore int64) {
 	}
 }
 
+func (e seriesstoreEngine) Configure(settings engineSettings) error {
+	e.SetMaxExemplars(settings.MaxExemplars)
+	e.SetOutOfOrderTimeWindow(settings.OutOfOrderTimeWindow)
+	return nil
+}
+
 func (e seriesstoreEngine) Head() engineHead {
 	return seriesstoreHead{e.Engine}
-}
-
-func (e seriesstoreEngine) Blocks() []*tsdb.Block {
-	return nil
-}
-
-func (e seriesstoreEngine) BlocksToDelete([]*tsdb.Block) map[ulid.ULID]struct{} {
-	return nil
-}
-
-// DisableCompactions is a no-op: the engine only compacts when the ingester asks it to.
-func (e seriesstoreEngine) DisableCompactions() {}
-
-func (e seriesstoreEngine) ApplyConfig(conf *config.Config) error {
-	if conf.StorageConfig.ExemplarsConfig != nil {
-		e.SetMaxExemplars(conf.StorageConfig.ExemplarsConfig.MaxExemplars)
-	}
-	if conf.StorageConfig.TSDBConfig != nil {
-		e.SetOutOfOrderTimeWindow(conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow)
-	}
-	return nil
-}
-
-func (e seriesstoreEngine) StartTime() (int64, error) {
-	return e.MinTime(), nil
 }
 
 type seriesstoreHead struct {
 	*store.Engine
 }
 
-// PostingsForMatchersCache is nil: the engine's own caches follow its series as they're created.
-func (h seriesstoreHead) PostingsForMatchersCache() *tsdb.PostingsForMatchersCache {
-	return nil
+func (h seriesstoreHead) TimeBounds() timeBounds {
+	return timeBounds{MinTime: h.MinTime(), MaxTime: h.MaxTime(), MinOOOTime: h.MinOOOTime(), MaxOOOTime: h.MaxOOOTime()}
+}
+
+func (h seriesstoreHead) OldestAppendableTime() (int64, bool) {
+	return h.AppendableMinValidTime()
+}
+
+func (h seriesstoreHead) Ownership(owned ring.TokenRanges) (int, []storage.SeriesRef) {
+	var (
+		count    int
+		nonOwned []storage.SeriesRef
+	)
+	h.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		for i, hash := range secondaryHashes {
+			if owned.IncludesKey(hash) {
+				count++
+			} else {
+				nonOwned = append(nonOwned, storage.SeriesRef(refs[i]))
+			}
+		}
+	})
+	return count, nonOwned
+}
+
+func (h seriesstoreHead) ShardSeries(shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+	h.ForEachShardHash(func(refs []storage.SeriesRef, shardHashes []uint64) {
+		for i := range refs {
+			if shardHashes[i]%shardCount == shardIndex {
+				out = append(out, refs[i])
+			}
+		}
+	})
+	slices.Sort(out) // The postings of an index are sorted.
+	return index.NewListPostings(out)
+}
+
+// Sync is the engine's durability point, which is nothing: it has no log, and what a crash loses comes back from Kafka.
+func (h seriesstoreHead) Sync() error {
+	return h.FsyncWLSegments()
 }
 
 // ValidateSeriesstoreEngine refuses configurations the seriesstore engine can't serve as the
