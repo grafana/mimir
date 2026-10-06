@@ -286,7 +286,8 @@ compactor_scheduler:
 
   lane_policy:
     # (experimental) The lane policy the compactor scheduler should use. Valid
-    # values: simple
+    # values: simple, backfill. backfill is required if and only if
+    # -compactor-scheduler.discovery-polls includes backfills.
     # CLI flag: -compactor-scheduler.lane-policy.policy
     [policy: <string> | default = "simple"]
 

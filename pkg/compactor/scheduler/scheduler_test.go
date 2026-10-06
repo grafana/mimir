@@ -175,6 +175,49 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	})
 }
 
+func TestConfig_Validate_BackfillLanePolicy(t *testing.T) {
+	tests := map[string]struct {
+		discoveryPolls []string
+		lanePolicy     string
+		expectErr      bool
+	}{
+		"simple policy without the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks},
+			lanePolicy:     lanePolicySimple,
+		},
+		"backfill policy with the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks, discoveryPollBackfills},
+			lanePolicy:     lanePolicyBackfill,
+		},
+		"simple policy with the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks, discoveryPollBackfills},
+			lanePolicy:     lanePolicySimple,
+			expectErr:      true,
+		},
+		"backfill policy without the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks},
+			lanePolicy:     lanePolicyBackfill,
+			expectErr:      true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := newTestSchedulerConfig()
+			cfg.PersistenceType = "none"
+			cfg.DiscoveryPolls = tc.discoveryPolls
+			cfg.LanePolicy.Policy = tc.lanePolicy
+
+			err := cfg.Validate()
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func newTestSchedulerConfig() Config {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
