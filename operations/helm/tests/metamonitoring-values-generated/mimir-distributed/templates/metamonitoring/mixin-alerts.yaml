@@ -694,8 +694,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrulertoomanyfailedpushes
             expr: |
               100 * (
-              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[4m]))
+              # Match the current server_error reason and legacy error or missing reason, but not client_error.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(server_error|error|^$)"}[4m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[4m]))
               ) > 1
@@ -709,8 +709,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrulertoomanyfailedqueries
             expr: |
               100 * (
-              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[4m]))
+              # Match the current server_error reason and legacy error or missing reason, but not client_error.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(server_error|error|^$)"}[4m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[4m]))
               ) > 1
