@@ -59,7 +59,11 @@ type infoSeries struct {
 	floats      []promql.FPoint
 }
 
-// infoSignature holds what is known about the info series that have the same labels-only signature.
+// infoSignatureKey is the signature of a series: its encoded identifying labels, without the metric name. Inner series
+// are enriched with the info series that have the same signature.
+type infoSignatureKey string
+
+// infoSignature holds what is known about the info series that have the same infoSignatureKey.
 type infoSignature struct {
 	// series holds the info series read so far, in the order that the info selector returned them. The
 	// samples are only needed until the last of them has been read, when the transitions can be found.
@@ -248,11 +252,11 @@ type InfoFunction struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// dedicated buffer for signature
+	// dedicated buffer for signatureKey
 	sigBuf []byte
-	// signature:index in signatures, for the signatures of inner series that can be enriched; nil once SeriesMetadata
-	// has returned
-	signatureIndexes map[string]int
+	// signature key:index in signatures, for the signatures of inner series that can be enriched; nil once
+	// SeriesMetadata has returned
+	signatureIndexes map[infoSignatureKey]int
 	signatures       []infoSignature
 	// number of distinct info metric names among the info series
 	infoMetricCount int
@@ -436,10 +440,10 @@ func hasAnyIdentifyingLabel(lset labels.Labels) bool {
 	return slices.ContainsFunc(identifyingLabels, lset.Has)
 }
 
-// signature returns the signature of lset: its identifying labels, without the metric name. The result is only valid
-// until the next call.
+// signatureKey returns the infoSignatureKey of lset, as bytes that are only valid until the next call. Callers convert
+// the bytes to infoSignatureKey in the map index expression, where the conversion does not allocate.
 // Ensure this is only called after initializing f.sigBuf.
-func (f *InfoFunction) signature(lset labels.Labels) []byte {
+func (f *InfoFunction) signatureKey(lset labels.Labels) []byte {
 	// BytesWithLabels requires the names to be sorted, which identifyingLabels is.
 	return lset.BytesWithLabels(f.sigBuf, identifyingLabels...)
 }
@@ -447,7 +451,7 @@ func (f *InfoFunction) signature(lset labels.Labels) []byte {
 // processSamplesFromInfoSeries reads the info series and finds their groups for each signature. It returns the
 // interned label sets hash IDs, by label sets hash.
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) (map[string]labelSetsHashID, error) {
-	// Initialize dedicated buffer for signature,
+	// Initialize dedicated buffer for signatureKey,
 	// since this is also called later when a local buffer would be out of scope.
 	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
 
@@ -456,7 +460,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// matching Prometheus (which fetches info series per inner-series presence pattern). This avoids
 	// both enriching label-less series and spurious "duplicate series for info metric" errors from
 	// over-fetched cross-signature series.
-	f.signatureIndexes = make(map[string]int, len(innerMetadata))
+	f.signatureIndexes = make(map[infoSignatureKey]int, len(innerMetadata))
 	for i, metadata := range innerMetadata {
 		if _, ignore := ignoreSeries[i]; ignore {
 			continue
@@ -465,9 +469,9 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			continue
 		}
 
-		sig := f.signature(metadata.Labels)
-		if _, exists := f.signatureIndexes[string(sig)]; !exists {
-			f.signatureIndexes[string(sig)] = len(f.signatureIndexes)
+		key := f.signatureKey(metadata.Labels)
+		if _, exists := f.signatureIndexes[infoSignatureKey(key)]; !exists {
+			f.signatureIndexes[infoSignatureKey(key)] = len(f.signatureIndexes)
 		}
 	}
 	f.signatures = make([]infoSignature, len(f.signatureIndexes))
@@ -484,7 +488,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	enrichingSeriesCount := 0
 
 	for i, metadata := range infoMetadata {
-		signatureIndex, exists := f.signatureIndexes[string(f.signature(metadata.Labels))]
+		signatureIndex, exists := f.signatureIndexes[infoSignatureKey(f.signatureKey(metadata.Labels))]
 		if !exists {
 			refs[i].signatureIndex = -1
 			continue
@@ -806,7 +810,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 
 		var labelSetsMap map[string][]labels.Labels
-		if signatureIndex, exists := f.signatureIndexes[string(f.signature(innerSeries.Labels))]; exists {
+		if signatureIndex, exists := f.signatureIndexes[infoSignatureKey(f.signatureKey(innerSeries.Labels))]; exists {
 			f.innerSignatures[i] = &f.signatures[signatureIndex]
 			labelSetsMap = f.signatures[signatureIndex].labelSetsByHash
 		}

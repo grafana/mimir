@@ -58,7 +58,7 @@ func TestFilterInfoInnerMatchers(t *testing.T) {
 	}
 }
 
-func TestInfoFunction_Signature(t *testing.T) {
+func TestInfoFunction_SignatureKey(t *testing.T) {
 	testCases := map[string]struct {
 		input    labels.Labels
 		expected labels.Labels
@@ -85,7 +85,7 @@ func TestInfoFunction_Signature(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &InfoFunction{sigBuf: make([]byte, 0, types.LabelBytesBufferSize)}
 			// Signatures are used as map keys, so compare them as strings.
-			require.Equal(t, string(testCase.expected.Bytes(nil)), string(f.signature(testCase.input)))
+			require.Equal(t, string(testCase.expected.Bytes(nil)), string(f.signatureKey(testCase.input)))
 		})
 	}
 }
