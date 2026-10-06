@@ -46,6 +46,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
 * [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values. #16761
 
+## 6.2.1
+
+* [CHANGE] Upgrade Mimir to [3.2.1](https://github.com/grafana/mimir/blob/release-3.2/CHANGELOG.md). #16803
+* [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
+
 ## 6.2.0
 
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
