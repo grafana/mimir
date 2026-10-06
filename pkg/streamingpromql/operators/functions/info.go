@@ -42,11 +42,20 @@ type labelSetsHashID uint32
 
 const innerSeriesHashID labelSetsHashID = 0
 
+// infoMetricIndex numbers the distinct info metric names of the info series, in the order that they are first seen.
+type infoMetricIndex int
+
+// infoSeriesIndex is the position of an info series in infoSignature.series.
+type infoSeriesIndex int
+
+// noInfoSeries means that no info series is chosen.
+const noInfoSeries infoSeriesIndex = -1
+
 // infoSeries is an info series whose samples are kept until all info series with its signature have been read.
 type infoSeries struct {
 	labels labels.Labels
-	// metricIndex identifies the info metric name. At each timestamp, only one series per info metric is used.
-	metricIndex int
+	// metricIndex identifies the info metric of the series. At each timestamp, only one series per info metric is used.
+	metricIndex infoMetricIndex
 	floats      []promql.FPoint
 }
 
@@ -91,11 +100,15 @@ type infoOutputIndex struct {
 // at least one of the series has a sample, it finds the group of info series that enriches inner series at that
 // timestamp: for each info metric, the series with the newest original sample timestamp.
 type infoGroupWalker struct {
-	signature       *infoSignature
-	cursors         []int
-	winners         []int // For each info metric, the index in signature.series of the series in the group, or -1.
-	winnerTimes     []int64
-	previousWinners []int
+	signature *infoSignature
+
+	// nextSamples is indexed by infoSeriesIndex: the index of the next sample to read from each info series.
+	nextSamples []int
+
+	// winners and previousWinners are indexed by infoMetricIndex: the series of each info metric in the group at
+	// the current and the previous timestamp.
+	winners         []infoMetricWinner
+	previousWinners []infoSeriesIndex
 	started         bool
 
 	// labelSets and hash describe the group at the timestamp that next last returned.
@@ -103,11 +116,18 @@ type infoGroupWalker struct {
 	hash      string
 }
 
+// infoMetricWinner is the series of one info metric in the group at a timestamp.
+type infoMetricWinner struct {
+	series infoSeriesIndex // noInfoSeries if no series of the info metric has a sample at the timestamp.
+	// originalT is the original timestamp of the series' sample at the timestamp, used to choose the newest series
+	// when several series of the info metric have a sample at the timestamp.
+	originalT int64
+}
+
 func (w *infoGroupWalker) reset(signature *infoSignature, metricCount int) {
 	w.signature = signature
-	w.cursors = resizeAndClear(w.cursors, len(signature.series))
+	w.nextSamples = resizeAndClear(w.nextSamples, len(signature.series))
 	w.winners = resizeAndClear(w.winners, metricCount)
-	w.winnerTimes = resizeAndClear(w.winnerTimes, metricCount)
 	w.previousWinners = resizeAndClear(w.previousWinners, metricCount)
 	w.started = false
 }
@@ -128,8 +148,8 @@ func resizeAndClear[T any](s []T, size int) []T {
 func (w *infoGroupWalker) next() (ts int64, changed bool, ok bool, err error) {
 	ts = math.MaxInt64
 	for seriesIndex, series := range w.signature.series {
-		if cursor := w.cursors[seriesIndex]; cursor < len(series.floats) && series.floats[cursor].T < ts {
-			ts = series.floats[cursor].T
+		if sampleIndex := w.nextSamples[seriesIndex]; sampleIndex < len(series.floats) && series.floats[sampleIndex].T < ts {
+			ts = series.floats[sampleIndex].T
 			ok = true
 		}
 	}
@@ -138,45 +158,51 @@ func (w *infoGroupWalker) next() (ts int64, changed bool, ok bool, err error) {
 		return 0, false, false, nil
 	}
 
-	copy(w.previousWinners, w.winners)
 	for metricIndex := range w.winners {
-		w.winners[metricIndex] = -1
+		w.previousWinners[metricIndex] = w.winners[metricIndex].series
+		w.winners[metricIndex] = infoMetricWinner{series: noInfoSeries}
 	}
 
 	for seriesIndex := range w.signature.series {
 		series := &w.signature.series[seriesIndex]
-		cursor := w.cursors[seriesIndex]
-		if cursor >= len(series.floats) || series.floats[cursor].T != ts {
+		sampleIndex := w.nextSamples[seriesIndex]
+		if sampleIndex >= len(series.floats) || series.floats[sampleIndex].T != ts {
 			continue
 		}
 
-		w.cursors[seriesIndex]++
+		w.nextSamples[seriesIndex]++
 		// The info selector returns the original sample timestamp, in seconds, as the sample value.
-		origTs := int64(series.floats[cursor].F * 1000)
-		metricIndex := series.metricIndex
+		originalT := int64(series.floats[sampleIndex].F * 1000)
+		winner := &w.winners[series.metricIndex]
 
 		// If a series of the same info metric has a sample at this timestamp too, keep the one with the newest
 		// original timestamp. Error out if the original timestamps are the same.
-		if existing := w.winners[metricIndex]; existing >= 0 {
-			if w.winnerTimes[metricIndex] == origTs {
-				return 0, false, false, fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", w.signature.series[existing].labels.String(), series.labels.String(), ts, model_timestamp.Time(ts).Format(time.RFC3339Nano))
-			} else if w.winnerTimes[metricIndex] > origTs {
+		if winner.series != noInfoSeries {
+			if winner.originalT == originalT {
+				return 0, false, false, fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", w.signature.series[winner.series].labels.String(), series.labels.String(), ts, model_timestamp.Time(ts).Format(time.RFC3339Nano))
+			} else if winner.originalT > originalT {
 				continue
 			}
 		}
 
-		w.winners[metricIndex] = seriesIndex
-		w.winnerTimes[metricIndex] = origTs
+		*winner = infoMetricWinner{series: infoSeriesIndex(seriesIndex), originalT: originalT}
 	}
 
-	changed = !w.started || !slices.Equal(w.winners, w.previousWinners)
+	// The group only depends on which series are chosen, not on their original timestamps.
+	changed = !w.started
+	for metricIndex, winner := range w.winners {
+		if winner.series != w.previousWinners[metricIndex] {
+			changed = true
+			break
+		}
+	}
 	w.started = true
 
 	if changed {
 		w.labelSets = w.labelSets[:0]
-		for _, seriesIndex := range w.winners {
-			if seriesIndex >= 0 {
-				w.labelSets = append(w.labelSets, w.signature.series[seriesIndex].labels)
+		for _, winner := range w.winners {
+			if winner.series != noInfoSeries {
+				w.labelSets = append(w.labelSets, w.signature.series[winner.series].labels)
 			}
 		}
 		w.hash = makeLabelSetsHash(w.labelSets)
@@ -450,12 +476,11 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// a signature's info series can be returned to the pool as soon as the last of them has been read.
 	type infoSeriesRef struct {
 		signatureIndex int // -1 if the info series can't enrich any inner series.
-		metricIndex    int
+		metricIndex    infoMetricIndex
 	}
+	// refs is indexed by the position of each info series in infoMetadata.
 	refs := make([]infoSeriesRef, len(infoMetadata))
-	// metricIndexes numbers the distinct info metric names, in the order that they are first seen. These numbers are
-	// the metricIndex of infoSeries, not positions in infoMetadata.
-	metricIndexes := make(map[string]int)
+	metricIndexes := make(map[string]infoMetricIndex)
 	enrichingSeriesCount := 0
 
 	for i, metadata := range infoMetadata {
@@ -468,7 +493,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		metricName := metadata.Labels.Get(model.MetricNameLabel)
 		metricIndex, exists := metricIndexes[metricName]
 		if !exists {
-			metricIndex = len(metricIndexes)
+			metricIndex = infoMetricIndex(len(metricIndexes))
 			metricIndexes[metricName] = metricIndex
 		}
 

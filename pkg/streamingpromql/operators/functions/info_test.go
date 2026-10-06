@@ -210,7 +210,7 @@ func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
 
 	type series struct {
 		labels      labels.Labels
-		metricIndex int
+		metricIndex infoMetricIndex
 		lag         int64 // Original sample timestamps are t/1000 - lag seconds.
 		timestamps  []int64
 	}
