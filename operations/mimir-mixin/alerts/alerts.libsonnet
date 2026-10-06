@@ -950,8 +950,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
-            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
+            # Match the current server_error reason and legacy error or missing reason, but not client_error.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(server_error|error|^$)"}[%(rate_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(rate_interval)s]))
             ) > 1
@@ -972,8 +972,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
+            # Match the current server_error reason and legacy error or missing reason, but not client_error.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(server_error|error|^$)"}[%(rate_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(rate_interval)s]))
             ) > 1
@@ -1173,32 +1173,41 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          // Alert if there's no available memberlist-bridge pod in any of the zones where it's deployed.
+          // Alert if there's no ready memberlist-bridge pod in any of the zones where it's deployed.
+          //
+          // Both operands read the Deployment object, so a kube-state-metrics shard that stops
+          // exporting drops them together and the `and` yields nothing.
+          //
+          // Do not compare the Deployment against Pod-object series with `unless`. kube-state-metrics shards by
+          // object, so those two sides can stop being exported independently, and an absent
+          // right-hand side would make an `unless` vacuous and fire every zone.
           alert: $.alertName('MemberlistBridgeZoneUnavailable'),
           expr: |||
-            # Find the expected memberlist-bridge zonal deployments.
-            count by (%(alert_aggregation_labels)s, zone) (
+            # Find the zonal memberlist-bridge deployments with no ready pod.
+            max by (%(alert_aggregation_labels)s, zone) (
                 label_replace(
-                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    kube_deployment_status_replicas_ready{deployment=~"memberlist-bridge-zone-[abc]"},
                     "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
                 )
-            )
-            # Excluding zones where there is at least 1 healthy memberlist-bridge.
-            unless (
-                count by(%(alert_aggregation_labels)s, zone) (
-                    label_replace(
-                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
-                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
-                    )
-                ) > 0
-            )
+            ) == 0
+            # Restricted to deployments that are expected to be running.
+            and on (%(alert_aggregation_labels)s, zone)
+            max by (%(alert_aggregation_labels)s, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"},
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            ) > 0
           ||| % $._config,
           'for': '10m',
           labels: {
-            severity: 'critical',
+            // Losing every bridge in a zone does not partition gossip. The memberlist client
+            // detects it and reverts to full-mesh node selection, so the consequence is
+            // inter-AZ data transfer rather than lost updates.
+            severity: 'warning',
           },
           annotations: {
-            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no available pods.' % $._config,
+            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no ready pods.' % $._config,
           },
         },
         {

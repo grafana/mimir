@@ -400,6 +400,28 @@ func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node
 		}, nil
 	}
 
+	// A range vector result (e.g. a top-level subquery) cannot be wrapped in DeduplicateAndMerge,
+	// which only operates on instant vectors, so drop names directly on the range vector. DropName
+	// is a no-op for series not flagged for name removal, so this is safe even when no name is
+	// removed.
+	//
+	// Series that collide after name removal are merged afterwards by Query.Exec, matching
+	// Prometheus (cleanupMetricLabels -> mergeSeriesWithSameLabelset).
+	resultType, err := root.ResultType()
+	if err != nil {
+		return nil, err
+	}
+	if resultType == parser.ValueTypeMatrix {
+		if _, ok := root.(*core.MatrixSelector); ok {
+			// A raw matrix selector never has names to drop.
+			return root, nil
+		}
+		return &core.DropName{
+			Inner:           root,
+			DropNameDetails: &core.DropNameDetails{},
+		}, nil
+	}
+
 	// Don't run delayed name removal or deduplicate and merge where there are no
 	// vector selectors.
 	shouldWrap, err := shouldWrapInDedupAndMerge(root)

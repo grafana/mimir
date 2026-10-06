@@ -20,7 +20,7 @@ To run Mimir Alertmanager as a part of [monolithic deployment](../../deployment-
 ## Multi-tenancy
 
 Like other Mimir components, multi-tenancy in the Mimir Alertmanager uses the tenant ID header.
-Each tenant has an isolated alert routing configuration and Alertmanager UI.
+Each tenant has an isolated alert routing configuration.
 
 ### Tenant configurations
 
@@ -65,7 +65,7 @@ mimirtool alertmanager delete \
   --id=<TENANT ID>
 ```
 
-After the tenant uploads an Alertmanager configuration, the tenant can access the Alertmanager UI at the `/alertmanager` endpoint.
+After the tenant uploads an Alertmanager configuration, the tenant can use the Alertmanager HTTP API under the `/alertmanager` path prefix.
 
 #### Fallback configuration
 
@@ -74,7 +74,7 @@ By default, there is always a fallback configuration set.
 You can overwrite the default fallback configuration via the `-alertmanager.configs.fallback` command-line flag.
 
 {{< admonition type="warning" >}}
-Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
+Without a fallback configuration or a tenant-specific configuration, the Alertmanager HTTP API for that tenant is unavailable and ruler notifications for that tenant fail.
 {{< /admonition >}}
 
 ### Tenant limits
@@ -82,16 +82,16 @@ Without a fallback configuration or a tenant specific configuration, the Alertma
 The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`](../../../../configure/configuration-parameters/#limits).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
-## Alertmanager UI
+## Alertmanager API
 
-The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at the `/alertmanager` endpoint.
+The Mimir Alertmanager exposes the same API as the Prometheus Alertmanager at the `/alertmanager` endpoint.
 
 When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request include the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
 
 For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API](../../../http-api/).
 
-You can configure the HTTP path prefix for the UI and the HTTP API:
+You can configure the HTTP path prefix for the HTTP API:
 
 - `-http.alertmanager-http-prefix` configures the path prefix for Alertmanager endpoints.
 - `-alertmanager.web.external-url` configures the source URLs generated in Alertmanager alerts and from where to fetch web assets.
@@ -125,7 +125,7 @@ The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
 Grafana Mimir Alertmanager replicas use a [hash ring](../../hash-ring/) that is stored in the KV store to discover their peers.
-This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
+This means that any Mimir Alertmanager replica can respond to any API request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
 To configure the Alertmanagers' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).
