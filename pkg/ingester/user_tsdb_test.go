@@ -477,7 +477,7 @@ func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	db := userTSDB{
-		db: prometheusEngine{tsdbDB},
+		db: prometheusEngine{DB: tsdbDB},
 		ownedState: ownedSeriesState{
 			ownedSeriesCount: 555,
 			localSeriesLimit: 10000,
@@ -592,7 +592,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
-		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{DB: tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
@@ -605,7 +605,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
 
-		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{DB: tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
@@ -627,7 +627,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
-		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, math.MaxUint32}}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{DB: tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, math.MaxUint32}}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 2, count)
@@ -659,7 +659,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 
 		// Own only the series with the lower hash; the other is non-owned.
 		minHash := min(hashA, hashB)
-		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, minHash}}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: prometheusEngine{DB: tsdbDB}, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, minHash}}
 
 		count := db.computeOwnedSeries()
 
