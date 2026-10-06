@@ -105,6 +105,10 @@ func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, 
 	return m.UpdateJobFunc(ctx, in)
 }
 
+func (m *mockCompactorSchedulerClient) UpdateBackfillJob(context.Context, *compactorschedulerpb.UpdateBackfillJobRequest, ...grpc.CallOption) (*compactorschedulerpb.UpdateJobResponse, error) {
+	return nil, errors.New("backfill jobs are not supported by the executor")
+}
+
 func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *compactorschedulerpb.PlannedJobsRequest, opts ...grpc.CallOption) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	m.mu.Lock()
 	m.recvPlannedReq = true
