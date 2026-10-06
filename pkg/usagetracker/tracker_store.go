@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
 
@@ -64,6 +65,9 @@ type trackerStore struct {
 	enableVerboseSeriesMetrics          bool
 	minTimeBetweenShardsCleanup         time.Duration
 
+	// metrics, exposed through the trackerStore collector.
+	shardCleanupDuration prometheus.Histogram
+
 	// misc
 	logger log.Logger
 }
@@ -92,6 +96,14 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 		enableVerboseSeriesMetrics:          enableVerboseSeriesMetrics,
 		minTimeBetweenShardsCleanup:         minTimeBetweenShardsCleanup,
 		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
+
+		shardCleanupDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_usage_tracker_shard_cleanup_duration_seconds",
+			Help:                            "Time spent cleaning up idle series from a single shard of a single tenant, while holding the shard lock.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
 	}
 	return t
 }
@@ -272,9 +284,12 @@ func (t *trackerStore) cleanup(now time.Time) {
 			shard := tenant.shards[s]
 
 			shard.Lock()
+			cleanupStart := time.Now()
 			totalSeries += shard.Count()
 			removed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
+			cleanupEnd := time.Now()
+			t.shardCleanupDuration.Observe(cleanupEnd.Sub(cleanupStart).Seconds())
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
 				seriesRemoved += removed
@@ -284,7 +299,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 			}
 
 			if timeAfterFirstTenantCleanup.IsZero() {
-				timeAfterFirstTenantCleanup = time.Now()
+				timeAfterFirstTenantCleanup = cleanupEnd
 			}
 		}
 
