@@ -4,7 +4,7 @@ It applies upstream's changes to our copies with a 3-way merge, preserving the e
 
 It does not decide which cases to disable. That is done afterwards by [`disable-failing-upstream-promql-tests`](../disable-failing-upstream-promql-tests), which runs the cases against Mimir's engine and comments out the ones that fail.
 
-Run this tool with `go run .` in this directory, or via `make sync-upstream-promql-tests` from the repository root.
+Run this tool with `go run .` in this directory, or via `make sync-upstream-promql-tests` from the repository root. It prints its report, and also writes it to `MIMIR_SYNC_REPORT` when that is set. That is only read when running the tool directly (as CI does), not through `make` in the build container.
 
 ## Fixing a failing mimir-prometheus vendoring PR
 
