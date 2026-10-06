@@ -242,6 +242,23 @@ alertmanager_config: |
 `,
 		},
 		{
+			name: "Should return error if global HTTP username_file is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      basic_auth:
+        username_file: /secrets
+        password: something
+
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
+		},
+		{
 			name: "Should return error if global HTTP password_file is set",
 			cfg: `
 alertmanager_config: |
@@ -255,7 +272,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global HTTP bearer_token_file is set",
@@ -270,7 +287,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global HTTP credentials_file is set",
@@ -286,7 +303,24 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
+		},
+		{
+			name: "Should return error if global HTTP header files is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+        http_headers:
+            "Cache-Control":
+                files:
+                    - /secrets
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errHTTPHeaderFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if global HTTP proxy_url is set",
@@ -332,7 +366,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errOAuth2SecretFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 proxy_url is set",
@@ -389,7 +423,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 TLS is configured through byte slices",
@@ -413,6 +447,24 @@ alertmanager_config: |
 			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should return error if receiver's HTTP username_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+            basic_auth:
+              username_file: /secrets
+              password: "something"
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
+		},
+		{
 			name: "Should return error if receiver's HTTP password_file is set",
 			cfg: `
 alertmanager_config: |
@@ -427,7 +479,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's HTTP bearer_token_file is set",
@@ -443,7 +495,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's HTTP credentials_file is set",
@@ -460,7 +512,26 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
+		},
+		{
+			name: "Should return error if receiver's HTTP header files is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+              http_headers:
+                  "Cache-Control":
+                      files:
+                          - /secrets
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errHTTPHeaderFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if receiver's HTTP proxy_url is set",
@@ -509,7 +580,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOAuth2SecretFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's OAuth2 proxy_url is set",
@@ -564,7 +635,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errSlackAPIURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if Slack api_url_file is set",
@@ -578,7 +649,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errSlackAPIURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global opsgenie_api_key_file is set",
@@ -595,7 +666,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOpsGenieAPIKeyFileFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if OpsGenie api_key_file is set",
@@ -609,7 +680,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOpsGenieAPIKeyFileFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if global victorops_api_key_file is set",
@@ -625,7 +696,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if VictorOps api_key_file is set",
@@ -640,7 +711,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if PagerDuty service_key_file is set",
@@ -655,7 +726,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPagerDutyServiceKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if PagerDuty routing_key_file is set",
@@ -669,7 +740,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPagerDutyRoutingKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if Pushover user_key_file is set",
@@ -684,7 +755,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPushoverUserKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "Should return error if Pushover token_file is set",
@@ -699,7 +770,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPushoverTokenFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "should return error if Telegram bot_token_file is set",
@@ -714,7 +785,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errTelegramBotTokenFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "should return error if Webhook url_file is set",
@@ -728,7 +799,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errWebhookURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errFileNotAllowed),
 		},
 		{
 			name: "should return error if template is wrong",
@@ -1094,31 +1165,118 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		input    interface{}
 		expected error
 	}{
-		"*HTTPClientConfig": {
+		"nil input": {
+			input: nil,
+		},
+		"*HTTPClientConfig.BasicAuth.PasswordFile": {
 			input: &commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
 					PasswordFile: "/secrets",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
-		"HTTPClientConfig": {
+		"HTTPClientConfig.BasicAuth.PasswordFile": {
 			input: commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
 					PasswordFile: "/secrets",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
-		"*TLSConfig": {
+		"*HTTPClientConfig.BasicAuth.UsernameFile": {
+			input: &commoncfg.HTTPClientConfig{
+				BasicAuth: &commoncfg.BasicAuth{
+					UsernameFile: "/secrets",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"HTTPClientConfig.BasicAuth.UsernameFile": {
+			input: commoncfg.HTTPClientConfig{
+				BasicAuth: &commoncfg.BasicAuth{
+					UsernameFile: "/secrets",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"*HTTPClientConfig.HTTPHeaders.Files": {
+			input: &commoncfg.HTTPClientConfig{
+				HTTPHeaders: &commoncfg.Headers{
+					Headers: map[string]commoncfg.Header{
+						"Cache-Control": {
+							Files: []string{"/secret"},
+						},
+					},
+				},
+			},
+			expected: errHTTPHeaderFileNotAllowed,
+		},
+		"HTTPClientConfig.HTTPHeaders.Files": {
+			input: commoncfg.HTTPClientConfig{
+				HTTPHeaders: &commoncfg.Headers{
+					Headers: map[string]commoncfg.Header{
+						"Cache-Control": {
+							Files: []string{"/secret"},
+						},
+					},
+				},
+			},
+			expected: errHTTPHeaderFileNotAllowed,
+		},
+		"*HTTPClientConfig.OAuth2.ClientSecretFile": {
+			input: &commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientSecretFile: "/file",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"HTTPClientConfig.OAuth2.ClientSecretFile": {
+			input: commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientSecretFile: "/file",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"*HTTPClientConfig.OAuth2.ClientCertificateKeyFile": {
+			input: &commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientCertificateKeyFile: "/file",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"HTTPClientConfig.OAuth2.ClientCertificateKeyFile": {
+			input: commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientCertificateKeyFile: "/file",
+				},
+			},
+			expected: errFileNotAllowed,
+		},
+		"*TLSConfig.CertFile": {
 			input: &commoncfg.TLSConfig{
 				CertFile: "/cert",
 			},
-			expected: errTLSConfigNotAllowed,
+			expected: errFileNotAllowed,
 		},
-		"TLSConfig": {
+		"TLSConfig.CertFile": {
 			input: commoncfg.TLSConfig{
 				CertFile: "/cert",
+			},
+			expected: errFileNotAllowed,
+		},
+		"*TLSConfig.Cert": {
+			input: &commoncfg.TLSConfig{
+				Cert: "cert",
+			},
+			expected: errTLSConfigNotAllowed,
+		},
+		"TLSConfig.Cert": {
+			input: commoncfg.TLSConfig{
+				Cert: "cert",
 			},
 			expected: errTLSConfigNotAllowed,
 		},
@@ -1126,13 +1284,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			input: &config.GlobalConfig{
 				SMTPAuthPasswordFile: "/file",
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"GlobalConfig.SMTPAuthPasswordFile": {
 			input: config.GlobalConfig{
 				SMTPAuthPasswordFile: "/file",
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"*DiscordConfig.HTTPConfig": {
 			input: &config.DiscordConfig{
@@ -1140,7 +1298,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					BearerTokenFile: "/file",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"DiscordConfig.HTTPConfig": {
 			input: &config.DiscordConfig{
@@ -1148,31 +1306,43 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					BearerTokenFile: "/file",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"*DiscordConfig.WebhookURLFile": {
 			input: &config.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
-			expected: errWebhookURLFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"DiscordConfig.WebhookURLFile": {
 			input: config.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
-			expected: errWebhookURLFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"*EmailConfig.AuthPasswordFile": {
 			input: &config.EmailConfig{
 				AuthPasswordFile: "/file",
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"EmailConfig.AuthPasswordFile": {
 			input: config.EmailConfig{
 				AuthPasswordFile: "/file",
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
+		},
+		"*SlackConfig.APIURLFile": {
+			input: &config.SlackConfig{
+				APIURLFile: "/file",
+			},
+			expected: errFileNotAllowed,
+		},
+		"SlackConfig.APIURLFile": {
+			input: config.SlackConfig{
+				APIURLFile: "/file",
+			},
+			expected: errFileNotAllowed,
 		},
 		"*MSTeams.HTTPConfig": {
 			input: &config.MSTeamsConfig{
@@ -1180,7 +1350,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					BearerTokenFile: "/file",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"MSTeams.HTTPConfig": {
 			input: &config.MSTeamsConfig{
@@ -1188,19 +1358,31 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					BearerTokenFile: "/file",
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"*MSTeams.WebhookURLFile": {
 			input: &config.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
-			expected: errWebhookURLFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"MSTeams.WebhookURLFile": {
 			input: config.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
-			expected: errWebhookURLFileNotAllowed,
+			expected: errFileNotAllowed,
+		},
+		"*TelegramConfig.BotTokenFile": {
+			input: &config.TelegramConfig{
+				BotTokenFile: "/file",
+			},
+			expected: errFileNotAllowed,
+		},
+		"TelegramConfig.BotTokenFile": {
+			input: config.TelegramConfig{
+				BotTokenFile: "/file",
+			},
+			expected: errFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{
@@ -1210,7 +1392,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					},
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as nested child": {
 			input: config.Config{
@@ -1222,7 +1404,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					},
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as nested child within a slice": {
 			input: config.Config{
@@ -1237,7 +1419,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					}}},
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"map containing *HTTPClientConfig": {
 			input: map[string]*commoncfg.HTTPClientConfig{
@@ -1247,7 +1429,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					},
 				},
 			},
-			expected: errPasswordFileNotAllowed,
+			expected: errFileNotAllowed,
 		},
 		"map containing TLSConfig as nested child": {
 			input: map[string][]config.EmailConfig{
@@ -1257,7 +1439,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					},
 				}},
 			},
-			expected: errTLSConfigNotAllowed,
+			expected: errFileNotAllowed,
 		},
 	}
 

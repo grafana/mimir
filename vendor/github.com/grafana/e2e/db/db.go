@@ -1,3 +1,4 @@
+// Package e2edb provides pre-built database and storage service definitions for e2e tests.
 package e2edb
 
 import (
@@ -36,7 +37,7 @@ func newMinio(port int, envVars map[string]string, bktNames ...string) *e2e.HTTP
 	for _, bkt := range bktNames {
 		commands = append(commands, fmt.Sprintf("mkdir -p /data/%s", bkt))
 	}
-	commands = append(commands, fmt.Sprintf("minio server --address :%v --quiet /data", port))
+	commands = append(commands, fmt.Sprintf("silo server --address :%v --quiet /data", port))
 
 	m := e2e.NewHTTPService(
 		fmt.Sprintf("minio-%v", port),
