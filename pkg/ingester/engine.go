@@ -25,7 +25,9 @@ import (
 // in userTSDB, so another engine only has to store and serve samples. The ingester says what it wants, and when:
 // how the engine does it is the engine's.
 type tenantEngine interface {
-	Appender(ctx context.Context) storage.Appender
+	// Ingest stores the series of a write request, and makes them visible. Soft failures are reported to the sink as
+	// they happen, and a hard error undoes the whole batch.
+	Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error)
 	Querier(mint, maxt int64) (storage.Querier, error)
 	// ChunkQuerier returns the chunks of the series in the range; with unordered, those of a series may overlap
 	// and come in any order, which the engine may serve more cheaply.
