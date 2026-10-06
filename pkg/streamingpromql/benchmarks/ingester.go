@@ -55,8 +55,7 @@ const (
 	infoGapIntervals = 100
 )
 
-// sampleFilter returns a function reporting whether series m has a sample at interval ts, or nil if m has a sample at
-// every interval.
+// sampleFilter returns a function reporting whether series m has a sample at interval ts.
 func sampleFilter(m labels.Labels) func(ts int) bool {
 	name := m.Get("__name__")
 
@@ -69,7 +68,7 @@ func sampleFilter(m labels.Labels) func(ts int) bool {
 	case strings.HasPrefix(name, targetInfoGappyPrefix):
 		return func(ts int) bool { return (ts/infoGapIntervals)%2 == 0 }
 	default:
-		return nil
+		return func(int) bool { return true }
 	}
 }
 
@@ -304,7 +303,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 
 		for metricIdx, m := range metrics {
 			filter := sampleFilters[metricIdx]
-			if filter != nil && !hasSampleInRange(filter, start, end) {
+			if !hasSampleInRange(filter, start, end) {
 				// Don't push series with no samples in this batch.
 				continue
 			}
@@ -340,7 +339,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 				series.Samples = series.Samples[:0]
 
 				for ts := start; ts < end; ts++ {
-					if filter != nil && !filter(ts) {
+					if !filter(ts) {
 						continue
 					}
 

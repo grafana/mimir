@@ -59,6 +59,38 @@ func TestFilterInfoInnerMatchers(t *testing.T) {
 	}
 }
 
+func TestInfoFunction_Signature(t *testing.T) {
+	testCases := map[string]struct {
+		input    labels.Labels
+		expected labels.Labels
+	}{
+		"metric name and other labels are not included": {
+			input:    labels.FromStrings("__name__", "metric", "env", "prod", "instance", "a", "job", "1", "zone", "z"),
+			expected: labels.FromStrings("instance", "a", "job", "1"),
+		},
+		"only instance": {
+			input:    labels.FromStrings("__name__", "metric", "instance", "a"),
+			expected: labels.FromStrings("instance", "a"),
+		},
+		"only job": {
+			input:    labels.FromStrings("__name__", "metric", "job", "1"),
+			expected: labels.FromStrings("job", "1"),
+		},
+		"no identifying labels": {
+			input:    labels.FromStrings("__name__", "metric", "env", "prod"),
+			expected: labels.EmptyLabels(),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f := &InfoFunction{sigBuf: make([]byte, 0, types.LabelBytesBufferSize)}
+			// Signatures are used as map keys, so compare them as strings.
+			require.Equal(t, string(testCase.expected.Bytes(nil)), string(f.signature(testCase.input)))
+		})
+	}
+}
+
 func TestInfoGroupWalker(t *testing.T) {
 	targetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "prod")
 	updatedTargetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "staging")

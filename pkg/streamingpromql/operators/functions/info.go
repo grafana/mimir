@@ -125,11 +125,11 @@ func resizeAndClear[T any](s []T, size int) []T {
 // next advances to the next timestamp at which at least one of the info series has a sample, and returns it.
 // ok is false once all samples have been read. changed reports whether the group at the timestamp is different
 // to the group at the previous timestamp, in which case labelSets and hash have been updated.
-func (w *infoGroupWalker) next() (t int64, changed bool, ok bool, err error) {
-	t = math.MaxInt64
-	for i, s := range w.signature.series {
-		if c := w.cursors[i]; c < len(s.floats) && s.floats[c].T < t {
-			t = s.floats[c].T
+func (w *infoGroupWalker) next() (ts int64, changed bool, ok bool, err error) {
+	ts = math.MaxInt64
+	for seriesIndex, series := range w.signature.series {
+		if cursor := w.cursors[seriesIndex]; cursor < len(series.floats) && series.floats[cursor].T < ts {
+			ts = series.floats[cursor].T
 			ok = true
 		}
 	}
@@ -139,34 +139,34 @@ func (w *infoGroupWalker) next() (t int64, changed bool, ok bool, err error) {
 	}
 
 	copy(w.previousWinners, w.winners)
-	for m := range w.winners {
-		w.winners[m] = -1
+	for metricIndex := range w.winners {
+		w.winners[metricIndex] = -1
 	}
 
-	for i := range w.signature.series {
-		s := &w.signature.series[i]
-		c := w.cursors[i]
-		if c >= len(s.floats) || s.floats[c].T != t {
+	for seriesIndex := range w.signature.series {
+		series := &w.signature.series[seriesIndex]
+		cursor := w.cursors[seriesIndex]
+		if cursor >= len(series.floats) || series.floats[cursor].T != ts {
 			continue
 		}
 
-		w.cursors[i]++
+		w.cursors[seriesIndex]++
 		// The info selector returns the original sample timestamp, in seconds, as the sample value.
-		origTs := int64(s.floats[c].F * 1000)
-		m := s.metricIndex
+		origTs := int64(series.floats[cursor].F * 1000)
+		metricIndex := series.metricIndex
 
 		// If a series of the same info metric has a sample at this timestamp too, keep the one with the newest
 		// original timestamp. Error out if the original timestamps are the same.
-		if existing := w.winners[m]; existing >= 0 {
-			if w.winnerTimes[m] == origTs {
-				return 0, false, false, fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", w.signature.series[existing].labels.String(), s.labels.String(), t, model_timestamp.Time(t).Format(time.RFC3339Nano))
-			} else if w.winnerTimes[m] > origTs {
+		if existing := w.winners[metricIndex]; existing >= 0 {
+			if w.winnerTimes[metricIndex] == origTs {
+				return 0, false, false, fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", w.signature.series[existing].labels.String(), series.labels.String(), ts, model_timestamp.Time(ts).Format(time.RFC3339Nano))
+			} else if w.winnerTimes[metricIndex] > origTs {
 				continue
 			}
 		}
 
-		w.winners[m] = i
-		w.winnerTimes[m] = origTs
+		w.winners[metricIndex] = seriesIndex
+		w.winnerTimes[metricIndex] = origTs
 	}
 
 	changed = !w.started || !slices.Equal(w.winners, w.previousWinners)
@@ -174,15 +174,15 @@ func (w *infoGroupWalker) next() (t int64, changed bool, ok bool, err error) {
 
 	if changed {
 		w.labelSets = w.labelSets[:0]
-		for _, i := range w.winners {
-			if i >= 0 {
-				w.labelSets = append(w.labelSets, w.signature.series[i].labels)
+		for _, seriesIndex := range w.winners {
+			if seriesIndex >= 0 {
+				w.labelSets = append(w.labelSets, w.signature.series[seriesIndex].labels)
 			}
 		}
 		w.hash = makeLabelSetsHash(w.labelSets)
 	}
 
-	return t, changed, true, nil
+	return ts, changed, true, nil
 }
 
 // infoGroupLookup returns the label sets hash ID of the group of info series of one signature, for each of an
@@ -222,9 +222,8 @@ type InfoFunction struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// dedicated buffer and scratch builder for signature
+	// dedicated buffer for signature
 	sigBuf []byte
-	sigLb  labels.ScratchBuilder
 	// signature:index in signatures, for the signatures of inner series that can be enriched; nil once SeriesMetadata
 	// has returned
 	signatureIndexes map[string]int
@@ -411,25 +410,20 @@ func hasAnyIdentifyingLabel(lset labels.Labels) bool {
 	return slices.ContainsFunc(identifyingLabels, lset.Has)
 }
 
-// signature generates signature from labels without metric name
-// Ensure this is only called after initializing f.sigBuf and f.sigLb
+// signature returns the signature of lset: its identifying labels, without the metric name. The result is only valid
+// until the next call.
+// Ensure this is only called after initializing f.sigBuf.
 func (f *InfoFunction) signature(lset labels.Labels) []byte {
-	// Signature is only the identifying labels without metric names.
-	f.sigLb.Reset()
-	lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-		f.sigLb.Add(l.Name, l.Value)
-	})
-	f.sigLb.Sort()
-	return f.sigLb.Labels().Bytes(f.sigBuf)
+	// BytesWithLabels requires the names to be sorted, which identifyingLabels is.
+	return lset.BytesWithLabels(f.sigBuf, identifyingLabels...)
 }
 
 // processSamplesFromInfoSeries reads the info series and finds their groups for each signature. It returns the
 // interned label sets hash IDs, by label sets hash.
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) (map[string]labelSetsHashID, error) {
-	// Initialize dedicated buffer and scratch builder for signature,
-	// since this is also called later when the local buf and lb would be out of scope.
+	// Initialize dedicated buffer for signature,
+	// since this is also called later when a local buffer would be out of scope.
 	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
-	f.sigLb = labels.NewScratchBuilder(0)
 
 	// Signatures of inner series that can be enriched: not ignored, with at least one identifying
 	// label. An info series whose signature is absent here enriches nothing, so it is dropped below,
@@ -459,6 +453,8 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		metricIndex    int
 	}
 	refs := make([]infoSeriesRef, len(infoMetadata))
+	// metricIndexes numbers the distinct info metric names, in the order that they are first seen. These numbers are
+	// the metricIndex of infoSeries, not positions in infoMetadata.
 	metricIndexes := make(map[string]int)
 	enrichingSeriesCount := 0
 
