@@ -20,6 +20,58 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: block-builder-rc-0
+  name: block-builder-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: block-builder-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: block-builder-rc-1
+  name: block-builder-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: block-builder-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: block-builder-scheduler-rc-0
+  name: block-builder-scheduler-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: block-builder-scheduler-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: block-builder-scheduler-rc-1
+  name: block-builder-scheduler-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: block-builder-scheduler-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: compactor-rc-0
   name: compactor-rc-0
   namespace: default
@@ -717,6 +769,44 @@ spec:
     targetPort: 7946
   selector:
     name: alertmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: block-builder-scheduler-rc-0
+  name: block-builder-scheduler-rc-0
+  namespace: default
+spec:
+  ports:
+  - name: block-builder-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: block-builder-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: block-builder-scheduler-rc-0
+    statefulset.kubernetes.io/pod-name: block-builder-scheduler-rc-0-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: block-builder-scheduler-rc-1
+  name: block-builder-scheduler-rc-1
+  namespace: default
+spec:
+  ports:
+  - name: block-builder-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: block-builder-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: block-builder-scheduler-rc-1
+    statefulset.kubernetes.io/pod-name: block-builder-scheduler-rc-1-0
 ---
 apiVersion: v1
 kind: Service
@@ -1738,6 +1828,198 @@ spec:
     mimir-rc: "1"
     name: store-gateway-zone-c-rc-1
     rollout-group: store-gateway-rc-1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    mimir-rc: "0"
+  name: block-builder-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 10
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: block-builder-rc-0
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        mimir-rc: "0"
+        name: block-builder-rc-0
+    spec:
+      containers:
+      - args:
+        - -block-builder.data-dir=/data/tsdb
+        - -block-builder.scheduler.address=block-builder-scheduler-rc-0.default.svc.cluster.local.:9095
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-0
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.fetch-concurrency-max=4
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
+        - -ingest-storage.kafka.ingestion-concurrency-max=2
+        - -ingest-storage.kafka.topic=ingest-rc-0
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=block-builder
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "4"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        image: grafana/mimir:3.2.1
+        imagePullPolicy: IfNotPresent
+        name: block-builder
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 12Gi
+          requests:
+            cpu: "4"
+            ephemeral-storage: 50Mi
+            memory: 8Gi
+        volumeMounts:
+        - mountPath: /data
+          name: block-builder-data
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 1800
+      volumes:
+      - ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+              - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 25Gi
+              storageClassName: standard
+        name: block-builder-data
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    mimir-rc: "1"
+  name: block-builder-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 10
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: block-builder-rc-1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        mimir-rc: "1"
+        name: block-builder-rc-1
+    spec:
+      containers:
+      - args:
+        - -block-builder.data-dir=/data/tsdb
+        - -block-builder.scheduler.address=block-builder-scheduler-rc-1.default.svc.cluster.local.:9095
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-1
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.fetch-concurrency-max=4
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
+        - -ingest-storage.kafka.ingestion-concurrency-max=2
+        - -ingest-storage.kafka.topic=ingest-rc-1
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=block-builder
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "4"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        image: grafana/mimir:3.2.1
+        imagePullPolicy: IfNotPresent
+        name: block-builder
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 12Gi
+          requests:
+            cpu: "4"
+            ephemeral-storage: 50Mi
+            memory: 8Gi
+        volumeMounts:
+        - mountPath: /data
+          name: block-builder-data
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 1800
+      volumes:
+      - ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+              - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 25Gi
+              storageClassName: standard
+        name: block-builder-data
+      - configMap:
+          name: overrides
+        name: overrides
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -4352,6 +4634,152 @@ spec:
       resources:
         requests:
           storage: 100Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    mimir-rc: "0"
+    name: block-builder-scheduler-rc-0
+  name: block-builder-scheduler-rc-0
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: block-builder-scheduler-rc-0
+  serviceName: block-builder-scheduler-rc-0
+  template:
+    metadata:
+      labels:
+        mimir-rc: "0"
+        name: block-builder-scheduler-rc-0
+    spec:
+      containers:
+      - args:
+        - -block-builder-scheduler.consumer-group=block-builder-rc-0
+        - -block-builder-scheduler.max-jobs-per-partition=3
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-0
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=block-builder-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.2.1
+        imagePullPolicy: IfNotPresent
+        name: block-builder-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "0.25"
+            memory: 1Gi
+          requests:
+            cpu: "0.1"
+            ephemeral-storage: 50Mi
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    mimir-rc: "1"
+    name: block-builder-scheduler-rc-1
+  name: block-builder-scheduler-rc-1
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: block-builder-scheduler-rc-1
+  serviceName: block-builder-scheduler-rc-1
+  template:
+    metadata:
+      labels:
+        mimir-rc: "1"
+        name: block-builder-scheduler-rc-1
+    spec:
+      containers:
+      - args:
+        - -block-builder-scheduler.consumer-group=block-builder-rc-1
+        - -block-builder-scheduler.max-jobs-per-partition=3
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-1
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=block-builder-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.2.1
+        imagePullPolicy: IfNotPresent
+        name: block-builder-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "0.25"
+            memory: 1Gi
+          requests:
+            cpu: "0.1"
+            ephemeral-storage: 50Mi
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -7504,6 +7932,96 @@ metadata:
   namespace: default
 spec:
   labelSelector: name=ingester-zone-a-rc-1
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: block-builder-rc-0
+  namespace: default
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 1800
+            type: Percent
+            value: 10
+          selectPolicy: Max
+          stabilizationWindowSeconds: 3600
+        scaleUp:
+          policies:
+          - periodSeconds: 900
+            type: Percent
+            value: 25
+          selectPolicy: Min
+          stabilizationWindowSeconds: 600
+  maxReplicaCount: 10
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    name: block-builder-rc-0
+  triggers:
+  - metadata:
+      metricName: cortex_block_builder_rc_0_hpa_default
+      query: |
+        avg(
+          histogram_avg(sum(rate(cortex_blockbuilder_consume_job_duration_seconds{success="true", namespace="default", container="block-builder", pod=~"block-builder-rc-0-.*"}[1h])))
+        )
+        * max(
+            max_over_time(cortex_blockbuilder_scheduler_outstanding_jobs{namespace="default", container="block-builder-scheduler", pod=~"block-builder-scheduler-rc-0-.*"}[1h])
+        )
+        / vector(60 * 60)
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "1"
+    metricType: AverageValue
+    name: cortex_block_builder_rc_0_hpa_default
+    type: prometheus
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: block-builder-rc-1
+  namespace: default
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 1800
+            type: Percent
+            value: 10
+          selectPolicy: Max
+          stabilizationWindowSeconds: 3600
+        scaleUp:
+          policies:
+          - periodSeconds: 900
+            type: Percent
+            value: 25
+          selectPolicy: Min
+          stabilizationWindowSeconds: 600
+  maxReplicaCount: 10
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    name: block-builder-rc-1
+  triggers:
+  - metadata:
+      metricName: cortex_block_builder_rc_1_hpa_default
+      query: |
+        avg(
+          histogram_avg(sum(rate(cortex_blockbuilder_consume_job_duration_seconds{success="true", namespace="default", container="block-builder", pod=~"block-builder-rc-1-.*"}[1h])))
+        )
+        * max(
+            max_over_time(cortex_blockbuilder_scheduler_outstanding_jobs{namespace="default", container="block-builder-scheduler", pod=~"block-builder-scheduler-rc-1-.*"}[1h])
+        )
+        / vector(60 * 60)
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "1"
+    metricType: AverageValue
+    name: cortex_block_builder_rc_1_hpa_default
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

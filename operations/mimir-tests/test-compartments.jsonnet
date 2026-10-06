@@ -40,6 +40,12 @@ local env = (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
     autoscaling_store_gateway_min_replicas_per_compartment_zone: 1,
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
     enable_pvc_auto_deletion_for_store_gateways: true,
+
+    // Exercise the per-compartment block-builders and block-builder-schedulers.
+    block_builder+: {
+      enabled: true,
+      autoscaling_enabled: true,
+    },
   },
 };
 
@@ -140,6 +146,8 @@ local disabledCompartmentsEnv = env {
     store_gateway_compartment_static_replicas: { compartment_1: 4 },
     ingest_storage_ingester_autoscaling_disabled_compartments: [1],
     ingester_compartment_static_replicas: { compartment_1: 5 },
+    autoscaling_block_builder_disabled_compartments: [0],
+    block_builder_compartment_static_replicas: { compartment_0: 6 },
   },
 };
 local annotationsOf(resource) = std.get(resource.metadata, 'annotations', {});
@@ -162,6 +170,8 @@ assert std.objectFields(disabledCompartmentsEnv.store_gateway_zone_a_scaled_obje
 assert std.objectFields(disabledCompartmentsEnv.ingest_storage_ingester_primary_zone_scalings) == ['compartment_0'] &&
        std.objectFields(disabledCompartmentsEnv.ingester_primary_zone_replica_templates) == ['compartment_0'] :
        'expected the disabled ingester compartment to lose its ScaledObject and ReplicaTemplate';
+assert std.objectFields(disabledCompartmentsEnv.block_builder_scaled_objects) == ['compartment_1'] :
+       'expected the disabled block-builder compartment to lose its ScaledObject';
 
 // The disabled compartment's workloads run the static replica count (per zone where zonal).
 assert disabledCompartmentsEnv.compactor_statefulsets.compartment_1.spec.replicas == 3 :
@@ -176,6 +186,8 @@ assert disabledCompartmentsEnv.store_gateway_zone_a_statefulsets.compartment_1.s
 assert disabledCompartmentsEnv.ingester_zone_a_statefulsets.compartment_1.spec.replicas == 5 &&
        disabledCompartmentsEnv.ingester_zone_b_statefulsets.compartment_1.spec.replicas == 5 :
        'expected the disabled ingester compartment to run static replicas in every zone';
+assert disabledCompartmentsEnv.block_builder_deployments.compartment_0.spec.replicas == 6 :
+       'expected the disabled block-builder compartment to run static replicas';
 
 // The disabled compartment drops the autoscaling annotations, labels and args.
 assert !std.objectHas(annotationsOf(disabledCompartmentsEnv.store_gateway_zone_b_statefulsets.compartment_1), 'grafana.com/rollout-downscale-leader') &&
@@ -192,11 +204,40 @@ assert !std.objectHas(disabledCompartmentsEnv.compactor_statefulsets.compartment
        'expected the autoscaled compactor compartment to keep its replicas stripped';
 assert !std.objectHas(disabledCompartmentsEnv.distributor_zone_a_deployments.compartment_1.spec, 'replicas') :
        'expected the autoscaled distributor compartment to keep its replicas stripped';
+assert !std.objectHas(disabledCompartmentsEnv.block_builder_deployments.compartment_1.spec, 'replicas') :
+       'expected the autoscaled block-builder compartment to keep its replicas stripped';
 assert annotationsOf(disabledCompartmentsEnv.store_gateway_zone_b_statefulsets.compartment_0)['grafana.com/rollout-downscale-leader'] == 'store-gateway-zone-a-rc-0' :
        'expected the autoscaled store-gateway compartment to keep following its leader';
 assert std.objectHas(annotationsOf(disabledCompartmentsEnv.ingester_zone_a_statefulsets.compartment_0), 'grafana.com/rollout-mirror-replicas-from-resource-name') :
        'expected the autoscaled ingester compartment to keep mirroring its ReplicaTemplate';
 assert disabledCompartmentsEnv.store_gateway_zone_a_compartments_args.compartment_0['store-gateway.sharding-ring.auto-forget-enabled'] == false :
        'expected the autoscaled store-gateway compartment to keep auto-forget disabled';
+
+// Per-compartment block-builders lease from their own scheduler and replace the non-compartments ones.
+assert std.objectFields(env.block_builder_deployments) == ['compartment_0', 'compartment_1'] &&
+       std.objectFields(env.block_builder_scheduler_statefulsets) == ['compartment_0', 'compartment_1'] :
+       'expected one block-builder and block-builder-scheduler per read compartment';
+assert env.block_builder_compartments_args.compartment_1['block-builder.scheduler.address'] ==
+       'block-builder-scheduler-rc-1.%s.svc.%s:9095' % [env._config.namespace, env._config.cluster_domain] :
+       'expected each compartment block-builder to lease from its own compartment scheduler';
+assert env.block_builder_scheduler_compartments_args.compartment_0['block-builder-scheduler.consumer-group'] !=
+       env.block_builder_scheduler_compartments_args.compartment_1['block-builder-scheduler.consumer-group'] :
+       'expected each compartment scheduler to commit offsets in its own consumer group';
+assert env.block_builder_deployment == null && env.block_builder_scaled_object == null && env.block_builder_pdb == null &&
+       env.block_builder_scheduler_statefulset == null && env.block_builder_scheduler_service == null && env.block_builder_scheduler_pdb == null :
+       'expected the non-compartments block-builder and scheduler to be retired';
+
+// When the non-compartments block-builder also runs, its autoscaler must ignore the per-compartment pods.
+local blockBuilderCoexistenceEnv = env {
+  _config+:: {
+    no_compartments_block_builder_enabled: true,
+  },
+};
+local blockBuilderCoexistenceQuery = blockBuilderCoexistenceEnv.block_builder_scaled_object.spec.triggers[0].metadata.query;
+assert blockBuilderCoexistenceEnv.block_builder_deployment != null && blockBuilderCoexistenceEnv.block_builder_scheduler_statefulset != null :
+       'expected coexistence to keep the non-compartments block-builder and scheduler';
+assert std.length(std.findSubstr('pod!~"block-builder-rc-.*"', blockBuilderCoexistenceQuery)) > 0 &&
+       std.length(std.findSubstr('pod!~"block-builder-scheduler-rc-.*"', blockBuilderCoexistenceQuery)) > 0 :
+       'expected the non-compartments block-builder autoscaler to exclude the per-compartment pods';
 
 env
