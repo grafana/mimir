@@ -276,7 +276,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods generate-asm check-asm: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
@@ -573,6 +573,14 @@ generate-node-methods: clean-node-methods
 check-node-methods: ## Check generated node methods are up to date.
 check-node-methods: generate-node-methods
 	@./tools/find-diff-or-untracked.sh 'pkg/**/node_gen.go' || (echo "Please regenerate node methods by running 'make generate-node-methods' and committing the result" && false)
+
+.PHONY: generate-asm check-asm
+generate-asm: ## Generate the assembly files written with avo.
+	go generate ./pkg/usagetracker/tenantshard/v2/
+
+check-asm: ## Check generated assembly files are up to date.
+check-asm: generate-asm
+	@./tools/find-diff-or-untracked.sh 'pkg/**/*.s' || (echo "Please regenerate the assembly by running 'make generate-asm' and committing the result" && false)
 
 format-promql-tests:
 	@./tools/format-promql-test.sh $(PROMQL_TESTS)
