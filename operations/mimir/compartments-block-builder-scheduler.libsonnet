@@ -5,20 +5,25 @@
   local numCompartments = $._config.compartments_read_count,
   local isNoCompartmentsEnabled = $._config.no_compartments_block_builder_enabled,
 
-  // Per-compartment scheduler endpoint the compartment's block-builders lease jobs from.
   blockBuilderSchedulerCompartmentEndpoint(compartmentIdx)::
     'block-builder-scheduler-rc-%d.%s.svc.%s:9095' % [compartmentIdx, $._config.namespace, $._config.cluster_domain],
 
+  // Per-compartment block-builders lease from their own block-builder-scheduler, so overwrite the
+  // single-scheduler address they inherit (via block_builder_args) with the per-compartment one.
+  block_builder_compartments_args+:: $.mimirCompartmentsOverrides(super.block_builder_compartments_args, function(compartmentIdx) {
+    'block-builder.scheduler.address': $.blockBuilderSchedulerCompartmentEndpoint(compartmentIdx),
+  }),
+
   // Args. Each read compartment's scheduler plans jobs for that compartment's topic across every write
   // compartment's Kafka cluster, tracking offsets in a per-compartment consumer group.
-  block_builder_scheduler_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartmentIdx)
-    $.block_builder_scheduler_args +
-    $.mimirCompartmentsCommonArgs +
-    {
+  local perCompartmentBlockBuilderSchedulerArgs(compartmentIdx) =
+    $.mimirCompartmentsCommonArgs {
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
       'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
       'block-builder-scheduler.consumer-group': 'block-builder-rc-%d' % compartmentIdx,
-    }),
+    },
+
+  block_builder_scheduler_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.block_builder_scheduler_args + perCompartmentBlockBuilderSchedulerArgs(compartment)),
 
   // Containers.
   newBlockBuilderSchedulerCompartmentContainer(compartmentIdx)::

@@ -36,17 +36,15 @@
   local compartmentStaticReplicas(compartment) = $._config.block_builder_compartment_static_replicas['compartment_%d' % compartment],
 
   // Args. Each read compartment's block-builders consume that compartment's topic from every write
-  // compartment's Kafka cluster, lease jobs from their own block-builder-scheduler and upload into the
-  // compartment's blocks bucket.
-  block_builder_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartmentIdx)
-    $.block_builder_args +
-    $.mimirCompartmentsCommonArgs +
-    {
+  // compartment's Kafka cluster and upload into the compartment's blocks bucket.
+  local perCompartmentBlockBuilderArgs(compartmentIdx) =
+    $.mimirCompartmentsCommonArgs {
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
       'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
       [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
-      'block-builder.scheduler.address': $.blockBuilderSchedulerCompartmentEndpoint(compartmentIdx),
-    }),
+    },
+
+  block_builder_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.block_builder_args + perCompartmentBlockBuilderArgs(compartment)),
 
   // Containers. Built on top of block_builder_container so container patches (resources, env, ...)
   // layered onto it apply to every compartment.
