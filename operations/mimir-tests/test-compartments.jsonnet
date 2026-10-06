@@ -240,4 +240,23 @@ assert std.length(std.findSubstr('pod!~"block-builder-rc-.*"', blockBuilderCoexi
        std.length(std.findSubstr('pod!~"block-builder-scheduler-rc-.*"', blockBuilderCoexistenceQuery)) > 0 :
        'expected the non-compartments block-builder autoscaler to exclude the per-compartment pods';
 
+// Patches layered onto the base block-builder and scheduler containers must reach every compartment's
+// workload, while each compartment keeps its own args.
+local blockBuilderBaseContainerEnv = env {
+  block_builder_container+:: { image: 'block-builder-sentinel' },
+  block_builder_scheduler_container+:: { image: 'block-builder-scheduler-sentinel' },
+};
+assert std.all([
+  d.spec.template.spec.containers[0].image == 'block-builder-sentinel'
+  for d in std.objectValues(blockBuilderBaseContainerEnv.block_builder_deployments)
+]) : 'expected a block_builder_container patch to propagate into every compartment block-builder';
+assert std.all([
+  s.spec.template.spec.containers[0].image == 'block-builder-scheduler-sentinel'
+  for s in std.objectValues(blockBuilderBaseContainerEnv.block_builder_scheduler_statefulsets)
+]) : 'expected a block_builder_scheduler_container patch to propagate into every compartment scheduler';
+assert std.member(
+  blockBuilderBaseContainerEnv.block_builder_scheduler_statefulsets.compartment_1.spec.template.spec.containers[0].args,
+  '-block-builder-scheduler.consumer-group=block-builder-rc-1',
+) : 'expected the compartment scheduler to keep its own args on top of the base container';
+
 env

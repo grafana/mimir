@@ -1,4 +1,5 @@
 {
+  local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
 
   local isEnabled = $._config.compartments_block_builder_enabled,
@@ -25,9 +26,11 @@
 
   block_builder_scheduler_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.block_builder_scheduler_args + perCompartmentBlockBuilderSchedulerArgs(compartment)),
 
-  // Containers.
+  // Containers. Built on top of block_builder_scheduler_container so container patches (image, resources,
+  // probes, ...) layered onto it apply to every compartment.
   newBlockBuilderSchedulerCompartmentContainer(compartmentIdx)::
-    $.newBlockBuilderSchedulerContainer('block-builder-scheduler', $.block_builder_scheduler_compartments_args['compartment_%d' % compartmentIdx], $.block_builder_scheduler_env_map),
+    $.block_builder_scheduler_container +
+    container.withArgs($.util.mapToFlags($.block_builder_scheduler_compartments_args['compartment_%d' % compartmentIdx])),
 
   block_builder_scheduler_containers:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.newBlockBuilderSchedulerCompartmentContainer(compartment)),
 
