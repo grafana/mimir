@@ -450,6 +450,10 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	return nil, errLeaseNotFound
 }
 
+func (s *Scheduler) UpdateBackfillJob(context.Context, *compactorschedulerpb.UpdateBackfillJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "backfill jobs are not supported yet")
+}
+
 func invalidUpdateTypeError(updateType compactorschedulerpb.UpdateType) error {
 	return status.Error(codes.InvalidArgument, fmt.Sprintf("update type was not recognized: %s", updateType.String()))
 }
