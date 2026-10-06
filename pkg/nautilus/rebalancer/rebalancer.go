@@ -39,6 +39,9 @@ type Config struct {
 	// the default until Scallop has replaced the production planner completely.
 	Planner string `yaml:"planner"`
 
+	// Scallop configures the cost model used when Planner is "scallop".
+	Scallop ScallopConfig `yaml:"scallop"`
+
 	// MinRebalanceInterval is a lower bound on the gap between
 	// rebalance rounds. The rebalancer normally schedules itself
 	// dynamically — each round is timed to fire LeaseLookahead
@@ -241,6 +244,7 @@ type Config struct {
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Planner, prefix+"planner", plannerLegacy, "Planning engine to use for each rebalance round. Supported values: legacy, scallop.")
+	cfg.Scallop.RegisterFlagsWithPrefix(prefix+"scallop.", f)
 	f.DurationVar(&cfg.MinRebalanceInterval, prefix+"min-rebalance-interval", 30*time.Second, "Lower bound on the gap between rebalance rounds. The rebalancer schedules itself dynamically (next round at lease_horizon - LeaseLookahead), but this floor protects against degenerate cases such as just-truncated leases or a fully-expired log.")
 	f.DurationVar(&cfg.MaxRebalanceInterval, prefix+"max-rebalance-interval", 5*time.Minute, "Upper bound on the gap between rebalance rounds. Acts as a heartbeat for stats collection and reassignment reactivity even when the lease horizon would otherwise allow a longer wait.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
@@ -269,6 +273,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 func (cfg *Config) Validate() error {
 	if cfg.Planner != plannerLegacy && cfg.Planner != plannerScallop {
 		return fmt.Errorf("nautilus-rebalancer.planner must be one of %q or %q, got %q", plannerLegacy, plannerScallop, cfg.Planner)
+	}
+	if err := cfg.Scallop.validate(); err != nil {
+		return fmt.Errorf("invalid nautilus-rebalancer Scallop configuration: %w", err)
 	}
 	if cfg.LoadHysteresis < 0 || cfg.LoadHysteresis >= 1 {
 		return fmt.Errorf("nautilus-rebalancer.load-hysteresis must be in [0, 1), got %f", cfg.LoadHysteresis)

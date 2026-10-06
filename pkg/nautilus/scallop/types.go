@@ -145,13 +145,13 @@ func DefaultPolicy() Policy {
 		Weights: Weights{
 			ReplicaBalance:      0.44668359215096315,
 			TransitionEvents:    0.07062687723113772,
-			TransitionLoad:      0.1,
-			TransitionHashSpace: 0.1,
+			TransitionLoad:      0.07079457843841379,
+			TransitionHashSpace: 0.01,
 			LocalityMiss:        0.01778279410038923,
 			Fragmentation:       10,
-			Resolution:          10,
+			Resolution:          22.387211385683393,
 		},
-		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 1},
+		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 5.623413251903491},
 		CandidateSearch:   DefaultCandidateSearchLimits(),
 		ActionLimits: ActionLimits{
 			Total:          1612,

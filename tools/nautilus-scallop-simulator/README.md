@@ -34,6 +34,7 @@ go run ./tools/nautilus-scallop-simulator run-fixture \
   -locality-miss 0.1 \
   -fragmentation 10 \
   -resolution 10 \
+  -move-partition-multiplier 5.623413251903491 \
   -json-output ./fixture-result.jsonl \
   -csv-output ./fixture-result.csv
 ```
@@ -78,8 +79,13 @@ load(hash, tick) =
 ```
 
 Amplitude profiles can be constant, bounded linear growth/decay, or Gaussian
-in time. Spatial load is integrated analytically over each current hash range;
-traffic is never randomly sampled.
+in time. A deterministic, mean-preserving log-normal AR(1) multiplier gives
+each Gaussian component correlated traffic variation; omitted noise settings
+use CV `0.12`, one-tick correlation, and seed `30`, while an explicit zero CV
+disables variation. The complete multiplier trajectory is generated before a
+run, so repeated observations at one tick are identical. Spatial load is
+integrated analytically over each current hash range, preserving exact
+split/merge additivity.
 
 ## Planning boundary
 
@@ -101,8 +107,11 @@ Scallop never receives Gaussian components or future amplitudes.
 
 Partition balance has fixed weight `1`. A deterministic beam search varies the
 relative replica-balance, transition, locality, fragmentation, and resolution
-weights. Policies are ranked by a separate fixed evaluation utility across all
-calibration fixtures, using both mean and worst-fixture outcomes.
+weights plus the partition-move action multiplier. Policies are ranked by a
+separate fixed evaluation utility across all calibration fixtures, using both
+mean and worst-fixture outcomes. That utility prices a partition move as 64
+ordinary range actions and separately penalizes partition reversals and load
+moved back within three ticks.
 
 ## Large-cell fixture
 
@@ -136,3 +145,11 @@ global budget, so the first round performs 200 fair merges and every tenant
 reaches the target within the 16 configured rounds. Per-tick trajectories, settle ticks,
 no-progress intervals, merge throughput, and per-tenant merge counts make
 fairness and convergence directly inspectable.
+
+## Dev-30 fluctuation fixture
+
+`dev30-fluctuating` models 300 partitions, 100 readcaches, and 200 tenants with
+four initial ranges apiece. Its varied static Gaussian hotspots receive the
+same default correlated noise as every other fixture over 16 30-second ticks,
+making repeated and reversed partition moves visible to the common evaluation
+and beam-search paths.

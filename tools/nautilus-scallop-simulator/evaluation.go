@@ -62,12 +62,17 @@ type LocalityDisruptionEvaluation struct {
 }
 
 type AdaptationStabilityEvaluation struct {
-	FirstChangeTick       int     `json:"first_change_tick"`
-	RecoveryTicks         int     `json:"recovery_ticks"`
-	PostChangeArea        float64 `json:"post_change_area"`
-	StationaryTailActions int     `json:"stationary_tail_actions"`
-	RepeatedLineageMoves  int     `json:"repeated_lineage_moves"`
-	ReversedMoves         int     `json:"reversed_moves"`
+	FirstChangeTick                     int     `json:"first_change_tick"`
+	RecoveryTicks                       int     `json:"recovery_ticks"`
+	PostChangeArea                      float64 `json:"post_change_area"`
+	StationaryTailActions               int     `json:"stationary_tail_actions"`
+	StationaryTailPartitionMoves        int     `json:"stationary_tail_partition_moves"`
+	StationaryTailPartitionLoadFraction float64 `json:"stationary_tail_partition_load_fraction"`
+	RepeatedRangeMoves                  int     `json:"repeated_range_moves"`
+	ReversedRangeMoves                  int     `json:"reversed_range_moves"`
+	RepeatedPartitionMoves              int     `json:"repeated_partition_moves"`
+	ReversedPartitionMoves              int     `json:"reversed_partition_moves"`
+	ReturnedPartitionLoadFraction       float64 `json:"returned_partition_load_fraction"`
 }
 
 type ActionEffectivenessEvaluation struct {
@@ -253,7 +258,7 @@ func actionColdMovedLoad(action scallop.Action) float64 {
 func evaluateAdaptation(fixture Fixture, rounds []RoundRecord) AdaptationStabilityEvaluation {
 	out := AdaptationStabilityEvaluation{FirstChangeTick: -1, RecoveryTicks: -1}
 	for tick := range rounds {
-		if fixture.workloadChangedAt(tick) {
+		if rounds[tick].WorkloadChanged {
 			out.FirstChangeTick = tick
 			break
 		}
@@ -275,23 +280,53 @@ func evaluateAdaptation(fixture Fixture, rounds []RoundRecord) AdaptationStabili
 	}
 
 	tailStart := len(rounds) * 3 / 4
-	seen := map[string]scallop.Action{}
+	seenRanges := map[string]scallop.Action{}
+	type timedPartitionMove struct {
+		tick   int
+		action scallop.Action
+	}
+	partitionHistory := map[int32][]timedPartitionMove{}
 	for i, round := range rounds {
 		if i >= tailStart {
 			out.StationaryTailActions += len(round.Actions)
 		}
 		for _, action := range round.Actions {
+			if action.Kind == scallop.ActionMovePartition {
+				if i >= tailStart {
+					out.StationaryTailPartitionMoves++
+					out.StationaryTailPartitionLoadFraction += action.Transition.TransitionLoad
+				}
+				history := partitionHistory[action.PartitionID]
+				if len(history) > 0 {
+					out.RepeatedPartitionMoves++
+				}
+				for historyIndex := len(history) - 1; historyIndex >= 0; historyIndex-- {
+					previous := history[historyIndex]
+					if i-previous.tick > 3 {
+						break
+					}
+					if action.FromReplica == previous.action.ToReplica &&
+						action.ToReplica == previous.action.FromReplica {
+						out.ReversedPartitionMoves++
+						out.ReturnedPartitionLoadFraction += action.Transition.TransitionLoad
+						break
+					}
+				}
+				partitionHistory[action.PartitionID] = append(history, timedPartitionMove{tick: i, action: action})
+				continue
+			}
+			if action.Kind != scallop.ActionMove {
+				continue
+			}
 			key := actionLineageKey(action)
-			if previous, ok := seen[key]; ok {
-				out.RepeatedLineageMoves++
-				if action.Kind == scallop.ActionMove &&
-					previous.Kind == scallop.ActionMove &&
-					action.FromPartition == previous.ToPartition &&
+			if previous, ok := seenRanges[key]; ok {
+				out.RepeatedRangeMoves++
+				if action.FromPartition == previous.ToPartition &&
 					action.ToPartition == previous.FromPartition {
-					out.ReversedMoves++
+					out.ReversedRangeMoves++
 				}
 			}
-			seen[key] = action
+			seenRanges[key] = action
 		}
 	}
 	return out
@@ -345,7 +380,7 @@ func evaluateTracking(
 			correctedTotal += (staticValues[i] - actualValues[i]) / staticValues[i]
 			correctedCount++
 		}
-		if firstChange < 0 && fixture.workloadChangedAt(i) {
+		if firstChange < 0 && round.WorkloadChanged {
 			firstChange = i
 		}
 		if firstChange >= 0 && firstAction < 0 && len(round.Actions) > 0 {
@@ -423,13 +458,21 @@ func actionLineageKey(action scallop.Action) string {
 
 // fixedUtility ranks policies with an external objective independent of the planner's own weighted cost.
 func fixedUtility(report EvaluationReport) float64 {
+	const (
+		ordinaryActionCost       = 0.05
+		partitionActionCostRatio = 64
+	)
 	work := report.RebalancingWork
 	structure := report.StructuralFootprint
+	stability := report.AdaptationStability
 	return report.PeakImbalance.Partition.Integral +
 		report.PeakImbalance.Replica.Integral +
 		0.1*work.MovedLoadFraction +
 		0.05*work.MovedHashFraction +
-		0.01*float64(work.Moves+work.Splits+work.Merges+work.PartitionMoves) +
+		ordinaryActionCost*float64(work.Moves+work.Splits+work.Merges+
+			partitionActionCostRatio*work.PartitionMoves) +
+		ordinaryActionCost*partitionActionCostRatio*float64(stability.ReversedPartitionMoves) +
+		0.1*partitionActionCostRatio*stability.ReturnedPartitionLoadFraction +
 		0.1*report.LocalityDisruption.ColdMovedLoadFraction +
 		0.00001*structure.RangeSeconds +
 		0.00001*structure.TenantPartitionSeconds

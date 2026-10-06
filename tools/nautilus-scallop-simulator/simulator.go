@@ -35,9 +35,10 @@ type RoundRecord struct {
 	Tick int       `json:"tick"`
 	Time time.Time `json:"time"`
 
-	Static   ImbalancePoint `json:"static"`
-	PrePlan  ImbalancePoint `json:"pre_plan"`
-	PostPlan ImbalancePoint `json:"post_plan"`
+	WorkloadChanged bool           `json:"workload_changed"`
+	Static          ImbalancePoint `json:"static"`
+	PrePlan         ImbalancePoint `json:"pre_plan"`
+	PostPlan        ImbalancePoint `json:"post_plan"`
 
 	TotalLoad         float64          `json:"total_load"`
 	RangeCount        int              `json:"range_count"`
@@ -66,6 +67,7 @@ type CandidateSearchSummary struct {
 
 type SimulationResult struct {
 	FixtureName     string                 `json:"fixture"`
+	TrafficNoise    TrafficNoiseConfig     `json:"traffic_noise"`
 	Policy          scallop.Policy         `json:"policy"`
 	Rounds          []RoundRecord          `json:"rounds"`
 	Evaluation      EvaluationReport       `json:"evaluation"`
@@ -94,6 +96,7 @@ func newSimulator(fixture Fixture) (*simulator, error) {
 	if err := fixture.validate(); err != nil {
 		return nil, err
 	}
+	fixture = prepareFixtureTrafficNoise(fixture)
 	partitions := make([]int32, fixture.Partitions)
 	owners := make(map[int32]string, fixture.Partitions)
 	replicas := make([]string, fixture.Readcaches)
@@ -196,6 +199,7 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 		rounds = append(rounds, RoundRecord{
 			Tick:              tick,
 			Time:              sim.now,
+			WorkloadChanged:   sim.fixture.workloadChangedAt(tick),
 			Static:            imbalancePoint(static),
 			PrePlan:           imbalancePoint(pre),
 			PostPlan:          imbalancePoint(post),
@@ -210,9 +214,10 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 		sim.now = sim.now.Add(time.Duration(fixture.TickSeconds) * time.Second)
 	}
 
-	evaluation := evaluate(fixture, rounds)
+	evaluation := evaluate(sim.fixture, rounds)
 	return SimulationResult{
 		FixtureName:     fixture.Name,
+		TrafficNoise:    sim.fixture.effectiveTrafficNoise(),
 		Policy:          policy,
 		Rounds:          rounds,
 		Evaluation:      evaluation,

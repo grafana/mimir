@@ -7,23 +7,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
+)
+
+const (
+	defaultTrafficNoiseCV               = 0.12
+	defaultTrafficNoiseCorrelationTicks = 1.0
+	defaultTrafficNoiseSeed             = int64(30)
 )
 
 //go:embed fixtures/*.json
 var fixtureFiles embed.FS
 
 type Fixture struct {
-	Name               string           `json:"name"`
-	Ticks              int              `json:"ticks"`
-	TickSeconds        int              `json:"tick_seconds"`
-	Partitions         int              `json:"partitions"`
-	Readcaches         int              `json:"readcaches"`
-	InitialRanges      int              `json:"initial_ranges_per_tenant"`
-	SettledRanges      int              `json:"settled_ranges_per_tenant,omitempty"`
-	ImbalanceThreshold float64          `json:"imbalance_threshold"`
-	LoadScale          float64          `json:"load_scale,omitempty"`
-	Tenants            []TenantWorkload `json:"tenants"`
+	Name               string              `json:"name"`
+	Ticks              int                 `json:"ticks"`
+	TickSeconds        int                 `json:"tick_seconds"`
+	Partitions         int                 `json:"partitions"`
+	Readcaches         int                 `json:"readcaches"`
+	InitialRanges      int                 `json:"initial_ranges_per_tenant"`
+	SettledRanges      int                 `json:"settled_ranges_per_tenant,omitempty"`
+	ImbalanceThreshold float64             `json:"imbalance_threshold"`
+	LoadScale          float64             `json:"load_scale,omitempty"`
+	TrafficNoise       *TrafficNoiseConfig `json:"traffic_noise,omitempty"`
+	Tenants            []TenantWorkload    `json:"tenants"`
+}
+
+// TrafficNoiseConfig defines deterministic multiplicative variation around configured amplitudes.
+type TrafficNoiseConfig struct {
+	CoefficientOfVariation float64 `json:"coefficient_of_variation"`
+	CorrelationTicks       float64 `json:"correlation_ticks"`
+	Seed                   int64   `json:"seed"`
+}
+
+// effectiveTrafficNoise uses production-calibrated defaults unless a fixture explicitly configures noise.
+func (f Fixture) effectiveTrafficNoise() TrafficNoiseConfig {
+	if f.TrafficNoise != nil {
+		return *f.TrafficNoise
+	}
+	return TrafficNoiseConfig{
+		CoefficientOfVariation: defaultTrafficNoiseCV,
+		CorrelationTicks:       defaultTrafficNoiseCorrelationTicks,
+		Seed:                   defaultTrafficNoiseSeed,
+	}
 }
 
 // settledRangeTarget returns the fixture's evaluation target without constraining planning.
@@ -52,6 +79,8 @@ type GaussianComponent struct {
 	Center    float64           `json:"center"`
 	Width     float64           `json:"width"`
 	Amplitude TemporalAmplitude `json:"amplitude"`
+
+	noiseMultipliers []float64
 }
 
 type TemporalAmplitude struct {
@@ -116,6 +145,17 @@ func (f Fixture) validate() error {
 	}
 	if f.ImbalanceThreshold <= 0 {
 		return fmt.Errorf("imbalance threshold must be positive")
+	}
+	noise := f.effectiveTrafficNoise()
+	if math.IsNaN(noise.CoefficientOfVariation) ||
+		math.IsInf(noise.CoefficientOfVariation, 0) ||
+		noise.CoefficientOfVariation < 0 {
+		return fmt.Errorf("traffic noise coefficient of variation must be finite and non-negative")
+	}
+	if math.IsNaN(noise.CorrelationTicks) ||
+		math.IsInf(noise.CorrelationTicks, 0) ||
+		(noise.CoefficientOfVariation > 0 && noise.CorrelationTicks <= 0) {
+		return fmt.Errorf("traffic noise correlation ticks must be finite and positive when noise is enabled")
 	}
 	if len(f.Tenants) == 0 {
 		return fmt.Errorf("at least one tenant is required")

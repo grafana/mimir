@@ -39,6 +39,7 @@ type RecommendationReport struct {
 
 type RecommendationFixture struct {
 	Name            string                 `json:"name"`
+	TrafficNoise    TrafficNoiseConfig     `json:"traffic_noise"`
 	Utility         float64                `json:"utility"`
 	Evaluation      EvaluationReport       `json:"evaluation"`
 	CandidateSearch CandidateSearchSummary `json:"candidate_search"`
@@ -63,6 +64,7 @@ func buildRecommendationReport(result SearchResult) RecommendationReport {
 	for _, fixture := range recommended.Fixtures {
 		out.Fixtures = append(out.Fixtures, RecommendationFixture{
 			Name:            fixture.FixtureName,
+			TrafficNoise:    fixture.TrafficNoise,
 			Utility:         fixture.Utility,
 			Evaluation:      fixture.Evaluation,
 			CandidateSearch: fixture.CandidateSearch,
@@ -101,6 +103,7 @@ func writeCSV(path string, result SearchResult) error {
 
 	header := []string{
 		"rank", "generation", "policy", "fixture",
+		"move_partition_multiplier", "traffic_noise_cv", "traffic_noise_correlation_ticks", "traffic_noise_seed",
 		"aggregate_utility", "mean_utility", "worst_utility", "fixture_utility",
 		"partition_imbalance_integral", "partition_imbalance_worst", "partition_imbalance_p95",
 		"replica_imbalance_integral", "replica_imbalance_worst", "replica_imbalance_p95",
@@ -110,7 +113,9 @@ func writeCSV(path string, result SearchResult) error {
 		"longest_no_progress_ticks", "unsettled_tenants",
 		"cold_moved_load", "cold_moved_load_fraction",
 		"first_change_tick", "recovery_ticks", "post_change_area",
-		"stationary_tail_actions", "repeated_lineage_moves", "reversed_moves",
+		"stationary_tail_actions", "stationary_tail_partition_moves", "stationary_tail_partition_load_fraction",
+		"repeated_range_moves", "reversed_range_moves",
+		"repeated_partition_moves", "reversed_partition_moves", "returned_partition_load_fraction",
 		"imbalance_reduction", "reduction_per_action", "reduction_per_moved_load",
 		"partition_tracking_score", "partition_tracking_max_error", "partition_tracking_p95_error",
 		"partition_time_above_threshold", "partition_corrective_action_delay",
@@ -157,6 +162,10 @@ func csvEvaluationRow(
 		strconv.Itoa(generation),
 		policyKey(policy),
 		fixture.FixtureName,
+		formatFloat(policy.ActionMultipliers.MovePartition),
+		formatFloat(fixture.TrafficNoise.CoefficientOfVariation),
+		formatFloat(fixture.TrafficNoise.CorrelationTicks),
+		strconv.FormatInt(fixture.TrafficNoise.Seed, 10),
 		formatFloat(aggregateUtility),
 		formatFloat(meanUtility),
 		formatFloat(worstUtility),
@@ -186,8 +195,13 @@ func csvEvaluationRow(
 		strconv.Itoa(e.AdaptationStability.RecoveryTicks),
 		formatFloat(e.AdaptationStability.PostChangeArea),
 		strconv.Itoa(e.AdaptationStability.StationaryTailActions),
-		strconv.Itoa(e.AdaptationStability.RepeatedLineageMoves),
-		strconv.Itoa(e.AdaptationStability.ReversedMoves),
+		strconv.Itoa(e.AdaptationStability.StationaryTailPartitionMoves),
+		formatFloat(e.AdaptationStability.StationaryTailPartitionLoadFraction),
+		strconv.Itoa(e.AdaptationStability.RepeatedRangeMoves),
+		strconv.Itoa(e.AdaptationStability.ReversedRangeMoves),
+		strconv.Itoa(e.AdaptationStability.RepeatedPartitionMoves),
+		strconv.Itoa(e.AdaptationStability.ReversedPartitionMoves),
+		formatFloat(e.AdaptationStability.ReturnedPartitionLoadFraction),
 		formatFloat(e.ActionEffectiveness.TotalImbalanceReduction),
 		formatFloat(e.ActionEffectiveness.ReductionPerAction),
 		formatFloat(e.ActionEffectiveness.ReductionPerMovedLoad),
@@ -245,7 +259,7 @@ func formatOptionalFloat(value *float64) string {
 func recommendationSummary(result SearchResult) string {
 	policy := result.Recommended.Policy
 	return fmt.Sprintf(
-		"evaluated=%d aggregate=%.6f weights={replica=%.6g events=%.6g load=%.6g hash=%.6g locality=%.6g fragmentation=%.6g resolution=%.6g}",
+		"evaluated=%d aggregate=%.6f weights={replica=%.6g events=%.6g load=%.6g hash=%.6g locality=%.6g fragmentation=%.6g resolution=%.6g} action_multipliers={move_partition=%.6g}",
 		result.EvaluatedPolicies,
 		result.Recommended.AggregateUtility,
 		policy.Weights.ReplicaBalance,
@@ -255,5 +269,6 @@ func recommendationSummary(result SearchResult) string {
 		policy.Weights.LocalityMiss,
 		policy.Weights.Fragmentation,
 		policy.Weights.Resolution,
+		policy.ActionMultipliers.MovePartition,
 	)
 }

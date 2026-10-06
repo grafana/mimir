@@ -46,11 +46,12 @@ type TickTracking struct {
 
 // TickEvaluationRecord is the stable machine-readable output for one simulated tick.
 type TickEvaluationRecord struct {
-	RecordType string         `json:"record_type"`
-	Fixture    string         `json:"fixture"`
-	Policy     scallop.Policy `json:"policy"`
-	Tick       int            `json:"tick"`
-	Time       time.Time      `json:"time"`
+	RecordType   string             `json:"record_type"`
+	Fixture      string             `json:"fixture"`
+	TrafficNoise TrafficNoiseConfig `json:"traffic_noise"`
+	Policy       scallop.Policy     `json:"policy"`
+	Tick         int                `json:"tick"`
+	Time         time.Time          `json:"time"`
 
 	Static   ImbalancePoint `json:"static"`
 	PrePlan  ImbalancePoint `json:"pre_plan"`
@@ -87,6 +88,7 @@ type FixtureBaselineSummary struct {
 type FixtureSummaryRecord struct {
 	RecordType      string                 `json:"record_type"`
 	Fixture         string                 `json:"fixture"`
+	TrafficNoise    TrafficNoiseConfig     `json:"traffic_noise"`
 	Policy          scallop.Policy         `json:"policy"`
 	Evaluation      EvaluationReport       `json:"evaluation"`
 	CandidateSearch CandidateSearchSummary `json:"candidate_search"`
@@ -150,6 +152,7 @@ func runFixtureCommand(args []string, stdout, stderr io.Writer) error {
 	flags.Float64Var(&policy.Weights.LocalityMiss, "locality-miss", policy.Weights.LocalityMiss, "Cold destination weight.")
 	flags.Float64Var(&policy.Weights.Fragmentation, "fragmentation", policy.Weights.Fragmentation, "Range fragmentation weight.")
 	flags.Float64Var(&policy.Weights.Resolution, "resolution", policy.Weights.Resolution, "Coarse hot-range weight.")
+	flags.Float64Var(&policy.ActionMultipliers.MovePartition, "move-partition-multiplier", policy.ActionMultipliers.MovePartition, "Relative transition cost of a partition move.")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -161,6 +164,11 @@ func runFixtureCommand(args []string, stdout, stderr io.Writer) error {
 	}
 	if err := validateCommandWeights(policy.Weights); err != nil {
 		return err
+	}
+	if math.IsNaN(policy.ActionMultipliers.MovePartition) ||
+		math.IsInf(policy.ActionMultipliers.MovePartition, 0) ||
+		policy.ActionMultipliers.MovePartition < 0 {
+		return fmt.Errorf("-move-partition-multiplier must be finite and non-negative, got %v", policy.ActionMultipliers.MovePartition)
 	}
 
 	fixtures, err := loadEmbeddedFixtures()
@@ -270,6 +278,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 		ticks = append(ticks, TickEvaluationRecord{
 			RecordType:                 "tick",
 			Fixture:                    fixture.Name,
+			TrafficNoise:               result.TrafficNoise,
 			Policy:                     result.Policy,
 			Tick:                       round.Tick,
 			Time:                       round.Time,
@@ -295,7 +304,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 				ReplicaCorrectedFraction:   correctedFraction(round.Static.Replica, round.PostPlan.Replica),
 				PartitionAboveThreshold:    round.PostPlan.Partition > fixture.ImbalanceThreshold,
 				ReplicaAboveThreshold:      round.PostPlan.Replica > fixture.ImbalanceThreshold,
-				WorkloadChanged:            fixture.workloadChangedAt(round.Tick),
+				WorkloadChanged:            round.WorkloadChanged,
 			},
 			CandidateSearch: round.CandidateSearch,
 		})
@@ -312,6 +321,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 	summary := FixtureSummaryRecord{
 		RecordType:      "summary",
 		Fixture:         fixture.Name,
+		TrafficNoise:    result.TrafficNoise,
 		Policy:          result.Policy,
 		Evaluation:      result.Evaluation,
 		CandidateSearch: result.CandidateSearch,
@@ -386,7 +396,7 @@ func writeFixtureCSV(path string, ticks []TickEvaluationRecord, summary FixtureS
 	}
 	writer := csv.NewWriter(file)
 	header := []string{
-		"record_type", "fixture", "tick", "time", "policy_json",
+		"record_type", "fixture", "tick", "time", "policy_json", "traffic_noise_json",
 		"static_partition", "static_replica", "pre_partition", "pre_replica", "post_partition", "post_replica",
 		"total_load", "range_count", "tenant_partitions", "unsettled_tenants",
 		"moves", "splits", "merges", "partition_moves", "moved_load", "moved_load_fraction",
@@ -403,6 +413,7 @@ func writeFixtureCSV(path string, ticks []TickEvaluationRecord, summary FixtureS
 	for _, tick := range ticks {
 		row := []string{
 			tick.RecordType, tick.Fixture, strconv.Itoa(tick.Tick), tick.Time.Format(time.RFC3339Nano), mustJSON(tick.Policy),
+			mustJSON(tick.TrafficNoise),
 			formatFloat(tick.Static.Partition), formatFloat(tick.Static.Replica),
 			formatFloat(tick.PrePlan.Partition), formatFloat(tick.PrePlan.Replica),
 			formatFloat(tick.PostPlan.Partition), formatFloat(tick.PostPlan.Replica),
@@ -425,6 +436,7 @@ func writeFixtureCSV(path string, ticks []TickEvaluationRecord, summary FixtureS
 	summaryRow[0] = summary.RecordType
 	summaryRow[1] = summary.Fixture
 	summaryRow[4] = mustJSON(summary.Policy)
+	summaryRow[5] = mustJSON(summary.TrafficNoise)
 	summaryRow[len(summaryRow)-1] = mustJSON(summary)
 	if err := writer.Write(summaryRow); err != nil {
 		_ = file.Close()

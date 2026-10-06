@@ -64,7 +64,7 @@ func (r *Rebalancer) seedScallopReadcacheCoverage(now time.Time, partitions []in
 
 // runScallopRound builds one snapshot, plans once, publishes both logs, then pushes.
 func (r *Rebalancer) runScallopRound(ctx context.Context, input scallopRoundInput) error {
-	policy := scallop.DefaultPolicy()
+	policy := r.cfg.Scallop.policy()
 	unavailable := input.failedConcreteReadcaches
 	if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
 		unavailable = excludeLogicalTargetsFromConcreteFailures(

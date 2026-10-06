@@ -22,7 +22,7 @@ type SearchConfig struct {
 func defaultSearchConfig() SearchConfig {
 	return SearchConfig{
 		BeamWidth:       3,
-		Log10StepByPass: []float64{0.75, 0.35, 0.15},
+		Log10StepByPass: []float64{1.0, 0.75, 0.35, 0.15},
 		MinimumPolicies: 100,
 	}
 }
@@ -212,7 +212,7 @@ func policyNeighbors(base scallop.Policy, log10Step float64) []scallop.Policy {
 	return out
 }
 
-const policyDimensions = 7
+const policyDimensions = 8
 
 // policyDimension reads one searchable weight by stable index for generic beam operations.
 func policyDimension(policy scallop.Policy, dimension int) float64 {
@@ -231,6 +231,8 @@ func policyDimension(policy scallop.Policy, dimension int) float64 {
 		return policy.Weights.Fragmentation
 	case 6:
 		return policy.Weights.Resolution
+	case 7:
+		return policy.ActionMultipliers.MovePartition
 	default:
 		panic("invalid policy dimension")
 	}
@@ -253,6 +255,8 @@ func setPolicyDimension(policy *scallop.Policy, dimension int, value float64) {
 		policy.Weights.Fragmentation = value
 	case 6:
 		policy.Weights.Resolution = value
+	case 7:
+		policy.ActionMultipliers.MovePartition = value
 	default:
 		panic("invalid policy dimension")
 	}

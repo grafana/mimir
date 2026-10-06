@@ -46,6 +46,91 @@ func TestGaussianIntegrationAndTemporalProfiles(t *testing.T) {
 	require.Less(t, envelope.at(0), envelope.at(5))
 }
 
+func TestTrafficNoiseIsDeterministicCorrelatedAndMeanPreserving(t *testing.T) {
+	fixture := Fixture{
+		Ticks: 20_000,
+		TrafficNoise: &TrafficNoiseConfig{
+			CoefficientOfVariation: 0.12,
+			CorrelationTicks:       2,
+			Seed:                   30,
+		},
+		Tenants: []TenantWorkload{{
+			ID: "tenant-a",
+			Components: []GaussianComponent{
+				{Amplitude: TemporalAmplitude{Kind: "constant", Value: 1}},
+				{Amplitude: TemporalAmplitude{Kind: "constant", Value: 1}},
+			},
+		}, {
+			ID: "tenant-b",
+			Components: []GaussianComponent{{
+				Amplitude: TemporalAmplitude{Kind: "constant", Value: 1},
+			}},
+		}},
+	}
+	first := prepareFixtureTrafficNoise(fixture)
+	second := prepareFixtureTrafficNoise(fixture)
+	require.Equal(t, first.Tenants[0].Components[0].noiseMultipliers, second.Tenants[0].Components[0].noiseMultipliers)
+
+	values := first.Tenants[0].Components[0].noiseMultipliers
+	require.NotEqual(t, values, first.Tenants[0].Components[1].noiseMultipliers)
+	require.NotEqual(t, values, first.Tenants[1].Components[0].noiseMultipliers)
+	sum := 0.0
+	logs := make([]float64, len(values))
+	for i, value := range values {
+		require.Positive(t, value)
+		sum += value
+		logs[i] = math.Log(value)
+	}
+	require.InDelta(t, 1, sum/float64(len(values)), 0.01)
+	require.InDelta(t, math.Exp(-0.5), lagOneCorrelation(logs), 0.03)
+
+	fixture.TrafficNoise.Seed++
+	different := prepareFixtureTrafficNoise(fixture)
+	require.NotEqual(t, values, different.Tenants[0].Components[0].noiseMultipliers)
+}
+
+func TestTrafficNoiseDefaultsAndExplicitDisable(t *testing.T) {
+	fixture := Fixture{Ticks: 3, Tenants: []TenantWorkload{{
+		ID: "tenant-a",
+		Components: []GaussianComponent{{
+			Amplitude: TemporalAmplitude{Kind: "constant", Value: 10},
+		}},
+	}}}
+	defaulted := prepareFixtureTrafficNoise(fixture)
+	require.Equal(t, defaultTrafficNoiseCV, defaulted.effectiveTrafficNoise().CoefficientOfVariation)
+	require.Len(t, defaulted.Tenants[0].Components[0].noiseMultipliers, fixture.Ticks)
+
+	fixture.TrafficNoise = &TrafficNoiseConfig{CoefficientOfVariation: 0, CorrelationTicks: 1, Seed: 99}
+	disabled := prepareFixtureTrafficNoise(fixture)
+	require.Empty(t, disabled.Tenants[0].Components[0].noiseMultipliers)
+	require.Equal(t, 10.0, disabled.Tenants[0].Components[0].at(2))
+}
+
+func TestNoisyGaussianIntegrationConservesSplitAndMergeLoad(t *testing.T) {
+	fixture := prepareFixtureTrafficNoise(Fixture{
+		Ticks: 2,
+		Tenants: []TenantWorkload{{
+			ID:       "tenant-a",
+			Baseline: 7,
+			Components: []GaussianComponent{{
+				Center:    0.23,
+				Width:     0.04,
+				Amplitude: TemporalAmplitude{Kind: "constant", Value: 100},
+			}},
+		}},
+	})
+	workload := fixture.Tenants[0]
+	left := assignment.HashRange{Lo: 0, Hi: math.MaxInt32}
+	right := assignment.HashRange{Lo: math.MaxInt32 + 1, Hi: math.MaxUint32}
+	full := assignment.HashRange{Lo: 0, Hi: math.MaxUint32}
+	for tick := range fixture.Ticks {
+		first := workload.integrate(full, tick)
+		second := workload.integrate(full, tick)
+		require.Equal(t, first, second, "same-tick integration must be stable")
+		require.InDelta(t, first, workload.integrate(left, tick)+workload.integrate(right, tick), 1e-10)
+	}
+}
+
 func TestDummyReadcacheImmediatelyExhibitsMovedGaussianLoad(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
@@ -167,7 +252,7 @@ func TestActionColdMovedLoadHandlesPartialPartitionWarmth(t *testing.T) {
 func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	require.Len(t, fixtures, 5)
+	require.Len(t, fixtures, 6)
 	policy := scallop.DefaultPolicy()
 	policy.ActionLimits = simulatorActionLimits(4)
 	policy.Weights.Resolution = 0.005
@@ -180,6 +265,8 @@ func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 		t.Run(fixture.Name, func(t *testing.T) {
 			result, err := simulateFixture(fixture, policy)
 			require.NoError(t, err)
+			require.Equal(t, fixture.effectiveTrafficNoise(), result.TrafficNoise)
+			require.Equal(t, defaultTrafficNoiseCV, result.TrafficNoise.CoefficientOfVariation)
 			require.Len(t, result.Rounds, fixture.Ticks)
 			require.Greater(t, result.Evaluation.PeakImbalance.Partition.Integral, 0.0)
 			require.Greater(t, result.Evaluation.StructuralFootprint.RangeSeconds, 0.0)
@@ -190,9 +277,8 @@ func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 
 			switch fixture.Name {
 			case "single-tenant-static":
-				for _, round := range result.Rounds[len(result.Rounds)-4:] {
-					require.Empty(t, round.Actions, "stationary fixture should converge to no-op rounds")
-				}
+				require.True(t, result.Rounds[1].WorkloadChanged,
+					"static Gaussian shape should still receive default traffic variation")
 			case "single-tenant-growing":
 				require.True(t, hasActionAfter(result.Rounds, fixture.Ticks/2),
 					"growing hotspot should trigger later actions from new observations")
@@ -268,6 +354,81 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 	}
 }
 
+func TestDev30FluctuatingFixtureTopology(t *testing.T) {
+	fixtures, err := loadEmbeddedFixtures()
+	require.NoError(t, err)
+	fixture := fixtureByName(t, fixtures, "dev30-fluctuating")
+	require.Equal(t, 300, fixture.Partitions)
+	require.Equal(t, 100, fixture.Readcaches)
+	require.Equal(t, 4, fixture.InitialRanges)
+	require.Equal(t, 30, fixture.TickSeconds)
+	require.GreaterOrEqual(t, fixture.Ticks, 8)
+	require.Len(t, fixture.Tenants, 200)
+	require.Equal(t, defaultTrafficNoiseCV, fixture.effectiveTrafficNoise().CoefficientOfVariation)
+	centers := map[float64]struct{}{}
+	loads := map[float64]struct{}{}
+	for _, tenant := range fixture.Tenants {
+		require.Len(t, tenant.Components, 1)
+		component := tenant.Components[0]
+		require.Equal(t, "constant", component.Amplitude.Kind)
+		centers[component.Center] = struct{}{}
+		loads[component.Amplitude.Value] = struct{}{}
+	}
+	require.Greater(t, len(centers), 100)
+	require.Greater(t, len(loads), 100)
+}
+
+func TestAdaptationSeparatesRangeAndPartitionReversals(t *testing.T) {
+	rounds := make([]RoundRecord, 8)
+	rounds[0].Actions = []scallop.Action{{
+		Kind: scallop.ActionMovePartition, PartitionID: 7, FromReplica: "a", ToReplica: "b",
+		Transition: scallop.CostBreakdown{TransitionLoad: 0.2},
+	}}
+	rounds[2].Actions = []scallop.Action{{
+		Kind: scallop.ActionMovePartition, PartitionID: 7, FromReplica: "b", ToReplica: "a",
+		Transition: scallop.CostBreakdown{TransitionLoad: 0.3},
+	}}
+	movedRange := assignment.HashRange{Lo: 0, Hi: 99}
+	rounds[3].Actions = []scallop.Action{{
+		Kind: scallop.ActionMove, TenantID: "tenant-a", Range: movedRange, FromPartition: 1, ToPartition: 2,
+	}}
+	rounds[5].Actions = []scallop.Action{{
+		Kind: scallop.ActionMove, TenantID: "tenant-a", Range: movedRange, FromPartition: 2, ToPartition: 1,
+	}}
+	rounds[7].Actions = []scallop.Action{{
+		Kind: scallop.ActionMovePartition, PartitionID: 9, FromReplica: "a", ToReplica: "b",
+	}}
+
+	got := evaluateAdaptation(Fixture{TickSeconds: 1}, rounds)
+	require.Equal(t, 1, got.RepeatedRangeMoves)
+	require.Equal(t, 1, got.ReversedRangeMoves)
+	require.Equal(t, 1, got.RepeatedPartitionMoves)
+	require.Equal(t, 1, got.ReversedPartitionMoves)
+	require.InDelta(t, 0.3, got.ReturnedPartitionLoadFraction, 1e-12)
+	require.Equal(t, 1, got.StationaryTailPartitionMoves)
+}
+
+func TestFixedUtilityPricesPartitionMoveChurn(t *testing.T) {
+	rangeWork := EvaluationReport{
+		RebalancingWork: RebalancingWorkEvaluation{Moves: 64},
+	}
+	partitionWork := EvaluationReport{
+		RebalancingWork: RebalancingWorkEvaluation{PartitionMoves: 1},
+	}
+	require.Equal(t, fixedUtility(rangeWork), fixedUtility(partitionWork))
+
+	partitionWork.AdaptationStability.ReversedPartitionMoves = 1
+	partitionWork.AdaptationStability.ReturnedPartitionLoadFraction = 0.1
+	require.Greater(t, fixedUtility(partitionWork), fixedUtility(rangeWork))
+}
+
+func TestPolicyIdentityIncludesPartitionMoveMultiplier(t *testing.T) {
+	first := scallop.DefaultPolicy()
+	second := first
+	second.ActionMultipliers.MovePartition *= 2
+	require.NotEqual(t, policyKey(first), policyKey(second))
+}
+
 func TestClosedLoopSupportsMultipleInitialGranularities(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
@@ -299,11 +460,23 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, first.EvaluatedPolicies, 100)
 	require.Equal(t, first.Recommended, replayed)
+	require.Greater(t, first.Recommended.Policy.ActionMultipliers.MovePartition, 1.0)
+	recommendedDev30 := first.Recommended.Fixtures[0]
+	for _, fixture := range first.Recommended.Fixtures {
+		if fixture.FixtureName == "dev30-fluctuating" {
+			recommendedDev30 = fixture
+			break
+		}
+	}
+	require.Equal(t, "dev30-fluctuating", recommendedDev30.FixtureName)
+	require.Zero(t, recommendedDev30.Evaluation.AdaptationStability.ReversedPartitionMoves)
+	require.Less(t, recommendedDev30.Evaluation.RebalancingWork.PartitionMoves, 56)
 	for _, policy := range first.Ranked {
 		for _, fixture := range policy.Fixtures {
 			requireSevenEvaluationGroups(t, fixture.Evaluation)
 			if fixture.FixtureName == "large-cell-static" ||
-				fixture.FixtureName == "many-tiny-tenants-consolidating" {
+				fixture.FixtureName == "many-tiny-tenants-consolidating" ||
+				fixture.FixtureName == "dev30-fluctuating" {
 				require.Greater(t, fixture.CandidateSearch.RoundsTruncated, 0)
 			} else {
 				require.Zero(t, fixture.CandidateSearch.RoundsTruncated,
@@ -343,6 +516,26 @@ func simulatorActionLimits(limit int) scallop.ActionLimits {
 		MergePerTenant: limit,
 		MovePartition:  limit,
 	}
+}
+
+func lagOneCorrelation(values []float64) float64 {
+	leftMean, rightMean := 0.0, 0.0
+	for i := 1; i < len(values); i++ {
+		leftMean += values[i-1]
+		rightMean += values[i]
+	}
+	count := float64(len(values) - 1)
+	leftMean /= count
+	rightMean /= count
+	covariance, leftVariance, rightVariance := 0.0, 0.0, 0.0
+	for i := 1; i < len(values); i++ {
+		left := values[i-1] - leftMean
+		right := values[i] - rightMean
+		covariance += left * right
+		leftVariance += left * left
+		rightVariance += right * right
+	}
+	return covariance / math.Sqrt(leftVariance*rightVariance)
 }
 
 func requireSevenEvaluationGroups(t *testing.T, evaluation EvaluationReport) {

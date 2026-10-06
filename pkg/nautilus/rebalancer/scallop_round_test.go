@@ -17,9 +17,13 @@ import (
 )
 
 func TestScallopRoundPlansOncePublishesBothLogsThenPushes(t *testing.T) {
+	scallopConfig := defaultScallopConfig()
+	scallopConfig.ReplicaBalanceWeight = 0.123
+	scallopConfig.MovePartitionMultiplier = 44
 	h := newHarness(t, harnessOpts{
 		cfg: Config{
 			Planner:        plannerScallop,
+			Scallop:        scallopConfig,
 			PartitionCount: 2,
 		},
 	})
@@ -43,9 +47,11 @@ func TestScallopRoundPlansOncePublishesBothLogsThenPushes(t *testing.T) {
 
 	var calls atomic.Int32
 	var plannedSnapshot scallop.Snapshot
-	h.r.scallopPlan = func(snapshot scallop.Snapshot, _ scallop.Policy) (scallop.PlanResult, error) {
+	var plannedPolicy scallop.Policy
+	h.r.scallopPlan = func(snapshot scallop.Snapshot, policy scallop.Policy) (scallop.PlanResult, error) {
 		calls.Add(1)
 		plannedSnapshot = snapshot
+		plannedPolicy = policy
 		assert.Equal(t, map[int32]string{0: "rc-0", 1: "rc-1"}, snapshot.PartitionOwners)
 		return scallop.PlanResult{
 			Assignment:      snapshot.Assignment,
@@ -84,7 +90,8 @@ func TestScallopRoundPlansOncePublishesBothLogsThenPushes(t *testing.T) {
 	envelope, err := last.scallopReplayEnvelope()
 	require.NoError(t, err)
 	assert.Equal(t, plannedSnapshot, envelope.Snapshot)
-	assert.Equal(t, scallop.DefaultPolicy(), envelope.Policy)
+	assert.Equal(t, scallopConfig.policy(), plannedPolicy)
+	assert.Equal(t, plannedPolicy, envelope.Policy)
 }
 
 func TestScallopRoundIncompleteSnapshotPreservesAssignmentsAndSkipsPlan(t *testing.T) {

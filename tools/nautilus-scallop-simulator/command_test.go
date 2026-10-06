@@ -28,6 +28,7 @@ func TestRunFixtureCommandEmitsDeterministicTickRecordsAndSummary(t *testing.T) 
 		"-locality-miss", "0.14",
 		"-fragmentation", "0.2",
 		"-resolution", "0.003",
+		"-move-partition-multiplier", "64",
 	}
 	var first, second bytes.Buffer
 	require.NoError(t, runCLI(args, &first, &bytes.Buffer{}))
@@ -53,10 +54,13 @@ func TestRunFixtureCommandEmitsDeterministicTickRecordsAndSummary(t *testing.T) 
 		require.Equal(t, 0.14, record.Policy.Weights.LocalityMiss)
 		require.Equal(t, 0.2, record.Policy.Weights.Fragmentation)
 		require.Equal(t, 0.003, record.Policy.Weights.Resolution)
+		require.Equal(t, 64.0, record.Policy.ActionMultipliers.MovePartition)
+		require.Equal(t, defaultTrafficNoiseCV, record.TrafficNoise.CoefficientOfVariation)
 	}
 	var summary FixtureSummaryRecord
 	require.NoError(t, json.Unmarshal([]byte(lines[len(lines)-1]), &summary))
 	require.Equal(t, "summary", summary.RecordType)
+	require.Equal(t, defaultTrafficNoiseCV, summary.TrafficNoise.CoefficientOfVariation)
 	requireSevenEvaluationGroups(t, summary.Evaluation)
 }
 
@@ -139,6 +143,10 @@ func TestRunFixtureCommandRejectsInvalidInput(t *testing.T) {
 			args:    []string{"run-fixture", "-fixture", "single-tenant-static", "-resolution", "NaN"},
 			message: "-resolution must be finite and non-negative",
 		},
+		"negative partition move multiplier": {
+			args:    []string{"run-fixture", "-fixture", "single-tenant-static", "-move-partition-multiplier", "-1"},
+			message: "-move-partition-multiplier must be finite and non-negative",
+		},
 		"unexpected argument": {
 			args:    []string{"run-fixture", "-fixture", "single-tenant-static", "extra"},
 			message: "unexpected positional arguments",
@@ -184,7 +192,7 @@ func TestTinyTenantFixtureConvergesFairly(t *testing.T) {
 	for i := range ticks {
 		require.NoError(t, json.Unmarshal([]byte(lines[i]), &ticks[i]))
 		require.Len(t, ticks[i].TenantRangeCounts, len(fixture.Tenants))
-		require.False(t, ticks[i].Tracking.WorkloadChanged)
+		require.Equal(t, i > 0, ticks[i].Tracking.WorkloadChanged)
 		require.LessOrEqual(t, ticks[i].Actions.Merges, len(fixture.Tenants)*ticks[i].Policy.ActionLimits.MergePerTenant)
 		for tenant, count := range ticks[i].TenantRangeCounts {
 			progress := previousCounts[tenant] - count
