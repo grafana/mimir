@@ -32,11 +32,27 @@ type seriesstoreEngine struct {
 	compactions prometheus.Counter
 }
 
-// seriesstoreShards is how many store shards a tenant's series spread over: appends to a tenant
-// come from the pusher's parallel shards, and each store shard has its own lock.
+// seriesstoreShards is how many store shards a tenant with up to a few hundred thousand series
+// spreads them over: appends to a tenant come from the pusher's parallel shards, and each store
+// shard has its own lock.
 const seriesstoreShards = 16
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
+// seriesstoreShardsFor is how many store shards a tenant with a limit of maxSeries series gets. The
+// pusher's parallel shards wait on each other's commits of a store shard, which costs a large
+// tenant's appends a third of their throughput at 16 shards, while a small tenant's few series
+// would only pay for the extra shards' state. A shard count is kept by the tenant's snapshot.
+func seriesstoreShardsFor(maxSeries int) int {
+	switch {
+	case maxSeries >= 1_000_000:
+		return 4 * seriesstoreShards
+	case maxSeries >= 300_000:
+		return 2 * seriesstoreShards
+	default:
+		return seriesstoreShards
+	}
+}
+
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -50,7 +66,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		}),
 	}
 	engine, err := store.OpenEngine(dir, userID, store.EngineOptions{
-		Shards:                  seriesstoreShards,
+		Shards:                  shards,
 		RetentionMs:             opts.RetentionDuration,
 		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
 		MaxExemplars:            opts.MaxExemplars,
