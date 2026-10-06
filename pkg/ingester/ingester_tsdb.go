@@ -22,7 +22,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"go.uber.org/atomic"
@@ -49,31 +48,16 @@ func (i *Ingester) applyTSDBSettings() {
 			oooTW = 0
 		}
 
-		// We populate a Config struct with just TSDB related config, which is OK
-		// because DB.ApplyConfig only looks at the specified config.
-		// The other fields in Config are things like Rules, Scrape
-		// settings, which don't apply to Head.
-		cfg := promcfg.Config{
-			StorageConfig: promcfg.StorageConfig{
-				ExemplarsConfig: &promcfg.ExemplarsConfig{
-					MaxExemplars: int64(i.limiter.maxExemplarsPerUser(userID)),
-				},
-				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderTimeWindow: oooTW.Milliseconds(),
-					ChunkEncoding: promcfg.ChunkEncodingConfig{
-						// ApplyConfig() reads the empty string as "keep the encoding resolved at
-						// startup", so a tenant clearing the limit needs an explicit value here to
-						// fall back to the default rather than keep its old encoding.
-						Floats: i.limits.FloatChunkEncodingValue(userID),
-					},
-				},
-			},
+		settings := engineSettings{
+			OutOfOrderTimeWindow: oooTW.Milliseconds(),
+			MaxExemplars:         int64(i.limiter.maxExemplarsPerUser(userID)),
+			FloatChunkEncoding:   i.limits.FloatChunkEncodingValue(userID),
 		}
 		db := i.getTSDB(userID)
 		if db == nil {
 			continue
 		}
-		if err := db.db.ApplyConfig(&cfg); err != nil {
+		if err := db.db.Configure(settings); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
@@ -268,7 +252,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		headMaxTime := time.UnixMilli(db.Head().MaxTime())
+		headMaxTime := time.UnixMilli(db.Head().TimeBounds().MaxTime)
 		if headMaxTime.Before(lastUpdateTime) {
 			lastUpdateTime = headMaxTime
 		}
@@ -344,7 +328,7 @@ func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.Block
 		if _, ok := b.(*tsdb.RangeHead); ok {
 			return "0" // Special case: querying head block
 		}
-		headMinTime := db.Head().MinTime()
+		headMinTime := db.Head().TimeBounds().MinTime
 		if headMinTime == math.MaxInt64 {
 			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
 		}
@@ -566,7 +550,7 @@ func (i *Ingester) minTsdbHeadTimestamp() float64 {
 
 	minTime := int64(math.MaxInt64)
 	for _, db := range i.tsdbs {
-		minTime = min(minTime, db.db.Head().MinTime())
+		minTime = min(minTime, db.db.Head().TimeBounds().MinTime)
 	}
 
 	if minTime == math.MaxInt64 {
@@ -582,7 +566,7 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 
 	maxTime := int64(math.MinInt64)
 	for _, db := range i.tsdbs {
-		maxTime = max(maxTime, db.db.Head().MaxTime())
+		maxTime = max(maxTime, db.db.Head().TimeBounds().MaxTime)
 	}
 
 	if maxTime == math.MinInt64 {

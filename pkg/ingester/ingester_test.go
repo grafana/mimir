@@ -8276,7 +8276,8 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 	h := db.Head()
 
-	dur := time.Duration(h.MaxTime()-h.MinTime()) * time.Millisecond
+	bounds := h.TimeBounds()
+	dur := time.Duration(bounds.MaxTime-bounds.MinTime) * time.Millisecond
 	require.True(t, dur <= 2*time.Hour)
 	require.Equal(t, 11, len(db.Blocks()))
 }
@@ -11868,7 +11869,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
 	// Verify that maxTime of TSDB is actually our future sample.
-	require.Equal(t, futureTS, db.db.Head().MaxTime())
+	require.Equal(t, futureTS, db.db.Head().TimeBounds().MaxTime)
 }
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
@@ -12355,7 +12356,7 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	userDB := &userTSDB{db: prometheusEngine{db}}
+	userDB := &userTSDB{db: prometheusEngine{DB: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
@@ -12411,7 +12412,7 @@ func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
 
 	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
 
-	userDB := &userTSDB{db: prometheusEngine{db}}
+	userDB := &userTSDB{db: prometheusEngine{DB: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
