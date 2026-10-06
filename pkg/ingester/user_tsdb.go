@@ -94,8 +94,10 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
-	cfg            *Config
-	db             tenantEngine
+	cfg *Config
+	db  tenantEngine
+	// The directory of the tenant's data, whatever the engine keeps in it.
+	dir            string
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -216,11 +218,11 @@ func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
 }
 
 func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.ChunkQuerier(mint, maxt)
+	return u.db.ChunkQuerier(mint, maxt, false)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.UnorderedChunkQuerier(mint, maxt)
+	return u.db.ChunkQuerier(mint, maxt, true)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
@@ -245,10 +247,6 @@ func (u *userTSDB) Close() error {
 
 func (u *userTSDB) Compact() error {
 	return u.db.Compact(context.Background())
-}
-
-func (u *userTSDB) StartTime() (int64, error) {
-	return u.db.StartTime()
 }
 
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
@@ -483,7 +481,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shippedBlocks, err := readShippedBlocks(u.db.Dir())
+	shippedBlocks, err := readShippedBlocks(u.dir)
 	if err != nil {
 		return err
 	}
@@ -776,7 +774,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := u.Head().MustIndex()
+	idx := mustIndex(u.Head())
 	defer idx.Close()
 
 	count := 0

@@ -462,7 +462,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		}
 
 		// Purge the active series so that the next call to Active() will return the up-to-date count.
-		idx := db.Head().MustIndex()
+		idx := mustIndex(db.Head())
 		db.activeSeries.Purge(now, idx)
 		idx.Close()
 
@@ -559,7 +559,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		}
 
 		// Purge active series to get accurate count
-		idx := db.Head().MustIndex()
+		idx := mustIndex(db.Head())
 		db.activeSeries.Purge(now, idx)
 		_ = idx.Close()
 

@@ -156,6 +156,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
+		dir:                     udir,
 		cfg:                     &i.cfg,
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
@@ -236,8 +237,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
-	db.DisableCompactions() // we will compact on our own schedule
-
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
@@ -647,7 +646,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// We need to remove these series from series count.
 	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
 
-	dir := userDB.db.Dir()
+	dir := userDB.dir
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)

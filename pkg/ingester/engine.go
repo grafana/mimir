@@ -20,8 +20,9 @@ import (
 type tenantEngine interface {
 	Appender(ctx context.Context) storage.Appender
 	Querier(mint, maxt int64) (storage.Querier, error)
-	ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error)
-	UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error)
+	// ChunkQuerier returns the chunks of the series in the range; with unordered, those of a series may overlap
+	// and come in any order, which the engine may serve more cheaply.
+	ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error)
 	ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error)
 
 	Head() engineHead
@@ -31,11 +32,8 @@ type tenantEngine interface {
 	CompactHead(mint, maxt int64) error
 	CompactOOOHead(ctx context.Context) error
 	CompactSelectedSeries(refs []storage.SeriesRef) error
-	DisableCompactions()
 
 	ApplyConfig(conf *config.Config) error
-	StartTime() (int64, error)
-	Dir() string
 	Close() error
 }
 
@@ -50,7 +48,6 @@ type engineHead interface {
 	AppendableMinValidTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
-	MustIndex() tsdb.IndexReader
 	ForEachSecondaryHash(fn func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32))
 	ForEachShardHash(fn func(refs []storage.SeriesRef, shardHashes []uint64))
 
@@ -73,9 +70,25 @@ type tsdbHead interface {
 	PostingsForMatchersCache() *tsdb.PostingsForMatchersCache
 }
 
+// mustIndex returns the head's index, for callers that can't continue without it.
+func mustIndex(head engineHead) tsdb.IndexReader {
+	idx, err := head.Index()
+	if err != nil {
+		panic(err)
+	}
+	return idx
+}
+
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
 type prometheusEngine struct {
 	*tsdb.DB
+}
+
+func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	if unordered {
+		return e.DB.UnorderedChunkQuerier(mint, maxt)
+	}
+	return e.DB.ChunkQuerier(mint, maxt)
 }
 
 // openPrometheusEngine opens the tenant's TSDB in dir, replaying its WAL.
@@ -84,6 +97,8 @@ func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Regist
 	if err != nil {
 		return nil, err
 	}
+	// The ingester compacts on its own schedule.
+	db.DisableCompactions()
 	return prometheusEngine{db}, nil
 }
 
