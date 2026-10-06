@@ -774,6 +774,7 @@ func (e *Engine) CompactSelectedSeries(refs []storage.SeriesRef) error {
 				return err
 			}
 			series.headEvicted = true
+			e.store.evictEpoch.Add(1)
 			series.inHead = false
 			leaving[ref] = entry.labels
 		}

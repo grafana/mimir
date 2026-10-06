@@ -191,7 +191,10 @@ type costAttributionState struct {
 // Store holds every tenant's series.
 type Store struct {
 	// Set by the engine, which keeps only head series in memory: see headView.memoryIsHead.
-	memoryIsHead   bool
+	memoryIsHead bool
+	// Bumped when a series is evicted from the head, which invalidates what the label lookups
+	// cached about the series in it.
+	evictEpoch     atomic.Uint64
 	shards         []*shardState
 	threads        int
 	activeWindowMs int64
