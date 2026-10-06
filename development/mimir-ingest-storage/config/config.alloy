@@ -140,6 +140,13 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         job         = "mimir-ingest-storage/usage-tracker",
                         namespace   = "mimir-ingest-storage",
                 }],
+                [{
+                        __address__ = "continuous-test:8080",
+                        cluster     = "docker-compose",
+                        container   = "continuous-test",
+                        job         = "mimir-ingest-storage/continuous-test",
+                        namespace   = "mimir-ingest-storage",
+                }],
         )
         forward_to      = [prometheus.remote_write.metrics_local.receiver]
         scrape_interval = "5s"

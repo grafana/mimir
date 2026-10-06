@@ -157,6 +157,7 @@ github.com/alecthomas/units
 ## explicit; go 1.24.0
 github.com/antithesishq/antithesis-sdk-go/assert
 github.com/antithesishq/antithesis-sdk-go/internal
+github.com/antithesishq/antithesis-sdk-go/random
 # github.com/armon/go-metrics v0.4.1
 ## explicit; go 1.12
 github.com/armon/go-metrics

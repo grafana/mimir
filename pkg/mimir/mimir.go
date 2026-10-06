@@ -54,6 +54,7 @@ import (
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/continuoustest/explore"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -140,17 +141,18 @@ type Config struct {
 	IncludeTenantIDInProfileLabels bool                            `yaml:"include_tenant_id_in_profile_labels" category:"experimental"`
 	Vault                          vault.Config                    `yaml:"vault"`
 
-	Ruler               ruler.Config                               `yaml:"ruler"`
-	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
-	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
-	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
-	RuntimeConfig       RuntimeConfigConfig                        `yaml:"runtime_config"`
-	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
-	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
-	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
-	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
-	ContinuousTest      continuoustest.Config                      `yaml:"-"`
-	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
+	Ruler                 ruler.Config                               `yaml:"ruler"`
+	RulerStorage          rulestore.Config                           `yaml:"ruler_storage"`
+	Alertmanager          alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
+	AlertmanagerStorage   alertstore.Config                          `yaml:"alertmanager_storage"`
+	RuntimeConfig         RuntimeConfigConfig                        `yaml:"runtime_config"`
+	MemberlistKV          memberlist.KVConfig                        `yaml:"memberlist"`
+	QueryScheduler        scheduler.Config                           `yaml:"query_scheduler"`
+	UsageStats            usagestats.Config                          `yaml:"usage_stats"`
+	UsageTracker          usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
+	ContinuousTest        continuoustest.Config                      `yaml:"-"`
+	ContinuousTestExplore explore.Config                             `yaml:"-"`
+	OverridesExporter     exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
 
@@ -224,6 +226,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.UsageTracker.RegisterFlags(f, logger)
 	c.ContinuousTest.RegisterFlags(f)
+	c.ContinuousTestExplore.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)

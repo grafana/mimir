@@ -947,6 +947,16 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.explore.definition-file string
+    	Path to a YAML file defining the behavior space and the paces at which to explore it. If empty, the built-in definition is used.
+  -tests.explore.enabled
+    	Set to true to run the explore test, which gradually writes and reads back scenarios drawn from a definition of the behavior space to explore. Its series are independent from the series of other tests.
+  -tests.explore.pace string
+    	Name of the pace, from the definition, at which to explore the behavior space. (default "production")
+  -tests.explore.scenario-source string
+    	How the scenario of each slot is chosen. With "schedule", scenarios follow the schedule determined by the seed and the definition, which covers every value and every pair of values in each cycle. With "antithesis", the dimension values and seed of each scenario are drawn from the Antithesis SDK when the scenario starts, so that Antithesis can guide the exploration. Outside Antithesis, the draws come from crypto/rand. (default "schedule")
+  -tests.explore.seed uint
+    	Seed of the exploration schedule. With the same seed and definition, the same scenario always runs in the same time slot. Set to 0 to pick a random seed at startup. (default 1)
   -tests.ingest-storage-record.consumer-group string
     	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
   -tests.ingest-storage-record.enabled
