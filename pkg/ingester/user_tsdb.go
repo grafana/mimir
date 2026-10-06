@@ -95,7 +95,7 @@ type ownedSeriesState struct {
 
 type userTSDB struct {
 	cfg            *Config
-	db             *tsdb.DB
+	db             tenantEngine
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -223,7 +223,7 @@ func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier
 	return u.db.ExemplarQuerier(ctx)
 }
 
-func (u *userTSDB) Head() *tsdb.Head {
+func (u *userTSDB) Head() engineHead {
 	return u.db.Head()
 }
 
@@ -310,7 +310,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 			break
 		}
 
-		if err := u.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
+		if err := u.db.CompactHead(blockMinTime, blockMaxTime); err != nil {
 			return err
 		}
 
@@ -442,7 +442,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		return nil
 	}
 
-	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
+	deletable := u.db.BlocksToDelete(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
