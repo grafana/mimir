@@ -12,8 +12,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // tenantEngine is the per-tenant storage behind userTSDB: everything the ingester does around it (limits through
@@ -69,18 +67,6 @@ type engineHead interface {
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
 type prometheusEngine struct {
 	*tsdb.DB
-}
-
-// testEngine lets tests run the whole package on another engine (MIMIR_TEST_TSDB_ENGINE); it's
-// always empty outside tests.
-var testEngine string
-
-// openTenantEngine opens the tenant's TSDB in dir with the engine the ingester is configured with.
-func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
-	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)))
-	}
-	return openPrometheusEngine(dir, logger, reg, opts)
 }
 
 // openPrometheusEngine opens the tenant's TSDB in dir, replaying its WAL.
