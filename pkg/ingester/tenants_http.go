@@ -154,7 +154,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 
 	shipped := db.getCachedShippedBlocks()
 
-	blocks := db.db.Blocks()
+	blocks := db.Blocks()
 	for _, b := range blocks {
 		m := b.Meta()
 

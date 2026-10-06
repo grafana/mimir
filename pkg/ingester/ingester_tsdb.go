@@ -256,7 +256,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		userDB.postingsCache = db.Head().PostingsForMatchersCache()
+		if head, ok := db.Head().(tsdbHead); ok {
+			userDB.postingsCache = head.PostingsForMatchersCache()
+		}
 	}
 
 	// If head is empty (eg. new TSDB), don't close it right after.
@@ -703,6 +705,6 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		if db == nil {
 			return nil
 		}
-		return db.Head().FsyncWLSegments()
+		return db.Head().Sync()
 	})
 }
