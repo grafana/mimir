@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -24,7 +25,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 const (
@@ -73,18 +76,44 @@ type BinaryTOC struct {
 }
 
 // WriteBinary builds an index-header file of the given format version from the pieces of the index in object storage.
-func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, blockDir string, version int) (err error) {
-	filename := indexHeaderPath(blockDir, version)
-
+func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, blockDir string, version int) error {
 	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
 	}
-	tmpFilename := filename + ".tmp"
+
+	var copyPostingsOffsets sectionCopyFunc
+	if version != BinaryFormatV2 {
+		copyPostingsOffsets = ir.CopyPostingsOffsets
+	}
 
 	// Buffer for copying and encbuffers.
-	// This also will control the size of file writer buffer.
+	// This also will control the size of the file writer buffer.
 	buf := make([]byte, 32*1024)
+
+	return writeIndexHeaderFile(blockDir, version, indexVersion, ir.toc.LabelIndicesTable, buf, ir.CopySymbols, copyPostingsOffsets)
+}
+
+// sectionCopyFunc copies a section of an index-header (Symbols or Postings Offsets) into w,
+// from whatever underlying source (bucket or file on disk) the caller has bound it to.
+type sectionCopyFunc func(w io.Writer, buf []byte) error
+
+// writeIndexHeaderFile writes an index-header of the given version to a temp file in blockDir,
+// then atomically renames it into place.
+// copySymbols and copyPostingsOffsets supply the content of their respective sections;
+// For BinaryFormatV2, copyPostingsOffsets is nil because postings offsets will be read from the bucket.
+func writeIndexHeaderFile(
+	blockDir string,
+	version int,
+	indexVersion int,
+	postingsListEnd uint64,
+	buf []byte,
+	copySymbols sectionCopyFunc,
+	copyPostingsOffsets sectionCopyFunc,
+) (err error) {
+	filename := indexHeaderPath(blockDir, version)
+	tmpFilename := filename + ".tmp"
+
 	bw, err := newBinaryWriter(tmpFilename, buf, version)
 	if err != nil {
 		return errors.Wrap(err, "new binary index header writer")
@@ -95,11 +124,11 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, b
 	// in which the end of the Postings list is the beginning of the Label Indices table.
 	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
 	// so we use Label Indices Table offset as the end bound of the Postings List.
-	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
+	if err := bw.AddIndexMeta(indexVersion, postingsListEnd); err != nil {
 		return errors.Wrap(err, "add index meta")
 	}
 
-	if err := ir.CopySymbols(bw.SymbolsWriter(), buf); err != nil {
+	if err := copySymbols(bw.SymbolsWriter(), buf); err != nil {
 		return err
 	}
 
@@ -107,8 +136,8 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, b
 		return errors.Wrap(err, "flush")
 	}
 
-	if version != BinaryFormatV2 {
-		if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+	if copyPostingsOffsets != nil {
+		if err := copyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
 			return err
 		}
 
@@ -135,6 +164,77 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, b
 	}
 
 	return nil
+}
+
+// buildRequiredIndexHeader builds an index-header of requiredVersion at localBlockDir.
+// When requiredVersion is BinaryFormatV2, it prefers copying the Symbols section locally from an existing,
+// valid BinaryFormatV1 header in headers over re-reading the bucket.
+// It falls back to WriteBinary from the bucket if no usable V1 header is found, or if building from it fails.
+func buildRequiredIndexHeader(
+	ctx context.Context,
+	bkt objstore.BucketReader,
+	id ulid.ULID,
+	localBlockDir string,
+	requiredVersion int,
+	headers []OnDiskIndexHeader,
+	l log.Logger,
+) error {
+	if requiredVersion == BinaryFormatV2 {
+		if v1Path, v1TOC, ok := usableV1Header(ctx, headers, l); ok {
+			if err := buildV2FromV1(v1Path, localBlockDir, v1TOC); err == nil {
+				return nil
+			}
+			// Fall through to building from the bucket below.
+		}
+	}
+
+	return WriteBinary(ctx, bkt, id, localBlockDir, requiredVersion)
+}
+
+// usableV1Header verifies that a usable BinaryFormatV1 entry can be found in headers.
+// ok is false if no V1 header is present, or if it fails verification.
+func usableV1Header(ctx context.Context, headers []OnDiskIndexHeader, l log.Logger) (v1Path string, v1TOC *TOCCompat, ok bool) {
+	for _, h := range headers {
+		if h.Version != BinaryFormatV1 {
+			continue
+		}
+
+		factory := streamencoding.NewFilePoolDecbufFactory(h.Path, 1, filepool.NewFilePoolMetrics(nil))
+		toc, version, err := TOCFromIndexHeader(ctx, castagnoliTable, factory, l)
+		closeErr := factory.Close()
+		if err != nil || closeErr != nil || version != BinaryFormatV1 {
+			return "", nil, false
+		}
+
+		return h.Path, toc, true
+	}
+
+	return "", nil, false
+}
+
+// buildV2FromV1 copies the Symbols section directly out of a BinaryFormatV1 index-header at v1Path to build a BinaryFormatV2 index-header,
+// instead of re-reading it from the bucket. It trusts that the validity of the V1 index-header has already been verified,
+// e.g., via usableV1Header.
+func buildV2FromV1(v1Path, blockDir string, v1TOC *TOCCompat) (err error) {
+	v1File, err := os.Open(v1Path)
+	if err != nil {
+		return errors.Wrap(err, "open v1 index-header")
+	}
+	defer runutil.CloseWithErrCapture(&err, v1File, "close v1 index-header %s", v1Path)
+
+	symbolsLen := int64(v1TOC.PostingsOffsetTable - v1TOC.Symbols)
+	symbolsReader := io.NewSectionReader(v1File, int64(v1TOC.Symbols), symbolsLen)
+	copySymbols := func(w io.Writer, buf []byte) error {
+		_, err := io.CopyBuffer(w, symbolsReader, buf)
+		return errors.Wrap(err, "copy symbols from v1 index-header")
+	}
+
+	// Buffer for copying and encbuffers.
+	// This also will control the size of the file writer buffer.
+	buf := make([]byte, 32*1024)
+
+	// BinaryFormatV2 has no Postings Offsets section, so copyPostingsOffsets is nil.
+	return writeIndexHeaderFile(blockDir, BinaryFormatV2, v1TOC.IndexVersion, v1TOC.PostingsListEnd, buf, copySymbols, nil)
 }
 
 type chunkedIndexReader struct {

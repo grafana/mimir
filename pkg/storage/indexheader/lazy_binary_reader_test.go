@@ -192,9 +192,10 @@ func TestEnsureIndexHeaderOnDisk(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tests := map[string]struct {
-		setup           func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string)
-		writeV2Header   bool
-		expectedVersion int
+		setup                   func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string)
+		writeV2Header           bool
+		expectedVersion         int
+		expectNoBucketIndexRead bool
 	}{
 		"v1 required, nothing on disk": {
 			writeV2Header:   false,
@@ -208,6 +209,17 @@ func TestEnsureIndexHeaderOnDisk(t *testing.T) {
 			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
 				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
 			},
+			writeV2Header: true,
+			// v2 should be built locally from the v1 header already on disk, not re-read from the bucket.
+			expectedVersion:         BinaryFormatV2,
+			expectNoBucketIndexRead: true,
+		},
+		"v2 required, corrupted v1 on disk": {
+			setup: func(t *testing.T, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, blockDir string) {
+				require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, BinaryFormatV1))
+				corruptTrailingByte(t, indexHeaderPath(blockDir, BinaryFormatV1))
+			},
+			// The v1 header on disk isn't usable, so this must fall back to reading the bucket.
 			writeV2Header:   true,
 			expectedVersion: BinaryFormatV2,
 		},
@@ -243,8 +255,14 @@ func TestEnsureIndexHeaderOnDisk(t *testing.T) {
 				tt.setup(t, bkt, blockID, blockDir)
 			}
 
+			tracked := &trackedBucket{InstrumentedBucketReader: bkt}
 			cfg := Config{BucketReader: BucketReaderConfig{Enabled: tt.writeV2Header}}
-			require.NoError(t, ensureIndexHeaderOnDisk(ctx, blockID, bkt, tmpDir, cfg, logger))
+			require.NoError(t, ensureIndexHeaderOnDisk(ctx, blockID, tracked, tmpDir, cfg, logger))
+
+			if tt.expectNoBucketIndexRead {
+				require.False(t, tracked.getRangeWasCalled, "building the index-header should not have read the full index from the bucket")
+				require.False(t, tracked.attributesWasCalled, "building the index-header should not have read the full index from the bucket")
+			}
 
 			// Exactly the required version should remain, and any other version must have been removed.
 			headers, err := IndexHeadersOnDisk(blockDir)
@@ -363,6 +381,25 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 		// Wait until both goroutines have done.
 		wg.Wait()
 	})
+}
+
+// corruptTrailingByte flips the last byte of path, which always falls within the fixed-size TOC
+// trailer (BinaryTOCLen), breaking its CRC32 check regardless of the rest of the file's content.
+func corruptTrailingByte(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	info, err := f.Stat()
+	require.NoError(t, err)
+
+	var b [1]byte
+	_, err = f.ReadAt(b[:], info.Size()-1)
+	require.NoError(t, err)
+	b[0]++
+	_, err = f.WriteAt(b[:], info.Size()-1)
+	require.NoError(t, err)
 }
 
 func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBucketReader, ulid.ULID) {

@@ -154,7 +154,7 @@ func NewStreamBinaryReader(
 				"path", localIndexHeaderPath, "err", err,
 			)
 			start := time.Now()
-			if err = WriteBinary(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
+			if err = buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg), headers, spanLog); err != nil {
 				return fmt.Errorf("failed to write index header: %w", err)
 			}
 			level.Info(spanLog).Log(
