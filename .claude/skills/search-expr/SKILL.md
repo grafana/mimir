@@ -48,7 +48,8 @@ the legacy `/labels` or `/label/<name>/values` API, not `/search/*`.
 | Task names a past period ("last 7 days", "ever", "has it ever failed") | widen that search in pass 1: `q K 'partition and lifecycler and reconcil' --data-urlencode start=$(( $(date +%s) - 604800 ))`. Failure and error counters often have no series in the last 1h, so the default window misses them |
 | Metric in a given namespace, job or pod | the legacy call with `match[]={__name__="M",namespace="N"}`. If it returns no series, the answer is not found, even though `M` exists elsewhere |
 | Label names on a metric | legacy `/labels?match[]={__name__="M"}` |
-| Values of a label | legacy `/label/L/values?match[]={__name__="M"}`; add `search_expr=<text>` to filter (values are often upper case, for example `ACTIVE`) |
+| Values of a label that match text (pod, container_id, alertname, namespace, any label) | `/search/label_values?label=L&search_expr=<text>`, with `case_sensitive=false` and `fuzz_alg=substring_left`. No `match[]` is needed. Values are often upper case (`ACTIVE`). See "Label values" |
+| All values of a label on one metric | legacy `/label/L/values?match[]={__name__="M"}` |
 
 ## Writing the expression
 
@@ -98,6 +99,32 @@ q B 'cortex and query_frontend and (inflight or in_progress)'
 When 2 or 3 candidates remain, get their type and help in one call:
 `include_metadata=true` with a `search_expr` of those names. Do not download
 the full `__name__` list to grep it.
+
+## Label values
+
+Never send `search_expr` to the legacy `/label/L/values`: it is ignored, and
+the call returns every value of the label. On mimir-dev-13 that was 7 MB in
+67 s for `pod`, and 16 MB for `container_id` before the connection dropped.
+Use `/search/label_values`, which filters on the server:
+
+```bash
+v() { curl -s -G -H "$H" --data-urlencode "label=$2" --data-urlencode "search_expr=$3" \
+  --data-urlencode case_sensitive=false --data-urlencode fuzz_alg=substring_left \
+  --data-urlencode limit=0 "${@:4}" "$B/search/label_values" -o "out.$1"
+  n=$(jq -r 'select(.status).returned' "out.$1")
+  echo "$1 [$n]: $(jq -r '.results[]?.value' "out.$1" | head -100 | tr '\n' ' ')"
+  if [ "${n:-0}" -gt 100 ]; then echo "$1 TRUNCATED: $n values, 100 shown."; fi; }
+v P pod 'ingester-zone-a'
+v A alertname 'memcached or (inter and az)'
+```
+
+- One search per label. Put several lookups on the same label in one
+  `search_expr` as OR groups, and match the values to tasks.
+- For a count, read `returned`; do not print the values.
+- To check one exact value, search for it: 0 results means not found.
+- `returned` stops at 10,000 (`has_more` is then `true`). For a label with
+  more values than that (`pod`, `container_id`, `interface`, `uid`), always
+  send a `search_expr`.
 
 ## Searching by description
 
