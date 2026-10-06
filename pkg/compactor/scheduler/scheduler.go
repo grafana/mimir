@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -105,6 +106,9 @@ func (cfg *Config) Validate() error {
 			return fmt.Errorf("compactor-scheduler.discovery-polls has unknown poll %q", poll)
 		}
 	}
+	if slices.Contains(cfg.DiscoveryPolls, discoveryPollBackfills) != (cfg.LanePolicy.Policy == lanePolicyBackfill) {
+		return fmt.Errorf("compactor-scheduler.lane-policy.policy must be %s if and only if compactor-scheduler.discovery-polls includes %s", lanePolicyBackfill, discoveryPollBackfills)
+	}
 	return nil
 }
 
@@ -197,8 +201,16 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
+// recoveryFilter rejects jobs whose type the lane policy does not support
+func (s *Scheduler) recoveryFilter(job TrackedJob) error {
+	if !slices.Contains(s.lanePolicy.JobTypes(), job.Type()) {
+		return fmt.Errorf("job type %s is not supported by the lane policy", job.Type())
+	}
+	return nil
+}
+
 func (s *Scheduler) start(ctx context.Context) error {
-	jobTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
+	jobTrackers, err := s.jpm.RecoverAll(s.allowList, s.recoveryFilter, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
@@ -290,6 +302,11 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
 			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
+			continue
+		}
+		if isTypedJobKey(job.Id) {
+			// This is never expected to actually happen. We reserve typed keys for internal use.
+			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID prefix", "id", job.Id)
 			continue
 		}
 		if _, ok := idSet[job.Id]; ok {
