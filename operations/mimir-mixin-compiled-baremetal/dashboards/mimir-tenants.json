@@ -1268,7 +1268,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Distributor discarded exemplars rate\nThe rate of each exmplars' discarding reason.\n\n",
+                  "description": "### Distributor discarded exemplars rate\nThe rate of each exemplars' discarding reason.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {

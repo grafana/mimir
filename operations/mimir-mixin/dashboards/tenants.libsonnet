@@ -537,7 +537,7 @@ local filename = 'mimir-tenants.json';
         $.panelDescription(
           title,
           |||
-            The rate of each exmplars' discarding reason.
+            The rate of each exemplars' discarding reason.
           |||
         ),
       )

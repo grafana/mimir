@@ -59,7 +59,7 @@
           },
           annotations: {
             message: |||
-              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to replicating partial state to its replicas.
+              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is failing to replicate partial state to its replicas.
             ||| % $._config,
           },
         },
@@ -74,7 +74,7 @@
           },
           annotations: {
             message: |||
-              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is unable to persist full state snaphots to remote storage.
+              %(product)s Alertmanager {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s is unable to persist full state snapshots to remote storage.
             ||| % $._config,
           },
         },

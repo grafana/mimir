@@ -58,7 +58,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       rate_interval=$.rateInterval('1m'),
       sum_by=[$._config.alert_aggregation_labels, $._config.per_job_label, 'route'],
       comment=|||
-        # The following 5xx errors considered as non-error:
+        # The following 5xx errors are considered as non-error:
         # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
         # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
       |||,
