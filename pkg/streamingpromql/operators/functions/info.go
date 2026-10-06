@@ -546,7 +546,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		signature.remainingSeries--
 		if signature.remainingSeries == 0 {
-			if err := f.completeSignature(signature, &walker, hashIDs); err != nil {
+			if err := signature.complete(&walker, f.infoMetricCount, f.timeRange.IntervalMilliseconds, hashIDs, f.MemoryConsumptionTracker); err != nil {
 				return nil, err
 			}
 		}
@@ -555,18 +555,18 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	return hashIDs, nil
 }
 
-// completeSignature finds the groups of info series of signature once all of its info series have been read,
-// records where the group changes, and returns the samples of the info series to the pool.
-func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoGroupWalker, hashIDs map[string]labelSetsHashID) error {
-	if len(signature.series) == 0 {
+// complete finds the groups of the info series of s once all of them have been read, records where the group
+// changes in s.transitions, and returns the samples of the info series to the pool. hashIDs interns the label sets
+// hashes of the groups, and is shared by all signatures of the query. interval is the step of the query.
+func (s *infoSignature) complete(walker *infoGroupWalker, metricCount int, interval int64, hashIDs map[string]labelSetsHashID, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if len(s.series) == 0 {
 		return nil
 	}
 
-	walker.reset(signature, f.infoMetricCount)
-	signature.labelSetsByHash = make(map[string][]labels.Labels)
+	walker.reset(s, metricCount)
+	s.labelSetsByHash = make(map[string][]labels.Labels)
 	// Most signatures have one transition where the info series start and one after they end.
-	signature.transitions = make([]infoGroupTransition, 0, 2)
-	interval := f.timeRange.IntervalMilliseconds
+	s.transitions = make([]infoGroupTransition, 0, 2)
 	hashID := innerSeriesHashID
 	previousT := int64(0)
 	started := false
@@ -584,7 +584,7 @@ func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoG
 		// previous step. Inner series samples in the gap are not enriched.
 		gap := started && t > previousT+interval
 		if gap {
-			signature.transitions = append(signature.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
+			s.transitions = append(s.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
 		}
 
 		if changed {
@@ -593,13 +593,13 @@ func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoG
 				hashID = labelSetsHashID(len(hashIDs))
 				hashIDs[walker.hash] = hashID
 			}
-			if _, exists := signature.labelSetsByHash[walker.hash]; !exists {
-				signature.labelSetsByHash[walker.hash] = slices.Clone(walker.labelSets)
+			if _, exists := s.labelSetsByHash[walker.hash]; !exists {
+				s.labelSetsByHash[walker.hash] = slices.Clone(walker.labelSets)
 			}
 		}
 
 		if changed || gap {
-			signature.transitions = append(signature.transitions, infoGroupTransition{t: t, hashID: hashID})
+			s.transitions = append(s.transitions, infoGroupTransition{t: t, hashID: hashID})
 		}
 
 		previousT = t
@@ -608,11 +608,11 @@ func (f *InfoFunction) completeSignature(signature *infoSignature, walker *infoG
 
 	if started {
 		// Inner series samples after the last info series sample are not enriched.
-		signature.transitions = append(signature.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
+		s.transitions = append(s.transitions, infoGroupTransition{t: previousT + interval, hashID: innerSeriesHashID})
 	}
 
-	signature.returnSamplesToPool(f.MemoryConsumptionTracker)
-	signature.series = nil
+	s.returnSamplesToPool(memoryConsumptionTracker)
+	s.series = nil
 
 	return nil
 }

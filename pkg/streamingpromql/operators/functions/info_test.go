@@ -10,7 +10,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	model_timestamp "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
@@ -203,7 +202,7 @@ func TestInfoGroupWalker(t *testing.T) {
 	}
 }
 
-func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
+func TestInfoSignature_CompleteAndInfoGroupLookup(t *testing.T) {
 	targetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "prod")
 	updatedTargetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "staging")
 	buildInfo := labels.FromStrings("__name__", "build_info", "instance", "a", "job", "1", "version", "1")
@@ -273,12 +272,6 @@ func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-			f := &InfoFunction{
-				MemoryConsumptionTracker: tracker,
-				timeRange:                types.NewRangeQueryTimeRange(model_timestamp.Time(0), model_timestamp.Time(6000), time.Second),
-				infoMetricCount:          testCase.metricCount,
-			}
-
 			signature := &infoSignature{}
 			for _, s := range testCase.series {
 				floats, err := types.FPointSlicePool.Get(len(s.timestamps), tracker)
@@ -291,7 +284,8 @@ func TestCompleteSignatureAndInfoGroupLookup(t *testing.T) {
 
 			hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
 			var walker infoGroupWalker
-			require.NoError(t, f.completeSignature(signature, &walker, hashIDs))
+			// The query has a step of one second.
+			require.NoError(t, signature.complete(&walker, testCase.metricCount, time.Second.Milliseconds(), hashIDs, tracker))
 
 			// The samples are not needed after the transitions have been found.
 			require.Nil(t, signature.series)
