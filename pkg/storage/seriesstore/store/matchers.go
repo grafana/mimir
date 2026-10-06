@@ -85,6 +85,9 @@ type compiledRegex struct {
 	pattern string
 	values  []string
 	finite  bool
+	// What every accepted value starts with: with it, the values of a sorted dictionary that can
+	// match are one range.
+	prefix string
 }
 
 func (r *compiledRegex) isMatch(value string) bool {
@@ -265,7 +268,7 @@ func anchoredRegex(pattern string) (*compiledRegex, error) {
 		return nil, err
 	}
 	values, finite := acceptedValues(pattern)
-	compiled := &compiledRegex{matcher: matcher, pattern: "^(?:" + pattern + ")$", values: values, finite: finite}
+	compiled := &compiledRegex{matcher: matcher, pattern: "^(?:" + pattern + ")$", values: values, finite: finite, prefix: literalPrefix(pattern)}
 	regexCache.Lock()
 	if len(regexCache.byPattern) >= cachedRegexes {
 		clear(regexCache.byPattern)
@@ -373,4 +376,18 @@ func keyOf(matcher *compiledMatcher) nameMatcherKey {
 	default:
 		panic(errors.New("key of an equality or shard matcher"))
 	}
+}
+
+// literalPrefix is what every value pattern accepts starts with.
+func literalPrefix(pattern string) string {
+	parsed, err := syntax.Parse(pattern, syntax.Perl|syntax.DotNL)
+	if err != nil {
+		return ""
+	}
+	prog, err := syntax.Compile(parsed.Simplify())
+	if err != nil {
+		return ""
+	}
+	prefix, _ := prog.Prefix()
+	return prefix
 }
