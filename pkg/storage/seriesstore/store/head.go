@@ -156,6 +156,7 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 				inHead := !series.headEvicted && hasNewest && newest >= b.headMin
 				if inHead && series.nonOwnedSinceS != 0 && b.hasEvict && int64(series.nonOwnedSinceS)*1000 <= b.evictBefore {
 					series.headEvicted = true
+					s.evictEpoch.Add(1)
 					series.nonOwnedSinceS = 0
 					report.NonOwnedEvicted++
 					inHead = false

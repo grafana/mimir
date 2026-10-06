@@ -5,6 +5,8 @@ package store
 import (
 	"cmp"
 	"slices"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
@@ -84,6 +86,9 @@ type seriesByName struct {
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey]nameMatch
 	len             int
+	// Bumped whenever series are removed, which invalidates what headLabels derived from them.
+	removals   uint64
+	headLabels headLabels
 }
 
 type nameMatch struct {
@@ -310,6 +315,7 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 	if total == b.len {
 		return
 	}
+	b.removals++
 	b.postings = nil
 	b.sharedPostings = nil
 	b.refs = nil
@@ -408,6 +414,11 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		oneValue  [1]string
 		valueList []string
 	)
+	// How many series a value lookup has to beat: the name group's or every series'.
+	groupLimit := b.len
+	if hasGroup {
+		groupLimit = len(b.groups[groupID].entries)
+	}
 	for index := range matchers {
 		matcher := &matchers[index]
 		switch {
@@ -416,6 +427,9 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 			valueList = oneValue[:]
 		case matcher.kind == kindRegex && !matcher.re.isMatch(""):
 			values, ok := matcher.re.acceptedValues()
+			if !ok && matcher.name != metricNameLabel {
+				values, ok = b.dictionaryMatches(matcher, groupLimit)
+			}
 			if !ok {
 				continue
 			}
@@ -606,4 +620,37 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 			}
 		}
 	}
+}
+
+// minDictionarySeries is how many series a regex has to select among before the label's values
+// are looked up rather than every series' value checked.
+const minDictionarySeries = 512
+
+// dictionaryMatches returns the values of a regex matcher's label that it accepts, from the sorted
+// values of the label, when that costs less than checking each of the candidate series.
+func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates int) ([]string, bool) {
+	id, known := labels.Lookup(matcher.name)
+	if !known || candidates < minDictionarySeries || b.seriesWith(id, true) < minDictionarySeries {
+		return nil, false
+	}
+	dictionary, ok := b.labelDictionary(id)
+	if !ok {
+		return nil, false
+	}
+	prefix := matcher.re.prefix
+	first := sort.SearchStrings(dictionary, prefix)
+	var matched []string
+	for _, value := range dictionary[first:] {
+		if !strings.HasPrefix(value, prefix) {
+			break
+		}
+		if matcher.re.isMatch(value) {
+			matched = append(matched, value)
+			// Past this, the postings of the values are no shorter than the candidates.
+			if len(matched) > candidates/2 {
+				return nil, false
+			}
+		}
+	}
+	return matched, true
 }

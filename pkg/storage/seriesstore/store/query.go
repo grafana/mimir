@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -633,6 +634,24 @@ func (s *Store) headView(tenantID string) headView {
 	return headView{headMin: t.headMin, minTime: t.minTime, maxTime: t.maxTime, memoryIsHead: s.memoryIsHead, minOOOTime: t.minOOOTime, maxOOOTime: t.maxOOOTime, blocks: t.blocks}
 }
 
+// perShardWithColdParallel is perShardWithCold with a goroutine per shard, for lookups that scan
+// every series: each query is given its shard's index and writes only to its own results.
+func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, cold *coldState)) {
+	var wg sync.WaitGroup
+	for index, shard := range s.shards {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			shard.RLock()
+			defer shard.RUnlock()
+			if t, ok := shard.tenants[tenantID]; ok {
+				query(index, t, shard.cold)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 // LabelNames returns the label names of the matching series the label window of [start, end]
 // sees, sorted.
 func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMatcher) ([]string, error) {
@@ -641,17 +660,45 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 		return nil, err
 	}
 	window := s.headView(tenantID).labelWindow(start, end)
-	names := map[string]struct{}{}
-	s.perShardWithCold(tenantID, func(t *tenant, _ *chunks.DiskMapper, cold *coldState) {
-		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if window.includes(entry) {
-				it := entry.labels.Iter()
-				for name, _, ok := it.Next(); ok; name, _, ok = it.Next() {
-					names[name] = struct{}{}
+	perShard := make([]map[string]struct{}, len(s.shards))
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold *coldState) {
+		names := map[string]struct{}{}
+		perShard[shard] = names
+		if cached, ok := s.headLabelNames(t, compiled, window); ok {
+			for _, name := range cached {
+				names[name] = struct{}{}
+			}
+		} else if len(compiled) == 0 {
+			// Every series, so each is only checked for the names not seen yet: a series' names are
+			// the same few as the previous series'.
+			var seen []bool
+			t.series.forEach(func(entry *seriesEntry) {
+				if !window.includes(entry) {
+					return
+				}
+				forEachLabelID(entry.labels, func(id uint32) {
+					if int(id) >= len(seen) {
+						seen = append(seen, make([]bool, int(id)+1-len(seen))...)
+					}
+					seen[id] = true
+				})
+			})
+			for id, ok := range seen {
+				if ok {
+					names[labels.Name(uint32(id))] = struct{}{}
 				}
 			}
-			return true
-		})
+		} else {
+			t.series.matching(compiled, func(entry *seriesEntry) bool {
+				if window.includes(entry) {
+					it := entry.labels.Iter()
+					for name, _, ok := it.Next(); ok; name, _, ok = it.Next() {
+						names[name] = struct{}{}
+					}
+				}
+				return true
+			})
+		}
 		// Names are collected by block-local id, without decoding the values or inserting every
 		// series' names: a block's names are the same few for most of its series.
 		seen := map[*coldBlock][]bool{}
@@ -671,7 +718,7 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 			}
 		}
 	})
-	return sortedKeys(names), nil
+	return sortedKeys(mergeSets(perShard)), nil
 }
 
 // LabelValues returns the values of name of the matching series the label window of [start, end]
@@ -682,24 +729,97 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 		return nil, err
 	}
 	window := s.headView(tenantID).labelWindow(start, end)
-	values := map[string]struct{}{}
 	id, known := labels.Lookup(name)
-	s.perShardWithCold(tenantID, func(t *tenant, _ *chunks.DiskMapper, cold *coldState) {
-		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if known && window.includes(entry) {
-				if value, ok := labelValue(entry.labels, id); ok {
-					values[value] = struct{}{}
-				}
+	perShard := make([]map[string]struct{}, len(s.shards))
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold *coldState) {
+		values := map[string]struct{}{}
+		perShard[shard] = values
+		if cached, ok := s.headLabelValues(t, name, id, known, compiled, window); ok {
+			for value := range cached {
+				values[value] = struct{}{}
 			}
-			return true
-		})
+		} else if known {
+			// A series' value is most often the previous series' value, which is already in the set.
+			previous := ""
+			t.series.matching(compiled, func(entry *seriesEntry) bool {
+				if window.includes(entry) {
+					if value, ok := labelValue(entry.labels, id); ok && value != previous {
+						values[value] = struct{}{}
+						previous = value
+					}
+				}
+				return true
+			})
+		}
 		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
 			if value, ok := series.lookup(name); ok {
 				values[value] = struct{}{}
 			}
 		})
 	})
-	return sortedKeys(values), nil
+	return sortedKeys(mergeSets(perShard)), nil
+}
+
+// headLabelNames returns the names of a shard's series without visiting them, when no matcher
+// narrows them and the window sees all of them.
+func (s *Store) headLabelNames(t *tenant, matchers []compiledMatcher, window labelWindow) ([]string, bool) {
+	if len(matchers) > 0 || !window.head || !window.view.memoryIsHead {
+		return nil, false
+	}
+	return t.series.headLabelNames(s.evictEpoch.Load())
+}
+
+// headLabelValues is headLabelNames for a label's values.
+func (s *Store) headLabelValues(t *tenant, name string, id uint32, known bool, matchers []compiledMatcher, window labelWindow) (map[string]struct{}, bool) {
+	if len(matchers) > 0 || !window.head || !window.view.memoryIsHead {
+		return nil, false
+	}
+	if name == metricNameLabel {
+		if _, ok := t.series.headLabelNames(s.evictEpoch.Load()); !ok {
+			return nil, false
+		}
+		names := map[string]struct{}{}
+		for _, metric := range t.series.headMetricNames() {
+			names[metric] = struct{}{}
+		}
+		return names, true
+	}
+	if !known {
+		return map[string]struct{}{}, true
+	}
+	return t.series.headLabelValues(id, s.evictEpoch.Load())
+}
+
+// mergeSets returns the union of sets, reusing the largest.
+func mergeSets(sets []map[string]struct{}) map[string]struct{} {
+	largest := 0
+	for index, set := range sets {
+		if len(set) > len(sets[largest]) {
+			largest = index
+		}
+	}
+	merged := sets[largest]
+	if merged == nil {
+		return map[string]struct{}{}
+	}
+	for index, set := range sets {
+		if index != largest {
+			for value := range set {
+				merged[value] = struct{}{}
+			}
+		}
+	}
+	return merged
+}
+
+// forEachLabelID calls visit with the name id of each of the stored labels.
+func forEachLabelID(stored labels.Labels, visit func(id uint32)) {
+	rest := string(stored)
+	for len(rest) > 0 {
+		visit(uint32(takeUvarintString(&rest)))
+		size := takeUvarintString(&rest)
+		rest = rest[size:]
+	}
 }
 
 // labelValue returns the value of the label with name id, and whether the labels have it.
