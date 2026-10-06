@@ -97,6 +97,7 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 		minTimeBetweenShardsCleanup:         minTimeBetweenShardsCleanup,
 		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 
+		//lint:ignore faillint The histogram is exposed through the trackerStore collector, so it must not be registered on its own.
 		shardCleanupDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_shard_cleanup_duration_seconds",
 			Help:                            "Time spent cleaning up idle series from a single shard of a single tenant, while holding the shard lock.",
