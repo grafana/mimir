@@ -7242,7 +7242,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 }
 
 func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
-	head := reflect.ValueOf(userTSDB.db.Head()).Elem()
+	head := reflect.ValueOf(userTSDB.db.Head().(prometheusHead).Head).Elem()
 	opts := head.FieldByName("opts").Elem()
 	walReplayConcurrency := opts.FieldByName("WALReplayConcurrency")
 	return int(walReplayConcurrency.Int())

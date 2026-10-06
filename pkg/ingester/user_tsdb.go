@@ -172,6 +172,10 @@ type userTSDB struct {
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
 	head := u.db.Head()
+	withMeta, ok := head.(tsdbHead)
+	if !ok {
+		return nil
+	}
 	indexReader, err := head.Index()
 	if err != nil {
 		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
@@ -179,7 +183,7 @@ func (u *userTSDB) generateHeadStatistics() error {
 	defer indexReader.Close()
 
 	// Get block metadata
-	blockMeta := head.Meta()
+	blockMeta := withMeta.Meta()
 
 	// Generate statistics
 	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
@@ -227,8 +231,12 @@ func (u *userTSDB) Head() engineHead {
 	return u.db.Head()
 }
 
+// Blocks returns the blocks of the engine, none for an engine that keeps no blocks.
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	return u.db.Blocks()
+	if engine, ok := u.db.(tsdbEngine); ok {
+		return engine.Blocks()
+	}
+	return nil
 }
 
 func (u *userTSDB) Close() error {
@@ -442,7 +450,11 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		return nil
 	}
 
-	deletable := u.db.BlocksToDelete(blocks)
+	engine, ok := u.db.(tsdbEngine)
+	if !ok {
+		return nil
+	}
+	deletable := engine.BlocksToDelete(blocks)
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 

@@ -25,9 +25,6 @@ type tenantEngine interface {
 	ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error)
 
 	Head() engineHead
-	Blocks() []*tsdb.Block
-	// BlocksToDelete returns the blocks the engine's own retention would delete.
-	BlocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{}
 
 	Compact(ctx context.Context) error
 	// CompactHead compacts the head's samples in [mint, maxt] into a block and truncates the head.
@@ -51,17 +48,29 @@ type engineHead interface {
 	MinOOOTime() int64
 	MaxOOOTime() int64
 	AppendableMinValidTime() (int64, bool)
-	Meta() tsdb.BlockMeta
 
 	Index() (tsdb.IndexReader, error)
 	MustIndex() tsdb.IndexReader
 	ForEachSecondaryHash(fn func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32))
 	ForEachShardHash(fn func(refs []storage.SeriesRef, shardHashes []uint64))
 
-	// PostingsForMatchersCache may be nil when the engine has no such cache.
+	// Sync makes what was appended so far durable, before the ingester commits its Kafka offset.
+	Sync() error
+}
+
+// tsdbEngine is what only the Prometheus TSDB engine has, which the ingester reaches by asserting it: the
+// compacted data it keeps on disk, which the shipper uploads and its retention deletes. Another engine has none.
+type tsdbEngine interface {
+	Blocks() []*tsdb.Block
+	// BlocksToDelete returns the blocks the engine's own retention would delete.
+	BlocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{}
+}
+
+// tsdbHead is the part of the Prometheus TSDB's head that only it has: the metadata of the block it would
+// become, and the postings cache it shares with the ingester, which may be nil.
+type tsdbHead interface {
+	Meta() tsdb.BlockMeta
 	PostingsForMatchersCache() *tsdb.PostingsForMatchersCache
-	// FsyncWLSegments makes what was appended so far durable, before the ingester commits its Kafka offset.
-	FsyncWLSegments() error
 }
 
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
@@ -79,7 +88,16 @@ func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Regist
 }
 
 func (e prometheusEngine) Head() engineHead {
-	return e.DB.Head()
+	return prometheusHead{e.DB.Head()}
+}
+
+// prometheusHead is the Prometheus TSDB's head as an engineHead.
+type prometheusHead struct {
+	*tsdb.Head
+}
+
+func (h prometheusHead) Sync() error {
+	return h.Head.FsyncWLSegments()
 }
 
 func (e prometheusEngine) CompactHead(mint, maxt int64) error {
