@@ -282,7 +282,7 @@ The following features are currently experimental:
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
-  - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.bucket-reader.enabled`
+  - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`

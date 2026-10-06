@@ -40,7 +40,7 @@ var implementations = []struct {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{Version: BinaryFormatV1}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -54,7 +54,7 @@ var implementations = []struct {
 			instrBkt := objstore.WithNoopInstr(bkt)
 			br, err := NewStreamBinaryReader(
 				ctx, id, instrBkt, dir,
-				Config{BucketReader: BucketReaderConfig{Enabled: true, BucketIndexSections: SectionPostingsOffsetsTable}},
+				Config{Version: BinaryFormatV2},
 				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
 			)
 			require.NoError(t, err)
@@ -69,10 +69,10 @@ var implementations = []struct {
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
 			readerFactory := func(ctx context.Context) (Reader, error) {
-				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{Version: BinaryFormatV1}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
-			br, err := NewLazyBinaryReader(ctx, Config{}, readerFactory, log.NewNopLogger(), instrBkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+			br, err := NewLazyBinaryReader(ctx, Config{Version: BinaryFormatV1}, readerFactory, log.NewNopLogger(), instrBkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -234,7 +234,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
 			// write a sparse index-header file to disk
-			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.protoRate, log.NewNopLogger(), noopMetrics)
+			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{Version: BinaryFormatV1}, tt.protoRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -243,7 +243,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
+			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{Version: BinaryFormatV1}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -488,13 +488,35 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
 		},
+		"should pass on index-header version 1": {
+			setup: func(cfg *Config) {
+				cfg.Version = BinaryFormatV1
+			},
+		},
+		"should pass on index-header version 2": {
+			setup: func(cfg *Config) {
+				cfg.Version = BinaryFormatV2
+			},
+		},
+		"should fail on unknown index-header version": {
+			setup: func(cfg *Config) {
+				cfg.Version = 3
+			},
+			expectedErr: errInvalidIndexHeaderVersion,
+		},
+		"should fail on index-header version 0": {
+			setup: func(cfg *Config) {
+				cfg.Version = 0
+			},
+			expectedErr: errInvalidIndexHeaderVersion,
+		},
 	}
 
 	for testName, testData := range tests {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			indexHeaderConfig := &Config{}
+			indexHeaderConfig := &Config{Version: BinaryFormatV1}
 
 			fs := flag.NewFlagSet("", flag.PanicOnError)
 			indexHeaderConfig.RegisterFlagsWithPrefix(fs, "blocks-storage.bucket-store.index-header.")
@@ -502,7 +524,11 @@ func TestConfig_Validate(t *testing.T) {
 			testData.setup(indexHeaderConfig)
 
 			actualErr := indexHeaderConfig.Validate()
-			assert.Equal(t, testData.expectedErr, actualErr)
+			if testData.expectedErr == nil {
+				require.NoError(t, actualErr)
+			} else {
+				require.ErrorIs(t, actualErr, testData.expectedErr)
+			}
 		})
 	}
 }

@@ -303,7 +303,7 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 }
 
 func TestBlockLabelNames(t *testing.T) {
-	testBlockLabelNames(t, indexheader.Config{})
+	testBlockLabelNames(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
 }
 
 // TestBlockLabelNames_IndexHeaderBucketReader repeats TestBlockLabelNames
@@ -508,7 +508,7 @@ func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, o
 }
 
 func TestBlockLabelValues(t *testing.T) {
-	testBlockLabelValues(t, indexheader.Config{})
+	testBlockLabelValues(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
 }
 
 // TestBlockLabelValues_IndexHeaderBucketReader repeats TestBlockLabelValues
@@ -780,7 +780,7 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
-	testBucketIndexReaderExpandedPostings(t, indexheader.Config{})
+	testBucketIndexReaderExpandedPostings(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
 }
 
 // TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader repeats TestBucketIndexReader_ExpandedPostings
@@ -1407,15 +1407,12 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 // which enables the experimental index-header bucket reader path.
 func indexHeaderBucketReaderConfig() indexheader.Config {
 	return indexheader.Config{
-		BucketReader: indexheader.BucketReaderConfig{
-			Enabled:             true,
-			BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
-		},
+		Version: indexheader.BinaryFormatV2,
 	}
 }
 
 func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, headerCfg ...indexheader.Config) func() *bucketBlock {
-	var cfg indexheader.Config
+	cfg := indexheader.Config{Version: indexheader.BinaryFormatV1}
 	if len(headerCfg) > 0 {
 		cfg = headerCfg[0]
 	}
@@ -1825,6 +1822,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				BlockSyncConcurrency:        1,
 				PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				IndexHeader: indexheader.Config{
+					Version:                indexheader.BinaryFormatV1,
 					LazyLoadingEnabled:     false,
 					LazyLoadingIdleTimeout: 0,
 				},
@@ -1954,6 +1952,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 							BlockSyncConcurrency:        1,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
+								Version:                indexheader.BinaryFormatV1,
 								LazyLoadingEnabled:     false,
 								LazyLoadingIdleTimeout: 0,
 							},
@@ -2075,7 +2074,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -2114,7 +2113,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -2125,6 +2124,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		logger:          logger,
 		indexCache:      indexCache,
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
+			Version:                indexheader.BinaryFormatV1,
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil)),
@@ -2283,6 +2283,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                indexheader.BinaryFormatV1,
 				LazyLoadingEnabled:     false,
 				LazyLoadingIdleTimeout: 0,
 			},
@@ -2352,6 +2353,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
+			IndexHeader:                 indexheader.Config{Version: indexheader.BinaryFormatV1},
 			StreamingBatchSize:          1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -2435,6 +2437,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                indexheader.BinaryFormatV1,
 				LazyLoadingEnabled:     false,
 				LazyLoadingIdleTimeout: 0,
 			},
@@ -2562,6 +2565,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                indexheader.BinaryFormatV1,
 				LazyLoadingEnabled:     false,
 				LazyLoadingIdleTimeout: 0,
 			},
@@ -2724,6 +2728,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 							BlockSyncConcurrency:        10,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
+								Version:                indexheader.BinaryFormatV1,
 								LazyLoadingEnabled:     false,
 								LazyLoadingIdleTimeout: 0,
 							},
@@ -2836,6 +2841,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                indexheader.BinaryFormatV1,
 				LazyLoadingEnabled:     false,
 				LazyLoadingIdleTimeout: 0,
 			},

@@ -6222,7 +6222,7 @@ bucket_store:
 
   index_header_cache:
     # Backend for index-header cache, if not empty. Intended for use with
-    # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:
+    # -blocks-storage.bucket-store.index-header.version=2. Supported values:
     # memcached.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
     [backend: <string> | default = ""]
@@ -6458,18 +6458,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
     [verify_on_load: <boolean> | default = false]
 
-    bucket_reader:
-      # (experimental) Enable reading TSDB index-header sections from object
-      # storage. When enabled, the configured
-      # -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      # are not downloaded to local disk.
-      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.enabled
-      [enabled: <boolean> | default = false]
-
-      # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: postings-offsets-table
-      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "postings-offsets-table"]
+    # (experimental) Index-header format version. Version 1 keeps the symbols
+    # and postings offsets tables on local disk. Version 2 keeps only the
+    # symbols table on local disk and reads the postings offsets table from the
+    # TSDB index in object storage.
+    # CLI flag: -blocks-storage.bucket-store.index-header.version
+    [version: <int> | default = 1]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.

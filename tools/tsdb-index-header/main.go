@@ -218,7 +218,7 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 
 	// Parse the index-header.
 	ctx := context.Background()
-	indexHeaderCfg := indexheader.Config{} // Default config creates a file-based reader.
+	indexHeaderCfg := indexheader.Config{Version: indexheader.BinaryFormatV1} // Default config creates a file-based reader.
 	reader, err := indexheader.NewStreamBinaryReader(
 		ctx,
 		blockID,
