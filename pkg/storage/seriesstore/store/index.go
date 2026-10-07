@@ -93,6 +93,10 @@ type seriesByName struct {
 	// Bumped whenever series are removed, which invalidates what headLabels derived from them.
 	removals   uint64
 	headLabels headLabels
+	// The hashes of the series' values of a label, by name group and label.
+	columnsLock sync.Mutex
+	columns     map[uint64][]uint32
+	columnBytes int
 }
 
 type nameMatch struct {
@@ -268,6 +272,47 @@ func (b *seriesByName) refsOf(postings []uint32, total int) []seriesRef {
 	return sortRefs(refs)
 }
 
+// minColumnSeries is how many series a name group has before it is scanned by value columns, and maxColumnFilters how
+// many of the lookup's labels are.
+const (
+	minColumnSeries  = 2048
+	maxColumnFilters = 3
+	// maxColumnBytes is what a shard keeps of value columns: a column is 4 bytes a series of a name group.
+	maxColumnBytes = 16 << 20
+)
+
+type valueColumnFilter struct {
+	hashes []uint32
+	want   uint32
+}
+
+// valueColumn returns the hash of the value of the label of each series of the name group, in the order of its
+// entries, built when first asked for and extended with the series added since. It is cleared when series are
+// removed, and when a shard holds too many.
+func (b *seriesByName) valueColumn(groupID, name uint32) []uint32 {
+	b.columnsLock.Lock()
+	defer b.columnsLock.Unlock()
+	key := uint64(groupID)<<32 | uint64(name)
+	entries := b.groups[groupID].entries
+	column := b.columns[key]
+	if len(column) < len(entries) {
+		if b.columns == nil || b.columnBytes+4*(len(entries)-len(column)) > maxColumnBytes {
+			clear(b.columns)
+			if b.columns == nil {
+				b.columns = map[uint64][]uint32{}
+			}
+			b.columnBytes, column = 0, nil
+		}
+		b.columnBytes += 4 * (len(entries) - len(column))
+		for index := len(column); index < len(entries); index++ {
+			value, _ := labelValue(entries[index].labels, name)
+			column = append(column, postingKey(value))
+		}
+		b.columns[key] = column
+	}
+	return column[:len(entries)]
+}
+
 // maxFilterPostings is how many postings a matcher filters by: each is looked up for every candidate.
 const maxFilterPostings = 4
 
@@ -376,6 +421,10 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 		return
 	}
 	b.removals++
+	b.columnsLock.Lock()
+	clear(b.columns)
+	b.columnBytes = 0
+	b.columnsLock.Unlock()
 	b.postings = nil
 	b.sharedPostings = nil
 	b.refs = nil
@@ -672,7 +721,28 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		b.visitRefs(fromRefs, emit)
 	case hasGroup:
 		entries := b.groups[groupID].entries
+		// A big group is scanned by the hashes of its series' values of the equality matchers' labels, which
+		// are one array each, instead of by reading every series' labels: a series with another hash can't match.
+		var columns []valueColumnFilter
+		if len(entries) >= minColumnSeries {
+			for index := range resolved {
+				r := &resolved[index]
+				if r.matcher.kind == kindEqual && r.known && r.matcher.name != metricNameLabel && len(columns) < maxColumnFilters {
+					columns = append(columns, valueColumnFilter{b.valueColumn(groupID, r.nameID), postingKey(r.matcher.value)})
+				}
+			}
+		}
 		for index := range entries {
+			skip := false
+			for _, column := range columns {
+				if column.hashes[index] != column.want {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
 			if !emit(&entries[index]) {
 				return
 			}

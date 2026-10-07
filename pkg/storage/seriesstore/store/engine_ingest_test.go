@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -267,3 +268,46 @@ type countingFloatSink struct{ errors int }
 func (s *countingFloatSink) Error(int, error, int64) bool                     { s.errors++; return true }
 func (*countingFloatSink) NeedsLabels() bool                                  { return false }
 func (*countingFloatSink) Ingested(int, promlabels.Labels, storage.SeriesRef) {}
+
+// BenchmarkEngineSelectBigGroup selects nothing from a name group of 50k series by an equality matcher on a label
+// that more series than the group have, so the engine reads the label of each series of the group to find out.
+func BenchmarkEngineSelectBigGroup(b *testing.B) {
+	ctx := context.Background()
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(ctx)
+	const series = 400_000
+	for n := range series {
+		name := "other"
+		if n%8 == 0 {
+			name = "big"
+		}
+		// Every series of the group has one of four clusters; the others have one of three others, which are
+		// more series than the group has.
+		cluster := 6 + n%3
+		if name == "big" {
+			cluster = n / 8 % 4
+		}
+		_, err := app.Append(0, promlabels.FromStrings("__name__", name, "cluster", fmt.Sprintf("cluster-%d", cluster), "pod", fmt.Sprintf("pod-%d", n)), 1_000, 1)
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+	matchers := []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "big"), promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "cluster-7")}
+	b.ResetTimer()
+	for range b.N {
+		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
+			b.StopTimer()
+			evictCaches()
+			b.StartTimer()
+		}
+		q, err := engine.ChunkQuerier(0, 10_000)
+		require.NoError(b, err)
+		set := q.Select(ctx, true, nil, matchers...)
+		for set.Next() {
+			b.Fatal("selected a series")
+		}
+		require.NoError(b, set.Err())
+		_ = q.Close()
+	}
+}
