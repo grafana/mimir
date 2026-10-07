@@ -72,7 +72,7 @@ type extendedAppender interface {
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.DB.Appender(ctx).(extendedAppender), batch, sink)
+	return ingestThroughAppender(e.Appender(ctx).(extendedAppender), batch, sink)
 }
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
