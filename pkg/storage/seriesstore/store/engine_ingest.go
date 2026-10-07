@@ -23,8 +23,11 @@ type FloatSink interface {
 	// Error reports a sample that wasn't ingested. It returns whether the error is soft: the ingestion goes on
 	// after a soft error, and stops after another.
 	Error(series int, err error, timestampMs int64) (soft bool)
-	// Ingested reports a series that got a sample, with its labels, which are valid only during the call.
+	// Ingested reports a series that got a sample, with its labels, which are valid only during the call, and
+	// only built if NeedsLabels says so.
 	Ingested(series int, lbls promlabels.Labels, ref storage.SeriesRef)
+	// NeedsLabels reports whether Ingested wants the labels of a series, which cost building.
+	NeedsLabels() bool
 }
 
 type floatSeries struct {
@@ -177,6 +180,7 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 				// Append, and the ones that passed are applied in order, as it does at Commit.
 				last := lastOf(&entry.series)
 				accepted = accepted[:0]
+				acceptedInOrder := true
 				for _, sample := range ts.Samples {
 					if sample.TimestampMs > maxTimestampMs {
 						failures = append(failures, floatError{prep.index, globalerror.SampleTooFarInFuture, sample.TimestampMs})
@@ -185,13 +189,27 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 						failures = append(failures, floatError{prep.index, globalerror.SampleTooFarInPast, sample.TimestampMs})
 						continue
 					}
-					if _, appendErr := appendableFloat(last, sample.TimestampMs, sample.Value, headMaxt, minValidTime, oooWindow); appendErr != nil {
+					isOOO, appendErr := appendableFloat(last, sample.TimestampMs, sample.Value, headMaxt, minValidTime, oooWindow)
+					if appendErr != nil {
 						failures = append(failures, floatError{prep.index, appendErr, sample.TimestampMs})
 						continue
 					}
+					acceptedInOrder = acceptedInOrder && !isOOO && math.Float64bits(sample.Value) != value.QuietZeroNaN && !last.isHist
 					accepted = append(accepted, sample)
 				}
 				ingested += len(accepted)
+				if len(accepted) == 1 && acceptedInOrder {
+					// The usual scrape: one in-order float, which the series' state still allows, so it is
+					// appended without checking it again.
+					sample := accepted[0]
+					result, appendErr := appendFloatInOrder(&entry.series, state.disk, sample.TimestampMs, sample.Value, true)
+					if appendErr != nil {
+						stop, err = true, appendErr
+					} else if !result.noop {
+						inOrderMin, inOrderMax = min(inOrderMin, sample.TimestampMs), max(inOrderMax, sample.TimestampMs)
+					}
+					accepted = accepted[:0]
+				}
 				for _, sample := range accepted {
 					pending := pendingSample{ref: entry.series.ref, t: sample.TimestampMs, v: sample.Value, kind: sampleFloat}
 					inOrder, ooo, commitErr := appender.commitSample(&entry.series, state, &pending)
@@ -241,9 +259,12 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 	}
 	// In the order of the request, which the prepared series are in.
 	slices.SortFunc(touched, func(a, b floatIngested) int { return cmp.Compare(a.series, b.series) })
+	needsLabels := sink.NeedsLabels()
 	for _, series := range touched {
 		index := prepared[series.series].index
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, timeseries[index].Labels, &scratch)
+		if needsLabels {
+			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, timeseries[index].Labels, &scratch)
+		}
 		sink.Ingested(index, scratch, series.ref)
 	}
 	return leftover, ingested, nil
