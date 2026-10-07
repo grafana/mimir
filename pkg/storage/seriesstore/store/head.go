@@ -485,14 +485,15 @@ func (s *Store) ActiveSeriesReport() []metrics.ActiveSeriesReport {
 			}
 			t.trackers = custom
 			generation := t.trackerGeneration
+			var matched []uint16
 			t.series.forEach(func(entry *seriesEntry) {
 				series := &entry.series
 				if series.lastIngestedMs < cutoff {
 					return
 				}
-				if series.trackerGeneration != generation {
+				if series.trackerGeneration != uint32(generation) {
 					series.setMatchedTrackers(custom.Matching(entry.labels))
-					series.trackerGeneration = generation
+					series.trackerGeneration = uint32(generation)
 				}
 				var buckets uint64
 				histogram := uint64(0)
@@ -504,7 +505,8 @@ func (s *Store) ActiveSeriesReport() []metrics.ActiveSeriesReport {
 					report.Active++
 					report.ActiveNativeHistograms += histogram
 					report.ActiveNativeHistogramBuckets += buckets
-					for _, match := range series.matchedTrackers() {
+					matched = series.matchedTrackersInto(matched)
+					for _, match := range matched {
 						entry := &report.CustomTrackers[match].Counts
 						for i := range entry {
 							entry[i] += seriesCounts[i]
