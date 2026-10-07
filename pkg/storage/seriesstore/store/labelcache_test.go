@@ -86,7 +86,7 @@ func TestEngineRegexSelectsOverLargeLabelsMatchPrometheus(t *testing.T) {
 		for _, head := range heads {
 			app := head.Appender(ctx)
 			for n := first; n < last; n++ {
-				_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%2), "pod", fmt.Sprintf("pod-%d", n), "zone", fmt.Sprintf("z%d", n%5)), 1_000, 1)
+				_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%2), "pod", fmt.Sprintf("pod-%d", n), "zone", fmt.Sprintf("z%d", n%5), "region", "r1"), 1_000, 1)
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
@@ -117,6 +117,10 @@ func TestEngineRegexSelectsOverLargeLabelsMatchPrometheus(t *testing.T) {
 			{re("pod", "pod-(1|2).*")},
 			// Equality matchers narrow each other by their postings.
 			{eq("zone", "z3"), eq("__name__", "metric_1")},
+			// A label every series has has more postings than the name group: the group is scanned by the
+			// hashes of the label's values.
+			{eq("__name__", "metric_1"), eq("region", "r1")},
+			{eq("__name__", "metric_1"), eq("region", "r1"), eq("zone", "z2")},
 			{eq("zone", "z2"), re("pod", "pod-1.*"), eq("__name__", "metric_0")},
 			{eq("zone", "z1"), eq("pod", "pod-1001")},
 		} {
@@ -128,6 +132,9 @@ func TestEngineRegexSelectsOverLargeLabelsMatchPrometheus(t *testing.T) {
 		require.Equal(t, got[0], got[1])
 		// Postings that don't meet select nothing.
 		got = selected(eq("zone", "z4"), eq("pod", "pod-1001"))
+		require.Empty(t, got[0])
+		require.Equal(t, got[0], got[1])
+		got = selected(eq("__name__", "metric_1"), eq("region", "r2"))
 		require.Empty(t, got[0])
 		require.Equal(t, got[0], got[1])
 	}
