@@ -85,21 +85,6 @@ type engineHead interface {
 	Sync() error
 }
 
-// tsdbEngine is what only the Prometheus TSDB engine has, which the ingester reaches by asserting it: the
-// compacted data it keeps on disk, which the shipper uploads and its retention deletes. Another engine has none.
-type tsdbEngine interface {
-	Blocks() []*tsdb.Block
-	// BlocksToDelete returns the blocks the engine's own retention would delete.
-	BlocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{}
-}
-
-// tsdbHead is the part of the Prometheus TSDB's head that only it has: the metadata of the block it would
-// become, and the postings cache it shares with the ingester, which may be nil.
-type tsdbHead interface {
-	Meta() tsdb.BlockMeta
-	PostingsForMatchersCache() *tsdb.PostingsForMatchersCache
-}
-
 // mustIndex returns the head's index, for callers that can't continue without it.
 func mustIndex(head engineHead) tsdb.IndexReader {
 	idx, err := head.Index()
