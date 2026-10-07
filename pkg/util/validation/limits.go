@@ -616,6 +616,8 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
+		l.CostAttributionBaseTrackers = maps.Clone(defaultLimits.CostAttributionBaseTrackers)
+		l.AdditionalCostAttributionTrackers = maps.Clone(defaultLimits.AdditionalCostAttributionTrackers)
 
 		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
