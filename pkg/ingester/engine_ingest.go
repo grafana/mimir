@@ -314,22 +314,3 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 	}
 	return outcome, nil
 }
-
-// ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
-// asked to skip already.
-func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, subset, true)
-	if err != nil {
-		if rollbackErr := app.Rollback(); rollbackErr != nil {
-			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
-		}
-		return outcome, err
-	}
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return outcome, err
-	}
-	outcome.CommitDuration = time.Since(startCommit)
-	return outcome, nil
-}
