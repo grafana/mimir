@@ -18,19 +18,71 @@ func TestThreeWayMerge(t *testing.T) {
 		expectedConflicts bool
 	}{
 		"upstream unchanged: our disabling is kept": {
-			ours:     "eval instant at 0m A\n  A 1\n\n# Unsupported by streaming engine.\n# eval instant at 0m B\n#   B 7\n",
-			theirs:   "eval instant at 0m A\n  A 1\n\neval instant at 0m B\n  B 7\n",
-			expected: "eval instant at 0m A\n  A 1\n\n# Unsupported by streaming engine.\n# eval instant at 0m B\n#   B 7\n",
+			ours: `eval instant at 0m A
+  A 1
+
+# Unsupported by streaming engine.
+# eval instant at 0m B
+#   B 7
+`,
+			theirs: `eval instant at 0m A
+  A 1
+
+eval instant at 0m B
+  B 7
+`,
+			expected: `eval instant at 0m A
+  A 1
+
+# Unsupported by streaming engine.
+# eval instant at 0m B
+#   B 7
+`,
 		},
 		"upstream changed an enabled case: change applied, disabling kept": {
-			ours:     "eval instant at 0m A\n  A 1\n\n# Unsupported by streaming engine.\n# eval instant at 0m B\n#   B 7\n",
-			theirs:   "eval instant at 0m A\n  A 2\n\neval instant at 0m B\n  B 7\n",
-			expected: "eval instant at 0m A\n  A 2\n\n# Unsupported by streaming engine.\n# eval instant at 0m B\n#   B 7\n",
+			ours: `eval instant at 0m A
+  A 1
+
+# Unsupported by streaming engine.
+# eval instant at 0m B
+#   B 7
+`,
+			theirs: `eval instant at 0m A
+  A 2
+
+eval instant at 0m B
+  B 7
+`,
+			expected: `eval instant at 0m A
+  A 2
+
+# Unsupported by streaming engine.
+# eval instant at 0m B
+#   B 7
+`,
 		},
 		"upstream changed a disabled case: only that block is taken from upstream": {
-			ours:              "# Unsupported by streaming engine.\n# eval instant at 0m B\n#   B 7\n\n# Unsupported by streaming engine.\n# eval instant at 0m C\n#   C 1\n",
-			theirs:            "eval instant at 0m B\n  B 6\n\neval instant at 0m C\n  C 1\n",
-			expected:          "eval instant at 0m B\n  B 6\n\n# Unsupported by streaming engine.\n# eval instant at 0m C\n#   C 1\n",
+			ours: `# Unsupported by streaming engine.
+# eval instant at 0m B
+#   B 7
+
+# Unsupported by streaming engine.
+# eval instant at 0m C
+#   C 1
+`,
+			theirs: `eval instant at 0m B
+  B 6
+
+eval instant at 0m C
+  C 1
+`,
+			expected: `eval instant at 0m B
+  B 6
+
+# Unsupported by streaming engine.
+# eval instant at 0m C
+#   C 1
+`,
 			expectedConflicts: true,
 		},
 	}

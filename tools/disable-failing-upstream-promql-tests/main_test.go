@@ -29,24 +29,24 @@ FAIL	github.com/grafana/mimir/pkg/streamingpromql/comparisons	2.1s
 }
 
 func TestBaselineOrigin(t *testing.T) {
-	b := parseBaseline(
-		"# a comment\n" +
-			"load 1m\n" +
-			"  metric 1 2 3\n" +
-			"\n" +
-			"eval instant at 0m sum(metric)\n" +
-			"  {} 6\n" +
-			"\n" +
-			"# Unsupported by streaming engine.\n" +
-			"# eval instant at 0m rate(metric[1m])\n" +
-			"#   {} 0\n" +
-			"\n" +
-			"# Unsupported by streaming engine.\n" +
-			"# eval instant at 0m count(metric)\n" +
-			"#   {} 3\n" +
-			"\n" +
-			"eval instant at 0m count(metric)\n" +
-			"  {} 3\n")
+	b := parseBaseline(`# a comment
+load 1m
+  metric 1 2 3
+
+eval instant at 0m sum(metric)
+  {} 6
+
+# Unsupported by streaming engine.
+# eval instant at 0m rate(metric[1m])
+#   {} 0
+
+# Unsupported by streaming engine.
+# eval instant at 0m count(metric)
+#   {} 3
+
+eval instant at 0m count(metric)
+  {} 3
+`)
 
 	testCases := map[string]struct {
 		baseline *baseline
@@ -85,16 +85,39 @@ func TestRenderDisabledCases(t *testing.T) {
 		"possible regressions come first and empty sections are omitted": {
 			cases:                     cases,
 			includePreviouslyDisabled: true,
-			expected: "**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**\n\n- existing divergent\n\n" +
-				"**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**\n\n- new divergent\n\n" +
-				"**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**\n\n- new unsupported\n\n" +
-				"**Divergent result or runtime error in PREVIOUSLY-DISABLED cases that upstream changes re-enabled (disabled again):**\n\n- previously disabled\n\n",
+			expected: `**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**
+
+- existing divergent
+
+**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**
+
+- new divergent
+
+**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**
+
+- new unsupported
+
+**Divergent result or runtime error in PREVIOUSLY-DISABLED cases that upstream changes re-enabled (disabled again):**
+
+- previously disabled
+
+`,
 		},
 		"previously disabled cases left out": {
 			cases: cases,
-			expected: "**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**\n\n- existing divergent\n\n" +
-				"**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**\n\n- new divergent\n\n" +
-				"**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**\n\n- new unsupported\n\n",
+			expected: `**Divergent result or runtime error in EXISTING cases (possible regression, please review carefully):**
+
+- existing divergent
+
+**Divergent result or runtime error in NEWLY-SYNCED upstream cases:**
+
+- new divergent
+
+**Unsupported by Mimir's engine in NEWLY-SYNCED upstream cases (feature not implemented):**
+
+- new unsupported
+
+`,
 		},
 		"only previously disabled cases, left out": {
 			cases: map[caseGroup][]string{{originPreviouslyDisabled, true}: {"- previously disabled"}},
