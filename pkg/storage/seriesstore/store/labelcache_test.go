@@ -115,12 +115,20 @@ func TestEngineRegexSelectsOverLargeLabelsMatchPrometheus(t *testing.T) {
 			{re("pod", "pod-1.*"), eq("zone", "z3")},
 			{eq("__name__", "metric_1"), re("pod", "pod-2[0-9]+")},
 			{re("pod", "pod-(1|2).*")},
+			// Equality matchers narrow each other by their postings.
+			{eq("zone", "z3"), eq("__name__", "metric_1")},
+			{eq("zone", "z2"), re("pod", "pod-1.*"), eq("__name__", "metric_0")},
+			{eq("zone", "z1"), eq("pod", "pod-1001")},
 		} {
 			got := selected(matchers...)
 			require.NotEmpty(t, got[0], matchers)
 			require.Equal(t, got[0], got[1], matchers)
 		}
 		got := selected(re("pod", "nothing.+"))
+		require.Equal(t, got[0], got[1])
+		// Postings that don't meet select nothing.
+		got = selected(eq("zone", "z4"), eq("pod", "pod-1001"))
+		require.Empty(t, got[0])
 		require.Equal(t, got[0], got[1])
 	}
 	appendSeries(0, 20000)

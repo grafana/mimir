@@ -305,6 +305,8 @@ func (f *realisticFixture) queries() []realisticQuery {
 		{"huge-metric-pod-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), re("pod", "pod-1.*")}},
 		{"huge-metric-job/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("job", "job-30")}},
 		{"nameless-job/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("job", "job-17")}},
+		{"nameless-job-namespace/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("job", "job-17"), eq("namespace", "ns-17")}},
+		{"huge-metric-two-labels/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("namespace", "ns-20"), eq("job", "job-20")}},
 		{"nameless-job/13h", all[0], all[1], []*promlabels.Matcher{eq("job", "job-17")}},
 		{"name-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{re("__name__", "metric_12.."), eq("namespace", "ns-5")}},
 		{"buckets/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "request_duration_seconds_bucket"), eq("namespace", "ns-3")}},
