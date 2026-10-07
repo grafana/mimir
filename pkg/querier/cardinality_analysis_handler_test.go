@@ -122,7 +122,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, "unexpected error %v", string(bodyContent))
-			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers, cardinality.InMemoryMethod)
+			distributor.AssertCalled(t, "LabelValuesCountPerLabelName", mock.Anything, data.expectedMatchers, cardinality.InMemoryMethod)
 		})
 	}
 }
@@ -1233,7 +1233,14 @@ func generateLabelValues(count int) ([]*client.LabelValues, int) {
 
 func mockDistributorLabelNamesAndValues(items []*client.LabelValues, err error) *mockDistributor {
 	distributor := &mockDistributor{}
-	distributor.On("LabelNamesAndValues", mock.Anything, mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, err)
+	var counts map[string]int
+	if err == nil {
+		counts = make(map[string]int, len(items))
+		for _, item := range items {
+			counts[item.LabelName] = len(item.Values)
+		}
+	}
+	distributor.On("LabelValuesCountPerLabelName", mock.Anything, mock.Anything, mock.Anything).Return(counts, err)
 	return distributor
 }
 

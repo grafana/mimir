@@ -64,7 +64,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
-	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, false, stream, valueFilter))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -89,6 +89,72 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	require.Equal(t, []*client.LabelValues{
 		{LabelName: "label-gg", Values: []string{"g0000000"}}},
 		mockServer.SentResponses[6].Items)
+	for _, resp := range mockServer.SentResponses {
+		require.False(t, resp.ValuesSorted)
+	}
+}
+
+func TestLabelNamesAndValues_SortValues(t *testing.T) {
+	existingLabels := map[string][]string{
+		"label-aa": {"a2222222", "a0000000", "a1111111"},
+		// Spans several 32-byte messages.
+		"label-bb": {"b5555555", "b3333333", "b0000000", "b4444444", "b1111111", "b2222222", "b6666666"},
+		"label-cc": {"c1111111", "c0000000"},
+	}
+	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
+	var valueFilter = func(_, value string) (bool, error) {
+		// Filtering must keep the order.
+		return !strings.HasSuffix(value, "4444444"), nil
+	}
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, true, &mockServer, valueFilter))
+
+	require.Greater(t, len(mockServer.SentResponses), 3)
+	var got []*client.LabelValues
+	prevName, prevValue := "", ""
+	for _, resp := range mockServer.SentResponses {
+		require.True(t, resp.ValuesSorted)
+		for _, item := range resp.Items {
+			for _, v := range item.Values {
+				if item.LabelName == prevName {
+					require.Less(t, prevValue, v, "values of %s must be strictly increasing", item.LabelName)
+				} else {
+					require.Less(t, prevName, item.LabelName, "label names must be strictly increasing")
+				}
+				prevName, prevValue = item.LabelName, v
+			}
+			got = append(got, item)
+		}
+	}
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-aa", Values: []string{"a0000000", "a1111111", "a2222222"}},
+		{LabelName: "label-bb", Values: []string{"b0000000", "b1111111", "b2222222", "b3333333", "b5555555", "b6666666"}},
+		{LabelName: "label-cc", Values: []string{"c0000000", "c1111111"}},
+	}, mergeLabelValuesRuns(got))
+}
+
+// mergeLabelValuesRuns joins consecutive items with the same label name, as they're split across messages.
+func mergeLabelValuesRuns(items []*client.LabelValues) []*client.LabelValues {
+	var out []*client.LabelValues
+	for _, item := range items {
+		if len(out) > 0 && out[len(out)-1].LabelName == item.LabelName {
+			out[len(out)-1].Values = append(out[len(out)-1].Values, item.Values...)
+			continue
+		}
+		out = append(out, &client.LabelValues{LabelName: item.LabelName, Values: slices.Clone(item.Values)})
+	}
+	return out
+}
+
+func TestLabelNamesAndValuesMessageSize(t *testing.T) {
+	for requested, expected := range map[uint64]int{
+		0:                labelNamesAndValuesTargetSizeBytes,
+		1:                labelNamesAndValuesMinRequestedSizeBytes,
+		64 * 1024:        64 * 1024,
+		1024 * 1024:      labelNamesAndValuesMaxRequestedSizeBytes,
+		1024 * 1024 * 64: labelNamesAndValuesMaxRequestedSizeBytes,
+	} {
+		require.Equal(t, expected, labelNamesAndValuesMessageSize(requested), "requested %d", requested)
+	}
 }
 
 func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
@@ -103,7 +169,7 @@ func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
 	var valueFilter = func(_, value string) (bool, error) {
 		return strings.Contains(value, "0"), nil
 	}
-	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, false, stream, valueFilter))
 
 	require.Len(t, mockServer.SentResponses, 2)
 
@@ -300,6 +366,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 			idxReader,
 			[]*labels.Matcher{},
 			1*1024*1024, // 1MB
+			false,
 			stream,
 			valueFilter,
 		)
@@ -637,6 +704,13 @@ func (i *mockIndex) LabelValues(_ context.Context, name string, _ *storage.Label
 	return i.existingLabels[name], nil
 }
 
+func (i *mockIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := i.LabelValues(ctx, name, hints, matchers...)
+	values = slices.Clone(values)
+	slices.Sort(values)
+	return values, err
+}
+
 func (i *mockIndex) Close() error { return nil }
 
 func (i *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -657,7 +731,7 @@ func (m *mockLabelNamesAndValuesServer) Send(response *client.LabelNamesAndValue
 		copy(values, it.Values)
 		items[i] = &client.LabelValues{LabelName: it.LabelName, Values: values}
 	}
-	m.SentResponses = append(m.SentResponses, client.LabelNamesAndValuesResponse{Items: items})
+	m.SentResponses = append(m.SentResponses, client.LabelNamesAndValuesResponse{Items: items, ValuesSorted: response.ValuesSorted})
 	return nil
 }
 

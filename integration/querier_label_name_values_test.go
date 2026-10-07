@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,104 +83,120 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 		},
 	}
 
-	// Run tests.
+	// Run tests. The streaming merge must return the same response as the in-memory merge.
 	for tn, tc := range tests {
-		t.Run(tn, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
-
-			// Start dependencies.
-			memcached := e2ecache.NewMemcached()
-			consul := e2edb.NewConsul()
-			require.NoError(t, s.StartAndWaitReady(consul, memcached))
-
-			// Set configuration.
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-				"-querier.cardinality-analysis-enabled": "true",
-				"-ingester.ring.replication-factor":     "3",
-
-				// Enable the cardinality results cache with a very short TTL just to exercise its code.
-				"-query-frontend.cache-results":                           "true",
-				"-query-frontend.results-cache.backend":                   "memcached",
-				"-query-frontend.results-cache.memcached.addresses":       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-				"-query-frontend.results-cache-ttl-for-cardinality-query": "1ms",
+		for _, streamingMerge := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, streaming merge: %t", tn, streamingMerge), func(t *testing.T) {
+				testQuerierLabelNamesAndValues(t, numSeriesToPush, tc.selector, tc.limit, streamingMerge, tc.expectedResult)
 			})
-
-			// Start minio.
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio))
-
-			// Start the query-scheduler.
-			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
-			require.NoError(t, s.StartAndWaitReady(queryScheduler))
-			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-
-			// Start the query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.Start(queryFrontend))
-
-			// Start all other Mimir services.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
-			require.NoError(t, s.WaitReady(queryFrontend))
-
-			// Wait until distributor and queriers have updated the ring.
-			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-			// Push series.
-			now := time.Now()
-
-			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
-			require.NoError(t, err)
-
-			for i := 1; i <= numSeriesToPush; i++ {
-				metricName := fmt.Sprintf("series_%d", i)
-				series, _, _ := generateAlternatingSeries(i)(metricName, now,
-					prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
-					prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
-				)
-
-				res, err := client.Push(series)
-				require.NoError(t, err)
-				require.Equal(t, http.StatusOK, res.StatusCode)
-			}
-
-			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
-			// the final ingester may not have received series yet.
-			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-			test.Poll(t, 3*time.Second, numSeriesToPush*3, func() interface{} {
-				var totalIngestedSeries int
-				for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
-					values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
-					require.NoError(t, err)
-
-					numMemorySeries := e2e.SumValues(values)
-					totalIngestedSeries += int(numMemorySeries)
-				}
-				return totalIngestedSeries
-			})
-
-			// Fetch label names and values.
-			lbNamesAndValuesResp, err := client.LabelNamesAndValues(tc.selector, tc.limit)
-			require.NoError(t, err)
-
-			// Test results.
-			require.Equal(t, tc.expectedResult, *lbNamesAndValuesResp)
-		})
+		}
 	}
+}
+
+func testQuerierLabelNamesAndValues(t *testing.T, numSeriesToPush int, selector string, limit int, streamingMerge bool, expectedResult api.LabelNamesCardinalityResponse) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul, memcached))
+
+	// Set configuration.
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		"-querier.cardinality-analysis-enabled":                 "true",
+		"-querier.cardinality-analysis-streaming-merge-enabled": strconv.FormatBool(streamingMerge),
+		"-ingester.ring.replication-factor":                     "3",
+
+		// Enable the cardinality results cache with a very short TTL just to exercise its code.
+		"-query-frontend.cache-results":                           "true",
+		"-query-frontend.results-cache.backend":                   "memcached",
+		"-query-frontend.results-cache.memcached.addresses":       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.results-cache-ttl-for-cardinality-query": "1ms",
+	})
+
+	// Start minio.
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	// Start all other Mimir services.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until distributor and queriers have updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Push series.
+	now := time.Now()
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	for i := 1; i <= numSeriesToPush; i++ {
+		metricName := fmt.Sprintf("series_%d", i)
+		series, _, _ := generateAlternatingSeries(i)(metricName, now,
+			prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
+			prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
+		)
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	}
+
+	// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+	// the final ingester may not have received series yet.
+	// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+	test.Poll(t, 3*time.Second, numSeriesToPush*3, func() interface{} {
+		var totalIngestedSeries int
+		for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
+			values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
+			require.NoError(t, err)
+
+			numMemorySeries := e2e.SumValues(values)
+			totalIngestedSeries += int(numMemorySeries)
+		}
+		return totalIngestedSeries
+	})
+
+	// Fetch label names and values.
+	lbNamesAndValuesResp, err := client.LabelNamesAndValues(selector, limit)
+	require.NoError(t, err)
+
+	// Test results.
+	require.Equal(t, expectedResult, *lbNamesAndValuesResp)
+
+	// Check which merge the querier used. All ingesters run the same version, so the streaming merge never falls back.
+	method := "map"
+	if streamingMerge {
+		method = "streaming"
+	}
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_label_names_and_values_merges_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "method", method),
+		labels.MustNewMatcher(labels.MatchEqual, "fallback", "false"))))
 }
 
 func TestQuerierLabelValuesCardinality(t *testing.T) {
