@@ -451,3 +451,31 @@ func TestRetainGivesBackTheSlotsOfRemovedSeries(t *testing.T) {
 		require.Equal(t, (n+1)%2 == 0, found, n)
 	}
 }
+
+// BenchmarkRetainShard is what a head compaction holds a shard's lock for when series leave it: a shard of a 2M series
+// tenant with 19 labels each, of which a share leaves.
+func BenchmarkRetainShard(b *testing.B) {
+	for _, leaving := range []int{2, 20, 50} {
+		b.Run(fmt.Sprintf("leaving=%d%%", leaving), func(b *testing.B) {
+			for range b.N {
+				b.StopTimer()
+				index := newSeriesByName()
+				for n := range 31_000 {
+					pairs := make([]string, 0, 38)
+					pairs = append(pairs, "__name__", fmt.Sprintf("metric_%d", n%200))
+					for label := 1; label < 19; label++ {
+						value := fmt.Sprintf("shared_%d", (n+label)%40)
+						if label >= 12 {
+							value = fmt.Sprintf("unique_%d_%d", label, n)
+						}
+						pairs = append(pairs, fmt.Sprintf("label_%02d", label), value)
+					}
+					stored := labels.FromStrings(pairs...)
+					index.insert(stored.Hash(), stored, Series{ref: uint64(n + 1)})
+				}
+				b.StartTimer()
+				index.retain(func(entry *seriesEntry) bool { return int(entry.series.ref%100) >= leaving })
+			}
+		})
+	}
+}
