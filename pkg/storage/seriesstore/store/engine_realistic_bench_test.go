@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // A production-sized tenant on one ingester: 2M owned series and 13h of retention, so that most
@@ -131,6 +134,8 @@ type realisticFixture struct {
 	head       headUnderTest
 	baseHeap   uint64
 	results    map[string]map[string]float64
+	// With MIMIR_REALISTIC_INGEST=floats, the seriesstore engine ingests batches of series with AppendFloats.
+	batches []mimirpb.PreallocTimeseries
 	// What every engine answered a query with, to compare them.
 	expected *sync.Map
 }
@@ -167,6 +172,10 @@ func (f *realisticFixture) appendRound(round int, series int) int {
 					failed.CompareAndSwap(nil, err)
 				}
 			}
+			if engine, ok := f.head.(*Engine); ok && f.batches != nil {
+				f.ingestFloats(engine, round, w, series, fail)
+				return
+			}
 			app := f.head.Appender(context.Background())
 			count := 0
 			for n := w; n < series; n += realisticWorkers {
@@ -190,6 +199,49 @@ func (f *realisticFixture) appendRound(round int, series int) int {
 		require.NoError(f.b, err)
 	}
 	return series
+}
+
+type discardSink struct{}
+
+func (discardSink) Error(int, error, int64) bool                       { return true }
+func (discardSink) Ingested(int, promlabels.Labels, storage.SeriesRef) {}
+
+// ingestFloats ingests the worker's series in batches like the ingester's pusher does: the series the engine has by
+// shard, the others one by one.
+func (f *realisticFixture) ingestFloats(engine *Engine, round, worker, series int, fail func(error)) {
+	batch := make([]mimirpb.PreallocTimeseries, 0, realisticBatch)
+	positions := make([]int, 0, realisticBatch)
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		indices := make([]int, len(batch))
+		for i := range indices {
+			indices[i] = i
+		}
+		leftover, _, err := engine.AppendFloats(batch, indices, math.MinInt64, math.MaxInt64, discardSink{})
+		fail(err)
+		if len(leftover) > 0 {
+			app := engine.Appender(context.Background())
+			for _, i := range leftover {
+				ref, err := app.Append(0, f.lsets[positions[i]], batch[i].Samples[0].TimestampMs, batch[i].Samples[0].Value)
+				fail(err)
+				f.refs[positions[i]] = ref
+			}
+			fail(app.Commit())
+		}
+		batch, positions = batch[:0], positions[:0]
+	}
+	for n := worker; n < series; n += realisticWorkers {
+		ts, v := realisticSample(n, round, f.intervalMs)
+		f.batches[n].Samples[0] = mimirpb.Sample{TimestampMs: f.t0 + ts, Value: v}
+		batch = append(batch, f.batches[n])
+		positions = append(positions, n)
+		if len(batch) == realisticBatch {
+			flush()
+		}
+	}
+	flush()
 }
 
 // phase runs fn once, however often the benchmark framework calls it, and reports its metrics.
@@ -360,12 +412,23 @@ func BenchmarkRealistic(b *testing.B) {
 	for n := range lsets {
 		lsets[n] = realisticLabels(n)
 	}
+	var batches []mimirpb.PreallocTimeseries
+	if os.Getenv("MIMIR_REALISTIC_INGEST") == "floats" {
+		batches = make([]mimirpb.PreallocTimeseries, series)
+		for n, lset := range lsets {
+			var adapters []mimirpb.LabelAdapter
+			lset.Range(func(l promlabels.Label) {
+				adapters = append(adapters, mimirpb.LabelAdapter{Name: l.Name, Value: l.Value})
+			})
+			batches[n] = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: adapters, Samples: make([]mimirpb.Sample, 1)}}
+		}
+	}
 	var expected sync.Map
 	for _, engine := range engines {
 		b.Run(engine, func(b *testing.B) {
 			f := &realisticFixture{
 				b: b, engine: engine, dir: b.TempDir(), series: series, rounds: rounds, intervalMs: intervalMs, t0: t0,
-				lsets: lsets, refs: make([]storage.SeriesRef, series), results: map[string]map[string]float64{}, expected: &expected,
+				lsets: lsets, batches: batches, refs: make([]storage.SeriesRef, series), results: map[string]map[string]float64{}, expected: &expected,
 			}
 			f.baseHeap = heapInUse()
 			f.open()
