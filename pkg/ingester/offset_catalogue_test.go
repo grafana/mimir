@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -25,12 +27,12 @@ func TestOffsetCatalogue(t *testing.T) {
 		createBlock(t, dir, id, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}})
 
 		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
-		require.NoError(t, c.Sync(t.Context(), 100))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewMultiClusterPartitionOffsets([]int64{100, 250, -1})))
 
 		data, err := readOffsetCatalogueFromFile(dir)
 		require.NoError(t, err)
 		require.Equal(t, offsetCatalogueVersion, data.Version)
-		require.Equal(t, offsetWatermark{Partition: 1, Offset: 100}, data.Data[id.String()])
+		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}, 2: {Partition: 1, Offset: -1}}, data.Data[id.String()])
 	})
 
 	t.Run("preserves existing entries", func(t *testing.T) {
@@ -39,16 +41,16 @@ func TestOffsetCatalogue(t *testing.T) {
 
 		createBlock(t, dir, id1, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id1}})
 		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
-		require.NoError(t, c.Sync(t.Context(), 50))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewMultiClusterPartitionOffsets([]int64{50, 300})))
 
 		// New block appears; second Sync must not overwrite id1's watermark.
 		createBlock(t, dir, id2, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id2}})
-		require.NoError(t, c.Sync(t.Context(), 200))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewMultiClusterPartitionOffsets([]int64{200, 400})))
 
 		data, err := readOffsetCatalogueFromFile(dir)
 		require.NoError(t, err)
-		require.Equal(t, offsetWatermark{Partition: 1, Offset: 50}, data.Data[id1.String()])
-		require.Equal(t, offsetWatermark{Partition: 1, Offset: 200}, data.Data[id2.String()])
+		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 50}, 1: {Partition: 1, Offset: 300}}, data.Data[id1.String()])
+		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 200}, 1: {Partition: 1, Offset: 400}}, data.Data[id2.String()])
 	})
 
 	t.Run("drops deleted blocks", func(t *testing.T) {
@@ -58,11 +60,11 @@ func TestOffsetCatalogue(t *testing.T) {
 		createBlock(t, dir, id1, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id1}})
 		createBlock(t, dir, id2, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id2}})
 		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
-		require.NoError(t, c.Sync(t.Context(), 10))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewSingleClusterPartitionOffsets(10)))
 
 		// Remove id1 (shipped / retention-deleted).
 		require.NoError(t, os.RemoveAll(filepath.Join(dir, id1.String())))
-		require.NoError(t, c.Sync(t.Context(), 20))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewSingleClusterPartitionOffsets(20)))
 
 		data, err := readOffsetCatalogueFromFile(dir)
 		require.NoError(t, err)
@@ -73,11 +75,27 @@ func TestOffsetCatalogue(t *testing.T) {
 	t.Run("no blocks", func(t *testing.T) {
 		dir := t.TempDir()
 		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
-		require.NoError(t, c.Sync(t.Context(), 42))
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewSingleClusterPartitionOffsets(42)))
 
 		data, err := readOffsetCatalogueFromFile(dir)
 		require.NoError(t, err)
 		require.Empty(t, data.Data)
+	})
+
+	t.Run("rebuilds older catalogue", func(t *testing.T) {
+		dir := t.TempDir()
+		id := ulid.MustNew(1, nil)
+		createBlock(t, dir, id, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}})
+		content := fmt.Sprintf(`{"version":1,"updated_at":0,"data":{%q:{"partition":1,"offset":50}}}`, id.String())
+		require.NoError(t, os.WriteFile(filepath.Join(dir, offsetCatalogueFilename), []byte(content), 0o644))
+
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewMultiClusterPartitionOffsets([]int64{100, 250})))
+
+		data, err := readOffsetCatalogueFromFile(dir)
+		require.NoError(t, err)
+		require.Equal(t, offsetCatalogueVersion, data.Version)
+		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}}, data.Data[id.String()])
 	})
 
 	t.Run("rejects version mismatch", func(t *testing.T) {
