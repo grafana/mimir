@@ -95,6 +95,8 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		idx := mustIndex(userDB.Head())
 
+		// One instance for both, as the order of the tracker names, which the counts follow, is not the same for two.
+		newMatchers := asmodel.NewMatchers(newMatchersConfig)
 		var oldMatcherNames []string
 		if matchersChanged || catChanged {
 			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
@@ -104,7 +106,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
 			}
 			userDB.activeSeries.ReloadSeriesConfig(
-				asmodel.NewMatchers(newMatchersConfig),
+				newMatchers,
 				newCostAttributionActiveSeriesTracker,
 				matchersChanged, catChanged, idx,
 			)
@@ -114,7 +116,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if userDB.nativeActive != nil {
 			// The engine counts by the new trackers from now on, and reports to the new cost attribution.
 			if matchersChanged {
-				userDB.nativeActive.SetActiveTrackers(asmodel.NewMatchers(newMatchersConfig))
+				userDB.nativeActive.SetActiveTrackers(newMatchers)
 			}
 			if catChanged {
 				userDB.setCostAttribution(newCostAttributionActiveSeriesTracker)

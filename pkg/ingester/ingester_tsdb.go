@@ -139,11 +139,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
 	}
 
+	// One instance for both, as the order of the tracker names, which the counts follow, is not the same for two.
+	trackerMatchers := asmodel.NewMatchers(matchersConfig)
 	userDB := &userTSDB{
 		dir:                     udir,
 		cfg:                     &i.cfg,
 		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
+		activeSeries:            activeseries.NewActiveSeries(trackerMatchers, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -240,7 +242,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
 	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
 		userDB.nativeActive = head
-		head.SetActiveTrackers(asmodel.NewMatchers(matchersConfig))
+		head.SetActiveTrackers(trackerMatchers)
 		userDB.setCostAttribution(i.costAttributionMgr.ActiveSeriesTracker(userID))
 	}
 
