@@ -201,8 +201,13 @@ func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations,
 // one response batch at a time, preserving the streaming contract.
 //
 // The fetch also includes the metric family name of each suffixed result (x for
-// x_bucket), because metadata is stored by family name. Results past the
-// handler's limit are not enriched.
+// x_bucket), because metadata is stored by family name.
+//
+// limit does not cap the output. The handler asks the inner set for limit+1
+// results, and uses the extra result only to set has_more. The handler never
+// writes the extra result, so this set does not fetch metadata for it. When
+// the extra result is alone in its batch, this saves a metadata request to
+// all ingesters.
 //
 // Metadata is best-effort: a fetch error does not fail the search, it just
 // leaves that batch un-enriched (metadata is optional per result), so no
