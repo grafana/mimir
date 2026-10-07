@@ -307,6 +307,11 @@ func (f *realisticFixture) queries() []realisticQuery {
 		{"nameless-job/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("job", "job-17")}},
 		{"nameless-job-namespace/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("job", "job-17"), eq("namespace", "ns-17")}},
 		{"huge-metric-two-labels/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("namespace", "ns-20"), eq("job", "job-20")}},
+		// The group is smaller than the label's postings, so the engine reads the label of each series of the group.
+		{"huge-metric-cluster/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("cluster", "cluster-4")}},
+		// No series of the group is in this cluster: all of the group is read to find out.
+		{"huge-metric-cluster-none/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("cluster", "cluster-5")}},
+		{"huge-metric-cluster-container/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "http_requests_total"), eq("cluster", "cluster-4"), eq("container", "c-0")}},
 		{"nameless-job/13h", all[0], all[1], []*promlabels.Matcher{eq("job", "job-17")}},
 		{"name-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{re("__name__", "metric_12.."), eq("namespace", "ns-5")}},
 		{"buckets/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "request_duration_seconds_bucket"), eq("namespace", "ns-3")}},
@@ -331,16 +336,36 @@ func (f *realisticFixture) selectSeries(q realisticQuery) int {
 	return series
 }
 
+// evictCaches reads a buffer larger than the CPU caches, so the next query finds the engine's memory cold: a query
+// of a busy ingester does, while a benchmark that repeats one finds the series it reads in cache.
+var evictBuffer = make([]byte, 256<<20)
+
+func evictCaches() {
+	sum := byte(0)
+	for i := 0; i < len(evictBuffer); i += 64 {
+		evictBuffer[i]++
+		sum += evictBuffer[i]
+	}
+	evictSink = sum
+}
+
+var evictSink byte
+
 // timed runs fn iterations times and reports its latency quantiles and CPU per call.
 func timed(iterations int, fn func()) (p50, p99, cpuMs float64) {
 	latencies := make([]time.Duration, 0, iterations)
-	cpuBefore := processCPU()
+	var cpu float64
 	for range iterations {
+		// With MIMIR_REALISTIC_COLD set, the caches are emptied before each query, which isn't timed.
+		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
+			evictCaches()
+		}
+		cpuBefore := processCPU()
 		started := time.Now()
 		fn()
 		latencies = append(latencies, time.Since(started))
+		cpu += processCPU() - cpuBefore
 	}
-	cpu := processCPU() - cpuBefore
 	slices.Sort(latencies)
 	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 	return ms(latencies[len(latencies)/2]), ms(latencies[min(len(latencies)-1, len(latencies)*99/100)]), cpu * 1000 / float64(iterations)
