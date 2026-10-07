@@ -3,8 +3,12 @@
 package store
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -138,11 +142,13 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 			defer wg.Done()
 			counts := ActiveCounts{Trackers: make([]TrackerCounts, count)}
 			var stale []uint64
+			var ages activeAges
 			state := e.store.shards[index]
 			state.RLock()
 			if t, ok := e.tenantLocked(index); ok {
 				t.series.forEach(func(entry *seriesEntry) {
 					series := &entry.series
+					ages.observe(series, cutoffMs)
 					if !series.isActive(cutoffMs) {
 						return
 					}
@@ -177,6 +183,9 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 				e.cacheTrackerMatches(index, trackers, stale)
 			}
 			perShard[index] = counts
+			if index == 0 {
+				ages.log(cutoffMs)
+			}
 		}()
 	}
 	wg.Wait()
@@ -224,4 +233,39 @@ func (e *Engine) IsActive(ref storage.SeriesRef, cutoffMs int64) (active bool, b
 		}
 	})
 	return active, buckets, histogram
+}
+
+// activeAges counts what the series' last ingests are, to find out why a count differs from another engine's. Temporary.
+type activeAges struct {
+	never, deactivated, cleared, older, active, recent int
+	total                                              int
+}
+
+func (a *activeAges) observe(series *Series, cutoffMs int64) {
+	a.total++
+	switch {
+	case series.lastIngestedMs == 0:
+		a.never++
+	case series.lastIngestedMs == math.MinInt64:
+		a.deactivated++
+	case series.activeCleared:
+		a.cleared++
+	case series.lastIngestedMs < cutoffMs-int64(20*60*1000):
+		a.older++
+	case series.lastIngestedMs < cutoffMs:
+		a.recent++
+	default:
+		a.active++
+	}
+}
+
+var lastActiveLog atomic.Int64
+
+func (a *activeAges) log(cutoffMs int64) {
+	now := time.Now().UnixNano()
+	last := lastActiveLog.Load()
+	if now-last < int64(3*time.Minute) || !lastActiveLog.CompareAndSwap(last, now) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "activelog shard0 total=%d active=%d idle<20m=%d idle>20m=%d never=%d deactivated=%d cleared=%d\n", a.total, a.active, a.recent, a.older, a.never, a.deactivated, a.cleared)
 }
