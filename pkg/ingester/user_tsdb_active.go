@@ -5,9 +5,11 @@ package ingester
 import (
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
@@ -19,11 +21,32 @@ type activeSeriesHead interface {
 	ActiveSeries(cutoff time.Time) activeCounts
 	// SetActiveTrackers sets the custom trackers that ActiveSeries counts by.
 	SetActiveTrackers(matchers *asmodel.Matchers)
+	// SetCostAttribution sets where the series that are active are reported, by their labels, when ActiveSeries
+	// is called: Increment for a series that became active and Decrement for one that isn't any more, so a tenant
+	// with cost attribution doesn't need the tracker either. A nil sink stops the reports.
+	SetCostAttribution(sink costAttributionSink)
 	// DeactivateSeries makes the series inactive until their next samples, and DeactivateAll all of them.
 	DeactivateSeries(refs []storage.SeriesRef)
 	DeactivateAll()
 	// ActiveRefs tells which series were ingested at or after the cutoff.
 	ActiveRefs(cutoff time.Time) activeseries.ActiveRefs
+}
+
+// costAttributionSink is what an engine reports the active series to, which cost attribution's tracker is.
+type costAttributionSink interface {
+	// Increment is for a series that became active, with its native histogram bucket count or -1.
+	Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int)
+	// Decrement is for one that isn't active any more, with the bucket count it was incremented with.
+	Decrement(lbls labels.Labels, nativeHistogramBucketNum int)
+}
+
+// setCostAttribution makes the engine report the tenant's active series to the cost attribution tracker, or stop.
+func (u *userTSDB) setCostAttribution(tracker *costattribution.ActiveSeriesTracker) {
+	if tracker == nil {
+		u.nativeActive.SetCostAttribution(nil)
+		return
+	}
+	u.nativeActive.SetCostAttribution(tracker)
 }
 
 // activeCounts are the active series, in all and by custom tracker, in the order of the trackers.
@@ -37,10 +60,10 @@ type trackerCounts struct {
 }
 
 // trackerActive reports whether the tracker, not the engine, tells the tenant's active series: it does for an engine
-// that doesn't keep them, and while cost attribution groups them by labels, which only the tracker does.
+// that doesn't keep them.
 func (u *userTSDB) trackerActive() bool {
 	// Without active series metrics nothing is active, which the tracker, that isn't fed, says.
-	return u.nativeActive == nil || u.costAttribution.Load() || !u.cfg.ActiveSeriesMetrics.Enabled
+	return u.nativeActive == nil || !u.cfg.ActiveSeriesMetrics.Enabled
 }
 
 // activeCutoff is when a series has to have been ingested to be active at now, or at the time of the last update of the
