@@ -636,6 +636,8 @@ func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
 	}
 }
 
+func (s *pushSink) NeedsLabels() bool { return s.activeSeries != nil }
+
 func (s *pushSink) Ingested(_ int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
 	if s.activeSeries != nil {
 		s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)

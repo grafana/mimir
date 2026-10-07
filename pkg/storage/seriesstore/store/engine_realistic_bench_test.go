@@ -204,6 +204,7 @@ func (f *realisticFixture) appendRound(round int, series int) int {
 type discardSink struct{}
 
 func (discardSink) Error(int, error, int64) bool                       { return true }
+func (discardSink) NeedsLabels() bool                                  { return false }
 func (discardSink) Ingested(int, promlabels.Labels, storage.SeriesRef) {}
 
 // ingestFloats ingests the worker's series in batches like the ingester's pusher does: the series the engine has by

@@ -27,6 +27,8 @@ func (s *recordingFloatSink) Error(series int, err error, timestampMs int64) boo
 	return true
 }
 
+func (s *recordingFloatSink) NeedsLabels() bool { return true }
+
 func (s *recordingFloatSink) Ingested(series int, _ promlabels.Labels, _ storage.SeriesRef) {
 	s.ingested = append(s.ingested, series)
 }
@@ -263,4 +265,5 @@ func BenchmarkEngineIngestBatch(b *testing.B) {
 type countingFloatSink struct{ errors int }
 
 func (s *countingFloatSink) Error(int, error, int64) bool                     { s.errors++; return true }
+func (*countingFloatSink) NeedsLabels() bool                                  { return false }
 func (*countingFloatSink) Ingested(int, promlabels.Labels, storage.SeriesRef) {}

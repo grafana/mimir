@@ -64,9 +64,11 @@ type Engine struct {
 
 	nextRef atomic.Uint64
 	// Where the next ingested batch starts walking the store shards.
-	ingestStart  atomic.Uint32
-	oooWindow    atomic.Int64
-	maxExemplars atomic.Int64
+	ingestStart atomic.Uint32
+	// The head\'s times as of the last commit that changed them, which commitTimes checks before locking.
+	windowMin, windowMax atomic.Int64
+	oooWindow            atomic.Int64
+	maxExemplars         atomic.Int64
 	// Whether an out-of-order window was ever set: out-of-order head compactions only run then.
 	oooWasEnabled atomic.Bool
 	// By store shard, the chunk reference below which out-of-order chunks were compacted out of
@@ -105,6 +107,9 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		return nil, fmt.Errorf("at most %d store shards", maxShards)
 	}
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
+	// No commit has seen the head's times yet.
+	e.windowMin.Store(math.MaxInt64)
+	e.windowMax.Store(math.MinInt64)
 	if e.callback == nil {
 		e.callback = noopCallback{}
 	}
@@ -394,6 +399,12 @@ func (e *Engine) initTime(timestamp int64) {
 
 // commitTimes extends the head's time bounds with committed in-order samples.
 func (e *Engine) commitTimes(minTime, maxTime int64) {
+	// Most batches are inside the window the head had when the last one changed it, but those of a new scrape
+	// round: taking the home shard's lock for each would queue every appender on it. The head's times only
+	// move forward but for a truncation, which also moves what appenders accept past the times it drops.
+	if minTime >= e.windowMin.Load() && maxTime <= e.windowMax.Load() {
+		return
+	}
 	home, t := e.home()
 	home.Lock()
 	defer home.Unlock()
@@ -403,6 +414,8 @@ func (e *Engine) commitTimes(minTime, maxTime int64) {
 	if maxTime > t.maxTime {
 		t.maxTime = maxTime
 	}
+	e.windowMin.Store(t.minTime)
+	e.windowMax.Store(t.maxTime)
 }
 
 // compactable is Prometheus's head compaction check.
