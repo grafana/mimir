@@ -13,10 +13,15 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
 
+	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -138,4 +143,81 @@ func TestValidateSeriesstoreEngine(t *testing.T) {
 	tsdbCfg.Engine = mimir_tsdb.EnginePrometheus
 	ingestCfg.Enabled = false
 	require.NoError(t, ValidateSeriesstoreEngine(tsdbCfg, ingesterCfg, ingestCfg))
+}
+
+// The engine reports a tenant's active series to cost attribution as the tracker does, for series becoming active,
+// going idle, and growing their histograms.
+func TestIngester_SeriesstoreCostAttributionMatchesTracker(t *testing.T) {
+	attributed := func(native bool) []map[string]float64 {
+		previous := testNoNativeActive
+		testNoNativeActive = !native
+		t.Cleanup(func() { testNoNativeActive = previous })
+
+		ctx := user.InjectOrgID(context.Background(), userID)
+		cfg := defaultIngesterTestConfig(t)
+		cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+		cfg.ActiveSeriesMetrics.IdleTimeout = 500 * time.Millisecond
+		limitsCfg := defaultLimitsTestConfig()
+		limitsCfg.NativeHistogramsIngestionEnabled = true
+		limitsCfg.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "cpu"}}},
+		}
+		limitsCfg.MaxCostAttributionCardinality = 100
+		overrides := validation.NewOverrides(limitsCfg, nil)
+		registry, attributionRegistry := prometheus.NewRegistry(), prometheus.NewRegistry()
+		manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, attributionRegistry)
+		require.NoError(t, err)
+		ingester, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, cfg, overrides, nil, "", "", registry, manager)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, ingester, r)
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+
+		read := func() map[string]float64 {
+			families, err := attributionRegistry.Gather()
+			require.NoError(t, err)
+			out := map[string]float64{}
+			for _, family := range families {
+				if family.GetName() != "cortex_ingester_attributed_active_series" {
+					continue
+				}
+				for _, m := range family.GetMetric() {
+					for _, label := range m.GetLabel() {
+						if label.GetName() == "cpu" {
+							out[label.GetValue()] += m.GetGauge().GetValue()
+						}
+					}
+				}
+			}
+			return out
+		}
+		push := func(at time.Time, series ...[]mimirpb.LabelAdapter) {
+			samples := make([]mimirpb.Sample, len(series))
+			for i := range samples {
+				samples[i] = mimirpb.Sample{TimestampMs: at.UnixMilli(), Value: 1}
+			}
+			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(series, samples, nil, nil, mimirpb.API))
+			require.NoError(t, err)
+		}
+		series := func(name, cpu string) []mimirpb.LabelAdapter {
+			return []mimirpb.LabelAdapter{{Name: "__name__", Value: name}, {Name: "cpu", Value: cpu}}
+		}
+
+		var out []map[string]float64
+		now := time.Now()
+		push(now, series("a", "1"), series("b", "1"), series("c", "2"))
+		require.Equal(t, native, !ingester.getTSDB(userID).trackerActive(), "the engine, not the tracker, counts the tenant's active series with cost attribution")
+		ingester.updateActiveSeries(now)
+		out = append(out, read())
+		// Another series, and the first ones go idle: samples count as ingested when they arrive.
+		time.Sleep(700 * time.Millisecond)
+		push(time.Now(), series("d", "2"))
+		ingester.updateActiveSeries(time.Now())
+		out = append(out, read())
+		ingester.updateActiveSeries(time.Now().Add(5 * time.Second))
+		out = append(out, read())
+		return out
+	}
+	tracker := attributed(false)
+	require.Equal(t, []map[string]float64{{"1": 2, "2": 1}, {"2": 1}, {}}, tracker)
+	require.Equal(t, tracker, attributed(true))
 }

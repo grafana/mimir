@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	promlabels "github.com/prometheus/prometheus/model/labels"
+
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/trackers"
@@ -423,12 +425,16 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) 
 	if block != nil {
 		state.cold.blocks = append(state.cold.blocks, block)
 	}
+	var builder promlabels.ScratchBuilder
 	for tenantID, t := range state.tenants {
 		t.series.retain(func(entry *seriesEntry) bool {
 			if entry.series.inHead {
 				return true
 			}
 			_, gone := pending.keys[frozenKey{tenantID, entry.labels}]
+			if gone {
+				t.uncount(entry, &builder)
+			}
 			return !gone
 		})
 	}

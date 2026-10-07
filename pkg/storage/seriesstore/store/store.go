@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	promlabels "github.com/prometheus/prometheus/model/labels"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
@@ -87,6 +89,8 @@ type tenant struct {
 	// tenant's overrides change, and matching every series again was a tenth of an ingester's CPU.
 	trackers          *trackers.CustomTrackers
 	trackerGeneration uint64
+	// Where the engine reports the series that are active, guarded by the shard's lock.
+	cost CostAttribution
 	// An engine's series of this shard by reference.
 	byRef refIndex
 	// An engine's out-of-order head bounds, and the start of its oldest emulated block, in the
@@ -1163,7 +1167,14 @@ func (s *Store) pruneBefore(cutoff int64) error {
 		state.Lock()
 		defer state.Unlock()
 		for _, t := range state.tenants {
-			t.series.retain(func(entry *seriesEntry) bool { return pruneSeries(&entry.series, cutoff) })
+			var builder promlabels.ScratchBuilder
+			t.series.retain(func(entry *seriesEntry) bool {
+				keep := pruneSeries(&entry.series, cutoff)
+				if !keep {
+					t.uncount(entry, &builder)
+				}
+				return keep
+			})
 		}
 		// Like Go's block retention, a cold block goes once all of it is older.
 		state.cold.pruneBefore(cutoff)
