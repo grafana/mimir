@@ -201,9 +201,9 @@ func writeLegacySnapshot(t testing.TB, s *Store, offsets []SnapshotOffset) {
 					require.NoError(t, err)
 					must(w.bytes(encoded))
 				}
-				must(w.i64(series.histogramNextAt))
-				must(w.length(len(series.outOfOrder)))
-				for _, sample := range series.outOfOrder {
+				must(w.i64(series.histogramNextAtValue()))
+				must(w.length(len(series.ooo())))
+				for _, sample := range series.ooo() {
 					require.Nil(t, sample.H, "legacy snapshots hold only float out-of-order samples")
 					must(w.i64(sample.T))
 					must(w.u64(math.Float64bits(sample.F)))

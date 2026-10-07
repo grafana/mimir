@@ -601,10 +601,10 @@ func compareHeads(t *testing.T, heads [2]headUnderTest, callbacks [2]*recordingC
 								fh = fmt.Sprintf("[%d,%d]", sr.floatHead.minTime, sr.floatHead.lastTimestamp())
 							}
 							hh := "nil"
-							if sr.histogramHead != nil {
-								hh = fmt.Sprintf("[%d,%d]", sr.histogramHead.FirstTimestamp(), sr.histogramHead.Last().Timestamp)
+							if sr.histogram() != nil {
+								hh = fmt.Sprintf("[%d,%d]", sr.histogram().FirstTimestamp(), sr.histogram().Last().Timestamp)
 							}
-							t.Logf("engine state: chunks %v float head %s histogram head %s ooo %v", metas, fh, hh, sr.outOfOrder)
+							t.Logf("engine state: chunks %v float head %s histogram head %s ooo %v", metas, fh, hh, sr.ooo())
 						})
 					}
 				}

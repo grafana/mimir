@@ -359,13 +359,13 @@ func writeSeries(w *snapshotWriter, entry *seriesEntry) error {
 			return err
 		}
 	}
-	if err := w.i64(series.histogramNextAt); err != nil {
+	if err := w.i64(series.histogramNextAtValue()); err != nil {
 		return err
 	}
-	if err := w.length(len(series.outOfOrder)); err != nil {
+	if err := w.length(len(series.ooo())); err != nil {
 		return err
 	}
-	for _, sample := range series.outOfOrder {
+	for _, sample := range series.ooo() {
 		if err := w.i64(sample.T); err != nil {
 			return err
 		}
@@ -811,8 +811,8 @@ func inferPreV4Flags(series *Series) {
 	if series.floatHead != nil {
 		openMin = series.floatHead.minTime
 	}
-	if series.histogramHead != nil {
-		openMin = min(openMin, series.histogramHead.FirstTimestamp())
+	if series.histogram() != nil {
+		openMin = min(openMin, series.histogram().FirstTimestamp())
 	}
 	inOrderMax := int64(math.MinInt64)
 	metas := series.chunks.toSlice()
@@ -831,7 +831,7 @@ func inferPreV4Flags(series *Series) {
 	if series.floatHead != nil {
 		float, hasFloat = series.floatHead.lastTimestamp(), true
 	}
-	series.nativeHistogram = series.histogramHead != nil && (!hasFloat || series.histogramHead.Last().Timestamp > float)
+	series.nativeHistogram = series.histogram() != nil && (!hasFloat || series.histogram().Last().Timestamp > float)
 }
 
 func readShard(r *snapshotReader, version int) (shardImage, error) {
@@ -1009,22 +1009,26 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 						return image, err
 					}
 				}
-				if series.histogramHead, err = chunks.NewHistogramAppenderFromSamples(samples); err != nil {
+				head, err := chunks.NewHistogramAppenderFromSamples(samples)
+				if err != nil {
 					return image, err
 				}
+				series.setHistogram(head)
 			}
-			if series.histogramNextAt, err = r.i64(); err != nil {
+			nextAt, err := r.i64()
+			if err != nil {
 				return image, err
 			}
+			series.setHistogramNextAt(nextAt)
 			oooCount, err := r.count(1_000_000)
 			if err != nil {
 				return image, err
 			}
 			if oooCount > 0 {
-				series.outOfOrder = make([]oooSample, oooCount)
+				series.setOutOfOrder(make([]oooSample, oooCount))
 			}
-			for index := range series.outOfOrder {
-				sample := &series.outOfOrder[index]
+			for index := range series.ooo() {
+				sample := &series.ooo()[index]
 				if sample.T, err = r.i64(); err != nil {
 					return image, err
 				}

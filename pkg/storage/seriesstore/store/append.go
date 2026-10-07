@@ -80,8 +80,8 @@ func committedOf(series *Series) committedHead {
 		value, _ := series.floatHead.appender.LastValue()
 		c.lastFloatTime, c.lastFloatBits, c.hasLastFloat = series.floatHead.lastTimestamp(), math.Float64bits(value), true
 	}
-	if series.histogramHead != nil {
-		last := *series.histogramHead.Last()
+	if series.histogram() != nil {
+		last := *series.histogram().Last()
 		c.lastHistogram = &last
 	}
 	return c
@@ -324,7 +324,7 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 func appendFloatInOrder(series *Series, disk *chunks.DiskMapper, timestamp int64, value float64, oneOpenChunk bool) (appended, error) {
 	// Prometheus's head has one open chunk: a float after histograms starts a new one. The Kafka
 	// path keeps both open, like the Rust store it's checked against.
-	if oneOpenChunk && series.histogramHead != nil {
+	if oneOpenChunk && series.histogram() != nil {
 		if err := cutHistogramHead(series, disk); err != nil {
 			return appended{}, err
 		}
@@ -404,36 +404,36 @@ func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.
 	timestamp := h.Timestamp
 	// Prometheus's `histogramsAppendPreprocessor`: cut on the estimated end time or twice the
 	// target size, with at least a few samples unless a new block range starts.
-	if hh := series.histogramHead; hh != nil {
+	if hh := series.histogram(); hh != nil {
 		samples := hh.Len()
 		bytes := hh.EncodedLen()
-		nextRangeStart := series.histogramNextAt
-		if series.histogramEndComputed {
+		nextRangeStart := series.histogramNextAtValue()
+		if series.histogramEndComputedValue() {
 			nextRangeStart = rangeEnd(hh.FirstTimestamp())
 		}
-		if !series.histogramEndComputed && bytes >= targetBytesPerHistogramChunk/4 {
-			series.histogramNextAt = computeChunkEndTime(hh.FirstTimestamp(), hh.Last().Timestamp, series.histogramNextAt, float64(targetBytesPerHistogramChunk)/float64(bytes))
-			series.histogramEndComputed = true
+		if !series.histogramEndComputedValue() && bytes >= targetBytesPerHistogramChunk/4 {
+			series.setHistogramNextAt(computeChunkEndTime(hh.FirstTimestamp(), hh.Last().Timestamp, series.histogramNextAtValue(), float64(targetBytesPerHistogramChunk)/float64(bytes)))
+			series.setHistogramEndComputed(true)
 		}
-		if (timestamp >= series.histogramNextAt || bytes >= targetBytesPerHistogramChunk*2) &&
+		if (timestamp >= series.histogramNextAtValue() || bytes >= targetBytesPerHistogramChunk*2) &&
 			(samples >= minSamplesPerHistogramChunk || timestamp >= nextRangeStart) {
 			next := chunks.NewHistogramAppender(h, hh)
 			if err := cutHistogramHead(series, disk); err != nil {
 				return appended{}, err
 			}
-			series.histogramHead = next
-			series.histogramNextAt = rangeEnd(timestamp)
-			series.histogramEndComputed = false
+			series.setHistogram(next)
+			series.setHistogramNextAt(rangeEnd(timestamp))
+			series.setHistogramEndComputed(false)
 			return appended{opened: true}, nil
 		}
 	}
-	if series.histogramHead == nil {
-		series.histogramHead = chunks.NewHistogramAppender(h, nil)
-		series.histogramNextAt = rangeEnd(timestamp)
-		series.histogramEndComputed = false
+	if series.histogram() == nil {
+		series.setHistogram(chunks.NewHistogramAppender(h, nil))
+		series.setHistogramNextAt(rangeEnd(timestamp))
+		series.setHistogramEndComputed(false)
 		return appended{opened: true}, nil
 	}
-	result, next, err := series.histogramHead.Append(h)
+	result, next, err := series.histogram().Append(h)
 	if err != nil {
 		return appended{}, err
 	}
@@ -443,9 +443,9 @@ func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.
 	if err := cutHistogramHead(series, disk); err != nil {
 		return appended{}, err
 	}
-	series.histogramHead = next
-	series.histogramNextAt = rangeEnd(timestamp)
-	series.histogramEndComputed = false
+	series.setHistogram(next)
+	series.setHistogramNextAt(rangeEnd(timestamp))
+	series.setHistogramEndComputed(false)
 	return appended{opened: true}, nil
 }
 
@@ -459,11 +459,11 @@ func cutFloatHead(series *Series, disk *chunks.DiskMapper) error {
 }
 
 func cutHistogramHead(series *Series, disk *chunks.DiskMapper) error {
-	hh := series.histogramHead
+	hh := series.histogram()
 	if hh == nil {
 		return nil
 	}
-	series.histogramHead = nil
+	series.setHistogram(nil)
 	encoded := hh.Encoded()
 	return writeChunk(series, disk, encoded.Encoding, encoded.Data, hh.FirstTimestamp(), hh.Last().Timestamp, false)
 }
@@ -472,7 +472,7 @@ func cutHistogramHead(series *Series, disk *chunks.DiskMapper) error {
 // chunk is dropped; once it holds outOfOrderCapacity samples it is written out like a
 // memory-mapped OOO chunk.
 func insertOutOfOrder(series *Series, disk *chunks.DiskMapper, sample oooSample) (appended, error) {
-	index, found := slices.BinarySearchFunc(series.outOfOrder, sample.T, func(stored oooSample, timestamp int64) int {
+	index, found := slices.BinarySearchFunc(series.ooo(), sample.T, func(stored oooSample, timestamp int64) int {
 		switch {
 		case stored.T < timestamp:
 			return -1
@@ -485,9 +485,9 @@ func insertOutOfOrder(series *Series, disk *chunks.DiskMapper, sample oooSample)
 	if found {
 		return appended{noop: true}, nil
 	}
-	series.outOfOrder = slices.Insert(series.outOfOrder, index, sample)
-	opened := len(series.outOfOrder) == 1
-	if len(series.outOfOrder) >= outOfOrderCapacity {
+	series.setOutOfOrder(slices.Insert(series.ooo(), index, sample))
+	opened := len(series.ooo()) == 1
+	if len(series.ooo()) >= outOfOrderCapacity {
 		if err := flushOutOfOrder(series, disk); err != nil {
 			return appended{}, err
 		}
@@ -496,11 +496,11 @@ func insertOutOfOrder(series *Series, disk *chunks.DiskMapper, sample oooSample)
 }
 
 func flushOutOfOrder(series *Series, disk *chunks.DiskMapper) error {
-	if len(series.outOfOrder) == 0 {
+	if len(series.ooo()) == 0 {
 		return nil
 	}
-	samples := series.outOfOrder
-	series.outOfOrder = nil
+	samples := series.ooo()
+	series.setOutOfOrder(nil)
 	encoded, err := chunks.EncodeOutOfOrder(samples)
 	if err != nil {
 		return err
