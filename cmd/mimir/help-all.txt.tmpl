@@ -1123,6 +1123,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The directory where bbolt shard database files are stored for the compactor scheduler. (default "./data-compactor-scheduler")
   -compactor-scheduler.bbolt.shard-count int
     	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
+  -compactor-scheduler.discovery-polls comma-separated-list-of-strings
+    	[experimental] Comma-separated list of polls used to discover tenants. A tenant is tracked while it is found by any poll. Valid values: blocks, backfills (default blocks)
   -compactor-scheduler.lane-policy.policy string
     	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
   -compactor-scheduler.lease-duration duration

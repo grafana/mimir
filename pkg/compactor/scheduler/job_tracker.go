@@ -14,6 +14,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
@@ -42,6 +43,8 @@ type JobTracker struct {
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
 	metrics                        *trackerMetrics
 
+	discoveredBy atomic.Uint32 // the discovery polls that last found this tenant
+
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
 	active                 *list.List               // ordered by oldest lease first
@@ -57,7 +60,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		pending[l] = list.New()
 	}
 
-	jt := &JobTracker{
+	return &JobTracker{
 		persister:                      jobPersister,
 		tenant:                         tenant,
 		clock:                          clock,
@@ -73,7 +76,6 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
-	return jt
 }
 
 // toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.
@@ -365,6 +367,10 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
 	if _, ok := jt.incompleteJobs[planJobId]; ok {
 		// There is already a plan job
+		return nil
+	}
+	if discoverySources(jt.discoveredBy.Load())&discoveredByBlocks == 0 {
+		// Only tenants found in the blocks bucket matter for plan jobs
 		return nil
 	}
 

@@ -290,6 +290,12 @@ compactor_scheduler:
     # CLI flag: -compactor-scheduler.lane-policy.policy
     [policy: <string> | default = "simple"]
 
+  # (experimental) Comma-separated list of polls used to discover tenants. A
+  # tenant is tracked while it is found by any poll. Valid values: blocks,
+  # backfills
+  # CLI flag: -compactor-scheduler.discovery-polls
+  [discovery_polls: <string> | default = "blocks"]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 
