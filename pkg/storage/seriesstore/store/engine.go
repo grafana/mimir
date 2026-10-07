@@ -62,7 +62,9 @@ type Engine struct {
 	opts     EngineOptions
 	callback tsdb.SeriesLifecycleCallback
 
-	nextRef      atomic.Uint64
+	nextRef atomic.Uint64
+	// Where the next ingested batch starts walking the store shards.
+	ingestStart  atomic.Uint32
 	oooWindow    atomic.Int64
 	maxExemplars atomic.Int64
 	// Whether an out-of-order window was ever set: out-of-order head compactions only run then.
