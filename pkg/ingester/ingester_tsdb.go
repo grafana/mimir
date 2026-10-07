@@ -242,8 +242,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
 	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
 		userDB.nativeActive = head
-		head.SetActiveTrackers(trackerMatchers)
-		userDB.setCostAttribution(i.costAttributionMgr.ActiveSeriesTracker(userID))
+		head.SetActiveTrackers(asmodel.NewMatchers(matchersConfig))
+		userDB.costAttribution.Store(i.costAttributionMgr.ActiveSeriesTracker(userID) != nil)
 	}
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries

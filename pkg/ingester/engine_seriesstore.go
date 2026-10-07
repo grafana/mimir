@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
@@ -20,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -125,7 +128,8 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 	}
 
 	var outcome ingestOutcome
-	leftover, ingested, err := e.Engine.AppendFloats(batch.Series, fast, batch.MinTimestampMs, batch.MaxTimestampMs, floatSink{sink})
+	atMs := batch.IngestedAt.UnixMilli()
+	leftover, ingested, err := e.Engine.AppendFloats(batch.Series, fast, batch.MinTimestampMs, batch.MaxTimestampMs, atMs, batch.OTLP, floatSink{sink})
 	outcome.Samples = ingested
 	if err != nil {
 		return outcome, err
@@ -137,11 +141,25 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 		return outcome, nil
 	}
 
-	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, sink, other)
+	// The series the appender ingests are marked ingested once it has, for the active series.
+	marker := &ingestedMarker{ingestSink: sink}
+	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, marker, other)
+	e.Engine.MarkIngested(marker.series, atMs, batch.OTLP)
 	outcome.Samples += rest.Samples
 	outcome.Exemplars += rest.Exemplars
 	outcome.CommitDuration = rest.CommitDuration
 	return outcome, err
+}
+
+// ingestedMarker collects the series an ingest got samples for.
+type ingestedMarker struct {
+	ingestSink
+	series []store.IngestedSeries
+}
+
+func (m *ingestedMarker) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
+	m.series = append(m.series, store.IngestedSeries{Ref: ref, HistogramBuckets: histogramBuckets})
+	m.ingestSink.Ingested(series, lbls, ref, histogramBuckets)
 }
 
 // floatSink tells an ingest sink what AppendFloats does: the series it ingests have no histograms.
@@ -226,6 +244,52 @@ func (e seriesstoreEngine) Head() engineHead {
 
 type seriesstoreHead struct {
 	*store.Engine
+}
+
+var _ activeSeriesHead = seriesstoreHead{}
+
+func (h seriesstoreHead) ActiveSeries(cutoff time.Time) activeCounts {
+	counts := h.Engine.ActiveSeries(cutoff.UnixMilli())
+	out := activeCounts{Total: int(counts.Total), OTLP: int(counts.OTLP), NativeHistograms: int(counts.NativeHistograms), NativeHistogramBuckets: int(counts.NativeHistogramBuckets), Trackers: make([]trackerCounts, len(counts.Trackers))}
+	for i, tracker := range counts.Trackers {
+		out.Trackers[i] = trackerCounts{Total: int(tracker.Total), NativeHistograms: int(tracker.NativeHistograms), NativeHistogramBuckets: int(tracker.NativeHistogramBuckets)}
+	}
+	return out
+}
+
+func (h seriesstoreHead) SetActiveTrackers(matchers *asmodel.Matchers) {
+	names := matchers.MatcherNames()
+	h.Engine.SetActiveTrackers(store.ActiveTrackers{Count: len(names), Match: func(lset labels.Labels) []uint16 {
+		matches := matchers.Matches(lset)
+		out := make([]uint16, matches.Len())
+		for i := range out {
+			out[i] = matches.Get(i)
+		}
+		return out
+	}})
+}
+
+func (h seriesstoreHead) DeactivateSeries(refs []storage.SeriesRef) { h.Engine.DeactivateSeries(refs) }
+func (h seriesstoreHead) DeactivateAll()                            { h.Engine.DeactivateAll() }
+
+func (h seriesstoreHead) ActiveRefs(cutoff time.Time) activeseries.ActiveRefs {
+	return activeRefs{h.Engine, cutoff.UnixMilli()}
+}
+
+// activeRefs answers for the series of an engine that were ingested at or after a time.
+type activeRefs struct {
+	engine   *store.Engine
+	cutoffMs int64
+}
+
+func (a activeRefs) ContainsRef(ref storage.SeriesRef) bool {
+	active, _, _ := a.engine.IsActive(ref, a.cutoffMs)
+	return active
+}
+
+func (a activeRefs) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
+	active, buckets, histogram := a.engine.IsActive(ref, a.cutoffMs)
+	return buckets, active && histogram
 }
 
 func (h seriesstoreHead) TimeBounds() timeBounds {

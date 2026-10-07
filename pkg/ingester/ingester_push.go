@@ -429,6 +429,8 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		MaxTimestampMs:   sink.maxTimestampMs,
 		NativeHistograms: nativeHistogramsIngestionEnabled,
 		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
+		IngestedAt:       startAppend,
+		OTLP:             req.Source == mimirpb.OTLP,
 	}, sink)
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars

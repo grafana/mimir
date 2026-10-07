@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
