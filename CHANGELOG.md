@@ -136,6 +136,12 @@
 ### Tools
 
 
+## 3.2.2
+
+### Grafana Mimir
+
+* [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16789
+
 ## 3.2.1
 
 ### Grafana Mimir
