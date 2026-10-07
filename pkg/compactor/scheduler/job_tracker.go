@@ -61,7 +61,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 	}
 
 	return &JobTracker{
-		persister:                     jobPersister,
+		persister:                      jobPersister,
 		tenant:                         tenant,
 		clock:                          clock,
 		logger:                         log.With(logger, "user", tenant),
