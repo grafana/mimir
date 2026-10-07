@@ -591,6 +591,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
 	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
+
 	r, stats := runInstantQuery(t, eng, promStorage, query, ts)
 	require.NoError(t, r.Err)
 	verifyEvaluationStats(t, stats, 24, 24)
@@ -600,24 +601,25 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// histogram_fraction's inner is DuplicateFilter -> Duplicate -> SplitFunctionCall -> last_over_time -> broad MatrixSelector;
 	// histogram_count's inner is Duplicate consumer of the same SplitFunctionCall.
 	// The shared split node's inner is the broad MatrixSelector, so there is a single cache entry.
-	broadSelector := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
-			{Name: "job", Type: labels.MatchEqual, Value: "test"},
-		},
-		Range:              4 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 112, End: 132},
-		Subsets: []core.SubsetMatchers{
-			{
-				Filter: []core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
-				AllMatchers: []core.LabelMatcher{
-					{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
-					{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
-					{Name: "job", Type: labels.MatchEqual, Value: "test"},
+	broadSelector := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+				{Name: "job", Type: labels.MatchEqual, Value: "test"},
+			},
+			Range:              4 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 112, End: 132},
+			Subsets: []core.SubsetMatchers{
+				{
+					Filter: []core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
+					AllMatchers: []core.LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+						{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
+						{Name: "job", Type: labels.MatchEqual, Value: "test"},
+					},
 				},
 			},
-		},
-	}}
+		}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 
 	require.Len(t, backend.Entries, 1)
@@ -688,23 +690,25 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	const blockStart, blockEnd = 2*hourInMs - 1, 4*hourInMs - 1
 
 	// Without SSE: the two MatrixSelectors retain their original matchers.
-	narrowNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-			{Name: "region", Type: labels.MatchEqual, Value: "us"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 14, End: 54},
-	}}
-	broadNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
-	}}
+	narrowNoSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+				{Name: "region", Type: labels.MatchEqual, Value: "us"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 14, End: 54},
+		}}
+	broadNoSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+		}}
 
 	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
 	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
@@ -726,24 +730,25 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	result, _ = runInstantQuery(t, engineSSE, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 
-	broadSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
-		Subsets: []core.SubsetMatchers{
-			{
-				Filter: []core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
-				AllMatchers: []core.LabelMatcher{
-					{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-					{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-					{Name: "region", Type: labels.MatchEqual, Value: "us"},
+	broadSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+			Subsets: []core.SubsetMatchers{
+				{
+					Filter: []core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
+					AllMatchers: []core.LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+						{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+						{Name: "region", Type: labels.MatchEqual, Value: "us"},
+					},
 				},
 			},
-		},
-	}}
+		}}
 
 	cacheKeyGenerator = createEmptyPrefixCacheKeyGenerator()
 	sharedKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSSE, params), blockStart, blockEnd)
@@ -1211,11 +1216,12 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	verifyCacheStats(t, testCache, 3, 0, 3)
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
-	inner := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
-		Range:              7 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
-	}}
+	inner := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
+			Range:              7 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 14, End: 29},
+		}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), createEmptyPrefixCacheKeyGenerator(), functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
 	require.NoError(t, err)

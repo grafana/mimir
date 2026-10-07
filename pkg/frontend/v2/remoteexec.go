@@ -171,7 +171,7 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 		Version:    version,
 	}
 
-	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(false, true, nodes...)
+	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), nodes...)
 	if err != nil {
 		return err
 	}
