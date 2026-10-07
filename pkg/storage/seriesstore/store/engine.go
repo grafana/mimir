@@ -70,8 +70,11 @@ type Engine struct {
 	// The custom trackers of the active series counts, and their generation.
 	activeTrackers   atomic.Pointer[activeTrackerSet]
 	activeGeneration atomic.Uint64
-	oooWindow        atomic.Int64
-	maxExemplars     atomic.Int64
+	// costMu serializes the reports to the cost attribution tracker, which cost holds.
+	costMu       sync.Mutex
+	cost         CostAttribution
+	oooWindow    atomic.Int64
+	maxExemplars atomic.Int64
 	// Whether an out-of-order window was ever set: out-of-order head compactions only run then.
 	oooWasEnabled atomic.Bool
 	// By store shard, the chunk reference below which out-of-order chunks were compacted out of
@@ -840,6 +843,9 @@ func (e *Engine) prune(cutoff int64) error {
 		if t, ok := shard.tenants[e.tenantID]; ok {
 			t.series.retain(func(entry *seriesEntry) bool {
 				keep := pruneSeries(&entry.series, cutoff)
+				if !keep {
+					t.uncount(entry, &builder)
+				}
 				if !keep && entry.series.ref != 0 {
 					t.byRef.delete(entry.series.ref)
 					deleted[tsdbchunks.HeadSeriesRef(entry.series.ref)] = toPromLabels(entry.labels, &builder)

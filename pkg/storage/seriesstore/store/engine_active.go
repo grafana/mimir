@@ -129,6 +129,7 @@ func (e *Engine) DeactivateAll() {
 
 // ActiveSeries counts the series ingested at or after cutoffMs.
 func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
+	e.syncCost(cutoffMs, time.Now())
 	trackers := e.activeTrackers.Load()
 	count := 0
 	if trackers != nil {

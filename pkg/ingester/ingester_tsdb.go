@@ -241,7 +241,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
 		userDB.nativeActive = head
 		head.SetActiveTrackers(asmodel.NewMatchers(matchersConfig))
-		userDB.costAttribution.Store(i.costAttributionMgr.ActiveSeriesTracker(userID) != nil)
+		userDB.setCostAttribution(i.costAttributionMgr.ActiveSeriesTracker(userID))
 	}
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries

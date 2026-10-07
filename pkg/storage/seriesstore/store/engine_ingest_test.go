@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -433,4 +434,88 @@ func TestEngineActiveSeries(t *testing.T) {
 	require.Equal(t, uint64(7), engine.ActiveSeries(50).Total)
 	engine.DeactivateAll()
 	require.Zero(t, engine.ActiveSeries(0).Total)
+}
+
+// activeSink keeps which series the cost attribution counts, and fails on a report that doesn't follow the last.
+type activeSink struct {
+	t       *testing.T
+	counted map[string]int
+}
+
+func (s *activeSink) Increment(lbls promlabels.Labels, _ time.Time, buckets int) {
+	_, found := s.counted[lbls.String()]
+	require.False(s.t, found, "incremented twice: %s", lbls)
+	s.counted[lbls.String()] = buckets
+}
+
+func (s *activeSink) Decrement(lbls promlabels.Labels, buckets int) {
+	was, found := s.counted[lbls.String()]
+	require.True(s.t, found, "decremented without increment: %s", lbls)
+	require.Equal(s.t, was, buckets, "decremented with other buckets: %s", lbls)
+	delete(s.counted, lbls.String())
+}
+
+func TestEngineCostAttribution(t *testing.T) {
+	ctx := context.Background()
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+
+	lsets := make([]promlabels.Labels, 6)
+	refs := make([]storage.SeriesRef, len(lsets))
+	app := engine.Appender(ctx)
+	for n := range lsets {
+		lsets[n] = promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("pod-%d", n))
+		ref, err := app.Append(0, lsets[n], 10_000, 1)
+		require.NoError(t, err)
+		refs[n] = ref
+	}
+	require.NoError(t, app.Commit())
+	sink := &activeSink{t: t, counted: map[string]int{}}
+	engine.SetCostAttribution(sink)
+	require.Zero(t, engine.ActiveSeries(1).Total)
+	require.Empty(t, sink.counted)
+
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[0], HistogramBuckets: -1}, {Ref: refs[1], HistogramBuckets: 4}, {Ref: refs[2], HistogramBuckets: -1}, {Ref: refs[3], HistogramBuckets: -1}}, 100, false)
+	require.Equal(t, uint64(4), engine.ActiveSeries(50).Total)
+	require.Equal(t, map[string]int{lsets[0].String(): -1, lsets[1].String(): 4, lsets[2].String(): -1, lsets[3].String(): -1}, sink.counted)
+	// Nothing changed: nothing is reported again.
+	engine.ActiveSeries(50)
+	require.Len(t, sink.counted, 4)
+
+	// A histogram that grew, one that went idle, and one that was deactivated.
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[1], HistogramBuckets: 9}}, 200, false)
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[0], HistogramBuckets: -1}, {Ref: refs[3], HistogramBuckets: -1}}, 200, false)
+	engine.DeactivateSeries([]storage.SeriesRef{refs[3]})
+	engine.ActiveSeries(150)
+	require.Equal(t, map[string]int{lsets[0].String(): -1, lsets[1].String(): 9}, sink.counted)
+	// The one that came back is counted again.
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[3], HistogramBuckets: -1}}, 300, false)
+	engine.ActiveSeries(150)
+	require.Contains(t, sink.counted, lsets[3].String())
+
+	// A clear leaves the counts in place, and they aren't doubled when the series are ingested again.
+	engine.DeactivateAll()
+	engine.ActiveSeries(150)
+	require.Len(t, sink.counted, 3)
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[0], HistogramBuckets: -1}}, 400, false)
+	engine.ActiveSeries(150)
+	require.Len(t, sink.counted, 3)
+
+	// A new sink hears of all the active series again.
+	next := &activeSink{t: t, counted: map[string]int{}}
+	engine.SetCostAttribution(next)
+	engine.ActiveSeries(150)
+	require.Equal(t, map[string]int{lsets[0].String(): -1}, next.counted)
+	engine.SetCostAttribution(nil)
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[4], HistogramBuckets: -1}}, 500, false)
+	engine.ActiveSeries(150)
+	require.Len(t, next.counted, 1)
+
+	// Series that leave the index aren't counted any more.
+	last := &activeSink{t: t, counted: map[string]int{}}
+	engine.SetCostAttribution(last)
+	engine.ActiveSeries(150)
+	require.Len(t, last.counted, 2)
+	require.NoError(t, engine.prune(1_000_000))
+	require.Empty(t, last.counted)
 }
