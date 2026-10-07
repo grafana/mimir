@@ -444,8 +444,10 @@ func readIndexHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID, versio
 // trackedBucket wraps a BucketReader and tracks details about downloaded files
 type trackedBucket struct {
 	objstore.InstrumentedBucketReader
-	getWasCalled   bool
-	downloadedPath string
+	getWasCalled        bool
+	downloadedPath      string
+	getRangeWasCalled   bool
+	attributesWasCalled bool
 }
 
 func (b *trackedBucket) ReaderWithExpectedErrs(objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
@@ -456,4 +458,14 @@ func (b *trackedBucket) Get(ctx context.Context, name string) (io.ReadCloser, er
 	b.getWasCalled = true
 	b.downloadedPath = name
 	return b.InstrumentedBucketReader.Get(ctx, name)
+}
+
+func (b *trackedBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.getRangeWasCalled = true
+	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+func (b *trackedBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	b.attributesWasCalled = true
+	return b.InstrumentedBucketReader.Attributes(ctx, name)
 }

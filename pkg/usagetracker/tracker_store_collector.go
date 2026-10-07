@@ -34,10 +34,13 @@ func (t *trackerStore) Describe(descs chan<- *prometheus.Desc) {
 		descs <- seriesCreatedTotalDesc
 		descs <- seriesRemovedTotalDesc
 	}
+	t.shardCleanupDuration.Describe(descs)
 }
 
 func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 	trackerStoreCollectTestHook()
+
+	t.shardCleanupDuration.Collect(metrics)
 
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
