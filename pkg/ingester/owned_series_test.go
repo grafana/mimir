@@ -71,8 +71,19 @@ func (c *ownedSeriesTestContextBase) checkTestedIngesterOwnedSeriesState(t *test
 	require.Equal(t, limit, os.localSeriesLimit, "local series limit")
 }
 
+// checkActiveSeriesCountOfTracker is checkActiveSeriesCount for what only the tracker does: it counts the series it
+// has, whether they are in the head or not, and none of a restarted ingester's. An engine that keeps the active series in
+// the head counts the series it has, and keeps them over a restart: after is what it counts then.
+func (c *ownedSeriesTestContextBase) checkActiveSeriesCountOfTracker(t *testing.T, expected, engineExpected int) {
+	if c.db.trackerActive() {
+		c.checkActiveSeriesCount(t, expected)
+		return
+	}
+	c.checkActiveSeriesCount(t, engineExpected)
+}
+
 func (c *ownedSeriesTestContextBase) checkActiveSeriesCount(t *testing.T, expected int) {
-	totalSeries, _, _, _ := c.db.activeSeries.Active()
+	totalSeries := c.db.activeSeriesTotal(time.Now())
 	require.Equal(t, expected, totalSeries, "total active series")
 }
 
@@ -226,7 +237,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				// shard size and local limit are initialized to correct values
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
-				c.checkActiveSeriesCount(t, 0) // active series do not get restored after a restart
+				c.checkActiveSeriesCountOfTracker(t, 0, ownedServiceSeriesCount) // the tracker does not get restored after a restart
 			},
 		},
 		"shard size = 1, scale ingesters up and down": {
@@ -656,6 +667,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
+				skipIfSeriesstore(t, "the engine counts the active series of its head, which an early compaction empties, where the tracker keeps them until they are idle")
 				// run early compaction removing all series from the head
 				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().TimeBounds().MaxTime)
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
@@ -663,7 +675,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
-				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
+				c.checkActiveSeriesCountOfTracker(t, ownedServiceSeriesCount, 0)
 
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonEarlyCompaction)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
@@ -979,7 +991,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				// shard size and local limit are initialized to correct values
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
-				c.checkActiveSeriesCount(t, 0) // active series do not get restored after a restart
+				c.checkActiveSeriesCountOfTracker(t, 0, ownedServiceSeriesCount) // the tracker does not get restored after a restart
 			},
 		},
 		"shard size = 1, scale ingesters up and down, partition shard is unaffected": {
@@ -1382,6 +1394,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
+				skipIfSeriesstore(t, "the engine counts the active series of its head, which an early compaction empties, where the tracker keeps them until they are idle")
 				// run early compaction removing all series from the head
 				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().TimeBounds().MaxTime)
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)

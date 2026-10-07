@@ -110,10 +110,24 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			)
 		}
 
-		userDB.activeSeries.Purge(now, idx)
 		idx.Close()
+		if userDB.nativeActive != nil {
+			// The engine counts by the new trackers from now on, and the tracker answers for the tenant while
+			// cost attribution is on.
+			if matchersChanged {
+				userDB.nativeActive.SetActiveTrackers(asmodel.NewMatchers(newMatchersConfig))
+			}
+			userDB.costAttribution.Store(newCostAttributionActiveSeriesTracker != nil)
+		}
 
-		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		counts := userDB.activeSeriesCounts(now)
+		allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets := counts.Total, counts.OTLP, counts.NativeHistograms, counts.NativeHistogramBuckets
+		activeMatching := make([]int, len(counts.Trackers))
+		activeMatchingHistograms := make([]int, len(counts.Trackers))
+		activeMatchingBuckets := make([]int, len(counts.Trackers))
+		for tracker, c := range counts.Trackers {
+			activeMatching[tracker], activeMatchingHistograms[tracker], activeMatchingBuckets[tracker] = c.Total, c.NativeHistograms, c.NativeHistogramBuckets
+		}
 		if allActive > 0 {
 			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
@@ -202,8 +216,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _, _ := userDB.activeSeries.Active()
-		activeSeriesCount += int64(activeSeries)
+		activeSeriesCount += int64(userDB.activeSeriesTotal(time.Now()))
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {

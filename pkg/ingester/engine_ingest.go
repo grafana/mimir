@@ -25,6 +25,10 @@ type ingestBatch struct {
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
 	NativeHistograms bool
 	Exemplars        bool
+	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
+	// records in the series it ingests.
+	IngestedAt time.Time
+	OTLP       bool
 }
 
 // ingestSink is what the ingester wants to know while an engine ingests a batch: series are identified by their
@@ -37,6 +41,8 @@ type ingestSink interface {
 	Error(series int, err error, timestampMs int64) (soft bool)
 	// ExemplarFailed reports an exemplar that wasn't ingested: err is one of the errors below, or the engine's.
 	ExemplarFailed(series, exemplar int, err error)
+	// NeedsLabels reports whether Ingested uses the labels of the series, which an engine may not have built.
+	NeedsLabels() bool
 	// Ingested reports a series that got a sample or a histogram, with its labels, which are valid only during the
 	// call, its reference, and the bucket count of its last histogram or -1.
 	Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int)
@@ -66,8 +72,12 @@ type extendedAppender interface {
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	app := e.DB.Appender(ctx).(extendedAppender)
-	outcome, err := appendBatch(app, batch, sink)
+	return ingestThroughAppender(e.DB.Appender(ctx).(extendedAppender), batch, sink)
+}
+
+// ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
+func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+	outcome, err := appendBatch(app, batch, sink, nil, false)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -83,19 +93,27 @@ func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink in
 	return outcome, nil
 }
 
-// appendBatch adds the batch to the appender. Errors the sink calls soft are reported to it, and any other error
-// is returned.
-func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+// appendBatch adds the batch to the appender, or with subset only the series at those indices, which the sink has
+// been asked to skip or not already. Errors the sink calls soft are reported to it, and any other error is returned.
+func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int, useSubset bool) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
 	)
 
-	for si, ts := range batch.Series {
-		if sink.Skip(si) {
+	count := len(batch.Series)
+	if useSubset {
+		count = len(subset)
+	}
+	for position := range count {
+		si := position
+		if useSubset {
+			si = subset[position]
+		} else if sink.Skip(si) {
 			continue
 		}
+		ts := batch.Series[si]
 
 		// MUST BE COPIED before being retained.
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
@@ -294,5 +312,24 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink) (inge
 			}
 		}
 	}
+	return outcome, nil
+}
+
+// ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
+// asked to skip already.
+func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int) (ingestOutcome, error) {
+	outcome, err := appendBatch(app, batch, sink, subset, true)
+	if err != nil {
+		if rollbackErr := app.Rollback(); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
+		}
+		return outcome, err
+	}
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return outcome, err
+	}
+	outcome.CommitDuration = time.Since(startCommit)
 	return outcome, nil
 }

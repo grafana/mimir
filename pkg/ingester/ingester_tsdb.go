@@ -237,6 +237,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
+	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
+	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
+		userDB.nativeActive = head
+		head.SetActiveTrackers(asmodel.NewMatchers(matchersConfig))
+		userDB.costAttribution.Store(i.costAttributionMgr.ActiveSeriesTracker(userID) != nil)
+	}
+
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
 		if head, ok := db.Head().(tsdbHead); ok {
