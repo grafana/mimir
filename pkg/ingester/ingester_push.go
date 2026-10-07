@@ -636,12 +636,22 @@ func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
 	}
 }
 
-func (s *pushSink) NeedsLabels() bool { return s.activeSeries != nil }
+// NeedsLabels is false: the tracker only needs a series' labels when it doesn't have it yet, which Ingested builds them for.
+func (s *pushSink) NeedsLabels() bool { return false }
 
-func (s *pushSink) Ingested(_ int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
-	if s.activeSeries != nil {
-		s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)
+func (s *pushSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
+	if s.activeSeries == nil {
+		return
 	}
+	if s.activeSeries.UpdateSeriesIfTracked(ref, s.startAppend, histogramBuckets) {
+		return
+	}
+	if lbls.IsEmpty() {
+		// An engine that didn't build them, as they're mostly not needed.
+		var builder labels.ScratchBuilder
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, s.timeseries[series].Labels, &lbls)
+	}
+	s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.

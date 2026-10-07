@@ -4,10 +4,14 @@ package store
 
 import (
 	"cmp"
+	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
@@ -264,6 +268,62 @@ func (b *seriesByName) refsOf(postings []uint32, total int) []seriesRef {
 	return sortRefs(refs)
 }
 
+// maxFilterPostings is how many postings a matcher filters by: each is looked up for every candidate.
+const maxFilterPostings = 4
+
+// refsOfFiltered is refsOf for the series that are also in one of the postings of each filter, and in the name
+// group when there is one: a series is the candidate of every matcher, and only reading its labels says so
+// otherwise.
+func (b *seriesByName) refsOfFiltered(postings []uint32, total int, filters [][]uint32, groupID uint32, hasGroup bool) []seriesRef {
+	if len(filters) == 0 && !hasGroup {
+		return b.refsOf(postings, total)
+	}
+	refs := make([]seriesRef, 0, min(total, 1024))
+	keep := func(id uint32) bool {
+		if hasGroup && b.refs[id].group != groupID {
+			return false
+		}
+		for _, filter := range filters {
+			if !b.inPostings(id, filter) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, posting := range postings {
+		one, many := b.posting(posting)
+		if many == nil {
+			if keep(one) {
+				refs = append(refs, b.refs[one])
+			}
+			continue
+		}
+		for _, id := range many {
+			if keep(id) {
+				refs = append(refs, b.refs[id])
+			}
+		}
+	}
+	return sortRefs(refs)
+}
+
+// inPostings reports whether the series id is in one of the postings.
+func (b *seriesByName) inPostings(id uint32, postings []uint32) bool {
+	for _, posting := range postings {
+		one, many := b.posting(posting)
+		if many == nil {
+			if one == id {
+				return true
+			}
+			continue
+		}
+		if _, found := slices.BinarySearch(many, id); found {
+			return true
+		}
+	}
+	return false
+}
+
 func sortRefs(refs []seriesRef) []seriesRef {
 	slices.SortFunc(refs, compareRefs)
 	return slices.Compact(refs)
@@ -414,6 +474,8 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		oneValue  [1]string
 		valueList []string
 	)
+	// The postings of the matchers that weren't the best, which series of the best have to be in.
+	var filters [][]uint32
 	// How many series a value lookup has to beat: the name group's or every series'.
 	groupLimit := b.len
 	if hasGroup {
@@ -455,8 +517,14 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		if total == 0 {
 			return
 		}
+		// The other matchers' postings filter the best one's series without reading their labels.
 		if !hasBest || total < bestLen {
+			if hasBest && len(best) <= maxFilterPostings {
+				filters = append(filters, best)
+			}
 			best, bestLen, hasBest = lists, total, true
+		} else if len(lists) <= maxFilterPostings {
+			filters = append(filters, lists)
 		}
 	}
 	groupLen := 0
@@ -519,7 +587,7 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		fromRefs = b.refsWith(labels.Lookup(presentName))
 	case hasBest && (!hasGroup || bestLen < groupLen):
 		nameMatched = false
-		fromRefs = b.refsOf(best, bestLen)
+		fromRefs = b.refsOfFiltered(best, bestLen, filters, groupID, hasGroup)
 	}
 	for index := range matchers {
 		matcher := &matchers[index]
@@ -585,12 +653,20 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		}
 		return true
 	}
+	var scanned, matched int
 	emit := func(entry *seriesEntry) bool {
+		scanned++
 		if !check(entry) {
 			return true
 		}
+		matched++
 		return visit(entry)
 	}
+	defer func() {
+		if scanned >= scanLogMinScanned {
+			logScan(matchers, scanned, matched, hasGroup, groupLimit, hasBest, bestLen, len(filters))
+		}
+	}()
 	switch {
 	case hasPresent || (hasBest && (!hasGroup || bestLen < groupLen)):
 		b.visitRefs(fromRefs, emit)
@@ -653,4 +729,31 @@ func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates in
 		}
 	}
 	return matched, true
+}
+
+// scanLogMinScanned is how many series a lookup visits before it is logged.
+const scanLogMinScanned = 20000
+
+var lastScanLog atomic.Int64
+
+// logScan prints the shape of a lookup that visited many series, at most every five seconds: which matchers made
+// the engine read labels, to be found in the logs of a deployment.
+func logScan(matchers []compiledMatcher, scanned, matched int, hasGroup bool, groupLimit int, hasBest bool, bestLen, filters int) {
+	now := time.Now().UnixNano()
+	last := lastScanLog.Load()
+	if now-last < int64(5*time.Second) || !lastScanLog.CompareAndSwap(last, now) {
+		return
+	}
+	var shape strings.Builder
+	for _, m := range matchers {
+		value := m.value
+		if m.re != nil {
+			value = m.re.pattern
+		}
+		if len(value) > 40 {
+			value = value[:40]
+		}
+		fmt.Fprintf(&shape, " {kind=%d name=%s value=%q}", m.kind, m.name, value)
+	}
+	fmt.Fprintf(os.Stderr, "scanlog scanned=%d matched=%d hasGroup=%t group=%d hasBest=%t best=%d filters=%d matchers:%s\n", scanned, matched, hasGroup, groupLimit, hasBest, bestLen, filters, shape.String())
 }
