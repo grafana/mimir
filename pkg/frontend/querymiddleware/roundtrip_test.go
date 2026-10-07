@@ -603,13 +603,11 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.ShardedQueries = true
 	cfg.UseMQEForSharding = false
 	cfg.RewriteQueriesHistogram = true
-	cfg.RewriteQueriesPropagateMatchers = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
 	require.NotZero(t, cfg.RewriteQueriesHistogram)
-	require.NotZero(t, cfg.RewriteQueriesPropagateMatchers)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 

@@ -39,37 +39,31 @@ func TestBlockBuilder(t *testing.T) {
 	cases := []struct {
 		name                   string
 		startOffset, endOffset int64
-		// For per tenant slice.
-		expSampleRangeStart int
-		expSampleRangeEnd   int
 	}{
 		{
-			name:                "first offset till somewhere in between",
-			startOffset:         0,
-			endOffset:           3 * 6,
-			expSampleRangeStart: 0,
-			expSampleRangeEnd:   6,
+			name:        "first offset till somewhere in between",
+			startOffset: 0,
+			endOffset:   3 * 6,
 		},
 		{
-			name:                "somewhere in between till last offset",
-			startOffset:         int64(3 * 6),
-			endOffset:           3 * 10,
-			expSampleRangeStart: 6,
-			expSampleRangeEnd:   10,
+			name:        "somewhere in between till last offset",
+			startOffset: int64(3 * 6),
+			endOffset:   3 * 10,
 		},
 		{
-			name:                "somewhere in between to somewhere in between",
-			startOffset:         int64(3 * 3),
-			endOffset:           3 * 6,
-			expSampleRangeStart: 3,
-			expSampleRangeEnd:   6,
+			name:        "somewhere in between to somewhere in between",
+			startOffset: int64(3 * 3),
+			endOffset:   3 * 6,
 		},
 		{
-			name:                "entire partition",
-			startOffset:         0,
-			endOffset:           3 * 10,
-			expSampleRangeStart: 0,
-			expSampleRangeEnd:   10,
+			name:        "entire partition",
+			startOffset: 0,
+			endOffset:   3 * 10,
+		},
+		{
+			name:        "single record",
+			startOffset: 3 * 5,
+			endOffset:   3*5 + 1,
 		},
 	}
 
@@ -112,19 +106,21 @@ func TestBlockBuilder(t *testing.T) {
 						// past the job's end offset in tests where no further records arrive.
 						cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
 
-						producedSamples := make(map[string][]mimirpb.Sample, 0)
-						recsPerTenant := 0
+						expectedSamples := make(map[string][]mimirpb.Sample, 0)
+						var offset int64
 						kafkaRecTime := time.Now().Add(-time.Hour)
 						for range samplesPerTenant {
 							for _, tenant := range tenants {
 								samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
-								producedSamples[tenant] = append(producedSamples[tenant], samples...)
+								if offset >= c.startOffset && offset < c.endOffset {
+									expectedSamples[tenant] = append(expectedSamples[tenant], samples...)
+								}
+								offset++
 							}
-							recsPerTenant++
 
 							kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
 						}
-						require.NotEmpty(t, producedSamples)
+						require.NotEmpty(t, expectedSamples)
 
 						scheduler := &mockSchedulerClient{}
 						scheduler.addJob(
@@ -163,10 +159,9 @@ func TestBlockBuilder(t *testing.T) {
 								validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
 							}
 
-							expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
 							compareQueryWithDir(t,
 								tenantBucketDir,
-								expSamples, nil,
+								expectedSamples[tenant], nil,
 								labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 							)
 						}

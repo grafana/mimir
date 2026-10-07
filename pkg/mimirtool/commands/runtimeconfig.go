@@ -10,7 +10,6 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/runtimeconfig"
 
 	"github.com/grafana/mimir/pkg/mimir"
 )
@@ -33,11 +32,8 @@ func (c *RuntimeConfigCommand) validate(*kingpin.ParseContext) error {
 		return fmt.Errorf("--config-file cannot be empty")
 	}
 
-	mimirCfg := mimir.Config{
-		RuntimeConfig: runtimeconfig.Config{
-			LoadPath: flagext.StringSliceCSV{c.configFile},
-		},
-	}
+	var mimirCfg mimir.Config
+	mimirCfg.RuntimeConfig.LoadPath = flagext.StringSliceCSV{c.configFile}
 	mimirCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError), log.NewNopLogger())
 	if err := mimirCfg.Validate(log.NewNopLogger()); err != nil {
 		return err

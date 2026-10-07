@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,21 +45,9 @@ func startReadcacheForAssignment(t *testing.T, instanceID string) (*Readcache, c
 
 // TestApplyAssignment_MatchesLeasesThroughReplicaMap is the readcache
 // half of RF=2: leases name a logical slot, and every concrete mirror
-// of that slot must claim the partition. Without the replica map a
-// zone-a pod would see "readcache-0" in the log, fail the exact
-// instance-ID comparison, and own nothing.
+// of that slot claims the partition because the slot is parsed from
+// the pod name. The replica map is not an input.
 func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
-	replicaMap := readcacheassignment.ReplicaMap{
-		"readcache-0": {
-			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
-			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
-		},
-		"readcache-1": {
-			{InstanceID: "readcache-zone-a-1", Zone: "zone-a"},
-			{InstanceID: "readcache-zone-b-1", Zone: "zone-b"},
-		},
-	}
-
 	now := time.Now()
 	// Slot 0 owns partitions 0 and 2, slot 1 owns partitions 1 and 3.
 	entries := []readcacheassignment.LogEntry{
@@ -70,7 +59,6 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 
 	t.Run("zone-a mirror owns its logical slot's partitions", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-0")
-		r.setReplicaMap(replicaMap)
 
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
 		assert.Equal(t, []int32{0, 2}, r.OwnedPartitions())
@@ -78,7 +66,6 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 
 	t.Run("zone-b mirror owns the same partitions", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-b-0")
-		r.setReplicaMap(replicaMap)
 
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
 		assert.Equal(t, []int32{0, 2}, r.OwnedPartitions(),
@@ -87,7 +74,6 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 
 	t.Run("a mirror of the sibling slot owns the other partitions", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-1")
-		r.setReplicaMap(replicaMap)
 
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
 		assert.Equal(t, []int32{1, 3}, r.OwnedPartitions())
@@ -95,7 +81,6 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 
 	t.Run("expired and future leases are still filtered by time", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-0")
-		r.setReplicaMap(replicaMap)
 
 		require.NoError(t, r.applyAssignment(ctx, []readcacheassignment.LogEntry{
 			{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-time.Hour), To: now},
@@ -103,20 +88,64 @@ func TestApplyAssignment_MatchesLeasesThroughReplicaMap(t *testing.T) {
 			{PartitionID: 2, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
 		}, now))
 		assert.Equal(t, []int32{2}, r.OwnedPartitions(),
-			"the replica map decides who owns a lease, not when it is active")
+			"slot ownership does not keep an expired or future lease")
 	})
 
-	t.Run("clearing the map falls back to exact instance-ID matching", func(t *testing.T) {
+	t.Run("a second snapshot that stops naming the slot drops it", func(t *testing.T) {
 		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-0")
-		r.setReplicaMap(replicaMap)
 		require.NoError(t, r.applyAssignment(ctx, entries, now))
-		require.NotEmpty(t, r.OwnedPartitions())
+		require.Equal(t, []int32{0, 2}, r.OwnedPartitions())
 
-		// The rebalancer went back to RF=1 and cleared the map; the
-		// logical IDs in the log no longer match this pod.
-		r.setReplicaMap(nil)
-		require.NoError(t, r.applyAssignment(ctx, entries, now))
+		require.NoError(t, r.applyAssignment(ctx, []readcacheassignment.LogEntry{
+			{PartitionID: 1, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+		}, now))
 		assert.Empty(t, r.OwnedPartitions())
+	})
+}
+
+// TestApplyAssignment_ZonalPodOwnsSlotWhenMapOmitsIt is the restart
+// case: the pod is absent from whatever the querier considers healthy,
+// and the leases for its slot are unchanged. Ownership comes from the
+// parsed name, so the first reconcile keeps the slot.
+func TestApplyAssignment_ZonalPodOwnsSlotWhenMapOmitsIt(t *testing.T) {
+	now := time.Now()
+	entries := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+		{PartitionID: 1, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+		{PartitionID: 2, InstanceID: "readcache-0", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+	}
+
+	r, ctx := startReadcacheForAssignment(t, "readcache-zone-b-0")
+	// Static startup marks the first reconcile done. The rebalancer
+	// path does not; this is that path's first snapshot.
+	r.startupReconcileDone.Store(false)
+
+	require.NoError(t, r.applyAssignment(ctx, entries, now))
+	assert.Equal(t, []int32{0, 2}, r.OwnedPartitions(),
+		"a restarting pod still owns the slot parsed from its name")
+	assert.Equal(t, 0.0, testutil.ToFloat64(r.firstSnapshotZeroLeases))
+}
+
+func TestApplyAssignment_FirstSnapshotZeroLeases(t *testing.T) {
+	now := time.Now()
+	otherSlot := []readcacheassignment.LogEntry{
+		{PartitionID: 1, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
+	}
+
+	t.Run("zonal pod", func(t *testing.T) {
+		r, ctx := startReadcacheForAssignment(t, "readcache-zone-a-0")
+		r.startupReconcileDone.Store(false)
+		require.NoError(t, r.applyAssignment(ctx, otherSlot, now))
+		assert.Empty(t, r.OwnedPartitions())
+		assert.Equal(t, 1.0, testutil.ToFloat64(r.firstSnapshotZeroLeases))
+	})
+
+	t.Run("non-zonal pod stays at zero", func(t *testing.T) {
+		r, ctx := startReadcacheForAssignment(t, "readcache-0")
+		r.startupReconcileDone.Store(false)
+		require.NoError(t, r.applyAssignment(ctx, otherSlot, now))
+		assert.Empty(t, r.OwnedPartitions())
+		assert.Equal(t, 0.0, testutil.ToFloat64(r.firstSnapshotZeroLeases))
 	})
 }
 

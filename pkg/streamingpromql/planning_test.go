@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -1680,6 +1681,31 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
+	// Cache-Control: no-store must be captured into the plan parameters and survive encoding and the wire
+	// round-trip, so the querier's splitting/caching passes can honour it.
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
+	plan, err := planner.NewQueryPlan(ctx, "some_metric", types.NewInstantQueryTimeRange(timestamp.Time(1000)), 5*time.Minute, false, NoopPlanningObserver{})
+	require.NoError(t, err)
+	require.True(t, plan.Parameters.CacheDisabled)
+
+	encoded, _, err := plan.ToEncodedPlan(false, true)
+	require.NoError(t, err)
+	require.True(t, encoded.CacheDisabled)
+
+	// Round-trip through the wire, as remote execution does.
+	marshalled, err := proto.Marshal(encoded)
+	require.NoError(t, err)
+	var decoded planning.EncodedQueryPlan
+	require.NoError(t, decoded.Unmarshal(marshalled))
+	require.True(t, decoded.CacheDisabled)
+	require.True(t, decoded.DecodeParameters().CacheDisabled)
+}
+
 func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -2255,4 +2281,56 @@ func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error
 
 func (t *versioningTestNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanVersion(t.Value), nil
+}
+
+// TestInfoQueriedTimeRangeCoversPinnedTime is a regression test for info() with a pinned range
+// selector as its first argument. The info series are looked up (with lookback) as of the pinned
+// time, but a range selector's queried time range does not include the lookback delta, so the
+// info series' lookback window must be contributed by the info data label selector. Previously it
+// was not, so the overall queried time range - which drives remote-execution data fetching - could
+// miss the info series and silently drop enrichment.
+func TestInfoQueriedTimeRange(t *testing.T) {
+	lookbackDelta := 5 * time.Minute
+	// Evaluate well after any pinned time so a range pinned to a selector doesn't reach it.
+	evalTime := timestamp.Time(0).Add(40 * time.Minute)
+
+	// The +1ms on MinT excludes the sample exactly one lookback delta before (see ComputeQueriedTimeRange).
+	testCases := map[string]struct {
+		expr         string
+		expectedMinT time.Time
+		expectedMaxT time.Time
+	}{
+		// A uniform reference pins the lookup to the shared time; the range selector alone queries
+		// no lookback, so the info series' lookback window must come from the data label selector.
+		"uniform reference pins to the shared time": {
+			expr:         "info(last_over_time(metric[1m] @ 120))",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: timestamp.Time(120_000),
+		},
+		// Selectors pinned at different times aren't uniform: info series are matched per step, so
+		// the range must reach the evaluation time rather than be capped at the pinned times.
+		"non-uniform references use evaluation time": {
+			expr:         "info(metric @ 120 or other_metric @ 180)",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: evalTime,
+		},
+	}
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	queryTimeRange := types.NewInstantQueryTimeRange(evalTime)
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedMinT, queried.MinT)
+			require.Equal(t, tc.expectedMaxT, queried.MaxT)
+		})
+	}
 }

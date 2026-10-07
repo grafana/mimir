@@ -1156,25 +1156,49 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null
@@ -1321,25 +1345,49 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null
@@ -2393,25 +2441,49 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null
@@ -2558,25 +2630,49 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null
@@ -2625,25 +2721,49 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null

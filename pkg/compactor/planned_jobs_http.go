@@ -55,8 +55,9 @@ type plannerJobsContent struct {
 	Tenant      string                 `json:"tenant"`
 	PlannedJobs []plannedCompactionJob `json:"jobs"`
 
-	ShowBlocks     bool `json:"-"`
-	ShowCompactors bool `json:"-"`
+	ShowBlocks       bool `json:"-"`
+	ShowCompactors   bool `json:"-"`
+	SchedulerEnabled bool `json:"-"`
 
 	SplitJobsCount int `json:"split_jobs_count"`
 	MergeJobsCount int `json:"merge_jobs_count"`
@@ -89,7 +90,7 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 	}
 
 	showBlocks := req.Form.Get("show_blocks") == "on"
-	showCompactors := req.Form.Get("show_compactors") == "on"
+	showCompactors := !c.compactorCfg.SchedulerClientConfig.Enabled && req.Form.Get("show_compactors") == "on"
 	tenantSplitGroups := c.cfgProvider.CompactorSplitGroups(tenantID)
 
 	tenantMergeShards := c.cfgProvider.CompactorSplitAndMergeShards(tenantID)
@@ -177,8 +178,9 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		Tenant:             tenantID,
 		PlannedJobs:        plannedJobs,
 
-		ShowBlocks:     showBlocks,
-		ShowCompactors: showCompactors,
+		ShowBlocks:       showBlocks,
+		ShowCompactors:   showCompactors,
+		SchedulerEnabled: c.compactorCfg.SchedulerClientConfig.Enabled,
 
 		TenantSplitGroups: tenantSplitGroups,
 		TenantMergeShards: tenantMergeShards,

@@ -6,11 +6,11 @@
   local envVar = $.core.v1.envVar,
 
   // The store-gateway runs a statefulset.
-  local store_gateway_data_pvc =
+  local newStoreGatewayDataPvc(diskClass) =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.store_gateway_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.store_gateway_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName(diskClass) +
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
@@ -91,7 +91,8 @@
 
   store_gateway_termination_grace_period_seconds:: 120,
 
-  newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=[])::
+  newStoreGatewayStatefulSet(name, container, dataDiskClass, withAntiAffinity=false, nodeAffinityMatchers=[])::
+    local store_gateway_data_pvc = newStoreGatewayDataPvc(dataDiskClass);
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.store_gateway_termination_grace_period_seconds) +
@@ -102,6 +103,7 @@
     self.newStoreGatewayStatefulSet(
       'store-gateway',
       $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
+      $._config.store_gateway_data_disk_class,
       !$._config.store_gateway_allow_multiple_replicas_on_same_node,
       $.store_gateway_node_affinity_matchers,
     ),

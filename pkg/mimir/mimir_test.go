@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -292,6 +294,62 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	}
 }
 
+// TestMimirServerShutdownWhileModuleIsStarting asserts that a shutdown signal received
+// before all modules finished starting is not reported as a failure. Cancelling the start
+// context leaves those modules in Failed state, which must not be mistaken for a crash.
+func TestMimirServerShutdownWhileModuleIsStarting(t *testing.T) {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	cfg.Target = []string{Querier}
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
+
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	// Register a module that never finishes starting and make the target depend on it,
+	// so the signal below is guaranteed to arrive while startup is still in progress.
+	starting := make(chan struct{})
+	c.ModuleManager.RegisterModule("test-blocking-module", func() (services.Service, error) {
+		return services.NewBasicService(func(ctx context.Context) error {
+			close(starting)
+			<-ctx.Done()
+			return ctx.Err()
+		}, nil, nil), nil
+	})
+	require.NoError(t, c.ModuleManager.AddDependency(Querier, "test-blocking-module"))
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	select {
+	case <-starting:
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "test module didn't reach starting state in time")
+	}
+
+	proc, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+
+	// Mimir reacts on SIGINT and does shutdown.
+	require.NoError(t, proc.Signal(syscall.SIGINT))
+
+	select {
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "Mimir didn't stop in time")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
 func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 	// This test checks that our /metrics endpoint handler supports metric filtering through the usage of name[] query param.
 	// This is added to prometheus/client_golang in https://github.com/prometheus/client_golang/pull/1925,
@@ -349,6 +407,93 @@ func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 		assert.Contains(t, string(body), "deprecated_flags_inuse_total")
 		assert.NotContains(t, string(body), "go_gc_duration_seconds")
 		require.Equal(t, 2, strings.Count(string(body), "HELP"))
+	}
+}
+
+func TestMetricsEndpoint_OpenMetricsTextCreatedSamples(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		args        []string
+		mediaType   string
+		version     string
+		wantCreated bool
+	}{
+		{name: "default openmetrics", mediaType: "application/openmetrics-text", version: "1.0.0"},
+		{name: "enabled openmetrics", args: []string{"-server.enable-open-metrics-text-created-samples=true"}, mediaType: "application/openmetrics-text", version: "1.0.0", wantCreated: true},
+		{name: "default prometheus", mediaType: "text/plain", version: "0.0.4"},
+		{name: "enabled prometheus", args: []string{"-server.enable-open-metrics-text-created-samples=true"}, mediaType: "text/plain", version: "0.0.4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg Config
+			fs := flag.NewFlagSet(t.Name(), flag.ContinueOnError)
+			cfg.RegisterFlags(fs, log.NewNopLogger())
+			args := append([]string{
+				"-target=" + OverridesExporter,
+				"-server.http-listen-address=127.0.0.1",
+				"-server.grpc-listen-address=127.0.0.1",
+				"-server.http-listen-port=0",
+				"-server.grpc-listen-port=0",
+			}, tc.args...)
+			require.NoError(t, fs.Parse(args))
+			require.NoError(t, cfg.Validate(log.NewNopLogger()))
+
+			reg := prometheus.NewPedanticRegistry()
+			cfg.Server.Gatherer = reg
+			counter := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+				Name: "test_requests_total",
+				Help: "Requests used to test metrics exposition.",
+			})
+			counter.Add(7)
+
+			c, err := New(cfg, reg)
+			require.NoError(t, err)
+			serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			sm, err := services.NewManager(slices.Collect(maps.Values(serviceMap))...)
+			require.NoError(t, err)
+			require.NoError(t, sm.StartAsync(t.Context()))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+				defer cancel()
+				require.NoError(t, services.StopManagerAndAwaitStopped(ctx, sm))
+			})
+			require.NoError(t, sm.AwaitHealthy(t.Context()))
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+c.Server.HTTPListenAddr().String()+"/metrics", nil)
+			require.NoError(t, err)
+			req.Header.Set("Accept", tc.mediaType+"; version="+tc.version)
+			res, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, res.Body.Close()) }()
+			require.Equal(t, http.StatusOK, res.StatusCode)
+
+			mediaType, params, err := mime.ParseMediaType(res.Header.Get("Content-Type"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.mediaType, mediaType)
+			assert.Equal(t, tc.version, params["version"])
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			samples := make(map[string]float64)
+			for _, line := range strings.Split(string(body), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) == 0 || (fields[0] != "test_requests_total" && fields[0] != "test_requests_created") {
+					continue
+				}
+				require.Len(t, fields, 2)
+				value, err := strconv.ParseFloat(fields[1], 64)
+				require.NoError(t, err)
+				require.NotContains(t, samples, fields[0], "duplicate sample")
+				samples[fields[0]] = value
+			}
+			require.Contains(t, samples, "test_requests_total")
+			assert.Equal(t, 7.0, samples["test_requests_total"])
+			created, hasCreated := samples["test_requests_created"]
+			require.Equal(t, tc.wantCreated, hasCreated)
+			if tc.wantCreated {
+				assert.Greater(t, created, 0.0)
+			}
+		})
 	}
 }
 
@@ -756,6 +901,32 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("openmetrics text created samples", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                    string
+			registerInstrumentation bool
+			enableCreatedSamples    bool
+			wantErr                 bool
+		}{
+			{name: "both disabled"},
+			{name: "instrumentation only", registerInstrumentation: true},
+			{name: "both enabled", registerInstrumentation: true, enableCreatedSamples: true},
+			{name: "created samples without instrumentation", enableCreatedSamples: true, wantErr: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := newDefaultConfig()
+				cfg.Server.RegisterInstrumentation = tc.registerInstrumentation
+				cfg.Server.EnableOpenMetricsTextCreatedSamples = tc.enableCreatedSamples
+				err := cfg.Validate(log.NewNopLogger())
+				if tc.wantErr {
+					require.EqualError(t, err, "server.enable-open-metrics-text-created-samples can only be used if server.register-instrumentation is set to true")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
 }
 
 // validCompartmentsConfig returns a config with a valid compartments setup (compartments and ingest

@@ -5,11 +5,53 @@ package functions
 import (
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+func TestFilterInfoInnerMatchers(t *testing.T) {
+	matchers := types.Matchers{
+		{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: "metric_total"},
+		{Type: labels.MatchRegexp, Name: "cluster", Value: "one"},
+		{Type: labels.MatchRegexp, Name: "data", Value: "info"},
+	}
+
+	testCases := map[string]struct {
+		dataLabelMatchers types.Matchers
+		expected          types.Matchers
+	}{
+		"unconstrained data labels": {
+			dataLabelMatchers: types.Matchers{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "target_info"}},
+			expected:          nil,
+		},
+		"explicit data label": {
+			dataLabelMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "target_info"},
+				{Type: labels.MatchRegexp, Name: "data", Value: ".+"},
+			},
+			expected: types.Matchers{
+				{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: "metric_total"},
+				{Type: labels.MatchRegexp, Name: "cluster", Value: "one"},
+			},
+		},
+		"multiple explicit data labels": {
+			dataLabelMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "cluster", Value: ".+"},
+				{Type: labels.MatchRegexp, Name: "data", Value: ".+"},
+			},
+			expected: types.Matchers{{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: "metric_total"}},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, filterInfoInnerMatchers(matchers, testCase.dataLabelMatchers))
+		})
+	}
+}
 
 func TestFinalizeInfoSeriesGroups(t *testing.T) {
 	targetInfo := labels.FromStrings("__name__", "target_info", "instance", "a", "job", "1", "env", "prod")

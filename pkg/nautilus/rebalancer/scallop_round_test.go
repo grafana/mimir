@@ -143,7 +143,9 @@ func TestScallopColdStartEstablishesReadcacheCoverageWithoutLegacyTier2(t *testi
 func TestScallopPushExpandsLogicalOwnersToConcreteMirrors(t *testing.T) {
 	h, pods := newRF2Harness(t)
 	h.r.cfg.Planner = plannerScallop
-	replicaMap := h.r.refreshReplicaMap()
+	require.True(t, h.r.refreshSlotView())
+	replicaMap, ok := h.r.slotReplicaMap()
+	require.True(t, ok)
 	current := assignment.EvenSplitForTenant("tenant-a", []int32{0, 1, 2, 3})
 	result := scallop.PlanResult{
 		Assignment: current,

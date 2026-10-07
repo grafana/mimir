@@ -76,7 +76,7 @@ func sumOverTimeGenerate(
 	}
 
 	if haveHistograms {
-		h, err := functions.SumHistograms(hHead, hTail, emitAnnotation)
+		h, comp, err := functions.KahanSumHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
@@ -86,6 +86,11 @@ func sumOverTimeGenerate(
 		}
 		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 		result.SumH = &histProto
+
+		if comp != nil {
+			compProto := mimirpb.FromFloatHistogramToHistogramProto(0, comp)
+			result.CompH = &compProto
+		}
 	}
 
 	return result, true, nil
@@ -100,8 +105,29 @@ func sumOverTimeCombine(
 ) (float64, bool, *histogram.FloatHistogram, error) {
 	haveFloats := false
 	sumF, c := 0.0, 0.0
-	var sumH *histogram.FloatHistogram
+	var sumH, compH *histogram.FloatHistogram
 	nhcbBoundsReconciledSeen := false
+
+	// addToSumH adds h to the running histogram sum using Kahan summation, so the compensation is retained across pieces
+	addToSumH := func(h *histogram.FloatHistogram) error {
+		if sumH == nil {
+			// First histogram we're seeing, copy it to create the accumulator.
+			sumH = h.Copy()
+			return nil
+		}
+
+		newCompH, _, nhcbBoundsReconciled, err := sumH.KahanAdd(h, compH)
+		if err != nil {
+			return err
+		}
+
+		compH = newCompH
+		if nhcbBoundsReconciled {
+			nhcbBoundsReconciledSeen = true
+		}
+
+		return nil
+	}
 
 	for _, p := range pieces {
 		if p.ForceEmptyResult {
@@ -113,17 +139,16 @@ func sumOverTimeCombine(
 			sumF, c = floats.KahanSumInc(p.SumC, sumF, c)
 		}
 		if p.SumH != nil {
-			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
+			if err := addToSumH(mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)); err != nil {
+				err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return 0, false, nil, err
+			}
 
-			if sumH == nil {
-				// First histogram we're seeing, copy it to create the accumulator.
-				sumH = h.Copy()
-			} else {
-				if _, _, nhcbBoundsReconciled, err := sumH.Add(h); err != nil {
+			// CompH is nil for pieces written before compensations were stored, and for pieces with a single sample.
+			if p.CompH != nil {
+				if err := addToSumH(mimirpb.FromFloatHistogramProtoToFloatHistogram(p.CompH)); err != nil {
 					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
-				} else if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
 				}
 			}
 		}
@@ -136,6 +161,14 @@ func sumOverTimeCombine(
 
 	if nhcbBoundsReconciledSeen {
 		emitAnnotation(functions.NewAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	if compH != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation.
+		if _, _, _, err := sumH.Add(compH); err != nil {
+			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return 0, false, nil, err
+		}
 	}
 
 	return sumF + c, haveFloats, sumH, nil

@@ -14,14 +14,14 @@ import (
 	"github.com/twmb/franz-go/pkg/kversion"
 )
 
-// produceAPIVersion is the Kafka Produce API version this client emits. v11
+// ProduceAPIVersion is the Kafka Produce API version this client emits. v11
 // matches franz-go's own negotiated default for ProduceRequest, addresses
 // topics by name on the wire (so stale TopicIDs cannot mis-route), and is
 // supported by every broker this client targets (vanilla Kafka 2.4+, Warpstream).
 // Topic UUID is the addressing mode at v13+; bumping past v11 would make
 // TopicID load-bearing and require dropping the topic name from requests,
 // which we do not need today.
-const produceAPIVersion int16 = 11
+const ProduceAPIVersion int16 = 11
 
 // WarpstreamClient is a produce-only Kafka client tailored to Warpstream's
 // stateless-agent architecture. It exists because franz-go's standard produce
@@ -43,8 +43,8 @@ const produceAPIVersion int16 = 11
 //
 //   - An *AgentPool* watches Metadata and exposes the current set of
 //     reachable agents plus the (Kafka-protocol-mandated) leader for each
-//     partition. The pool is kept up to date in the background; the produce
-//     path never blocks on Metadata refreshes.
+//     partition. The pool is refreshed on a timer and on-demand when routing
+//     finds no candidate; the produce path never waits for those fetches.
 //   - A *PartitionAssignmentStrategy* turns the pool into a deterministic
 //     primary/secondary mapping. Every client instance with the same pool
 //     view picks the same secondary for a given partition, which keeps
@@ -89,6 +89,12 @@ type WarpstreamClient struct {
 	refreshCancel context.CancelFunc
 	closeOnce     sync.Once
 	refreshWG     sync.WaitGroup
+
+	// refreshNowCh is a size-1 nudge from the produce path to the refresh
+	// goroutine. Sends never block: while one nudge is pending, additional
+	// nudges coalesce. A nudge arriving during a refresh can queue one
+	// follow-up refresh after the cooldown.
+	refreshNowCh chan struct{}
 }
 
 // NewWarpstreamClient wires every component of the produce path. Config starts
@@ -121,9 +127,9 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 	}
 
 	innerTracker := NewAverageAgentStatsTracker()
-	tracker := NewCachedAgentStatsTracker(innerTracker, cfg.ClusterStatsTTL)
+	tracker := NewCachedAgentStatsTracker(NewObservedAgentStatsTracker(innerTracker, m), cfg.ClusterStatsTTL)
 
-	directProducer := NewKafkaDirectProducer(kgoClient, pool.TopicID, produceAPIVersion, cfg.DirectProducer, m)
+	directProducer := NewKafkaDirectProducer(kgoClient, pool.TopicID, ProduceAPIVersion, cfg.DirectProducer, m)
 	// Tracker observes each per-attempt outcome directly. Cross-agent
 	// retry is handled by the Hedger as part of its per-call wave loop,
 	// so the agent stats here reflect per-attempt quality and the Hedger
@@ -142,17 +148,17 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 		directProducer: directProducer,
 		refreshCtx:     refreshCtx,
 		refreshCancel:  refreshCancel,
+		refreshNowCh:   make(chan struct{}, 1),
 	}
 	// Demoter sits on top of the lazy pool strategy so refresh-driven
 	// agent-pool changes flow through transparently while the Demoter's
 	// per-agent probe-timing state persists across refreshes.
 	lazy := NewLazyPartitionAssignmentStrategy(pool.Strategy)
 	c.demoter = NewDemoter(lazy, tracker, cfg.HealthCheck, cfg.Demoter, logger, reg)
-	c.hedger = NewHedger(trackingProducer, tracker, c.demoter, cfg.HealthCheck, cfg.Hedger, cfg.Linger, cfg.BatchMaxBytes, m)
+	c.hedger = NewHedger(trackingProducer, tracker, c.demoter, cfg.HealthCheck, cfg.Hedger, cfg.Linger, cfg.BatchMaxBytes, m, logger)
 	// The cluster buffer's AgentFlushFunc is the Hedger, wrapped only to
-	// bound each flush by WriteTimeout. The Hedger is otherwise shaped
-	// like a DirectProducer (same signature as KafkaDirectProducer) so it
-	// composes directly with the buffer.
+	// bound each flush by WriteTimeout. Hedger.ProduceSync still takes a
+	// nodeID so it composes directly with the buffer.
 	c.buffer = NewClusterBuffer[routedTopicPartitionRecords](cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m, reg)
 	c.startBackgroundRefresh()
 	return c, nil
@@ -367,10 +373,12 @@ func (c *WarpstreamClient) Close() {
 	})
 }
 
-// startBackgroundRefresh ticks pool.Refresh and purges the tracker of removed
-// agents. refreshCtx (cancelled by Close) bounds both the loop and any
-// in-flight Refresh; the underlying Metadata fetch is already capped by
-// kgo's RequestTimeoutOverhead, so we don't add a per-call deadline.
+// startBackgroundRefresh owns every post-startup AgentPool.Refresh: the
+// periodic ticker and on-demand nudges from triggerRefresh. One owner means
+// Refresh is never concurrent. refreshCtx (cancelled by Close) stops the loop,
+// interrupts an in-flight Refresh, and aborts the cooldown. We rely on kgo's
+// per-attempt RequestTimeoutOverhead and overall retry policy rather than
+// adding a separate per-refresh deadline.
 func (c *WarpstreamClient) startBackgroundRefresh() {
 	c.refreshWG.Add(1)
 	go func() {
@@ -381,19 +389,61 @@ func (c *WarpstreamClient) startBackgroundRefresh() {
 			select {
 			case <-c.refreshCtx.Done():
 				return
+			case <-c.refreshNowCh:
+				ticker.Reset(c.cfg.MetadataRefreshInterval)
+				startedAt := time.Now()
+				c.refreshPool(metadataRefreshTriggerOnDemand)
+				if !c.waitRefreshCooldown(time.Since(startedAt)) {
+					return
+				}
 			case <-ticker.C:
-				removed, err := c.pool.Refresh(c.refreshCtx)
-				if err != nil {
-					log(c.logger, kgo.LogLevelWarn, "warpstream client metadata refresh failed", "err", err)
-					continue
-				}
-				if len(removed) > 0 {
-					c.tracker.PurgeAgents(removed)
-				}
-				c.demoter.Refresh(c.pool.Agents())
+				c.refreshPool(metadataRefreshTriggerPeriodic)
 			}
 		}
 	}()
+}
+
+// triggerRefresh asks the refresh goroutine to fetch Metadata soon. Never
+// blocks: if a refresh is already pending the nudge is dropped.
+func (c *WarpstreamClient) triggerRefresh() {
+	select {
+	case c.refreshNowCh <- struct{}{}:
+	default:
+	}
+}
+
+// refreshPool fetches Metadata and applies the snapshot. Failures are logged
+// and leave the previous snapshot in place.
+func (c *WarpstreamClient) refreshPool(trigger metadataRefreshTrigger) {
+	before := c.pool.Agents()
+	removed, err := c.pool.Refresh(c.refreshCtx)
+	c.metrics.observeMetadataRefresh(trigger, before, c.pool.Agents(), err)
+	if err != nil {
+		log(c.logger, kgo.LogLevelWarn, "warpstream client metadata refresh failed", "err", err)
+		return
+	}
+	if len(removed) > 0 {
+		c.tracker.PurgeAgents(removed)
+	}
+	c.demoter.Refresh(c.pool.Agents())
+}
+
+// waitRefreshCooldown enforces the configured minimum between on-demand
+// refresh start times. Time spent fetching already counts toward the interval.
+// Returns false during close so the refresh loop exits without spinning.
+func (c *WarpstreamClient) waitRefreshCooldown(elapsed time.Duration) bool {
+	remaining := c.cfg.OnDemandMetadataRefreshInterval - elapsed
+	if remaining <= 0 {
+		return c.refreshCtx.Err() == nil
+	}
+	t := time.NewTimer(remaining)
+	defer t.Stop()
+	select {
+	case <-c.refreshCtx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 // routeRecords groups records by (topic, partition), stamps each group with
@@ -408,6 +458,7 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 		if !ok {
 			cands := c.demoter.Candidates(r.Topic, r.Partition, 1)
 			if len(cands) == 0 {
+				c.triggerRefresh()
 				return nil, fmt.Errorf("no agent assigned for topic %q partition %d", r.Topic, r.Partition)
 			}
 			g = &promised[routedTopicPartitionRecords]{
@@ -440,6 +491,7 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResult)) (promised[routedTopicPartitionRecords], error) {
 	cands := c.demoter.Candidates(record.Topic, record.Partition, 1)
 	if len(cands) == 0 {
+		c.triggerRefresh()
 		return promised[routedTopicPartitionRecords]{}, fmt.Errorf("no agent assigned for topic %q partition %d", record.Topic, record.Partition)
 	}
 	return promised[routedTopicPartitionRecords]{
@@ -516,7 +568,7 @@ func newKgoClient(cfg Config, logger kgo.Logger, reg prometheus.Registerer) (*kg
 		kgo.ProducerLinger(cfg.Linger),
 		kgo.ProducerBatchMaxBytes(cfg.BatchMaxBytes),
 
-		// Pin Produce to produceAPIVersion: our wire builders set
+		// Pin Produce to ProduceAPIVersion: our wire builders set
 		// req.Version explicitly, but kgo.Broker.Request overrides it
 		// to the negotiated max. Without this cap, brokers supporting
 		// v13+ would receive UUID-only requests/responses, which our
@@ -543,11 +595,11 @@ func newKgoClient(cfg Config, logger kgo.Logger, reg prometheus.Registerer) (*kg
 
 // produceMaxVersions returns a kversion.Versions snapshot identical to
 // kgo's default kversion.Stable() except Produce is capped at
-// produceAPIVersion so kgo's per-request version negotiation can't
+// ProduceAPIVersion so kgo's per-request version negotiation can't
 // promote us past the wire format we generate and parse.
 func produceMaxVersions() *kversion.Versions {
 	v := kversion.Stable()
-	v.SetMaxKeyVersion(kmsg.Produce.Int16(), produceAPIVersion)
+	v.SetMaxKeyVersion(kmsg.Produce.Int16(), ProduceAPIVersion)
 	return v
 }
 

@@ -100,10 +100,16 @@ spec:
           {{- if .resources }}
             {{- toYaml .resources | nindent 12 }}
           {{- else }}
-          {{- /* Calculate requested memory as round(allocatedMemory * 1.2). But with integer built-in operators. */}}
-          {{- $requestMemory := div (add (mul .allocatedMemory 12) 5) 10 }}
+          {{- /* Calculate requested memory as round(allocatedMemory * 1.2) + 100Mi and the memory limit as
+                 round(allocatedMemory * 1.5), matching the buffers used by the memcached jsonnet library.
+                 The flat overhead covers memcached's memory usage that doesn't scale with allocatedMemory, such as
+                 connection buffers, the hash table and thread stacks, which a purely multiplicative buffer
+                 under-provisions for small caches. The limit is floored at the request so that a small
+                 allocatedMemory can't yield a request larger than the limit. But with integer built-in operators. */}}
+          {{- $requestMemory := add (div (add (mul .allocatedMemory 12) 5) 10) 100 }}
+          {{- $limitMemory := max (div (add (mul .allocatedMemory 15) 5) 10) $requestMemory }}
             limits:
-              memory: {{ $requestMemory }}Mi
+              memory: {{ $limitMemory }}Mi
             requests:
               cpu: 500m
               memory: {{ $requestMemory }}Mi

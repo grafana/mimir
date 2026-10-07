@@ -29,11 +29,6 @@ func FormatTimeMillis(ms int64) string {
 	return TimeFromMillis(ms).String()
 }
 
-// FormatTimeModel returns a human-readable version of the input time.
-func FormatTimeModel(t model.Time) string {
-	return TimeFromMillis(int64(t)).String()
-}
-
 // ParseTime parses the string into an int64 time, unix milliseconds since epoch.
 func ParseTime(s string) (int64, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
@@ -97,17 +92,6 @@ func DurationWithNegativeJitter(input time.Duration, variancePerc float64) time.
 	jitter := rand.Int63n(variance)
 
 	return input - time.Duration(jitter)
-}
-
-// NewDisableableTicker essentially wraps NewTicker but allows the ticker to be disabled by passing
-// zero duration as the interval. Returns a function for stopping the ticker, and the ticker channel.
-func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
-	if interval == 0 {
-		return func() {}, nil
-	}
-
-	tick := time.NewTicker(interval)
-	return func() { tick.Stop() }, tick.C
 }
 
 // UnixSeconds is Unix timestamp with seconds precision.

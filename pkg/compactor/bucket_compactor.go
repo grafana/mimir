@@ -325,6 +325,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+			if c.bkt.IsObjNotFoundErr(err) {
+				return blockFileNotFoundError{err: err, id: meta.ULID}
+			}
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
@@ -420,6 +423,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	uploadBlocksCount := len(blocksToUpload)
 
+	blocksHealthStats := make([]block.HealthStats, uploadBlocksCount)
+
 	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
@@ -447,9 +452,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("remove tombstones: %w", err)
 		}
 
-		if err := verifyBlock(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
+		// Verify block is healthy.
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime)
+		if err != nil {
+			return fmt.Errorf("gather health stats for result block %s: %w", bdir, err)
+		}
+		if err := stats.AnyErr(); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
+		// Per-block health stats are used below after the block was successfully uploaded.
+		blocksHealthStats[idx] = stats
+
 		return nil
 	})
 	if err != nil {
@@ -502,6 +515,22 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("upload of %s failed: %w", blockToUpload.ulid, err)
 		}
 
+		blockStats := blocksHealthStats[idx]
+		if c.blockSymbolTableSizeThreshold > 0 && blockStats.SymbolTableSize > c.blockSymbolTableSizeThreshold {
+			// Block is oversized. Preemptively mark it as no-compact, in order to skip it on the next compaction cycle.
+			if err := block.MarkForNoCompact(
+				ctx,
+				jobLogger,
+				c.bkt,
+				blockToUpload.ulid,
+				block.PreemptiveNoCompactReason,
+				"block exceeds configured size threshold",
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)),
+			); err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to preemptively mark block as no-compact", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			}
+		}
+
 		elapsed := time.Since(begin)
 		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
 
@@ -524,6 +553,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			"size_bytes", blockSize,
 			"series_count", seriesCount,
 			"sample_count", sampleCount,
+			"symbol_table_size_bytes", blockStats.SymbolTableSize,
 			"compaction_level", compactionLevel,
 			"duration", elapsed,
 			"duration_ms", elapsed.Milliseconds(),
@@ -570,15 +600,6 @@ func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger,
 	defer g.Done()
 
 	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
-}
-
-func verifyBlock(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) error {
-	stats, err := gatherBlockHealthStats(ctx, g, logger, bdir, minTime, maxTime)
-	if err != nil {
-		return err
-	}
-
-	return stats.AnyErr()
 }
 
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
@@ -679,6 +700,27 @@ func isIssue347Error(err error) (bool, issue347Error) {
 	var ie issue347Error
 	ok := errors.As(err, &ie)
 	return ok, ie
+}
+
+// blockFileNotFoundError is a type wrapper for when a file of a source block is missing from object storage.
+type blockFileNotFoundError struct {
+	err error
+	id  ulid.ULID
+}
+
+func (e blockFileNotFoundError) Error() string {
+	return fmt.Sprintf("block file not found in bucket: %s (block: %s)", e.err.Error(), e.id.String())
+}
+
+func (e blockFileNotFoundError) Unwrap() error {
+	return e.err
+}
+
+// isBlockFileNotFoundError returns true if the base error is a blockFileNotFoundError.
+func isBlockFileNotFoundError(err error) (bool, blockFileNotFoundError) {
+	var notFoundErr blockFileNotFoundError
+	ok := errors.As(err, &notFoundErr)
+	return ok, notFoundErr
 }
 
 // OutOfOrderChunksError is a type wrapper for OOO chunk error from validating block index.
@@ -893,6 +935,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.IndexExceeds64GiBNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.SymbolTableTooLargeNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)).Add(0)
 
 	return bcm
 }
@@ -914,6 +957,7 @@ type BucketCompactor struct {
 	bkt                              objstore.Bucket
 	concurrency                      int
 	skipUnhealthyBlocks              bool
+	blockSymbolTableSizeThreshold    uint64
 	sparseIndexHeaderSamplingRate    int
 	maxPerBlockUploadConcurrency     int
 	sparseIndexHeaderconfig          indexheader.Config
@@ -937,6 +981,7 @@ func NewBucketCompactor(
 	bkt objstore.Bucket,
 	concurrency int,
 	skipUnhealthyBlocks bool,
+	blockSymbolTableSizeThreshold uint64,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
@@ -966,6 +1011,7 @@ func NewBucketCompactor(
 		bkt:                              bkt,
 		concurrency:                      concurrency,
 		skipUnhealthyBlocks:              skipUnhealthyBlocks,
+		blockSymbolTableSizeThreshold:    blockSymbolTableSizeThreshold,
 		ownJob:                           ownJob,
 		sortJobs:                         sortJobs,
 		waitPeriod:                       waitPeriod,

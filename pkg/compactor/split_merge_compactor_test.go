@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -30,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) {
@@ -624,6 +627,9 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.splitAndMergeShards[userID] = testData.numShards
+			// Run the whole compactor for a tenant on a non-default encoding, so the lookup in
+			// newBucketCompactor() is exercised.
+			cfgProvider.floatChunkEncodings[userID] = chunkenc.EncXOR2
 
 			logger := log.NewLogfmtLogger(os.Stdout)
 			reg := prometheus.NewPedanticRegistry()
@@ -806,4 +812,147 @@ func convertMetasMapToSlice(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 		out = append(out, m)
 	}
 	return out
+}
+
+func TestSplitAndMergeCompactorFactory_ShouldRegisterTSDBCompactorMetricsOnce(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	reg := prometheus.NewPedanticRegistry()
+	provider, _, err := splitAndMergeCompactorFactory(t.Context(), cfg, newMockConfigProvider(), log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	require.NotNil(t, provider("user-1"))
+
+	// The compactors share a single metrics instance: building the metrics per compactor would
+	// register them twice, which the pedantic registry would reject. Gathering also checks they are
+	// registered at all, so the test can't pass with them silently dropped instead.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP prometheus_tsdb_compactions_total Total number of compactions that were executed for the partition.
+		# TYPE prometheus_tsdb_compactions_total counter
+		prometheus_tsdb_compactions_total 0
+	`), "prometheus_tsdb_compactions_total"))
+}
+
+// TestSplitAndMergeCompactorFactory_ShouldFailOnEmptyBlockRanges checks the factory fails at
+// startup, rather than per compaction job.
+func TestSplitAndMergeCompactorFactory_ShouldFailOnEmptyBlockRanges(t *testing.T) {
+	_, _, err := splitAndMergeCompactorFactory(t.Context(), Config{}, newMockConfigProvider(), log.NewNopLogger(), prometheus.NewRegistry())
+	require.ErrorContains(t, err, "creating compactor for float chunk encoding")
+	require.ErrorContains(t, err, "at least one range must be provided")
+}
+
+func TestSplitAndMergeCompactorFactory_VerticalCompactionHonorsFloatChunkEncoding(t *testing.T) {
+	tests := map[string]struct {
+		encoding    chunkenc.Encoding
+		expectedEnc chunkenc.Encoding
+	}{
+		"unset falls back to the default": {expectedEnc: chunkenc.EncXOR},
+		"xor2":                            {encoding: chunkenc.EncXOR2, expectedEnc: chunkenc.EncXOR2},
+		// A ConfigProvider is free to return an encoding the limit cannot select.
+		"encoding outside the limit falls back to the default": {encoding: chunkenc.EncHistogram, expectedEnc: chunkenc.EncXOR},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			const userID = "user-1"
+
+			cfgProvider := newMockConfigProvider()
+			if testData.encoding != chunkenc.EncNone {
+				cfgProvider.floatChunkEncodings[userID] = testData.encoding
+			}
+
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+
+			provider, _, err := splitAndMergeCompactorFactory(t.Context(), cfg, cfgProvider, log.NewNopLogger(), prometheus.NewRegistry())
+			require.NoError(t, err)
+
+			chunks := verticallyCompactOverlappingBlocks(t, provider(userID), t.TempDir())
+
+			// The two source blocks hold a single float chunk each, and they overlap, so the
+			// compactor has to merge them into one re-encoded chunk. Asserting the count keeps the
+			// assertion below from passing on a chunk that was copied over verbatim, since only
+			// re-encoded chunks get the configured encoding.
+			require.Len(t, chunks, 1)
+			assert.Equal(t, testData.expectedEnc, chunks[0].encoding)
+
+			// The chunk must span both source blocks, which proves it is the merge of the two
+			// overlapping chunks and not one of them passed through.
+			assert.Less(t, chunks[0].minTime, verticallyCompactedBlocksOverlapStart)
+			assert.Greater(t, chunks[0].maxTime, verticallyCompactedBlocksOverlapStart)
+		})
+	}
+}
+
+// verticallyCompactedBlocksOverlapStart is the timestamp at which the two blocks created by
+// verticallyCompactOverlappingBlocks() start overlapping.
+const verticallyCompactedBlocksOverlapStart = int64(500)
+
+// floatChunkInfo describes a float chunk stored in a block.
+type floatChunkInfo struct {
+	encoding chunkenc.Encoding
+	minTime  int64
+	maxTime  int64
+}
+
+// verticallyCompactOverlappingBlocks compacts, in dir, two blocks holding the same series over
+// overlapping time ranges, and returns the float chunks of the compacted block. Because the blocks
+// overlap, the compactor has to merge and re-encode the float chunks, which is the only case where
+// the configured float chunk encoding is applied.
+func verticallyCompactOverlappingBlocks(t *testing.T, compactor Compactor, dir string) []floatChunkInfo {
+	t.Helper()
+
+	// block.CreateBlock() cycles through value types, so out of these three series only the first
+	// one holds floats, while the other two hold histograms and float histograms.
+	series := []labels.Labels{
+		labels.FromStrings("series", "1"),
+		labels.FromStrings("series", "2"),
+		labels.FromStrings("series", "3"),
+	}
+
+	block1, err := block.CreateBlock(t.Context(), dir, series, 10, 0, 2*verticallyCompactedBlocksOverlapStart, labels.EmptyLabels())
+	require.NoError(t, err)
+	block2, err := block.CreateBlock(t.Context(), dir, series, 10, verticallyCompactedBlocksOverlapStart, 3*verticallyCompactedBlocksOverlapStart, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	compacted, err := compactor.Compact(dir, []string{filepath.Join(dir, block1.String()), filepath.Join(dir, block2.String())}, nil)
+	require.NoError(t, err)
+	require.Len(t, compacted, 1)
+
+	return blockFloatChunks(t, filepath.Join(dir, compacted[0].String()))
+}
+
+// blockFloatChunks returns every float chunk stored in the block at dir.
+func blockFloatChunks(t *testing.T, dir string) []floatChunkInfo {
+	t.Helper()
+
+	b, err := tsdb.OpenBlock(nil, dir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, b.Close()) })
+
+	q, err := tsdb.NewBlockChunkQuerier(b, b.MinTime(), b.MaxTime())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	floatEncodings := make([]chunkenc.Encoding, 0, len(validation.FloatChunkEncodingValues))
+	for _, value := range validation.FloatChunkEncodingValues {
+		floatEncodings = append(floatEncodings, validation.ParseFloatChunkEncoding(value))
+	}
+
+	var chunks []floatChunkInfo
+	ss := q.Select(t.Context(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "series", ".*"))
+	for ss.Next() {
+		it := ss.At().Iterator(nil)
+		for it.Next() {
+			meta := it.At()
+			if slices.Contains(floatEncodings, meta.Chunk.Encoding()) {
+				chunks = append(chunks, floatChunkInfo{encoding: meta.Chunk.Encoding(), minTime: meta.MinTime, maxTime: meta.MaxTime})
+			}
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, ss.Err())
+
+	return chunks
 }

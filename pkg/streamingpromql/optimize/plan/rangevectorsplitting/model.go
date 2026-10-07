@@ -16,7 +16,9 @@ import (
 
 // Range represents a time range within a query split.
 // Start is exclusive, End is inclusive.
-// Start and End are in data-time, not query-time: any offset/@ modifier on the inner selector has already been applied.
+// For matrix selectors, Start and End are in storage time after applying the selector's offset/@ modifier.
+// For subqueries, they are in the subquery's split time. Modifiers in nested expressions can produce a different storage
+// time range.
 type Range struct {
 	Start     int64
 	End       int64

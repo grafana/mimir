@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"sync"
-	syncatomic "sync/atomic" //lint:ignore faillint generic atomic.Pointer isn't available in go.uber.org/atomic.
 	"time"
 
 	"github.com/go-kit/log"
@@ -72,14 +71,18 @@ type Readcache struct {
 	// RebalancerAddress is empty.
 	rebalancerConn *grpc.ClientConn
 
-	// replicaMap is the logical->concrete expansion published by the
-	// rebalancer on the assignment stream. Under RF≥2 a lease names a
-	// logical slot (e.g. "readcache-5") and every zone pod in that
-	// slot's replica set owns the partition, so applyAssignment must
-	// match leases through the map rather than by exact instance ID.
-	// Nil or empty means identity (RF=1): only leases naming this
-	// instance are ours.
-	replicaMap syncatomic.Pointer[readcacheassignment.ReplicaMap]
+	// leaseSlot is the logical slot parsed from this pod's instance id
+	// once at startup ("readcache-5" for both readcache-5 and
+	// readcache-zone-a-5). Empty when the name does not parse; those
+	// pods match leases by the raw instance id. leaseZone is empty for
+	// a non-zonal name.
+	leaseSlot string
+	leaseZone string
+
+	// firstSnapshotZeroLeases is 1 when a zonal pod's first assignment
+	// snapshot named none of its slot's leases. That is the restart
+	// path that used to delete resume offsets.
+	firstSnapshotZeroLeases prometheus.Gauge
 
 	// spotlights is the readcache's local cache of the rebalancer's
 	// spotlighted hash ranges. Populated by a background poller
@@ -92,6 +95,15 @@ type Readcache struct {
 	// caller of New didn't pass one (e.g. unit tests that don't
 	// care about ring registration).
 	instanceLifecycler *ring.BasicLifecycler
+
+	// instanceRing is the read-only client for that same ring. Compaction
+	// reads its zone list from here. Nil in tests, which then run without
+	// a zone offset. SetInstanceRing wires it after New.
+	instanceRing *ring.Ring
+
+	// compactionIdleTimeout is HeadCompactionIdleTimeout plus the
+	// ingester's +25% jitter, fixed for the life of the process.
+	compactionIdleTimeout time.Duration
 
 	// queryLoad and partitionSeries are the per-partition query-load
 	// and per-partition active-series signals that the rebalancer
@@ -131,6 +143,23 @@ type Readcache struct {
 	// by the streamed chunks. Same buckets as the ingester metric so
 	// the two histograms compare directly.
 	queriedSamples prometheus.Histogram
+
+	// queryStreamTSDBs and queryStreamSeries expose the physical work
+	// hidden behind the externally-compatible QueryStream response. The
+	// storage-shape experiment should reduce TSDB fan-out while preserving
+	// the returned series set; the selected stage includes duplicates
+	// gathered from separate physical TSDBs and the returned stage is after
+	// label-set coalescing.
+	queryStreamTSDBs  prometheus.Histogram
+	queryStreamSeries *prometheus.HistogramVec
+	queryStreamChunks prometheus.Histogram
+
+	// tsdbMutationLockWait and tsdbMutationDuration measure serialization
+	// around appends, compaction, runtime config updates, and close. They are
+	// deliberately operation-only: pod/workload labels supplied by the
+	// monitoring stack provide the A/B dimension without tenant cardinality.
+	tsdbMutationLockWait *prometheus.HistogramVec
+	tsdbMutationDuration *prometheus.HistogramVec
 
 	// partitionWarmupDuration records successful asynchronous Kafka
 	// catch-up time after acquiring a partition. The current number of
@@ -186,9 +215,16 @@ type Readcache struct {
 	frozen   map[int32][]*frozenEpoch
 
 	// epochSeq tracks the next epoch number to hand out per partition
-	// (0 on first acquisition). Mutated only in addPartition under
-	// partitionMu.
+	// (0 on first acquisition). Mutated under partitionMu.
 	epochSeq map[int32]int
+
+	// resumeEpoch is the on-disk epoch a previous process closed
+	// without a frozen marker (restart or crash). addPartition reuses
+	// it when this pod still owns the partition, so a restart does not
+	// open a second TSDB beside the one it just closed. The first
+	// assignment promotes any epoch it did not reuse to a frozen epoch.
+	resumeEpoch map[int32]int
+	unmarked    []unmarkedTSDBDir
 
 	// startupReconcileDone flips to true once the initial partition
 	// set has been reconciled: after the first rebalancer assignment
@@ -331,6 +367,7 @@ func New(
 		partitions:                  make(map[int32]*partitionState),
 		frozen:                      make(map[int32][]*frozenEpoch),
 		epochSeq:                    make(map[int32]int),
+		resumeEpoch:                 make(map[int32]int),
 		instanceLifecycler:          instanceLifecycler,
 		queryLoad:                   loadstats.NewTracker("cortex_readcache"),
 		partitionSeries:             loadstats.NewPartitionSeries(),
@@ -338,6 +375,11 @@ func New(
 		seriesStatsRefreshRequested: make(chan struct{}, 1),
 		seriesStatsRefreshInterval:  seriesStatsRefreshInterval,
 	}
+	if id, ok := readcacheassignment.ParseInstanceIdentity(cfg.InstanceID); ok {
+		r.leaseSlot = id.LogicalID
+		r.leaseZone = id.Zone
+	}
+	r.initCompactionSchedule()
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
 
@@ -388,6 +430,11 @@ func New(
 		Help: "Total float and native-histogram samples successfully appended to a partition's TSDB head from the Kafka ingest topic, labelled by Kafka partition ID. Use rate() to get samples/sec per partition. Readcache counterpart to cortex_distributor_nautilus_partition_samples_written_total.",
 	}, []string{"partition"})
 
+	r.firstSnapshotZeroLeases = promauto.With(metricReg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_readcache_first_snapshot_zero_leases",
+		Help: "1 if this zonal readcache's first assignment snapshot matched no leases for its slot. That snapshot used to delete the pod's resume offsets.",
+	})
+
 	r.ingestedSamples = promauto.With(metricReg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_readcache_ingested_samples_total",
 		Help: "The total number of samples ingested per user. Counts successfully-appended samples only (the readcache mirror of cortex_ingester_ingested_samples_total), so the two line up 1:1 when a tenant is moved between the ingester and readcache write paths.",
@@ -402,6 +449,38 @@ func New(
 		// histograms compare directly: 10*(8^(8-1)) = 20.9m.
 		Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 	})
+
+	r.queryStreamTSDBs = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_tsdbs",
+		Help:                        "Number of physical TSDBs selected for one QueryStream call.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 2, 8),
+		NativeHistogramBucketFactor: 1.1,
+	})
+	r.queryStreamSeries = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_series",
+		Help:                        "Number of series processed by QueryStream before physical-TSDB deduplication and returned after deduplication.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 4, 10),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"stage"})
+	r.queryStreamChunks = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_chunks",
+		Help:                        "Number of chunks returned by one QueryStream call after physical-TSDB deduplication.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 4, 10),
+		NativeHistogramBucketFactor: 1.1,
+	})
+
+	r.tsdbMutationLockWait = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_tsdb_mutation_lock_wait_seconds",
+		Help:                        "Time spent waiting to mutate a readcache TSDB, by operation.",
+		Buckets:                     prometheus.ExponentialBuckets(0.000001, 4, 12),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	r.tsdbMutationDuration = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_tsdb_mutation_duration_seconds",
+		Help:                        "Time spent holding the readcache TSDB mutation lock, by operation.",
+		Buckets:                     prometheus.ExponentialBuckets(0.00001, 4, 12),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
 
 	promauto.With(metricReg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_readcache_partitions_warming",
@@ -426,6 +505,7 @@ func New(
 
 	if reg != nil {
 		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
+		reg.MustRegister(newReadcacheTSDBCollector(r))
 		reg.MustRegister(r.queryLoad)
 	}
 
@@ -502,6 +582,7 @@ func (r *Readcache) starting(ctx context.Context) error {
 			return fmt.Errorf("starting partition %d: %w", pid, err)
 		}
 	}
+	r.promoteUnownedResumeEpochs(wanted)
 	r.removeUnownedFrozenPartitionOffsets(wanted)
 	r.startupReconcileDone.Store(true)
 	r.assignmentReady.Store(true)
@@ -528,12 +609,17 @@ func (r *Readcache) dialRebalancer(ctx context.Context) (*grpc.ClientConn, error
 	return grpc.DialContext(ctx, r.cfg.RebalancerAddress, dialOpts...)
 }
 
+// SetInstanceRing installs the readcache ring client used to stagger
+// compaction across zones. Nil leaves the schedule unstaggered.
+func (r *Readcache) SetInstanceRing(instanceRing *ring.Ring) {
+	r.instanceRing = instanceRing
+}
+
 func (r *Readcache) running(ctx context.Context) error {
-	// Per-partition tickers for head compaction. Aggregated to one
-	// shared goroutine to avoid one goroutine per partition; the
-	// granularity (an hour by default) makes shared scheduling fine.
-	compactT := time.NewTicker(r.cfg.HeadCompactionInterval)
-	defer compactT.Stop()
+	// One goroutine compacts every owned TSDB. The first wait is the
+	// zone offset plus this pod's jitter; later ticks keep that phase.
+	stopCompact, compactC := r.startCompactionTicker()
+	defer stopCompact()
 
 	tsdbUpdateT := time.NewTicker(r.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateT.Stop()
@@ -569,7 +655,7 @@ func (r *Readcache) running(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-compactT.C:
+		case <-compactC:
 			r.compactHeads()
 		case <-tsdbUpdateT.C:
 			r.applyPartitionTSDBTenantSettings()
@@ -683,7 +769,7 @@ func (r *Readcache) stopping(_ error) error {
 	for _, entry := range parts {
 		entry := entry
 		g.Go(func() error {
-			if err := r.freezePartitionForShutdown(entry.partitionID, entry.state); err != nil {
+			if err := r.closeLiveForRestart(entry.state); err != nil {
 				firstErrMu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -770,18 +856,31 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 		return fmt.Errorf("creating readcache data-dir for partition %d: %w", partitionID, err)
 	}
 	p := newPartitionState(partitionID)
-	// Assign this acquisition's epoch (0 on the first time this pod
-	// owns the partition; incremented on each re-acquisition) so a
-	// fresh live TSDB never collides on disk with a frozen epoch of
-	// the same partition still being served.
-	p.epoch = r.epochSeq[partitionID]
-	r.epochSeq[partitionID]++
+	// Reuse the epoch the previous process closed in place when this
+	// pod still owns the partition. Otherwise hand out the next epoch
+	// so a fresh live TSDB never collides with a frozen one.
+	var resumed bool
+	p.epoch, resumed = r.takeLiveEpoch(partitionID)
 	r.partitions[partitionID] = p
 	r.partitionMu.Unlock()
 
+	// Open the previous process's TSDBs before the reader starts and
+	// before the partition can be marked warm. Otherwise a tenant with
+	// no record after the stored offset never enters the live map, and
+	// queries return an empty success for it.
+	if resumed {
+		r.reopenUnmarkedLiveDirs(p)
+	}
+
 	if err := r.startKafkaReader(ctx, p); err != nil {
+		// The reader is already stopped. Close anything this attempt
+		// opened, or the retry file-locks the same directories.
+		r.closeOpenedPartitionTSDBs(p)
 		r.partitionMu.Lock()
 		delete(r.partitions, partitionID)
+		if resumed {
+			r.resumeEpoch[partitionID] = p.epoch
+		}
 		r.partitionMu.Unlock()
 		return err
 	}
@@ -978,6 +1077,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 	if r.tsdbMetrics != nil {
 		r.tsdbMetrics.SetRegistryForTenant(tsdbMetricsTenantID(tenantID, partitionID), tsdbPromReg)
 	}
+	r.instrumentTSDB(opened)
 	p.tenants[tenantID] = opened
 	return opened, nil
 }
@@ -985,6 +1085,16 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 // tsdbMetricsTenantID is the key used in TSDBMetrics for a (tenant, partition) head.
 func tsdbMetricsTenantID(tenantID string, partitionID int32) string {
 	return fmt.Sprintf("%s/%d", tenantID, partitionID)
+}
+
+// appendOpenTSDB adds db when it is still open. Idle close leaves a
+// closed TSDB in the tenant map until RemoveAll finishes, so a query
+// must not open a querier on it: that error fails the whole request.
+func appendOpenTSDB(out []*partitionTSDB, db *partitionTSDB) []*partitionTSDB {
+	if db == nil || db.IsClosed() {
+		return out
+	}
+	return append(out, db)
 }
 
 // listTSDBsForTenant returns the partition TSDBs this readcache owns
@@ -1018,9 +1128,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 				return nil, errStillWarming(hint.PartitionId)
 			}
 			p.tenantsMu.RLock()
-			if db := p.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, p.tenants[tenantID])
 			p.tenantsMu.RUnlock()
 		}
 	} else {
@@ -1030,9 +1138,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 				return nil, errStillWarming(p.partitionID)
 			}
 			p.tenantsMu.RLock()
-			if db := p.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, p.tenants[tenantID])
 			p.tenantsMu.RUnlock()
 		}
 	}
@@ -1051,9 +1157,7 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 	addFrozen := func(partitionID int32) {
 		for _, ep := range r.frozen[partitionID] {
 			frozenForHint = true
-			if db := ep.tenants[tenantID]; db != nil {
-				out = append(out, db)
-			}
+			out = appendOpenTSDB(out, ep.tenants[tenantID])
 		}
 	}
 	if hint != nil {
@@ -1142,10 +1246,14 @@ func (r *Readcache) compactHeads() {
 		}
 		p.tenantsMu.RUnlock()
 		for _, db := range dbs {
-			if err := db.CompactHead(); err != nil && !errors.Is(err, context.Canceled) {
-				level.Warn(r.logger).Log("msg", "compact head failed",
-					"user", db.tenantID, "partition", db.partitionID, "err", err)
+			if !r.cfg.IngesterScheduleCompaction {
+				if err := db.CompactHead(); err != nil {
+					level.Warn(r.logger).Log("msg", "readcache head compaction failed",
+						"user", db.tenantID, "partition", db.partitionID, "err", err)
+				}
+				continue
 			}
+			r.compactOne(db)
 		}
 	}
 	r.requestSeriesStatsRefresh()
@@ -1226,12 +1334,8 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 		if resp.PruneBeforeUnixMs > 0 {
 			local.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
 		}
-		// The replica map is sent in full on every message, so it is
-		// replaced wholesale — including the transition back to
-		// identity when the rebalancer clears it. Store it before
-		// applying so the reconciliation below sees the expansion
-		// matching this snapshot.
-		r.setReplicaMap(rebalancer.ReplicaMapFromProto(resp.ReplicaSets))
+		// replica_sets on the stream is ignored. Ownership is the slot
+		// parsed from this pod's name, not the rebalancer's expansion.
 		if err := r.applyAssignment(ctx, local.Entries(), time.Now()); err != nil {
 			level.Warn(r.logger).Log("msg", "applying readcache assignment", "err", err)
 			// Keep consuming: a single failed add/remove must not
@@ -1241,20 +1345,16 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 	}
 }
 
-// setReplicaMap installs the logical->concrete expansion published by
-// the rebalancer. Called from the assignment stream; also used by
-// tests that drive applyAssignment directly.
-func (r *Readcache) setReplicaMap(m readcacheassignment.ReplicaMap) {
-	r.replicaMap.Store(&m)
-}
-
-// getReplicaMap returns the current logical->concrete expansion, or
-// nil when none has been received (identity / RF=1).
-func (r *Readcache) getReplicaMap() readcacheassignment.ReplicaMap {
-	if m := r.replicaMap.Load(); m != nil {
-		return *m
+// ownsAssignmentLease reports whether this pod should consume a lease
+// stored under leaseInstanceID. The slot is parsed once at startup.
+// A zonal pod owns every lease for that slot. A non-zonal pod's slot
+// is its own instance id, so RF=1 leases still match. An unparseable
+// name matches only the raw instance id.
+func (r *Readcache) ownsAssignmentLease(leaseInstanceID string) bool {
+	if r.leaseSlot != "" {
+		return leaseInstanceID == r.leaseSlot
 	}
-	return nil
+	return leaseInstanceID == r.cfg.InstanceID
 }
 
 // applyAssignment reconciles the local owned-partition set with the
@@ -1277,16 +1377,15 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	firstReconcile := !r.startupReconcileDone.Load()
 	defer r.startupReconcileDone.Store(true)
 
-	// A lease names a logical slot under RF≥2; this pod owns the
-	// partition when it is one of that slot's concrete replicas. With
-	// no replica map OwnsLogical reduces to an exact instance-ID
-	// match, which is the RF=1 behaviour.
-	replicaMap := r.getReplicaMap()
-
+	// A lease names a logical slot under RF≥2 and this pod's instance
+	// id under RF=1. Both are the slot parsed from the pod name.
+	// Absence from the ring is a querier concern; it does not mean
+	// this pod owns nothing. Treating it that way deleted resume
+	// offsets on the first snapshot after a restart.
 	wanted := map[int32]struct{}{}
 	var snapshotForInstance int
 	for _, e := range entries {
-		if !replicaMap.OwnsLogical(r.cfg.InstanceID, e.InstanceID) {
+		if !r.ownsAssignmentLease(e.InstanceID) {
 			continue
 		}
 		snapshotForInstance++
@@ -1330,6 +1429,15 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		"add_partition_ids", formatPartitionIDs(toAdd, 20),
 		"remove_partition_ids", formatPartitionIDs(toRemove, 20),
 	)
+	if firstReconcile && r.leaseZone != "" && snapshotForInstance == 0 {
+		r.firstSnapshotZeroLeases.Set(1)
+		level.Warn(r.logger).Log(
+			"msg", "first readcache assignment snapshot matched zero leases",
+			"instance_id", r.cfg.InstanceID,
+			"lease_slot", r.leaseSlot,
+			"snapshot_entries", len(entries),
+		)
+	}
 
 	var firstErr error
 	var addFailed, removeFailed []int32
@@ -1356,6 +1464,7 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		}
 	}
 	if firstReconcile {
+		r.promoteUnownedResumeEpochs(wanted)
 		r.removeUnownedFrozenPartitionOffsets(wanted)
 	}
 	if len(toAdd) > 0 || len(toRemove) > 0 {

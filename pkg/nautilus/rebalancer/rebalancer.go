@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/scallop"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
@@ -391,10 +392,13 @@ type Rebalancer struct {
 	// readcacheRing is the ring client the slicer consults to learn
 	// which readcache instances are currently healthy. Nil when
 	// running without a ring (tests, or operators who pin the
-	// instance set via ReadcacheSlicer.Instances). Resolved on each
-	// slicer round; membership hysteresis admits a change after two
-	// consecutive observations.
+	// instance set via ReadcacheSlicer.Instances).
 	readcacheRing readcacheRingReader
+
+	// readcacheSlots groups healthy ring members by parsed slot. It is
+	// refreshed when the healthy set changes and is not published on
+	// the assignment stream.
+	readcacheSlots *readcacheassignment.SlotViewCache
 
 	// clock is the time source consulted by rebalance(), the admin
 	// handlers, and the gRPC stream handlers. Production wires
@@ -468,6 +472,7 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		structuralCooldowns: make(map[tenantRangeKey]time.Time),
 		readcacheCooldowns:  make(readcacheMoveCooldowns),
 		readcacheMembership: newReadcacheMembershipTracker(),
+		readcacheSlots:      readcacheassignment.NewSlotViewCache(),
 		metrics:             newMetrics(registerer),
 		clock:               wallClock{},
 		spotlights:          newSpotlightStore(time.Now().UnixNano(), defaultSpotlightSampleRate, defaultSpotlightDuration),
@@ -557,11 +562,15 @@ func (r *Rebalancer) running(ctx context.Context) error {
 	// assignment as soon as the rebalancer is up.
 	timer := time.NewTimer(0)
 	defer timer.Stop()
+	slotViewTicker := time.NewTicker(readcacheassignment.SlotViewRefreshInterval)
+	defer slotViewTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-slotViewTicker.C:
+			r.refreshSlotView()
 		case <-timer.C:
 			if err := r.rebalance(ctx); err != nil {
 				level.Warn(r.logger).Log("msg", "rebalance round failed", "err", err)
@@ -759,9 +768,8 @@ func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsReque
 
 func readcacheUpdateToProto(u readcacheUpdate) *WatchReadcacheAssignmentsResponse {
 	resp := &WatchReadcacheAssignmentsResponse{
-		Entries:     ReadcacheEntriesToProto(u.entries),
-		Reset_:      u.reset,
-		ReplicaSets: ReplicaMapToProto(u.replicaMap),
+		Entries: ReadcacheEntriesToProto(u.entries),
+		Reset_:  u.reset,
 	}
 	if !u.pruneBefore.IsZero() {
 		resp.PruneBeforeUnixMs = u.pruneBefore.UnixMilli()
@@ -833,12 +841,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// tier-2 actually places onto.
 	stableReadcacheInstances := r.stabilizedReadcacheInstances()
 	// Under DesiredReplicas > 0 the slicer places partitions onto
-	// sticky logical slots rather than concrete ring members, and the
-	// replica map published to readcaches and queriers expands those
-	// slots to the concrete zone pods. Refresh it every round so a
-	// zone pod joining or leaving reaches clients promptly.
+	// sticky logical slots rather than concrete ring members. The
+	// slot view, refreshed here, expands those slots to the zone pods
+	// that are healthy right now. It is not streamed to clients.
 	placementInstances := r.placementReadcacheInstancesFrom(stableReadcacheInstances)
-	replicaMap := r.refreshReplicaMap()
+	r.refreshSlotView()
 	current := r.store.latestActiveAssignment(now)
 	if current == nil {
 		// Cold start: try to reconstruct tenant assignments from whatever
@@ -1065,6 +1072,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// Scallop owns both placement layers. Branch before all legacy
 	// prediction, cooldown, slicer, and tier-2 decision code.
 	if r.cfg.planner() == plannerScallop {
+		replicaMap, replicaMapOK := r.slotReplicaMap()
+		if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 && !replicaMapOK {
+			level.Warn(r.logger).Log("msg", "readcache slot view unavailable; skipping Scallop round")
+			r.metrics.recordPlannerRound(plannerScallop, "skipped", "slot_view_unavailable")
+			r.refreshCurrentLeases(now, current)
+			return nil
+		}
 		r.admin.setLastStats(lm, partitionLByPID, partitionRateByPID, activePartitions)
 		return r.runScallopRound(ctx, scallopRoundInput{
 			now:                      now,
@@ -1226,25 +1240,39 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				// stays a valid target as long as one of its zone
 				// mirrors is still answering.
 				excludedTargets := failedReadcaches
+				// An unavailable view is not "exclude everyone".
+				// lightestInstance ignores a total exclusion, and
+				// pass 2 would still cold-place unassigned partitions.
+				// Skip the slicer and extend the leases already in the log.
+				slotViewUnavailable := false
 				if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
-					excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
-				}
-				if len(statsReadiness.unreadyLogicalTargets) > 0 {
-					if excludedTargets == nil {
-						excludedTargets = make(map[string]struct{}, len(statsReadiness.unreadyLogicalTargets))
+					replicaMap, ok := r.slotReplicaMap()
+					if !ok {
+						slotViewUnavailable = true
+						level.Warn(r.logger).Log("msg", "readcache slot view unavailable; leaving existing tier-2 placement in place")
+						readcacheLogChanged = r.refreshReadcacheLeases()
+					} else {
+						excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
 					}
-					for instanceID := range statsReadiness.unreadyLogicalTargets {
-						excludedTargets[instanceID] = struct{}{}
-					}
 				}
-				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets, excludedFromSlicer)
-				// Update the gating state regardless of whether the
-				// slicer produced changes: even a no-op tier-2 round
-				// observed the current instance set and load, so the
-				// next interval starts now.
-				r.lastTier2RoundAt = now
-				r.lastTier2Instances = append([]string(nil), instances...)
-				r.metrics.recordTier2FireDecision(decision.reason)
+				if !slotViewUnavailable {
+					if len(statsReadiness.unreadyLogicalTargets) > 0 {
+						if excludedTargets == nil {
+							excludedTargets = make(map[string]struct{}, len(statsReadiness.unreadyLogicalTargets))
+						}
+						for instanceID := range statsReadiness.unreadyLogicalTargets {
+							excludedTargets[instanceID] = struct{}{}
+						}
+					}
+					readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets, excludedFromSlicer)
+					// Update the gating state regardless of whether the
+					// slicer produced changes: even a no-op tier-2 round
+					// observed the current instance set and load, so the
+					// next interval starts now.
+					r.lastTier2RoundAt = now
+					r.lastTier2Instances = append([]string(nil), instances...)
+					r.metrics.recordTier2FireDecision(decision.reason)
+				}
 			} else {
 				r.metrics.recordTier2SkipDecision(decision.reason)
 				level.Debug(r.logger).Log(

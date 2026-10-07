@@ -187,6 +187,16 @@ func withManyParts() prepareStoreConfigOption {
 	}
 }
 
+// withIndexHeaderBucketReaderEnabled configures the store to use the experimental index-header bucket reader path.
+func withIndexHeaderBucketReaderEnabled() prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.bucketStoreConfig.IndexHeader.BucketReader = indexheader.BucketReaderConfig{
+			Enabled:             true,
+			BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
+		}
+	}
+}
+
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), cfg.numBlocks/2, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
@@ -1221,6 +1231,20 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
+	})
+
+	// Exercise experimental index-header bucket reader path.
+	t.Run("index-header-bucket-reader", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := filesystem.NewBucket(t.TempDir())
+		assert.NoError(t, err)
+
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			cfg := defaultPrepareStoreConfig(t).apply(withIndexHeaderBucketReaderEnabled()).apply(opts...)
+			return prepareStoreWithTestBlocks(t, b, cfg)
 		}
 		runTest(t, factory)
 	})

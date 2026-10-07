@@ -1083,6 +1083,9 @@ func TestObservations(t *testing.T) {
 	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
 	require.Equal(t, 65, int(sched.jobs.epoch))
 
+	require.Equal(t, 4.0, promtest.ToFloat64(sched.metrics.startupJobsSkipped),
+		"3 jobs after ingest/8's gap and 1 after ingest/9's, excluding ingest/2's already-committed job")
+
 	// Verify that the same set of updates can be sent now that we're out of
 	// observation mode, and that offsets are not changed.
 	sendUpdates()

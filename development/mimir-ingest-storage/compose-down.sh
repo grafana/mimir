@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # newer compose is a subcommand of `docker`, not a hyphenated standalone command

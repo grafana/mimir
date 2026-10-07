@@ -44,8 +44,8 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
 			# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
-			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
-			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",lane="compaction"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",lane="compaction"} %g
 		`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 	}
 
@@ -187,10 +187,9 @@ func newTestScheduler(t *testing.T, bkt objstore.Bucket, cfg Config) (*Scheduler
 	t.Helper()
 
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
 	compactorCfg := compactor.Config{CompactionWaitPeriod: 15 * time.Minute}
 
-	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, metrics, log.NewNopLogger())
+	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -1071,6 +1071,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
+	// One flag gates both halves of the in-flight metrics, so push it into each component.
+	t.Cfg.Frontend.Handler.MaxInflightMetricsEnabled = t.Cfg.Frontend.MaxInflightMetricsEnabled
+	t.Cfg.Frontend.FrontendV2.MaxInflightMetricsEnabled = t.Cfg.Frontend.MaxInflightMetricsEnabled
+
 	// If the query-frontend is running in the same process as the query-scheduler and
 	// the query-scheduler hasn't been explicitly configured, Mimir will default to trying
 	// to connect to a scheduler on localhost on its own gRPC listening port.
@@ -1811,6 +1815,7 @@ func (t *Mimir) initReadcache() (services.Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "readcache init")
 	}
+	r.SetInstanceRing(t.ReadcacheInstanceRing)
 	t.Readcache = r
 	t.API.RegisterReadcache(r)
 	t.API.RegisterReadcacheLifecycle(http.HandlerFunc(r.PrepareInstanceRingDownscaleHandler))

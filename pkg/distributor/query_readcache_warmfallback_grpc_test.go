@@ -224,8 +224,9 @@ func TestQueryIngesterStream_StillWarmingFallback(t *testing.T) {
 			oldOwnerID: {{InstanceID: oldA, Zone: "zone-a"}, {InstanceID: oldB, Zone: "zone-b"}},
 		}
 		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(leases(now)), replicaMap)
-
-		set := readcacheReplicationSetForOwner(replicaMap, partition, newOwnerID, false)
+		view, ok := d.currentReadcacheSlotView()
+		require.True(t, ok)
+		set := readcacheReplicationSetForOwner(view, true, partition, newOwnerID, false)
 		partitionByInstance := map[string]int32{}
 		for _, inst := range set.Instances {
 			partitionByInstance[inst.Id] = partition
@@ -249,8 +250,9 @@ func TestQueryIngesterStream_StillWarmingFallback(t *testing.T) {
 			oldOwnerID: {{InstanceID: oldA, Zone: "zone-a"}, {InstanceID: oldB, Zone: "zone-b"}},
 		}
 		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(leases(now)), replicaMap)
-
-		set := readcacheReplicationSetForOwner(replicaMap, partition, newOwnerID, false)
+		view, ok := d.currentReadcacheSlotView()
+		require.True(t, ok)
+		set := readcacheReplicationSetForOwner(view, true, partition, newOwnerID, false)
 		partitionByInstance := map[string]int32{}
 		for _, inst := range set.Instances {
 			partitionByInstance[inst.Id] = partition

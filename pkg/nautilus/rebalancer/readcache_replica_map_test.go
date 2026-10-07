@@ -105,10 +105,9 @@ func TestPlacementReadcacheInstances_StickyVsLegacy(t *testing.T) {
 	})
 }
 
-// TestRefreshReplicaMap covers both directions of the DesiredReplicas
-// switch: building the map from the ring (or the static pin list) and
-// clearing it back to identity.
-func TestRefreshReplicaMap(t *testing.T) {
+// TestRefreshSlotView groups the ring by parsed slot. The grouping is
+// local to this process; the assignment stream does not carry it.
+func TestRefreshSlotView(t *testing.T) {
 	newRebalancer := func(desired int, ringMembers ...ring.InstanceDesc) *Rebalancer {
 		r := &Rebalancer{
 			logger:         log.NewNopLogger(),
@@ -126,7 +125,9 @@ func TestRefreshReplicaMap(t *testing.T) {
 			ring.InstanceDesc{Id: "readcache-zone-a-0", Zone: "zone-a"},
 			ring.InstanceDesc{Id: "readcache-zone-a-1", Zone: "zone-a"},
 		)
-		m := r.refreshReplicaMap()
+		require.True(t, r.refreshSlotView())
+		m, ok := r.slotReplicaMap()
+		require.True(t, ok)
 		assert.Equal(t, []readcacheassignment.Replica{
 			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
 			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
@@ -134,19 +135,27 @@ func TestRefreshReplicaMap(t *testing.T) {
 		assert.Equal(t, []readcacheassignment.Replica{
 			{InstanceID: "readcache-zone-a-1", Zone: "zone-a"},
 		}, m["readcache-1"])
-		assert.True(t, m.Equal(r.readcacheStore.getReplicaMap()), "the map must be published on the store")
+		assert.Empty(t, r.readcacheStore.getReplicaMap(), "the grouping is not published on the assignment stream")
 	})
 
-	t.Run("desired slots with no live mirror still get an entry", func(t *testing.T) {
+	t.Run("desired slots with no live mirror are empty in the placement map", func(t *testing.T) {
 		r := newRebalancer(3, ring.InstanceDesc{Id: "readcache-zone-a-0", Zone: "zone-a"})
-		m := r.refreshReplicaMap()
+		require.True(t, r.refreshSlotView())
+		m, ok := r.slotReplicaMap()
+		require.True(t, ok)
 		require.Contains(t, m, "readcache-2")
 		assert.Empty(t, m["readcache-2"])
+		view, ok := r.currentSlotView()
+		require.True(t, ok)
+		_, found := view.Pods("readcache-2")
+		assert.False(t, found, "the dial view does not invent a pod for an empty slot")
 	})
 
 	t.Run("zone is recovered from the instance name when the ring omits it", func(t *testing.T) {
 		r := newRebalancer(1, ring.InstanceDesc{Id: "readcache-zone-a-0"})
-		m := r.refreshReplicaMap()
+		require.True(t, r.refreshSlotView())
+		m, ok := r.slotReplicaMap()
+		require.True(t, ok)
 		assert.Equal(t, []readcacheassignment.Replica{
 			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
 		}, m["readcache-0"])
@@ -155,21 +164,23 @@ func TestRefreshReplicaMap(t *testing.T) {
 	t.Run("static pin list wins over the ring", func(t *testing.T) {
 		r := newRebalancer(1, ring.InstanceDesc{Id: "readcache-zone-a-0", Zone: "zone-a"})
 		r.cfg.ReadcacheSlicer.Instances = flagext.StringSliceCSV{"readcache-zone-b-0"}
-		m := r.refreshReplicaMap()
+		require.True(t, r.refreshSlotView())
+		m, ok := r.slotReplicaMap()
+		require.True(t, ok)
 		assert.Equal(t, []readcacheassignment.Replica{
 			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
 		}, m["readcache-0"])
 	})
 
-	t.Run("DesiredReplicas=0 clears the map back to identity", func(t *testing.T) {
-		r := newRebalancer(2,
+	t.Run("RF=1 still groups healthy pods and publishes nothing", func(t *testing.T) {
+		r := newRebalancer(0,
 			ring.InstanceDesc{Id: "readcache-zone-a-0", Zone: "zone-a"},
 			ring.InstanceDesc{Id: "readcache-zone-b-0", Zone: "zone-b"},
 		)
-		require.NotEmpty(t, r.refreshReplicaMap())
-
-		r.cfg.ReadcacheSlicer.DesiredReplicas = 0
-		assert.Nil(t, r.refreshReplicaMap())
+		require.True(t, r.refreshSlotView())
+		m, ok := r.slotReplicaMap()
+		require.True(t, ok)
+		assert.NotEmpty(t, m)
 		assert.Empty(t, r.readcacheStore.getReplicaMap())
 	})
 }
@@ -216,6 +227,13 @@ func TestExcludeLogicalTargetsFromConcreteFailures(t *testing.T) {
 		withEmpty["readcache-2"] = nil
 		got := excludeLogicalTargetsFromConcreteFailures(
 			map[string]struct{}{"readcache-zone-a-0": {}}, withEmpty, healthy)
+		assert.Equal(t, map[string]struct{}{"readcache-2": {}}, got)
+	})
+
+	t.Run("a fully down slot is excluded when no stats call failed", func(t *testing.T) {
+		withEmpty := replicaMap.Clone()
+		withEmpty["readcache-2"] = nil
+		got := excludeLogicalTargetsFromConcreteFailures(nil, withEmpty, healthy)
 		assert.Equal(t, map[string]struct{}{"readcache-2": {}}, got)
 	})
 
@@ -327,9 +345,10 @@ func TestReadcacheLogStore_SetReplicaMapRebroadcasts(t *testing.T) {
 	})
 }
 
-// TestReadcacheUpdateToProto_CarriesReplicaMap checks the last hop
-// between the store and the wire.
-func TestReadcacheUpdateToProto_CarriesReplicaMap(t *testing.T) {
+// TestReadcacheUpdateToProto_OmitsReplicaMap checks that the assignment
+// stream no longer carries the slot expansion. Queriers group the ring
+// themselves.
+func TestReadcacheUpdateToProto_OmitsReplicaMap(t *testing.T) {
 	u := readcacheUpdate{
 		entries: []readcacheassignment.LogEntry{
 			{PartitionID: 0, InstanceID: "readcache-0", From: time.Unix(1, 0), To: time.Unix(300, 0)},
@@ -339,11 +358,6 @@ func TestReadcacheUpdateToProto_CarriesReplicaMap(t *testing.T) {
 			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
 		}},
 	}
-	resp := readcacheUpdateToProto(u)
-	require.Len(t, resp.ReplicaSets, 1)
-	assert.Equal(t, "readcache-0", resp.ReplicaSets[0].LogicalId)
-	assert.Equal(t, []ReadcacheReplica{{InstanceId: "readcache-zone-a-0", Zone: "zone-a"}}, resp.ReplicaSets[0].Replicas)
-
-	assert.Nil(t, readcacheUpdateToProto(readcacheUpdate{entries: u.entries}).ReplicaSets,
-		"RF=1 updates must not carry replica sets")
+	assert.Nil(t, readcacheUpdateToProto(u).ReplicaSets)
+	assert.Nil(t, readcacheUpdateToProto(readcacheUpdate{entries: u.entries}).ReplicaSets)
 }

@@ -169,7 +169,7 @@ func templateDataForTests(t *testing.T, tmpl *template.Template) *template.Data 
 
 	eurl, _ := url.Parse("http://localhost:9090")
 	tmpl.ExternalURL = eurl // This is done externally, by the system using the templates.
-	return tmpl.Data("receiver", model.LabelSet{}, "", &alert.Alert{
+	return tmpl.Data("receiver", model.LabelSet{}, model.LabelSet{}, "", &alert.Alert{
 		Alert: model.Alert{
 			GeneratorURL: "http://localhost:9090",
 		},

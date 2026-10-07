@@ -80,6 +80,22 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_wal_writes_failed_total counter
 			cortex_ingester_tsdb_wal_writes_failed_total 1486965
 
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds Duration of TSDB out-of-order WBL fsync.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds summary
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.5"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.9"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.99"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds_sum 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds_count 3
+
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total Total number of TSDB out-of-order WBL page flushes.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total counter
+			cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total 198262
+
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes Size of the TSDB out-of-order WBL directory.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes gauge
+			cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes 6344384
+
 			# HELP cortex_ingester_tsdb_head_truncations_failed_total Total number of TSDB head truncations that failed.
 			# TYPE cortex_ingester_tsdb_head_truncations_failed_total counter
 			cortex_ingester_tsdb_head_truncations_failed_total 2.775668e+06
@@ -328,6 +344,22 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_wal_writes_failed_total counter
 			cortex_ingester_tsdb_wal_writes_failed_total 1486965
 
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds Duration of TSDB out-of-order WBL fsync.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds summary
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.5"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.9"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds{quantile="0.99"} 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds_sum 30
+			cortex_ingester_tsdb_out_of_order_wbl_fsync_duration_seconds_count 3
+
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total Total number of TSDB out-of-order WBL page flushes.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total counter
+			cortex_ingester_tsdb_out_of_order_wbl_page_flushes_total 198262
+
+			# HELP cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes Size of the TSDB out-of-order WBL directory.
+			# TYPE cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes gauge
+			cortex_ingester_tsdb_out_of_order_wbl_storage_size_bytes 6280448
+
 			# HELP cortex_ingester_tsdb_head_truncations_failed_total Total number of TSDB head truncations that failed.
 			# TYPE cortex_ingester_tsdb_head_truncations_failed_total counter
 			cortex_ingester_tsdb_head_truncations_failed_total 2.775668e+06
@@ -568,6 +600,25 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of WAL writes that failed.",
 	})
 	writesFailed.Add(15 * base)
+
+	wblFsyncDuration := promauto.With(r).NewSummary(prometheus.SummaryOpts{
+		Name:       "prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds",
+		Help:       "Duration of write log fsync.",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+	})
+	wblFsyncDuration.Observe(10)
+
+	wblPageFlushes := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_out_of_order_wbl_page_flushes_total",
+		Help: "Total number of page flushes.",
+	})
+	wblPageFlushes.Add(2 * base)
+
+	wblStorageSize := promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_out_of_order_wbl_storage_size_bytes",
+		Help: "Size of the write log directory.",
+	})
+	wblStorageSize.Set(64 * base)
 
 	checkpointDeleteFail := promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_checkpoint_deletions_failed_total",

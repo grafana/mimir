@@ -26,6 +26,9 @@ type TSDBMetrics struct {
 	tsdbWALTruncateDuration           *prometheus.Desc
 	tsdbWALCorruptionsTotal           *prometheus.Desc
 	tsdbWALWritesFailed               *prometheus.Desc
+	tsdbWblFsyncDuration              *prometheus.Desc
+	tsdbWblPageFlushes                *prometheus.Desc
+	tsdbWblStorageSize                *prometheus.Desc
 	tsdbHeadTruncateFail              *prometheus.Desc
 	tsdbHeadTruncateTotal             *prometheus.Desc
 	tsdbHeadGcDuration                *prometheus.Desc
@@ -115,6 +118,18 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 		tsdbWALWritesFailed: prometheus.NewDesc(
 			"tsdb_wal_writes_failed_total",
 			"Total number of TSDB WAL writes that failed.",
+			nil, nil),
+		tsdbWblFsyncDuration: prometheus.NewDesc(
+			"tsdb_out_of_order_wbl_fsync_duration_seconds",
+			"Duration of TSDB out-of-order WBL fsync.",
+			nil, nil),
+		tsdbWblPageFlushes: prometheus.NewDesc(
+			"tsdb_out_of_order_wbl_page_flushes_total",
+			"Total number of TSDB out-of-order WBL page flushes.",
+			nil, nil),
+		tsdbWblStorageSize: prometheus.NewDesc(
+			"tsdb_out_of_order_wbl_storage_size_bytes",
+			"Size of the TSDB out-of-order WBL directory.",
 			nil, nil),
 		tsdbHeadTruncateFail: prometheus.NewDesc(
 			"tsdb_head_truncations_failed_total",
@@ -292,6 +307,9 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbWALTruncateDuration
 	out <- sm.tsdbWALCorruptionsTotal
 	out <- sm.tsdbWALWritesFailed
+	out <- sm.tsdbWblFsyncDuration
+	out <- sm.tsdbWblPageFlushes
+	out <- sm.tsdbWblStorageSize
 	out <- sm.tsdbHeadTruncateFail
 	out <- sm.tsdbHeadTruncateTotal
 	out <- sm.tsdbHeadGcDuration
@@ -348,6 +366,9 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfSummaries(out, sm.tsdbWALTruncateDuration, "prometheus_tsdb_wal_truncate_duration_seconds")
 	data.SendSumOfCounters(out, sm.tsdbWALCorruptionsTotal, "prometheus_tsdb_wal_corruptions_total")
 	data.SendSumOfCounters(out, sm.tsdbWALWritesFailed, "prometheus_tsdb_wal_writes_failed_total")
+	data.SendSumOfSummaries(out, sm.tsdbWblFsyncDuration, "prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds")
+	data.SendSumOfCounters(out, sm.tsdbWblPageFlushes, "prometheus_tsdb_out_of_order_wbl_page_flushes_total")
+	data.SendSumOfGauges(out, sm.tsdbWblStorageSize, "prometheus_tsdb_out_of_order_wbl_storage_size_bytes")
 	data.SendSumOfCounters(out, sm.tsdbHeadTruncateFail, "prometheus_tsdb_head_truncations_failed_total")
 	data.SendSumOfCounters(out, sm.tsdbHeadTruncateTotal, "prometheus_tsdb_head_truncations_total")
 	data.SendSumOfSummaries(out, sm.tsdbHeadGcDuration, "prometheus_tsdb_head_gc_duration_seconds")

@@ -520,7 +520,12 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 // TestQuerySplitting_DuplicateAboveSplitFunctionCall verifies that a shared, split range vector function has its
 // Duplicate injected above the SplitFunctionCall.
 func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
-	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	// Propagate matchers is disabled so this test isolates SSE: otherwise a="1" from the LHS would be
+	// cross-propagated into the RHS rate(foo[3h]) selector, making both sides identical and removing
+	// the DuplicateFilter/subset structure this test checks.
+	opts := defaultSplittingOpts()
+	opts.EnablePropagateMatchers = false
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	buildPlan := func(t *testing.T, expr string) *planning.QueryPlan {
@@ -577,7 +582,12 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	backend, eng := setupEngineAndCache(t)
+	// Propagate matchers is disabled so this test isolates SSE: otherwise code!="err" from the
+	// histogram_fraction side would be cross-propagated into the histogram_count side, changing
+	// the broad selector's post-optimization matchers and cache key.
+	opts := defaultSplittingOpts()
+	opts.EnablePropagateMatchers = false
+	backend, eng := setupEngineAndCacheWithOpts(t, opts)
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
 	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
@@ -664,8 +674,11 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	expr := `sum_over_time(some_metric{env="prod", region="us"}[5h]) / sum_over_time(some_metric{env="prod"}[5h])`
 
 	// Without SSE: each MatrixSelector keeps its full matchers, so cache keys are just the matchers.
+	// Propagate matchers is disabled so this test isolates SSE: otherwise region="us" from the narrow
+	// selector would be cross-propagated into the broad selector, changing its post-optimization matchers.
 	withoutSSE := defaultSplittingOpts()
 	withoutSSE.EnableSubsetSelectorElimination = false
+	withoutSSE.EnablePropagateMatchers = false
 	backendNoSSE, engineNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
 
 	result, _ := runInstantQuery(t, engineNoSSE, promStorage, expr, ts)
@@ -707,6 +720,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	// MatrixSelector, so there is one cache entry keyed by that broad (subset-aware) selector.
 	withSSE := defaultSplittingOpts()
 	withSSE.EnableSubsetSelectorElimination = true
+	withSSE.EnablePropagateMatchers = false
 	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
 
 	result, _ = runInstantQuery(t, engineSSE, promStorage, expr, ts)
@@ -1011,6 +1025,60 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
+}
+
+func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
+	opts := defaultSplittingOpts()
+
+	baseT := timestamp.Time(0)
+	fixedNow := baseT.Add(12 * time.Hour)
+	opts.TimeNow = func() time.Time { return fixedNow }
+
+	backend := caching.NewInMemoryCache()
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	require.NoError(t, err)
+
+	storageInstance := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, storageInstance.Close()) })
+
+	ctx := context.Background()
+	app := storageInstance.Appender(ctx)
+	// Seed hourly data through fixedNow.
+	for i := 0; i <= 12; i++ {
+		sampleTs := timestamp.FromTime(baseT.Add(time.Duration(i) * time.Hour))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), sampleTs, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// The -2h offset makes the subquery steps at 8h through 12h read data at 10h through 14h.
+	expr := "sum_over_time((test_metric offset -2h)[5h:1h])"
+	ts := fixedNow
+
+	// Only 10h through 12h exist, and only the split reading 10h and 11h is safe to cache.
+	result1, statsRes1, ranges1 := executeQuery(t, mimirEngine, storageInstance, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 33, "env", "prod"), result1)
+	verifyEvaluationStats(t, statsRes1, 3, 3)
+	require.Len(t, ranges1, 2)
+	verifyCacheStats(t, backend, 1, 0, 1)
+
+	// Add data in the uncacheable range after the first execution.
+	app = storageInstance.Appender(ctx)
+	newSampleTs := timestamp.FromTime(baseT.Add(14 * time.Hour))
+	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), newSampleTs, 999.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// The cached split is reused, while the uncacheable split is re-read and observes the new sample.
+	result2, statsRes2, ranges2 := executeQuery(t, mimirEngine, storageInstance, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 33+999, "env", "prod"), result2)
+	verifyEvaluationStats(t, statsRes2, 4, 4)
+	require.Len(t, ranges2, 1)
+	verifyCacheStats(t, backend, 2, 1, 1)
 }
 
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
@@ -1514,6 +1582,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	opts.CommonOpts.Reg = registry
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
@@ -1599,6 +1668,7 @@ func defaultSplittingOpts() streamingpromql.EngineOpts {
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	return opts
 }
 

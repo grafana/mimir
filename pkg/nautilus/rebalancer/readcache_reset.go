@@ -96,10 +96,10 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	// Use the same padded lookahead as the round paths so a reset
 	// does not leave a shorter successor runway than a normal tick.
 	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.readcacheLeaseLookahead(), r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
-	// Publish the logical->concrete expansion alongside the new leases
-	// so subscribers can resolve the logical IDs the reset just wrote
-	// without waiting for the next rebalance round.
-	r.refreshReplicaMap()
+	// Refresh the local slot view so this process can expand the
+	// logical IDs the reset just wrote. Queriers read the ring
+	// themselves; the assignment stream no longer carries the map.
+	r.refreshSlotView()
 
 	// Reflect the reset in the slicer's cooldown bookkeeping so the
 	// next slicer round (if enabled) does not immediately try to

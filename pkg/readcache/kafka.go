@@ -84,10 +84,38 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 		return nil
 	}
 
-	// Serialize with CompactHead and ApplyConfig on this partition TSDB.
-	// Kafka ingest may use parallel pusher shards (ingestion-concurrency-max).
-	db.tsdbMut.Lock()
-	defer db.tsdbMut.Unlock()
+	err = p.appendToOpenTSDB(ctx, req, userID, db)
+	if errors.Is(err, errTSDBClosed) {
+		// Idle close dropped this pointer. The partition reader retries
+		// a failed push; re-resolve once so a replacement TSDB, if it
+		// is already open, takes the batch on this attempt.
+		db, err = p.rc.getOrOpenTSDB(userID, p.partitionID)
+		if err != nil {
+			return errors.Wrap(err, "opening partition TSDB")
+		}
+		if db == nil {
+			return nil
+		}
+		err = p.appendToOpenTSDB(ctx, req, userID, db)
+	}
+	return err
+}
+
+func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.WriteRequest, userID string, db *partitionTSDB) error {
+	tracked, err := db.beginAppend(req.MinTimestamp())
+	if err != nil {
+		return err
+	}
+	defer db.endAppend(tracked)
+
+	// Serialize with ApplyConfig and Close. Regular compaction does not
+	// take this lock. Kafka ingest may use parallel pusher shards
+	// (ingestion-concurrency-max).
+	unlock := db.lockForMutation(tsdbMutationAppend)
+	defer unlock()
+	if db.IsClosed() {
+		return errTSDBClosed
+	}
 
 	app := db.Appender(ctx).(ingester.ExtendedAppender)
 	res := ingester.PushWriteRequestTimeseries(ctx, ingester.WriteRequestTimeseriesPush{
@@ -107,6 +135,7 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	if res.Err != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.Err)
 	}
+	db.touchLastAppend(time.Now())
 	// Count what landed in the head (float samples + native
 	// histograms). PushWriteRequestTimeseries internally rejects
 	// individual sample-level errors via FirstPartialErr; res.Err

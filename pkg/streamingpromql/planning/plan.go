@@ -99,7 +99,16 @@ const QueryPlanV18 = QueryPlanVersion(18)
 // QueryPlanV19 introduces support for deduplicating scalar expressions.
 const QueryPlanV19 = QueryPlanVersion(19)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV19
+// QueryPlanV20 introduces support for the fill_left and fill_right modifiers in binary expressions.
+// Queriers that do not support this version would silently ignore the fill modifier and produce
+// incorrect results.
+const QueryPlanV20 = QueryPlanVersion(20)
+
+// QueryPlanV21 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node
@@ -117,6 +126,10 @@ type QueryParameters struct {
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
 	LookbackDelta            time.Duration
+
+	// CacheDisabled reflects the request's Cache-Control: no-store option, carried in the plan so the
+	// querier's splitting/caching passes can honour it.
+	CacheDisabled bool
 }
 
 // Node represents a node in the query plan graph.
@@ -297,6 +310,10 @@ type SplitNode interface {
 	IsSplittable() bool
 
 	GetRangeParams() RangeParams
+
+	// QueriedTimeRangeWithSubRange returns the range of data queried from ingesters and store-gateways when this node
+	// is evaluated with overrideRangeParams instead of its original range parameters.
+	QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams RangeParams, lookbackDelta time.Duration) (QueriedTimeRange, error)
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.
@@ -318,6 +335,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
+		CacheDisabled:            p.Parameters.CacheDisabled,
 		Version:                  p.Version,
 	}
 
@@ -474,6 +492,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
+		CacheDisabled:            p.CacheDisabled,
 	}
 }
 

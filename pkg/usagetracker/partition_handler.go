@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -120,6 +121,7 @@ func newPartitionHandler(
 	snapshotsKafkaWriter *kgo.Client,
 	snapshotsBucket objstore.InstrumentedBucket,
 	lim limiter,
+	newShard tenantshard.Factory,
 	logger log.Logger,
 	registerer prometheus.Registerer,
 ) (*partitionHandler, error) {
@@ -208,7 +210,7 @@ func newPartitionHandler(
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup)
+	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup, newShard)
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }

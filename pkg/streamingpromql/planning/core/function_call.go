@@ -9,12 +9,14 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -74,6 +76,19 @@ func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer 
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
+	if f.Function == functions.FUNCTION_INFO && len(f.Args) == 2 {
+		// Pin the data label selector to the first argument's @/offset (mirroring Prometheus's
+		// infoSelectHints), but only when the vector paths share one reference; otherwise leave the
+		// per-step default. Done here, not in the operator factory, where nested selectors aren't
+		// reachable.
+		if dataLabelSelector, ok := children[1].(*functions.DataLabelSelector); ok {
+			if ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0]); uniform {
+				dataLabelSelector.Selector.Timestamp = TimestampFromTime(ts)
+				dataLabelSelector.Selector.Offset = offset.Milliseconds()
+			}
+		}
+	}
+
 	o, err := fnc.OperatorFactory(children, absentLabels, params, f.GetExpressionPosition().ToPrometheusType(), timeRange)
 	if err != nil {
 		return nil, err
@@ -93,7 +108,18 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	timeRange := planning.NoDataQueried()
 
-	for _, arg := range f.Args {
+	for i, arg := range f.Args {
+		if f.Function == functions.FUNCTION_INFO && i == 1 {
+			// The info data label selector is evaluated as a vector selector at the @ timestamp and
+			// offset derived from the first argument (which MaterializeFunctionCall applies to the
+			// operator). Reflect that here so the queried range covers the info series' lookback
+			// window at the pinned time. A range-selector first argument does not contribute that
+			// window itself, so using the selector's own evaluation-time range would miss the info
+			// series when routing remote-execution requests.
+			timeRange = timeRange.Union(f.infoSeriesQueriedTimeRange(queryTimeRange, lookbackDelta))
+			continue
+		}
+
 		argTimeRange, err := arg.QueriedTimeRange(queryTimeRange, lookbackDelta)
 		if err != nil {
 			return planning.NoDataQueried(), err
@@ -103,6 +129,18 @@ func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, loo
 	}
 
 	return timeRange, nil
+}
+
+// infoSeriesQueriedTimeRange returns the time range over which the info function selects its info
+// series. Like MaterializeFunctionCall, it pins to the first argument's @/offset only when the
+// vector paths share one reference, so the advertised range matches the operator's fetch.
+func (f *FunctionCall) infoSeriesQueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0])
+	if !uniform {
+		ts, offset = nil, 0
+	}
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(ts), 0, offset.Milliseconds(), lookbackDelta, false, false)
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
 }
 
 func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {

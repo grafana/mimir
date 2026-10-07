@@ -264,6 +264,20 @@ func TestReadcache_QueryStream_QueryLoadAttribution(t *testing.T) {
 	assert.Equal(t, float64(2*p0Samples+p1Samples), qs.Histogram.GetSampleSum(),
 		"cortex_readcache_queried_samples sum must equal the total streamed samples")
 
+	var selectedSeries, returnedSeries, selectedTSDBs, returnedChunks dto.Metric
+	require.NoError(t, rc.queryStreamSeries.WithLabelValues(queryStreamSeriesStageSelected).(prometheus.Metric).Write(&selectedSeries))
+	require.NoError(t, rc.queryStreamSeries.WithLabelValues(queryStreamSeriesStageReturned).(prometheus.Metric).Write(&returnedSeries))
+	require.NoError(t, rc.queryStreamTSDBs.Write(&selectedTSDBs))
+	require.NoError(t, rc.queryStreamChunks.Write(&returnedChunks))
+	assert.Equal(t, uint64(4), selectedSeries.Histogram.GetSampleCount())
+	assert.Equal(t, float64(3), selectedSeries.Histogram.GetSampleSum())
+	assert.Equal(t, uint64(4), returnedSeries.Histogram.GetSampleCount())
+	assert.Equal(t, float64(3), returnedSeries.Histogram.GetSampleSum())
+	assert.Equal(t, uint64(4), selectedTSDBs.Histogram.GetSampleCount())
+	assert.Equal(t, float64(5), selectedTSDBs.Histogram.GetSampleSum())
+	assert.Equal(t, uint64(4), returnedChunks.Histogram.GetSampleCount())
+	assert.Equal(t, float64(3), returnedChunks.Histogram.GetSampleSum())
+
 	// Advance the EWMAs once (the background loop ticks every 15s,
 	// far beyond this test's lifetime). With init=false the first
 	// tick sets lastRate = accumulated / TickInterval.
@@ -378,6 +392,16 @@ func TestReadcache_QueryStream_GlobalSortsAndDeduplicatesLabelsAcrossPartitions(
 	require.Equal(t, []string{"series_a", "series_z"}, gotLabels)
 	require.Len(t, gotChunkCounts, 2)
 	assert.GreaterOrEqual(t, gotChunkCounts[1], int64(2), "duplicate labelset should carry chunks from both partitions")
+
+	var selectedSeries, returnedSeries dto.Metric
+	require.NoError(t, rc.queryStreamSeries.WithLabelValues(queryStreamSeriesStageSelected).(prometheus.Metric).Write(&selectedSeries))
+	require.NoError(t, rc.queryStreamSeries.WithLabelValues(queryStreamSeriesStageReturned).(prometheus.Metric).Write(&returnedSeries))
+	assert.Equal(t, uint64(1), selectedSeries.Histogram.GetSampleCount())
+	assert.Equal(t, float64(3), selectedSeries.Histogram.GetSampleSum(),
+		"selected stage must include duplicate labelsets from separate physical TSDBs")
+	assert.Equal(t, uint64(1), returnedSeries.Histogram.GetSampleCount())
+	assert.Equal(t, float64(2), returnedSeries.Histogram.GetSampleSum(),
+		"returned stage must reflect labelset coalescing")
 }
 
 // TestReadcache_QueryStream_NoInRangeSamples covers a series whose

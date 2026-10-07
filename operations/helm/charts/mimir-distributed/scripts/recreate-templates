@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 declare -A COMPONENTARGS
 COMPONENTARGS["admin-api"]="-e -g"

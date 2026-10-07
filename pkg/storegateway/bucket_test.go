@@ -27,13 +27,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -66,7 +63,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -307,6 +303,16 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 }
 
 func TestBlockLabelNames(t *testing.T) {
+	testBlockLabelNames(t, indexheader.Config{})
+}
+
+// TestBlockLabelNames_IndexHeaderBucketReader repeats TestBlockLabelNames
+// with the experimental index-header bucket reader path.
+func TestBlockLabelNames_IndexHeaderBucketReader(t *testing.T) {
+	testBlockLabelNames(t, indexHeaderBucketReaderConfig())
+}
+
+func testBlockLabelNames(t *testing.T, headerCfg indexheader.Config) {
 	const series = 500
 
 	allLabelNames := []string{"i", "n", "j", "p", "q", "r", "s", "t"}
@@ -322,7 +328,7 @@ func TestBlockLabelNames(t *testing.T) {
 
 	tb := test.NewTB(t)
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -502,11 +508,21 @@ func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, o
 }
 
 func TestBlockLabelValues(t *testing.T) {
+	testBlockLabelValues(t, indexheader.Config{})
+}
+
+// TestBlockLabelValues_IndexHeaderBucketReader repeats TestBlockLabelValues
+// with the experimental index-header bucket reader path.
+func TestBlockLabelValues_IndexHeaderBucketReader(t *testing.T) {
+	testBlockLabelValues(t, indexHeaderBucketReaderConfig())
+}
+
+func testBlockLabelValues(t *testing.T, headerCfg indexheader.Config) {
 	const series = 100_000
 
 	tb := test.NewTB(t)
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -764,11 +780,21 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
+	testBucketIndexReaderExpandedPostings(t, indexheader.Config{})
+}
+
+// TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader repeats TestBucketIndexReader_ExpandedPostings
+// with the experimental index-header bucket reader path.
+func TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader(t *testing.T) {
+	testBucketIndexReaderExpandedPostings(t, indexHeaderBucketReaderConfig())
+}
+
+func testBucketIndexReaderExpandedPostings(t *testing.T, headerCfg indexheader.Config) {
 	tb := test.NewTB(t)
 	const series = 50000
 
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy cases", func(t *testing.T) {
 		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
@@ -1377,7 +1403,23 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) func() *bucketBlock {
+// indexHeaderBucketReaderConfig returns an indexheader.Config
+// which enables the experimental index-header bucket reader path.
+func indexHeaderBucketReaderConfig() indexheader.Config {
+	return indexheader.Config{
+		BucketReader: indexheader.BucketReaderConfig{
+			Enabled:             true,
+			BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
+		},
+	}
+}
+
+func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, headerCfg ...indexheader.Config) func() *bucketBlock {
+	var cfg indexheader.Config
+	if len(headerCfg) > 0 {
+		cfg = headerCfg[0]
+	}
+
 	return func() *bucketBlock {
 		var chunkObjects []string
 		err := testBlock.InstrBkt.Iter(
@@ -1388,7 +1430,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			})
 		require.NoError(tb, err)
 
-		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), cfg, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		require.NoError(tb, err)
 
 		return &bucketBlock{
@@ -2218,72 +2260,6 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	}
 }
 
-func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	bktDir := filepath.Join(tmpDir, "bkt")
-	bkt, err := filesystem.NewBucket(bktDir)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
-
-	var (
-		logger   = log.NewNopLogger()
-		instrBkt = objstore.WithNoopInstr(bkt)
-	)
-
-	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
-	assert.NoError(t, err)
-
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{}, nil, logger)
-	assert.NoError(t, err)
-
-	store, err := NewBucketStore(
-		"test",
-		instrBkt,
-		newTestBucketIndexMetadataReader(t, bkt, "test"),
-		fetcher,
-		tmpDir,
-		mimir_tsdb.BucketStoreConfig{
-			StreamingBatchSize:          5000,
-			BlockSyncConcurrency:        10,
-			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			IndexHeader: indexheader.Config{
-				LazyLoadingEnabled:     false,
-				LazyLoadingIdleTimeout: 0,
-			},
-		},
-		selectAllStrategy{},
-		newStaticChunksLimiterFactory(100),
-		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
-		hashcache.NewSeriesHashCache(1024*1024),
-		NewBucketStoreMetrics(nil),
-		WithLogger(logger),
-		WithIndexCache(indexCache),
-	)
-	assert.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
-	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
-
-	assert.NoError(t, store.SyncBlocks(context.Background()))
-
-	// Create a request with invalid hints (uses response hints instead of request hints).
-	req := &storepb.SeriesRequest{
-		MinTime: 0,
-		MaxTime: 3,
-		Matchers: []storepb.LabelMatcher{
-			{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-		},
-		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
-	}
-
-	srv := newStoreGatewayTestServer(t, store)
-	_, _, _, _, err = srv.Series(context.Background(), req)
-	assert.Error(t, err)
-	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
-}
-
 func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	tmpDir := t.TempDir()
 	bktDir := filepath.Join(tmpDir, "bkt")
@@ -2791,14 +2767,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	}
 }
 
-func mustMarshalAny(pb proto.Message) *types.Any {
-	out, err := types.MarshalAny(pb)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storeTestSeries, []*storeTestSeries, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
@@ -2972,11 +2940,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			labelNamesReq: &storepb.LabelNamesRequest{
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelNamesRequestHints{
+				RequestHints: &storepb.LabelNamesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				},
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
@@ -2989,11 +2957,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				Label: "ext1",
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelValuesRequestHints{
+				RequestHints: &storepb.LabelValuesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				},
 			},
 			expectedValues: []string{"1"},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{

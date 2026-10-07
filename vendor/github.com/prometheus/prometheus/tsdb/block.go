@@ -444,6 +444,14 @@ func (pb *Block) Close() error {
 	)
 }
 
+// LogValue returns the block's representation for logging.
+func (pb *Block) LogValue() slog.Value {
+	if pb == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(pb.String())
+}
+
 func (pb *Block) String() string {
 	return pb.meta.ULID.String()
 }

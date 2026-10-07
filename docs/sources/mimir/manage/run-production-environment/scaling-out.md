@@ -65,6 +65,8 @@ The rollout-operator is deployed by the Grafana Mimir Helm chart and is the reco
 
 If you’re managing ingesters manually, you can use GET, POST, or DELETE on the [HTTP API endpoint `/ingester/prepare-partition-downscale`](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/http-api/#prepare-partition-downscale) to prepare ingesters for downscaling instead of relying on the rollout-operator.
 
+The `/ingester/prepare-instance-ring-downscale` endpoint and the ingester read-only mode it controls are not available in ingest storage architecture. Calls to that endpoint fail with `405 Method Not Allowed`. Refer to [Scaling down ingesters in classic architecture](#scaling-down-ingesters-in-classic-architecture) for how that endpoint is used in classic architecture.
+
 ### Scaling down ingesters in classic architecture
 
 {{< admonition type="note" >}}
@@ -93,7 +95,7 @@ You might experience the following challenges when you scale down ingesters:
 
 Complete the following steps to scale down ingesters in any zone.
 
-1. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on each ingester to place it into read-only mode.
+1. Send a POST request to the [`/ingester/prepare-instance-ring-downscale`](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/http-api/#prepare-instance-ring-downscale) API endpoint on each ingester to place it into read-only mode. This endpoint is only available in classic architecture.
 1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
    - The configured `-querier.query-store-after` setting
    - Two times the configured `-blocks-storage.bucket-store.sync-interval` setting

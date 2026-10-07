@@ -300,6 +300,7 @@
 
     // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
     compactor_standalone_enabled: true,
+    compactor_standalone_summary_collapsed: $._config.compactor_scheduler_enabled,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,

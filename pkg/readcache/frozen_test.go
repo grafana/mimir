@@ -122,12 +122,13 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 // freeze/reap tests (no Kafka, no rings) rooted at cfg.DataDir.
 func newFrozenTestReadcache(cfg Config, limits *validation.Overrides) *Readcache {
 	return &Readcache{
-		logger:     log.NewNopLogger(),
-		cfg:        cfg,
-		limits:     limits,
-		partitions: map[int32]*partitionState{},
-		frozen:     map[int32][]*frozenEpoch{},
-		epochSeq:   map[int32]int{},
+		logger:      log.NewNopLogger(),
+		cfg:         cfg,
+		limits:      limits,
+		partitions:  map[int32]*partitionState{},
+		frozen:      map[int32][]*frozenEpoch{},
+		epochSeq:    map[int32]int{},
+		resumeEpoch: map[int32]int{},
 	}
 }
 
@@ -197,6 +198,7 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 	setup := func(t *testing.T, sampleTS int64) (Config, *validation.Overrides, string) {
 		cfg := newTestConfig(t, false, 0)
 		cfg.LocalBlockRetention = time.Hour
+		cfg.IngesterScheduleCompaction = true
 		limits := validation.NewOverrides(validation.Limits{}, nil)
 
 		// "Previous process": freeze one epoch, then drop it from
@@ -230,16 +232,16 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		assert.Equal(t, 1, r.epochSeq[pid],
 			"epochSeq must be seeded past the restored epoch so a re-acquisition can't collide with its dir")
 
-		// The restored slice is queryable again, with the pre-restart
-		// sample intact (it lived in the WAL: freezing does not
-		// compact the head).
+		// The restored slice is queryable again. Freeze flushes the head,
+		// so the sample is in a block: block min is the sample time and
+		// block max is exclusive.
 		hint := &client.QueryAttributionHint{PartitionId: pid}
 		dbs, err := r.listTSDBsForTenant(tenantID, hint)
 		require.NoError(t, err)
 		require.Len(t, dbs, 1, "restored frozen epoch must be queryable")
 		mn, mx := dbs[0].sampleBounds()
-		assert.Equal(t, sampleTS, mn, "the pre-restart sample must survive the WAL replay")
-		assert.Equal(t, sampleTS, mx)
+		assert.Equal(t, sampleTS, mn, "the pre-restart sample must survive the freeze flush")
+		assert.Equal(t, sampleTS+1, mx)
 
 		// Still kept at "now".
 		r.reapFrozenEpochs(time.Now())
@@ -296,10 +298,23 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 
 		r := newFrozenTestReadcache(cfg, limits)
 		r.restoreFrozenEpochsOnStartup(time.Now())
+		require.Empty(t, r.frozen[pid], "an unmarked dir stays live until the assignment gives the partition away")
+		require.Equal(t, 0, r.resumeEpoch[pid])
+
+		// This pod did not get the partition back.
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{})
 
 		require.Len(t, r.frozen[pid], 1)
 		assert.Equal(t, 1, r.epochSeq[pid])
+		_, stillResume := r.resumeEpoch[pid]
+		assert.False(t, stillResume, "freezing the unmarked epoch must not leave it as the next live epoch")
 		require.FileExists(t, filepath.Join(db.dir, frozenMarkerFilename))
+
+		r.partitionMu.Lock()
+		next, resumed := r.takeLiveEpoch(pid)
+		r.partitionMu.Unlock()
+		assert.False(t, resumed)
+		assert.Equal(t, 1, next, "a later add must open the next epoch, not the frozen directory")
 
 		dbs, err := r.listTSDBsForTenant(tenantID, &client.QueryAttributionHint{PartitionId: pid})
 		require.NoError(t, err)
@@ -307,6 +322,147 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		minT, maxT := dbs[0].sampleBounds()
 		assert.Equal(t, sampleTS, minT)
 		assert.Equal(t, sampleTS, maxT)
+	})
+
+	t.Run("unmarked live dir is reused when the partition stays owned", func(t *testing.T) {
+		cfg := newTestConfig(t, false, 0)
+		cfg.LocalBlockRetention = time.Hour
+		limits := validation.NewOverrides(validation.Limits{}, nil)
+
+		db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
+		app := db.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, db.Close())
+
+		r := newFrozenTestReadcache(cfg, limits)
+		r.restoreFrozenEpochsOnStartup(time.Now())
+
+		r.partitionMu.Lock()
+		epoch, resumed := r.takeLiveEpoch(pid)
+		p := newPartitionState(pid)
+		p.epoch = epoch
+		r.partitions[pid] = p
+		r.partitionMu.Unlock()
+		require.True(t, resumed)
+		require.Equal(t, 0, epoch)
+
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{pid: {}})
+		require.Empty(t, r.frozen[pid])
+		require.NoFileExists(t, filepath.Join(db.dir, frozenMarkerFilename))
+		// No append after the restart: the tenant must still be open.
+		require.Contains(t, p.tenants, tenantID)
+		require.False(t, p.tenants[tenantID].IsClosed())
+		p.warm.Store(true)
+		dbs, err := r.listTSDBsForTenant(tenantID, &client.QueryAttributionHint{PartitionId: pid})
+		require.NoError(t, err)
+		require.Len(t, dbs, 1)
+		minT, maxT := dbs[0].sampleBounds()
+		assert.Equal(t, sampleTS, minT)
+		assert.Equal(t, sampleTS, maxT)
+	})
+
+	t.Run("unmarked epoch older than a frozen epoch is not resumed", func(t *testing.T) {
+		cfg := newTestConfig(t, false, 0)
+		cfg.LocalBlockRetention = time.Hour
+		limits := validation.NewOverrides(validation.Limits{}, nil)
+		sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
+
+		oldDB, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		app := oldDB.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, oldDB.Close())
+
+		newDB, err := openPartitionTSDB(tenantID, pid, 1, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		app = newDB.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, writeFrozenMarkerData(newDB.dir, frozenMarker{
+			PartitionID: pid, Epoch: 1, MinT: sampleTS, MaxT: sampleTS, Tenant: tenantID,
+			StoppedConsumingAt: time.Now().UnixMilli(),
+		}))
+		require.NoError(t, newDB.Close())
+
+		r := newFrozenTestReadcache(cfg, limits)
+		r.restoreFrozenEpochsOnStartup(time.Now())
+		_, resume := r.resumeEpoch[pid]
+		assert.False(t, resume, "an older unmarked epoch must not become the live epoch")
+		require.GreaterOrEqual(t, r.epochSeq[pid], 2)
+
+		r.partitionMu.Lock()
+		epoch, resumed := r.takeLiveEpoch(pid)
+		p := newPartitionState(pid)
+		p.epoch = epoch
+		r.partitions[pid] = p
+		r.partitionMu.Unlock()
+		require.False(t, resumed)
+		require.Equal(t, 2, epoch)
+
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{pid: {}})
+		require.Len(t, r.frozen[pid], 2, "epoch 0 is frozen on assignment and epoch 1 was already frozen")
+		require.NotContains(t, p.tenants, tenantID)
+	})
+
+	t.Run("partially marked epoch is not resumed", func(t *testing.T) {
+		cfg := newTestConfig(t, false, 0)
+		cfg.LocalBlockRetention = time.Hour
+		limits := validation.NewOverrides(validation.Limits{}, nil)
+		sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
+		const otherTenant = "tenant-2"
+
+		marked, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		app := marked.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, writeFrozenMarkerData(marked.dir, frozenMarker{
+			PartitionID: pid, Epoch: 0, MinT: sampleTS, MaxT: sampleTS, Tenant: tenantID,
+			StoppedConsumingAt: time.Now().UnixMilli(),
+		}))
+		require.NoError(t, marked.Close())
+
+		unmarked, err := openPartitionTSDB(otherTenant, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+		app = unmarked.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, unmarked.Close())
+
+		r := newFrozenTestReadcache(cfg, limits)
+		r.restoreFrozenEpochsOnStartup(time.Now())
+		_, resume := r.resumeEpoch[pid]
+		assert.False(t, resume, "a marker on any tenant makes the whole epoch frozen")
+
+		r.promoteUnownedResumeEpochs(map[int32]struct{}{pid: {}})
+		frozenTenants := map[string]struct{}{}
+		for _, ep := range r.frozen[pid] {
+			for tenant := range ep.tenants {
+				frozenTenants[tenant] = struct{}{}
+			}
+		}
+		assert.Contains(t, frozenTenants, tenantID)
+		assert.Contains(t, frozenTenants, otherTenant)
+
+		r.partitionMu.Lock()
+		epoch, resumed := r.takeLiveEpoch(pid)
+		r.partitionMu.Unlock()
+		assert.False(t, resumed)
+		assert.Equal(t, 1, epoch)
 	})
 
 	t.Run("multiple tenants of one epoch are grouped back together", func(t *testing.T) {
@@ -368,4 +524,46 @@ func TestReadcache_RemoveUnownedFrozenPartitionOffsets(t *testing.T) {
 
 	require.FileExists(t, r.partitionOffsetFilePath(3))
 	require.NoFileExists(t, r.partitionOffsetFilePath(4))
+}
+
+func TestReadcache_FailedAddClosesResumedTSDBs(t *testing.T) {
+	const tenantID = "tenant-1"
+	const pid = int32(3)
+	cfg := newTestConfig(t, false, 0)
+	cfg.LocalBlockRetention = time.Hour
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	r := newFrozenTestReadcache(cfg, limits)
+	r.restoreFrozenEpochsOnStartup(time.Now())
+
+	r.partitionMu.Lock()
+	epoch, resumed := r.takeLiveEpoch(pid)
+	p := newPartitionState(pid)
+	p.epoch = epoch
+	r.partitions[pid] = p
+	r.partitionMu.Unlock()
+	require.True(t, resumed)
+	r.reopenUnmarkedLiveDirs(p)
+	opened := p.tenants[tenantID]
+	require.NotNil(t, opened)
+
+	// startKafkaReader failed after the resume open. The rollback must
+	// close the DB and put the epoch back, or the retry cannot open it.
+	r.closeOpenedPartitionTSDBs(p)
+	r.partitionMu.Lock()
+	delete(r.partitions, pid)
+	r.resumeEpoch[pid] = p.epoch
+	r.partitionMu.Unlock()
+
+	require.Empty(t, p.tenants)
+	require.True(t, opened.IsClosed())
+	reopened, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, reopened.Close())
 }

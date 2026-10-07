@@ -138,13 +138,6 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 	return r.freezePartitionWithOffsetPolicy(partitionID, p, true)
 }
 
-// freezePartitionForShutdown freezes a live epoch during process shutdown while
-// retaining its offset file. If the partition returns to this pod after restart,
-// the new live epoch resumes immediately after the frozen epoch's final record.
-func (r *Readcache) freezePartitionForShutdown(partitionID int32, p *partitionState) error {
-	return r.freezePartitionWithOffsetPolicy(partitionID, p, false)
-}
-
 func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partitionState, removeOffsetFile bool) error {
 	if hook := r.stopPartitionHook; hook != nil {
 		hook(partitionID)
@@ -174,22 +167,40 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 	// replay records the intermediate owner already ingested (and still
 	// serves from its frozen epoch), double-counting them at query
 	// time. The resume-from-offset path in startKafkaReader is only
-	// for process restarts within a single ownership stint, where the
-	// file is intentionally left in place (process shutdown calls
-	// freezePartitionForShutdown with removeOffsetFile=false).
+	// for process restarts within a single ownership stint.
+	// closeLiveForRestart leaves the file in place and does not write
+	// a frozen marker, so the next process reopens the same TSDB.
 	if removeOffsetFile {
 		if err := os.Remove(r.partitionOffsetFilePath(partitionID)); err != nil && !os.IsNotExist(err) {
 			level.Warn(r.logger).Log("msg", "removing partition offset file on freeze", "partition", partitionID, "err", err)
 		}
 	}
 
-	// Detach the tenant TSDBs from the (now unreachable) live state.
-	// The reader has returned from StopAndAwaitTerminated, so no
-	// goroutine is appending; taking tenantsMu is safe.
-	p.tenantsMu.Lock()
-	tenants := p.tenants
-	p.tenants = map[string]*partitionTSDB{}
-	p.tenantsMu.Unlock()
+	// The reader has stopped, so nothing appends. Remember the inclusive
+	// sample bounds first: compaction's block max is one millisecond
+	// past the last sample, and the marker's maxT is the reap key.
+	// Then flush each head so the frozen epoch does not keep a live
+	// head for the rest of local retention.
+	p.tenantsMu.RLock()
+	toFlush := make([]*partitionTSDB, 0, len(p.tenants))
+	preFlushBounds := make(map[*partitionTSDB][2]int64, len(p.tenants))
+	for _, db := range p.tenants {
+		mn, mx := db.sampleBounds()
+		preFlushBounds[db] = [2]int64{mn, mx}
+		toFlush = append(toFlush, db)
+	}
+	p.tenantsMu.RUnlock()
+	for _, db := range toFlush {
+		if err := r.flushPartitionHead(db); err != nil {
+			level.Warn(r.logger).Log("msg", "flushing readcache head before freeze",
+				"user", db.tenantID, "partition", partitionID, "err", err)
+		}
+	}
+
+	// Detach tenants idle close does not own. An empty head is flushed
+	// above without taking compactMu, so idle close can be past its
+	// liveness check and about to Close and RemoveAll this directory.
+	tenants := detachLiveTenants(p, toFlush)
 
 	if len(tenants) == 0 {
 		level.Info(r.logger).Log("msg", "readcache: partition removed (nothing to freeze)", "partition", partitionID)
@@ -208,7 +219,11 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 		stoppedConsumingAt: stoppedConsumingAt,
 	}
 	for tenant, db := range tenants {
-		mn, mx := db.sampleBounds()
+		bounds, ok := preFlushBounds[db]
+		mn, mx := int64(0), int64(-1)
+		if ok {
+			mn, mx = bounds[0], bounds[1]
+		}
 		if mx < mn {
 			continue // empty TSDB; bounds left at the sentinel
 		}
@@ -245,6 +260,54 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 	level.Info(r.logger).Log("msg", "readcache: partition frozen",
 		"partition", partitionID, "epoch", p.epoch, "minT", ep.minT, "maxT", ep.maxT)
 	return firstErr
+}
+
+// detachLiveTenants moves tenant TSDBs that idle close does not own out
+// of p.tenants. Idle close holds compactMu from beginIdleClose until
+// the TSDB is closed, so taking that lock waits the close out; a TSDB
+// already marked closed stays in the map for closeIdleTSDB to delete
+// after RemoveAll. Publishing it would let the close delete a directory
+// the frozen epoch still serves.
+//
+// candidates are the TSDBs snapshotted before the flush. A TSDB opened
+// after that snapshot is taken too, unless it is already closed.
+// The caller must not hold tenantsMu or any compactMu.
+func detachLiveTenants(p *partitionState, candidates []*partitionTSDB) map[string]*partitionTSDB {
+	locked := make([]*partitionTSDB, 0, len(candidates))
+	seen := make(map[*partitionTSDB]struct{}, len(candidates))
+	for _, db := range candidates {
+		if db == nil {
+			continue
+		}
+		if _, ok := seen[db]; ok {
+			continue
+		}
+		seen[db] = struct{}{}
+		db.compactMu.Lock()
+		locked = append(locked, db)
+	}
+	defer func() {
+		for _, db := range locked {
+			db.compactMu.Unlock()
+		}
+	}()
+
+	p.tenantsMu.Lock()
+	defer p.tenantsMu.Unlock()
+
+	moving := make(map[string]*partitionTSDB, len(p.tenants))
+	for id, db := range p.tenants {
+		if _, ok := seen[db]; ok {
+			if db.idleCloseClaimed() {
+				continue
+			}
+		} else if db.IsClosed() {
+			continue
+		}
+		moving[id] = db
+		delete(p.tenants, id)
+	}
+	return moving
 }
 
 // writeFrozenMarker serializes the epoch's state into
@@ -336,12 +399,11 @@ func (r *Readcache) reapFrozenEpochs(now time.Time) {
 //
 //   - already past the serving horizon: the directory is deleted
 //     immediately;
-//   - still within the horizon: the TSDB is reopened (WAL replay
-//     included — freezing does not compact the head, so recent
-//     samples live in the WAL) and grouped back into its
-//     (partition, epoch) frozenEpoch in r.frozen. From there it is
-//     queryable and reaped exactly like an epoch frozen by this
-//     process;
+//   - still within the horizon: the TSDB is reopened and grouped back
+//     into its (partition, epoch) frozenEpoch in r.frozen. Freeze
+//     flushes the head first, so a clean shutdown leaves blocks rather
+//     than a WAL to replay. From there it is queryable and reaped
+//     exactly like an epoch frozen by this process;
 //   - unopenable (e.g. unrepairable corruption): the directory is
 //     deleted. Readcache is a cache — the canonical copy of the data
 //     lives with the ingester/blockbuilder — and a dir we cannot open
@@ -352,11 +414,13 @@ func (r *Readcache) reapFrozenEpochs(now time.Time) {
 // re-acquiring the partition can never hand out an epoch whose
 // directory is still in use by a restored frozen epoch.
 //
-// Directories without a marker are live epochs left by an older binary
-// or an abrupt crash. They are reopened as frozen epochs too: the first
-// assignment snapshot may move the partition elsewhere, but distributors
-// still route historical slices to this pod. If the partition returns,
-// addPartition creates the next epoch and resumes from the retained offset.
+// Directories without a marker are live epochs left by a restart or an
+// abrupt crash. The newest such epoch is remembered in resumeEpoch and
+// reopened as the live TSDB when the first assignment still owns the
+// partition. An older unmarked epoch, or one that already has a frozen
+// sibling, is not resumed: the first assignment freezes it instead.
+// A partition the first assignment does not return is frozen too, and
+// its resumeEpoch entry is dropped so a later add opens the next epoch.
 //
 // Must run during starting(), before this pod registers in the ring
 // and starts receiving assignments: distributors may route to us the
@@ -426,65 +490,27 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				if !ok {
 					continue
 				}
-				tenant := tenantEntry.Name()
-				db, openErr := openPartitionTSDB(
-					tenant,
-					partitionID,
-					epoch,
-					r.cfg.DataDir,
-					r.cfg.BlocksStorage.TSDB,
-					r.cfg.LocalBlockRetention,
-					r.limits,
-					r.cfg.MaxExemplarsPerPartitionTSDB,
-					r.seriesHashCache,
-					r.headPostingsForMatchersCacheFactory,
-					r.blockPostingsForMatchersCacheFactory,
-					r.lookupPlanMetrics,
-					prometheus.NewRegistry(),
-					r.logger,
-				)
-				if openErr != nil {
-					level.Warn(r.logger).Log("msg", "reopening unmarked partition TSDB on startup failed; deleting dir",
-						"user", tenant, "partition", partitionID, "epoch", epoch, "dir", dir, "err", openErr)
-					if removeErr := os.RemoveAll(dir); removeErr != nil {
-						level.Warn(r.logger).Log("msg", "removing unopenable unmarked partition TSDB dir",
-							"user", tenant, "partition", partitionID, "epoch", epoch, "dir", dir, "err", removeErr)
-					}
-					continue
+				// No marker: the previous process closed this TSDB in
+				// place (or crashed). Remember it. The first assignment
+				// reopens it as the live epoch when this pod still owns
+				// the partition, and freezes it when ownership moved.
+				if r.resumeEpoch == nil {
+					r.resumeEpoch = map[int32]int{}
 				}
-
-				minT, maxT := db.sampleBounds()
-				if maxT < cutoff {
-					if closeErr := db.Close(); closeErr != nil {
-						level.Warn(r.logger).Log("msg", "closing expired unmarked partition TSDB",
-							"user", tenant, "partition", partitionID, "epoch", epoch, "err", closeErr)
-					}
-					if removeErr := os.RemoveAll(dir); removeErr != nil {
-						level.Warn(r.logger).Log("msg", "removing expired unmarked partition TSDB dir on startup",
-							"user", tenant, "partition", partitionID, "epoch", epoch, "dir", dir, "err", removeErr)
-						continue
-					}
-					deleted++
-					continue
+				if epoch >= r.resumeEpoch[partitionID] {
+					r.resumeEpoch[partitionID] = epoch
 				}
-
-				marker := frozenMarker{
-					PartitionID:        partitionID,
-					Epoch:              epoch,
-					MinT:               minT,
-					MaxT:               maxT,
-					StartOffset:        -1,
-					EndOffset:          -1,
-					StoppedConsumingAt: now.UnixMilli(),
-					Tenant:             tenant,
+				r.partitionMu.Lock()
+				if next := epoch + 1; next > r.epochSeq[partitionID] {
+					r.epochSeq[partitionID] = next
 				}
-				if markerErr := writeFrozenMarkerData(dir, marker); markerErr != nil {
-					level.Warn(r.logger).Log("msg", "writing marker for unmarked partition TSDB",
-						"user", tenant, "partition", partitionID, "epoch", epoch, "dir", dir, "err", markerErr)
-				}
-				addRestored(marker, tenant, db)
-				level.Info(r.logger).Log("msg", "readcache: unmarked partition epoch restored as frozen",
-					"user", tenant, "partition", partitionID, "epoch", epoch, "minT", minT, "maxT", maxT)
+				r.partitionMu.Unlock()
+				r.unmarked = append(r.unmarked, unmarkedTSDBDir{
+					tenant:      tenantEntry.Name(),
+					partitionID: partitionID,
+					epoch:       epoch,
+					dir:         dir,
+				})
 				continue
 			}
 			if err != nil {
@@ -543,6 +569,7 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				}
 				continue
 			}
+			r.instrumentTSDB(db)
 
 			addRestored(marker, tenant, db)
 		}
@@ -565,6 +592,318 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 		level.Info(r.logger).Log("msg", "readcache: frozen epoch restore finished",
 			"restored_epochs", len(restored), "restored_tsdbs", restoredDBs, "deleted_expired_dirs", deleted)
 	}
+	// A resume epoch has to be the newest epoch of its partition and
+	// entirely unmarked. A newer frozen epoch, or a marker on some
+	// tenant of the same epoch, means this directory is history: living
+	// in it would overlap the frozen copy or reopen a dir it already holds.
+	r.forgetUnusableResumeEpochs()
+}
+
+// unmarkedTSDBDir is a tenant TSDB directory with no frozen marker.
+type unmarkedTSDBDir struct {
+	tenant      string
+	partitionID int32
+	epoch       int
+	dir         string
+}
+
+// takeLiveEpoch returns the epoch addPartition should open. A restart
+// that still owns the partition reuses the closed-in-place epoch.
+// partitionMu is held by the caller.
+func (r *Readcache) takeLiveEpoch(partitionID int32) (epoch int, resumed bool) {
+	if r.resumeEpoch != nil {
+		if epoch, ok := r.resumeEpoch[partitionID]; ok {
+			delete(r.resumeEpoch, partitionID)
+			if next := epoch + 1; next > r.epochSeq[partitionID] {
+				r.epochSeq[partitionID] = next
+			}
+			return epoch, true
+		}
+	}
+	epoch = r.epochSeq[partitionID]
+	r.epochSeq[partitionID]++
+	return epoch, false
+}
+
+// promoteUnownedResumeEpochs freezes unmarked directories for partitions
+// the first assignment did not give back to this pod, and for epochs
+// that are not the live one. Directories for an owned partition at its
+// resume epoch stay unmarked and are opened into the live tenant map
+// so a tenant with no post-restart append is still queryable.
+// Adopting an epoch drops its resumeEpoch entry: a later addPartition
+// must open the next epoch, not the directory now held frozen.
+func (r *Readcache) promoteUnownedResumeEpochs(owned map[int32]struct{}) {
+	if len(r.unmarked) == 0 {
+		return
+	}
+	now := time.Now()
+	cutoff := now.Add(-r.cfg.LocalBlockRetention - frozenEpochReapGrace).UnixMilli()
+	kept := r.unmarked[:0]
+	for _, dir := range r.unmarked {
+		if _, ok := owned[dir.partitionID]; ok && r.keepsUnmarkedEpoch(dir.partitionID, dir.epoch) {
+			r.partitionMu.RLock()
+			p := r.partitions[dir.partitionID]
+			r.partitionMu.RUnlock()
+			if p != nil && p.epoch == dir.epoch {
+				r.reopenLiveUnmarkedDir(p, dir)
+			}
+			kept = append(kept, dir)
+			continue
+		}
+		r.adoptUnmarkedDir(dir, now, cutoff)
+		r.clearResumeEpoch(dir.partitionID, dir.epoch)
+	}
+	r.unmarked = kept
+}
+
+// forgetUnusableResumeEpochs drops resume epochs that already overlap a
+// restored frozen epoch, or that are older than another epoch of the
+// same partition. Those directories are frozen by promoteUnownedResumeEpochs.
+func (r *Readcache) forgetUnusableResumeEpochs() {
+	r.frozenMu.RLock()
+	frozenAt := make(map[int32]map[int]struct{}, len(r.frozen))
+	for pid, eps := range r.frozen {
+		set := make(map[int]struct{}, len(eps))
+		for _, ep := range eps {
+			set[ep.epoch] = struct{}{}
+		}
+		frozenAt[pid] = set
+	}
+	r.frozenMu.RUnlock()
+
+	r.partitionMu.Lock()
+	defer r.partitionMu.Unlock()
+	for pid, epoch := range r.resumeEpoch {
+		if _, overlap := frozenAt[pid][epoch]; overlap || epoch+1 < r.epochSeq[pid] {
+			delete(r.resumeEpoch, pid)
+		}
+	}
+}
+
+// clearResumeEpoch forgets a resume epoch that this process just froze
+// or deleted. A later addPartition then takes the next epoch.
+func (r *Readcache) clearResumeEpoch(partitionID int32, epoch int) {
+	r.partitionMu.Lock()
+	defer r.partitionMu.Unlock()
+	if current, ok := r.resumeEpoch[partitionID]; ok && current == epoch {
+		delete(r.resumeEpoch, partitionID)
+	}
+}
+
+// reopenUnmarkedLiveDirs opens on-disk TSDBs for p's epoch into the live
+// tenant map. Called from addPartition before the Kafka reader starts,
+// so quiet tenants are queryable once the partition is warm.
+func (r *Readcache) reopenUnmarkedLiveDirs(p *partitionState) {
+	for _, dir := range r.unmarked {
+		if dir.partitionID == p.partitionID && dir.epoch == p.epoch {
+			r.reopenLiveUnmarkedDir(p, dir)
+		}
+	}
+}
+
+// reopenLiveUnmarkedDir opens one unmarked directory as a live TSDB.
+// A tenant the Kafka reader already opened is left as-is. An unopenable
+// directory is deleted: readcache is a cache, and a dir we cannot open
+// can never be served.
+func (r *Readcache) reopenLiveUnmarkedDir(p *partitionState, dir unmarkedTSDBDir) {
+	p.tenantsMu.Lock()
+	defer p.tenantsMu.Unlock()
+	if existing := p.tenants[dir.tenant]; existing != nil && !existing.IsClosed() {
+		return
+	}
+
+	tsdbPromReg := prometheus.NewRegistry()
+	opened, err := openPartitionTSDB(
+		dir.tenant,
+		dir.partitionID,
+		dir.epoch,
+		r.cfg.DataDir,
+		r.cfg.BlocksStorage.TSDB,
+		r.cfg.LocalBlockRetention,
+		r.limits,
+		r.cfg.MaxExemplarsPerPartitionTSDB,
+		r.seriesHashCache,
+		r.headPostingsForMatchersCacheFactory,
+		r.blockPostingsForMatchersCacheFactory,
+		r.lookupPlanMetrics,
+		tsdbPromReg,
+		r.logger,
+	)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "reopening live partition TSDB failed; deleting dir",
+			"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", err)
+		if removeErr := os.RemoveAll(dir.dir); removeErr != nil {
+			level.Warn(r.logger).Log("msg", "removing unopenable live partition TSDB dir",
+				"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", removeErr)
+		}
+		return
+	}
+	if r.tsdbMetrics != nil {
+		r.tsdbMetrics.SetRegistryForTenant(tsdbMetricsTenantID(dir.tenant, dir.partitionID), tsdbPromReg)
+	}
+	r.instrumentTSDB(opened)
+	p.tenants[dir.tenant] = opened
+}
+
+// closeOpenedPartitionTSDBs closes TSDBs opened while a partition add
+// was in flight. startKafkaReader has already stopped the reader before
+// returning an error, so no pusher is still inside getOrOpenTSDB.
+func (r *Readcache) closeOpenedPartitionTSDBs(p *partitionState) {
+	p.tenantsMu.Lock()
+	tenants := p.tenants
+	p.tenants = map[string]*partitionTSDB{}
+	p.tenantsMu.Unlock()
+	for tenant, db := range tenants {
+		if r.tsdbMetrics != nil {
+			r.tsdbMetrics.RemoveRegistryForTenant(tsdbMetricsTenantID(tenant, p.partitionID))
+		}
+		if err := db.Close(); err != nil {
+			level.Warn(r.logger).Log("msg", "closing partition TSDB after failed add",
+				"user", tenant, "partition", p.partitionID, "err", err)
+		}
+	}
+}
+
+// keepsUnmarkedEpoch reports whether this partition is reopening dirEpoch
+// as its live TSDB. A failed reader start puts the epoch back into
+// resumeEpoch so the directory is not frozen out from under a retry.
+func (r *Readcache) keepsUnmarkedEpoch(partitionID int32, dirEpoch int) bool {
+	r.partitionMu.RLock()
+	p := r.partitions[partitionID]
+	r.partitionMu.RUnlock()
+	if p != nil && p.epoch == dirEpoch {
+		return true
+	}
+	if r.resumeEpoch == nil {
+		return false
+	}
+	resume, ok := r.resumeEpoch[partitionID]
+	return ok && resume == dirEpoch
+}
+
+func (r *Readcache) adoptUnmarkedDir(dir unmarkedTSDBDir, now time.Time, cutoff int64) {
+	db, err := openPartitionTSDB(
+		dir.tenant,
+		dir.partitionID,
+		dir.epoch,
+		r.cfg.DataDir,
+		r.cfg.BlocksStorage.TSDB,
+		r.cfg.LocalBlockRetention,
+		r.limits,
+		r.cfg.MaxExemplarsPerPartitionTSDB,
+		r.seriesHashCache,
+		r.headPostingsForMatchersCacheFactory,
+		r.blockPostingsForMatchersCacheFactory,
+		r.lookupPlanMetrics,
+		prometheus.NewRegistry(),
+		r.logger,
+	)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "reopening unmarked partition TSDB failed; deleting dir",
+			"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", err)
+		if removeErr := os.RemoveAll(dir.dir); removeErr != nil {
+			level.Warn(r.logger).Log("msg", "removing unopenable unmarked partition TSDB dir",
+				"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", removeErr)
+		}
+		return
+	}
+	r.instrumentTSDB(db)
+
+	minT, maxT := db.sampleBounds()
+	if maxT < cutoff {
+		if closeErr := db.Close(); closeErr != nil {
+			level.Warn(r.logger).Log("msg", "closing expired unmarked partition TSDB",
+				"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "err", closeErr)
+		}
+		if removeErr := os.RemoveAll(dir.dir); removeErr != nil {
+			level.Warn(r.logger).Log("msg", "removing expired unmarked partition TSDB dir",
+				"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", removeErr)
+		}
+		return
+	}
+
+	marker := frozenMarker{
+		PartitionID:        dir.partitionID,
+		Epoch:              dir.epoch,
+		MinT:               minT,
+		MaxT:               maxT,
+		StartOffset:        -1,
+		EndOffset:          -1,
+		StoppedConsumingAt: now.UnixMilli(),
+		Tenant:             dir.tenant,
+	}
+	if err := writeFrozenMarkerData(dir.dir, marker); err != nil {
+		level.Warn(r.logger).Log("msg", "writing marker for unmarked partition TSDB",
+			"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", err)
+	}
+	r.frozenMu.Lock()
+	var ep *frozenEpoch
+	for _, existing := range r.frozen[dir.partitionID] {
+		if existing.epoch == dir.epoch && existing.startOffset == -1 && existing.endOffset == -1 {
+			ep = existing
+			break
+		}
+	}
+	if ep == nil {
+		ep = &frozenEpoch{
+			partitionID:        dir.partitionID,
+			epoch:              dir.epoch,
+			tenants:            map[string]*partitionTSDB{},
+			minT:               minT,
+			maxT:               maxT,
+			startOffset:        -1,
+			endOffset:          -1,
+			stoppedConsumingAt: now.UnixMilli(),
+		}
+		r.frozen[dir.partitionID] = append(r.frozen[dir.partitionID], ep)
+	}
+	ep.tenants[dir.tenant] = db
+	if minT < ep.minT {
+		ep.minT = minT
+	}
+	if maxT > ep.maxT {
+		ep.maxT = maxT
+	}
+	r.frozenMu.Unlock()
+	level.Info(r.logger).Log("msg", "readcache: unmarked partition epoch restored as frozen",
+		"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "minT", minT, "maxT", maxT)
+}
+
+// closeLiveForRestart stops a partition's reader and closes its TSDBs
+// without writing a frozen marker or removing the offset file. The next
+// process reopens the same directories when it still owns the partition.
+func (r *Readcache) closeLiveForRestart(p *partitionState) error {
+	if hook := r.stopPartitionHook; hook != nil {
+		hook(p.partitionID)
+	}
+	p.cancelWarmup()
+	var firstErr error
+	if err := r.stopKafkaReaderLocked(p); err != nil {
+		firstErr = err
+		level.Warn(r.logger).Log("msg", "stopping partition reader before restart close", "partition", p.partitionID, "err", err)
+	}
+
+	p.tenantsMu.Lock()
+	tenants := p.tenants
+	p.tenants = map[string]*partitionTSDB{}
+	p.tenantsMu.Unlock()
+
+	for tenant, db := range tenants {
+		if err := r.flushPartitionHead(db); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if r.tsdbMetrics != nil {
+			r.tsdbMetrics.RemoveRegistryForTenant(tsdbMetricsTenantID(tenant, p.partitionID))
+		}
+		if err := db.Close(); err != nil && firstErr == nil {
+			firstErr = err
+			level.Warn(r.logger).Log("msg", "closing partition TSDB for restart",
+				"user", tenant, "partition", p.partitionID, "err", err)
+		}
+	}
+	level.Info(r.logger).Log("msg", "readcache: partition closed for restart",
+		"partition", p.partitionID, "epoch", p.epoch, "tenants", len(tenants))
+	return firstErr
 }
 
 // removeUnownedFrozenPartitionOffsets drops restart-resume offsets for frozen

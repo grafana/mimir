@@ -88,13 +88,11 @@ func (t *readcacheHitTracker) count() int {
 	return len(t.instances)
 }
 
-// readcacheAssignmentState is the atomically-published pair of
-// assignment log + replica map from one WatchReadcacheAssignments
-// message. Storing them together prevents querier/ruler read-path
-// goroutines from observing a new logical-ID log against a stale map.
+// readcacheAssignmentState is the assignment log from one
+// WatchReadcacheAssignments message. replica_sets on that message are
+// ignored; concrete pods come from the ring-derived slot view.
 type readcacheAssignmentState struct {
-	log        *readcacheassignment.Log
-	replicaMap readcacheassignment.ReplicaMap
+	log *readcacheassignment.Log
 }
 
 // GetReadcacheLog returns the current (partition -> readcache
@@ -107,30 +105,54 @@ func (d *Distributor) GetReadcacheLog() *readcacheassignment.Log {
 	return nil
 }
 
-// GetReadcacheReplicaMap returns the current logical->concrete
-// readcache replica map streamed from the rebalancer. A nil or empty
-// map means identity: the instance IDs in the assignment log are
-// themselves the concrete pods to dial (RF=1 / legacy).
+// GetReadcacheReplicaMap returns the ring-derived slot view as a
+// logical→concrete map. A nil map means the view is unavailable or
+// empty, not that the logical id should be dialed.
 func (d *Distributor) GetReadcacheReplicaMap() readcacheassignment.ReplicaMap {
-	if s := d.loadReadcacheAssignment(); s != nil {
-		return s.replicaMap
+	view, ok := d.currentReadcacheSlotView()
+	if !ok {
+		return nil
 	}
-	return nil
+	return view.ReplicaMap()
 }
 
-// loadReadcacheAssignment returns the atomically-published log+map
-// pair, or nil when no snapshot has arrived yet.
+// loadReadcacheAssignment returns the latest assignment log, or nil
+// when no snapshot has arrived yet.
 func (d *Distributor) loadReadcacheAssignment() *readcacheAssignmentState {
 	return d.readcacheAssignment.Load()
 }
 
-// setReadcacheAssignment publishes log and replicaMap together.
-// replicaMap may be nil (identity). Used by the watch loop and tests.
+// setReadcacheAssignment publishes the assignment log. A non-nil
+// replicaMap installs that expansion as the slot view; tests use this
+// in place of a ring. The watch loop passes nil and leaves the view to
+// the ring refresher. replica_sets from the stream are not applied.
 func (d *Distributor) setReadcacheAssignment(log *readcacheassignment.Log, replicaMap readcacheassignment.ReplicaMap) {
-	d.readcacheAssignment.Store(&readcacheAssignmentState{
-		log:        log,
-		replicaMap: replicaMap.Clone(),
-	})
+	d.readcacheAssignment.Store(&readcacheAssignmentState{log: log})
+	if replicaMap != nil {
+		d.ensureReadcacheSlots().ObserveReplicaMap(replicaMap)
+	}
+}
+
+func (d *Distributor) ensureReadcacheSlots() *readcacheassignment.SlotViewCache {
+	if d.readcachePool != nil && d.readcachePool.slots != nil {
+		d.readcacheSlots = d.readcachePool.slots
+		return d.readcacheSlots
+	}
+	if d.readcacheSlots == nil {
+		d.readcacheSlots = readcacheassignment.NewSlotViewCache()
+	}
+	return d.readcacheSlots
+}
+
+func (d *Distributor) currentReadcacheSlotView() (readcacheassignment.SlotView, bool) {
+	slots := d.readcacheSlots
+	if d.readcachePool != nil && d.readcachePool.slots != nil {
+		slots = d.readcachePool.slots
+	}
+	if slots == nil {
+		return readcacheassignment.SlotView{}, false
+	}
+	return slots.Current()
 }
 
 // watchReadcacheAssignments mirrors watchNautilusAssignments for the
@@ -192,9 +214,9 @@ func (d *Distributor) consumeReadcacheStream(stream rebalancer.NautilusRebalance
 			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
 		}
 		first = false
-		// Publish log + map atomically so RF≥2 expansion always
-		// matches the lease IDs from the same message.
-		d.setReadcacheAssignment(log, rebalancer.ReplicaMapFromProto(resp.ReplicaSets))
+		// replica_sets is ignored. The slot view is refreshed from the
+		// readcache ring, not from this stream.
+		d.setReadcacheAssignment(log, nil)
 		if d.readcacheInitialSync != nil {
 			d.readcacheInitialSyncOnce.Do(func() {
 				close(d.readcacheInitialSync)
@@ -251,7 +273,11 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	// to its concrete zone replicas and dial them in order until one
 	// connects — under RF=1 the expansion is the identity, so this
 	// reduces to dialing the logged owner.
-	for _, rep := range expandReadcacheReplicasForQuery(rcState.replicaMap, owners[0], d.cfg.Readcache.IgnoreReplicaMapForQueries) {
+	view, viewOK := d.currentReadcacheSlotView()
+	if !d.cfg.Readcache.IgnoreReplicaMapForQueries && !viewOK {
+		return nil, "", false, fmt.Errorf("readcache slot view is unavailable")
+	}
+	for _, rep := range expandReadcacheReplicasForQuery(view, viewOK, owners[0], d.cfg.Readcache.IgnoreReplicaMapForQueries) {
 		cli, err = d.readcachePool.GetClientForInstance(ctx, rep.InstanceID)
 		if err != nil {
 			continue
@@ -344,18 +370,13 @@ func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, 
 	return best.InstanceID, true
 }
 
-func logicalReadcacheOwnerForReplica(replicaMap readcacheassignment.ReplicaMap, concreteID string, ignoreMap bool) string {
-	if ignoreMap {
+func logicalReadcacheOwnerForReplica(concreteID string, ignoreMap bool) string {
+	if ignoreMap || concreteID == "" {
 		return concreteID
 	}
-	for logicalOwner, replicas := range replicaMap {
-		for _, replica := range replicas {
-			if replica.InstanceID == concreteID {
-				return logicalOwner
-			}
-		}
+	if id, ok := readcacheassignment.ParseInstanceIdentity(concreteID); ok {
+		return id.LogicalID
 	}
-	// RF=1 and older snapshots use identity expansion.
 	return concreteID
 }
 
@@ -387,22 +408,32 @@ func readcacheSyntheticInstanceID(concreteID string, partitionID int32) string {
 // expandReadcacheReplicasForQuery returns the concrete pods the read
 // path should dial for logicalOwner.
 //
-// When ignoreMap is true (RF=1→RF=2 warm stage), expansion is the
-// identity so queriers keep dialing the legacy non-zonal pod while
-// zone mirrors consume via the real replica map.
+// When ignoreMap is true, expansion is the identity so queriers keep
+// dialing the legacy non-zonal pod named by the lease.
 //
-// When ignoreMap is false and the map lists any zoned replica,
-// non-zonal entries are dropped so a dual-fleet cutover can leave the
-// old STS consuming without serving. An explicitly empty map entry
-// (both mirrors down) is handled by the caller before Expand.
-func expandReadcacheReplicasForQuery(replicaMap readcacheassignment.ReplicaMap, logicalOwner string, ignoreMap bool) []readcacheassignment.Replica {
+// Otherwise the pods come from the slot view. A slot with no healthy
+// pod, or an unavailable view, yields nothing: the caller fails the
+// query instead of dialing the logical id. When the view lists any
+// zoned replica, non-zonal entries are dropped so a leftover legacy
+// pod is not dialed once zone mirrors are healthy.
+func expandReadcacheReplicasForQuery(view readcacheassignment.SlotView, viewOK bool, logicalOwner string, ignoreMap bool) []readcacheassignment.Replica {
 	if logicalOwner == "" {
 		return nil
 	}
 	if ignoreMap {
 		return []readcacheassignment.Replica{{InstanceID: logicalOwner}}
 	}
-	replicas := replicaMap.Expand(logicalOwner)
+	if !viewOK {
+		return nil
+	}
+	pods, ok := view.Pods(logicalOwner)
+	if !ok {
+		return nil
+	}
+	replicas := make([]readcacheassignment.Replica, 0, len(pods))
+	for _, pod := range pods {
+		replicas = append(replicas, readcacheassignment.Replica{InstanceID: pod.InstanceID, Zone: pod.Zone})
+	}
 	zoned := make([]readcacheassignment.Replica, 0, len(replicas))
 	for _, rep := range replicas {
 		if rep.Zone != "" {
@@ -425,23 +456,13 @@ func expandReadcacheReplicasForQuery(replicaMap readcacheassignment.ReplicaMap, 
 // hold identical data, so the read only needs one of them to answer.
 // With distinct zones that is expressed with zone awareness, which
 // makes DoUntilQuorum return as soon as one zone succeeds and spill
-// to the other zone only on failure. With an empty replica map the
-// expansion is the identity and the set degenerates to the
-// single-instance, no-tolerance shape used under RF=1.
+// to the other zone only on failure.
 //
-// ignoreMap forces identity expansion (legacy pod) even when a
-// replica map is present — used for dual-fleet warm before query cutover.
-func readcacheReplicationSetForOwner(replicaMap readcacheassignment.ReplicaMap, partitionID int32, logicalOwner string, ignoreMap bool) ring.ReplicationSet {
-	if !ignoreMap {
-		if reps, known := replicaMap[logicalOwner]; known && len(reps) == 0 {
-			// The rebalancer knows this logical slot but has no live pod
-			// for it (both mirrors left the ring). Returning an empty set
-			// makes the caller fail the slot explicitly instead of
-			// dialing the logical ID, which is not a routable address.
-			return ring.ReplicationSet{}
-		}
-	}
-	replicas := expandReadcacheReplicasForQuery(replicaMap, logicalOwner, ignoreMap)
+// ignoreMap forces identity expansion (legacy pod). An unavailable
+// view or a slot with no healthy pod returns an empty set so the
+// caller fails the query instead of dialing the logical id.
+func readcacheReplicationSetForOwner(view readcacheassignment.SlotView, viewOK bool, partitionID int32, logicalOwner string, ignoreMap bool) ring.ReplicationSet {
+	replicas := expandReadcacheReplicasForQuery(view, viewOK, logicalOwner, ignoreMap)
 	set := ring.ReplicationSet{Instances: make([]ring.InstanceDesc, 0, len(replicas))}
 	zones := make(map[string]struct{}, len(replicas))
 	for _, rep := range replicas {
@@ -554,7 +575,6 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 		return nil, "", false
 	}
 	excludedOwner := logicalReadcacheOwnerForReplica(
-		rcState.replicaMap,
 		failingReplica,
 		d.cfg.Readcache.IgnoreReplicaMapForQueries,
 	)
@@ -564,7 +584,8 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 	}
 	// prevID is a logical slot under RF≥2; expand and take the first
 	// replica that dials, preferring the querier's local zones.
-	replicas := expandReadcacheReplicasForQuery(rcState.replicaMap, prevID, d.cfg.Readcache.IgnoreReplicaMapForQueries)
+	view, viewOK := d.currentReadcacheSlotView()
+	replicas := expandReadcacheReplicasForQuery(view, viewOK, prevID, d.cfg.Readcache.IgnoreReplicaMapForQueries)
 	for _, rep := range preferReadcacheReplicas(replicas, d.cfg.PreferAvailabilityZones) {
 		cli, err := d.readcachePool.GetClientForInstance(ctx, rep.InstanceID)
 		if err != nil {

@@ -24,6 +24,8 @@ message Chunk {
     Chunk_Histogram = 1;
     Chunk_FloatHistogram = 2;
     Chunk_XOR2 = 3;
+    Chunk_HistogramST = 4;
+    Chunk_FloatHistogramST = 5;
   }
   Encoding type = 1;
   bytes data = 2 [

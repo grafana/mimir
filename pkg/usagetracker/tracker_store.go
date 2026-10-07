@@ -42,6 +42,8 @@ type trackerStore struct {
 	// dependencies
 	limiter limiter
 	events  events
+	// newShard creates the per-tenant shard maps of the configured implementation.
+	newShard tenantshard.Factory
 
 	// config
 	idleTimeout                         time.Duration
@@ -64,11 +66,12 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool, minTimeBetweenShardsCleanup time.Duration) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool, minTimeBetweenShardsCleanup time.Duration, newShard tenantshard.Factory) *trackerStore {
 	t := &trackerStore{
 		tenants:                             make(map[string]*trackedTenant),
 		limiter:                             l,
 		events:                              ev,
+		newShard:                            newShard,
 		logger:                              logger,
 		idleTimeout:                         idleTimeout,
 		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
@@ -209,7 +212,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 		capacity = math.MaxUint32
 	}
 	for i := range tenant.shards {
-		tenant.shards[i] = tenantshard.New(uint32(capacity))
+		tenant.shards[i] = t.newShard(uint32(capacity))
 	}
 
 	t.tenants[tenantID] = tenant
@@ -406,7 +409,7 @@ type trackedTenant struct {
 	sync.RWMutex
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
-	shards       [shards]*tenantshard.Map
+	shards       [shards]tenantshard.Map
 
 	seriesCreated *atomic.Uint64
 	seriesRemoved *atomic.Uint64
