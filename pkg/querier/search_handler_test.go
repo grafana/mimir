@@ -1495,9 +1495,8 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		assert.Equal(t, true, lines[len(lines)-1]["has_more"])
 	})
 
-	t.Run("requests a family name again in a later batch", func(t *testing.T) {
-		// x is fetched in the first batch and x_bucket arrives in the second, so
-		// the second fetch must request x again.
+	t.Run("enriches a family and its suffixed name in different batches", func(t *testing.T) {
+		// x is in the first batch and x_bucket is in the second.
 		series := []string{"x"}
 		for i := range searchDefaultBatchSize {
 			series = append(series, fmt.Sprintf("x_a%03d", i))
@@ -1517,21 +1516,20 @@ func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T)
 		h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/metric_names?include_metadata=true&batch_size=%d&limit=%d", searchDefaultBatchSize, len(series))))
 		require.Equal(t, http.StatusOK, w.Code)
 
-		require.Len(t, dist.requests, 2)
-		assert.Contains(t, dist.requests[0].MetricNames, "x")
-		assert.Contains(t, dist.requests[1].MetricNames, "x")
+		require.Len(t, dist.requests, 2, "x and x_bucket must be in different batches")
 
 		lines := drainNDJSON(t, w.Body.String())
-		var bucket map[string]any
+		got := map[string]map[string]any{}
 		for _, line := range lines[:len(lines)-1] {
 			for _, r := range line["results"].([]any) {
-				if rec := r.(map[string]any); rec["name"] == "x_bucket" {
-					bucket = rec
-				}
+				rec := r.(map[string]any)
+				got[rec["name"].(string)] = rec
 			}
 		}
-		require.NotNil(t, bucket)
-		assert.Equal(t, "histogram", bucket["type"])
+		for _, name := range []string{"x", "x_bucket"} {
+			require.Contains(t, got, name)
+			assert.Equal(t, "histogram", got[name]["type"], "type of %s", name)
+		}
 	})
 }
 
