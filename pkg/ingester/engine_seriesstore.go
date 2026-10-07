@@ -149,6 +149,11 @@ type floatSink struct {
 	ingestSink
 }
 
+// NeedsLabels is whether the active series tracker is on, which is the only one to want a series' labels.
+func (s floatSink) NeedsLabels() bool {
+	return s.ingestSink.NeedsLabels()
+}
+
 func (s floatSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef) {
 	s.ingestSink.Ingested(series, lbls, ref, -1)
 }

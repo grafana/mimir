@@ -37,6 +37,8 @@ type ingestSink interface {
 	Error(series int, err error, timestampMs int64) (soft bool)
 	// ExemplarFailed reports an exemplar that wasn't ingested: err is one of the errors below, or the engine's.
 	ExemplarFailed(series, exemplar int, err error)
+	// NeedsLabels reports whether Ingested uses the labels of the series, which an engine may not have built.
+	NeedsLabels() bool
 	// Ingested reports a series that got a sample or a histogram, with its labels, which are valid only during the
 	// call, its reference, and the bucket count of its last histogram or -1.
 	Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int)
