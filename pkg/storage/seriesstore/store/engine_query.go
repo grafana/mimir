@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
@@ -275,6 +276,7 @@ type engineChunkSeriesSet struct {
 	series  []rawSeries
 	index   int
 	builder promlabels.ScratchBuilder
+	slab    adapterSlab
 	current engineChunkSeries
 }
 
@@ -284,7 +286,8 @@ func (s *engineChunkSeriesSet) Next() bool {
 		return false
 	}
 	raw := &s.series[s.index]
-	s.current = engineChunkSeries{labels: toPromLabels(raw.stored, &s.builder), chunks: raw.chunks}
+	s.slab.remaining = len(s.series) - s.index
+	s.current = engineChunkSeries{stored: raw.stored, chunks: raw.chunks, builder: &s.builder, slab: &s.slab}
 	return true
 }
 
@@ -294,17 +297,46 @@ func (s *engineChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // engineChunkSeries is a selected series, whose chunks decode from the store's data.
 type engineChunkSeries struct {
-	labels promlabels.Labels
+	stored labels.Labels
 	chunks []chunks.Chunk
+	// What labels are built with, which the series' set keeps from series to series.
+	builder *promlabels.ScratchBuilder
+	slab    *adapterSlab
 }
 
-func (s *engineChunkSeries) Labels() promlabels.Labels { return s.labels }
+// Labels builds the Prometheus labels of the series, which the ingester doesn't need for the series it streams.
+func (s *engineChunkSeries) Labels() promlabels.Labels { return toPromLabels(s.stored, s.builder) }
+
+// LabelAdapters returns the labels as the ingester sends them, which point into the stored labels and share arrays
+// between series: the Prometheus labels it would convert were two allocations a series.
+func (s *engineChunkSeries) LabelAdapters() []mimirpb.LabelAdapter { return s.slab.adapters(s.stored) }
+
+// adapterSlab hands out label adapters from arrays that hold many series' labels.
+type adapterSlab struct {
+	free []mimirpb.LabelAdapter
+	// How many series are left, to size an array that a short result doesn't waste.
+	remaining int
+}
+
+func (a *adapterSlab) adapters(stored labels.Labels) []mimirpb.LabelAdapter {
+	n := stored.Len()
+	if len(a.free) < n {
+		a.free = make([]mimirpb.LabelAdapter, max(n, min(4096, a.remaining*n)))
+	}
+	out := a.free[:0:n]
+	it := stored.Iter()
+	for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
+		out = append(out, mimirpb.LabelAdapter{Name: name, Value: value})
+	}
+	a.free = a.free[n:]
+	return out
+}
 
 func (s *engineChunkSeries) ChunkCount() (int, error) { return len(s.chunks), nil }
 
 func (s *engineChunkSeries) IteratorFactory() storage.ChunkIterable {
-	copied := *s
-	return &copied
+	// What it iterates are the chunks.
+	return &engineChunkSeries{stored: s.stored, chunks: s.chunks}
 }
 
 func (s *engineChunkSeries) Iterator(it tsdbchunks.Iterator) tsdbchunks.Iterator {

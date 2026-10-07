@@ -659,6 +659,12 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
+// labelAdapterSeries is a series that gives its labels as they are sent, which an engine that stores them another way can
+// do without building Prometheus labels first.
+type labelAdapterSeries interface {
+	LabelAdapters() []mimirpb.LabelAdapter
+}
+
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
@@ -696,9 +702,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
-		lbls := cs.Labels()
+		// An engine may give the labels as they are sent, without building Prometheus labels to convert.
+		var adapters []mimirpb.LabelAdapter
+		if adapted, ok := cs.(labelAdapterSeries); ok {
+			adapters = adapted.LabelAdapters()
+		} else {
+			adapters = mimirpb.FromLabelsToLabelAdapters(cs.Labels())
+		}
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
+			Labels:     adapters,
 			ChunkCount: int64(chunkCount),
 		})
 

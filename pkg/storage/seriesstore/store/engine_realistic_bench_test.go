@@ -325,6 +325,12 @@ func (f *realisticFixture) selectSeries(q realisticQuery) int {
 	set := querier.Select(context.Background(), true, nil, q.matchers...)
 	series := 0
 	for set.Next() {
+		// The ingester sends the labels of every series it streams.
+		if adapted, ok := set.At().(interface{ LabelAdapters() []mimirpb.LabelAdapter }); ok {
+			_ = adapted.LabelAdapters()
+		} else {
+			_ = mimirpb.FromLabelsToLabelAdapters(set.At().Labels())
+		}
 		it := set.At().Iterator(nil)
 		for it.Next() {
 			_ = it.At().Chunk.Bytes()
