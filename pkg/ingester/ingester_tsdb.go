@@ -248,7 +248,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Set a reference the head's postings for matchers cache, so that ingesters can invalidate entries
 	if i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache && i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation {
-		if head, ok := db.Head().(tsdbHead); ok {
+		if head, ok := db.Head().(prometheusHead); ok {
 			userDB.postingsCache = head.PostingsForMatchersCache()
 		}
 	}

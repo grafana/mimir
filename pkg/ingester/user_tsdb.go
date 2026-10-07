@@ -178,7 +178,7 @@ type userTSDB struct {
 func (u *userTSDB) generateHeadStatistics() error {
 	// Open head block
 	head := u.db.Head()
-	withMeta, ok := head.(tsdbHead)
+	withMeta, ok := head.(prometheusHead)
 	if !ok {
 		return nil
 	}
@@ -235,7 +235,8 @@ func (u *userTSDB) Head() engineHead {
 
 // Blocks returns the blocks of the engine, none for an engine that keeps no blocks.
 func (u *userTSDB) Blocks() []*tsdb.Block {
-	if engine, ok := u.db.(tsdbEngine); ok {
+	// Only the Prometheus TSDB keeps blocks.
+	if engine, ok := u.db.(prometheusEngine); ok {
 		return engine.Blocks()
 	}
 	return nil
@@ -402,7 +403,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		return nil
 	}
 
-	engine, ok := u.db.(tsdbEngine)
+	engine, ok := u.db.(prometheusEngine)
 	if !ok {
 		return nil
 	}
