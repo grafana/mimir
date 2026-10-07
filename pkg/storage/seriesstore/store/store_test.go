@@ -121,7 +121,7 @@ func TestReturnsOutOfOrderSamplesWithInOrderOnes(t *testing.T) {
 	require.NoError(t, s.Ingest("tenant", floatRequest(samplesRange(0, outOfOrderCapacity, func(t int64) sample { return sample{100 + t, 0} })...)))
 	withSeries(t, s, func(series *Series) {
 		require.Equal(t, 1, series.chunks.count())
-		require.Len(t, series.outOfOrder, 2)
+		require.Len(t, series.ooo(), 2)
 	})
 	require.Len(t, floatSamples(t, s, math.MinInt64, math.MaxInt64), len(expected)+outOfOrderCapacity)
 }

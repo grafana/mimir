@@ -46,21 +46,18 @@ type Series struct {
 	// chunk list ending at chunksTailEnd: dense histogram series cut a chunk every few samples,
 	// and finding the last chunk otherwise means decoding the whole list on every cut.
 	chunksTailRef, chunksTailMinTime int64
-	chunksTailEnd                    int32
 	floatHead                        *floatHead
-	// The open histogram chunk, kept encoded like Prometheus's head chunk; most series are floats.
-	histogramHead   *chunks.HistogramAppender
-	histogramNextAt int64
-	// The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
-	outOfOrder     []oooSample
+	// What few series have, off the series: most are floats without out-of-order samples, and the
+	// slot is paid for by every series.
+	extra          *seriesExtra
 	lastIngestedMs int64
 	// Mimir's `ShardByAllLabels`, which decides which partition owns the series.
 	ownedHash       uint32
 	lastBucketCount uint32
+	// Which chunk list's end chunksTailRef and chunksTailMinTime are for. Here, not by them, for the padding.
+	chunksTailEnd int32
 	// When an owned series recompute first found it non-owned, in Unix seconds, or 0.
 	nonOwnedSinceS uint32
-	// Whether histogramNextAt was already estimated from the chunk's fill rate.
-	histogramEndComputed bool
 	// Whether the last request's samples ended with a native histogram, as Mimir's active series
 	// tracker records it.
 	nativeHistogram bool
@@ -80,7 +77,111 @@ type Series struct {
 	shardHash uint64
 	// Custom trackers this series matches, computed for one of its tenant's tracker generations.
 	trackerGeneration uint64
-	trackerMatches    []uint16
+}
+
+// seriesExtra is the state of a series that has histograms, out-of-order samples or custom tracker matches.
+type seriesExtra struct {
+	// The open histogram chunk, kept encoded like Prometheus's head chunk.
+	histogramHead   *chunks.HistogramAppender
+	histogramNextAt int64
+	// Whether histogramNextAt was already estimated from the chunk's fill rate.
+	histogramEndComputed bool
+	// The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
+	outOfOrder []oooSample
+	// Custom trackers this series matches, for the trackerGeneration.
+	trackerMatches []uint16
+}
+
+func (s *Series) histogram() *chunks.HistogramAppender {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.histogramHead
+}
+
+func (s *Series) setHistogram(head *chunks.HistogramAppender) {
+	if s.extra == nil {
+		if head == nil {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.histogramHead = head
+	s.dropEmptyExtra()
+}
+
+func (s *Series) histogramNextAtValue() int64 {
+	if s.extra == nil {
+		return 0
+	}
+	return s.extra.histogramNextAt
+}
+
+func (s *Series) setHistogramNextAt(at int64) {
+	if s.extra == nil {
+		if at == 0 {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.histogramNextAt = at
+}
+
+func (s *Series) histogramEndComputedValue() bool {
+	return s.extra != nil && s.extra.histogramEndComputed
+}
+
+func (s *Series) setHistogramEndComputed(computed bool) {
+	if s.extra == nil {
+		if !computed {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.histogramEndComputed = computed
+}
+
+func (s *Series) ooo() []oooSample {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.outOfOrder
+}
+
+func (s *Series) setOutOfOrder(samples []oooSample) {
+	if s.extra == nil {
+		if len(samples) == 0 {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.outOfOrder = samples
+	s.dropEmptyExtra()
+}
+
+func (s *Series) matchedTrackers() []uint16 {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.trackerMatches
+}
+
+func (s *Series) setMatchedTrackers(matches []uint16) {
+	if s.extra == nil {
+		if len(matches) == 0 {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.trackerMatches = matches
+	s.dropEmptyExtra()
+}
+
+// dropEmptyExtra frees the extra state once a series has none of it, as a histogram series that went idle.
+func (s *Series) dropEmptyExtra() {
+	if e := s.extra; e.histogramHead == nil && e.histogramNextAt == 0 && !e.histogramEndComputed && len(e.outOfOrder) == 0 && len(e.trackerMatches) == 0 {
+		s.extra = nil
+	}
 }
 
 func (s *Series) isActive(cutoff int64) bool {
@@ -88,7 +189,7 @@ func (s *Series) isActive(cutoff int64) bool {
 }
 
 func (s *Series) hasSamples() bool {
-	return s.floatHead != nil || s.histogramHead != nil || !s.chunks.isEmpty() || len(s.outOfOrder) > 0
+	return s.floatHead != nil || s.histogram() != nil || !s.chunks.isEmpty() || len(s.ooo()) > 0
 }
 
 // maxTime is the newest in-order sample, float or histogram, like the head chunk's max time.
@@ -100,8 +201,8 @@ func (s *Series) maxTime() (int64, bool) {
 	if s.floatHead != nil {
 		newest, ok = s.floatHead.lastTimestamp(), true
 	}
-	if s.histogramHead != nil {
-		if last := s.histogramHead.Last().Timestamp; !ok || last > newest {
+	if s.histogram() != nil {
+		if last := s.histogram().Last().Timestamp; !ok || last > newest {
 			newest, ok = last, true
 		}
 	}
@@ -123,8 +224,8 @@ func (s *Series) newest() (int64, bool) {
 			newest, ok = chunk.MaxTime, true
 		}
 	}
-	if n := len(s.outOfOrder); n > 0 {
-		if last := s.outOfOrder[n-1].T; !ok || last > newest {
+	if n := len(s.ooo()); n > 0 {
+		if last := s.ooo()[n-1].T; !ok || last > newest {
 			newest, ok = last, true
 		}
 	}
@@ -149,11 +250,11 @@ func (s *Series) oldest() (int64, bool) {
 	if s.floatHead != nil {
 		consider(s.floatHead.minTime)
 	}
-	if s.histogramHead != nil {
-		consider(s.histogramHead.FirstTimestamp())
+	if s.histogram() != nil {
+		consider(s.histogram().FirstTimestamp())
 	}
-	if len(s.outOfOrder) > 0 {
-		consider(s.outOfOrder[0].T)
+	if len(s.ooo()) > 0 {
+		consider(s.ooo()[0].T)
 	}
 	return oldest, ok
 }
@@ -163,10 +264,10 @@ func (s *Series) headBounds(visit func(minTime, maxTime int64) bool) bool {
 	if s.floatHead != nil && visit(s.floatHead.minTime, s.floatHead.lastTimestamp()) {
 		return true
 	}
-	if s.histogramHead != nil && visit(s.histogramHead.FirstTimestamp(), s.histogramHead.Last().Timestamp) {
+	if s.histogram() != nil && visit(s.histogram().FirstTimestamp(), s.histogram().Last().Timestamp) {
 		return true
 	}
-	if n := len(s.outOfOrder); n > 0 && visit(s.outOfOrder[0].T, s.outOfOrder[n-1].T) {
+	if n := len(s.ooo()); n > 0 && visit(s.ooo()[0].T, s.ooo()[n-1].T) {
 		return true
 	}
 	return false
@@ -196,11 +297,11 @@ func (s *Series) hasChunkIn(start, end int64) bool {
 	if s.floatHead != nil && s.floatHead.minTime <= end && s.floatHead.lastTimestamp() >= start {
 		return true
 	}
-	if s.histogramHead != nil && s.histogramHead.FirstTimestamp() <= end && s.histogramHead.Last().Timestamp >= start {
+	if s.histogram() != nil && s.histogram().FirstTimestamp() <= end && s.histogram().Last().Timestamp >= start {
 		return true
 	}
-	if n := len(s.outOfOrder); n > 0 && s.outOfOrder[0].T <= end && s.outOfOrder[n-1].T >= start {
-		encoded, err := chunks.EncodeOutOfOrder(s.outOfOrder)
+	if n := len(s.ooo()); n > 0 && s.ooo()[0].T <= end && s.ooo()[n-1].T >= start {
+		encoded, err := chunks.EncodeOutOfOrder(s.ooo())
 		if err != nil {
 			return true
 		}
@@ -217,10 +318,10 @@ func (s *Series) headOverlaps(start, end int64) bool {
 	if s.floatHead != nil && s.floatHead.minTime <= end && s.floatHead.lastTimestamp() >= start {
 		return true
 	}
-	if s.histogramHead != nil && s.histogramHead.FirstTimestamp() <= end && s.histogramHead.Last().Timestamp >= start {
+	if s.histogram() != nil && s.histogram().FirstTimestamp() <= end && s.histogram().Last().Timestamp >= start {
 		return true
 	}
-	if n := len(s.outOfOrder); n > 0 && s.outOfOrder[0].T <= end && s.outOfOrder[n-1].T >= start {
+	if n := len(s.ooo()); n > 0 && s.ooo()[0].T <= end && s.ooo()[n-1].T >= start {
 		return true
 	}
 	return false
@@ -229,10 +330,10 @@ func (s *Series) headOverlaps(start, end int64) bool {
 // histogramSamples returns the open histogram chunk's samples, the first carrying the chunk
 // header as its hint, for rebuilding it.
 func (s *Series) histogramSamples() ([]mimirpb.Histogram, error) {
-	if s.histogramHead == nil {
+	if s.histogram() == nil {
 		return nil, nil
 	}
-	return s.histogramHead.Samples()
+	return s.histogram().Samples()
 }
 
 func histogramBucketCount(h *mimirpb.Histogram) uint64 {

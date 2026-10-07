@@ -258,8 +258,8 @@ func TestAppendsHistogramsLikeThePrometheusHead(t *testing.T) {
 	require.NoError(t, s.Ingest("tenant", request(histogramAt(10_000, 7), histogramAt(500, 5))))
 	withSeries(t, s, func(series *Series) {
 		require.True(t, series.chunks.isEmpty())
-		require.Len(t, series.outOfOrder, 1)
-		require.Equal(t, 21, series.histogramHead.Len())
+		require.Len(t, series.ooo(), 1)
+		require.Equal(t, 21, series.histogram().Len())
 		require.Equal(t, uint32(5), series.lastBucketCount)
 	})
 	var bounds [][2]int64
@@ -278,7 +278,7 @@ func TestAppendsHistogramsLikeThePrometheusHead(t *testing.T) {
 			metas = append(metas, [2]int64{chunk.MinTime, chunk.MaxTime})
 		}
 		require.Equal(t, [][2]int64{{1_000, 10_000}}, metas)
-		require.Equal(t, chunks.HeaderCounterReset, series.histogramHead.Header())
+		require.Equal(t, chunks.HeaderCounterReset, series.histogram().Header())
 	})
 }
 
@@ -457,7 +457,7 @@ func TestParallelBatchAppliesEachSeriesInRecordOrder(t *testing.T) {
 	}
 	require.NoError(t, s.IngestBatch(batch))
 	withSeries(t, s, func(series *Series) {
-		require.Empty(t, series.outOfOrder)
+		require.Empty(t, series.ooo())
 		for _, chunk := range series.chunks.toSlice() {
 			require.LessOrEqual(t, chunk.MinTime, chunk.MaxTime)
 		}

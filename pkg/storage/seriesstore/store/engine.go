@@ -243,8 +243,8 @@ func (e *Engine) adoptRestored() error {
 						minOOOTime, maxOOOTime = min(minOOOTime, chunk.MinTime), max(maxOOOTime, chunk.MaxTime)
 					}
 				}
-				if n := len(series.outOfOrder); n > 0 {
-					minOOOTime, maxOOOTime = min(minOOOTime, series.outOfOrder[0].T), max(maxOOOTime, series.outOfOrder[n-1].T)
+				if n := len(series.ooo()); n > 0 {
+					minOOOTime, maxOOOTime = min(minOOOTime, series.ooo()[0].T), max(maxOOOTime, series.ooo()[n-1].T)
 				}
 			})
 		}
@@ -576,8 +576,8 @@ func (e *Engine) oooState(shard int, series *Series) (bool, int64) {
 			has, oldest = true, min(oldest, chunk.MinTime)
 		}
 	}
-	if len(series.outOfOrder) > 0 {
-		has, oldest = true, min(oldest, series.outOfOrder[0].T)
+	if len(series.ooo()) > 0 {
+		has, oldest = true, min(oldest, series.ooo()[0].T)
 	}
 	return has, oldest
 }
@@ -595,7 +595,7 @@ func inOrderFrom(series *Series, mint int64) (bool, int64) {
 	if fh := series.floatHead; fh != nil && fh.lastTimestamp() >= mint {
 		has, oldest = true, min(oldest, fh.minTime)
 	}
-	if hh := series.histogramHead; hh != nil && hh.Last().Timestamp >= mint {
+	if hh := series.histogram(); hh != nil && hh.Last().Timestamp >= mint {
 		has, oldest = true, min(oldest, hh.FirstTimestamp())
 	}
 	return has, oldest
