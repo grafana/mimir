@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -6165,6 +6166,10 @@ type prepConfig struct {
 	replicationFactor                  int
 	enableTracker                      bool
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
+	// labelNamesAndValuesBehaviour selects how each mock ingester answers LabelNamesAndValues. ingesterIdx is the per-zone mockIngester.id.
+	labelNamesAndValuesBehaviour func(zone string, ingesterIdx int) labelNamesAndValuesBehaviour
+	// labelNamesAndValuesGate is shared by the mock ingesters; see labelNamesAndValuesCurrentAfterFailure.
+	labelNamesAndValuesGate *labelNamesAndValuesGate
 
 	configure func(*Config)
 
@@ -6327,6 +6332,10 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 		}
+		if cfg.labelNamesAndValuesBehaviour != nil {
+			ingester.labelNamesAndValuesBehaviour = cfg.labelNamesAndValuesBehaviour(zone, i)
+		}
+		ingester.labelNamesAndValuesGate = cfg.labelNamesAndValuesGate
 		if cfg.searchLabelNamesHook != nil {
 			ingesterIdx := i
 			hook := cfg.searchLabelNamesHook
@@ -6998,6 +7007,9 @@ type mockIngester struct {
 	calls                         map[string][][]any
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
+	labelNamesAndValuesBehaviour  labelNamesAndValuesBehaviour
+	labelNamesAndValuesCalls      int
+	labelNamesAndValuesGate       *labelNamesAndValuesGate
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
@@ -7560,13 +7572,55 @@ func (i *mockIngester) MetricsMetadata(ctx context.Context, _ *client.MetricsMet
 	return resp, nil
 }
 
-func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+// labelNamesAndValuesBehaviour selects how a mock ingester answers LabelNamesAndValues requests.
+type labelNamesAndValuesBehaviour int
+
+const (
+	// labelNamesAndValuesCurrent sorts values and splits messages when asked to, like the current ingester.
+	labelNamesAndValuesCurrent labelNamesAndValuesBehaviour = iota
+	// labelNamesAndValuesOld ignores sort_values and target_message_size_bytes, like an ingester from an older release.
+	labelNamesAndValuesOld
+	// labelNamesAndValuesOutOfOrder confirms sorting but sends the values of one label out of order.
+	labelNamesAndValuesOutOfOrder
+	// labelNamesAndValuesFailAfterFirstMessage sends the first message and then fails the stream.
+	labelNamesAndValuesFailAfterFirstMessage
+	// labelNamesAndValuesFailOnceThenUnavailable fails its first stream after the first message, like an ingester
+	// that goes down during the request, and then fails every later request when it's opened.
+	labelNamesAndValuesFailOnceThenUnavailable
+	// labelNamesAndValuesCurrentAfterFailure behaves like labelNamesAndValuesCurrent, but holds its first message
+	// until a failing ingester's stream is read past its first message. Tests use it to make sure that the
+	// failing ingester is part of the quorum.
+	labelNamesAndValuesCurrentAfterFailure
+)
+
+// labelNamesAndValuesGate is opened by failing mock ingesters, and waited for by labelNamesAndValuesCurrentAfterFailure.
+type labelNamesAndValuesGate struct {
+	once sync.Once
+	ch   chan struct{}
+}
+
+func newLabelNamesAndValuesGate() *labelNamesAndValuesGate {
+	return &labelNamesAndValuesGate{ch: make(chan struct{})}
+}
+
+func (g *labelNamesAndValuesGate) open() { g.once.Do(func() { close(g.ch) }) }
+
+func (i *mockIngester) LabelNamesAndValues(ctx context.Context, req *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}
 
 	i.Lock()
 	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+	i.labelNamesAndValuesCalls++
+	if i.labelNamesAndValuesBehaviour == labelNamesAndValuesFailOnceThenUnavailable && i.labelNamesAndValuesCalls > 1 {
+		return nil, errFail
+	}
+
 	results := map[string]map[string]struct{}{}
 	for _, ts := range i.timeseries {
 		for _, lbl := range ts.Labels {
@@ -7578,16 +7632,80 @@ func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelN
 			results[lbl.Name] = labelValues
 		}
 	}
-	var items []*client.LabelValues
-	for labelName, labelValues := range results {
-		var values []string
-		for val := range labelValues {
-			values = append(values, val)
+
+	if !req.SortValues || i.labelNamesAndValuesBehaviour == labelNamesAndValuesOld {
+		var items []*client.LabelValues
+		for labelName, labelValues := range results {
+			var values []string
+			for val := range labelValues {
+				values = append(values, val)
+			}
+			items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
 		}
-		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
+		resp := &client.LabelNamesAndValuesResponse{Items: items}
+		return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.labelNamesStreamResponseDelay}, nil
 	}
-	resp := &client.LabelNamesAndValuesResponse{Items: items}
-	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.labelNamesStreamResponseDelay}, nil
+
+	names := slices.Sorted(maps.Keys(results))
+	sorted := make([]*client.LabelValues, 0, len(names))
+	outOfOrderDone := false
+	for _, name := range names {
+		values := slices.Sorted(maps.Keys(results[name]))
+		if i.labelNamesAndValuesBehaviour == labelNamesAndValuesOutOfOrder && !outOfOrderDone && len(values) > 1 {
+			slices.Reverse(values)
+			outOfOrderDone = true
+		}
+		sorted = append(sorted, &client.LabelValues{LabelName: name, Values: values})
+	}
+
+	stream := &labelNamesAndValuesMockStream{
+		ctx:           ctx,
+		responses:     splitLabelNamesAndValues(sorted, int(req.TargetMessageSizeBytes)),
+		responseDelay: i.labelNamesStreamResponseDelay,
+	}
+	switch i.labelNamesAndValuesBehaviour {
+	case labelNamesAndValuesFailAfterFirstMessage, labelNamesAndValuesFailOnceThenUnavailable:
+		stream.responses = stream.responses[:min(1, len(stream.responses))]
+		stream.errAtEnd = errFail
+		if i.labelNamesAndValuesGate != nil {
+			stream.afterFirst = i.labelNamesAndValuesGate.open
+		}
+	case labelNamesAndValuesCurrentAfterFailure:
+		if i.labelNamesAndValuesGate != nil {
+			stream.beforeFirst = i.labelNamesAndValuesGate.ch
+		}
+	}
+	return stream, nil
+}
+
+// splitLabelNamesAndValues splits sorted items into messages of about targetSize bytes, with at least one value each,
+// splitting a label's values across messages like the ingester does. All messages have ValuesSorted set.
+func splitLabelNamesAndValues(items []*client.LabelValues, targetSize int) []*client.LabelNamesAndValuesResponse {
+	var out []*client.LabelNamesAndValuesResponse
+	curr := &client.LabelNamesAndValuesResponse{ValuesSorted: true}
+	size := 0
+	for _, item := range items {
+		var currItem *client.LabelValues
+		for _, v := range item.Values {
+			if currItem == nil {
+				currItem = &client.LabelValues{LabelName: item.LabelName}
+				curr.Items = append(curr.Items, currItem)
+				size += len(item.LabelName)
+			}
+			currItem.Values = append(currItem.Values, v)
+			size += len(v)
+			if targetSize > 0 && size >= targetSize {
+				out = append(out, curr)
+				curr = &client.LabelNamesAndValuesResponse{ValuesSorted: true}
+				currItem = nil
+				size = 0
+			}
+		}
+	}
+	if len(curr.Items) > 0 {
+		out = append(out, curr)
+	}
+	return out
 }
 
 type labelNamesAndValuesMockStream struct {
@@ -7595,6 +7713,14 @@ type labelNamesAndValuesMockStream struct {
 	responses     []*client.LabelNamesAndValuesResponse
 	i             int
 	responseDelay time.Duration
+	// errAtEnd is returned instead of io.EOF once all responses are sent.
+	errAtEnd error
+
+	ctx context.Context
+	// beforeFirst, if set, must be closed before the first response is returned.
+	beforeFirst <-chan struct{}
+	// afterFirst, if set, is called when a response after the first one is requested.
+	afterFirst func()
 }
 
 func (*labelNamesAndValuesMockStream) CloseSend() error {
@@ -7603,7 +7729,20 @@ func (*labelNamesAndValuesMockStream) CloseSend() error {
 
 func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesResponse, error) {
 	time.Sleep(s.responseDelay)
+	if s.i == 0 && s.beforeFirst != nil {
+		select {
+		case <-s.beforeFirst:
+		case <-s.ctx.Done():
+			return nil, context.Cause(s.ctx)
+		}
+	}
+	if s.i > 0 && s.afterFirst != nil {
+		s.afterFirst()
+	}
 	if s.i >= len(s.responses) {
+		if s.errAtEnd != nil {
+			return nil, s.errAtEnd
+		}
 		return nil, io.EOF
 	}
 	result := s.responses[s.i]

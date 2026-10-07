@@ -244,6 +244,7 @@ The following features are currently experimental:
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
+  - Streaming merge for the label names cardinality endpoint (`-querier.cardinality-analysis-streaming-merge-enabled` and `-querier.cardinality-analysis-streaming-merge-message-size-bytes`, and the `cardinality_analysis_streaming_merge_enabled` and `cardinality_analysis_streaming_merge_message_size_bytes` per-tenant limits)
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)

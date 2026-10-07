@@ -453,6 +453,7 @@
   "querier.label-names-and-values-results-max-size-bytes": 419430400,
   "querier.label-values-max-cardinality-label-names-per-request": 100,
   "querier.cardinality-api-max-series-limit": 500,
+  "querier.cardinality-analysis-streaming-merge-message-size-bytes": 65536,
   "querier.active-series-results-max-size-bytes": 419430400,
   "validation.cost-attribution-cooldown": 0,
   "validation.max-cost-attribution-cardinality": 2000,
