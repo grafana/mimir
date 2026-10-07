@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -132,11 +133,12 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 		}
 	}
 
+	activeRefs := db.activeRefs(time.Now())
 	if isNativeHistogram {
-		return activeseries.NewNativeHistogramPostings(db.activeSeries, postings), nil
+		return activeseries.NewNativeHistogramPostings(activeRefs, postings), nil
 	}
 
-	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, nil
+	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
 }
 
 // Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.

@@ -382,7 +382,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Walk the samples, ingesting them into the users database
 	var activeSeries *activeseries.ActiveSeries
-	if i.cfg.ActiveSeriesMetrics.Enabled {
+	if i.cfg.ActiveSeriesMetrics.Enabled && db.trackerActive() {
 		activeSeries = db.activeSeries
 	}
 
@@ -423,6 +423,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		MaxTimestampMs:   sink.maxTimestampMs,
 		NativeHistograms: nativeHistogramsIngestionEnabled,
 		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
+		IngestedAt:       startAppend,
+		OTLP:             req.Source == mimirpb.OTLP,
 	}, sink)
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars

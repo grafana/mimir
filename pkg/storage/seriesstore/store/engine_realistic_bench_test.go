@@ -220,7 +220,7 @@ func (f *realisticFixture) ingestFloats(engine *Engine, round, worker, series in
 		for i := range indices {
 			indices[i] = i
 		}
-		leftover, _, err := engine.AppendFloats(batch, indices, math.MinInt64, math.MaxInt64, discardSink{})
+		leftover, _, err := engine.AppendFloats(batch, indices, math.MinInt64, math.MaxInt64, 0, false, discardSink{})
 		fail(err)
 		if len(leftover) > 0 {
 			app := engine.Appender(context.Background())

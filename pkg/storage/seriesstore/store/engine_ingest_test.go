@@ -112,7 +112,7 @@ func TestEngineAppendFloatsMatchesAppender(t *testing.T) {
 	for n := range indices {
 		indices[n] = n
 	}
-	leftover, ingested, err := viaFloats.AppendFloats(request, indices, 0, 50_000_000, floatsSink)
+	leftover, ingested, err := viaFloats.AppendFloats(request, indices, 0, 50_000_000, 123, true, floatsSink)
 	require.NoError(t, err)
 	require.Equal(t, indices[30:], leftover, "the series the engine doesn't have are left over")
 	require.Greater(t, ingested, 0)
@@ -249,7 +249,7 @@ func BenchmarkEngineIngestBatch(b *testing.B) {
 							}
 						default:
 							sink := &countingFloatSink{}
-							leftover, _, err := engine.AppendFloats(batch, indices, 0, math.MaxInt64, sink)
+							leftover, _, err := engine.AppendFloats(batch, indices, 0, math.MaxInt64, 0, false, sink)
 							if err != nil || len(leftover) > 0 || sink.errors > 0 {
 								b.Error(err, len(leftover), sink.errors)
 								return
@@ -349,4 +349,82 @@ func BenchmarkEngineSelectColdBlocks(b *testing.B) {
 		require.NoError(b, set.Err())
 		_ = q.Close()
 	}
+}
+
+func TestEngineActiveSeries(t *testing.T) {
+	ctx := context.Background()
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+
+	lsets := make([]promlabels.Labels, 10)
+	for n := range lsets {
+		lsets[n] = promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%2), "pod", fmt.Sprintf("pod-%d", n))
+	}
+	app := engine.Appender(ctx)
+	refs := make([]storage.SeriesRef, len(lsets))
+	for n, lset := range lsets {
+		ref, err := app.Append(0, lset, 10_000, 1)
+		require.NoError(t, err)
+		refs[n] = ref
+	}
+	require.NoError(t, app.Commit())
+	// No series was marked ingested yet: they are all at time zero.
+	require.Zero(t, engine.ActiveSeries(1).Total)
+
+	// Series 0-5 are ingested by floats at 100 over OTLP, and 6-7 at 200 through the appender's path, with histograms.
+	request := make([]mimirpb.PreallocTimeseries, 6)
+	indices := make([]int, 6)
+	for n := range request {
+		var adapters []mimirpb.LabelAdapter
+		lsets[n].Range(func(l promlabels.Label) {
+			adapters = append(adapters, mimirpb.LabelAdapter{Name: l.Name, Value: l.Value})
+		})
+		request[n] = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: adapters, Samples: []mimirpb.Sample{{TimestampMs: 20_000, Value: 2}}}}
+		indices[n] = n
+	}
+	leftover, _, err := engine.AppendFloats(request, indices, 0, math.MaxInt64, 100, true, &recordingFloatSink{})
+	require.NoError(t, err)
+	require.Empty(t, leftover)
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[6], HistogramBuckets: 7}, {Ref: refs[7], HistogramBuckets: -1}}, 200, false)
+
+	counts := engine.ActiveSeries(50)
+	require.Equal(t, uint64(8), counts.Total)
+	require.Equal(t, uint64(6), counts.OTLP)
+	require.Equal(t, uint64(1), counts.NativeHistograms)
+	require.Equal(t, uint64(7), counts.NativeHistogramBuckets)
+	// Only the later ones are active in a later window.
+	require.Equal(t, uint64(2), engine.ActiveSeries(150).Total)
+
+	// A custom tracker matches the series of metric_0, and follows a change of trackers.
+	engine.SetActiveTrackers(ActiveTrackers{Count: 1, Match: func(lset promlabels.Labels) []uint16 {
+		if lset.Get("__name__") == "metric_0" {
+			return []uint16{0}
+		}
+		return nil
+	}})
+	counts = engine.ActiveSeries(50)
+	require.Equal(t, []TrackerCounts{{Total: 4, NativeHistograms: 1, NativeHistogramBuckets: 7}}, counts.Trackers)
+	require.Equal(t, counts.Trackers, engine.ActiveSeries(50).Trackers, "from the cached matches")
+	engine.SetActiveTrackers(ActiveTrackers{Count: 2, Match: func(lset promlabels.Labels) []uint16 {
+		if lset.Get("pod") == "pod-1" {
+			return []uint16{1}
+		}
+		return nil
+	}})
+	require.Equal(t, []TrackerCounts{{}, {Total: 1}}, engine.ActiveSeries(50).Trackers)
+
+	active, buckets, histogram := engine.IsActive(refs[6], 50)
+	require.True(t, active)
+	require.True(t, histogram)
+	require.Equal(t, 7, buckets)
+	active, _, _ = engine.IsActive(refs[9], 50)
+	require.False(t, active)
+
+	engine.DeactivateSeries([]storage.SeriesRef{refs[0], refs[6]})
+	require.Equal(t, uint64(6), engine.ActiveSeries(50).Total)
+	// A later ingest brings a series back.
+	engine.MarkIngested([]IngestedSeries{{Ref: refs[0], HistogramBuckets: -1}}, 300, false)
+	require.Equal(t, uint64(7), engine.ActiveSeries(50).Total)
+	engine.DeactivateAll()
+	require.Zero(t, engine.ActiveSeries(0).Total)
 }

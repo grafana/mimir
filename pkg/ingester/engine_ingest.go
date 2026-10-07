@@ -25,6 +25,10 @@ type ingestBatch struct {
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
 	NativeHistograms bool
 	Exemplars        bool
+	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
+	// records in the series it ingests.
+	IngestedAt time.Time
+	OTLP       bool
 }
 
 // ingestSink is what the ingester wants to know while an engine ingests a batch: series are identified by their

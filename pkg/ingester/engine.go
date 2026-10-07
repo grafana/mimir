@@ -115,6 +115,10 @@ func mustIndex(head engineHead) tsdb.IndexReader {
 // always empty outside tests.
 var testEngine string
 
+// testNoNativeActive makes tests run an engine that keeps the active series itself with the ingester's tracker instead,
+// to compare them (MIMIR_TEST_NO_NATIVE_ACTIVE); it's always false outside tests.
+var testNoNativeActive bool
+
 // openTenantEngine opens the tenant's TSDB in dir with the engine the ingester is configured with.
 func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {

@@ -54,9 +54,9 @@ type floatIngested struct {
 // AppendFloats appends the float samples of the series at indices to the series the engine already has, and
 // returns the indices, in order, of those it didn't handle, which the caller appends another way: series it doesn't have
 // yet, and series with a staleness marker, whose type follows the series' last sample. Samples are appended and
-// visible when it returns. It takes each store shard's lock once, where an appender takes it for every sample
+// visible when it returns, and the series that got samples are marked ingested at ingestedAtMs. It takes each store shard's lock once, where an appender takes it for every sample
 // twice. Series need floats and no histograms or exemplars, and the head needs to have its first sample.
-func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs int64, sink FloatSink) (leftover []int, ingested int, err error) {
+func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
 		return indices, 0, nil
@@ -225,6 +225,8 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 					}
 				}
 				if ingested > oldIngested {
+					// The series are active, as the active series counts tell, and not by a histogram.
+					entry.series.markIngested(ingestedAtMs, otlp, -1)
 					touched = append(touched, floatIngested{int(position), storage.SeriesRef(entry.series.ref)})
 				}
 				if stop {

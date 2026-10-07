@@ -125,11 +125,11 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	// Use a trick to track all series we've written so far as "inactive".
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingester.getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries := ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 0, totalActiveSeries)
 
 	// Push 20 more series.
@@ -145,7 +145,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries = ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 20, totalActiveSeries)
 
 	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
@@ -155,7 +155,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries = ingester.getTSDB(userID).activeSeriesTotal(time.Now())
 	require.Equal(t, 0, totalActiveSeries)
 }
 
@@ -792,7 +792,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 	}
 
 	// Mark all series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingester.getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Per-tenant early compaction should not trigger because threshold is 0 (disabled)
 	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
@@ -834,7 +834,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Pre-condition: owned series (12) is below the global threshold (20),
 	// but at or above the local per-ingester threshold (20 / 2 = 10).
@@ -885,7 +885,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// First compaction should trigger
 	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
@@ -900,7 +900,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	}
 
 	// Mark new series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(70*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(70 * time.Minute))
 
 	// Try compaction again immediately (within cooldown period)
 	// Should not create a new block because cooldown hasn't passed
@@ -945,7 +945,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RequiresOwnedSeriesForLimits(
 	}
 
 	// Mark all series as inactive
-	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).markAllInactive(now.Add(30 * time.Minute))
 
 	// Per-tenant early compaction should NOT trigger because UseIngesterOwnedSeriesForLimits is false
 	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
