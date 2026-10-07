@@ -21,12 +21,12 @@ type BucketCountPostings interface {
 // open TSDB head. It is not valid to use NativeHistogramPostings if the
 // postings are from a block.
 type NativeHistogramPostings struct {
-	activeSeries       *ActiveSeries
+	activeSeries       ActiveRefs
 	postings           index.Postings
 	currentBucketCount int
 }
 
-func NewNativeHistogramPostings(activeSeries *ActiveSeries, postings index.Postings) *NativeHistogramPostings {
+func NewNativeHistogramPostings(activeSeries ActiveRefs, postings index.Postings) *NativeHistogramPostings {
 	return &NativeHistogramPostings{
 		activeSeries: activeSeries,
 		postings:     postings,

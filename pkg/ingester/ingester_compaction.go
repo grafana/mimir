@@ -462,14 +462,9 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 			continue
 		}
 
-		// Purge the active series so that the next call to Active() will return the up-to-date count.
-		idx := mustIndex(db.Head())
-		db.activeSeries.Purge(now, idx)
-		idx.Close()
-
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		totalActiveSeries, _, _, _ := db.activeSeries.Active()
+		totalActiveSeries := db.activeSeriesCounts(now).Total
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,
@@ -559,12 +554,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 			continue
 		}
 
-		// Purge active series to get accurate count
-		idx := mustIndex(db.Head())
-		db.activeSeries.Purge(now, idx)
-		_ = idx.Close()
-
-		totalActiveSeries, _, _, _ := db.activeSeries.Active()
+		totalActiveSeries := db.activeSeriesCounts(now).Total
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimatedPercentage := int((uint64(estimatedSeriesReduction) * 100) / userMemorySeries)
 

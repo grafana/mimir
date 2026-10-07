@@ -109,6 +109,10 @@ func mustIndex(head engineHead) tsdb.IndexReader {
 	return idx
 }
 
+// testNoNativeActive makes tests run an engine that keeps the active series itself with the ingester's tracker instead,
+// to compare them (MIMIR_TEST_NO_NATIVE_ACTIVE); it's always false outside tests.
+var testNoNativeActive bool
+
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
 type prometheusEngine struct {
 	*tsdb.DB
