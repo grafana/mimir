@@ -312,9 +312,10 @@ func (s *metadataEnrichingSearchResultSet) enrich(batch []storage.SearchResult) 
 		return
 	}
 
-	// Store the metadata of the batch in one slice instead of one allocation
-	// per result. It is allocated at the first match, with room for every
-	// remaining result, so it never grows and the pointers into it stay valid.
+	// Store the metadata of the batch in one slice, allocated at the first
+	// match. A pointer to a per-result variable escapes to the heap and costs
+	// one allocation per result.
+	// Using the slice allows for single alloc rather than per match
 	var mds []metadata.Metadata
 	for i := range batch {
 		m, ok := metadataForMetric(md, batch[i].Value)
@@ -322,10 +323,10 @@ func (s *metadataEnrichingSearchResultSet) enrich(batch []storage.SearchResult) 
 			continue
 		}
 		if mds == nil {
-			mds = make([]metadata.Metadata, 0, len(batch)-i)
+			mds = make([]metadata.Metadata, len(batch))
 		}
-		mds = append(mds, m)
-		batch[i].Metadata = &mds[len(mds)-1]
+		mds[i] = m
+		batch[i].Metadata = &mds[i]
 	}
 }
 
