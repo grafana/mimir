@@ -222,9 +222,6 @@ type metadataEnrichingSearchResultSet struct {
 	warnedFetchErr bool
 	// readFromCurrentBatch is the number of results readFromCurrentBatch from inner before the current batch.
 	readFromCurrentBatch int
-
-	// requested is reused across batches to dedupe the names to fetch.
-	requested map[string]struct{}
 }
 
 func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize, limit int, logger log.Logger) *metadataEnrichingSearchResultSet {
@@ -280,26 +277,23 @@ func (s *metadataEnrichingSearchResultSet) enrich(batch []storage.SearchResult) 
 	// fetch returns. Capacity is increased to accommodate family names being
 	// added to this slice.
 	names := make([]string, 0, 2*len(batch))
-	if s.requested == nil {
-		s.requested = make(map[string]struct{}, 2*len(batch))
-	}
-	defer clear(s.requested)
+	requested := make(map[string]struct{}, 2*len(batch))
 
 	for i := range batch {
 		val := batch[i].Value
 		names = append(names, val)
-		s.requested[val] = struct{}{}
+		requested[val] = struct{}{}
 	}
 	for i := range batch {
 		family, _, ok := metricFamilyName(batch[i].Value)
 		if !ok {
 			continue
 		}
-		if _, ok := s.requested[family]; ok {
+		if _, ok := requested[family]; ok {
 			continue
 		}
 		names = append(names, family)
-		s.requested[family] = struct{}{}
+		requested[family] = struct{}{}
 	}
 
 	md, err := s.fetch(s.ctx, names)
