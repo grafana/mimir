@@ -12,6 +12,7 @@ import (
 func init() {
 	testEngine = os.Getenv("MIMIR_TEST_TSDB_ENGINE")
 	testNoNativeActive = os.Getenv("MIMIR_TEST_NO_NATIVE_ACTIVE") != ""
+	testNoCompactionJitter = true
 }
 
 // skipIfSeriesstore skips tests of Prometheus TSDB internals the seriesstore engine doesn't have.

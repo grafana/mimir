@@ -679,7 +679,7 @@ func TestTrackerMatchesSurviveReloadsThatKeepTheTrackers(t *testing.T) {
 		for _, shard := range s.shards {
 			shard.RLock()
 			if t, ok := shard.tenants[tenant]; ok {
-				t.series.forEach(func(entry *seriesEntry) { out = append(out, entry.series.trackerGeneration) })
+				t.series.forEach(func(entry *seriesEntry) { out = append(out, uint64(entry.series.trackerGeneration)) })
 			}
 			shard.RUnlock()
 		}
@@ -889,5 +889,73 @@ func TestPostingsSelectTheSameSeriesAsAFullScan(t *testing.T) {
 	built = buildPostings(snapshot)
 	byName.retain(func(entry *seriesEntry) bool { return entry.series.lastIngestedMs != 1 })
 	require.False(t, byName.installPostings(built, snapshot))
+	check()
+}
+
+// A big name group is scanned by the dictionaries of its labels' values for the matchers that aren't equalities, which
+// selects the same series as reading each series' labels, for the label a series lacks and for one with many values.
+func TestDictionariesSelectTheSameSeriesAsAFullScan(t *testing.T) {
+	byName := newSeriesByName()
+	insert := func(id uint64) {
+		pairs := [][2]string{
+			{"__name__", fmt.Sprintf("metric_%d", id%2)},
+			{"job", fmt.Sprintf("job_%d", id%7)},
+			{"pod", fmt.Sprintf("pod_%d", id)},
+		}
+		if id%3 == 0 {
+			pairs = append(pairs, [2]string{"zone", fmt.Sprintf("zone_%d", id%5)})
+		}
+		slices.SortFunc(pairs, comparePairs)
+		stored := labels.FromSorted(pairs)
+		byName.insert(stored.Hash(), stored, Series{})
+	}
+	for id := range uint64(6000) {
+		insert(id)
+	}
+	cases := [][]LabelMatcher{
+		{matcher(0, "__name__", "metric_1"), matcher(2, "job", "job_(1|3)")},
+		{matcher(0, "__name__", "metric_1"), matcher(3, "job", "job_[0-4]")},
+		{matcher(0, "__name__", "metric_0"), matcher(1, "job", "job_2")},
+		{matcher(0, "__name__", "metric_0"), matcher(2, "zone", "zone_1|")},
+		{matcher(0, "__name__", "metric_0"), matcher(3, "zone", "zone_.*")},
+		{matcher(0, "__name__", "metric_0"), matcher(1, "zone", "")},
+		{matcher(0, "__name__", "metric_0"), matcher(2, "zone", "zone_1"), matcher(3, "job", "job_[0-2]")},
+		{matcher(0, "__name__", "metric_1"), matcher(2, "pod", "pod_1[0-9]+")},
+		{matcher(0, "__name__", "metric_1"), matcher(3, "pod", "pod_1[0-9]+")},
+	}
+	check := func() {
+		for _, c := range cases {
+			compiled, err := compileMatchers(c)
+			require.NoError(t, err)
+			var expected, actual []uint64
+			byName.forEach(func(entry *seriesEntry) {
+				if matches(entry.labels, compiled) {
+					expected = append(expected, entry.hash)
+				}
+			})
+			byName.matching(compiled, func(entry *seriesEntry) bool {
+				actual = append(actual, entry.hash)
+				return true
+			})
+			slices.Sort(expected)
+			slices.Sort(actual)
+			require.Equal(t, expected, actual, "%v", c)
+		}
+	}
+	check()
+	tooMany := 0
+	for _, dict := range byName.dicts {
+		if dict.tooManyAt > 0 {
+			tooMany++
+		}
+	}
+	require.NotEmpty(t, byName.dicts)
+	require.Equal(t, 1, tooMany, "the pods have too many values for a dictionary, the jobs and zones don't")
+	// Series added meanwhile extend the dictionaries, and the ones removed give them up.
+	for id := uint64(6000); id < 6500; id++ {
+		insert(id)
+	}
+	check()
+	byName.retain(func(entry *seriesEntry) bool { return entry.hash%3 != 0 })
 	check()
 }
