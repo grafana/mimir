@@ -47,9 +47,9 @@ type EngineOptions struct {
 	// Prometheus's `TimelyCompaction`: the head compacts its oldest block range once it ends
 	// behind the appendable window, instead of once the head spans 1.5 block ranges.
 	TimelyCompaction bool
-	// JitterCompaction starts the engine's head compactions a random time, up to a quarter of a block range, after the
-	// head spans 1.5 block ranges: the ingesters of a partition ring would otherwise compact at the same wall-clock
-	// time, as the block ranges are aligned on it, and slow their queries together.
+	// JitterCompaction starts the engine's head compactions a random time, up to a quarter of a block range, later
+	// than they are due: the ingesters of a partition ring would otherwise compact at the same wall-clock time, as the
+	// block ranges are aligned on it, and slow their queries together.
 	JitterCompaction        bool
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
@@ -91,6 +91,9 @@ type Engine struct {
 
 	// Compactions and snapshots run one at a time.
 	compactionLock sync.Mutex
+	// Whether out-of-order samples came in since the out-of-order head was last compacted: it has nothing to compact
+	// otherwise, and walking every series to find out is most of what a compaction holds the shards' locks for.
+	oooDirty atomic.Bool
 	// How long past 1.5 block ranges the head has to span to be compacted.
 	compactionJitterMs int64
 	// Whether Open restored the head as it was at the last Close, or started without any data.
@@ -120,6 +123,8 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		return nil, fmt.Errorf("at most %d store shards", maxShards)
 	}
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
+	// A restored head may hold out-of-order data that was never compacted.
+	e.oooDirty.Store(true)
 	if opts.JitterCompaction {
 		e.compactionJitterMs = rand.Int64N(chunkRangeMs / 4)
 	}
@@ -368,6 +373,7 @@ func (e *Engine) MaxOOOTime() int64 {
 }
 
 func (e *Engine) observeOOO(minTime, maxTime int64) {
+	e.oooDirty.Store(true)
 	home, t := e.home()
 	home.Lock()
 	defer home.Unlock()
@@ -441,7 +447,7 @@ func (e *Engine) compactable() bool {
 		return false
 	}
 	if e.opts.TimelyCompaction {
-		return rangeForTimestamp(minTime) < appendableMinValidTime(maxTime, minValid)
+		return satAdd(rangeForTimestamp(minTime), e.compactionJitterMs) < appendableMinValidTime(maxTime, minValid)
 	}
 	return maxTime-minTime > chunkRangeMs/2*3+e.compactionJitterMs
 }
@@ -526,9 +532,10 @@ func (e *Engine) truncateMemory(blockMin, mint int64) {
 // compacted, like Prometheus's out-of-order head compaction; the samples stay queryable with their
 // series. The head's garbage collection runs when any chunk was compacted, like truncateOOO.
 func (e *Engine) compactOOOHead() {
-	if !e.oooWasEnabled.Load() {
+	if !e.oooWasEnabled.Load() || !e.oooDirty.Swap(false) {
 		return
 	}
+	failed := false
 	watermarks := slices.Clone(e.oooWatermarks)
 	compactedFrom, compactedTo := int64(math.MaxInt64), int64(math.MinInt64)
 	for index, shard := range e.store.shards {
@@ -538,6 +545,7 @@ func (e *Engine) compactOOOHead() {
 				series := &entry.series
 				if err := flushOutOfOrder(series, shard.disk); err != nil {
 					fmt.Fprintf(os.Stderr, "phase=ooo_flush_error tenant=%s error=%v\n", e.tenantID, err)
+					failed = true
 				}
 				// Out-of-order blocks are aligned on block ranges.
 				if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
@@ -547,6 +555,7 @@ func (e *Engine) compactOOOHead() {
 					return nil
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "phase=ooo_split_error tenant=%s error=%v\n", e.tenantID, err)
+					failed = true
 				}
 				it := series.chunks.iter()
 				for chunk, more := it.next(); more; chunk, more = it.next() {
@@ -559,6 +568,10 @@ func (e *Engine) compactOOOHead() {
 			})
 		}
 		shard.Unlock()
+	}
+	if failed {
+		// What failed is tried again by the next compaction.
+		e.oooDirty.Store(true)
 	}
 	if compactedFrom > compactedTo {
 		return
