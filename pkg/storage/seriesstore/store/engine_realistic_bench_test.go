@@ -352,23 +352,28 @@ func evictCaches() {
 var evictSink byte
 
 // timed runs fn iterations times and reports its latency quantiles and CPU per call.
-func timed(iterations int, fn func()) (p50, p99, cpuMs float64) {
+func timed(iterations int, fn func()) (p50, p99, cpuMs, allocKB float64) {
 	latencies := make([]time.Duration, 0, iterations)
 	var cpu float64
+	var allocated uint64
 	for range iterations {
 		// With MIMIR_REALISTIC_COLD set, the caches are emptied before each query, which isn't timed.
 		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
 			evictCaches()
 		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
 		cpuBefore := processCPU()
 		started := time.Now()
 		fn()
 		latencies = append(latencies, time.Since(started))
 		cpu += processCPU() - cpuBefore
+		runtime.ReadMemStats(&after)
+		allocated += after.TotalAlloc - before.TotalAlloc
 	}
 	slices.Sort(latencies)
 	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
-	return ms(latencies[len(latencies)/2]), ms(latencies[min(len(latencies)-1, len(latencies)*99/100)]), cpu * 1000 / float64(iterations)
+	return ms(latencies[len(latencies)/2]), ms(latencies[min(len(latencies)-1, len(latencies)*99/100)]), cpu * 1000 / float64(iterations), float64(allocated) / 1024 / float64(iterations)
 }
 
 func (f *realisticFixture) queryPhases(b *testing.B, prefix string) {
@@ -378,8 +383,8 @@ func (f *realisticFixture) queryPhases(b *testing.B, prefix string) {
 			if previous, loaded := f.expected.LoadOrStore(q.name, series); loaded {
 				require.Equal(b, previous, series, "series of %s differ between engines", q.name)
 			}
-			p50, p99, cpu := timed(max(5, min(100, 2_000_000/max(1, series*20))), func() { f.selectSeries(q) })
-			m["series"], m["p50-ms"], m["p99-ms"], m["cpu-ms/query"] = float64(series), p50, p99, cpu
+			p50, p99, cpu, alloc := timed(max(5, min(100, 2_000_000/max(1, series*20))), func() { f.selectSeries(q) })
+			m["series"], m["p50-ms"], m["p99-ms"], m["cpu-ms/query"], m["alloc-KB/query"] = float64(series), p50, p99, cpu, alloc
 		})
 	}
 	end := int64(f.rounds-1) * f.intervalMs
@@ -419,8 +424,8 @@ func (f *realisticFixture) queryPhases(b *testing.B, prefix string) {
 			if previous, loaded := f.expected.LoadOrStore(lq.name, values); loaded {
 				require.Equal(b, previous, values, "values of %s differ between engines", lq.name)
 			}
-			p50, p99, cpu := timed(10, func() { run() })
-			m["values"], m["p50-ms"], m["p99-ms"], m["cpu-ms/query"] = float64(values), p50, p99, cpu
+			p50, p99, cpu, alloc := timed(10, func() { run() })
+			m["values"], m["p50-ms"], m["p99-ms"], m["cpu-ms/query"], m["alloc-KB/query"] = float64(values), p50, p99, cpu, alloc
 		})
 	}
 }
