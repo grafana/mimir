@@ -802,7 +802,7 @@ func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates in
 }
 
 // scanLogMinScanned is how many series a lookup visits before it is logged.
-const scanLogMinScanned = 20000
+const scanLogMinScanned = 3000
 
 var lastScanLog atomic.Int64
 
