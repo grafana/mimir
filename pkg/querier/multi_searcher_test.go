@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -389,7 +390,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			fetched = true
 			return nil, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, 10, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, 10, 0, log.NewNopLogger())
 
 		assert.Equal(t, storage.SearchResult{}, rs.At(), "At() before Next() must be the zero value")
 		require.False(t, rs.Next())
@@ -400,7 +401,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		fetch := func(_ context.Context, _ []string) (map[string]metadata.Metadata, error) {
 			return map[string]metadata.Metadata{"a": md("help a")}, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, 0, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 2)
@@ -421,7 +422,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d", "e"), fetch, 2, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d", "e"), fetch, 2, 0, log.NewNopLogger())
 
 		got := drain(t, rs)
 		var vals []string
@@ -434,11 +435,114 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		assert.Equal(t, [][]string{{"a", "b"}, {"c", "d"}, {"e"}}, calls, "each response batch must trigger exactly one fetch of that batch's names")
 	})
 
+	t.Run("fetches each value and family name once, whatever the result order", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			vals []string
+			want []string
+		}{
+			{name: "family after its suffixed name", vals: []string{"x_bucket", "x"}, want: []string{"x_bucket", "x"}},
+			{name: "family before its suffixed name", vals: []string{"x", "x_bucket"}, want: []string{"x", "x_bucket"}},
+			{name: "family shared by two suffixed names", vals: []string{"x_bucket", "x_sum", "x"}, want: []string{"x_bucket", "x", "x_sum"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var calls [][]string
+				fetch := func(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+					calls = append(calls, append([]string(nil), names...))
+					return nil, nil
+				}
+				rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", tc.vals...), fetch, 10, 0, log.NewNopLogger())
+
+				drain(t, rs)
+				assert.Equal(t, [][]string{tc.want}, calls)
+			})
+		}
+	})
+
+	t.Run("each result gets its own metadata when the first results do not match", func(t *testing.T) {
+		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
+			return map[string]metadata.Metadata{"b": md("help b"), "c": md("help c"), "d": md("help d")}, nil
+		}
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d"), fetch, 10, 0, log.NewNopLogger())
+
+		got := drain(t, rs)
+		require.Len(t, got, 4)
+		assert.Nil(t, got[0].Metadata)
+		for i, v := range []string{"b", "c", "d"} {
+			require.NotNil(t, got[i+1].Metadata, "%q must be enriched", v)
+			assert.Equal(t, "help "+v, got[i+1].Metadata.Help)
+		}
+	})
+
+	t.Run("allocates only the names slice, the metadata slice and the dedupe map per batch", func(t *testing.T) {
+		// enrich runs once per batch on the search path. A pointer to a
+		// per-result variable, such as &m, escapes to the heap and adds one
+		// allocation per enriched result. This test catches that regression.
+		const n = 1000
+		batch := make([]storage.SearchResult, n)
+		fetched := make(map[string]metadata.Metadata, n)
+		for i := range batch {
+			v := fmt.Sprintf("metric_%04d", i)
+			batch[i] = searchResult(v, 1.0)
+			fetched[v] = md("help " + v)
+		}
+		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
+			return fetched, nil
+		}
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, n, 0, log.NewNopLogger())
+
+		allocs := testing.AllocsPerRun(10, func() { rs.enrich(batch) })
+		// The map allocation count grows with its capacity, so measure it
+		// instead of hard-coding it. This map escapes to the heap, so it also
+		// counts the map header, which makes it an upper bound.
+		var requested map[string]struct{}
+		mapAllocs := testing.AllocsPerRun(10, func() { requested = make(map[string]struct{}, 2*n) })
+		require.NotNil(t, requested)
+		assert.LessOrEqual(t, allocs, 2+mapAllocs)
+		for i := range batch {
+			require.NotNil(t, batch[i].Metadata)
+			assert.Equal(t, "help "+batch[i].Value, batch[i].Metadata.Help)
+		}
+	})
+
+	t.Run("results past the limit are emitted without metadata and without a fetch", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			batchSize int
+			calls     [][]string
+		}{
+			// The (limit+1)-th result starts a new batch, which must not fetch.
+			{name: "past the limit in a new batch", batchSize: 2, calls: [][]string{{"a", "b"}}},
+			{name: "past the limit in the same batch", batchSize: 10, calls: [][]string{{"a", "b"}}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var calls [][]string
+				fetch := func(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+					calls = append(calls, append([]string(nil), names...))
+					out := map[string]metadata.Metadata{}
+					for _, n := range names {
+						out[n] = md("help " + n)
+					}
+					return out, nil
+				}
+				rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c"), fetch, tc.batchSize, 2, log.NewNopLogger())
+
+				got := drain(t, rs)
+				require.Len(t, got, 3, "results past the limit must still be emitted")
+				require.NotNil(t, got[0].Metadata)
+				require.NotNil(t, got[1].Metadata)
+				assert.Equal(t, "c", got[2].Value)
+				assert.Nil(t, got[2].Metadata)
+				assert.Equal(t, tc.calls, calls)
+			})
+		}
+	})
+
 	t.Run("a fetch error emits the batch un-enriched, best-effort with no warning", func(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return nil, errors.New("ingesters unavailable")
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, 0, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 2)
@@ -458,7 +562,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d"), fetch, 2, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d"), fetch, 2, 0, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 4)
@@ -472,7 +576,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return nil, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("inner warn", "a"), fetch, 10, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("inner warn", "a"), fetch, 10, 0, log.NewNopLogger())
 
 		_ = drain(t, rs)
 		var warns []string
@@ -492,7 +596,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), inner, fetch, 10, log.NewNopLogger())
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), inner, fetch, 10, 0, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 1)
