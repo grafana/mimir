@@ -114,13 +114,12 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		idx.Close()
 		if userDB.nativeActive != nil {
-			// The engine counts by the new trackers from now on, and reports to the new cost attribution.
+			// The engine counts by the new trackers from now on, and the tracker answers for the tenant while
+			// cost attribution is on.
 			if matchersChanged {
-				userDB.nativeActive.SetActiveTrackers(newMatchers)
+				userDB.nativeActive.SetActiveTrackers(asmodel.NewMatchers(newMatchersConfig))
 			}
-			if catChanged {
-				userDB.setCostAttribution(newCostAttributionActiveSeriesTracker)
-			}
+			userDB.costAttribution.Store(newCostAttributionActiveSeriesTracker != nil)
 		}
 
 		counts := userDB.activeSeriesCounts(now)

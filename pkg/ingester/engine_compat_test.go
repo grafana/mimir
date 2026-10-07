@@ -161,7 +161,7 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 	compare("compacted")
 }
 
-func serveIngester(t *testing.T, ingester *Ingester) client.IngesterClient {
+func serveIngester(t testing.TB, ingester *Ingester) client.IngesterClient {
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
 		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),

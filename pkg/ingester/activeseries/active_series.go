@@ -170,6 +170,16 @@ func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattrib
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
+// ActiveRefs tells which series are active: the tracker does, and so does an engine that keeps it in its series.
+type ActiveRefs interface {
+	// ContainsRef reports whether the series is active.
+	ContainsRef(ref storage.SeriesRef) bool
+	// NativeHistogramBuckets returns the bucket count of the series' last native histogram, when it is active and ended with one.
+	NativeHistogramBuckets(ref storage.SeriesRef) (int, bool)
+}
+
+var _ ActiveRefs = (*ActiveSeries)(nil)
+
 // UpdateSeriesIfTracked updates the timestamp of a series the tracker already has and that needs no other update,
 // without its labels, which callers may have to build. It returns false when it did nothing, and the caller
 // has to call UpdateSeries.

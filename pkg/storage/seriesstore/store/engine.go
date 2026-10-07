@@ -67,8 +67,11 @@ type Engine struct {
 	ingestStart atomic.Uint32
 	// The head\'s times as of the last commit that changed them, which commitTimes checks before locking.
 	windowMin, windowMax atomic.Int64
-	oooWindow            atomic.Int64
-	maxExemplars         atomic.Int64
+	// The custom trackers of the active series counts, and their generation.
+	activeTrackers   atomic.Pointer[activeTrackerSet]
+	activeGeneration atomic.Uint64
+	oooWindow        atomic.Int64
+	maxExemplars     atomic.Int64
 	// Whether an out-of-order window was ever set: out-of-order head compactions only run then.
 	oooWasEnabled atomic.Bool
 	// By store shard, the chunk reference below which out-of-order chunks were compacted out of

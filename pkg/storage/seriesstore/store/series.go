@@ -64,6 +64,8 @@ type Series struct {
 	// Whether the last request's samples ended with a native histogram, as Mimir's active series
 	// tracker records it.
 	nativeHistogram bool
+	// Whether the last request that had samples for the series came by OTLP, as Mimir's active series tracker records it.
+	otlp bool
 	// Whether the series is in the emulated Go head window, as of the last head tick.
 	inHead bool
 	// Whether Mimir's owned series recompute cleared the tenant's active series (it owned no

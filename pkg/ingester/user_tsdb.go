@@ -97,9 +97,14 @@ type userTSDB struct {
 	cfg *Config
 	db  tenantEngine
 	// The directory of the tenant's data, whatever the engine keeps in it.
-	dir            string
-	userID         string
-	activeSeries   *activeseries.ActiveSeries
+	dir          string
+	userID       string
+	activeSeries *activeseries.ActiveSeries
+	// An engine that keeps the active series itself, which answers for them unless cost attribution needs the tracker.
+	nativeActive    activeSeriesHead
+	costAttribution atomic.Bool
+	// The time the active series were last counted at, in Unix nanoseconds.
+	activeAsOf     atomic.Int64
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 
@@ -735,12 +740,12 @@ func (u *userTSDB) computeOwnedSeries() int {
 	if trackNonOwned {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(nonOwned))
 	}
-	for _, ref := range nonOwned {
-		// When no token range is owned, activeSeries.Clear() above already handled the active-series side.
-		if !allNonOwned {
-			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
-		}
-		if trackNonOwned {
+	// When no token range is owned, deactivateAll() above already handled the active-series side.
+	if !allNonOwned {
+		u.deactivateSeries(nonOwned)
+	}
+	if trackNonOwned {
+		for _, ref := range nonOwned {
 			nonOwnedRefs[ref] = struct{}{}
 		}
 	}
