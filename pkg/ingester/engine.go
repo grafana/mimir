@@ -121,7 +121,7 @@ type prometheusEngine struct {
 
 func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
 	if unordered {
-		return e.DB.UnorderedChunkQuerier(mint, maxt)
+		return e.UnorderedChunkQuerier(mint, maxt)
 	}
 	return e.DB.ChunkQuerier(mint, maxt)
 }
@@ -147,7 +147,7 @@ type prometheusHead struct {
 }
 
 func (h prometheusHead) Sync() error {
-	return h.Head.FsyncWLSegments()
+	return h.FsyncWLSegments()
 }
 
 func (h prometheusHead) TimeBounds() timeBounds {
@@ -197,7 +197,7 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 			break
 		}
 
-		if err := e.DB.CompactHead(tsdb.NewRangeHead(head, blockMinTime, blockMaxTime)); err != nil {
+		if err := e.CompactHead(tsdb.NewRangeHead(head, blockMinTime, blockMaxTime)); err != nil {
 			return err
 		}
 
@@ -207,18 +207,18 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 		}
 	}
 
-	return e.DB.CompactOOOHead(ctx)
+	return e.CompactOOOHead(ctx)
 }
 
 // Evict compacts the out-of-order head first, which persists the out-of-order data of the series before they
 // leave, then the series themselves. The first failure doesn't stop the second: series without out-of-order data
 // can still leave.
 func (e prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
-	oooErr := e.DB.CompactOOOHead(ctx)
+	oooErr := e.CompactOOOHead(ctx)
 	if oooErr != nil {
 		oooErr = fmt.Errorf("compact the out-of-order head: %w", oooErr)
 	}
-	selectedErr := e.DB.CompactSelectedSeries(refs)
+	selectedErr := e.CompactSelectedSeries(refs)
 	if selectedErr != nil {
 		selectedErr = fmt.Errorf("compact the selected series: %w", selectedErr)
 	}
@@ -228,7 +228,7 @@ func (e prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) e
 func (e prometheusEngine) Configure(settings engineSettings) error {
 	// DB.ApplyConfig only looks at the TSDB settings of the config; the rest of its fields are for things like
 	// rules and scrapes.
-	return e.DB.ApplyConfig(&config.Config{
+	return e.ApplyConfig(&config.Config{
 		StorageConfig: config.StorageConfig{
 			ExemplarsConfig: &config.ExemplarsConfig{MaxExemplars: settings.MaxExemplars},
 			TSDBConfig: &config.TSDBConfig{
