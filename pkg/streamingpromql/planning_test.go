@@ -2439,3 +2439,29 @@ func TestInfoQueriedTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanningAssignsNodeIds(t *testing.T) {
+	// Create a query planner with optimization passes enabled so that we can test how
+	// node IDs are assigned when nodes appear in the query plan more than once (such as
+	// when common subexpression elimination is enabled).
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `foo + foo`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	require.Equal(t, int64(1), plan.Root.GetNodeId())
+
+	lhsDuplicate := plan.Root.Child(0)
+	require.Equal(t, int64(2), lhsDuplicate.GetNodeId())
+	rhsDuplicate := plan.Root.Child(1)
+	require.Equal(t, int64(2), rhsDuplicate.GetNodeId())
+
+	lhsSelector := lhsDuplicate.Child(0)
+	require.Equal(t, int64(3), lhsSelector.GetNodeId())
+	rhsSelector := rhsDuplicate.Child(0)
+	require.Equal(t, int64(3), rhsSelector.GetNodeId())
+}
