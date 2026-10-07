@@ -275,7 +275,7 @@ func (b *seriesByName) refsOf(postings []uint32, total int) []seriesRef {
 // minColumnSeries is how many series a name group has before it is scanned by value columns, and maxColumnFilters how
 // many of the lookup's labels are.
 const (
-	minColumnSeries  = 2048
+	minColumnSeries  = 128
 	maxColumnFilters = 3
 	// maxColumnBytes is what a shard keeps of value columns: a column is 4 bytes a series of a name group.
 	maxColumnBytes = 16 << 20
