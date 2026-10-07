@@ -349,15 +349,23 @@ func alignedCuts(meta ChunkMeta) []int64 {
 // inOrderCuts are the in-order blocks' boundaries inside a chunk, sorted.
 func inOrderCuts(blocks []emulatedBlock, meta ChunkMeta) []int64 {
 	var cuts []int64
-	for _, block := range blocks {
+	inside := func(boundary int64) bool { return boundary > meta.MinTime && boundary <= meta.MaxTime }
+	for index := range blocks {
+		block := &blocks[index]
 		if block.outOfOrder {
 			continue
 		}
-		for _, boundary := range []int64{block.minTime, block.maxTime} {
-			if boundary > meta.MinTime && boundary <= meta.MaxTime {
-				cuts = append(cuts, boundary)
-			}
+		// Chunks end on block boundaries but for the ones a boundary moved into, so this finds none for nearly every
+		// chunk of every series, and doesn't allocate for it.
+		if inside(block.minTime) {
+			cuts = append(cuts, block.minTime)
 		}
+		if inside(block.maxTime) {
+			cuts = append(cuts, block.maxTime)
+		}
+	}
+	if len(cuts) == 0 {
+		return nil
 	}
 	slices.Sort(cuts)
 	return slices.Compact(cuts)
