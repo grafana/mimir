@@ -25,6 +25,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// maxLabelValuesCountStreamingRetries bounds how many times a request is retried after a stream fails after quorum.
+// Every retry re-reads all streams from every ingester, so it must stay small even when the replication sets'
+// error budget would allow more, for example with one replication set per partition.
+const maxLabelValuesCountStreamingRetries = 2
+
 // errLabelValuesOutOfOrder is returned when an ingester that confirmed sorting sends label values out of order.
 // The streaming merge can't recover from it, because it has already counted the earlier values.
 var errLabelValuesOutOfOrder = errors.New("ingester sent label names and values out of order")
@@ -68,7 +73,7 @@ func (d *Distributor) LabelValuesCountPerLabelName(ctx context.Context, matchers
 //
 // Quorum only covers opening the streams, so a stream that fails afterwards would fail the request even when other
 // replicas are healthy. In that case the request is retried without the failed replica, using up the replication
-// set's error budget, until it succeeds or no budget is left.
+// sets' error budget, at most maxLabelValuesCountStreamingRetries times.
 func (d *Distributor) labelValuesCountStreaming(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.LabelNamesAndValuesRequest, userID string) (map[string]int, error) {
 	spanLog, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.labelValuesCountStreaming")
 	defer spanLog.Finish()
@@ -83,6 +88,10 @@ func (d *Distributor) labelValuesCountStreaming(ctx context.Context, replication
 			return counts, err
 		}
 		if ctx.Err() != nil {
+			return nil, streamErr.err
+		}
+		if retries >= maxLabelValuesCountStreamingRetries {
+			level.Debug(spanLog).Log("msg", "an ingester stream failed after quorum and the retry limit is reached, not retrying", "ingester", streamErr.instance.Addr, "retries", retries, "err", streamErr.err)
 			return nil, streamErr.err
 		}
 		next, ok := excludeFailedReplica(replicationSets, streamErr.instance)
@@ -118,33 +127,49 @@ func streamFailure(instance ring.InstanceDesc, err error) error {
 }
 
 // excludeFailedReplica returns a copy of the replication sets without the failed instance, using up one unit of
-// error budget in each set that contains it. With zone awareness, the instance's whole zone is excluded, because
-// a zone holds a full copy of the data only with all its instances. It returns false if the instance isn't in any
-// set, or a set that contains it has no error budget left.
+// error budget in each set it changes.
+//
+// Without zone awareness, only the instance is excluded, from the sets that contain it. With zone awareness, the
+// instance's whole zone is excluded, because a zone holds a full copy of the data only with all its instances.
+// The zone is excluded from every zone-aware set that still has zone budget, not only the failed instance's: with
+// ingest storage each partition is its own set, and a zone whose ingesters are failing would otherwise cost one
+// retry per partition.
+//
+// It returns false if the instance isn't in any set, or a set that contains it has no error budget left.
 func excludeFailedReplica(sets []ring.ReplicationSet, failed ring.InstanceDesc) ([]ring.ReplicationSet, bool) {
 	out := make([]ring.ReplicationSet, len(sets))
 	found := false
 	for i, set := range sets {
-		if !set.Includes(failed.Addr) {
+		out[i] = set
+		containsFailed := set.Includes(failed.Addr)
+		found = found || containsFailed
+
+		if set.ZoneAwarenessEnabled {
+			hasZone := slices.ContainsFunc(set.Instances, func(inst ring.InstanceDesc) bool { return inst.Zone == failed.Zone })
+			if !hasZone {
+				continue
+			}
+			if set.MaxUnavailableZones <= 0 {
+				if containsFailed {
+					return nil, false
+				}
+				// This set can't lose the zone, and its instances haven't failed.
+				continue
+			}
+			set.MaxUnavailableZones--
+			set.Instances = slices.DeleteFunc(slices.Clone(set.Instances), func(inst ring.InstanceDesc) bool { return inst.Zone == failed.Zone })
 			out[i] = set
 			continue
 		}
-		found = true
 
-		excluded := func(inst ring.InstanceDesc) bool { return inst.Addr == failed.Addr }
-		if set.ZoneAwarenessEnabled {
-			if set.MaxUnavailableZones <= 0 {
-				return nil, false
-			}
-			set.MaxUnavailableZones--
-			excluded = func(inst ring.InstanceDesc) bool { return inst.Zone == failed.Zone }
-		} else {
-			if set.MaxErrors <= 0 {
-				return nil, false
-			}
-			set.MaxErrors--
+		if !containsFailed {
+			continue
 		}
-		set.Instances = slices.DeleteFunc(slices.Clone(set.Instances), excluded)
+		if set.MaxErrors <= 0 {
+			return nil, false
+		}
+		set.MaxErrors--
+		set.Instances = slices.DeleteFunc(slices.Clone(set.Instances), func(inst ring.InstanceDesc) bool { return inst.Addr == failed.Addr })
 		out[i] = set
 	}
 	return out, found

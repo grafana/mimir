@@ -248,6 +248,52 @@ func TestDistributor_LabelValuesCountPerLabelName_StreamErrors(t *testing.T) {
 		require.Equal(t, expected, counts)
 	})
 
+	t.Run("a failing zone across partitions costs one retry", func(t *testing.T) {
+		_, expected := labelValuesCountFixtures()
+		reg := prometheus.NewPedanticRegistry()
+		ds, _ := prepareLabelValuesCount(t, prepConfig{
+			numIngesters: 8, happyIngesters: 8, ingesterZones: []string{"zone-a", "zone-b"}, ingestStorageEnabled: true, ingestStoragePartitions: 4, reg: reg,
+			// Every partition queries zone-a first, where every ingester fails after its first message.
+			configure: func(cfg *Config) {
+				cfg.MinimizeIngesterRequests = true
+				cfg.PreferAvailabilityZones = []string{"zone-a"}
+			},
+			labelNamesAndValuesBehaviour: func(zone string, _ int) labelNamesAndValuesBehaviour {
+				if zone == "zone-a" {
+					return labelNamesAndValuesFailAfterFirstMessage
+				}
+				return labelNamesAndValuesCurrent
+			},
+		}, true, series)
+
+		counts, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
+		require.NoError(t, err)
+		require.Equal(t, expected, counts)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.
+			# TYPE cortex_distributor_label_names_and_values_streaming_retries_total counter
+			cortex_distributor_label_names_and_values_streaming_retries_total 1
+		`), "cortex_distributor_label_names_and_values_streaming_retries_total"))
+	})
+
+	t.Run("retries stop at the limit even with error budget left", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		ds, _ := prepareLabelValuesCount(t, prepConfig{
+			// RF 7 tolerates 3 failing ingesters, one more than the retry limit.
+			numIngesters: 7, happyIngesters: 7, replicationFactor: 7, reg: reg,
+			configure:                    func(cfg *Config) { cfg.MinimizeIngesterRequests = false },
+			labelNamesAndValuesBehaviour: func(string, int) labelNamesAndValuesBehaviour { return labelNamesAndValuesFailAfterFirstMessage },
+		}, true, series)
+
+		_, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
+		require.ErrorIs(t, err, errFail)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.
+			# TYPE cortex_distributor_label_names_and_values_streaming_retries_total counter
+			cortex_distributor_label_names_and_values_streaming_retries_total %d
+		`, maxLabelValuesCountStreamingRetries)), "cortex_distributor_label_names_and_values_streaming_retries_total"))
+	})
+
 	t.Run("stream fails after quorum on every attempt", func(t *testing.T) {
 		ds, _ := prepareLabelValuesCount(t, prepConfig{
 			numIngesters: 3, happyIngesters: 3, replicationFactor: 3,
@@ -288,15 +334,35 @@ func TestExcludeFailedReplica(t *testing.T) {
 		require.False(t, ok, "no zone budget left")
 	})
 
-	t.Run("only changes the sets that contain the instance", func(t *testing.T) {
+	t.Run("with zone awareness, excludes the zone from every set with zone budget", func(t *testing.T) {
+		b2 := ring.InstanceDesc{Addr: "b-2", Zone: "b"}
 		sets := []ring.ReplicationSet{
+			// One set per partition, as with ingest storage.
 			{Instances: []ring.InstanceDesc{a1, b1}, MaxUnavailableZones: 1, ZoneAwarenessEnabled: true},
-			{Instances: []ring.InstanceDesc{a2, c1}, MaxUnavailableZones: 1, ZoneAwarenessEnabled: true},
+			{Instances: []ring.InstanceDesc{a2, b2}, MaxUnavailableZones: 1, ZoneAwarenessEnabled: true},
+			// No zone budget left, so it keeps zone a.
+			{Instances: []ring.InstanceDesc{a2, c1}, MaxUnavailableZones: 0, ZoneAwarenessEnabled: true},
+			// No instance in zone a.
+			{Instances: []ring.InstanceDesc{b1, c1}, MaxUnavailableZones: 1, ZoneAwarenessEnabled: true},
 		}
 		out, ok := excludeFailedReplica(sets, a1)
 		require.True(t, ok)
-		require.Equal(t, []ring.InstanceDesc{b1}, out[0].Instances)
-		require.Equal(t, sets[1], out[1])
+		require.Equal(t, []ring.ReplicationSet{
+			{Instances: []ring.InstanceDesc{b1}, MaxUnavailableZones: 0, ZoneAwarenessEnabled: true},
+			{Instances: []ring.InstanceDesc{b2}, MaxUnavailableZones: 0, ZoneAwarenessEnabled: true},
+			sets[2],
+			sets[3],
+		}, out)
+	})
+
+	t.Run("without zone awareness, only changes the sets that contain the instance", func(t *testing.T) {
+		sets := []ring.ReplicationSet{
+			{Instances: []ring.InstanceDesc{a1, b1}, MaxErrors: 1},
+			{Instances: []ring.InstanceDesc{a2, c1}, MaxErrors: 1},
+		}
+		out, ok := excludeFailedReplica(sets, a1)
+		require.True(t, ok)
+		require.Equal(t, []ring.ReplicationSet{{Instances: []ring.InstanceDesc{b1}, MaxErrors: 0}, sets[1]}, out)
 	})
 
 	t.Run("unknown instance", func(t *testing.T) {
