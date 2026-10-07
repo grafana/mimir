@@ -215,7 +215,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	remembered := make([]map[string]bool, len(coldLabels))
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
-		if table == nil || !block.overlaps(tenantID, start, end) {
+		if table == nil || table.minTime > end || table.maxTime < start {
 			continue
 		}
 		// For each label matcher that accepts the empty value, the series with its label when few

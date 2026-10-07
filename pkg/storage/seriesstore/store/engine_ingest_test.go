@@ -311,3 +311,42 @@ func BenchmarkEngineSelectBigGroup(b *testing.B) {
 		_ = q.Close()
 	}
 }
+
+// BenchmarkEngineSelectColdBlocks selects one series of a tenant whose series left the head in many small blocks,
+// as a head compaction every minute writes them, which every lookup goes through block by block.
+func BenchmarkEngineSelectColdBlocks(b *testing.B) {
+	ctx := context.Background()
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const blocks = 60
+	for round := range blocks {
+		app := engine.Appender(ctx)
+		// A few series each round, which only stay in the head for it.
+		for n := range 64 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, 1)
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+		// A series far ahead moves the head past the others, which compaction takes out of it.
+		_, err := engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*chunkRangeMs*2, 1)
+		require.NoError(b, err)
+		require.NoError(b, engine.Compact(ctx))
+	}
+	matchers := []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "old"), promlabels.MustNewMatcher(promlabels.MatchEqual, "round", "3"), promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "5")}
+	b.ResetTimer()
+	for range b.N {
+		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
+			b.StopTimer()
+			evictCaches()
+			b.StartTimer()
+		}
+		q, err := engine.ChunkQuerier(0, blocks*chunkRangeMs*3)
+		require.NoError(b, err)
+		set := q.Select(ctx, true, nil, matchers...)
+		for set.Next() {
+		}
+		require.NoError(b, set.Err())
+		_ = q.Close()
+	}
+}

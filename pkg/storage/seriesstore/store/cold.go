@@ -78,6 +78,9 @@ type coldBlock struct {
 	names    []string
 	localIDs map[string]uint32
 	tenants  map[string]*coldTenantIndex
+	// The tenant and its table when the block has only one.
+	onlyName string
+	only     *coldTenantIndex
 }
 
 func coldBlockPath(directory string, id uint64) string {
@@ -345,7 +348,13 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 		maxTime = max(maxTime, index.maxTime)
 		tenants[tenant] = index
 	}
-	return &coldBlock{id: id, minTime: minTime, maxTime: maxTime, path: path, data: data, mapped: mapped, names: names, localIDs: localIDs, tenants: tenants}, nil
+	block = &coldBlock{id: id, minTime: minTime, maxTime: maxTime, path: path, data: data, mapped: mapped, names: names, localIDs: localIDs, tenants: tenants}
+	for name, table := range tenants {
+		if len(tenants) == 1 {
+			block.onlyName, block.only = name, table
+		}
+	}
+	return block, nil
 }
 
 func (b *coldBlock) close() error {
@@ -358,11 +367,19 @@ func (b *coldBlock) close() error {
 
 // overlaps reports whether the tenant has samples in [start, end] here.
 func (b *coldBlock) overlaps(tenant string, start, end int64) bool {
-	index, ok := b.tenants[tenant]
-	return ok && index.minTime <= end && index.maxTime >= start
+	index := b.tenant(tenant)
+	return index != nil && index.minTime <= end && index.maxTime >= start
 }
 
+// tenant returns the tenant's table in the block, or nil. A tenant's engine has blocks of its own, so a
+// string comparison finds it, where a lookup in the map is a hash and a cache miss for every block of every query.
 func (b *coldBlock) tenant(tenant string) *coldTenantIndex {
+	if b.only != nil {
+		if b.onlyName == tenant {
+			return b.only
+		}
+		return nil
+	}
 	return b.tenants[tenant]
 }
 
@@ -531,7 +548,7 @@ func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32
 // list of their equality matchers or, without one, of the series with the label of a matcher that
 // rejects the empty value, or every series. Callers still check the matchers.
 func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint32 {
-	table := b.tenants[tenant]
+	table := b.tenant(tenant)
 	if table == nil {
 		return nil
 	}
@@ -722,7 +739,7 @@ func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, s
 		if !block.overlaps(tenant, start, end) {
 			continue
 		}
-		table := block.tenants[tenant]
+		table := block.tenant(tenant)
 		for _, index := range block.candidates(tenant, matchers) {
 			series := block.seriesIn(table, int(index))
 			if series.hasData(start, end) && matches(&series, matchers) {
