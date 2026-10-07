@@ -220,8 +220,8 @@ type metadataEnrichingSearchResultSet struct {
 	bufNextReadIdx int
 	innerDone      bool
 	warnedFetchErr bool
-	// readFromCurrentBatch is the number of results read from inner before the current batch.
-	readFromCurrentBatch int
+	// readBeforeBatch is the number of results read from inner before the current batch.
+	readBeforeBatch int
 }
 
 func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize, limit int, logger log.Logger) *metadataEnrichingSearchResultSet {
@@ -257,9 +257,9 @@ func (s *metadataEnrichingSearchResultSet) Next() bool {
 	// batch, this saves a metadata fetch from all ingesters.
 	n := len(s.buf)
 	if s.limit > 0 {
-		n = min(n, max(s.limit-s.readFromCurrentBatch, 0))
+		n = min(n, max(s.limit-s.readBeforeBatch, 0))
 	}
-	s.readFromCurrentBatch += len(s.buf)
+	s.readBeforeBatch += len(s.buf)
 	if n > 0 {
 		s.enrich(s.buf[:n])
 	}
@@ -281,11 +281,15 @@ func (s *metadataEnrichingSearchResultSet) enrich(batch []storage.SearchResult) 
 
 	for i := range batch {
 		val := batch[i].Value
-		names = append(names, val)
-		requested[val] = struct{}{}
-	}
-	for i := range batch {
-		family, _, ok := metricFamilyName(batch[i].Value)
+
+		// Although the batch values are unique it is possible that this value
+		// matches a previously added metric family.
+		if _, ok := requested[val]; !ok {
+			names = append(names, val)
+			requested[val] = struct{}{}
+		}
+
+		family, _, ok := metricFamilyName(val)
 		if !ok {
 			continue
 		}

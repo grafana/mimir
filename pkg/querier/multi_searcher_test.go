@@ -435,6 +435,30 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		assert.Equal(t, [][]string{{"a", "b"}, {"c", "d"}, {"e"}}, calls, "each response batch must trigger exactly one fetch of that batch's names")
 	})
 
+	t.Run("fetches each value and family name once, whatever the result order", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			vals []string
+			want []string
+		}{
+			{name: "family after its suffixed name", vals: []string{"x_bucket", "x"}, want: []string{"x_bucket", "x"}},
+			{name: "family before its suffixed name", vals: []string{"x", "x_bucket"}, want: []string{"x", "x_bucket"}},
+			{name: "family shared by two suffixed names", vals: []string{"x_bucket", "x_sum", "x"}, want: []string{"x_bucket", "x", "x_sum"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var calls [][]string
+				fetch := func(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+					calls = append(calls, append([]string(nil), names...))
+					return nil, nil
+				}
+				rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", tc.vals...), fetch, 10, 0, log.NewNopLogger())
+
+				drain(t, rs)
+				assert.Equal(t, [][]string{tc.want}, calls)
+			})
+		}
+	})
+
 	t.Run("each result gets its own metadata when the first results do not match", func(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return map[string]metadata.Metadata{"b": md("help b"), "c": md("help c"), "d": md("help d")}, nil
