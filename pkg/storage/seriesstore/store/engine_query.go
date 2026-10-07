@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -73,9 +74,20 @@ func (e *Engine) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, 
 type engineChunkQuerier struct {
 	e          *Engine
 	mint, maxt int64
+	// The data buffers of the chunks it selected, given back when it is closed.
+	mu      sync.Mutex
+	buffers [][]byte
 }
 
-func (q *engineChunkQuerier) Close() error { return nil }
+// Close gives back the buffers of the chunks the querier selected, which callers are done with.
+func (q *engineChunkQuerier) Close() error {
+	q.mu.Lock()
+	buffers := q.buffers
+	q.buffers = nil
+	q.mu.Unlock()
+	giveQueryBuffers(buffers)
+	return nil
+}
 
 func (q *engineChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*promlabels.Matcher) ([]string, annotations.Annotations, error) {
 	return (&engineQuerier{e: q.e, mint: q.mint, maxt: q.maxt}).LabelValues(ctx, name, hints, matchers...)
@@ -96,10 +108,13 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	selected, err := q.e.selectRaw(start, end, compiled)
+	selected, buffers, err := q.e.selectRaw(start, end, compiled)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
+	q.mu.Lock()
+	q.buffers = append(q.buffers, buffers...)
+	q.mu.Unlock()
 	return &engineChunkSeriesSet{series: selected, index: -1}
 }
 
@@ -111,7 +126,7 @@ type rawSeries struct {
 
 // selectRaw returns the series matching compiled with chunks in [start, end], sorted by labels,
 // with the same chunks the store's QueryStream returns.
-func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawSeries, error) {
+func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawSeries, [][]byte, error) {
 	var coldLabels, coldShard []compiledMatcher
 	for _, matcher := range compiled {
 		if matcher.kind == kindShard {
@@ -126,6 +141,9 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		metas    []ChunkMeta
 		scratch  []chunks.Chunk
 		data     []byte
+		// The chunks' data buffers, which the caller gives back once it is done with the chunks.
+		buffers          [][]byte
+		candidatesBuffer []chunks.Candidate
 	)
 	// The chunks' data is copied out while the shard is locked, into one buffer per shard.
 	copyOut := func(raw []chunks.Chunk) []chunks.Chunk {
@@ -135,7 +153,8 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		}
 		if cap(data)-len(data) < size {
 			// Doubling from small, so a query of a few series doesn't pay for a large buffer.
-			data = make([]byte, 0, max(size, min(2*cap(data), 1<<20), 4<<10))
+			data = takeQueryBuffer(max(size, min(2*cap(data), 1<<20), 4<<10))
+			buffers = append(buffers, data)
 		}
 		out := make([]chunks.Chunk, len(raw))
 		for index := range raw {
@@ -189,7 +208,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 					headMetas = append(headMetas, meta)
 				}
 			}
-			scratch = queryRawChunks(series, headMetas, coldChunks, disk, start, end, scratch[:0])
+			scratch = queryRawChunks(series, headMetas, coldChunks, disk, start, end, scratch[:0], &candidatesBuffer)
 			for _, meta := range compacted {
 				if meta.MinTime <= end && meta.MaxTime >= start {
 					scratch = append(scratch, chunks.Chunk{MinTime: meta.MinTime, MaxTime: meta.MaxTime, Encoding: int32(meta.Encoding), Data: disk.Read(meta.Ref, meta.Len)})
@@ -201,7 +220,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			return true
 		})
 		for stored, candidate := range coldSeries {
-			scratch = queryRawChunks(nil, nil, candidate.chunks, disk, start, end, scratch[:0])
+			scratch = queryRawChunks(nil, nil, candidate.chunks, disk, start, end, scratch[:0], &candidatesBuffer)
 			if len(scratch) > 0 {
 				selected = append(selected, rawSeries{stored, copyOut(scratch)})
 			}
@@ -209,7 +228,47 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 	})
 	names := labels.TakeSnapshot()
 	slices.SortFunc(selected, func(x, y rawSeries) int { return compareLabels(names, x.stored, y.stored) })
-	return selected, nil
+	return selected, buffers, nil
+}
+
+// The buffers a query copies its chunks' data into are kept between queries, in two sizes: allocating them was a tenth
+// of what an ingester allocated, and the memory clearing and garbage collection that goes with it.
+const (
+	smallQueryBuffer = 64 << 10
+	largeQueryBuffer = 1 << 20
+)
+
+var queryBuffers [2]sync.Pool
+
+// takeQueryBuffer returns an empty buffer that holds size bytes, which giveQueryBuffers may get back.
+func takeQueryBuffer(size int) []byte {
+	switch {
+	case size <= smallQueryBuffer:
+		if buffer, ok := queryBuffers[0].Get().(*[]byte); ok {
+			return (*buffer)[:0]
+		}
+		return make([]byte, 0, smallQueryBuffer)
+	case size <= largeQueryBuffer:
+		if buffer, ok := queryBuffers[1].Get().(*[]byte); ok {
+			return (*buffer)[:0]
+		}
+		return make([]byte, 0, largeQueryBuffer)
+	}
+	return make([]byte, 0, size)
+}
+
+// giveQueryBuffers keeps the buffers of a query that is done with its chunks.
+func giveQueryBuffers(buffers [][]byte) {
+	for _, buffer := range buffers {
+		switch cap(buffer) {
+		case smallQueryBuffer:
+			buffer = buffer[:0]
+			queryBuffers[0].Put(&buffer)
+		case largeQueryBuffer:
+			buffer = buffer[:0]
+			queryBuffers[1].Put(&buffer)
+		}
+	}
 }
 
 type engineChunkSeriesSet struct {

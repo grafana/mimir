@@ -3,10 +3,10 @@
 package store
 
 import (
+	"cmp"
 	"encoding/binary"
 	"math"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -310,7 +310,8 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 // as stored.
 func queryChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.DiskMapper, start, end int64, a *arena) []EncodedChunk {
 	var storage [8]chunks.Chunk
-	raw := queryRawChunks(series, stored, coldChunks, disk, start, end, storage[:0])
+	var candidates []chunks.Candidate
+	raw := queryRawChunks(series, stored, coldChunks, disk, start, end, storage[:0], &candidates)
 	out := a.chunkSlice(len(raw))
 	for index := range raw {
 		out = append(out, wireChunk(raw[index].MinTime, raw[index].MaxTime, raw[index].Encoding, raw[index].Data, a))
@@ -321,15 +322,20 @@ func queryChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.Di
 // queryRawChunks appends to out the series' chunks in [start, end], as queryChunks returns them.
 // Their data may point into the chunk files or the series' open chunks: callers copy it before
 // releasing the shard's lock.
-func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.DiskMapper, start, end int64, out []chunks.Chunk) []chunks.Chunk {
+//
+// The candidates buffer is the caller's, which keeps it from series to series: a buffer of the function's own, which its
+// closures made escape to the heap, was a third of what a query allocated.
+func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks.DiskMapper, start, end int64, out []chunks.Chunk, buffer *[]chunks.Candidate) []chunks.Chunk {
 	overlaps := func(minTime, maxTime int64) bool { return minTime <= end && maxTime >= start }
 	var (
-		candidates        []chunks.Candidate
-		inOrder, ooo      int
-		anyOutOfOrder     bool
-		candidatesStorage [8]chunks.Candidate
+		candidates    = (*buffer)[:0]
+		inOrder, ooo  int
+		anyOutOfOrder bool
 	)
-	candidates = candidatesStorage[:0]
+	defer func() {
+		clear(candidates)
+		*buffer = candidates[:0]
+	}()
 	add := func(chunk chunks.Chunk, outOfOrder bool) {
 		counter := &inOrder
 		if outOfOrder {
@@ -385,7 +391,7 @@ func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks
 		}
 		return append(out, merged...)
 	}
-	sort.SliceStable(candidates, func(x, y int) bool { return candidates[x].Chunk.MinTime < candidates[y].Chunk.MinTime })
+	slices.SortStableFunc(candidates, func(x, y chunks.Candidate) int { return cmp.Compare(x.Chunk.MinTime, y.Chunk.MinTime) })
 	for index := range candidates {
 		out = append(out, candidates[index].Chunk)
 	}
