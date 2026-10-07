@@ -1177,10 +1177,10 @@ func pruneSeries(series *Series, cutoff int64) bool {
 	if series.floatHead != nil && series.floatHead.lastTimestamp() < cutoff {
 		series.floatHead = nil
 	}
-	if series.histogramHead != nil && series.histogramHead.Last().Timestamp < cutoff {
-		series.histogramHead = nil
+	if series.histogram() != nil && series.histogram().Last().Timestamp < cutoff {
+		series.setHistogram(nil)
 	}
-	series.outOfOrder = slices.DeleteFunc(series.outOfOrder, func(sample oooSample) bool { return sample.T < cutoff })
+	series.setOutOfOrder(slices.DeleteFunc(series.ooo(), func(sample oooSample) bool { return sample.T < cutoff }))
 	return series.hasSamples()
 }
 

@@ -366,14 +366,14 @@ func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks
 		if fh := series.floatHead; fh != nil {
 			add(chunks.Chunk{MinTime: fh.minTime, MaxTime: fh.lastTimestamp(), Encoding: int32(xorEncoding), Data: fh.appender.Bytes()}, false)
 		}
-		if hh := series.histogramHead; hh != nil && overlaps(hh.FirstTimestamp(), hh.Last().Timestamp) {
+		if hh := series.histogram(); hh != nil && overlaps(hh.FirstTimestamp(), hh.Last().Timestamp) {
 			encoded := hh.Encoded()
 			add(chunks.Chunk{MinTime: hh.FirstTimestamp(), MaxTime: hh.Last().Timestamp, Encoding: encoded.Encoding, Data: encoded.Data}, false)
 		}
 		// The open out-of-order chunk shares one position, like Prometheus's OOO head chunk.
 		ooo++
-		if len(series.outOfOrder) > 0 {
-			head, err := chunks.EncodeOutOfOrder(series.outOfOrder)
+		if len(series.ooo()) > 0 {
+			head, err := chunks.EncodeOutOfOrder(series.ooo())
 			if err == nil {
 				for _, chunk := range head {
 					if overlaps(chunk.MinTime, chunk.MaxTime) {

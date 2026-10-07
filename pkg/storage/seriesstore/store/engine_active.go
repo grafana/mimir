@@ -166,7 +166,7 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 					if count == 0 {
 						return
 					}
-					matches := series.trackerMatches
+					matches := series.matchedTrackers()
 					if series.trackerGeneration != trackers.generation {
 						matches = trackers.Match(toPromLabels(entry.labels, &promlabels.ScratchBuilder{}))
 						stale = append(stale, series.ref)
@@ -218,7 +218,7 @@ func (e *Engine) cacheTrackerMatches(shard int, trackers *activeTrackerSet, refs
 	var builder promlabels.ScratchBuilder
 	for _, ref := range refs {
 		if entry, ok := e.lookupLocked(t, ref); ok && entry.series.trackerGeneration != trackers.generation {
-			entry.series.trackerMatches = append([]uint16(nil), trackers.Match(toPromLabels(entry.labels, &builder))...)
+			entry.series.setMatchedTrackers(append([]uint16(nil), trackers.Match(toPromLabels(entry.labels, &builder))...))
 			entry.series.trackerGeneration = trackers.generation
 		}
 	}

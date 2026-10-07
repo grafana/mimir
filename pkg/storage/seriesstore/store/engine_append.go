@@ -274,7 +274,7 @@ func lastOf(series *Series) lastInOrder {
 		last.t, last.ok = fh.lastTimestamp(), true
 		last.float, _ = fh.appender.LastValue()
 	}
-	if hh := series.histogramHead; hh != nil {
+	if hh := series.histogram(); hh != nil {
 		if h := hh.Last(); !last.ok || h.Timestamp > last.t {
 			copied := *h
 			last = lastInOrder{t: h.Timestamp, ok: true, isHist: true, h: &copied}

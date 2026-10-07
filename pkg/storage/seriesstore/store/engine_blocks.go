@@ -107,7 +107,7 @@ func inOrderIn(series *Series, start, end, headMin int64) bool {
 	if fh := series.floatHead; fh != nil && fh.minTime <= end && fh.lastTimestamp() >= start {
 		return true
 	}
-	if hh := series.histogramHead; hh != nil && hh.FirstTimestamp() <= end && hh.Last().Timestamp >= start {
+	if hh := series.histogram(); hh != nil && hh.FirstTimestamp() <= end && hh.Last().Timestamp >= start {
 		return true
 	}
 	return false
@@ -123,7 +123,7 @@ func (e *Engine) oooIn(shard int, series *Series, start, end int64) bool {
 			return true
 		}
 	}
-	for _, sample := range series.outOfOrder {
+	for _, sample := range series.ooo() {
 		if sample.T >= start && sample.T <= end {
 			return true
 		}

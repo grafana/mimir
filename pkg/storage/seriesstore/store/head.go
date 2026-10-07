@@ -206,10 +206,10 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 				if series.floatHead != nil {
 					report.HeadChunks++
 				}
-				if series.histogramHead != nil {
+				if series.histogram() != nil {
 					report.HeadChunks++
 				}
-				if len(series.outOfOrder) > 0 {
+				if len(series.ooo()) > 0 {
 					report.HeadChunks++
 				}
 			})
@@ -408,7 +408,7 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) 
 				return
 			}
 			chunks, ok := pending.keys[frozenKey{tenantID, entry.labels}]
-			if ok && series.floatHead == nil && series.histogramHead == nil && len(series.outOfOrder) == 0 && bytes.Equal(series.chunks, chunks) {
+			if ok && series.floatHead == nil && series.histogram() == nil && len(series.ooo()) == 0 && bytes.Equal(series.chunks, chunks) {
 				unchanged++
 			}
 		})
@@ -478,7 +478,7 @@ func (s *Store) ActiveSeriesReport() []metrics.ActiveSeriesReport {
 					return
 				}
 				if series.trackerGeneration != generation {
-					series.trackerMatches = custom.Matching(entry.labels)
+					series.setMatchedTrackers(custom.Matching(entry.labels))
 					series.trackerGeneration = generation
 				}
 				var buckets uint64
@@ -491,7 +491,7 @@ func (s *Store) ActiveSeriesReport() []metrics.ActiveSeriesReport {
 					report.Active++
 					report.ActiveNativeHistograms += histogram
 					report.ActiveNativeHistogramBuckets += buckets
-					for _, match := range series.trackerMatches {
+					for _, match := range series.matchedTrackers() {
 						entry := &report.CustomTrackers[match].Counts
 						for i := range entry {
 							entry[i] += seriesCounts[i]
