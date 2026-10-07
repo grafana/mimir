@@ -475,6 +475,9 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 	})
 
 	t.Run("allocates only the names slice, the metadata slice and the dedupe map per batch", func(t *testing.T) {
+		// enrich runs once per batch on the search path. A pointer to a
+		// per-result variable, such as &m, escapes to the heap and adds one
+		// allocation per enriched result. This test catches that regression.
 		const n = 1000
 		batch := make([]storage.SearchResult, n)
 		fetched := make(map[string]metadata.Metadata, n)
