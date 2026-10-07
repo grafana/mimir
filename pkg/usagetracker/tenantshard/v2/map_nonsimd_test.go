@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//go:build !amd64.v3 || nosimd
+
 package v2
 
 import (

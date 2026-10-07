@@ -15,6 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
+// This directive is here and not in map_simd_amd64.go, because go generate skips files whose build
+// constraints do not match the machine it runs on.
+//go:generate go run ./asmgen -out map_simd_amd64.s
+
 const (
 	indexEntryBits = 7
 
@@ -277,29 +281,9 @@ func (m *Map) Stats() Stats {
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 	for i := range m.data {
-		occupied := m.index[i].matchOccupied()
-		for occupied != 0 {
-			j := nextMatch(&occupied)
-			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
-				removed++
-				m.resident--
-
-				if j == last {
-					// This is the last element, if it was previously set,
-					// then group may have spilled to the next one.
-					// We need to keep that signal, so we leave a spillmark here.
-					m.data[i][j] = spillmark
-					// We need to leave spillmark in the data because that's what iterator uses.
-					m.index[i][j] = spillmark
-					// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
-					// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
-				} else {
-					// This is not the last element, so just mark it as empty.
-					m.data[i][j] = empty
-					m.index[i][j] = empty
-				}
-			}
-		}
+		n := cleanupGroup(&m.index[i], &m.data[i], watermark)
+		removed += n
+		m.resident -= uint32(n)
 	}
 	if limit == nil {
 		return removed

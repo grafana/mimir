@@ -957,6 +957,21 @@ github.com/mitchellh/mapstructure
 # github.com/mitchellh/reflectwalk v1.0.2
 ## explicit
 github.com/mitchellh/reflectwalk
+# github.com/mmcloughlin/avo v0.6.0
+## explicit; go 1.18
+github.com/mmcloughlin/avo/attr
+github.com/mmcloughlin/avo/build
+github.com/mmcloughlin/avo/buildtags
+github.com/mmcloughlin/avo/gotypes
+github.com/mmcloughlin/avo/internal/prnt
+github.com/mmcloughlin/avo/internal/stack
+github.com/mmcloughlin/avo/ir
+github.com/mmcloughlin/avo/operand
+github.com/mmcloughlin/avo/pass
+github.com/mmcloughlin/avo/printer
+github.com/mmcloughlin/avo/reg
+github.com/mmcloughlin/avo/src
+github.com/mmcloughlin/avo/x86
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 ## explicit
 github.com/modern-go/concurrent

@@ -175,9 +175,9 @@ func TestMapCleanup(t *testing.T) {
 	}
 
 	t.Run("spillmark avoidance with empty slots in group", func(t *testing.T) {
-		// With maxAvgGroupLoad=4 and groupSize=8, a small map will have groups
+		// With maxAvgGroupLoad=groupSize/2, a small map will have groups
 		// that are partially full, so cleanup should avoid spillmarks.
-		m := New(4, testNumShards) // 1 group, limit=4
+		m := New(4, testNumShards) // 1 group
 		m.Load(1, 10)
 		m.Load(2, 50)
 
@@ -189,7 +189,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("element expiring at the beginning of a full group becomes empty again", func(t *testing.T) {
-		// Force a full group by directly populating all 8 slots.
+		// Force a full group by directly populating all its slots.
 		m := New(1, testNumShards) // 1 group
 		// Fill all groupSize slots directly.
 		for j := uint32(0); j < groupSize; j++ {
@@ -213,7 +213,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("spillmark created when last group element is expired", func(t *testing.T) {
-		// Force a full group by directly populating all 8 slots.
+		// Force a full group by directly populating all its slots.
 		m := New(1, testNumShards) // 1 group
 		// Fill all groupSize slots directly.
 		for j := uint32(0); j < groupSize; j++ {
@@ -641,4 +641,111 @@ func TestMatchOccupied(t *testing.T) {
 		}
 		require.Zero(t, set)
 	})
+}
+
+// referenceCleanupGroup is the slot by slot definition of cleanupGroup that the implementations are checked against.
+func referenceCleanupGroup(idx *index, d *data, watermark clock.Minutes) int {
+	removed := 0
+	for j := range groupSize {
+		if d[j] == empty || d[j] == spillmark {
+			continue
+		}
+		if !watermark.GreaterOrEqualThan(d[j].clockMinutes()) {
+			continue
+		}
+		removed++
+		if j == last {
+			idx[j], d[j] = spillmark, spillmark
+		} else {
+			idx[j], d[j] = empty, empty
+		}
+	}
+	return removed
+}
+
+func TestCleanupGroup(t *testing.T) {
+	check := func(t *testing.T, idx index, d data, watermark clock.Minutes) {
+		t.Helper()
+		wantIdx, wantData := idx, d
+		wantRemoved := referenceCleanupGroup(&wantIdx, &wantData, watermark)
+		gotIdx, gotData := idx, d
+		gotRemoved := cleanupGroup(&gotIdx, &gotData, watermark)
+		if gotRemoved != wantRemoved || gotIdx != wantIdx || gotData != wantData {
+			t.Fatalf("watermark %d, index %v, data %v:\ngot  removed %d, index %v, data %v\nwant removed %d, index %v, data %v",
+				watermark, idx, d, gotRemoved, gotIdx, gotData, wantRemoved, wantIdx, wantData)
+		}
+	}
+
+	t.Run("one entry", func(t *testing.T) {
+		// Every value that Put accepts against every watermark byte, in every slot. This includes
+		// bytes that clock.ToMinutes never produces, so that the implementations match
+		// GreaterOrEqualThan for any input, not only for valid minutes.
+		for w := range 256 {
+			watermark := clock.Minutes(w)
+			for v := range 0xfe {
+				value := clock.Minutes(v)
+				for j := range groupSize {
+					var idx index
+					var d data
+					idx[j], d[j] = prefix(prefixOffset+j), xor(value)
+					check(t, idx, d, watermark)
+				}
+			}
+		}
+	})
+
+	t.Run("random groups", func(t *testing.T) {
+		r := rand.New(rand.NewSource(1))
+		for range 100_000 {
+			var idx index
+			var d data
+			for j := range groupSize {
+				switch p := r.Intn(10); {
+				case p < 3:
+					// Leave the slot empty.
+				case p < 4:
+					idx[j], d[j] = spillmark, spillmark
+				default:
+					idx[j], d[j] = prefix(prefixOffset+r.Intn(128)), xor(clock.Minutes(r.Intn(0xfe)))
+				}
+			}
+			check(t, idx, d, clock.Minutes(r.Intn(256)))
+		}
+	})
+}
+
+func TestMatchEmptyOrSpillmarkAndOccupiedRandom(t *testing.T) {
+	// The marks and the values next to them are where borrows between bytes would show up.
+	interesting := []prefix{empty, spillmark, 2, 3, 0x7f, 0x80, 0x81, 0xfe, 0xff}
+	r := rand.New(rand.NewSource(1))
+	for range 10_000 {
+		var idx index
+		for j := range idx {
+			if r.Intn(2) == 0 {
+				idx[j] = interesting[r.Intn(len(interesting))]
+			} else {
+				idx[j] = prefix(r.Intn(256))
+			}
+		}
+
+		var wantFree, wantOccupied []uint32
+		for j, p := range idx {
+			if p == empty || p == spillmark {
+				wantFree = append(wantFree, uint32(j))
+			} else {
+				wantOccupied = append(wantOccupied, uint32(j))
+			}
+		}
+		require.Equal(t, wantFree, slots(idx.matchEmptyOrSpillmark()), "index %v", idx)
+		require.Equal(t, wantOccupied, slots(idx.matchOccupied()), "index %v", idx)
+	}
+}
+
+// slots returns the slots set in b, in increasing order.
+func slots(b bitset) []uint32 {
+	var s []uint32
+	for b != 0 {
+		s = append(s, nextMatch(&b))
+	}
+	return s
 }

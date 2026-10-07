@@ -234,6 +234,9 @@ jobs:
     runs-on: ubuntu-x64
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    env:
+      # GOAMD64 is part of the build cache key, so it must match the test job.
+      GOAMD64: v3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
@@ -329,6 +332,9 @@ jobs:
       contents: read
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    env:
+      # Test with the microarchitecture level that the Makefile builds with. It must match warmup-go-build-cache-unit-tests.
+      GOAMD64: v3
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7

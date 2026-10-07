@@ -62,6 +62,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	github.com/mmcloughlin/avo v0.6.0
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac

@@ -3,11 +3,15 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Dolthub, Inc.
 
+//go:build !amd64.v3 || nosimd
+
 package v2
 
 import (
 	"math/bits"
 	"unsafe"
+
+	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
 const (
@@ -43,6 +47,34 @@ func (m *index) matchEmptyOrSpillmark() bitset {
 // matchOccupied matches the slots that hold data, i.e. neither empty nor spillmarks.
 func (m *index) matchOccupied() bitset {
 	return m.matchEmptyOrSpillmark() ^ bitset(hiBits)
+}
+
+// cleanupGroup removes the entries of the group that expired at watermark, and returns how many it removed.
+func cleanupGroup(idx *index, d *data, watermark clock.Minutes) int {
+	removed := 0
+	occupied := idx.matchOccupied()
+	for occupied != 0 {
+		j := nextMatch(&occupied)
+		if watermark.GreaterOrEqualThan(d[j].clockMinutes()) {
+			removed++
+
+			if j == last {
+				// This is the last element, if it was previously set,
+				// then group may have spilled to the next one.
+				// We need to keep that signal, so we leave a spillmark here.
+				d[j] = spillmark
+				// We need to leave spillmark in the data because that's what iterator uses.
+				idx[j] = spillmark
+				// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
+				// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
+			} else {
+				// This is not the last element, so just mark it as empty.
+				d[j] = empty
+				idx[j] = empty
+			}
+		}
+	}
+	return removed
 }
 
 // nextMatch clears and returns the index corresponding to the next set bit in
