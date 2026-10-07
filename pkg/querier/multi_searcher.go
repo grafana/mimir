@@ -220,7 +220,7 @@ type metadataEnrichingSearchResultSet struct {
 	bufNextReadIdx int
 	innerDone      bool
 	warnedFetchErr bool
-	// readFromCurrentBatch is the number of results readFromCurrentBatch from inner before the current batch.
+	// readFromCurrentBatch is the number of results read from inner before the current batch.
 	readFromCurrentBatch int
 }
 

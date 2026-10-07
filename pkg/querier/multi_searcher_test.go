@@ -450,7 +450,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		}
 	})
 
-	t.Run("allocations per batch do not grow with the number of enriched results", func(t *testing.T) {
+	t.Run("allocates only the names slice, the metadata slice and the dedupe map per batch", func(t *testing.T) {
 		const n = 1000
 		batch := make([]storage.SearchResult, n)
 		fetched := make(map[string]metadata.Metadata, n)
@@ -465,9 +465,13 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, n, 0, log.NewNopLogger())
 
 		allocs := testing.AllocsPerRun(10, func() { rs.enrich(batch) })
-		// The names slice and the metadata slice. The requested map is
-		// allocated once, before the measured runs.
-		assert.LessOrEqual(t, allocs, 2.0)
+		// The map allocation count grows with its capacity, so measure it
+		// instead of hard-coding it. This map escapes to the heap, so it also
+		// counts the map header, which makes it an upper bound.
+		var requested map[string]struct{}
+		mapAllocs := testing.AllocsPerRun(10, func() { requested = make(map[string]struct{}, 2*n) })
+		require.NotNil(t, requested)
+		assert.LessOrEqual(t, allocs, 2+mapAllocs)
 		for i := range batch {
 			require.NotNil(t, batch[i].Metadata)
 			assert.Equal(t, "help "+batch[i].Value, batch[i].Metadata.Help)
