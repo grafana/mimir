@@ -151,8 +151,8 @@ func validateReplayInputFields(data []byte) error {
 	}{
 		{"weights", []string{"replica_balance", "transition_events", "transition_load", "transition_hash_space", "locality_miss", "fragmentation", "resolution"}},
 		{"action_multipliers", []string{"move", "split", "merge", "move_partition"}},
-		{"candidate_search", []string{"max_move_sources", "max_destinations_per_range", "max_split_candidates", "max_merge_candidates", "max_partition_move_sources", "max_destinations_per_partition", "max_partition_move_candidates", "max_fully_scored"}},
-		{"action_limits", []string{"total", "move", "split", "merge", "merge_per_tenant", "move_partition"}},
+		{"candidate_search", []string{"max_move_sources", "max_destinations_per_range", "max_merge_candidates", "max_partition_move_sources", "max_destinations_per_partition", "max_partition_move_candidates", "max_fully_scored"}},
+		{"action_limits", []string{"total", "move", "move_per_tenant", "split", "split_per_tenant", "merge", "merge_per_tenant", "move_partition"}},
 	}
 	for _, object := range nested {
 		var fields map[string]json.RawMessage

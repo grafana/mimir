@@ -20,7 +20,7 @@ func TestStateCostTerms(t *testing.T) {
 	policy.Weights.Fragmentation = 3
 	policy.Weights.Resolution = 4
 
-	cost := stateCost(stateFromSnapshot(snapshot), snapshot, policy)
+	cost := stateCost(stateFromSnapshot(snapshot), totalsOf(stateFromSnapshot(snapshot)), snapshot, policy)
 	require.InDelta(t, 0.5, cost.PartitionBalance, 1e-12)
 	require.InDelta(t, 0.5, cost.ReplicaBalance, 1e-12)
 	require.InDelta(t, 4, cost.Fragmentation, 1e-12)
@@ -54,7 +54,7 @@ func TestTransitionCostTermsAndLocality(t *testing.T) {
 		movedHashFraction: 0.25,
 	}
 
-	cost := transitionCost(action, state, snapshot, policy)
+	cost := transitionCost(action, state, totalsOf(state), snapshot, policy)
 	require.InDelta(t, 1, cost.TransitionEvents, 1e-12)
 	require.InDelta(t, 0.25, cost.TransitionLoad, 1e-12)
 	require.InDelta(t, 0.25, cost.TransitionHashSpace, 1e-12)
@@ -65,7 +65,7 @@ func TestTransitionCostTermsAndLocality(t *testing.T) {
 	require.InDelta(t, 1, cost.WeightedLocalityMiss, 1e-12)
 	require.InDelta(t, 3.25, cost.WeightedTotal, 1e-12)
 	policy.ActionLimits = ActionLimits{Total: 1000, Move: 1000}
-	require.Equal(t, cost.TransitionEvents, transitionCost(action, state, snapshot, policy).TransitionEvents,
+	require.Equal(t, cost.TransitionEvents, transitionCost(action, state, totalsOf(state), snapshot, policy).TransitionEvents,
 		"execution capacity must not change per-event cost")
 	coarserSnapshot := testSnapshot(
 		[]int32{0, 1},
@@ -73,13 +73,13 @@ func TestTransitionCostTermsAndLocality(t *testing.T) {
 		map[int32]string{0: "rc-a", 1: "rc-b"},
 	)
 	require.Equal(t, cost.TransitionEvents,
-		transitionCost(action, stateFromSnapshot(coarserSnapshot), coarserSnapshot, policy).TransitionEvents,
+		transitionCost(action, stateFromSnapshot(coarserSnapshot), totalsOf(stateFromSnapshot(coarserSnapshot)), coarserSnapshot, policy).TransitionEvents,
 		"assignment granularity must not change per-event cost")
 
 	snapshot.LastHostedAt = map[string]map[string]time.Time{
 		"tenant-a": {"rc-b": snapshot.At.Add(-time.Minute)},
 	}
-	cost = transitionCost(action, state, snapshot, policy)
+	cost = transitionCost(action, state, totalsOf(state), snapshot, policy)
 	require.Zero(t, cost.LocalityMiss)
 	require.InDelta(t, 2.25, cost.WeightedTotal, 1e-12)
 }
@@ -105,12 +105,12 @@ func TestPartitionMoveTransitionCostUsesTenantWeightedLocality(t *testing.T) {
 		tenantLoads: map[string]float64{"tenant-a": 6},
 	}
 
-	cost := transitionCost(action, state, snapshot, policy)
+	cost := transitionCost(action, state, totalsOf(state), snapshot, policy)
 	require.Zero(t, cost.LocalityMiss)
 	require.Zero(t, cost.TransitionHashSpace)
 
 	delete(snapshot.LastHostedAt, "tenant-a")
-	cost = transitionCost(action, state, snapshot, policy)
+	cost = transitionCost(action, state, totalsOf(state), snapshot, policy)
 	require.InDelta(t, 0.75, cost.LocalityMiss, 1e-12)
 }
 
@@ -140,7 +140,7 @@ func TestRangeMoveUsesProjectedPartitionOwnerForLocality(t *testing.T) {
 		movedLoad:   3,
 	}
 
-	require.Zero(t, transitionCost(move, state, snapshot, policy).LocalityMiss)
+	require.Zero(t, transitionCost(move, state, totalsOf(state), snapshot, policy).LocalityMiss)
 }
 
 func TestPeakExcessZeroLoad(t *testing.T) {

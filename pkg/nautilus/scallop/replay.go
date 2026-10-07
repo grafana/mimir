@@ -5,7 +5,7 @@ package scallop
 // This file defines the versioned wire contract for replaying one planning round.
 
 // ReplaySnapshotVersion is the current offline replay envelope version.
-const ReplaySnapshotVersion = 1
+const ReplaySnapshotVersion = 2
 
 // ReplaySnapshotEnvelope contains every input required to reproduce one Plan call.
 type ReplaySnapshotEnvelope struct {

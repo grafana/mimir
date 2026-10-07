@@ -13,19 +13,15 @@ import (
 )
 
 // stateCost evaluates balance, fragmentation, and resolution for one projected placement.
-func stateCost(state planningState, snapshot Snapshot, policy Policy) CostBreakdown {
+func stateCost(state planningState, totals planTotals, snapshot Snapshot, policy Policy) CostBreakdown {
 	partitionLoads := make(map[int32]float64, len(snapshot.ActivePartitions))
 	for _, partitionID := range snapshot.ActivePartitions {
 		partitionLoads[partitionID] = 0
 	}
-	totalLoad := 0.0
-	tenants := make(map[string]struct{})
 	resolution := 0.0
 	for _, r := range state.ranges {
 		partitionLoads[r.entry.PartitionID] += r.load
-		totalLoad += r.load
-		tenants[r.entry.TenantID] = struct{}{}
-		resolution += r.load * float64(r.entry.Range.Size()) / hashSpaceSize
+		resolution += r.load * rangeFraction(r.entry.Range)
 	}
 
 	replicaLoads := make(map[string]float64, len(snapshot.ActiveReplicas))
@@ -39,14 +35,10 @@ func stateCost(state planningState, snapshot Snapshot, policy Policy) CostBreakd
 		replicaLoads[state.partitionOwners[partitionID]] += load
 	}
 
-	fragmentationDenominator := len(tenants)
-	if fragmentationDenominator == 0 {
-		fragmentationDenominator = 1
-	}
 	out := CostBreakdown{
 		PartitionBalance: peakExcess(partitionLoads),
 		ReplicaBalance:   peakExcess(replicaLoads),
-		Fragmentation:    float64(len(state.ranges)) / float64(fragmentationDenominator),
+		Fragmentation:    float64(len(state.ranges)) / float64(max(1, totals.tenants)),
 		Resolution:       resolution,
 	}
 	out.WeightedPartitionBalance = out.PartitionBalance
@@ -83,12 +75,8 @@ func peakExcess[K comparable](loads map[K]float64) float64 {
 }
 
 // transitionCost evaluates control-plane work, relocation, hash movement, and locality for one action.
-func transitionCost(action candidate, state planningState, snapshot Snapshot, policy Policy) CostBreakdown {
-	totalLoad := 0.0
-	for _, r := range state.ranges {
-		totalLoad += r.load
-	}
-
+func transitionCost(action candidate, state planningState, totals planTotals, snapshot Snapshot, policy Policy) CostBreakdown {
+	totalLoad := totals.load
 	eventMultiplier := 0.0
 	switch action.kind {
 	case ActionMove:
@@ -107,7 +95,7 @@ func transitionCost(action candidate, state planningState, snapshot Snapshot, po
 	if totalLoad > 0 {
 		out.TransitionLoad = action.movedLoad / totalLoad
 	}
-	out.TransitionHashSpace = action.movedHashFraction / float64(max(1, tenantCount(state)))
+	out.TransitionHashSpace = action.movedHashFraction / float64(max(1, totals.tenants))
 
 	if action.movedLoad > 0 {
 		if action.kind == ActionMovePartition {
@@ -144,15 +132,6 @@ func transitionCost(action candidate, state planningState, snapshot Snapshot, po
 			out.WeightedTransitionHashSpace +
 			out.WeightedLocalityMiss
 	return out
-}
-
-// tenantCount returns the number of tenants represented in one projected state.
-func tenantCount(state planningState) int {
-	tenants := map[string]struct{}{}
-	for _, r := range state.ranges {
-		tenants[r.entry.TenantID] = struct{}{}
-	}
-	return len(tenants)
 }
 
 // recentlyHosted reports whether locality history keeps a tenant-replica move warm within the policy window.

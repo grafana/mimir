@@ -71,7 +71,11 @@ func TestPartitionMoveTransitionPricingRejectsNoisyReversal(t *testing.T) {
 	snapshot.LastHostedAt = map[string]map[string]time.Time{
 		"tenant-a": {"rc-a": snapshot.At, "rc-b": snapshot.At},
 	}
+	// Replica skew must be weighted enough for the first move to pay off; the
+	// calibrated policy below differs only in its partition-move multiplier.
+	const replicaBalance = 0.5
 	policy := DefaultPolicy()
+	policy.Weights.ReplicaBalance = replicaBalance
 	policy.ActionMultipliers.MovePartition = 1
 	policy.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
 
@@ -99,6 +103,7 @@ func TestPartitionMoveTransitionPricingRejectsNoisyReversal(t *testing.T) {
 	require.Equal(t, first.Actions[0].FromReplica, second.Actions[0].ToReplica)
 
 	calibrated := DefaultPolicy()
+	calibrated.Weights.ReplicaBalance = replicaBalance
 	calibrated.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
 	stable, err := Plan(snapshot, calibrated)
 	require.NoError(t, err)
@@ -141,7 +146,7 @@ func TestJointPlannerChangesActionTypeWithObservedLoad(t *testing.T) {
 	)
 	policy := zeroCostPolicy()
 	policy.Weights.ReplicaBalance = 1
-	policy.ActionLimits = ActionLimits{Total: 1, Move: 1, MovePartition: 1}
+	policy.ActionLimits = ActionLimits{Total: 1, Move: 1, MovePerTenant: 1, MovePartition: 1}
 
 	first, err := Plan(firstSnapshot, policy)
 	require.NoError(t, err)
@@ -391,12 +396,141 @@ func TestPlanHonorsPerKindActionLimits(t *testing.T) {
 	)
 	policy := zeroCostPolicy()
 	policy.Weights.Resolution = 1
-	policy.ActionLimits = ActionLimits{Total: 10, Split: 1}
+	policy.ActionLimits = ActionLimits{Total: 10, Split: 1, SplitPerTenant: 1}
 
 	result, err := Plan(snapshot, policy)
 	require.NoError(t, err)
 	require.Len(t, result.Actions, 1)
 	require.Equal(t, ActionSplit, result.Actions[0].Kind)
+}
+
+// TestSplitWaveSelectsEachTenantsHottestRangesInOnePass keeps split volume from multiplying greedy iterations.
+func TestSplitWaveSelectsEachTenantsHottestRangesInOnePass(t *testing.T) {
+	snapshot := twoTenantSplitSnapshot()
+	policy := zeroCostPolicy()
+	policy.Weights.Resolution = 1
+	policy.ActionLimits = ActionLimits{Total: 100, Split: 100, SplitPerTenant: 2}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]float64{
+		"tenant-a": {8, 7},
+		"tenant-b": {9, 6},
+	}, splitLoadsByTenant(result.Actions))
+	require.Equal(t, 2, result.CandidateSearch.Iterations, "one greedy pass finds nothing, then one split wave")
+	require.Len(t, result.Assignment.Entries, len(snapshot.Assignment.Entries)+4)
+	require.NoError(t, result.Assignment.Validate())
+}
+
+// TestSplitWaveHonorsClusterWideLimit keeps the globally best splits when tenant allowances exceed the round budget.
+func TestSplitWaveHonorsClusterWideLimit(t *testing.T) {
+	snapshot := twoTenantSplitSnapshot()
+	policy := zeroCostPolicy()
+	policy.Weights.Resolution = 1
+	policy.ActionLimits = ActionLimits{Total: 100, Split: 3, SplitPerTenant: 2}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]float64{
+		"tenant-a": {8, 7},
+		"tenant-b": {9},
+	}, splitLoadsByTenant(result.Actions))
+}
+
+// TestSplitPriorityIsExactCostChange justifies costing a split wave as the sum of independent splits.
+func TestSplitPriorityIsExactCostChange(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 1, 2},
+		[]float64{4, 2, 1, 7},
+		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.ReplicaBalance = 0.5
+	policy.Weights.TransitionEvents = 0.3
+	policy.Weights.Fragmentation = 0.2
+	policy.Weights.Resolution = 3
+	state := stateFromSnapshot(snapshot)
+	totals := totalsOf(state)
+	before := stateCost(state, totals, snapshot, policy).WeightedTotal
+
+	for i := range state.ranges {
+		split := candidate{kind: ActionSplit, index: i}
+		transition := transitionCost(split, state, totals, snapshot, policy).WeightedTotal
+		after := stateCost(project(state, split), totals, snapshot, policy).WeightedTotal
+		require.InDelta(t, before-after-transition, splitPriority(state.ranges[i], totals, policy, transition), 1e-12)
+	}
+}
+
+// TestPlanCapsMovesPerTenant limits how far one tenant's placement can shift from a single observation.
+func TestPlanCapsMovesPerTenant(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 0, 0},
+		[]float64{1, 1, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c", 3: "rc-d"},
+	)
+	policy := zeroCostPolicy()
+	policy.ActionLimits = ActionLimits{Total: 10, Move: 10, MovePerTenant: 10}
+
+	uncapped, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Greater(t, len(uncapped.Actions), 1)
+
+	policy.ActionLimits.MovePerTenant = 1
+	capped, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, capped.Actions, 1)
+	require.Equal(t, ActionMove, capped.Actions[0].Kind)
+}
+
+// TestPolicyRequiresPerTenantLimitForEnabledRangeActions keeps every range action kind bounded per tenant.
+func TestPolicyRequiresPerTenantLimitForEnabledRangeActions(t *testing.T) {
+	for name, limits := range map[string]ActionLimits{
+		"move":  {Total: 1, Move: 1},
+		"split": {Total: 1, Split: 1},
+		"merge": {Total: 1, Merge: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			policy := zeroCostPolicy()
+			policy.ActionLimits = limits
+			require.ErrorContains(t, policy.validate(), name+"-per-tenant action limit must be positive")
+		})
+	}
+}
+
+func twoTenantSplitSnapshot() Snapshot {
+	first := assignment.EvenSplitForTenant("tenant-a", []int32{0, 0, 0, 0, 0, 0, 0, 0})
+	second := assignment.EvenSplitForTenant("tenant-b", []int32{0, 0, 0, 0, 0, 0, 0, 0})
+	entries := append(append([]assignment.Entry(nil), first.Entries...), second.Entries...)
+	loads := map[string][]float64{
+		"tenant-a": {8, 1, 1, 1, 1, 1, 1, 7},
+		"tenant-b": {1, 1, 1, 9, 6, 1, 1, 1},
+	}
+	snapshot := Snapshot{
+		At:               time.Unix(100, 0),
+		Assignment:       &assignment.Assignment{Entries: entries},
+		RangeLoads:       make(map[RangeKey]float64, len(entries)),
+		ActivePartitions: []int32{0},
+		PartitionOwners:  map[int32]string{0: "rc-a"},
+		ActiveReplicas:   []string{"rc-a"},
+	}
+	for i, entry := range entries {
+		snapshot.RangeLoads[RangeKey{TenantID: entry.TenantID, Range: entry.Range}] = loads[entry.TenantID][i%8]
+	}
+	return snapshot
+}
+
+func splitLoadsByTenant(actions []Action) map[string][]float64 {
+	out := map[string][]float64{}
+	for _, action := range actions {
+		if action.Kind == ActionSplit {
+			out[action.TenantID] = append(out[action.TenantID], action.Load)
+		}
+	}
+	for tenantID := range out {
+		slices.Sort(out[tenantID])
+		slices.Reverse(out[tenantID])
+	}
+	return out
 }
 
 // TestOnlySplitChildrenAreIneligibleForLaterActions distinguishes unknown split loads from known move and merge loads.
@@ -486,7 +620,6 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 	policy.CandidateSearch = CandidateSearchLimits{
 		MaxMoveSources:              3,
 		MaxDestinationsPerRange:     2,
-		MaxSplitCandidates:          2,
 		MaxMergeCandidates:          2,
 		MaxPartitionMoveSources:     2,
 		MaxDestinationsPerPartition: 2,
@@ -497,18 +630,15 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 	candidates, diagnostics := generateCandidates(stateFromSnapshot(snapshot), snapshot, policy)
 	require.LessOrEqual(t, len(candidates), policy.CandidateSearch.MaxFullyScored)
 	require.LessOrEqual(t, diagnostics.Admitted.Move, 3*2)
-	require.LessOrEqual(t, diagnostics.Admitted.Split, 2)
 	require.LessOrEqual(t, diagnostics.Admitted.Merge, 2)
 	require.True(t, diagnostics.Truncated)
 	require.Greater(t, diagnostics.DiscardedByBudget.MoveSources, 0)
 	require.Greater(t, diagnostics.DiscardedByBudget.Destinations, 0)
-	require.Greater(t, diagnostics.DiscardedByBudget.Splits, 0)
 	require.Greater(t, diagnostics.DiscardedByBudget.Merges, 0)
 	require.Greater(t, diagnostics.DiscardedByBudget.FullyScored, 0)
 	require.Equal(t, diagnostics.Discarded.Total,
 		diagnostics.DiscardedByBudget.MoveSources+
 			diagnostics.DiscardedByBudget.Destinations+
-			diagnostics.DiscardedByBudget.Splits+
 			diagnostics.DiscardedByBudget.Merges+
 			diagnostics.DiscardedByBudget.PartitionMoveSources+
 			diagnostics.DiscardedByBudget.PartitionMoveDestinations+
@@ -551,7 +681,7 @@ func TestReplicaSurplusCanAdmitRangeFromUnderloadedPartition(t *testing.T) {
 		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b", 3: "rc-b"},
 	)
 	state := stateFromSnapshot(snapshot)
-	index := buildCandidateIndex(state, snapshot)
+	index := buildCandidateIndex(state, totalsOf(state), snapshot)
 	policy := zeroCostPolicy()
 	policy.Weights.ReplicaBalance = 1
 
@@ -595,7 +725,9 @@ func testActionLimits(limit int) ActionLimits {
 	return ActionLimits{
 		Total:          limit,
 		Move:           limit,
+		MovePerTenant:  limit,
 		Split:          limit,
+		SplitPerTenant: limit,
 		Merge:          limit,
 		MergePerTenant: limit,
 		MovePartition:  limit,

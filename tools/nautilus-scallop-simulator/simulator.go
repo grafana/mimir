@@ -245,7 +245,6 @@ func summarizeCandidateSearch(rounds []RoundRecord, limits scallop.CandidateSear
 		addCandidateCounts(&out.Discarded, diagnostics.Discarded)
 		out.DiscardedByBudget.MoveSources += diagnostics.DiscardedByBudget.MoveSources
 		out.DiscardedByBudget.Destinations += diagnostics.DiscardedByBudget.Destinations
-		out.DiscardedByBudget.Splits += diagnostics.DiscardedByBudget.Splits
 		out.DiscardedByBudget.Merges += diagnostics.DiscardedByBudget.Merges
 		out.DiscardedByBudget.PartitionMoveSources += diagnostics.DiscardedByBudget.PartitionMoveSources
 		out.DiscardedByBudget.PartitionMoveDestinations += diagnostics.DiscardedByBudget.PartitionMoveDestinations

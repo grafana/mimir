@@ -92,11 +92,11 @@ type ActionMultipliers struct {
 }
 
 // CandidateSearchLimits bounds expensive candidate projection while allowing
-// small legal candidate sets to pass through in full.
+// small legal candidate sets to pass through in full. Splits have no search
+// limit because every legal split is costed exactly in one linear pass.
 type CandidateSearchLimits struct {
 	MaxMoveSources              int `json:"max_move_sources"`
 	MaxDestinationsPerRange     int `json:"max_destinations_per_range"`
-	MaxSplitCandidates          int `json:"max_split_candidates"`
 	MaxMergeCandidates          int `json:"max_merge_candidates"`
 	MaxPartitionMoveSources     int `json:"max_partition_move_sources"`
 	MaxDestinationsPerPartition int `json:"max_destinations_per_partition"`
@@ -109,7 +109,6 @@ func DefaultCandidateSearchLimits() CandidateSearchLimits {
 	return CandidateSearchLimits{
 		MaxMoveSources:              80,
 		MaxDestinationsPerRange:     4,
-		MaxSplitCandidates:          80,
 		MaxMergeCandidates:          3200,
 		MaxPartitionMoveSources:     32,
 		MaxDestinationsPerPartition: 4,
@@ -119,12 +118,18 @@ func DefaultCandidateSearchLimits() CandidateSearchLimits {
 }
 
 // ActionLimits bounds selected work per planning round independently from candidate-search effort.
+//
+// Range actions have a per-tenant limit, which bounds how much one tenant's
+// layout can change from a single observation, and a cluster-wide limit, which
+// bounds total work per round. Partition moves are not tenant-scoped and have
+// only a cluster-wide limit.
 type ActionLimits struct {
-	Total int `json:"total"`
-	Move  int `json:"move"`
-	Split int `json:"split"`
-	Merge int `json:"merge"`
-	// MergePerTenant limits how quickly one tenant can consolidate from a single observation.
+	Total          int `json:"total"`
+	Move           int `json:"move"`
+	MovePerTenant  int `json:"move_per_tenant"`
+	Split          int `json:"split"`
+	SplitPerTenant int `json:"split_per_tenant"`
+	Merge          int `json:"merge"`
 	MergePerTenant int `json:"merge_per_tenant"`
 	MovePartition  int `json:"move_partition"`
 }
@@ -143,20 +148,22 @@ type Policy struct {
 func DefaultPolicy() Policy {
 	return Policy{
 		Weights: Weights{
-			ReplicaBalance:      0.44668359215096315,
+			ReplicaBalance:      0.199526231496888,
 			TransitionEvents:    0.07062687723113772,
-			TransitionLoad:      0.07079457843841379,
-			TransitionHashSpace: 0.01,
-			LocalityMiss:        0.01778279410038923,
+			TransitionLoad:      0.012589254117941671,
+			TransitionHashSpace: 0.007079457843841379,
+			LocalityMiss:        0.1778279410038923,
 			Fragmentation:       10,
 			Resolution:          22.387211385683393,
 		},
 		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 5.623413251903491},
 		CandidateSearch:   DefaultCandidateSearchLimits(),
 		ActionLimits: ActionLimits{
-			Total:          1612,
+			Total:          1640,
 			Move:           4,
-			Split:          4,
+			MovePerTenant:  4,
+			Split:          32,
+			SplitPerTenant: 4,
 			Merge:          1600,
 			MergePerTenant: 4,
 			MovePartition:  4,
@@ -235,7 +242,6 @@ type CandidateCounts struct {
 type CandidateBudgetDiscards struct {
 	MoveSources               int `json:"move_sources"`
 	Destinations              int `json:"destinations"`
-	Splits                    int `json:"splits"`
 	Merges                    int `json:"merges"`
 	PartitionMoveSources      int `json:"partition_move_sources"`
 	PartitionMoveDestinations int `json:"partition_move_destinations"`
@@ -274,16 +280,28 @@ type PlanResult struct {
 
 // validate rejects policy values that would make planning unsafe or nondeterministic.
 func (p Policy) validate() error {
-	if p.ActionLimits.Total <= 0 ||
-		p.ActionLimits.Move < 0 ||
-		p.ActionLimits.Split < 0 ||
-		p.ActionLimits.Merge < 0 ||
-		p.ActionLimits.MergePerTenant < 0 ||
-		p.ActionLimits.MovePartition < 0 {
+	actions := p.ActionLimits
+	if actions.Total <= 0 ||
+		actions.Move < 0 ||
+		actions.MovePerTenant < 0 ||
+		actions.Split < 0 ||
+		actions.SplitPerTenant < 0 ||
+		actions.Merge < 0 ||
+		actions.MergePerTenant < 0 ||
+		actions.MovePartition < 0 {
 		return fmt.Errorf("action limits must have a positive total and non-negative per-kind values")
 	}
-	if p.ActionLimits.Merge > 0 && p.ActionLimits.MergePerTenant == 0 {
-		return fmt.Errorf("merge-per-tenant action limit must be positive when merges are enabled")
+	for _, kind := range []struct {
+		name             string
+		limit, perTenant int
+	}{
+		{"move", actions.Move, actions.MovePerTenant},
+		{"split", actions.Split, actions.SplitPerTenant},
+		{"merge", actions.Merge, actions.MergePerTenant},
+	} {
+		if kind.limit > 0 && kind.perTenant == 0 {
+			return fmt.Errorf("%s-per-tenant action limit must be positive when %ss are enabled", kind.name, kind.name)
+		}
 	}
 	if p.LocalityWindow < 0 {
 		return fmt.Errorf("locality window must be non-negative")
@@ -291,7 +309,6 @@ func (p Policy) validate() error {
 	limits := p.CandidateSearch
 	if limits.MaxMoveSources <= 0 ||
 		limits.MaxDestinationsPerRange <= 0 ||
-		limits.MaxSplitCandidates <= 0 ||
 		limits.MaxMergeCandidates <= 0 ||
 		limits.MaxPartitionMoveSources <= 0 ||
 		limits.MaxDestinationsPerPartition <= 0 ||
@@ -389,6 +406,24 @@ type rangeState struct {
 type planningState struct {
 	ranges          []rangeState
 	partitionOwners map[int32]string
+}
+
+// planTotals holds aggregates that no planning action changes: moves, splits,
+// and merges conserve load, and no action adds or removes a tenant.
+type planTotals struct {
+	load    float64
+	tenants int
+}
+
+func totalsOf(state planningState) planTotals {
+	tenants := map[string]struct{}{}
+	var totals planTotals
+	for _, r := range state.ranges {
+		totals.load += r.load
+		tenants[r.entry.TenantID] = struct{}{}
+	}
+	totals.tenants = len(tenants)
+	return totals
 }
 
 // stateFromSnapshot copies caller-owned assignment entries and observations into mutable projected state.

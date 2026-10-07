@@ -270,11 +270,10 @@ func policyKey(policy scallop.Policy) string {
 	}
 	limits := policy.CandidateSearch
 	actions := policy.ActionLimits
-	return fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d",
+	return fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d",
 		strings.Join(values, "/"),
 		limits.MaxMoveSources,
 		limits.MaxDestinationsPerRange,
-		limits.MaxSplitCandidates,
 		limits.MaxMergeCandidates,
 		limits.MaxPartitionMoveSources,
 		limits.MaxDestinationsPerPartition,
@@ -282,7 +281,9 @@ func policyKey(policy scallop.Policy) string {
 		limits.MaxFullyScored,
 		actions.Total,
 		actions.Move,
+		actions.MovePerTenant,
 		actions.Split,
+		actions.SplitPerTenant,
 		actions.Merge,
 		actions.MergePerTenant,
 		actions.MovePartition,

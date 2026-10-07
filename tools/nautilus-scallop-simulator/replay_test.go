@@ -61,7 +61,7 @@ func TestReplaySnapshotRejectsMalformedIncompleteAndUnknownVersion(t *testing.T)
 			message: "decode replay input",
 		},
 		"unknown field": {
-			body:    `{"version":1,"snapshot":{},"policy":{},"extra":true}`,
+			body:    `{"version":2,"snapshot":{},"policy":{},"extra":true}`,
 			message: `unknown field "extra"`,
 		},
 		"unknown version": {
@@ -69,12 +69,12 @@ func TestReplaySnapshotRejectsMalformedIncompleteAndUnknownVersion(t *testing.T)
 			message: "unsupported replay input version 99",
 		},
 		"incomplete": {
-			body:    `{"version":1,"snapshot":{},"policy":{}}`,
+			body:    `{"version":2,"snapshot":{},"policy":{}}`,
 			message: "snapshot is incomplete",
 		},
 		"partial policy": {
 			body: `{
-				"version": 1,
+				"version": 2,
 				"snapshot": {"at":"2026-01-01T00:00:00Z","assignment":null,"range_loads":{},"active_partitions":[],"partition_owners":{},"active_replicas":[]},
 				"policy": {"weights":{},"action_multipliers":{},"candidate_search":{},"action_limits":{},"locality_window":0}
 			}`,

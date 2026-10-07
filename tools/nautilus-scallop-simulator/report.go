@@ -128,7 +128,7 @@ func writeCSV(path string, result SearchResult) error {
 		"candidate_fully_scored_moves", "candidate_fully_scored_splits", "candidate_fully_scored_merges", "candidate_fully_scored_partition_moves",
 		"candidate_discarded_moves", "candidate_discarded_splits", "candidate_discarded_merges", "candidate_discarded_partition_moves",
 		"discarded_by_move_source_budget", "discarded_by_destination_budget",
-		"discarded_by_split_budget", "discarded_by_merge_budget",
+		"discarded_by_merge_budget",
 		"discarded_by_partition_source_budget", "discarded_by_partition_destination_budget",
 		"discarded_by_partition_move_budget", "discarded_by_fully_scored_budget",
 	}
@@ -235,7 +235,6 @@ func csvEvaluationRow(
 		strconv.Itoa(search.Discarded.MovePartition),
 		strconv.Itoa(search.DiscardedByBudget.MoveSources),
 		strconv.Itoa(search.DiscardedByBudget.Destinations),
-		strconv.Itoa(search.DiscardedByBudget.Splits),
 		strconv.Itoa(search.DiscardedByBudget.Merges),
 		strconv.Itoa(search.DiscardedByBudget.PartitionMoveSources),
 		strconv.Itoa(search.DiscardedByBudget.PartitionMoveDestinations),

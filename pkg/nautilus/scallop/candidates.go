@@ -50,8 +50,7 @@ type candidateIndex struct {
 	replicaMean       float64
 	partitionPeak     float64
 	replicaPeak       float64
-	totalLoad         float64
-	tenantCount       int
+	totals            planTotals
 	tenantRangeCounts map[string]int
 }
 
@@ -71,22 +70,25 @@ type rankedReplica struct {
 	priority float64
 }
 
+// candidateGeneration describes which pairwise-interacting actions remain
+// available. Splits are not generated here; see selectSplitWave.
 type candidateGeneration struct {
 	move                   bool
-	split                  bool
 	merge                  bool
 	movePartition          bool
+	selectedMovesByTenant  map[string]int
+	movePerTenant          int
 	selectedMergesByTenant map[string]int
 	mergePerTenant         int
 }
 
-// generateCandidates returns a deterministic bounded shortlist of legal range and partition actions.
+// generateCandidates returns a deterministic bounded shortlist of legal move, merge, and partition actions.
 func generateCandidates(state planningState, snapshot Snapshot, policy Policy) ([]candidate, CandidateSearchDiagnostics) {
-	return generateCandidatesFor(state, snapshot, policy, candidateGeneration{
+	return generateCandidatesFor(state, totalsOf(state), snapshot, policy, candidateGeneration{
 		move:           true,
-		split:          true,
 		merge:          true,
 		movePartition:  true,
+		movePerTenant:  len(state.ranges) + 1,
 		mergePerTenant: len(state.ranges) + 1,
 	})
 }
@@ -94,6 +96,7 @@ func generateCandidates(state planningState, snapshot Snapshot, policy Policy) (
 // generateCandidatesFor omits action kinds whose execution budgets are exhausted in the current plan.
 func generateCandidatesFor(
 	state planningState,
+	totals planTotals,
 	snapshot Snapshot,
 	policy Policy,
 	generation candidateGeneration,
@@ -104,38 +107,24 @@ func generateCandidatesFor(
 	sort.Strings(replicas)
 	limits := policy.CandidateSearch
 	diagnostics := CandidateSearchDiagnostics{Limits: limits}
-	index := buildCandidateIndex(state, snapshot)
+	index := buildCandidateIndex(state, totals, snapshot)
 
 	moveSources := make([]rankedRange, 0, len(state.ranges))
-	splits := make([]candidate, 0, min(len(state.ranges), limits.MaxSplitCandidates))
 	for i, r := range state.ranges {
-		if !r.observed {
+		if !r.observed ||
+			!generation.move ||
+			len(partitions) < 2 ||
+			generation.selectedMovesByTenant[r.entry.TenantID] >= generation.movePerTenant {
 			continue
 		}
-		if generation.move && len(partitions) > 1 {
-			diagnostics.LegalMoveSources++
-			diagnostics.LegalMoveDestinations += len(partitions) - 1
-			diagnostics.Legal.Move += len(partitions) - 1
-			moveSources = append(moveSources, rankedRange{
-				index:    i,
-				priority: moveSourcePriority(r, index, policy),
-				key:      rangeStateKey(r),
-			})
-		}
-		if generation.split && r.entry.Range.Size() > 1 {
-			diagnostics.Legal.Split++
-			splits = append(splits, candidate{
-				kind:          ActionSplit,
-				index:         i,
-				otherIndex:    -1,
-				tenantID:      r.entry.TenantID,
-				r:             r.entry.Range,
-				fromPartition: r.entry.PartitionID,
-				toPartition:   r.entry.PartitionID,
-				load:          r.load,
-				priority:      splitPriority(r, index, snapshot, policy),
-			})
-		}
+		diagnostics.LegalMoveSources++
+		diagnostics.LegalMoveDestinations += len(partitions) - 1
+		diagnostics.Legal.Move += len(partitions) - 1
+		moveSources = append(moveSources, rankedRange{
+			index:    i,
+			priority: moveSourcePriority(r, index, policy),
+			key:      rangeStateKey(r),
+		})
 	}
 
 	selectedSources := selectMoveSources(moveSources, limits.MaxMoveSources)
@@ -189,9 +178,7 @@ func generateCandidatesFor(
 	}
 
 	moves = limitCandidates(moves, len(moves))
-	diagnostics.DiscardedByBudget.Splits = max(0, len(splits)-limits.MaxSplitCandidates)
 	diagnostics.DiscardedByBudget.Merges = max(0, len(merges)-limits.MaxMergeCandidates)
-	splits = limitCandidates(splits, limits.MaxSplitCandidates)
 	merges = limitMergesFair(merges, index.tenantRangeCounts, limits.MaxMergeCandidates)
 
 	partitionMoves := make([]candidate, 0, limits.MaxPartitionMoveCandidates)
@@ -230,18 +217,17 @@ func generateCandidatesFor(
 				tenantLoads:   tenantLoads,
 				priority:      source.priority + destination.priority,
 			}
-			move.priority -= transitionCost(move, state, snapshot, policy).WeightedTotal
+			move.priority -= transitionCost(move, state, totals, snapshot, policy).WeightedTotal
 			partitionMoves = append(partitionMoves, move)
 		}
 	}
 	diagnostics.DiscardedByBudget.PartitionMoves =
 		max(0, len(partitionMoves)-limits.MaxPartitionMoveCandidates)
 	partitionMoves = limitCandidates(partitionMoves, limits.MaxPartitionMoveCandidates)
-	diagnostics.Admitted = candidateCounts(moves, splits, merges, partitionMoves)
+	diagnostics.Admitted = candidateCounts(moves, merges, partitionMoves)
 
 	candidates := make([]candidate, 0, diagnostics.Admitted.Total)
 	candidates = append(candidates, moves...)
-	candidates = append(candidates, splits...)
 	candidates = append(candidates, merges...)
 	candidates = append(candidates, partitionMoves...)
 	diagnostics.DiscardedByBudget.FullyScored = max(0, len(candidates)-limits.MaxFullyScored)
@@ -289,15 +275,15 @@ func mergeCandidateForTarget(index int, left, right rangeState, target int32) ca
 	}
 }
 
-// buildCandidateIndex caches aggregate loads and tenant count used to rank candidates cheaply.
-func buildCandidateIndex(state planningState, snapshot Snapshot) candidateIndex {
+// buildCandidateIndex caches aggregate loads used to rank candidates cheaply.
+func buildCandidateIndex(state planningState, totals planTotals, snapshot Snapshot) candidateIndex {
 	index := candidateIndex{
 		partitionLoads:    make(map[int32]float64, len(snapshot.ActivePartitions)),
 		replicaLoads:      make(map[string]float64, len(snapshot.ActiveReplicas)),
 		partitionOwners:   state.partitionOwners,
-		tenantRangeCounts: map[string]int{},
+		totals:            totals,
+		tenantRangeCounts: make(map[string]int, totals.tenants),
 	}
-	tenants := map[string]struct{}{}
 	for _, partitionID := range snapshot.ActivePartitions {
 		index.partitionLoads[partitionID] = 0
 	}
@@ -306,8 +292,6 @@ func buildCandidateIndex(state planningState, snapshot Snapshot) candidateIndex 
 	}
 	for _, r := range state.ranges {
 		index.partitionLoads[r.entry.PartitionID] += r.load
-		index.totalLoad += r.load
-		tenants[r.entry.TenantID] = struct{}{}
 		index.tenantRangeCounts[r.entry.TenantID]++
 	}
 	partitions := append([]int32(nil), snapshot.ActivePartitions...)
@@ -316,11 +300,10 @@ func buildCandidateIndex(state planningState, snapshot Snapshot) candidateIndex 
 		load := index.partitionLoads[partitionID]
 		index.replicaLoads[state.partitionOwners[partitionID]] += load
 	}
-	index.partitionMean = index.totalLoad / float64(len(snapshot.ActivePartitions))
-	index.replicaMean = index.totalLoad / float64(len(snapshot.ActiveReplicas))
+	index.partitionMean = totals.load / float64(len(snapshot.ActivePartitions))
+	index.replicaMean = totals.load / float64(len(snapshot.ActiveReplicas))
 	index.partitionPeak = peakExcessWithMean(index.partitionLoads, index.partitionMean)
 	index.replicaPeak = peakExcessWithMean(index.replicaLoads, index.replicaMean)
-	index.tenantCount = len(tenants)
 	return index
 }
 
@@ -396,13 +379,13 @@ func selectDestinations(
 	return destinations[:limit]
 }
 
-// splitPriority estimates net resolution benefit after fragmentation and event costs.
-func splitPriority(r rangeState, index candidateIndex, snapshot Snapshot, policy Policy) float64 {
+// splitPriority is the exact weighted cost reduction of one split. Both
+// children stay on the parent partition, so balance is unchanged; only
+// resolution, fragmentation, and the split's own transition cost move.
+func splitPriority(r rangeState, totals planTotals, policy Policy, transition float64) float64 {
 	resolutionBenefit := policy.Weights.Resolution * r.load * rangeFraction(r.entry.Range) / 2
-	fragmentationCost := policy.Weights.Fragmentation / float64(max(1, index.tenantCount))
-	eventCost := policy.Weights.TransitionEvents * policy.ActionMultipliers.Split /
-		float64(max(1, len(snapshot.Assignment.Entries)))
-	return resolutionBenefit - fragmentationCost - eventCost
+	fragmentationCost := policy.Weights.Fragmentation / float64(max(1, totals.tenants))
+	return resolutionBenefit - fragmentationCost - transition
 }
 
 // mergePriority estimates net fragmentation benefit after resolution and relocation costs.
@@ -414,13 +397,13 @@ func mergePriority(
 	snapshot Snapshot,
 	policy Policy,
 ) float64 {
-	fragmentationBenefit := policy.Weights.Fragmentation / float64(max(1, index.tenantCount))
+	fragmentationBenefit := policy.Weights.Fragmentation / float64(max(1, index.totals.tenants))
 	beforeResolution := left.load*rangeFraction(left.entry.Range) + right.load*rangeFraction(right.entry.Range)
 	afterResolution := (left.load + right.load) * rangeFraction(assignment.HashRange{Lo: left.entry.Range.Lo, Hi: right.entry.Range.Hi})
 	resolutionCost := policy.Weights.Resolution * (afterResolution - beforeResolution)
 	balanceBenefit := mergeBalanceBenefit(merge, index, state, policy)
 	return balanceBenefit + fragmentationBenefit -
-		resolutionCost - transitionCost(merge, state, snapshot, policy).WeightedTotal
+		resolutionCost - transitionCost(merge, state, index.totals, snapshot, policy).WeightedTotal
 }
 
 // mergeBalanceBenefit computes exact affected-load relief without projecting a full assignment.
@@ -609,13 +592,12 @@ func limitCandidates(candidates []candidate, limit int) []candidate {
 	return candidates[:limit]
 }
 
-func candidateCounts(moves, splits, merges, partitionMoves []candidate) CandidateCounts {
+func candidateCounts(moves, merges, partitionMoves []candidate) CandidateCounts {
 	return CandidateCounts{
 		Move:          len(moves),
-		Split:         len(splits),
 		Merge:         len(merges),
 		MovePartition: len(partitionMoves),
-		Total:         len(moves) + len(splits) + len(merges) + len(partitionMoves),
+		Total:         len(moves) + len(merges) + len(partitionMoves),
 	}
 }
 
@@ -686,26 +668,7 @@ func project(state planningState, c candidate) planningState {
 		next.ranges[c.index].entry.PartitionID = c.toPartition
 
 	case ActionSplit:
-		parent := next.ranges[c.index]
-		midpoint := parent.entry.Range.Lo + uint32((uint64(parent.entry.Range.Hi)-uint64(parent.entry.Range.Lo))/2)
-		left := rangeState{
-			entry: assignment.Entry{
-				TenantID:    parent.entry.TenantID,
-				Range:       assignment.HashRange{Lo: parent.entry.Range.Lo, Hi: midpoint},
-				PartitionID: parent.entry.PartitionID,
-			},
-			load:     parent.load / 2,
-			observed: false,
-		}
-		right := rangeState{
-			entry: assignment.Entry{
-				TenantID:    parent.entry.TenantID,
-				Range:       assignment.HashRange{Lo: midpoint + 1, Hi: parent.entry.Range.Hi},
-				PartitionID: parent.entry.PartitionID,
-			},
-			load:     parent.load - left.load,
-			observed: false,
-		}
+		left, right := splitChildren(next.ranges[c.index])
 		replacement := make([]rangeState, 0, len(next.ranges)+1)
 		replacement = append(replacement, next.ranges[:c.index]...)
 		replacement = append(replacement, left, right)
@@ -733,4 +696,29 @@ func project(state planningState, c candidate) planningState {
 		next.partitionOwners[c.partitionID] = c.toReplica
 	}
 	return next
+}
+
+// splitChildren halves a range at its hash midpoint, assumes evenly spread
+// load, and keeps both unobserved children on the parent's partition.
+func splitChildren(parent rangeState) (rangeState, rangeState) {
+	midpoint := parent.entry.Range.Lo + uint32((uint64(parent.entry.Range.Hi)-uint64(parent.entry.Range.Lo))/2)
+	left := rangeState{
+		entry: assignment.Entry{
+			TenantID:    parent.entry.TenantID,
+			Range:       assignment.HashRange{Lo: parent.entry.Range.Lo, Hi: midpoint},
+			PartitionID: parent.entry.PartitionID,
+		},
+		load:     parent.load / 2,
+		observed: false,
+	}
+	right := rangeState{
+		entry: assignment.Entry{
+			TenantID:    parent.entry.TenantID,
+			Range:       assignment.HashRange{Lo: midpoint + 1, Hi: parent.entry.Range.Hi},
+			PartitionID: parent.entry.PartitionID,
+		},
+		load:     parent.load - left.load,
+		observed: false,
+	}
+	return left, right
 }

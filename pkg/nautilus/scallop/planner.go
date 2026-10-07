@@ -14,7 +14,12 @@ import (
 
 const costEpsilon = 1e-12
 
-// Plan greedily selects lower-cost actions and fair merge waves within explicit execution limits.
+// Plan greedily selects lower-cost moves, partition moves, and fair merge
+// waves, then applies one split wave, all within explicit execution limits.
+//
+// Splits run last because they never change balance and their children cannot
+// be acted on again before observation: deferring them lets observed ranges be
+// moved first, and lets every worthwhile split be selected in one pass.
 func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 	if err := snapshot.validate(); err != nil {
 		return PlanResult{}, err
@@ -24,21 +29,24 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 	}
 
 	state := stateFromSnapshot(snapshot)
-	initialCost := stateCost(state, snapshot, policy)
+	totals := totalsOf(state)
+	initialCost := stateCost(state, totals, snapshot, policy)
 	currentCost := initialCost
 	var actions []Action
 	var selected CandidateCounts
+	selectedMovesByTenant := map[string]int{}
 	selectedMergesByTenant := map[string]int{}
 	var cumulativeTransition CostBreakdown
 	searchDiagnostics := CandidateSearchDiagnostics{Limits: policy.CandidateSearch}
 
 	for selected.Total < policy.ActionLimits.Total {
 		var best *evaluatedCandidate
-		candidates, iterationDiagnostics := generateCandidatesFor(state, snapshot, policy, candidateGeneration{
+		candidates, iterationDiagnostics := generateCandidatesFor(state, totals, snapshot, policy, candidateGeneration{
 			move:                   canSelect(ActionMove, selected, policy.ActionLimits),
-			split:                  canSelect(ActionSplit, selected, policy.ActionLimits),
 			merge:                  canSelect(ActionMerge, selected, policy.ActionLimits),
 			movePartition:          canSelect(ActionMovePartition, selected, policy.ActionLimits),
+			selectedMovesByTenant:  selectedMovesByTenant,
+			movePerTenant:          policy.ActionLimits.MovePerTenant,
 			selectedMergesByTenant: selectedMergesByTenant,
 			mergePerTenant:         policy.ActionLimits.MergePerTenant,
 		})
@@ -56,11 +64,11 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 			policy.ActionLimits.MergePerTenant,
 		)
 		if len(mergeWave) > 0 {
-			projected, transition, resolvedWave, err := projectMergeWave(state, mergeWave, snapshot, policy)
+			projected, transition, resolvedWave, err := projectMergeWave(state, totals, mergeWave, snapshot, policy)
 			if err != nil {
 				return PlanResult{}, err
 			}
-			after := stateCost(projected, snapshot, policy)
+			after := stateCost(projected, totals, snapshot, policy)
 			total := after.WeightedTotal + transition.WeightedTotal
 			if total < currentCost.WeightedTotal-costEpsilon {
 				best = &evaluatedCandidate{
@@ -83,8 +91,8 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 				return PlanResult{}, fmt.Errorf("candidate %s produced invalid assignment: %w", candidate.key(), err)
 			}
 
-			after := stateCost(projected, snapshot, policy)
-			transition := transitionCost(candidate, state, snapshot, policy)
+			after := stateCost(projected, totals, snapshot, policy)
+			transition := transitionCost(candidate, state, totals, snapshot, policy)
 			total := after.WeightedTotal + transition.WeightedTotal
 			if total >= currentCost.WeightedTotal-costEpsilon {
 				continue
@@ -109,7 +117,7 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 
 		if len(best.wave) > 0 {
 			waveActions, next, waveTransition, err := materializeMergeWave(
-				state, currentCost, best.wave, snapshot, policy, best.total,
+				state, totals, currentCost, best.wave, snapshot, policy, best.total,
 			)
 			if err != nil {
 				return PlanResult{}, err
@@ -129,9 +137,32 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 		action := actionFromCandidate(best.candidate, currentCost, best.after, best.transition, best.total)
 		actions = append(actions, action)
 		incrementCandidateCount(&selected, best.candidate.kind)
+		if best.candidate.kind == ActionMove {
+			selectedMovesByTenant[best.candidate.tenantID]++
+		}
 		accumulateTransition(&cumulativeTransition, best.transition)
 		state = best.state
 		currentCost = best.after
+	}
+
+	remainingSplits := min(
+		policy.ActionLimits.Split-selected.Split,
+		policy.ActionLimits.Total-selected.Total,
+	)
+	if remainingSplits > 0 {
+		wave, waveDiagnostics, err := planSplitWave(state, totals, currentCost, remainingSplits, snapshot, policy)
+		if err != nil {
+			return PlanResult{}, err
+		}
+		accumulateSearchDiagnostics(&searchDiagnostics, waveDiagnostics)
+		if len(wave.actions) > 0 {
+			actions = append(actions, wave.actions...)
+			selected.Split += len(wave.actions)
+			selected.Total += len(wave.actions)
+			accumulateTransition(&cumulativeTransition, wave.transition)
+			state = wave.state
+			currentCost = wave.after
+		}
 	}
 
 	finalCost := currentCost
@@ -305,11 +336,12 @@ func selectMergeWave(
 // projectMergeWave cumulatively projects and costs a complete primitive merge wave.
 func projectMergeWave(
 	state planningState,
+	totals planTotals,
 	wave []candidate,
 	snapshot Snapshot,
 	policy Policy,
 ) (planningState, CostBreakdown, []candidate, error) {
-	index := buildCandidateIndex(state, snapshot)
+	index := buildCandidateIndex(state, totals, snapshot)
 	resolved := make([]candidate, 0, len(wave))
 	for _, original := range wave {
 		candidate, ok := resolveMergeCandidate(state, original, index, snapshot, policy)
@@ -320,7 +352,7 @@ func projectMergeWave(
 		resolved = append(resolved, candidate)
 	}
 
-	initialTotal := stateCost(state, snapshot, policy).WeightedTotal
+	initialTotal := stateCost(state, totals, snapshot, policy).WeightedTotal
 	bestTotal := initialTotal
 	bestLength := 0
 	var bestState planningState
@@ -328,13 +360,13 @@ func projectMergeWave(
 	step := max(1, len(resolved)/64)
 	var cumulative CostBreakdown
 	for length, candidate := range resolved {
-		accumulateTransition(&cumulative, transitionCost(candidate, state, snapshot, policy))
+		accumulateTransition(&cumulative, transitionCost(candidate, state, totals, snapshot, policy))
 		prefixLength := length + 1
 		if prefixLength%step != 0 && prefixLength != len(resolved) {
 			continue
 		}
 		projected := projectMergeBatch(state, resolved[:prefixLength])
-		after := stateCost(projected, snapshot, policy)
+		after := stateCost(projected, totals, snapshot, policy)
 		total := after.WeightedTotal + cumulative.WeightedTotal
 		if total < bestTotal-costEpsilon {
 			bestTotal = total
@@ -384,6 +416,7 @@ func projectMergeBatch(state planningState, wave []candidate) planningState {
 // materializeMergeWave emits every selected merge with sequential cost evidence.
 func materializeMergeWave(
 	state planningState,
+	totals planTotals,
 	before CostBreakdown,
 	wave []candidate,
 	snapshot Snapshot,
@@ -391,11 +424,11 @@ func materializeMergeWave(
 	waveTotal float64,
 ) ([]Action, planningState, CostBreakdown, error) {
 	next := projectMergeBatch(state, wave)
-	after := stateCost(next, snapshot, policy)
+	after := stateCost(next, totals, snapshot, policy)
 	actions := make([]Action, 0, len(wave))
 	var cumulative CostBreakdown
 	for _, candidate := range wave {
-		transition := transitionCost(candidate, state, snapshot, policy)
+		transition := transitionCost(candidate, state, totals, snapshot, policy)
 		action := actionFromCandidate(candidate, before, after, transition, waveTotal)
 		action.Explanation = fmt.Sprintf(
 			"merge wave cumulatively lowers weighted cost from %.6f to %.6f across %d primitive merges",
@@ -405,6 +438,120 @@ func materializeMergeWave(
 		accumulateTransition(&cumulative, transition)
 	}
 	return actions, next, cumulative, nil
+}
+
+type splitWave struct {
+	actions    []Action
+	state      planningState
+	after      CostBreakdown
+	transition CostBreakdown
+}
+
+// planSplitWave applies every cost-reducing split within per-tenant and
+// cluster-wide limits in one step. Splits leave balance unchanged and their
+// children are ineligible for further action, so each split's cost change is
+// independent of the others and the wave's cost change is their sum.
+func planSplitWave(
+	state planningState,
+	totals planTotals,
+	before CostBreakdown,
+	limit int,
+	snapshot Snapshot,
+	policy Policy,
+) (splitWave, CandidateSearchDiagnostics, error) {
+	wave, diagnostics := selectSplitWave(state, totals, snapshot, policy, limit)
+	if len(wave) == 0 {
+		return splitWave{}, diagnostics, nil
+	}
+	next := projectSplitBatch(state, wave)
+	if err := next.assignment().Validate(); err != nil {
+		return splitWave{}, diagnostics, fmt.Errorf("split wave produced invalid assignment: %w", err)
+	}
+	after := stateCost(next, totals, snapshot, policy)
+	transitions := make([]CostBreakdown, len(wave))
+	var cumulative CostBreakdown
+	for i, candidate := range wave {
+		transitions[i] = transitionCost(candidate, state, totals, snapshot, policy)
+		accumulateTransition(&cumulative, transitions[i])
+	}
+	total := after.WeightedTotal + cumulative.WeightedTotal
+	if total >= before.WeightedTotal-costEpsilon {
+		return splitWave{}, diagnostics, nil
+	}
+	actions := make([]Action, len(wave))
+	for i, candidate := range wave {
+		actions[i] = actionFromCandidate(candidate, before, after, transitions[i], total)
+		actions[i].Explanation = fmt.Sprintf(
+			"split wave lowers weighted cost from %.6f to %.6f across %d primitive splits",
+			before.WeightedTotal, total, len(wave),
+		)
+	}
+	return splitWave{actions: actions, state: next, after: after, transition: cumulative}, diagnostics, nil
+}
+
+// selectSplitWave exactly costs every legal split, keeps each tenant's best
+// cost-reducing splits up to its allowance, and returns the best of those up to
+// limit in range order.
+func selectSplitWave(
+	state planningState,
+	totals planTotals,
+	snapshot Snapshot,
+	policy Policy,
+	limit int,
+) ([]candidate, CandidateSearchDiagnostics) {
+	diagnostics := CandidateSearchDiagnostics{Limits: policy.CandidateSearch}
+	transition := transitionCost(candidate{kind: ActionSplit}, state, totals, snapshot, policy).WeightedTotal
+	byTenant := map[string][]candidate{}
+	for i, r := range state.ranges {
+		if !r.observed || r.entry.Range.Size() <= 1 {
+			continue
+		}
+		diagnostics.Legal.Split++
+		priority := splitPriority(r, totals, policy, transition)
+		if priority <= costEpsilon {
+			continue
+		}
+		byTenant[r.entry.TenantID] = append(byTenant[r.entry.TenantID], candidate{
+			kind:          ActionSplit,
+			index:         i,
+			otherIndex:    -1,
+			tenantID:      r.entry.TenantID,
+			r:             r.entry.Range,
+			fromPartition: r.entry.PartitionID,
+			toPartition:   r.entry.PartitionID,
+			load:          r.load,
+			priority:      priority,
+		})
+	}
+	diagnostics.Legal.Total = diagnostics.Legal.Split
+	diagnostics.Admitted = diagnostics.Legal
+	diagnostics.FullyScored = diagnostics.Legal
+
+	var wave []candidate
+	for _, tenantCandidates := range byTenant {
+		sortCandidatesByPriority(tenantCandidates)
+		wave = append(wave, tenantCandidates[:min(policy.ActionLimits.SplitPerTenant, len(tenantCandidates))]...)
+	}
+	sortCandidatesByPriority(wave)
+	wave = wave[:min(limit, len(wave))]
+	sort.Slice(wave, func(i, j int) bool { return wave[i].index < wave[j].index })
+	return wave, diagnostics
+}
+
+// projectSplitBatch applies index-ordered, non-overlapping splits in one linear pass.
+func projectSplitBatch(state planningState, wave []candidate) planningState {
+	ranges := make([]rangeState, 0, len(state.ranges)+len(wave))
+	next := 0
+	for i, r := range state.ranges {
+		if next < len(wave) && wave[next].index == i {
+			left, right := splitChildren(r)
+			ranges = append(ranges, left, right)
+			next++
+			continue
+		}
+		ranges = append(ranges, r)
+	}
+	return planningState{ranges: ranges, partitionOwners: clonePartitionOwners(state.partitionOwners)}
 }
 
 // resolveMergeCandidate chooses the lower-cost destination against cumulative wave state.
@@ -504,7 +651,6 @@ func accumulateSearchDiagnostics(dst *CandidateSearchDiagnostics, src CandidateS
 	addCandidateCounts(&dst.Discarded, src.Discarded)
 	dst.DiscardedByBudget.MoveSources += src.DiscardedByBudget.MoveSources
 	dst.DiscardedByBudget.Destinations += src.DiscardedByBudget.Destinations
-	dst.DiscardedByBudget.Splits += src.DiscardedByBudget.Splits
 	dst.DiscardedByBudget.Merges += src.DiscardedByBudget.Merges
 	dst.DiscardedByBudget.PartitionMoveSources += src.DiscardedByBudget.PartitionMoveSources
 	dst.DiscardedByBudget.PartitionMoveDestinations += src.DiscardedByBudget.PartitionMoveDestinations

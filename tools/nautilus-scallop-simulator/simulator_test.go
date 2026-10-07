@@ -186,6 +186,7 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 		CandidateSearch:   scallop.DefaultCandidateSearchLimits(),
 		ActionLimits:      simulatorActionLimits(4),
 	}
+	policy.ActionLimits.Move = 0
 	plan, err := scallop.Plan(scallop.Snapshot{
 		At:               sim.now,
 		Assignment:       sim.assignment,
@@ -339,7 +340,6 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 	require.Equal(t, first.CandidateSearch.Discarded.Total,
 		first.CandidateSearch.DiscardedByBudget.MoveSources+
 			first.CandidateSearch.DiscardedByBudget.Destinations+
-			first.CandidateSearch.DiscardedByBudget.Splits+
 			first.CandidateSearch.DiscardedByBudget.Merges+
 			first.CandidateSearch.DiscardedByBudget.PartitionMoveSources+
 			first.CandidateSearch.DiscardedByBudget.PartitionMoveDestinations+
@@ -478,10 +478,17 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 				fixture.FixtureName == "many-tiny-tenants-consolidating" ||
 				fixture.FixtureName == "dev30-fluctuating" {
 				require.Greater(t, fixture.CandidateSearch.RoundsTruncated, 0)
-			} else {
-				require.Zero(t, fixture.CandidateSearch.RoundsTruncated,
-					"small fixtures should fit entirely within candidate limits")
 			}
+		}
+	}
+	// Extreme search policies can fragment small fixtures past the candidate
+	// limits, so only the recommendation must be evaluated without pruning.
+	for _, fixture := range first.Recommended.Fixtures {
+		if fixture.FixtureName != "large-cell-static" &&
+			fixture.FixtureName != "many-tiny-tenants-consolidating" &&
+			fixture.FixtureName != "dev30-fluctuating" {
+			require.Zero(t, fixture.CandidateSearch.RoundsTruncated,
+				"small fixtures should fit entirely within candidate limits under the recommended policy")
 		}
 	}
 	recommendation := buildRecommendationReport(first)
@@ -511,7 +518,9 @@ func simulatorActionLimits(limit int) scallop.ActionLimits {
 	return scallop.ActionLimits{
 		Total:          limit,
 		Move:           limit,
+		MovePerTenant:  limit,
 		Split:          limit,
+		SplitPerTenant: limit,
 		Merge:          limit,
 		MergePerTenant: limit,
 		MovePartition:  limit,
