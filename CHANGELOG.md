@@ -329,6 +329,12 @@
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
 
+## 3.1.7
+
+### Grafana Mimir
+
+* [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16791
+
 ## 3.1.6
 
 ### Grafana Mimir
