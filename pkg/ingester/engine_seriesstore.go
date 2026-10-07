@@ -269,6 +269,10 @@ func (h seriesstoreHead) SetActiveTrackers(matchers *asmodel.Matchers) {
 	}})
 }
 
+func (h seriesstoreHead) SetCostAttribution(sink costAttributionSink) {
+	h.Engine.SetCostAttribution(sink)
+}
+
 func (h seriesstoreHead) DeactivateSeries(refs []storage.SeriesRef) { h.Engine.DeactivateSeries(refs) }
 func (h seriesstoreHead) DeactivateAll()                            { h.Engine.DeactivateAll() }
 

@@ -100,9 +100,8 @@ type userTSDB struct {
 	dir          string
 	userID       string
 	activeSeries *activeseries.ActiveSeries
-	// An engine that keeps the active series itself, which answers for them unless cost attribution needs the tracker.
-	nativeActive    activeSeriesHead
-	costAttribution atomic.Bool
+	// An engine that keeps the active series itself, which answers for them.
+	nativeActive activeSeriesHead
 	// The time the active series were last counted at, in Unix nanoseconds.
 	activeAsOf     atomic.Int64
 	seriesInMetric *metricCounter

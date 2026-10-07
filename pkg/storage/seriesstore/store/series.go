@@ -69,6 +69,8 @@ type Series struct {
 	// ranges) since this series' last sample. Unlike deleting one series, clearing leaves the cost
 	// attribution counts in place.
 	activeCleared bool
+	// Whether the cost attribution tracker counts the series as active, which Engine.ActiveSeries keeps up to date.
+	counted bool
 	// Evicted from the emulated head as non-owned, like Mimir's early compaction of non-owned
 	// series, until its next sample; its data stays queryable as a compacted block's.
 	headEvicted bool
@@ -90,6 +92,8 @@ type seriesExtra struct {
 	outOfOrder []oooSample
 	// Custom trackers this series matches, for the trackerGeneration.
 	trackerMatches []uint16
+	// The native histogram buckets the cost attribution tracker counted the series with, plus one: zero is none.
+	countedBuckets int32
 }
 
 func (s *Series) histogram() *chunks.HistogramAppender {
@@ -177,9 +181,28 @@ func (s *Series) setMatchedTrackers(matches []uint16) {
 	s.dropEmptyExtra()
 }
 
+// countedBucketCount is the buckets the cost attribution tracker counted the series with, or -1 for a float.
+func (s *Series) countedBucketCount() int {
+	if s.extra == nil {
+		return -1
+	}
+	return int(s.extra.countedBuckets) - 1
+}
+
+func (s *Series) setCountedBucketCount(buckets int) {
+	if s.extra == nil {
+		if buckets < 0 {
+			return
+		}
+		s.extra = &seriesExtra{}
+	}
+	s.extra.countedBuckets = int32(max(buckets, -1) + 1)
+	s.dropEmptyExtra()
+}
+
 // dropEmptyExtra frees the extra state once a series has none of it, as a histogram series that went idle.
 func (s *Series) dropEmptyExtra() {
-	if e := s.extra; e.histogramHead == nil && e.histogramNextAt == 0 && !e.histogramEndComputed && len(e.outOfOrder) == 0 && len(e.trackerMatches) == 0 {
+	if e := s.extra; e.histogramHead == nil && e.histogramNextAt == 0 && !e.histogramEndComputed && len(e.outOfOrder) == 0 && len(e.trackerMatches) == 0 && e.countedBuckets == 0 {
 		s.extra = nil
 	}
 }
