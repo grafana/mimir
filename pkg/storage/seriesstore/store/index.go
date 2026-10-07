@@ -90,6 +90,8 @@ type seriesByName struct {
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey]nameMatch
 	len             int
+	// How many series were removed since the postings were built, whose ids they still have.
+	stale int
 	// Bumped whenever series are removed, which invalidates what headLabels derived from them.
 	removals   uint64
 	headLabels headLabels
@@ -395,19 +397,31 @@ func (b *seriesByName) visitRefs(refs []seriesRef, visit func(entry *seriesEntry
 	}
 }
 
-// retain keeps the series keep accepts, rebuilding the postings when any is removed: removals are
-// rare and batched by retention.
-func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
-	total := 0
+// retain keeps the series keep accepts, and returns the name groups that lost series. A removal costs what the removed
+// series and their groups do, not what the whole shard does: the postings keep the ids of the removed series, which no
+// entry answers to any more, so they only add candidates that the lookups skip, until rebuildable says to rebuild them.
+func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) (changed []uint32) {
+	removed := 0
 	for groupID := range b.groups {
 		g := &b.groups[groupID]
-		kept := g.entries[:0]
-		for index := range g.entries {
-			if keep(&g.entries[index]) {
-				kept = append(kept, g.entries[index])
+		before := len(g.entries)
+		write := 0
+		for read := range g.entries {
+			entry := &g.entries[read]
+			if keep(entry) {
+				if write != read {
+					g.entries[write] = *entry
+				}
+				write++
+				continue
 			}
+			b.forgetLabels(entry.labels)
 		}
-		clear(g.entries[len(kept):])
+		if write == before {
+			continue
+		}
+		clear(g.entries[write:])
+		kept := g.entries[:write]
 		// Head compaction and retention remove whole hours of series at once; give back their
 		// slots, which are most of an entry's cost once a group lost half its series. Growing the
 		// slice again copies it once, as appending to it would have anyway.
@@ -415,22 +429,6 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 			kept = slices.Clone(kept)
 		}
 		g.entries = kept
-		total += len(kept)
-	}
-	if total == b.len {
-		return
-	}
-	b.removals++
-	b.columnsLock.Lock()
-	clear(b.columns)
-	b.columnBytes = 0
-	b.columnsLock.Unlock()
-	b.postings = nil
-	b.sharedPostings = nil
-	b.refs = nil
-	b.labelSeries = nil
-	for groupID := range b.groups {
-		g := &b.groups[groupID]
 		g.first.reset(len(g.entries))
 		for index := range g.entries {
 			entry := &g.entries[index]
@@ -439,10 +437,102 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) {
 				entry.next = first
 			}
 			g.first.set(entry.hash, int32(index), g.entries)
-			b.addPostings(entry.labels, uint32(groupID), entry.hash)
+		}
+		changed = append(changed, uint32(groupID))
+		removed += before - write
+	}
+	if removed == 0 {
+		return nil
+	}
+	b.len -= removed
+	b.stale += removed
+	b.removals++
+	// A column is by the position of the series in its group, which moved in the groups that lost series.
+	b.columnsLock.Lock()
+	for key, column := range b.columns {
+		if slices.Contains(changed, uint32(key>>32)) {
+			b.columnBytes -= 4 * len(column)
+			delete(b.columns, key)
 		}
 	}
-	b.len = total
+	b.columnsLock.Unlock()
+	return changed
+}
+
+// forgetLabels takes a removed series off the count of series with each of its labels.
+func (b *seriesByName) forgetLabels(stored labels.Labels) {
+	rest := string(stored)
+	for len(rest) > 0 {
+		name := uint32(takeUvarintString(&rest))
+		size := takeUvarintString(&rest)
+		rest = rest[size:]
+		if name != metricNameID && int(name) < len(b.labelSeries) && b.labelSeries[name] > 0 {
+			b.labelSeries[name]--
+		}
+	}
+}
+
+// rebuildable reports whether the removed series' ids are in the postings enough to make them worth rebuilding.
+func (b *seriesByName) rebuildable() bool {
+	return b.stale > max(1024, b.len/4)
+}
+
+// postingsSnapshot is what a rebuild of the postings needs from the series, to build them while the shard is unlocked.
+type postingsSnapshot struct {
+	removals uint64
+	groups   []int
+	series   []snapshotSeries
+}
+
+type snapshotSeries struct {
+	group  uint32
+	hash   uint64
+	labels labels.Labels
+}
+
+// snapshotForPostings copies what identifies each series, with the shard at least read locked.
+func (b *seriesByName) snapshotForPostings() postingsSnapshot {
+	snapshot := postingsSnapshot{removals: b.removals, groups: make([]int, len(b.groups)), series: make([]snapshotSeries, 0, b.len)}
+	for groupID := range b.groups {
+		entries := b.groups[groupID].entries
+		snapshot.groups[groupID] = len(entries)
+		for index := range entries {
+			snapshot.series = append(snapshot.series, snapshotSeries{uint32(groupID), entries[index].hash, entries[index].labels})
+		}
+	}
+	return snapshot
+}
+
+// buildPostings builds the postings of the snapshot's series, which needs no lock.
+func buildPostings(snapshot postingsSnapshot) *seriesByName {
+	built := &seriesByName{}
+	for _, series := range snapshot.series {
+		built.addPostings(series.labels, series.group, series.hash)
+	}
+	return built
+}
+
+// installPostings replaces the postings with the built ones, once the series added since the snapshot are in them, with
+// the shard locked. It reports false when series were removed meanwhile: their positions in the snapshot are stale.
+func (b *seriesByName) installPostings(built *seriesByName, snapshot postingsSnapshot) bool {
+	if b.removals != snapshot.removals {
+		return false
+	}
+	for groupID := range b.groups {
+		from := 0
+		if groupID < len(snapshot.groups) {
+			from = snapshot.groups[groupID]
+		}
+		entries := b.groups[groupID].entries
+		for index := from; index < len(entries); index++ {
+			built.addPostings(entries[index].labels, uint32(groupID), entries[index].hash)
+		}
+	}
+	b.postings, b.sharedPostings, b.refs, b.labelSeries = built.postings, built.sharedPostings, built.refs, built.labelSeries
+	b.stale = 0
+	// What headLabels derived from the refs is by their position.
+	b.removals++
+	return true
 }
 
 // nameGroups returns the name groups whose name matcher, a name matcher other than an equality,

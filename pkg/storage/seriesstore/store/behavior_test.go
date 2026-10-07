@@ -856,8 +856,38 @@ func TestPostingsSelectTheSameSeriesAsAFullScan(t *testing.T) {
 		}
 	}
 	check()
-	// Retention rebuilds the postings without the removed series.
-	byName.retain(func(entry *seriesEntry) bool { return entry.series.lastIngestedMs%2 == 0 })
+	// Removing series leaves their ids in the postings, which only add candidates that no entry answers to.
+	changed := byName.retain(func(entry *seriesEntry) bool { return entry.series.lastIngestedMs%2 == 0 })
+	require.NotEmpty(t, changed)
 	require.Equal(t, 200, byName.len)
+	require.Equal(t, 200, byName.stale)
+	check()
+	// The only series with a label going takes the label with it, as the count of series with each label is exact.
+	require.Equal(t, uint32(67), byName.labelSeries[labels.Intern("zone")])
+	// A removed series that comes back is found once, though its old id is in the postings too.
+	for id := range uint64(20) {
+		pairs := [][2]string{{"__name__", fmt.Sprintf("metric_%d", id%7)}, {"job", fmt.Sprintf("job_%d", id%5)}, {"pod", fmt.Sprintf("pod_%d", id)}}
+		if id%3 == 0 {
+			pairs = append(pairs, [2]string{"zone", "a"})
+		}
+		slices.SortFunc(pairs, comparePairs)
+		stored := labels.FromSorted(pairs)
+		byName.insert(stored.Hash(), stored, Series{lastIngestedMs: int64(id)})
+	}
+	check()
+	// Rebuilding the postings off the lock, with a series added meanwhile, gives the same answers.
+	snapshot := byName.snapshotForPostings()
+	built := buildPostings(snapshot)
+	stored := labels.FromStrings("__name__", "metric_1", "job", "job_9", "pod", "pod_new")
+	byName.insert(stored.Hash(), stored, Series{lastIngestedMs: 1})
+	require.True(t, byName.installPostings(built, snapshot))
+	require.Zero(t, byName.stale)
+	cases = append(cases, []LabelMatcher{matcher(0, "pod", "pod_new")})
+	check()
+	// Removals meanwhile give the snapshot up.
+	snapshot = byName.snapshotForPostings()
+	built = buildPostings(snapshot)
+	byName.retain(func(entry *seriesEntry) bool { return entry.series.lastIngestedMs != 1 })
+	require.False(t, byName.installPostings(built, snapshot))
 	check()
 }

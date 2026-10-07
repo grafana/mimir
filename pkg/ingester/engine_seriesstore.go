@@ -77,6 +77,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
 		MaxExemplars:            opts.MaxExemplars,
 		TimelyCompaction:        opts.TimelyCompaction,
+		JitterCompaction:        true,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
 	})

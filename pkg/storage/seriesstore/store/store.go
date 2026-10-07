@@ -1168,13 +1168,17 @@ func (s *Store) pruneBefore(cutoff int64) error {
 		defer state.Unlock()
 		for _, t := range state.tenants {
 			var builder promlabels.ScratchBuilder
-			t.series.retain(func(entry *seriesEntry) bool {
+			changed := t.series.retain(func(entry *seriesEntry) bool {
 				keep := pruneSeries(&entry.series, cutoff)
 				if !keep {
 					t.uncount(entry, &builder)
+					if entry.series.ref != 0 {
+						t.byRef.delete(entry.series.ref)
+					}
 				}
 				return keep
 			})
+			reindexGroups(t, changed)
 		}
 		// Like Go's block retention, a cold block goes once all of it is older.
 		state.cold.pruneBefore(cutoff)

@@ -397,9 +397,9 @@ func (p *pendingFreeze) build(directory string) *coldBlock {
 // installFreeze adds the block and drops its series from memory, with the shard locked. If any
 // of them took samples since it was prepared, the block is discarded and they all stay in
 // memory, for the next freeze: the block would miss the new samples.
-func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) {
+func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) (removed map[uint64]struct{}) {
 	if pending.keys == nil {
-		return
+		return nil
 	}
 	unchanged := 0
 	for tenantID, t := range state.tenants {
@@ -420,25 +420,32 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) 
 		if block != nil {
 			discardColdBlock(block)
 		}
-		return
+		return nil
 	}
 	if block != nil {
 		state.cold.blocks = append(state.cold.blocks, block)
 	}
 	var builder promlabels.ScratchBuilder
+	removed = map[uint64]struct{}{}
 	for tenantID, t := range state.tenants {
-		t.series.retain(func(entry *seriesEntry) bool {
+		changed := t.series.retain(func(entry *seriesEntry) bool {
 			if entry.series.inHead {
 				return true
 			}
 			_, gone := pending.keys[frozenKey{tenantID, entry.labels}]
 			if gone {
 				t.uncount(entry, &builder)
+				if ref := entry.series.ref; ref != 0 {
+					t.byRef.delete(ref)
+					removed[ref] = struct{}{}
+				}
 			}
 			return !gone
 		})
+		reindexGroups(t, changed)
 	}
 	fmt.Fprintf(os.Stderr, "phase=cold_block_written id=%d series=%d duration_ms=%d\n", pending.id, len(pending.keys), time.Since(pending.started).Milliseconds())
+	return removed
 }
 
 // ActiveSeriesReport returns the active series counts per tenant for the ingester's metrics,

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -45,7 +46,11 @@ type EngineOptions struct {
 	MaxExemplars           int64
 	// Prometheus's `TimelyCompaction`: the head compacts its oldest block range once it ends
 	// behind the appendable window, instead of once the head spans 1.5 block ranges.
-	TimelyCompaction        bool
+	TimelyCompaction bool
+	// JitterCompaction starts the engine's head compactions a random time, up to a quarter of a block range, after the
+	// head spans 1.5 block ranges: the ingesters of a partition ring would otherwise compact at the same wall-clock
+	// time, as the block ranges are aligned on it, and slow their queries together.
+	JitterCompaction        bool
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
@@ -86,6 +91,8 @@ type Engine struct {
 
 	// Compactions and snapshots run one at a time.
 	compactionLock sync.Mutex
+	// How long past 1.5 block ranges the head has to span to be compacted.
+	compactionJitterMs int64
 	// Whether Open restored the head as it was at the last Close, or started without any data.
 	restored bool
 	closed   atomic.Bool
@@ -113,6 +120,9 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		return nil, fmt.Errorf("at most %d store shards", maxShards)
 	}
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
+	if opts.JitterCompaction {
+		e.compactionJitterMs = rand.Int64N(chunkRangeMs / 4)
+	}
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)
 	e.windowMax.Store(math.MinInt64)
@@ -433,7 +443,7 @@ func (e *Engine) compactable() bool {
 	if e.opts.TimelyCompaction {
 		return rangeForTimestamp(minTime) < appendableMinValidTime(maxTime, minValid)
 	}
-	return maxTime-minTime > chunkRangeMs/2*3
+	return maxTime-minTime > chunkRangeMs/2*3+e.compactionJitterMs
 }
 
 // rangeForTimestamp is Prometheus's: the end of the block range of t.
@@ -682,6 +692,7 @@ func (e *Engine) headGC() {
 	home.Lock()
 	t.minOOOTime = minOOOTime
 	home.Unlock()
+	e.rebuildStalePostings()
 	if len(deleted) > 0 {
 		e.callback.PostDeletion(deleted)
 	}
@@ -710,15 +721,12 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	}
 	block := pending.build(shard.cold.directory)
 	shard.Lock()
-	installFreeze(shard, pending, block)
+	removed := installFreeze(shard, pending, block)
 	for ref, stored := range leaving {
-		if _, still := e.lookupLocked(t, ref); still {
-			continue
+		if _, gone := removed[ref]; gone {
+			deleted[tsdbchunks.HeadSeriesRef(ref)] = toPromLabels(stored, builder)
 		}
-		t.byRef.delete(ref)
-		deleted[tsdbchunks.HeadSeriesRef(ref)] = toPromLabels(stored, builder)
 	}
-	reindex(t)
 }
 
 // CompactSelectedSeries moves the series refs out of the head without moving its min time, like
@@ -841,7 +849,7 @@ func (e *Engine) prune(cutoff int64) error {
 	for _, shard := range e.store.shards {
 		shard.Lock()
 		if t, ok := shard.tenants[e.tenantID]; ok {
-			t.series.retain(func(entry *seriesEntry) bool {
+			changed := t.series.retain(func(entry *seriesEntry) bool {
 				keep := pruneSeries(&entry.series, cutoff)
 				if !keep {
 					t.uncount(entry, &builder)
@@ -852,7 +860,7 @@ func (e *Engine) prune(cutoff int64) error {
 				}
 				return keep
 			})
-			reindex(t)
+			reindexGroups(t, changed)
 		}
 		if shard == e.store.shards[0] {
 			if t, ok := shard.tenants[e.tenantID]; ok {
@@ -863,6 +871,7 @@ func (e *Engine) prune(cutoff int64) error {
 		errs = append(errs, shard.disk.TruncateBefore(cutoff))
 		shard.Unlock()
 	}
+	e.rebuildStalePostings()
 	if len(deleted) > 0 {
 		e.callback.PostDeletion(deleted)
 	}
@@ -877,13 +886,33 @@ type refLocation struct {
 }
 
 // lookupLocked finds the series ref, with its shard locked.
-// reindex records every series' position after removals moved them, with the shard locked.
-func reindex(t *tenant) {
-	for groupID := range t.series.groups {
+// rebuildStalePostings rebuilds the postings of the shards that removed many series since, which keep the removed series'
+// ids in them: only copying what identifies the series and installing the result hold a shard's lock, not the build.
+func (e *Engine) rebuildStalePostings() {
+	for _, shard := range e.store.shards {
+		shard.RLock()
+		t, ok := shard.tenants[e.tenantID]
+		if !ok || !t.series.rebuildable() {
+			shard.RUnlock()
+			continue
+		}
+		snapshot := t.series.snapshotForPostings()
+		shard.RUnlock()
+		built := buildPostings(snapshot)
+		shard.Lock()
+		t.series.installPostings(built, snapshot)
+		shard.Unlock()
+	}
+}
+
+// reindexGroups records the positions of the series of the groups that lost series, which moved them, with the shard
+// locked.
+func reindexGroups(t *tenant, groups []uint32) {
+	for _, groupID := range groups {
 		entries := t.series.groups[groupID].entries
 		for position := range entries {
 			if ref := entries[position].series.ref; ref != 0 {
-				t.byRef.set(ref, refLocation{uint32(groupID), int32(position)})
+				t.byRef.set(ref, refLocation{groupID, int32(position)})
 			}
 		}
 	}
