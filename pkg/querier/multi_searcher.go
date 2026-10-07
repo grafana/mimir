@@ -220,8 +220,8 @@ type metadataEnrichingSearchResultSet struct {
 	bufNextReadIdx int
 	innerDone      bool
 	warnedFetchErr bool
-	// read is the number of results read from inner before the current batch.
-	read int
+	// readFromCurrentBatch is the number of results readFromCurrentBatch from inner before the current batch.
+	readFromCurrentBatch int
 
 	// requested is reused across batches to dedupe the names to fetch.
 	requested map[string]struct{}
@@ -260,9 +260,9 @@ func (s *metadataEnrichingSearchResultSet) Next() bool {
 	// batch, this saves a metadata fetch from all ingesters.
 	n := len(s.buf)
 	if s.limit > 0 {
-		n = min(n, max(s.limit-s.read, 0))
+		n = min(n, max(s.limit-s.readFromCurrentBatch, 0))
 	}
-	s.read += len(s.buf)
+	s.readFromCurrentBatch += len(s.buf)
 	if n > 0 {
 		s.enrich(s.buf[:n])
 	}
