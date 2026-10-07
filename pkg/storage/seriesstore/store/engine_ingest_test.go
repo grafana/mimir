@@ -272,8 +272,14 @@ func (*countingFloatSink) Ingested(int, promlabels.Labels, storage.SeriesRef) {}
 // BenchmarkEngineSelectBigGroup selects nothing from a name group of 50k series by an equality matcher on a label
 // that more series than the group have, so the engine reads the label of each series of the group to find out.
 func BenchmarkEngineSelectBigGroup(b *testing.B) {
+	for _, shards := range []int{16, 64} {
+		b.Run(fmt.Sprintf("shards=%d", shards), func(b *testing.B) { benchmarkSelectBigGroup(b, shards) })
+	}
+}
+
+func benchmarkSelectBigGroup(b *testing.B, shards int) {
 	ctx := context.Background()
-	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: shards, SecondaryHashFunction: secondaryHash})
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = engine.Close() })
 	app := engine.Appender(ctx)
