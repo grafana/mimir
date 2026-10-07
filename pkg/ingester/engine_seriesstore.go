@@ -58,6 +58,10 @@ func seriesstoreShardsFor(maxSeries int) int {
 	}
 }
 
+// testNoCompactionJitter makes tests compact when they expect to, not a random time later; it's always false outside
+// tests.
+var testNoCompactionJitter bool
+
 func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
@@ -77,7 +81,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
 		MaxExemplars:            opts.MaxExemplars,
 		TimelyCompaction:        opts.TimelyCompaction,
-		JitterCompaction:        true,
+		JitterCompaction:        !testNoCompactionJitter,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
 	})

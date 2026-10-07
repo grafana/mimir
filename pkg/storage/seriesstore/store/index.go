@@ -98,6 +98,8 @@ type seriesByName struct {
 	// The hashes of the series' values of a label, by name group and label.
 	columnsLock sync.Mutex
 	columns     map[uint64][]uint32
+	// The distinct values of a label of a name group, and each series' value among them.
+	dicts       map[uint64]*valueDict
 	columnBytes int
 }
 
@@ -283,6 +285,89 @@ const (
 	maxColumnBytes = 16 << 20
 )
 
+// maxDictValues is how many distinct values of a label a dictionary has before it isn't worth it: the values are
+// strings, and a matcher evaluated for each of them is a scan of the series by another name.
+const (
+	maxDictValues   = 4096
+	maxDictFilters  = 2
+	dictValueBytes  = 64
+	minDictSavingBy = 8
+)
+
+// valueDict is the values of one label of the series of a name group, in the order of its entries: each series has the
+// id of its value in values, where id 0 is the empty value, which a series without the label has. A matcher is
+// evaluated once for each value, instead of for each series, and the series are scanned by 4 bytes each, not by
+// reading their labels.
+type valueDict struct {
+	ids    []uint32
+	values []string
+	index  map[string]uint32
+	// How many series the group had when the label turned out to have too many values for the dictionary, or 0: it is
+	// tried again once the group doubled.
+	tooManyAt int
+}
+
+// dictSnapshot is what a lookup scans, which later series only append to.
+type dictSnapshot struct {
+	ids    []uint32
+	values []string
+}
+
+// valueDictOf returns the dictionary of the label of the name group, built when first asked for and extended with the
+// series added since, or false when the label has too many values.
+func (b *seriesByName) valueDictOf(groupID, name uint32) (dictSnapshot, bool) {
+	b.columnsLock.Lock()
+	defer b.columnsLock.Unlock()
+	key := uint64(groupID)<<32 | uint64(name)
+	entries := b.groups[groupID].entries
+	dict := b.dicts[key]
+	if dict == nil {
+		if b.dicts == nil {
+			b.dicts = map[uint64]*valueDict{}
+		}
+		dict = &valueDict{values: []string{""}, index: map[string]uint32{"": 0}}
+		b.dicts[key] = dict
+	}
+	if dict.tooManyAt > 0 {
+		if len(entries) < 2*dict.tooManyAt {
+			return dictSnapshot{}, false
+		}
+		dict = &valueDict{values: []string{""}, index: map[string]uint32{"": 0}}
+		b.dicts[key] = dict
+	}
+	if len(dict.ids) < len(entries) {
+		if b.columnBytes+4*(len(entries)-len(dict.ids)) > maxColumnBytes {
+			clear(b.columns)
+			clear(b.dicts)
+			b.columnBytes = 0
+			return dictSnapshot{}, false
+		}
+		before, valuesBefore := len(dict.ids), len(dict.values)
+		for index := len(dict.ids); index < len(entries); index++ {
+			value, _ := labelValue(entries[index].labels, name)
+			id, ok := dict.index[value]
+			if !ok {
+				if len(dict.values) >= maxDictValues || len(dict.values) >= len(entries)/minDictSavingBy {
+					b.columnBytes -= 4*before + dictValueBytes*valuesBefore
+					*dict = valueDict{tooManyAt: len(entries)}
+					return dictSnapshot{}, false
+				}
+				id = uint32(len(dict.values))
+				dict.values = append(dict.values, value)
+				dict.index[value] = id
+			}
+			dict.ids = append(dict.ids, id)
+		}
+		b.columnBytes += 4*(len(dict.ids)-before) + dictValueBytes*(len(dict.values)-valuesBefore)
+	}
+	return dictSnapshot{ids: dict.ids[:len(entries)], values: dict.values}, true
+}
+
+type dictFilter struct {
+	ids      []uint32
+	accepted []bool
+}
+
 type valueColumnFilter struct {
 	hashes []uint32
 	want   uint32
@@ -300,6 +385,7 @@ func (b *seriesByName) valueColumn(groupID, name uint32) []uint32 {
 	if len(column) < len(entries) {
 		if b.columns == nil || b.columnBytes+4*(len(entries)-len(column)) > maxColumnBytes {
 			clear(b.columns)
+			clear(b.dicts)
 			if b.columns == nil {
 				b.columns = map[uint64][]uint32{}
 			}
@@ -455,6 +541,12 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) (changed []uin
 			delete(b.columns, key)
 		}
 	}
+	for key, dict := range b.dicts {
+		if slices.Contains(changed, uint32(key>>32)) {
+			b.columnBytes -= 4*len(dict.ids) + dictValueBytes*len(dict.values)
+			delete(b.dicts, key)
+		}
+	}
 	b.columnsLock.Unlock()
 	return changed
 }
@@ -585,6 +677,8 @@ type resolvedMatcher struct {
 	// few have it: the others pass without reading their labels.
 	withLabel  map[uint64]struct{}
 	remembered map[string]bool
+	// Whether the scan of the group's dictionary already decided the matcher.
+	decided bool
 }
 
 // matching calls visit for every series that matches matchers, until it returns false.
@@ -762,6 +856,9 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 					continue
 				}
 			}
+			if r.decided {
+				continue
+			}
 			countLabelValueRead()
 			value := ""
 			if r.known {
@@ -822,12 +919,43 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 				}
 			}
 		}
+		// The matchers that aren't equalities are evaluated once for each value of their label, then the series
+		// are scanned by their value's id.
+		var dicts []dictFilter
+		if len(entries) >= minColumnSeries {
+			for index := range resolved {
+				r := &resolved[index]
+				switch r.matcher.kind {
+				case kindRegex, kindNotRegex, kindNotEqual:
+				default:
+					continue
+				}
+				if !r.known || r.withLabel != nil || r.matcher.name == metricNameLabel || len(dicts) >= maxDictFilters {
+					continue
+				}
+				snapshot, ok := b.valueDictOf(groupID, r.nameID)
+				if !ok {
+					continue
+				}
+				accepted := make([]bool, len(snapshot.values))
+				for id, value := range snapshot.values {
+					accepted[id] = r.matcher.matchesValue(value)
+				}
+				r.decided = true
+				dicts = append(dicts, dictFilter{snapshot.ids, accepted})
+			}
+		}
 		for index := range entries {
 			skip := false
 			for _, column := range columns {
 				if column.hashes[index] != column.want {
 					skip = true
 					break
+				}
+			}
+			for _, dict := range dicts {
+				if !skip && !dict.accepted[dict.ids[index]] {
+					skip = true
 				}
 			}
 			if skip {

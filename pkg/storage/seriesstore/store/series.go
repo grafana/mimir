@@ -3,6 +3,9 @@
 package store
 
 import (
+	"math/bits"
+	"slices"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
@@ -54,6 +57,10 @@ type Series struct {
 	// Mimir's `ShardByAllLabels`, which decides which partition owns the series.
 	ownedHash       uint32
 	lastBucketCount uint32
+	// The custom trackers the series matches, as a bit for each of the first 32, computed for the tenant's tracker
+	// generation: most series match some, and an allocation each costs more than the slot's other fields.
+	trackerBits       uint32
+	trackerGeneration uint32
 	// Which chunk list's end chunksTailRef and chunksTailMinTime are for. Here, not by them, for the padding.
 	chunksTailEnd int32
 	// When an owned series recompute first found it non-owned, in Unix seconds, or 0.
@@ -77,8 +84,6 @@ type Series struct {
 	// Go's `labels.StableHash`, by which sharded queries pick series. Kept like Go's head keeps it:
 	// rehashing every series' labels for each query shard was a fifth of a busy ingester's CPU.
 	shardHash uint64
-	// Custom trackers this series matches, computed for one of its tenant's tracker generations.
-	trackerGeneration uint64
 }
 
 // seriesExtra is the state of a series that has histograms, out-of-order samples or custom tracker matches.
@@ -90,7 +95,7 @@ type seriesExtra struct {
 	histogramEndComputed bool
 	// The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
 	outOfOrder []oooSample
-	// Custom trackers this series matches, for the trackerGeneration.
+	// The custom trackers the series matches when it matches one past the first 32.
 	trackerMatches []uint16
 	// The native histogram buckets the cost attribution tracker counted the series with, plus one: zero is none.
 	countedBuckets int32
@@ -163,22 +168,45 @@ func (s *Series) setOutOfOrder(samples []oooSample) {
 	s.dropEmptyExtra()
 }
 
-func (s *Series) matchedTrackers() []uint16 {
-	if s.extra == nil {
-		return nil
+// bitTrackers is how many custom trackers a series keeps its matches of in its slot.
+const bitTrackers = 32
+
+// matchedTrackersInto appends the custom trackers the series matches to buf[:0].
+func (s *Series) matchedTrackersInto(buf []uint16) []uint16 {
+	buf = buf[:0]
+	if s.extra != nil && len(s.extra.trackerMatches) > 0 {
+		return append(buf, s.extra.trackerMatches...)
 	}
-	return s.extra.trackerMatches
+	for bits := s.trackerBits; bits != 0; bits &= bits - 1 {
+		buf = append(buf, uint16(bits2index(bits)))
+	}
+	return buf
 }
 
+func bits2index(b uint32) int { return bits.TrailingZeros32(b) }
+
 func (s *Series) setMatchedTrackers(matches []uint16) {
-	if s.extra == nil {
-		if len(matches) == 0 {
-			return
+	s.trackerBits = 0
+	wide := false
+	for _, match := range matches {
+		if match >= bitTrackers {
+			wide = true
+			break
 		}
+		s.trackerBits |= 1 << match
+	}
+	if !wide {
+		if s.extra != nil && len(s.extra.trackerMatches) > 0 {
+			s.extra.trackerMatches = nil
+			s.dropEmptyExtra()
+		}
+		return
+	}
+	s.trackerBits = 0
+	if s.extra == nil {
 		s.extra = &seriesExtra{}
 	}
-	s.extra.trackerMatches = matches
-	s.dropEmptyExtra()
+	s.extra.trackerMatches = slices.Clone(matches)
 }
 
 // countedBucketCount is the buckets the cost attribution tracker counted the series with, or -1 for a float.

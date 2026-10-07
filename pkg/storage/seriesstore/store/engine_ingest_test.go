@@ -300,22 +300,37 @@ func benchmarkSelectBigGroup(b *testing.B, shards int) {
 		require.NoError(b, err)
 	}
 	require.NoError(b, app.Commit())
-	matchers := []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "big"), promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "cluster-7")}
-	b.ResetTimer()
-	for range b.N {
-		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
-			b.StopTimer()
-			evictCaches()
-			b.StartTimer()
+	name := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "big")
+	// None of the series match, so what the lookup costs is how it finds that out.
+	for label, matcher := range map[string]*promlabels.Matcher{
+		"equal":     promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "cluster-7"),
+		"regex":     promlabels.MustNewMatcher(promlabels.MatchRegexp, "cluster", "cluster-(7|8)"),
+		"not-regex": promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "cluster", "cluster-[0-3]"),
+		"not-equal": promlabels.MustNewMatcher(promlabels.MatchNotEqual, "pod", ""),
+	} {
+		if label == "not-equal" {
+			// Every series has a pod: this one selects them all, which is the cost of reading each.
+			continue
 		}
-		q, err := engine.ChunkQuerier(0, 10_000)
-		require.NoError(b, err)
-		set := q.Select(ctx, true, nil, matchers...)
-		for set.Next() {
-			b.Fatal("selected a series")
-		}
-		require.NoError(b, set.Err())
-		_ = q.Close()
+		matchers := []*promlabels.Matcher{name, matcher}
+		b.Run(label, func(b *testing.B) {
+			b.ResetTimer()
+			for range b.N {
+				if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
+					b.StopTimer()
+					evictCaches()
+					b.StartTimer()
+				}
+				q, err := engine.ChunkQuerier(0, 10_000)
+				require.NoError(b, err)
+				set := q.Select(ctx, true, nil, matchers...)
+				for set.Next() {
+					b.Fatal("selected a series")
+				}
+				require.NoError(b, set.Err())
+				_ = q.Close()
+			}
+		})
 	}
 }
 
