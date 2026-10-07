@@ -54,14 +54,14 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, discoveredBy discoverySources, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
 	pending := make(map[lane]*list.List)
 	for _, l := range lanePolicy.AllLanes() {
 		pending[l] = list.New()
 	}
 
-	jt := &JobTracker{
-		persister:                      jobPersister,
+	return &JobTracker{
+		persister:                     jobPersister,
 		tenant:                         tenant,
 		clock:                          clock,
 		logger:                         log.With(logger, "user", tenant),
@@ -76,8 +76,6 @@ func NewJobTracker(jobPersister JobPersister, tenant string, discoveredBy discov
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
-	jt.discoveredBy.Store(uint32(discoveredBy))
-	return jt
 }
 
 // toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.

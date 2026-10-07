@@ -142,11 +142,12 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker = NewJobTracker(persister, tenant, sources, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker = NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker.discoveredBy.Store(uint32(sources))
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = tracker
 		} else if discoverySources(tracker.discoveredBy.Load()) != sources {
-			// There's no TOCTOU to worry about here since dsicovery is the only writer after construction
+			// Discovery is the only writer of this field
 			tracker.discoveredBy.Store(uint32(sources))
 		}
 	}

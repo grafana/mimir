@@ -77,7 +77,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, discoveredByBlocks, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Empty recovery should succeed
@@ -112,7 +112,7 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, discoveredByBlocks, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Create a bucket with an invalid tenant name
@@ -261,7 +261,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, discoveredByBlocks, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, len(tenants))
@@ -324,7 +324,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, discoveredByBlocks, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, 2)

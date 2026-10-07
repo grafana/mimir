@@ -95,7 +95,7 @@ func newRotatorForTest() *Rotator {
 func newTrackerWithPendingJobs(clk clock.Clock, name string, numJobs int) *JobTracker {
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-	jt := NewJobTracker(&NopJobPersister{}, name, discoveredByBlocks, clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
+	jt := NewJobTracker(&NopJobPersister{}, name, clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
 	for j := range numJobs {
 		id := fmt.Sprintf("%s-%d", name, j)
 		jt.toPendingBack(NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
@@ -235,14 +235,14 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
-	jt := NewJobTracker(&NopJobPersister{}, "t1", discoveredByBlocks, clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
+	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
 	jt.toPendingBack(NewTrackedPlanJob(clk.Now()))
 	firstCompactionJobId := "first"
 	jt.toPendingBack(NewTrackedCompactionJob(firstCompactionJobId, &CompactionJob{}, 1, 2, clk.Now()))
 	r.AddTenant("t1", jt)
 
 	// Add a tenant with a only a compaction job
-	jt2 := NewJobTracker(&NopJobPersister{}, "t2", discoveredByBlocks, clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t2"), log.NewNopLogger())
+	jt2 := NewJobTracker(&NopJobPersister{}, "t2", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t2"), log.NewNopLogger())
 	secondCompactionJobId := "second"
 	jt2.toPendingBack(NewTrackedCompactionJob(secondCompactionJobId, &CompactionJob{}, 1, 2, clk.Now()))
 	r.AddTenant("t2", jt2)
