@@ -107,9 +107,50 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 	c.SeriesLifecycleCallback.PostDeletion(deleted)
 }
 
-// Ingest appends the batch with the engine's Prometheus-style appender.
+// Ingest appends the floats of series the engine has already by shard, taking each shard's lock once, and the
+// rest of the batch with the engine's Prometheus-style appender: new series, histograms, exemplars, created
+// timestamps and staleness markers.
 func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.Engine.Appender(ctx), batch, sink)
+	var fast, other []int
+	for i := range batch.Series {
+		if sink.Skip(i) {
+			continue
+		}
+		ts := &batch.Series[i]
+		if len(ts.Samples) > 0 && ts.CreatedTimestamp == 0 && (!batch.NativeHistograms || len(ts.Histograms) == 0) && (!batch.Exemplars || len(ts.Exemplars) == 0) {
+			fast = append(fast, i)
+		} else {
+			other = append(other, i)
+		}
+	}
+
+	var outcome ingestOutcome
+	leftover, ingested, err := e.Engine.AppendFloats(batch.Series, fast, batch.MinTimestampMs, batch.MaxTimestampMs, floatSink{sink})
+	outcome.Samples = ingested
+	if err != nil {
+		return outcome, err
+	}
+	// In the order of the request: a series may be created by one that comes before it, such as for its exemplars.
+	other = append(other, leftover...)
+	slices.Sort(other)
+	if len(other) == 0 {
+		return outcome, nil
+	}
+
+	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, sink, other)
+	outcome.Samples += rest.Samples
+	outcome.Exemplars += rest.Exemplars
+	outcome.CommitDuration = rest.CommitDuration
+	return outcome, err
+}
+
+// floatSink tells an ingest sink what AppendFloats does: the series it ingests have no histograms.
+type floatSink struct {
+	ingestSink
+}
+
+func (s floatSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef) {
+	s.ingestSink.Ingested(series, lbls, ref, -1)
 }
 
 func (e seriesstoreEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {

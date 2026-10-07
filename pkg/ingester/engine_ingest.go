@@ -71,7 +71,7 @@ func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink in
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
 func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink)
+	outcome, err := appendBatch(app, batch, sink, nil, false)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -87,19 +87,27 @@ func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestS
 	return outcome, nil
 }
 
-// appendBatch adds the batch to the appender. Errors the sink calls soft are reported to it, and any other error
-// is returned.
-func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+// appendBatch adds the batch to the appender, or with subset only the series at those indices, which the sink has
+// been asked to skip or not already. Errors the sink calls soft are reported to it, and any other error is returned.
+func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int, useSubset bool) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
 	)
 
-	for si, ts := range batch.Series {
-		if sink.Skip(si) {
+	count := len(batch.Series)
+	if useSubset {
+		count = len(subset)
+	}
+	for position := range count {
+		si := position
+		if useSubset {
+			si = subset[position]
+		} else if sink.Skip(si) {
 			continue
 		}
+		ts := batch.Series[si]
 
 		// MUST BE COPIED before being retained.
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
@@ -298,5 +306,24 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink) (inge
 			}
 		}
 	}
+	return outcome, nil
+}
+
+// ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
+// asked to skip already.
+func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int) (ingestOutcome, error) {
+	outcome, err := appendBatch(app, batch, sink, subset, true)
+	if err != nil {
+		if rollbackErr := app.Rollback(); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
+		}
+		return outcome, err
+	}
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return outcome, err
+	}
+	outcome.CommitDuration = time.Since(startCommit)
 	return outcome, nil
 }
