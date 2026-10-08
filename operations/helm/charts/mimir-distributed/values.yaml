@@ -3153,6 +3153,9 @@ kafka:
   # -- Enable Kafka for ingest-storage architecture
   enabled: true
 
+  # -- Number of Kafka broker replicas.
+  replicas: 1
+
   # -- The cluster ID used to format the Kafka storage. This only takes effect on the first startup of each broker,
   # since Kafka refuses to start if the configured cluster ID doesn't match the one already recorded in its storage.
   # If unset, the cluster ID built into the Kafka image is used, which is the same for every Mimir installation.

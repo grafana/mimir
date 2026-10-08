@@ -14,7 +14,7 @@ metadata:
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -69,7 +69,7 @@ spec:
             - name: KAFKA_ADVERTISED_LISTENERS
               value: PLAINTEXT://$(_POD_NAME).large-values-mimir-kafka-headless.citestns.svc.cluster.local.:9092
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: 0@large-values-mimir-kafka-0.large-values-mimir-kafka-headless.citestns.svc.cluster.local:9093
+              value: 0@large-values-mimir-kafka-0.large-values-mimir-kafka-headless.citestns.svc.cluster.local:9093,1@large-values-mimir-kafka-1.large-values-mimir-kafka-headless.citestns.svc.cluster.local:9093,2@large-values-mimir-kafka-2.large-values-mimir-kafka-headless.citestns.svc.cluster.local:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: CONTROLLER
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -77,11 +77,11 @@ spec:
             - name: KAFKA_LOG_DIRS
               value: /var/lib/kafka/data
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
-              value: "1"
+              value: "3"
             - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
-              value: "1"
+              value: "3"
             - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
-              value: "1"
+              value: "2"
             - name: KAFKA_LOG_RETENTION_HOURS
               value: "24"
             - name: KAFKA_MESSAGE_MAX_BYTES

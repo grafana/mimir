@@ -83,6 +83,9 @@ ingester:
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
 
+kafka:
+  replicas: 3
+
 admin-cache:
   enabled: true
   replicas: 2
