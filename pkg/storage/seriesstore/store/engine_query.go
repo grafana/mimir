@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -109,10 +110,12 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
+	began := time.Now()
 	selected, buffers, err := q.e.selectRaw(start, end, compiled)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
+	selectors.observe(q.e.tenantID, selectorKey(compiled), time.Since(began), len(selected))
 	q.mu.Lock()
 	q.buffers = append(q.buffers, buffers...)
 	q.mu.Unlock()
