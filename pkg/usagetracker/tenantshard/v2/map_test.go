@@ -133,7 +133,8 @@ func TestSpillTriggeredRehashCompacts(t *testing.T) {
 }
 
 func TestLimitAwareGrowth(t *testing.T) {
-	const perShard uint64 = 1000
+	// A whole number of blocks at maxAvgGroupLoad, so that the map is exactly full.
+	const perShard uint64 = 32 * groupsPerBlock * maxAvgGroupLoad
 	m := New(uint32(perShard), testNumShards)
 	total := atomic.NewUint64(0)
 
@@ -145,6 +146,7 @@ func TestLimitAwareGrowth(t *testing.T) {
 	// Trigger a rehash by adding one more element (no series limit check since limit arg is nil).
 	m.Put(perShard, 1, total, nil, false)
 	groupsAfter := len(m.index)
+	require.Greater(t, groupsAfter, groupsBefore, "one more element than the limit must grow the map")
 
 	// Without limit-aware growth the map would double.
 	// With limit-aware growth it should grow to ~1.25x, not 2x.
@@ -664,54 +666,66 @@ func referenceCleanupGroup(idx *index, d *data, watermark clock.Minutes) int {
 	return removed
 }
 
-func TestMapCleanupGroup(t *testing.T) {
+func TestMapCleanupBlock(t *testing.T) {
 	m := New(1, testNumShards)
-	require.Len(t, m.index, 1)
-	const resident = 100
+	require.Len(t, m.index, groupsPerBlock, "a map always has whole blocks of groups")
+	const resident = 1000
 
-	check := func(t *testing.T, idx index, d data, watermark clock.Minutes) {
+	// check runs Cleanup on a one-block map that holds idx and d, and compares the result with
+	// referenceCleanupGroup applied to every group of the block.
+	check := func(t *testing.T, idx [groupsPerBlock]index, d [groupsPerBlock]data, watermark clock.Minutes) {
 		t.Helper()
 		wantIdx, wantData := idx, d
-		wantRemoved := referenceCleanupGroup(&wantIdx, &wantData, watermark)
-		m.index[0], m.data[0], m.resident = idx, d, resident
+		wantRemoved := 0
+		for g := range groupsPerBlock {
+			wantRemoved += referenceCleanupGroup(&wantIdx[g], &wantData[g], watermark)
+		}
+		copy(m.index, idx[:])
+		copy(m.data, d[:])
+		m.resident = resident
 		gotRemoved := m.Cleanup(watermark, nil)
-		if gotRemoved != wantRemoved || m.index[0] != wantIdx || m.data[0] != wantData || m.resident != resident-uint32(wantRemoved) {
+		gotIdx, gotData := [groupsPerBlock]index(m.index), [groupsPerBlock]data(m.data)
+		if gotRemoved != wantRemoved || gotIdx != wantIdx || gotData != wantData || m.resident != resident-uint32(wantRemoved) {
 			t.Fatalf("watermark %d, index %v, data %v:\ngot  removed %d, index %v, data %v, resident %d\nwant removed %d, index %v, data %v, resident %d",
-				watermark, idx, d, gotRemoved, m.index[0], m.data[0], m.resident, wantRemoved, wantIdx, wantData, resident-wantRemoved)
+				watermark, idx, d, gotRemoved, gotIdx, gotData, m.resident, wantRemoved, wantIdx, wantData, resident-wantRemoved)
 		}
 	}
 
 	t.Run("one entry", func(t *testing.T) {
-		// Every value that Put accepts against every watermark byte, in every slot. This includes
-		// bytes that clock.ToMinutes never produces, so that Cleanup matches GreaterOrEqualThan
-		// for any input, not only for valid minutes.
+		// Every value that Put accepts against every watermark byte, in every slot, and in every group
+		// of the block, since Cleanup has one unrolled copy of the code per group. This includes bytes
+		// that clock.ToMinutes never produces, so that Cleanup matches GreaterOrEqualThan for any input,
+		// not only for valid minutes.
 		for w := range 256 {
 			watermark := clock.Minutes(w)
 			for v := range 0xfe {
 				value := clock.Minutes(v)
+				g := (w + v) % groupsPerBlock
 				for j := range groupSize {
-					var idx index
-					var d data
-					idx[j], d[j] = prefix(prefixOffset+j), xor(value)
+					var idx [groupsPerBlock]index
+					var d [groupsPerBlock]data
+					idx[g][j], d[g][j] = prefix(prefixOffset+j), xor(value)
 					check(t, idx, d, watermark)
 				}
 			}
 		}
 	})
 
-	t.Run("random groups", func(t *testing.T) {
+	t.Run("random blocks", func(t *testing.T) {
 		r := rand.New(rand.NewSource(1))
 		for range 100_000 {
-			var idx index
-			var d data
-			for j := range groupSize {
-				switch p := r.Intn(10); {
-				case p < 3:
-					// Leave the slot empty.
-				case p < 4:
-					idx[j], d[j] = spillmark, spillmark
-				default:
-					idx[j], d[j] = prefix(prefixOffset+r.Intn(128)), xor(clock.Minutes(r.Intn(0xfe)))
+			var idx [groupsPerBlock]index
+			var d [groupsPerBlock]data
+			for g := range groupsPerBlock {
+				for j := range groupSize {
+					switch p := r.Intn(10); {
+					case p < 3:
+						// Leave the slot empty.
+					case p < 4:
+						idx[g][j], d[g][j] = spillmark, spillmark
+					default:
+						idx[g][j], d[g][j] = prefix(prefixOffset+r.Intn(128)), xor(clock.Minutes(r.Intn(0xfe)))
+					}
 				}
 			}
 			check(t, idx, d, clock.Minutes(r.Intn(256)))
