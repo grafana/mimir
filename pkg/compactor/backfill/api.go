@@ -4,7 +4,6 @@ package backfill
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"path"
@@ -27,21 +26,11 @@ const (
 	jobPathVar       = "job"
 	blocksPathPrefix = "data"
 
+	BucketPrefix = bucket.MimirInternalsPrefix + "/backfill"
+
 	// TODO: make this configurable and/or revisit it once backfill validation is implemented.
 	maxBlockRange = 24 * time.Hour
 )
-
-type Config struct {
-	Storage bucket.Config `yaml:"storage"`
-}
-
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.Storage.RegisterFlagsWithPrefixAndDefaultDirectory("backfill-api.storage.", "backfillblocks", f)
-}
-
-func (cfg *Config) Validate() error {
-	return cfg.Storage.Validate()
-}
 
 var errInvalidJobID = errors.New("invalid backfill job ID")
 
@@ -59,7 +48,7 @@ func NewAPI(limits blockupload.Limits, bucketClient objstore.Bucket, logger log.
 	logger = log.With(logger, "component", "backfill")
 
 	return &API{
-		bucketClient: bucketClient,
+		bucketClient: bucket.NewPrefixedBucketClient(bucketClient, BucketPrefix),
 		logger:       logger,
 		upload: blockupload.New(blockupload.Config{
 			MaxBlockRange: maxBlockRange,

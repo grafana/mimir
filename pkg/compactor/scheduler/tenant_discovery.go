@@ -16,7 +16,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -201,7 +201,7 @@ func (s *TenantDiscoverer) pollTenants(ctx context.Context) (map[string]discover
 	return tenants, nil
 }
 
-const backfillPhasesPrefix = bucket.MimirInternalsPrefix + "/backfill/phases/"
+const backfillPhasesPrefix = backfill.BucketPrefix + "/phases/"
 
 // listBackfillTenants lists the tenants that have backfill phase markers
 func listBackfillTenants(ctx context.Context, bkt objstore.Bucket) (tenants []string, err error) {
