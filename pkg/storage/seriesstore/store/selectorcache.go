@@ -17,8 +17,8 @@ import (
 // candidates: they are checked against the matchers when used, so nothing here can make a lookup return a series that
 // doesn't match.
 const (
-	// A name with fewer series in a shard is scanned each time: scanning it costs about what reading the list does.
-	minCachedGroup = 256
+	// A name with fewer series in a shard is scanned each time.
+	minCachedGroup = 8
 	// A selector matching more series in a shard than this isn't kept.
 	maxCachedRefs = 20_000
 	// How many selectors are kept; at this many, they are all dropped, which the selectors in use fill again.
