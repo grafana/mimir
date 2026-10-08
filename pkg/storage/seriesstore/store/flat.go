@@ -199,3 +199,55 @@ func (r *refIndex) rebuild(slots int) {
 func (r *refIndex) reset(count int) {
 	r.slots, r.used = make([]refSlot, tableSlotsFor(count)), 0
 }
+
+// locationCache remembers where a series with a hash was last found, by group and position: a lookup that hits it reads
+// one slot, where finding the series' name group and its place in the group's table reads more, each a cache miss for a
+// tenant of millions of series. It has no say in what exists: a hit is checked against the entry it points to, so what
+// removals move or drop only makes lookups miss, and a slot a series shares with another is the last one's.
+type locationCache struct {
+	// Buckets of two slots, for the hashes that share one.
+	slots []locationSlot
+	mask  uint64
+	used  int
+}
+
+type locationSlot struct {
+	// The position in the group plus one, zero for a slot that is empty.
+	index uint32
+	group uint32
+}
+
+// findAll calls visit with each position the hash may be at until it returns true.
+func (c *locationCache) findAll(hash uint64, visit func(group uint32, index int) bool) bool {
+	if len(c.slots) == 0 {
+		return false
+	}
+	at := (hash & c.mask) &^ 1
+	for _, slot := range c.slots[at : at+2] {
+		if slot.index != 0 && visit(slot.group, int(slot.index)-1) {
+			return true
+		}
+	}
+	return false
+}
+
+// remember records where the series with hash is, replacing one of the bucket's slots.
+func (c *locationCache) remember(hash uint64, group uint32, index int, series int) {
+	if series > len(c.slots) {
+		// Grown for twice the series it holds, which empties it: it fills again from the lookups that miss.
+		c.slots = make([]locationSlot, max(1024, 1<<bits.Len(uint(series))))
+		c.mask = uint64(len(c.slots) - 1)
+	}
+	at := (hash & c.mask) &^ 1
+	slot := locationSlot{uint32(index) + 1, group}
+	if c.slots[at] == slot || c.slots[at+1] == slot {
+		return
+	}
+	if c.slots[at].index == 0 {
+		c.slots[at] = slot
+		return
+	}
+	// The older slot of the bucket goes: the newer one moves to the first.
+	c.slots[at+1] = c.slots[at]
+	c.slots[at] = slot
+}
