@@ -147,6 +147,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
 			// replaying the WAL, so lets just log the error if it's not that type.
 			err = h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
+			if err == nil {
+				ms.updateExemplarTimestamp(e.T)
+			}
 			if err != nil && errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
@@ -1076,6 +1079,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	// References that this WBL resolves through multiRef. Their series records
+	// must stay in the WAL after the next checkpoint. See pinWBLSeriesRefs.
+	pinnedSeries := make(map[chunks.HeadSeriesRef]struct{})
 	for d := range decodedCh {
 		switch v := d.(type) {
 		case []record.RefSample:
@@ -1093,6 +1099,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						pinnedSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1119,6 +1126,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 
 				if r, ok := multiRef[rm.Ref]; ok {
+					pinnedSeries[rm.Ref] = struct{}{}
 					rm.Ref = r
 				}
 
@@ -1146,6 +1154,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						pinnedSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1176,6 +1185,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						pinnedSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1196,6 +1206,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		}
 	}
 	unknownSeriesRefs.merge(missingSeries)
+	h.pinWBLSeriesRefs(pinnedSeries)
 
 	if decodeErr != nil {
 		return decodeErr
@@ -1981,6 +1992,7 @@ Outer:
 					loopErr = fmt.Errorf("add exemplar: %w", err)
 					break Outer
 				}
+				ms.updateExemplarTimestamp(e.T)
 			}
 
 		default:

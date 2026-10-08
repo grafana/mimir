@@ -22,11 +22,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 var (
@@ -86,13 +86,16 @@ type LazyBinaryReader struct {
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
 
-	readerFactory func() (Reader, error)
+	readerFactory func(ctx context.Context) (Reader, error)
 
 	blockID ulid.ULID
 	done    chan struct{}
 }
 
 type readerRequest struct {
+	// ctx is the context of whichever caller's getOrLoadReader triggers the actual load.
+	// Only its trace span is used (as the parent of the load's own span), not its cancellation.
+	ctx      context.Context
 	response chan loadedReader
 }
 
@@ -125,7 +128,7 @@ type unloadRequest struct {
 func NewLazyBinaryReader(
 	ctx context.Context,
 	cfg Config,
-	readerFactory func() (Reader, error),
+	readerFactory func(ctx context.Context) (Reader, error),
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
@@ -135,7 +138,7 @@ func NewLazyBinaryReader(
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	localBlockDir := filepath.Join(localDir, id.String())
-	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	headerPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
 
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
@@ -147,7 +150,7 @@ func NewLazyBinaryReader(
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, cfg, logger)
 	})
 
 	g.Go(func() error {
@@ -163,7 +166,7 @@ func NewLazyBinaryReader(
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
-		filepath:        indexHeaderPath,
+		filepath:        headerPath,
 		metrics:         metrics,
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
@@ -181,36 +184,47 @@ func NewLazyBinaryReader(
 	return reader, nil
 }
 
+// ensureIndexHeaderOnDisk builds an index-header of the version required from the bucket if it is not already on disk,
+// and removes any other version that may already have existed.
 func ensureIndexHeaderOnDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
+	cfg Config,
 	logger log.Logger,
 ) error {
 	localBlockDir := filepath.Join(dir, blockID.String())
-	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	requiredVersion := requiredIndexHeaderVersion(cfg)
 
-	_, err := os.Stat(indexHeaderPath)
-	// The header is already on disk
-	if err == nil {
-		return nil
-	}
-	if !os.IsNotExist(err) {
-		level.Error(logger).Log("msg", "failed to stat existing index-header on disk", "err", err)
-		return err
+	headers, err := IndexHeadersOnDisk(localBlockDir)
+	if err != nil {
+		return fmt.Errorf("list index-headers on disk: %w", err)
 	}
 
-	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
+	for i, h := range headers {
+		if h.Version == requiredVersion {
+			// We already have the right header; update headers to remove the correct version, and sweep the rest
+			headers = append(headers[:i], headers[i+1:]...)
+			return removeIndexHeaders(localBlockDir, headers...)
+		}
+	}
+
+	level.Debug(logger).Log(
+		"msg", "index-header for required version not found on disk; will build from bucket",
+		"path", indexHeaderPath(localBlockDir, requiredVersion), "requiredVersion", requiredVersion,
+	)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
+	if err := buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, requiredVersion, headers, logger); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
 
-	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
-	return nil
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath(localBlockDir, requiredVersion), "elapsed", time.Since(start))
+
+	// headers was created before we built the correct index-header file, we can remove all of these
+	return removeIndexHeaders(localBlockDir, headers...)
 }
 
 // Close implements Reader.
@@ -307,7 +321,7 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
-	readerReq := readerRequest{response: make(chan loadedReader)}
+	readerReq := readerRequest{ctx: ctx, response: make(chan loadedReader)}
 	select {
 	case <-r.done:
 		return loadedReader{err: errors.New("lazy reader is closed; this shouldn't happen")}
@@ -327,12 +341,14 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
 }
 
 // loadReader is called from getOrLoadReader, without any locks.
-func (r *LazyBinaryReader) loadReader() (Reader, error) {
+func (r *LazyBinaryReader) loadReader(callerCtx context.Context) (Reader, error) {
+	ctx := trace.ContextWithSpanContext(r.ctx, trace.SpanContextFromContext(callerCtx))
+
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
 	// then goroutine that continues would not be able to get Write lock.)
-	err := r.lazyLoadingGate.Start(r.ctx)
+	err := r.lazyLoadingGate.Start(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to wait for turn")
 	}
@@ -342,7 +358,7 @@ func (r *LazyBinaryReader) loadReader() (Reader, error) {
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
-	reader, err := r.readerFactory()
+	reader, err := r.readerFactory(ctx)
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		return nil, errors.Wrapf(err, "lazy load index-header file at %s", r.filepath)
@@ -390,7 +406,7 @@ func (r *LazyBinaryReader) controlLoop() {
 			if loaded.reader == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
 				loaded = loadedReader{}
-				loaded.reader, loaded.err = r.loadReader()
+				loaded.reader, loaded.err = r.loadReader(readerReq.ctx)
 				if loaded.reader != nil {
 					loaded.inUse = &sync.WaitGroup{}
 				}

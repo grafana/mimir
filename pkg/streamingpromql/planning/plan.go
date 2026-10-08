@@ -216,7 +216,12 @@ type Node interface {
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
 	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
-	// FIXME: implementations for many of the above methods can be generated automatically
+	// GetNodeId returns the ID assigned to this node that uniquely identifies it within a query plan.
+	// The ID is 0 when unset.
+	GetNodeId() int64
+
+	// SetNodeId sets the ID for this node that uniquely identifies it within a query plan.
+	SetNodeId(id int64)
 }
 
 // ChildrenIter returns an iterator over all children of n.
@@ -327,8 +332,8 @@ type SplitNode interface {
 // - all nodes reachable from the plan's root will be encoded
 // - the corresponding index in the encoded plan for the root node will be returned
 // - RootNode on the returned plan will be populated
-func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
-	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
+func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
+	encoder := newQueryPlanEncoder(options)
 
 	encoded := &EncodedQueryPlan{
 		TimeRange:                p.Parameters.TimeRange.Encode(),
@@ -397,18 +402,36 @@ func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (Quer
 	return maxVersion, nil
 }
 
-type queryPlanEncoder struct {
-	nodes               []*EncodedNode
-	nodesToIndex        map[Node]int64
-	includeDescriptions bool // Include descriptions of nodes and their children, for display to a human
-	includeDetails      bool // Include details of nodes, for reconstruction in another process
+// DefaultQueryPlanEncodingOptions returns a QueryPlanEncodingOptions suitable for encoding
+// a plan to be sent between query-frontend and querier for remote execution. It does not include
+// descriptions, does include details, and does include node IDs.
+func DefaultQueryPlanEncodingOptions() QueryPlanEncodingOptions {
+	return QueryPlanEncodingOptions{
+		IncludeDescriptions: false,
+		IncludeDetails:      true,
+		IncludeNodeId:       true,
+	}
 }
 
-func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPlanEncoder {
+type QueryPlanEncodingOptions struct {
+	// Include descriptions of nodes and their children, for display to a human.
+	IncludeDescriptions bool
+	// Include details of nodes, for reconstruction in another process.
+	IncludeDetails bool
+	// Include the unique ID of each node within the plan.
+	IncludeNodeId bool
+}
+
+type queryPlanEncoder struct {
+	nodes        []*EncodedNode
+	nodesToIndex map[Node]int64
+	options      QueryPlanEncodingOptions
+}
+
+func newQueryPlanEncoder(options QueryPlanEncodingOptions) *queryPlanEncoder {
 	return &queryPlanEncoder{
-		nodesToIndex:        make(map[Node]int64),
-		includeDescriptions: includeDescriptions,
-		includeDetails:      includeDetails,
+		nodesToIndex: make(map[Node]int64),
+		options:      options,
 	}
 }
 
@@ -418,6 +441,7 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	encoded := &EncodedNode{}
+
 	childCount := n.ChildCount()
 
 	if childCount > 0 {
@@ -437,7 +461,7 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		encoded.Children = childIndices
 	}
 
-	if e.includeDetails {
+	if e.options.IncludeDetails {
 		encoded.NodeType = n.NodeType()
 		var err error
 		encoded.Details, err = proto.Marshal(n.Details())
@@ -446,10 +470,14 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		}
 	}
 
-	if e.includeDescriptions {
+	if e.options.IncludeDescriptions {
 		encoded.Type = NodeTypeName(n)
 		encoded.Description = n.Describe()
 		encoded.ChildrenLabels = n.ChildrenLabels()
+	}
+
+	if e.options.IncludeNodeId {
+		encoded.NodeId = n.GetNodeId()
 	}
 
 	e.nodes = append(e.nodes, encoded)
@@ -534,6 +562,8 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 	}
 
 	node := nodeFactory()
+	node.SetNodeId(encodedNode.NodeId)
+
 	if err := proto.Unmarshal(encodedNode.Details, node.Details()); err != nil {
 		return nil, err
 	}
