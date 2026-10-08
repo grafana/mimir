@@ -398,7 +398,7 @@ func (b *coldBlock) seriesIn(table *coldTenantIndex, index int) coldSeries {
 	stored := cursor[:labelsLen]
 	cursor = cursor[labelsLen:]
 	chunksLen := int(takeUvarint(&cursor))
-	return coldSeries{block: b, encoded: unsafe.String(unsafe.SliceData(stored), len(stored)), chunks: cursor[:chunksLen:chunksLen]}
+	return coldSeries{block: b, encoded: unsafe.String(unsafe.SliceData(stored), len(stored)), chunks: cursor[:chunksLen:chunksLen], nativeHistogram: cursor[chunksLen] == 1}
 }
 
 // withLabel returns the indexes of the tenant's series with label name, from every posting list
@@ -691,6 +691,8 @@ type coldSeries struct {
 	block   *coldBlock
 	encoded string
 	chunks  []byte
+	// Whether the series' last samples were native histograms.
+	nativeHistogram bool
 }
 
 // Range calls visit for each label in order.
@@ -798,6 +800,113 @@ func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, s
 			}
 		}
 	}
+}
+
+const (
+	// A block with fewer series than this is small, and the blocks that head compactions write every minute are: a query
+	// visits every block of every shard, so hundreds of them cost more than the series in them do.
+	coldSmallSeries = 2048
+	// How many adjacent small blocks are merged into one.
+	coldMergeFanout = 8
+)
+
+// seriesTotal is how many series the block has, of all its tenants.
+func (b *coldBlock) seriesTotal() int {
+	total := 0
+	for _, table := range b.tenants {
+		total += table.seriesCount
+	}
+	return total
+}
+
+// mergeSmallBlocks merges runs of adjacent small blocks into one block each, with the shard locked: as no query reads
+// a block meanwhile, the blocks that were merged are removed as soon as the merged one is written. A series in more
+// than one block gets the chunks of all of them. A failure leaves the blocks as they were.
+func (c *coldState) mergeSmallBlocks() {
+	for {
+		start, run := -1, 0
+		for index, block := range c.blocks {
+			if block.seriesTotal() >= coldSmallSeries {
+				run = 0
+				continue
+			}
+			if run == 0 {
+				start = index
+			}
+			run++
+			if run == coldMergeFanout {
+				break
+			}
+		}
+		if run < coldMergeFanout {
+			return
+		}
+		if err := c.merge(start, start+coldMergeFanout); err != nil {
+			fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error error=%v\n", err)
+			return
+		}
+	}
+}
+
+// merge replaces the blocks from to before with one that has their series.
+func (c *coldState) merge(from, to int) error {
+	type key struct {
+		tenant string
+		labels labels.Labels
+	}
+	merged := c.blocks[from:to]
+	var frozen []frozenSeries
+	positions := map[key]int{}
+	var pairs [][2]string
+	for _, block := range merged {
+		for tenant, table := range block.tenants {
+			for index := range table.seriesCount {
+				series := block.seriesIn(table, index)
+				stored := series.labelsInto(&pairs)
+				chunks := chunkList(slices.Clone(series.chunks))
+				at, seen := positions[key{tenant, stored}]
+				if !seen {
+					positions[key{tenant, stored}] = len(frozen)
+					frozen = append(frozen, frozenSeries{tenant: tenant, labels: stored, chunks: chunks, nativeHistogram: series.nativeHistogram})
+					continue
+				}
+				// The same series left the head more than once: the chunks of the later block come after.
+				known := map[uint64]struct{}{}
+				metas := frozen[at].chunks.toSlice()
+				for _, meta := range metas {
+					known[uint64(meta.Ref)] = struct{}{}
+				}
+				for _, meta := range chunks.toSlice() {
+					if _, ok := known[uint64(meta.Ref)]; !ok {
+						metas = append(metas, meta)
+					}
+				}
+				frozen[at].chunks = chunkListFromMetas(metas)
+				frozen[at].nativeHistogram = series.nativeHistogram
+			}
+		}
+	}
+	id := c.nextID
+	block, err := buildColdBlock(c.directory, id, frozen)
+	if err != nil {
+		return err
+	}
+	c.nextID++
+	for _, old := range merged {
+		if old.path != "" {
+			if err := os.Remove(old.path); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", old.path, err)
+			}
+		}
+		_ = old.close()
+	}
+	if block == nil {
+		c.blocks = slices.Delete(c.blocks, from, to)
+		return nil
+	}
+	c.blocks[from] = block
+	c.blocks = slices.Delete(c.blocks, from+1, to)
+	return nil
 }
 
 // discardColdBlock removes a block no query has seen.

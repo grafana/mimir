@@ -332,20 +332,53 @@ func benchmarkSelectBigGroup(b *testing.B, shards int) {
 			}
 		})
 	}
+	// A quarter of the group matches, which the lookup finds and the query reads.
+	for label, matchers := range map[string][]*promlabels.Matcher{
+		"equal-many":   {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "cluster-0")},
+		"regex-many":   {name, promlabels.MustNewMatcher(promlabels.MatchRegexp, "cluster", "cluster-(0|1)")},
+		"two-equal":    {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "cluster-0"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "cluster", "cluster-3")},
+		"not-equal-eq": {name, promlabels.MustNewMatcher(promlabels.MatchNotEqual, "cluster", "cluster-0")},
+	} {
+		b.Run(label, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				q, err := engine.ChunkQuerier(0, 10_000)
+				require.NoError(b, err)
+				set := q.Select(ctx, true, nil, matchers...)
+				selected := 0
+				for set.Next() {
+					selected++
+				}
+				require.NoError(b, set.Err())
+				require.NotZero(b, selected)
+				_ = q.Close()
+			}
+		})
+	}
 }
 
 // BenchmarkEngineSelectColdBlocks selects one series of a tenant whose series left the head in many small blocks,
 // as a head compaction every minute writes them, which every lookup goes through block by block.
 func BenchmarkEngineSelectColdBlocks(b *testing.B) {
+	// A block every minute of a few series is what a busy head leaves, and the other is what a lookup of big ones costs.
+	for _, shape := range []struct {
+		name             string
+		blocks, perBlock int
+	}{{"60-blocks-of-1000", 60, 1000}, {"300-blocks-of-20", 300, 20}} {
+		b.Run(shape.name, func(b *testing.B) { benchmarkSelectColdBlocks(b, shape.blocks, shape.perBlock) })
+	}
+}
+
+func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 	ctx := context.Background()
 	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = engine.Close() })
-	const blocks = 60
 	for round := range blocks {
 		app := engine.Appender(ctx)
 		// A few series each round, which only stay in the head for it.
-		for n := range 1000 {
+		for n := range perBlock {
 			// The cluster is on all the series, so its posting list is the whole block's.
 			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "cluster", "c1", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, 1)
 			require.NoError(b, err)
@@ -359,22 +392,40 @@ func BenchmarkEngineSelectColdBlocks(b *testing.B) {
 	eq := func(name, value string) *promlabels.Matcher {
 		return promlabels.MustNewMatcher(promlabels.MatchEqual, name, value)
 	}
+	// What a dashboard's variables ask for: the label names and values of a metric, over the whole range.
+	b.Run("label-names", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			q, err := engine.Querier(0, int64(blocks)*chunkRangeMs*3)
+			require.NoError(b, err)
+			_, _, err = q.LabelNames(ctx, nil, eq("__name__", "old"))
+			require.NoError(b, err)
+			_ = q.Close()
+		}
+	})
+	b.Run("label-values", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			q, err := engine.Querier(0, int64(blocks)*chunkRangeMs*3)
+			require.NoError(b, err)
+			_, _, err = q.LabelValues(ctx, "pod", nil, eq("__name__", "old"))
+			require.NoError(b, err)
+			_ = q.Close()
+		}
+	})
 	for name, matchers := range map[string][]*promlabels.Matcher{
 		// The lists of the cluster and the name are the whole block's: only the pod's is read.
 		"one-series": {eq("__name__", "old"), eq("cluster", "c1"), eq("round", "3"), eq("pod", "5")},
 		// Every series of a block, each of which has its labels copied out.
 		"one-block": {eq("__name__", "old"), eq("cluster", "c1"), eq("round", "3")},
+		// A series in every block, which a lookup of its pod over the whole range finds block by block.
+		"every-block": {eq("__name__", "old"), eq("pod", "5")},
 	} {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
-					b.StopTimer()
-					evictCaches()
-					b.StartTimer()
-				}
-				q, err := engine.ChunkQuerier(0, blocks*chunkRangeMs*3)
+				q, err := engine.ChunkQuerier(0, int64(blocks)*chunkRangeMs*3)
 				require.NoError(b, err)
 				set := q.Select(ctx, true, nil, matchers...)
 				for set.Next() {
@@ -546,4 +597,74 @@ func TestEngineCostAttribution(t *testing.T) {
 	require.Len(t, last.counted, 2)
 	require.NoError(t, engine.prune(1_000_000))
 	require.Empty(t, last.counted)
+}
+
+// Merging the small cold blocks that head compactions write leaves what a query sees as it was, including for a series
+// that left the head in several of them.
+func TestEngineMergesSmallColdBlocks(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	engine := openEngine(t, dir, differentialOptions{}, nil)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	const rounds = 40
+	for round := range rounds {
+		app := engine.Appender(ctx)
+		for n := range 6 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, float64(round))
+			require.NoError(t, err)
+		}
+		// One series in every block.
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", "all", "pod", "stable"), int64(round)*chunkRangeMs, float64(round))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		_, err = engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*chunkRangeMs*2, 1)
+		require.NoError(t, err)
+		require.NoError(t, engine.Compact(ctx))
+	}
+	blocks := 0
+	for _, shard := range engine.store.shards {
+		blocks += len(shard.cold.blocks)
+	}
+	require.Less(t, blocks, rounds*len(engine.store.shards)/2, "the small blocks were merged")
+
+	read := func(matchers ...*promlabels.Matcher) map[string][]float64 {
+		q, err := engine.ChunkQuerier(0, rounds*chunkRangeMs*3)
+		require.NoError(t, err)
+		defer q.Close()
+		out := map[string][]float64{}
+		set := q.Select(ctx, true, nil, matchers...)
+		for set.Next() {
+			var values []float64
+			for _, sample := range mergedSamples(t, set.At()) {
+				values = append(values, math.Float64frombits(sample.f))
+			}
+			out[set.At().Labels().String()] = values
+		}
+		require.NoError(t, set.Err())
+		return out
+	}
+	eq := func(name, value string) *promlabels.Matcher {
+		return promlabels.MustNewMatcher(promlabels.MatchEqual, name, value)
+	}
+	stable := read(eq("pod", "stable"))
+	require.Len(t, stable, 1)
+	var want []float64
+	for round := range rounds {
+		want = append(want, float64(round))
+	}
+	for _, values := range stable {
+		require.Equal(t, want, values, "the chunks of every block, once, in order")
+	}
+	require.Len(t, read(eq("pod", "3")), rounds)
+	byRound := read(eq("__name__", "old"), eq("round", "7"))
+	require.Len(t, byRound, 6)
+	for _, values := range byRound {
+		require.Equal(t, []float64{7}, values)
+	}
+
+	// The merged blocks are what a restart finds.
+	everything := read(eq("__name__", "old"))
+	require.NoError(t, engine.Close())
+	engine = openEngine(t, dir, differentialOptions{}, nil)
+	require.Equal(t, everything, read(eq("__name__", "old")))
 }
