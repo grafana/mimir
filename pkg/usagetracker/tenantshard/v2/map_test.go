@@ -474,14 +474,37 @@ func BenchmarkMapCleanup(b *testing.B) {
 
 	const size = 1e6
 
+	// spread spreads the series over 4/3 of the idle timeout, so that about 25% of them expire in one cleanup.
+	// That is a corner case, like a deployment that stops a quarter of a tenant's series in the same minute.
+	spread := func(r *rand.Rand, now time.Time) time.Time {
+		return now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+	}
+	// churn looks like production: a tenant churns 1/3 to 2/3 of its series every 2h, and the watermark moves
+	// once a minute, so a cleanup removes at most one minute of stopped series, 1/360 to 1/180 of them.
+	// The other series are active. A cleanup that runs before the watermark moves again removes nothing.
+	churn := func(expired float64) func(r *rand.Rand, now time.Time) time.Time {
+		return func(r *rand.Rand, now time.Time) time.Time {
+			if r.Float64() < expired {
+				// Seen for the last time exactly idleTimeout ago, so it expires in this cleanup.
+				return now.Add(-idleTimeout)
+			}
+			return now
+		}
+	}
+
 	for _, tc := range []struct {
-		name string
-		now  time.Time
+		name     string
+		now      time.Time
+		lastSeen func(r *rand.Rand, now time.Time) time.Time
 	}{
 		// The watermark and all the series are before the same two-hour boundary.
-		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC), lastSeen: spread},
 		// The watermark is before a two-hour boundary, and the series are on both sides of it.
-		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC)},
+		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC), lastSeen: spread},
+		// Production churn: 2/3 and 1/3 of the series every 2h, and a cleanup with nothing to remove.
+		{name: "churn=2of3", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(1.0 / 180)},
+		{name: "churn=1of3", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(1.0 / 360)},
+		{name: "churn=0", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(0)},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			maps := make([]*Map, b.N)
@@ -491,15 +514,17 @@ func BenchmarkMapCleanup(b *testing.B) {
 			r := rand.New(rand.NewSource(1))
 			for _, m := range maps {
 				for i := 0; i < size; i++ {
-					ts := tc.now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+					ts := tc.lastSeen(r, tc.now)
 					m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
 				}
 			}
 			b.ResetTimer()
 			watermark := tc.now.Add(-idleTimeout)
+			removed := 0
 			for i := 0; i < b.N; i++ {
-				maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+				removed += maps[i].Cleanup(clock.ToMinutes(watermark), nil)
 			}
+			b.ReportMetric(float64(removed)/float64(b.N), "removed/op")
 		})
 	}
 }
