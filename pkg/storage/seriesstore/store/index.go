@@ -96,6 +96,8 @@ type seriesByName struct {
 	removals   uint64
 	headLabels headLabels
 	// The hashes of the series' values of a label, by name group and label.
+	// Where the series with each hash were last found, which AppendFloats looks in first.
+	locs        locationCache
 	columnsLock sync.Mutex
 	columns     map[uint64][]uint32
 	// The distinct values of a label of a name group, and each series' value among them.
@@ -152,6 +154,7 @@ func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, se
 	g.entries = append(g.entries, seriesEntry{hash: hash, labels: stored, next: next, series: series})
 	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
+	b.locs.remember(hash, groupID, len(g.entries)-1, b.len)
 	b.addPostings(stored, groupID, hash)
 	return &g.entries[len(g.entries)-1]
 }
