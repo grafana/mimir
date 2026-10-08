@@ -184,6 +184,14 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 					}
 				}
 				if entry == nil || entry.series.ref == 0 || hasStaleMarker(ts.Samples) {
+					switch {
+					case entry == nil:
+						e.leftovers[0].Add(1)
+					case entry.series.ref == 0:
+						e.leftovers[1].Add(1)
+					default:
+						e.leftovers[2].Add(1)
+					}
 					leftover = append(leftover, prep.index)
 					continue
 				}

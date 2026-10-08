@@ -94,6 +94,9 @@ type Engine struct {
 	// Whether out-of-order samples came in since the out-of-order head was last compacted: it has nothing to compact
 	// otherwise, and walking every series to find out is most of what a compaction holds the shards' locks for.
 	oooDirty atomic.Bool
+	// How many series AppendFloats left for the appender, by why: unknown, without a reference, and with a staleness
+	// marker. Temporary, for finding what the appender path is for.
+	leftovers [3]atomic.Uint64
 	// What the selectors that come in again match.
 	selectors selectorCache
 	// How long past 1.5 block ranges the head has to span to be compacted.
@@ -982,4 +985,10 @@ func (e *Engine) tenantExemplars() *exemplars.TenantExemplars[labels.Labels] {
 // what a crash loses comes back from Kafka instead.
 func (e *Engine) FsyncWLSegments() error {
 	return nil
+}
+
+// FloatLeftovers is how many series AppendFloats left for the appender: unknown to the engine, without a reference, and
+// with a staleness marker.
+func (e *Engine) FloatLeftovers() [3]uint64 {
+	return [3]uint64{e.leftovers[0].Load(), e.leftovers[1].Load(), e.leftovers[2].Load()}
 }

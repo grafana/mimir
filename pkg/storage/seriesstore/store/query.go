@@ -100,10 +100,15 @@ func (a *arena) alloc(size int) []byte {
 // queries use the cores. Spreading each small query over the store's threads spent more CPU
 // finding work than running it.
 func (s *Store) perShardWithCold(tenantID string, query func(t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
-	for _, shard := range s.shards {
+	s.perShardIndexed(tenantID, func(_ int, t *tenant, disk *chunks.DiskMapper, cold *coldState) { query(t, disk, cold) })
+}
+
+// perShardIndexed is perShardWithCold with the index of the shard.
+func (s *Store) perShardIndexed(tenantID string, query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	for index, shard := range s.shards {
 		shard.RLock()
 		if t, ok := shard.tenants[tenantID]; ok {
-			query(t, shard.disk, shard.cold)
+			query(index, t, shard.disk, shard.cold)
 		}
 		shard.RUnlock()
 	}
