@@ -3153,7 +3153,7 @@ kafka:
   # -- Enable Kafka for ingest-storage architecture
   enabled: true
 
-  # -- Number of Kafka broker replicas.
+  # -- Number of Kafka broker replicas. Changing this value on an existing bundled Kafka installation changes the static KRaft voter set; migrate the quorum before scaling.
   replicas: 1
 
   # -- The cluster ID used to format the Kafka storage. This only takes effect on the first startup of each broker,

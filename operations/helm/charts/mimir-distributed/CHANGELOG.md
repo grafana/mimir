@@ -46,7 +46,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
 * [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values. #16761
 * [BUGFIX] Kafka: set `KAFKA_MESSAGE_MAX_BYTES` to `16000000` on the bundled broker, as recommended in the Kafka backend documentation. Previously the broker used Kafka's 1 MB default, so it rejected records and batches larger than that with `MESSAGE_TOO_LARGE`, while Mimir produces up to about 16 MB. The value can be overridden through `kafka.env`. #16804
-* [BUGFIX] Kafka: set three replicas in the `large.yaml` and `capped-large.yaml` deployment presets so large installations do not use a single bundled broker. #16823
+* [BUGFIX] Kafka: configure three broker replicas and a default topic replication factor of three in the `large.yaml` and `capped-large.yaml` deployment presets. #16823
+  This applies to newly auto-created topics. Existing installations using the bundled static KRaft quorum must migrate the quorum before scaling, and existing `mimir-ingest` topics require separate replica reassignment. See Apache Kafka's [KRaft upgrade guide](https://kafka.apache.org/41/operations/kraft/).
 
 ## 6.2.1
 

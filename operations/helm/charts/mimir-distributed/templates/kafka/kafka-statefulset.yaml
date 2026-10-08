@@ -89,6 +89,9 @@ spec:
               (dict "name" "KAFKA_LOG_RETENTION_HOURS" "value" (.logRetentionHours | default 24 | toString))
               (dict "name" "KAFKA_MESSAGE_MAX_BYTES" "value" "16000000")
           -}}
+          {{- if gt (int $replicas) 1 -}}
+          {{- $defaultEnv = append $defaultEnv (dict "name" "KAFKA_DEFAULT_REPLICATION_FACTOR" "value" (min 3 $replicas | toString)) -}}
+          {{- end -}}
           {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "kafka" "env" $defaultEnv) | nindent 10 }}
           resources:
             {{- toYaml .resources | nindent 12 }}
