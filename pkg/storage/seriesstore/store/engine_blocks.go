@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,8 +38,50 @@ func (b *emulatedBlock) overlaps(start, end int64) bool {
 }
 
 func (b *emulatedBlock) holds(hash uint64) bool {
-	_, found := slices.BinarySearch(b.series, hash)
-	return found
+	return containsHash(b.series, hash)
+}
+
+// containsHash reports whether the sorted hashes have hash. They are uniform, so where a hash is in them is about where
+// its value is in the range of 64 bits: the search starts there and widens until it brackets the hash, which is a few
+// reads close to each other where a binary search of millions of them reads a dozen of them far apart.
+func containsHash(sorted []uint64, hash uint64) bool {
+	n := len(sorted)
+	if n == 0 {
+		return false
+	}
+	guess, _ := bits.Mul64(hash, uint64(n))
+	low, high := int(guess), int(guess)+1
+	step := 4
+	if sorted[low] < hash {
+		// Widen to the right until a hash that isn't smaller, or the end.
+		for high < n && sorted[high] < hash {
+			low = high
+			high = min(n, high+step)
+			step *= 2
+		}
+		return searchHash(sorted[low:min(n, high+1)], hash)
+	}
+	// Widen to the left until a hash that isn't larger, or the start.
+	for low > 0 && sorted[low-1] >= hash {
+		high = low + 1
+		low = max(0, low-step)
+		step *= 2
+	}
+	return searchHash(sorted[low:high], hash)
+}
+
+// searchHash is a binary search that reads a short run in order, as the bracket of a hash nearly always is.
+func searchHash(sorted []uint64, hash uint64) bool {
+	if len(sorted) > 16 {
+		_, found := slices.BinarySearch(sorted, hash)
+		return found
+	}
+	for _, candidate := range sorted {
+		if candidate >= hash {
+			return candidate == hash
+		}
+	}
+	return false
 }
 
 // writeBlock records the block over [minTime, maxTime) of the head series holds picks, unless it
