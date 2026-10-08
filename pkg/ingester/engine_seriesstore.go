@@ -188,10 +188,17 @@ func (s floatSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRe
 }
 
 func (e seriesstoreEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	var q storage.ChunkQuerier
+	var err error
 	if unordered {
-		return e.Engine.UnorderedChunkQuerier(mint, maxt)
+		q, err = e.Engine.UnorderedChunkQuerier(mint, maxt)
+	} else {
+		q, err = e.Engine.ChunkQuerier(mint, maxt)
 	}
-	return e.Engine.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return wrapStreaming(q), nil
 }
 
 func (e seriesstoreEngine) Compact(ctx context.Context) error {

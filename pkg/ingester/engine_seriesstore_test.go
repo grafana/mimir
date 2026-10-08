@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,12 +16,15 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
@@ -220,4 +224,161 @@ func TestIngester_SeriesstoreCostAttributionMatchesTracker(t *testing.T) {
 	tracker := attributed(false)
 	require.Equal(t, []map[string]float64{{"1": 2, "2": 1}, {"2": 1}, {}}, tracker)
 	require.Equal(t, tracker, attributed(true))
+}
+
+// recordingStream keeps the marshaled bytes of the response messages it is sent, as the messages' slices are reused.
+type recordingStream struct {
+	grpc.ServerStream
+	ctx      context.Context
+	messages [][]byte
+}
+
+func (s *recordingStream) Send(response *client.QueryStreamResponse) error {
+	encoded, err := response.Marshal()
+	if err != nil {
+		return err
+	}
+	s.messages = append(s.messages, encoded)
+	return nil
+}
+
+func (s *recordingStream) Context() context.Context { return s.ctx }
+
+// The seriesstore builds the streamed response itself: it has to send what sendStreamingQuerySeries and
+// sendStreamingQueryChunks send for the same querier, message for message.
+func TestIngester_SeriesstoreStreamsTheSameResponseAsTheGenericPath(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.NativeHistogramsIngestionEnabled = true
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, t.TempDir(), nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	now := time.Now().UnixMilli()
+	// Series with floats, with histograms and with both, with many samples so the chunks cut, and enough of them for
+	// more than one batch of each kind.
+	var series []mimirpb.PreallocTimeseries
+	for n := range 300 {
+		ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", n%3)}, {Name: "pod", Value: fmt.Sprintf("pod-%03d", n)}}}
+		for sample := range 130 {
+			if n%5 == 4 {
+				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(now-int64(130-sample)*1000, streamTestHistogram(sample)))
+			} else {
+				ts.Samples = append(ts.Samples, mimirpb.Sample{TimestampMs: now - int64(130-sample)*1000, Value: float64(sample * n)})
+			}
+		}
+		series = append(series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+	}
+	_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+	require.NoError(t, err)
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	hints := initSelectHints(now-1_000_000, now+1000)
+	hints = configSelectHintsWithDisabledTrimming(hints)
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_.*")}
+
+	q, err := db.ChunkQuerier(hints.Start, hints.End)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = q.Close() })
+	streaming, ok := q.(streamingQuerier)
+	require.True(t, ok, "the seriesstore's querier builds the response itself")
+
+	const chunksBatchSize = 7
+	viaEngine := &recordingStream{ctx: ctx}
+	stats, err := streaming.QueryStream(ctx, hints, matchers, streamBatching{SeriesBatchSize: queryStreamBatchSize, ChunksBatchSize: chunksBatchSize, ChunksBatchMessageBytes: queryStreamBatchMessageSize}, func(response *client.QueryStreamResponse) error { return client.SendQueryStream(viaEngine, response) })
+	require.NoError(t, err)
+
+	generic := &recordingStream{ctx: ctx}
+	underlying := q.(streamingChunkQuerier).ChunkQuerier
+	allSeries, count, err := ingester.sendStreamingQuerySeries(ctx, underlying, hints, matchers, generic)
+	require.NoError(t, err)
+	samples, chunks, batches, err := ingester.sendStreamingQueryChunks(allSeries, generic, chunksBatchSize)
+	require.NoError(t, err)
+
+	require.Equal(t, count, stats.Series)
+	require.Equal(t, samples, stats.Samples)
+	require.Equal(t, chunks, stats.Chunks)
+	require.Equal(t, batches, stats.Batches)
+	require.Greater(t, len(generic.messages), 3)
+	require.Equal(t, generic.messages, viaEngine.messages)
+}
+
+func streamTestHistogram(base int) *histogram.Histogram {
+	return &histogram.Histogram{
+		Count:           uint64(2*base + 3),
+		Sum:             float64(base) + 1.5,
+		ZeroThreshold:   0.001,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{int64(base) + 1, 1},
+	}
+}
+
+type marshalingStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *marshalingStream) Send(response *client.QueryStreamResponse) error {
+	_, err := response.Marshal()
+	return err
+}
+
+func (s *marshalingStream) Context() context.Context { return s.ctx }
+
+// BenchmarkIngester_SeriesstoreQueryStream is a streamed response of 5000 series of 130 samples each, built by the
+// generic path and by the seriesstore's.
+func BenchmarkIngester_SeriesstoreQueryStream(b *testing.B) {
+	cfg := defaultIngesterTestConfig(b)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.MaxGlobalSeriesPerMetric = 0
+	limitsCfg.MaxGlobalSeriesPerUser = 0
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+	require.NoError(b, err)
+	startAndWaitHealthy(b, ingester, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	now := time.Now().UnixMilli()
+	for first := 0; first < 5000; first += 500 {
+		var series []mimirpb.PreallocTimeseries
+		for n := first; n < first+500; n++ {
+			ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "cluster", Value: "c1"}, {Name: "namespace", Value: fmt.Sprintf("ns-%d", n%50)}, {Name: "pod", Value: fmt.Sprintf("pod-%05d", n)}}}
+			for sample := range 130 {
+				ts.Samples = append(ts.Samples, mimirpb.Sample{TimestampMs: now - int64(130-sample)*1000, Value: float64(sample * n)})
+			}
+			series = append(series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+		}
+		_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(b, err)
+	}
+	hints := configSelectHintsWithDisabledTrimming(initSelectHints(now-1_000_000, now+1000))
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric")}
+	stream := &marshalingStream{ctx: ctx}
+	db := ingester.getTSDB(userID)
+
+	for _, mode := range []string{"generic", "engine"} {
+		b.Run(mode, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				q, err := db.ChunkQuerier(hints.Start, hints.End)
+				require.NoError(b, err)
+				if mode == "engine" {
+					_, err = q.(streamingQuerier).QueryStream(ctx, hints, matchers, streamBatching{SeriesBatchSize: queryStreamBatchSize, ChunksBatchSize: 128, ChunksBatchMessageBytes: queryStreamBatchMessageSize}, func(response *client.QueryStreamResponse) error { return client.SendQueryStream(stream, response) })
+				} else {
+					underlying := q.(streamingChunkQuerier).ChunkQuerier
+					var allSeries *chunkSeriesNode
+					allSeries, _, err = ingester.sendStreamingQuerySeries(ctx, underlying, hints, matchers, stream)
+					if err == nil {
+						_, _, _, err = ingester.sendStreamingQueryChunks(allSeries, stream, 128)
+					}
+				}
+				require.NoError(b, err)
+				require.NoError(b, q.Close())
+			}
+		})
+	}
 }
