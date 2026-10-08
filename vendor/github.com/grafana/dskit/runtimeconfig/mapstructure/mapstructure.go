@@ -289,6 +289,11 @@ type DecoderConfig struct {
 	// it. If this is false, a map will be merged.
 	ZeroFields bool
 
+	// ErrorNil, if set to true, makes decoding nil into a value that can't be nil
+	// (a number, string, bool, array or struct) an error, rather than leaving it
+	// untouched, or zeroing it if ZeroFields is true.
+	ErrorNil bool
+
 	// If WeaklyTypedInput is true, the decoder will make the following
 	// "weak" conversions:
 	//
@@ -555,6 +560,32 @@ func isNil(input any) bool {
 	return val.Kind() == reflect.Pointer && val.IsNil()
 }
 
+func isNilable(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return true
+	}
+	return false
+}
+
+func (d *Decoder) errorOnNil(name string, outVal reflect.Value) error {
+	if d.config.ErrorNil && !isNilable(outVal.Kind()) {
+		return newDecodeError(name, fmt.Errorf("cannot decode nil into %s", outVal.Type()))
+	}
+	return nil
+}
+
+func (d *Decoder) maybeSetToZero(name string, outVal reflect.Value) {
+	if !d.config.ZeroFields {
+		return
+	}
+	outVal.Set(reflect.Zero(outVal.Type()))
+
+	if d.config.Metadata != nil && name != "" {
+		d.config.Metadata.Keys = append(d.config.Metadata.Keys, name)
+	}
+}
+
 // Decodes an unknown data type into a specific reflection value.
 func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 	var (
@@ -567,14 +598,14 @@ func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 		input = nil
 	}
 	if input == nil {
-		// If the data is nil, then we don't set anything, unless ZeroFields is set
-		// to true.
-		if d.config.ZeroFields {
-			outVal.Set(reflect.Zero(outVal.Type()))
-
-			if d.config.Metadata != nil && name != "" {
-				d.config.Metadata.Keys = append(d.config.Metadata.Keys, name)
+		if err := d.errorOnNil(name, outVal); err != nil {
+			if !decodeNil {
+				return err
 			}
+		} else {
+			// If the data is nil, then we don't set anything, unless ZeroFields is set
+			// to true.
+			d.maybeSetToZero(name, outVal)
 		}
 		if !decodeNil {
 			return nil
@@ -612,6 +643,10 @@ func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 		}
 	}
 	if isNil(input) {
+		if err := d.errorOnNil(name, outVal); err != nil {
+			return err
+		}
+		d.maybeSetToZero(name, outVal)
 		return nil
 	}
 
@@ -1410,6 +1445,9 @@ func (d *Decoder) decodeSlice(name string, data any, val reflect.Value) error {
 
 	// If the input value is nil, then don't allocate since empty != nil
 	if dataValKind != reflect.Array && dataVal.IsNil() {
+		if d.config.ZeroFields {
+			val.Set(reflect.Zero(val.Type()))
+		}
 		return nil
 	}
 

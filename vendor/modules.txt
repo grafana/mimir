@@ -157,9 +157,6 @@ github.com/alecthomas/units
 ## explicit; go 1.24.0
 github.com/antithesishq/antithesis-sdk-go/assert
 github.com/antithesishq/antithesis-sdk-go/internal
-# github.com/armon/go-metrics v0.4.1
-## explicit; go 1.12
-github.com/armon/go-metrics
 # github.com/aws/aws-sdk-go-v2 v1.47.0
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/aws
@@ -675,7 +672,7 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20260916161559-407dda1fce2b
+# github.com/grafana/dskit v0.0.0-20261008090416-c9d8893130af
 ## explicit; go 1.26.7
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -770,10 +767,9 @@ github.com/hashicorp/go-hclog
 # github.com/hashicorp/go-immutable-radix v1.3.1
 ## explicit
 github.com/hashicorp/go-immutable-radix
-# github.com/hashicorp/go-metrics v0.6.1
+# github.com/hashicorp/go-metrics v0.7.0
 ## explicit; go 1.25.0
 github.com/hashicorp/go-metrics
-github.com/hashicorp/go-metrics/compat
 github.com/hashicorp/go-metrics/prometheus
 # github.com/hashicorp/go-msgpack/v2 v2.1.5
 ## explicit; go 1.24.0
@@ -818,11 +814,11 @@ github.com/hashicorp/hcl/hcl/token
 github.com/hashicorp/hcl/json/parser
 github.com/hashicorp/hcl/json/scanner
 github.com/hashicorp/hcl/json/token
-# github.com/hashicorp/memberlist v0.6.0 => github.com/grafana/memberlist v0.3.1-0.20260515134459-1798cf41aca7
-## explicit; go 1.24
+# github.com/hashicorp/memberlist v0.7.0 => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
+## explicit; go 1.25
 github.com/hashicorp/memberlist
-# github.com/hashicorp/serf v0.10.4
-## explicit; go 1.25.0
+# github.com/hashicorp/serf v0.11.0
+## explicit; go 1.26.0
 github.com/hashicorp/serf/coordinate
 # github.com/hashicorp/vault/api v1.23.0
 ## explicit; go 1.24.0
@@ -1401,7 +1397,7 @@ go.etcd.io/bbolt
 go.etcd.io/bbolt/errors
 go.etcd.io/bbolt/internal/common
 go.etcd.io/bbolt/internal/freelist
-# go.etcd.io/etcd/api/v3 v3.7.1
+# go.etcd.io/etcd/api/v3 v3.7.2
 ## explicit; go 1.26
 go.etcd.io/etcd/api/v3/authpb
 go.etcd.io/etcd/api/v3/etcdserverpb
@@ -1410,7 +1406,7 @@ go.etcd.io/etcd/api/v3/mvccpb
 go.etcd.io/etcd/api/v3/v3rpc/rpctypes
 go.etcd.io/etcd/api/v3/version
 go.etcd.io/etcd/api/v3/versionpb
-# go.etcd.io/etcd/client/pkg/v3 v3.7.1
+# go.etcd.io/etcd/client/pkg/v3 v3.7.2
 ## explicit; go 1.26
 go.etcd.io/etcd/client/pkg/v3/fileutil
 go.etcd.io/etcd/client/pkg/v3/logutil
@@ -1419,7 +1415,7 @@ go.etcd.io/etcd/client/pkg/v3/tlsutil
 go.etcd.io/etcd/client/pkg/v3/transport
 go.etcd.io/etcd/client/pkg/v3/types
 go.etcd.io/etcd/client/pkg/v3/verify
-# go.etcd.io/etcd/client/v3 v3.7.1
+# go.etcd.io/etcd/client/v3 v3.7.2
 ## explicit; go 1.26
 go.etcd.io/etcd/client/v3
 go.etcd.io/etcd/client/v3/credentials
@@ -2169,7 +2165,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261005025238-12d789ed6eb8
-# github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260515134459-1798cf41aca7
+# github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261002173312-a1d5f0fedb1c
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
