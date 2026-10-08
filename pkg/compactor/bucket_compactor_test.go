@@ -28,6 +28,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
+// testIndexHeaderV1Config creates indexheader.Config with the default v1 index-header format
+func testIndexHeaderV1Config() indexheader.Config {
+	return indexheader.Config{Version: indexheader.BinaryFormatV1}
+}
+
 func TestDefaultGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
 		input    block.ThanosMeta
@@ -119,7 +124,8 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	}
 
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
-	cfg := indexheader.Config{Version: indexheader.BinaryFormatV1, VerifyOnLoad: true}
+	cfg := testIndexHeaderV1Config()
+	cfg.VerifyOnLoad = true
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, testCase.ownJob, nil, 0, 0, false, 4, 4, m, 32, cfg, 8)
@@ -157,7 +163,8 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 	}))
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
-	cfg := indexheader.Config{Version: indexheader.BinaryFormatV1, VerifyOnLoad: true}
+	cfg := testIndexHeaderV1Config()
+	cfg.VerifyOnLoad = true
 	now := time.UnixMilli(1500002900159)
 	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, nil, nil, 0, 0, false, 4, 4, metrics, 32, cfg, 8)
 	require.NoError(t, err)

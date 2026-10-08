@@ -94,7 +94,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 			LazyLoadingIdleTimeout: idleTimeout,
 		}, gate.NewNoop(), metrics)
 
-		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{Version: BinaryFormatV1})
+		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
 		require.NoError(t, err)
 
 		// Ensure it can read data.
@@ -143,7 +143,7 @@ func TestReaderPool_OnDiskVersionMetric(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pool := newReaderPool(log.NewNopLogger(), Config{Version: BinaryFormatV1, LazyLoadingEnabled: lazyReaderEnabled}, gate.NewNoop(), metrics)
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{Version: BinaryFormatV1})
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
 			require.NoError(t, err)
 			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 
@@ -174,7 +174,7 @@ func TestReaderPool_OnDiskVersionMetricIdleUnload(t *testing.T) {
 		LazyLoadingIdleTimeout: idleTimeout,
 	}, gate.NewNoop(), metrics)
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{Version: BinaryFormatV1})
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
 	require.NoError(t, err)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 

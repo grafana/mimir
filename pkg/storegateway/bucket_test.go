@@ -78,6 +78,11 @@ func newGapBasedPartitionersHelper(maxGapBytes uint64) blockPartitioners {
 	return newGapBasedPartitioners(maxGapBytes, maxGapBytes, maxGapBytes, nil)
 }
 
+// testIndexHeaderV1Config creates indexheader.Config with the default v1 index-header format
+func testIndexHeaderV1Config() indexheader.Config {
+	return indexheader.Config{Version: indexheader.BinaryFormatV1}
+}
+
 func TestBucketBlock_matchLabels(t *testing.T) {
 	dir := t.TempDir()
 
@@ -303,7 +308,7 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 }
 
 func TestBlockLabelNames(t *testing.T) {
-	testBlockLabelNames(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
+	testBlockLabelNames(t, testIndexHeaderV1Config())
 }
 
 // TestBlockLabelNames_IndexHeaderBucketReader repeats TestBlockLabelNames
@@ -508,7 +513,7 @@ func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, o
 }
 
 func TestBlockLabelValues(t *testing.T) {
-	testBlockLabelValues(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
+	testBlockLabelValues(t, testIndexHeaderV1Config())
 }
 
 // TestBlockLabelValues_IndexHeaderBucketReader repeats TestBlockLabelValues
@@ -780,7 +785,7 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
-	testBucketIndexReaderExpandedPostings(t, indexheader.Config{Version: indexheader.BinaryFormatV1})
+	testBucketIndexReaderExpandedPostings(t, testIndexHeaderV1Config())
 }
 
 // TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader repeats TestBucketIndexReader_ExpandedPostings
@@ -1412,7 +1417,7 @@ func indexHeaderBucketReaderConfig() indexheader.Config {
 }
 
 func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, headerCfg ...indexheader.Config) func() *bucketBlock {
-	cfg := indexheader.Config{Version: indexheader.BinaryFormatV1}
+	cfg := testIndexHeaderV1Config()
 	if len(headerCfg) > 0 {
 		cfg = headerCfg[0]
 	}
@@ -2074,7 +2079,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -2113,7 +2118,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, testIndexHeaderV1Config(), mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -2353,7 +2358,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
-			IndexHeader:                 indexheader.Config{Version: indexheader.BinaryFormatV1},
+			IndexHeader:                 testIndexHeaderV1Config(),
 			StreamingBatchSize:          1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
