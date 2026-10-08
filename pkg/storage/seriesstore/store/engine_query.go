@@ -119,6 +119,41 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 	return &engineChunkSeriesSet{series: selected, index: -1}
 }
 
+// StreamedSeries is a selected series as a query response sends it.
+type StreamedSeries struct {
+	// The labels, which point into the store's own, and share arrays with the other series'.
+	Labels []mimirpb.LabelAdapter
+	// The chunks, in the encoding the store keeps them in. Their data stays valid until the querier is closed.
+	Chunks []chunks.Chunk
+}
+
+// SelectStreamed is Select for a response that streams the series: it returns them in label order with their labels as
+// adapters and their chunks as the store has them, without a series set and chunk iterators in between.
+func (q *engineChunkQuerier) SelectStreamed(hints *storage.SelectHints, matchers ...*promlabels.Matcher) ([]StreamedSeries, error) {
+	start, end := q.mint, q.maxt
+	if hints != nil {
+		start, end = max(start, hints.Start), min(end, hints.End)
+	}
+	compiled, err := compilePromMatchers(hints, matchers)
+	if err != nil {
+		return nil, err
+	}
+	selected, buffers, err := q.e.selectRaw(start, end, compiled)
+	if err != nil {
+		return nil, err
+	}
+	q.mu.Lock()
+	q.buffers = append(q.buffers, buffers...)
+	q.mu.Unlock()
+	var slab adapterSlab
+	out := make([]StreamedSeries, len(selected))
+	for index := range selected {
+		slab.remaining = len(selected) - index
+		out[index] = StreamedSeries{Labels: slab.adapters(selected[index].stored), Chunks: selected[index].chunks}
+	}
+	return out, nil
+}
+
 // rawSeries is a selected series: its labels, and its chunks with their own copy of the data.
 type rawSeries struct {
 	stored labels.Labels
