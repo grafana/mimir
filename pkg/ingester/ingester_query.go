@@ -609,6 +609,20 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hint
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
+	// An engine may build the response itself.
+	if streaming, ok := q.(streamingQuerier); ok {
+		stats, err := streaming.QueryStream(ctx, hints, matchers, streamBatching{
+			SeriesBatchSize:         queryStreamBatchSize,
+			ChunksBatchSize:         batchSize,
+			ChunksBatchMessageBytes: queryStreamBatchMessageSize,
+		}, func(response *client.QueryStreamResponse) error { return client.SendQueryStream(stream, response) })
+		if err != nil {
+			return 0, 0, err
+		}
+		spanlog.DebugLog("msg", "finished streaming the query", "series", stats.Series, "chunks", stats.Chunks, "batches", stats.Batches)
+		return stats.Series, stats.Samples, nil
+	}
+
 	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, hints, matchers, stream)
 	if err != nil {
 		return 0, 0, err
@@ -657,6 +671,30 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	sn.series = sn.series[:0]
 	sn.next = nil
 	chunkSeriesNodePool.Put(sn)
+}
+
+// streamingQuerier is implemented by a chunk querier whose engine builds the query response itself, which is what
+// sendStreamingQuerySeries and sendStreamingQueryChunks do for the others: the series in label order with their
+// labels, and then their chunks, in batches.
+type streamingQuerier interface {
+	// QueryStream selects the series, in label order, and sends them as response messages through send: the series
+	// batches, ended by one that says so, and then the chunk batches, cut as batching says.
+	QueryStream(ctx context.Context, hints *storage.SelectHints, matchers []*labels.Matcher, batching streamBatching, send func(*client.QueryStreamResponse) error) (streamStats, error)
+}
+
+// streamBatching is how a streamed response is cut into messages.
+type streamBatching struct {
+	// How many series a message of series has.
+	SeriesBatchSize int
+	// How many series a message of chunks has at most, and how many bytes: a series whose chunks would take the message
+	// over starts the next one.
+	ChunksBatchSize         uint64
+	ChunksBatchMessageBytes int
+}
+
+// streamStats is what a streamed response had.
+type streamStats struct {
+	Series, Samples, Chunks, Batches int
 }
 
 // labelAdapterSeries is a series that gives its labels as they are sent, which an engine that stores them another way can
