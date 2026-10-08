@@ -1072,7 +1072,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.34.1
+# github.com/prometheus/alertmanager v0.34.1 => github.com/prometheus/alertmanager v0.34.1
 ## explicit; go 1.25.0
 github.com/prometheus/alertmanager/alert
 github.com/prometheus/alertmanager/api
@@ -2169,6 +2169,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
+# github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261007153231-4582b0c28e5d
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260515134459-1798cf41aca7
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261002173312-a1d5f0fedb1c

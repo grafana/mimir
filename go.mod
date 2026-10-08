@@ -341,6 +341,10 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
+// Pin Alertmanager because Grafana Alerting keeps its integrations compatible with the
+// version Mimir imports. Coordinate version bumps with the Grafana Alerting team.
+replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
+
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261007153231-4582b0c28e5d
 
 // Replace memberlist with our fork which includes some changes that haven't been
