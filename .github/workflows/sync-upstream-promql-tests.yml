@@ -1,9 +1,9 @@
 name: Sync upstream PromQL test cases
 
 # When the vendoring bot opens a "[main] Update mimir-prometheus to ..." PR, re-sync
-# pkg/streamingpromql/testdata/upstream with the vendored upstream test cases and comment out the ones
-# Mimir's engine fails, so the PR doesn't fail TestOurUpstreamTestCasesAreInSyncWithUpstream /
-# TestUpstreamTestCases. See tools/sync-upstream-promql-tests/README.md.
+# pkg/streamingpromql/testdata/upstream with the vendored upstream test cases, so the PR doesn't fail
+# TestOurUpstreamTestCasesAreInSyncWithUpstream. Cases that then fail TestUpstreamTestCases are not
+# disabled automatically: someone on the MQE team decides. See tools/sync-upstream-promql-tests/README.md.
 #
 # This runs code from the PR (including newly vendored upstream code), so it has read-only access and no
 # secrets, and only uploads the results. commit-synced-upstream-promql-tests.yml then runs from main,
@@ -51,29 +51,11 @@ jobs:
           mkdir -p "$(dirname "$MIMIR_SYNC_REPORT")"
           touch "$MIMIR_SYNC_REPORT"
           (cd tools/sync-upstream-promql-tests && go run .)
-          cp -a pkg/streamingpromql/testdata/upstream "$RUNNER_TEMP/after-resync"
-
-      - name: Disable failing upstream PromQL test cases
-        env:
-          MIMIR_SYNC_REPORT: ${{ runner.temp }}/report/sync-report.md
-          MIMIR_SYNC_DISABLED: ${{ runner.temp }}/report/disabled-cases.md
-          # The re-sync isn't committed, so the checked-out commit still has the pre-sync copies, which
-          # the disabling step compares against to tell new upstream cases from existing ones.
-          MIMIR_SYNC_BASELINE_REF: ${{ github.event.pull_request.head.sha }}
-        run: |
-          cd tools/disable-failing-upstream-promql-tests && go run .
 
       - name: Upload re-synced test cases
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: after-resync
-          path: ${{ runner.temp }}/after-resync
-          retention-days: 1
-
-      - name: Upload test cases after disabling
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: after-disable
           path: pkg/streamingpromql/testdata/upstream
           retention-days: 1
 

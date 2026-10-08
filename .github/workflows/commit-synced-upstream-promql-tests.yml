@@ -2,8 +2,8 @@ name: Commit synced upstream PromQL test cases
 
 # Second half of sync-upstream-promql-tests.yml, which runs the sync tools on a new mimir-prometheus
 # vendoring PR without write access. This runs from main after it completes, checks that the PR is the
-# vendoring bot's own and unchanged since the sync ran, and pushes the generated test cases to it as two
-# verified commits (re-sync, then disable). It never runs code from the PR or from the artifacts.
+# vendoring bot's own and unchanged since the sync ran, and pushes the re-synced test cases to it as a
+# verified commit. It never runs code from the PR or from the artifacts.
 
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] no code from the PR or the artifacts is run, and the artifacts are validated before being committed
@@ -108,14 +108,6 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      - name: Download test cases after disabling
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: after-disable
-          path: ${{ runner.temp }}/after-disable
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-
       - name: Download sync report
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -129,14 +121,13 @@ jobs:
       - name: Validate downloaded test cases
         run: |
           set -euo pipefail
-          for dir in "$RUNNER_TEMP/after-resync" "$RUNNER_TEMP/after-disable"; do
-            unexpected=$(find "$dir" -mindepth 1 \( ! -type f -o -path "$dir/*/*" -o ! \( -name '*.test' -o -name '*.test.disabled' -o -name README.md \) \) -print)
-            if [ -n "$unexpected" ]; then
-              echo "::error::Unexpected entries in the $(basename "$dir") artifact:"
-              echo "$unexpected"
-              exit 1
-            fi
-          done
+          dir="$RUNNER_TEMP/after-resync"
+          unexpected=$(find "$dir" -mindepth 1 \( ! -type f -o -path "$dir/*/*" -o ! \( -name '*.test' -o -name '*.test.disabled' -o -name README.md \) \) -print)
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected entries in the $(basename "$dir") artifact:"
+            echo "$unexpected"
+            exit 1
+          fi
 
       # Use the mimir-vendoring app (not GITHUB_TOKEN) so the pushed commits are verified and re-trigger
       # the PR's CI. Also minted in dry-run mode, to check the token config works before relying on it.
@@ -163,64 +154,16 @@ jobs:
           rm -rf "$UPSTREAM_DIR"
           cp -r "$RUNNER_TEMP/after-resync" "$UPSTREAM_DIR"
 
-      - name: Describe what would be committed
-        if: env.DRY_RUN == 'true'
-        run: |
-          set -euo pipefail
-          resync=$(git status --short -- "$UPSTREAM_DIR")
-          # git diff --no-index exits 1 when the directories differ.
-          disable=$(git -C "$RUNNER_TEMP" diff --no-index --stat after-resync after-disable) || true
-          {
-            echo "Dry run: nothing was committed. It would have committed:"
-            echo
-            echo '1. Re-sync upstream PromQL test cases:'
-            echo '```'
-            echo "${resync:-(no changes)}"
-            echo '```'
-            echo '2. Disable upstream PromQL test cases unsupported by Mimir'"'"'s engine:'
-            echo '```'
-            echo "${disable:-(no changes)}"
-            echo '```'
-            echo
-          } > "$RUNNER_TEMP/dry-run.md"
+      - name: List the re-synced files
+        run: git status --short -- "$UPSTREAM_DIR" > "$RUNNER_TEMP/changes.txt"
 
-      # Commit 1, signed and verified via the GitHub API (a plain git push would be unverified and
-      # blocked by branch protection).
+      # Signed and verified via the GitHub API (a plain git push would be unverified and blocked by
+      # branch protection). Only pushes if the re-sync changed anything.
       - name: Commit re-sync
-        id: commit-resync
         if: env.DRY_RUN != 'true'
         uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: Re-sync upstream PromQL test cases
-          repo: ${{ github.repository }}
-          branch: ${{ env.BRANCH }}
-          file_pattern: ${{ env.UPSTREAM_DIR }}/*
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      # Move HEAD to commit 1 so commit 2 goes on top of it (and fails if anything else was pushed).
-      - name: Check out the re-sync commit's test cases
-        if: env.DRY_RUN != 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          # commit-hash is empty when there was nothing to re-sync.
-          ref: ${{ steps.commit-resync.outputs.commit-hash || github.event.workflow_run.head_sha }}
-          persist-credentials: false
-          sparse-checkout: ${{ env.UPSTREAM_DIR }}/
-          sparse-checkout-cone-mode: false
-
-      - name: Stage test cases after disabling
-        if: env.DRY_RUN != 'true'
-        run: |
-          rm -rf "$UPSTREAM_DIR"
-          cp -r "$RUNNER_TEMP/after-disable" "$UPSTREAM_DIR"
-
-      # Commit 2 (only pushes if the disabling step changed anything), same verified path.
-      - name: Commit disabled cases
-        if: env.DRY_RUN != 'true'
-        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
-        with:
-          commit_message: Disable upstream PromQL test cases unsupported by Mimir's engine
           repo: ${{ github.repository }}
           branch: ${{ env.BRANCH }}
           file_pattern: ${{ env.UPSTREAM_DIR }}/*
@@ -235,27 +178,31 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ steps.check.outputs.pr }}
           REPORT: ${{ runner.temp }}/report/sync-report.md
-          DISABLED: ${{ runner.temp }}/report/disabled-cases.md
-          DRY_RUN_REPORT: ${{ runner.temp }}/dry-run.md
+          CHANGES: ${{ runner.temp }}/changes.txt
         run: |
           set -euo pipefail
-          if [ ! -s "$REPORT" ]; then
-            echo "No sync report; not commenting."
+          if [ ! -s "$CHANGES" ]; then
+            echo "Nothing re-synced; not commenting."
             exit 0
           fi
           {
             echo "## Upstream PromQL test-case sync"
             echo
-            if [ -s "$DRY_RUN_REPORT" ]; then cat "$DRY_RUN_REPORT"; fi
-            cat "$REPORT"
-            # Mention the MQE owners (the same as test-build-deploy.yml's notify-streamingpromql-failures)
-            # whenever cases that weren't already disabled get disabled, since CI then passes and doesn't
-            # notify them. The disabling step lists only those cases in DISABLED. Not in dry-run mode, as CI
-            # still fails then.
-            if [ ! -s "$DRY_RUN_REPORT" ] && [ -s "$DISABLED" ]; then
-              echo
-              echo 'cc @charleskorn @56quarters @lamida @zenador @tcp13equals2'
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo 'Dry run: nothing was committed. It would have committed "Re-sync upstream PromQL test cases" with:'
+            else
+              echo 'Committed "Re-sync upstream PromQL test cases" with:'
             fi
+            echo '```'
+            cat "$CHANGES"
+            echo '```'
+            echo
+            if [ -s "$REPORT" ]; then cat "$REPORT"; echo; fi
+            # No cases are disabled automatically. If some now fail, CI fails and test-build-deploy.yml's
+            # notify-streamingpromql-failures mentions the MQE team.
+            cat <<'EOF'
+          If `TestUpstreamTestCases` now fails, see [Fixing a failing mimir-prometheus vendoring PR](https://github.com/grafana/mimir/blob/main/tools/sync-upstream-promql-tests/README.md#fixing-a-failing-mimir-prometheus-vendoring-pr).
+          EOF
           } > "$RUNNER_TEMP/comment.md"
           gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"
 
@@ -266,7 +213,8 @@ jobs:
         run: |
           {
             echo "## Upstream PromQL test-case sync"
-            if [ -s "$REPORT" ]; then cat "$REPORT"; else echo "No sync report."; fi
+            if [ -s "$RUNNER_TEMP/changes.txt" ]; then echo '```'; cat "$RUNNER_TEMP/changes.txt"; echo '```'; else echo "Nothing re-synced."; fi
+            if [ -s "$REPORT" ]; then cat "$REPORT"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment on the PR that the sync failed
