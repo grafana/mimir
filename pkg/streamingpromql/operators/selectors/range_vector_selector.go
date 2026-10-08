@@ -165,7 +165,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
-	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets)
+	if err := m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets); err != nil {
+		return nil, err
+	}
 
 	// Pre-mutation snapshot of buffer counts. We use this to detect mixed-type ranges in the
 	// extended look-back/look-ahead window for the anchored/smoothed paths, matching Prometheus's

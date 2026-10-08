@@ -1,33 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/promqltest/test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors
 
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/grafana/regexp"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
 	"github.com/grafana/mimir/pkg/util/fs"
-)
-
-var (
-	// These expressions are taken directly from the promqltest package, and are what it uses to parse eval commands.
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|info|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
 
 func main() {
@@ -90,8 +77,7 @@ func run() error {
 }
 
 type disabledTest struct {
-	isInstant  bool
-	expr       string
+	evalLine   string
 	lineNumber int
 }
 
@@ -106,15 +92,14 @@ func getDisabledTests(testFile string) ([]disabledTest, error) {
 	var disabledTests []disabledTest
 
 	for lineIdx, line := range lines {
-		if line == "# Unsupported by streaming engine." {
+		if line == upstreamtestdata.UnsupportedMarker {
 			testLineNumber := lineIdx + 2
 			testLine := strings.TrimSpace(strings.TrimPrefix(lines[lineIdx+1], "#"))
-			test, err := parseDisabledTest(testLine, testLineNumber)
-			if err != nil {
-				return nil, err
+			if !upstreamtestdata.IsEval(testLine) {
+				return nil, fmt.Errorf("could not parse test on line %v (%v)", testLineNumber, testLine)
 			}
 
-			disabledTests = append(disabledTests, test)
+			disabledTests = append(disabledTests, disabledTest{evalLine: testLine, lineNumber: testLineNumber})
 		}
 	}
 
@@ -138,57 +123,27 @@ func getAllTests(testFile string) ([]disabledTest, error) {
 
 		testLineNumber := lineIdx + 1
 		testLine := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		test, err := parseDisabledTest(testLine, testLineNumber)
-		if err != nil {
-			return nil, err
+		if !upstreamtestdata.IsEval(testLine) {
+			return nil, fmt.Errorf("could not parse test on line %v (%v)", testLineNumber, testLine)
 		}
 
-		disabledTests = append(disabledTests, test)
+		disabledTests = append(disabledTests, disabledTest{evalLine: testLine, lineNumber: testLineNumber})
 	}
 
 	return disabledTests, nil
 }
 
-func parseDisabledTest(line string, lineNumber int) (disabledTest, error) {
-	instantParts := patEvalInstant.FindStringSubmatch(line)
-	rangeParts := patEvalRange.FindStringSubmatch(line)
-
-	if instantParts == nil && rangeParts == nil {
-		return disabledTest{}, fmt.Errorf("could not parse test on line %v (%v)", lineNumber, line)
-	}
-
-	if instantParts != nil {
-		return disabledTest{
-			isInstant:  true,
-			expr:       instantParts[3],
-			lineNumber: lineNumber,
-		}, nil
-	}
-
-	return disabledTest{
-		isInstant:  false,
-		expr:       rangeParts[5],
-		lineNumber: lineNumber,
-	}, nil
-}
-
 func checkForSupportedTests(tests []disabledTest, engine promql.QueryEngine) error {
 	for _, test := range tests {
-		var q promql.Query
-		var err error
-
-		if test.isInstant {
-			q, err = engine.NewInstantQuery(context.Background(), nil, nil, test.expr, timestamp.Time(0))
-		} else {
-			q, err = engine.NewRangeQuery(context.Background(), nil, nil, test.expr, timestamp.Time(0), timestamp.Time(1000), time.Millisecond)
+		switch result, err := upstreamtestdata.ClassifyEval(context.Background(), engine, test.evalLine); result {
+		case upstreamtestdata.BuildOK:
+			fmt.Printf("> Disabled test case on line %v (%v) is supported!\n", test.lineNumber, test.evalLine)
+		case upstreamtestdata.BuildError:
+			fmt.Printf("> Warning: could not check disabled test case on line %v (%v): %v\n", test.lineNumber, test.evalLine, err)
+		case upstreamtestdata.BuildNotEval:
+			fmt.Printf("> Warning: could not parse disabled test case on line %v (%v)\n", test.lineNumber, test.evalLine)
 		}
-
-		if err == nil {
-			q.Close()
-			fmt.Printf("> Disabled test case on line %v (%v) is supported!\n", test.lineNumber, test.expr)
-		} else if err != nil && !errors.Is(err, compat.NotSupportedError{}) {
-			fmt.Printf("> Warning: could not check disabled test case on line %v (%v): %v\n", test.lineNumber, test.expr, err)
-		}
+		// BuildUnsupported is the expected case for a disabled test; nothing to report.
 	}
 
 	return nil

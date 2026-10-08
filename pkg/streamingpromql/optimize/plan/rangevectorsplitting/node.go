@@ -29,6 +29,7 @@ func init() {
 
 //node:generate
 type SplitFunctionCall struct {
+	core.NodeIdentifier
 	*SplitFunctionCallDetails
 	Inner *core.FunctionCall `node:"child"`
 }
@@ -304,7 +305,12 @@ func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]
 	cacheKeyParams.CacheDisabled = false
 
 	plan := &planning.QueryPlan{Root: node, Parameters: &cacheKeyParams}
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(
+		planning.QueryPlanEncodingOptions{
+			IncludeDescriptions: false,
+			IncludeDetails:      true,
+			IncludeNodeId:       false,
+		})
 	if err != nil {
 		return nil, fmt.Errorf("encoding %T for splitting cache key: %w", node, err)
 	}

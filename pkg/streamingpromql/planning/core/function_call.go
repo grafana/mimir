@@ -23,6 +23,7 @@ import (
 
 //node:generate
 type FunctionCall struct {
+	NodeIdentifier
 	*FunctionCallDetails
 	Args []planning.Node `json:"-" node:"children,labelfmt=param %d"`
 }
