@@ -156,6 +156,110 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 	}
 }
 
+func TestIngesterSearchLabelValuesWithMetricMatcher(t *testing.T) {
+	const (
+		bigMetric   = "big_metric"
+		smallMetric = "small_metric"
+	)
+	var series []util_test.Series
+	add := func(metric, tenant string) {
+		series = append(series, util_test.Series{
+			Labels:  labels.FromStrings(model.MetricNameLabel, metric, "cluster", "c", "tenant", tenant),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		})
+	}
+	// bigMetric matches far more series than 1/100 of the tenant values, so
+	// TSDB takes the per-value postings path; smallMetric takes the series path.
+	for n := 0; n < 300; n++ {
+		add(bigMetric, fmt.Sprintf("tenant-%03d", n))
+	}
+	for _, v := range []string{"Example-1", "Example-2", "Example-3"} {
+		add(bigMetric, v)
+	}
+	add(smallMetric, "tenant-001")
+	add(smallMetric, "Example-1")
+	// A value that matches the term but is not on bigMetric must not be returned.
+	add("other_metric", "example-elsewhere")
+
+	registry := prometheus.NewRegistry()
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	tests := []struct {
+		name       string
+		metric     string
+		filter     *client.SearchFilter
+		ordering   client.SearchOrdering
+		limit      int64
+		wantValues []string
+	}{
+		{
+			name:       "postings path, selective term",
+			metric:     bigMetric,
+			filter:     &client.SearchFilter{Terms: []string{"example"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+			wantValues: []string{"Example-1", "Example-2", "Example-3"},
+		},
+		{
+			name:       "postings path, expression with NOT",
+			metric:     bigMetric,
+			filter:     &client.SearchFilter{Expression: "example and not 2", CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+			wantValues: []string{"Example-1", "Example-3"},
+		},
+		{
+			name:   "postings path, no value passes the filter",
+			metric: bigMetric,
+			filter: &client.SearchFilter{Terms: []string{"nomatch"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+		},
+		{
+			name:       "postings path, limit",
+			metric:     bigMetric,
+			filter:     &client.SearchFilter{Terms: []string{"example"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+			limit:      2,
+			wantValues: []string{"Example-1", "Example-2"},
+		},
+		{
+			name:       "postings path, score ordering",
+			metric:     bigMetric,
+			filter:     &client.SearchFilter{Terms: []string{"tenant-29"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+			ordering:   client.ORDER_BY_SCORE_DESC,
+			wantValues: []string{"tenant-290", "tenant-291", "tenant-292", "tenant-293", "tenant-294", "tenant-295", "tenant-296", "tenant-297", "tenant-298", "tenant-299"},
+		},
+		{
+			name:       "series path, selective term",
+			metric:     smallMetric,
+			filter:     &client.SearchFilter{Terms: []string{"example"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+			wantValues: []string{"Example-1"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &client.SearchLabelValuesRequest{
+				StartTimestampMs: 0,
+				EndTimestampMs:   200_000,
+				Name:             "tenant",
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: tc.metric},
+					{Type: client.EQUAL, Name: "cluster", Value: "c"},
+				},
+				Filter:   tc.filter,
+				Ordering: tc.ordering,
+				Limit:    tc.limit,
+			}
+			s := &mockSearchLabelValuesStream{ctx: ctx}
+			require.NoError(t, i.SearchLabelValues(req, s))
+
+			var got []string
+			for _, b := range s.sent {
+				for _, r := range b.Results {
+					got = append(got, r.Value)
+				}
+			}
+			assert.Equal(t, tc.wantValues, got)
+		})
+	}
+}
+
 type mockSearchMetricsMetadataStream struct {
 	client.Ingester_SearchMetricsMetadataServer
 	ctx  context.Context

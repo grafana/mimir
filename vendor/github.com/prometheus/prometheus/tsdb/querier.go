@@ -121,6 +121,12 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		labelHints.Limit = hints.Limit
 		labelHints.LimitSmallest = true
 	}
+	if hints.Filter != nil {
+		labelHints.ValueFilter = func(v string) bool {
+			accepted, _ := hints.Filter.Accept(v)
+			return accepted
+		}
+	}
 
 	var (
 		values []string
@@ -567,6 +573,25 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 
 		// If we haven't reached end of postings, we prepend our expanded postings to "p", and continue.
 		p = newPrependPostings(expanded, p)
+	}
+
+	// The filter runs only now, so the series check above still compares
+	// against the unfiltered value count; filtering first would push small
+	// matcher sets off the cheaper series path.
+	if hints != nil && hints.ValueFilter != nil {
+		filteredValues := allValues[:0]
+		for i, v := range allValues {
+			if (i+1)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if hints.ValueFilter(v) {
+				filteredValues = append(filteredValues, v)
+			}
+		}
+		allValues = filteredValues
+		if len(allValues) == 0 {
+			return nil, nil
+		}
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))

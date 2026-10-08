@@ -335,6 +335,11 @@ type LabelHints struct {
 	// LimitSmallest requires Limit and will select the lexically smallest N
 	// values of the full set.
 	LimitSmallest bool
+
+	// ValueFilter is advisory: a reader may drop values it rejects before the
+	// per-value postings work, but callers must still filter the results, as
+	// a reader is free to ignore it.
+	ValueFilter func(value string) bool
 }
 
 // AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
