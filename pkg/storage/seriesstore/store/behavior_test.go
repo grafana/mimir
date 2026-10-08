@@ -1019,3 +1019,33 @@ func TestCachedSelectorsSelectTheSameSeriesAsAScan(t *testing.T) {
 	add(100)
 	check()
 }
+
+// What the selectors keep is bounded: a selector that matches many series in a shard isn't kept, and the cache drops
+// what it holds when it holds too much.
+func TestSelectorCacheIsBounded(t *testing.T) {
+	var cache selectorCache
+	selector := cache.get("a", 2)
+	require.Same(t, selector, cache.get("a", 2))
+	selector.keep(0, &cachedShard{refs: make([]seriesRef, 10)})
+	selector.keep(0, &cachedShard{refs: make([]seriesRef, 4)})
+	require.Equal(t, int64(4), cache.refs.Load(), "a shard's refs replace the ones it had")
+	inserted := maxCachedTotalRefs/maxCachedRefs + 2
+	for index := range inserted {
+		cache.get(fmt.Sprint(index), 2).keep(0, &cachedShard{refs: make([]seriesRef, maxCachedRefs)})
+	}
+	require.Less(t, cache.refs.Load(), int64(maxCachedTotalRefs), "dropped once past the limit")
+	require.Less(t, len(cache.selectors), inserted)
+
+	// A selector with more matches in a shard than the limit is scanned each time.
+	byName := newSeriesByName()
+	for id := range 2 * maxCachedRefs {
+		stored := labels.FromStrings("__name__", "metric", "pod", fmt.Sprint(id))
+		byName.insert(stored.Hash(), stored, Series{})
+	}
+	compiled, err := compileMatchers([]LabelMatcher{matcher(0, "__name__", "metric")})
+	require.NoError(t, err)
+	name, rest, _ := cacheableName(compiled)
+	cached := cache.get(selectorKey(compiled), 1)
+	byName.matchingCached(cached, 0, name, nil, compiled, rest, func(*seriesEntry) bool { return true })
+	require.Nil(t, cached.shards[0].Load())
+}
