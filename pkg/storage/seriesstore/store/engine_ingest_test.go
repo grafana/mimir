@@ -729,3 +729,48 @@ func BenchmarkEngineIngestScattered(b *testing.B) {
 	})
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*batchSize), "ns/series")
 }
+
+// BenchmarkEngineSelectRepeated is a selector that rulers and dashboards send again and again: the same name and
+// matchers, over a name with many series of which few match, which a lookup finds by scanning the name's series of each
+// shard.
+func BenchmarkEngineSelectRepeated(b *testing.B) {
+	ctx := context.Background()
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 64, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(ctx)
+	const names, perName = 20, 100_000
+	for n := range names * perName {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%names), "cluster", fmt.Sprintf("c%d", n/names%12), "job", fmt.Sprintf("job-%d", n/names%500), "namespace", fmt.Sprintf("ns-%d", n/names%300), "pod", fmt.Sprintf("pod-%d", n/names)), 1_000, 1)
+		require.NoError(b, err)
+		if n%100_000 == 99_999 {
+			require.NoError(b, app.Commit())
+			app = engine.Appender(ctx)
+		}
+	}
+	require.NoError(b, app.Commit())
+	name := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
+	for label, matchers := range map[string][]*promlabels.Matcher{
+		"regex":        {name, promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-(1|2|3)"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "cluster", "c5")},
+		"two-equal":    {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "c5"), promlabels.MustNewMatcher(promlabels.MatchEqual, "namespace", "ns-17")},
+		"not-regex":    {name, promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "namespace", "ns-([1-9]|[0-9][0-9]|.*[0-8])")},
+		"selective-eq": {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "pod-77")},
+	} {
+		b.Run(label, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				q, err := engine.ChunkQuerier(0, 10_000)
+				require.NoError(b, err)
+				set := q.Select(ctx, true, nil, matchers...)
+				selected := 0
+				for set.Next() {
+					selected++
+				}
+				require.NoError(b, set.Err())
+				require.NotZero(b, selected)
+				_ = q.Close()
+			}
+		})
+	}
+}

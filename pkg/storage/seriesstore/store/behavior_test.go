@@ -959,3 +959,63 @@ func TestDictionariesSelectTheSameSeriesAsAFullScan(t *testing.T) {
 	byName.retain(func(entry *seriesEntry) bool { return entry.hash%3 != 0 })
 	check()
 }
+
+// A selector that comes in again is answered from what it matched before, until the name's series change: what it
+// returns is what a scan of the series does, through series added and removed, for each query shard.
+func TestCachedSelectorsSelectTheSameSeriesAsAScan(t *testing.T) {
+	byName := newSeriesByName()
+	next := uint64(0)
+	add := func(count int) {
+		for range count {
+			id := next
+			next++
+			pairs := [][2]string{{"__name__", "metric"}, {"job", fmt.Sprintf("job_%d", id%7)}, {"pod", fmt.Sprintf("pod_%d", id)}}
+			if id%3 == 0 {
+				pairs = append(pairs, [2]string{"zone", fmt.Sprintf("zone_%d", id%5)})
+			}
+			slices.SortFunc(pairs, comparePairs)
+			stored := labels.FromSorted(pairs)
+			byName.insert(stored.Hash(), stored, Series{shardHash: id})
+		}
+	}
+	add(2000)
+	cases := [][]LabelMatcher{
+		{matcher(0, "__name__", "metric"), matcher(2, "job", "job_(1|3)")},
+		{matcher(0, "__name__", "metric"), matcher(0, "job", "job_2"), matcher(1, "zone", "zone_1")},
+		{matcher(0, "__name__", "metric"), matcher(3, "zone", "zone_.*")},
+		{matcher(0, "__name__", "metric"), matcher(0, "pod", "pod_10")},
+	}
+	var cache selectorCache
+	check := func() {
+		for _, c := range cases {
+			compiled, err := compileMatchers(c)
+			require.NoError(t, err)
+			name, rest, ok := cacheableName(compiled)
+			require.True(t, ok)
+			selector := cache.get(selectorKey(compiled), 1)
+			// Twice: the first time scans and keeps what it found, the second reads it.
+			for range 2 {
+				var expected, actual []uint64
+				byName.matching(compiled, func(entry *seriesEntry) bool {
+					expected = append(expected, entry.hash)
+					return true
+				})
+				byName.matchingCached(selector, 0, name, nil, compiled, rest, func(entry *seriesEntry) bool {
+					actual = append(actual, entry.hash)
+					return true
+				})
+				slices.Sort(expected)
+				slices.Sort(actual)
+				require.Equal(t, expected, actual, "%v", c)
+			}
+		}
+	}
+	check()
+	// Series added, and then removed, change what the selectors match.
+	add(500)
+	check()
+	byName.retain(func(entry *seriesEntry) bool { return entry.series.shardHash%4 != 0 })
+	check()
+	add(100)
+	check()
+}
