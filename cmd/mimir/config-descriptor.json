@@ -6003,6 +6003,17 @@
         },
         {
           "kind": "field",
+          "name": "histogram_chunk_encoding",
+          "required": false,
+          "desc": "Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st.",
+          "fieldValue": null,
+          "fieldDefaultValue": "histogram",
+          "fieldFlag": "blocks-storage.tsdb.histogram-chunk-encoding",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",

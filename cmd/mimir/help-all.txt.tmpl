@@ -885,6 +885,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.histogram-chunk-encoding string
+    	[experimental] Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st. (default "histogram")
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled

@@ -4711,6 +4711,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
 
+# (experimental) Encoding used for integer and float native histogram chunks
+# written for this tenant by the ingester and block-builder. Supported values
+# are: histogram, histogram_st.
+# CLI flag: -blocks-storage.tsdb.histogram-chunk-encoding
+[histogram_chunk_encoding: <string> | default = "histogram"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
