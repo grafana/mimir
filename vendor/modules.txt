@@ -673,7 +673,7 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20261008090416-c9d8893130af
+# github.com/grafana/dskit v0.0.0-20261008154447-20e0d1956aa6
 ## explicit; go 1.26.7
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
