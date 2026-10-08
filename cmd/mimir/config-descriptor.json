@@ -11655,7 +11655,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.",
+                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.version=2. Supported values: memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.bucket-store.index-header-cache.backend",
@@ -12799,36 +12799,15 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "bucket_reader",
+                  "kind": "field",
+                  "name": "version",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "enabled",
-                      "required": false,
-                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "index_sections",
-                      "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "postings-offsets-table",
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
-                    }
-                  ],
+                  "desc": "Index-header format version. Version 1 keeps the symbols and postings offsets tables on local disk. Version 2 keeps only the symbols table on local disk and reads the postings offsets table from the TSDB index in object storage.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.version",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
