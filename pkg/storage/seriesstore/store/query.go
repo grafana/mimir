@@ -213,6 +213,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	var result map[labels.Labels]*coldCandidateSeries
 	// Like the head's, each regex matcher's result for the label values it saw.
 	remembered := make([]map[string]bool, len(coldLabels))
+	var pairs [][2]string
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
 		if table == nil || table.minTime > end || table.maxTime < start {
@@ -284,7 +285,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			if !matched {
 				continue
 			}
-			stored := series.labels()
+			stored := series.labelsInto(&pairs)
 			if result == nil {
 				result = map[labels.Labels]*coldCandidateSeries{}
 			}

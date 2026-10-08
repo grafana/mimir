@@ -522,12 +522,12 @@ func (b *coldBlock) metricNamesOf(table *coldTenantIndex) []coldMetricName {
 	return table.metricNames
 }
 
-// posting returns the series with name="value", or none when the name never appears here, so
-// nothing does.
-func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32 {
+// postingRef finds the posting list of name="value": where it is and how many series it has, which needs no copy of it.
+// The name never appearing here, or the value, is a list of none.
+func (b *coldBlock) postingRef(table *coldTenantIndex, name, value string) (offset uint32, count int) {
 	local, ok := b.localIDs[name]
 	if !ok {
-		return nil
+		return 0, 0
 	}
 	hash := labels.ValueHash(value)
 	low := sort.Search(table.postingsCount, func(index int) bool {
@@ -535,13 +535,28 @@ func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32
 		return entryName > local || entryName == local && entryHash >= hash
 	})
 	if low == table.postingsCount {
-		return nil
+		return 0, 0
 	}
 	entryName, entryHash, offset := b.entry(table, low)
 	if entryName != local || entryHash != hash {
+		return 0, 0
+	}
+	return offset, b.listLen(table, offset)
+}
+
+// listLen is how many series a posting list has.
+func (b *coldBlock) listLen(table *coldTenantIndex, offset uint32) int {
+	return int(binary.LittleEndian.Uint32(b.data[table.postingsTable+table.postingsCount*16+int(offset):]))
+}
+
+// posting returns the series with name="value", or none when the name never appears here, so
+// nothing does.
+func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32 {
+	offset, count := b.postingRef(table, name, value)
+	if count == 0 {
 		return nil
 	}
-	return b.list(table, offset, nil)
+	return b.list(table, offset, make([]uint32, 0, count))
 }
 
 // candidates returns indexes of the tenant's series that may match matchers: the smallest posting
@@ -552,14 +567,22 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 	if table == nil {
 		return nil
 	}
+	// The lists are measured, and only the smallest is read: the others were copied just to be left out.
 	var best []uint32
+	bestSize := -1
+	var bestLists []uint32
 	hasBest := false
 	for index := range matchers {
 		matcher := &matchers[index]
-		var list []uint32
+		var offsets []uint32
+		size := 0
 		switch {
 		case matcher.kind == kindEqual && matcher.value != "":
-			list = b.posting(table, matcher.name, matcher.value)
+			offset, count := b.postingRef(table, matcher.name, matcher.value)
+			if count > 0 {
+				offsets = append(offsets, offset)
+			}
+			size = count
 		case matcher.kind == kindRegex && !matcher.re.isMatch(""):
 			// A regex that accepts few values, not the empty one, takes their postings.
 			values, ok := matcher.re.acceptedValues()
@@ -567,15 +590,29 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 				continue
 			}
 			for _, value := range values {
-				list = append(list, b.posting(table, matcher.name, value)...)
+				if offset, count := b.postingRef(table, matcher.name, value); count > 0 {
+					offsets = append(offsets, offset)
+					size += count
+				}
 			}
-			slices.Sort(list)
-			list = slices.Compact(list)
 		default:
 			continue
 		}
-		if !hasBest || len(list) < len(best) {
-			best, hasBest = list, true
+		if !hasBest || size < bestSize {
+			hasBest, bestSize, bestLists = true, size, offsets
+		}
+	}
+	if hasBest {
+		best = make([]uint32, 0, bestSize)
+		for _, offset := range bestLists {
+			best = b.list(table, offset, best)
+		}
+		if len(bestLists) > 1 {
+			slices.Sort(best)
+			best = slices.Compact(best)
+		}
+		if len(best) == 0 {
+			best = nil
 		}
 	}
 	if !hasBest {
@@ -613,9 +650,10 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 func (b *coldBlock) labelsHash(table *coldTenantIndex, index int) uint64 {
 	table.labelHashesOnce.Do(func() {
 		hashes := make([]uint64, table.seriesCount)
+		var pairs [][2]string
 		for series := range hashes {
 			s := b.seriesIn(table, series)
-			hashes[series] = s.labels().Hash()
+			hashes[series] = s.labelsInto(&pairs).Hash()
 		}
 		table.labelHashes = hashes
 	})
@@ -692,8 +730,21 @@ func (s *coldSeries) Get(name string) string {
 // labels returns the series' labels, copied out of the block.
 func (s *coldSeries) labels() labels.Labels {
 	var pairs [][2]string
-	s.Range(func(name, value string) { pairs = append(pairs, [2]string{name, value}) })
-	return labels.FromSorted(pairs)
+	return s.labelsInto(&pairs)
+}
+
+// labelsInto is labels with a buffer for the pairs that callers keep between series: growing one for each was most of
+// what a lookup of cold series allocated.
+func (s *coldSeries) labelsInto(pairs *[][2]string) labels.Labels {
+	*pairs = (*pairs)[:0]
+	rest := s.encoded
+	for len(rest) > 0 {
+		name := s.block.names[takeUvarintString(&rest)]
+		size := takeUvarintString(&rest)
+		*pairs = append(*pairs, [2]string{name, rest[:size]})
+		rest = rest[size:]
+	}
+	return labels.FromSorted(*pairs)
 }
 
 func (s *coldSeries) chunkIter() chunkIter {
