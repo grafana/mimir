@@ -734,12 +734,17 @@ func BenchmarkEngineIngestScattered(b *testing.B) {
 // matchers, over a name with many series of which few match, which a lookup finds by scanning the name's series of each
 // shard.
 func BenchmarkEngineSelectRepeated(b *testing.B) {
+	// Names with many series, and names with a few in each shard, which is most of what a tenant has.
+	b.Run("big-names", func(b *testing.B) { benchmarkSelectRepeated(b, 20, 100_000) })
+	b.Run("small-names", func(b *testing.B) { benchmarkSelectRepeated(b, 500, 2048) })
+}
+
+func benchmarkSelectRepeated(b *testing.B, names, perName int) {
 	ctx := context.Background()
 	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 64, SecondaryHashFunction: secondaryHash})
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = engine.Close() })
 	app := engine.Appender(ctx)
-	const names, perName = 20, 100_000
 	for n := range names * perName {
 		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%names), "cluster", fmt.Sprintf("c%d", n/names%12), "job", fmt.Sprintf("job-%d", n/names%500), "namespace", fmt.Sprintf("ns-%d", n/names%300), "pod", fmt.Sprintf("pod-%d", n/names)), 1_000, 1)
 		require.NoError(b, err)
