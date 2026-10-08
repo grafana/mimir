@@ -1063,36 +1063,6 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 				cfg.Compactor.DataDir = "/path/to/data/compactor"
 			},
 		},
-		"should fail if backfill-api storage filesystem directory and blocks storage filesystem directory overlap": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Compactor, BackfillAPI}
-				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
-				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
-				cfg.BackfillAPI.Storage.Backend = bucket.Filesystem
-				cfg.BackfillAPI.Storage.Filesystem.Directory = "/path/to/data"
-			},
-			expectedErr: `the configured blocks storage filesystem directory "/path/to/data" cannot overlap with the configured backfill-api storage filesystem directory "/path/to/data"`,
-		},
-		"should succeed if backfill-api storage shares the blocks storage filesystem directory under a different prefix": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Compactor, BackfillAPI}
-				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
-				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
-				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
-				cfg.BackfillAPI.Storage.Backend = bucket.Filesystem
-				cfg.BackfillAPI.Storage.Filesystem.Directory = "/path/to/data"
-				cfg.BackfillAPI.Storage.StoragePrefix = "backfill-api"
-			},
-		},
-		"should succeed if backfill-api storage overlaps blocks storage but backfill-api is not targeted": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Compactor}
-				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
-				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
-				cfg.BackfillAPI.Storage.Backend = bucket.Filesystem
-				cfg.BackfillAPI.Storage.Filesystem.Directory = "/path/to/data"
-			},
-		},
 		"should fail if tsdb directory and blocks storage filesystem directory overlap": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{Ingester}

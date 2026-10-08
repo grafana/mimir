@@ -68,7 +68,7 @@ func TestAPI_BlockUpload(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, do(a.FinishBlockUpload, jobID, "", nil).StatusCode)
 
-	blockPath := path.Join(blocksPathPrefix, jobID, testBlockID)
+	blockPath := path.Join(BucketPrefix, blocksPathPrefix, jobID, testBlockID)
 	assert.Equal(t, []string{
 		path.Join(blockPath, "chunks/000001"),
 		path.Join(blockPath, "index"),

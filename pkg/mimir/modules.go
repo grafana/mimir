@@ -1502,7 +1502,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initBackfillAPI() (serv services.Service, err error) {
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BackfillAPI.Storage, "backfill-api", util_log.Logger, t.Registerer)
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "backfill-api", util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
