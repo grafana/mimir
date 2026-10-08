@@ -31,6 +31,8 @@ type seriesEntry struct {
 type group struct {
 	entries []seriesEntry
 	first   hashIndex
+	// Changes whenever the group gains or loses series, which what is cached of what a selector matches in it is by.
+	version uint64
 }
 
 func (g *group) lookup(hash uint64, visit func(entry *seriesEntry) bool) bool {
@@ -151,6 +153,7 @@ func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, se
 	if first, ok := g.first.get(hash, g.entries); ok {
 		next = first
 	}
+	g.version++
 	g.entries = append(g.entries, seriesEntry{hash: hash, labels: stored, next: next, series: series})
 	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
@@ -509,6 +512,7 @@ func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) (changed []uin
 		if write == before {
 			continue
 		}
+		g.version++
 		clear(g.entries[write:])
 		kept := g.entries[:write]
 		// Head compaction and retention remove whole hours of series at once; give back their
