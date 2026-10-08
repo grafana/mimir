@@ -6014,6 +6014,26 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-record-version
   [producer_record_version: <int> | default = 2]
 
+  # (experimental) The seed broker addresses of the fallback Kafka client used
+  # by the producer. The brokers must serve the same topic as
+  # -ingest-storage.kafka.address, for example the WarpStream agents of another
+  # availability zone.
+  # CLI flag: -ingest-storage.kafka.producer-fallback-address
+  [producer_fallback_address: <string> | default = ""]
+
+  # (experimental) The Kafka client ID of the fallback Kafka client used by the
+  # producer. When empty, -ingest-storage.kafka.client-id is used.
+  # CLI flag: -ingest-storage.kafka.producer-fallback-client-id
+  [producer_fallback_client_id: <string> | default = ""]
+
+  # (experimental) When greater than 0, the records of a write request not
+  # acknowledged within this delay are produced again through the fallback Kafka
+  # client, and the write succeeds if the fallback client acknowledges them. A
+  # record may be written twice. Must be lower than
+  # -ingest-storage.kafka.write-timeout. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.producer-fallback-delay
+  [producer_fallback_delay: <duration> | default = 0s]
+
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
   # CLI flag: -ingest-storage.kafka.fetch-max-wait

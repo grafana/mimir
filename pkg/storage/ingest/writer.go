@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -61,8 +62,9 @@ type Writer struct {
 	// kafkaCfg.Topic and can be overridden via WithAutoCreateTopics.
 	autoCreateTopics []string
 
-	client     atomic.Pointer[KafkaProducer]
-	serializer recordSerializer
+	client         atomic.Pointer[KafkaProducer]
+	fallbackClient atomic.Pointer[KafkaProducer]
+	serializer     recordSerializer
 
 	// Metrics.
 	writeSuccessLatency prometheus.Observer
@@ -156,12 +158,31 @@ func (w *Writer) starting(_ context.Context) error {
 		return err
 	}
 
+	if w.kafkaCfg.ProducerFallbackDelay > 0 {
+		fallbackCfg := w.kafkaCfg
+		fallbackCfg.Address = w.kafkaCfg.ProducerFallbackAddress
+		if w.kafkaCfg.ProducerFallbackClientID != "" {
+			fallbackCfg.ClientID = w.kafkaCfg.ProducerFallbackClientID
+		}
+
+		fallbackReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix+"fallback_", w.registerer)
+		fallback, err := newKafkaProducerForBackend(fallbackCfg, maxInflightProduceRequests, w.logger, fallbackReg)
+		if err != nil {
+			producer.Close()
+			return err
+		}
+		w.fallbackClient.Store(fallback)
+	}
+
 	w.client.Store(producer)
 	return nil
 }
 
 func (w *Writer) stopping(_ error) error {
 	if client := w.client.Swap(nil); client != nil {
+		client.Close()
+	}
+	if client := w.fallbackClient.Swap(nil); client != nil {
 		client.Close()
 	}
 
@@ -223,7 +244,7 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 
 	// Write to backend. The topic and partition fields are already set on each record by ToRecords,
 	// so the Kafka client routes records to the correct topic and partition.
-	res := client.ProduceSync(ctx, allRecords)
+	res := w.produceSync(ctx, client, allRecords)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
@@ -241,6 +262,44 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 	}
 
 	return produceResultsErr(res)
+}
+
+// produceSync produces the records through the client. When the producer fallback is enabled, the
+// records not acknowledged within the fallback delay are produced again through the fallback client,
+// which writes the same partitions through other brokers (e.g. another zone's WarpStream agents),
+// so that a single slow broker doesn't fail the whole write request.
+func (w *Writer) produceSync(ctx context.Context, client *KafkaProducer, records []*kgo.Record) kgo.ProduceResults {
+	fallback := w.fallbackClient.Load()
+	if fallback == nil {
+		return client.ProduceSync(ctx, records)
+	}
+
+	// Copy the records before the client takes ownership of them.
+	copies := make([]*kgo.Record, len(records))
+	for i, r := range records {
+		copies[i] = &kgo.Record{Topic: r.Topic, Partition: r.Partition, Key: r.Key, Value: r.Value, Headers: slices.Clone(r.Headers)}
+	}
+
+	primaryCtx, cancel := context.WithTimeout(ctx, w.kafkaCfg.ProducerFallbackDelay)
+	res := client.ProduceSync(primaryCtx, records)
+	cancel()
+
+	var retryIdx []int
+	var retry []*kgo.Record
+	for i, r := range res {
+		if r.Err != nil && !errors.Is(r.Err, kerr.MessageTooLarge) {
+			retryIdx = append(retryIdx, i)
+			retry = append(retry, copies[i])
+		}
+	}
+	if len(retry) == 0 {
+		return res
+	}
+
+	for i, r := range fallback.ProduceSync(ctx, retry) {
+		res[retryIdx[i]] = r
+	}
+	return res
 }
 
 type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest

@@ -116,6 +116,34 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.WriteTimeout = time.Second
 			},
 		},
+		"should pass if the producer fallback is enabled with an address and a delay lower than the write timeout": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerFallbackAddress = flagext.StringSliceCSV{"fallback"}
+				cfg.KafkaConfig.ProducerFallbackDelay = 2 * time.Second
+			},
+		},
+		"should fail if the producer fallback is enabled without an address": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerFallbackDelay = 2 * time.Second
+			},
+			expectedErr: ErrInvalidProducerFallback,
+		},
+		"should fail if the producer fallback delay is not lower than the write timeout": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerFallbackAddress = flagext.StringSliceCSV{"fallback"}
+				cfg.KafkaConfig.ProducerFallbackDelay = cfg.KafkaConfig.WriteTimeout
+			},
+			expectedErr: ErrInvalidProducerFallback,
+		},
 		"should fail if backend is empty": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true

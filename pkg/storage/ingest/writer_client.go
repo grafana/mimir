@@ -325,16 +325,16 @@ func (c *KafkaProducer) updateMetricsLoop() {
 // acceptance does not turn into a wasted full retry from the caller, which fails the whole batch on
 // any error.
 //
-// On context cancellation/timeout after records have been handed to the Kafka client, the returned
-// results carry per-record errors but the Record on each result is a synthetic value with only the
-// input partition set. Callers must not assume Record points back to the original input record or
-// that any field other than Partition is populated in that case.
+// The returned results are in the same order as the input records. On context cancellation/timeout
+// after records have been handed to the Kafka client, the records not acknowledged yet carry an error
+// and a synthetic Record with only the input partition set. Callers must not assume Record points back
+// to the original input record or that any field other than Partition is populated in that case.
 func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	var (
 		remaining = atomic.NewInt64(int64(len(records)))
 		done      = make(chan struct{})
 		resMx     sync.Mutex
-		res       = make(kgo.ProduceResults, 0, len(records))
+		res       = make(kgo.ProduceResults, len(records))
 	)
 
 	// Keep track of the remaining deadline before producing records.
@@ -411,13 +411,13 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		recordPartitions[i] = r.Partition
 	}
 
-	onProduceDone := func(r *kgo.Record, err error) {
+	onProduceDone := func(idx int, r *kgo.Record, err error) {
 		if c.maxBufferedBytes > 0 {
 			c.bufferedBytes.Add(-int64(len(r.Value)))
 		}
 
 		resMx.Lock()
-		res = append(res, kgo.ProduceResult{Record: r, Err: err})
+		res[idx] = kgo.ProduceResult{Record: r, Err: err}
 		resMx.Unlock()
 
 		if err != nil {
@@ -438,7 +438,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	{
 		enqueueStartTime := time.Now()
 
-		for _, record := range records {
+		for idx, record := range records {
 			// We use a new context to avoid that other Produce() may be cancelled when this call's context is
 			// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 			// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
@@ -447,7 +447,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 			// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
 			// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
 			// Produce() should never block for us in practice.
-			c.client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
+			c.client.Produce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) { onProduceDone(idx, r, err) })
 		}
 
 		c.produceRecordsEnqueueDuration.Observe(time.Since(enqueueStartTime).Seconds())
@@ -457,9 +457,19 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	select {
 	case <-ctx.Done():
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
-		// Records have already been handed to the Kafka client, so we can't expose the original
-		// record pointers on the results; build fresh records from the partition snapshot taken above.
-		return newFailedProduceResultsFromPartitions(recordPartitions, errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged"))
+		// Records still owned by the Kafka client can't be exposed on the results, so they get a
+		// fresh record built from the partition snapshot taken above. Already acknowledged records
+		// are reported as such.
+		failed := newFailedProduceResultsFromPartitions(recordPartitions, errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged"))
+
+		resMx.Lock()
+		defer resMx.Unlock()
+		for idx, r := range res {
+			if r.Record != nil && r.Err == nil {
+				failed[idx] = r
+			}
+		}
+		return failed
 	case <-done:
 		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
 		return res

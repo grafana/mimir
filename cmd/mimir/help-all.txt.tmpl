@@ -1743,6 +1743,12 @@ Usage of ./cmd/mimir/mimir:
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
   -ingest-storage.kafka.producer-compression string
     	The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to "none" to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.
+  -ingest-storage.kafka.producer-fallback-address comma-separated-list-of-strings
+    	[experimental] The seed broker addresses of the fallback Kafka client used by the producer. The brokers must serve the same topic as -ingest-storage.kafka.address, for example the WarpStream agents of another availability zone.
+  -ingest-storage.kafka.producer-fallback-client-id string
+    	[experimental] The Kafka client ID of the fallback Kafka client used by the producer. When empty, -ingest-storage.kafka.client-id is used.
+  -ingest-storage.kafka.producer-fallback-delay duration
+    	[experimental] When greater than 0, the records of a write request not acknowledged within this delay are produced again through the fallback Kafka client, and the write succeeds if the fallback client acknowledges them. A record may be written twice. Must be lower than -ingest-storage.kafka.write-timeout. 0 to disable.
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int

@@ -80,6 +80,7 @@ var (
 	ErrInvalidWriteLogsFsyncConcurrency  = errors.New("the configured number of tenants to fsync concurrently before Kafka offsets are committed must be at least 1")
 	ErrInvalidWriteTimeoutOverhead       = fmt.Errorf("ingest-storage.kafka.write-timeout-overhead must be at least %s", MinKafkaRequestTimeoutOverhead)
 	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than or equal to twice ingest-storage.kafka.write-timeout-overhead when ingest-storage.kafka.backend=%s", KafkaBackendWarpstream)
+	ErrInvalidProducerFallback           = errors.New("ingest-storage.kafka.producer-fallback-delay must be 0, or lower than ingest-storage.kafka.write-timeout with ingest-storage.kafka.producer-fallback-address set")
 
 	ErrInvalidProducerCompression = fmt.Errorf("the configured Kafka producer compression codec is invalid, must be one of: %s", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "))
 
@@ -204,6 +205,10 @@ type KafkaConfig struct {
 
 	ProducerRecordVersion int `yaml:"producer_record_version"`
 
+	ProducerFallbackAddress  flagext.StringSliceCSV `yaml:"producer_fallback_address" category:"experimental"`
+	ProducerFallbackClientID string                 `yaml:"producer_fallback_client_id" category:"experimental"`
+	ProducerFallbackDelay    time.Duration          `yaml:"producer_fallback_delay" category:"experimental"`
+
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
@@ -298,6 +303,10 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
 	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 2, "The record version that this producer sends.")
+
+	f.Var(&cfg.ProducerFallbackAddress, prefix+"producer-fallback-address", "The seed broker addresses of the fallback Kafka client used by the producer. The brokers must serve the same topic as -"+prefix+"address, for example the WarpStream agents of another availability zone.")
+	f.StringVar(&cfg.ProducerFallbackClientID, prefix+"producer-fallback-client-id", "", "The Kafka client ID of the fallback Kafka client used by the producer. When empty, -"+prefix+"client-id is used.")
+	f.DurationVar(&cfg.ProducerFallbackDelay, prefix+"producer-fallback-delay", 0, "When greater than 0, the records of a write request not acknowledged within this delay are produced again through the fallback Kafka client, and the write succeeds if the fallback client acknowledges them. A record may be written twice. Must be lower than -"+prefix+"write-timeout. 0 to disable.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 12, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
@@ -404,6 +413,10 @@ func (cfg *KafkaConfig) Validate() error {
 	// when write-timeout is at least twice the overhead, so the per-attempt timeout stays positive.
 	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout < cfg.WriteTimeoutOverhead*2 {
 		return fmt.Errorf("%w (write-timeout=%s, write-timeout-overhead=%s)", ErrInvalidWarpstreamWriteTimeout, cfg.WriteTimeout, cfg.WriteTimeoutOverhead)
+	}
+
+	if cfg.ProducerFallbackDelay < 0 || (cfg.ProducerFallbackDelay > 0 && (cfg.ProducerFallbackDelay >= cfg.WriteTimeout || len(cfg.ProducerFallbackAddress) == 0)) {
+		return ErrInvalidProducerFallback
 	}
 
 	// The dialer is only expected to be used in tests.

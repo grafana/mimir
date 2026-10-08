@@ -9982,6 +9982,39 @@
             },
             {
               "kind": "field",
+              "name": "producer_fallback_address",
+              "required": false,
+              "desc": "The seed broker addresses of the fallback Kafka client used by the producer. The brokers must serve the same topic as -ingest-storage.kafka.address, for example the WarpStream agents of another availability zone.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.producer-fallback-address",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "producer_fallback_client_id",
+              "required": false,
+              "desc": "The Kafka client ID of the fallback Kafka client used by the producer. When empty, -ingest-storage.kafka.client-id is used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.producer-fallback-client-id",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "producer_fallback_delay",
+              "required": false,
+              "desc": "When greater than 0, the records of a write request not acknowledged within this delay are produced again through the fallback Kafka client, and the write succeeds if the fallback client acknowledges them. A record may be written twice. Must be lower than -ingest-storage.kafka.write-timeout. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-fallback-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "fetch_max_wait",
               "required": false,
               "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
