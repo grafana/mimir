@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -129,8 +131,12 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 			fast = append(fast, i)
 		} else {
 			other = append(other, i)
+			ingestPaths.count(ts, batch)
 		}
 	}
+	ingestPaths.series.Add(uint64(len(batch.Series)))
+	ingestPaths.fast.Add(uint64(len(fast)))
+	ingestPaths.maybeLog(e.Engine)
 
 	var outcome ingestOutcome
 	atMs := batch.IngestedAt.UnixMilli()
@@ -426,4 +432,41 @@ func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink i
 	}
 	outcome.CommitDuration = time.Since(startCommit)
 	return outcome, nil
+}
+
+// ingestPathStats counts why series take the appender path, to find what it is for. Temporary.
+type ingestPathStats struct {
+	series, fast                                               atomic.Uint64
+	createdTimestamp, histograms, exemplars, noSamples, others atomic.Uint64
+	histogramSamples                                           atomic.Uint64
+	last                                                       atomic.Int64
+}
+
+var ingestPaths ingestPathStats
+
+func (s *ingestPathStats) count(ts *mimirpb.PreallocTimeseries, batch ingestBatch) {
+	switch {
+	case len(ts.Histograms) > 0 && batch.NativeHistograms:
+		s.histograms.Add(1)
+		s.histogramSamples.Add(uint64(len(ts.Histograms)))
+	case len(ts.Exemplars) > 0 && batch.Exemplars:
+		s.exemplars.Add(1)
+	case ts.CreatedTimestamp != 0:
+		s.createdTimestamp.Add(1)
+	case len(ts.Samples) == 0:
+		s.noSamples.Add(1)
+	default:
+		s.others.Add(1)
+	}
+}
+
+func (s *ingestPathStats) maybeLog(engine *store.Engine) {
+	now := time.Now().UnixNano()
+	last := s.last.Load()
+	if now-last < int64(time.Minute) || !s.last.CompareAndSwap(last, now) {
+		return
+	}
+	leftovers := engine.FloatLeftovers()
+	fmt.Fprintf(os.Stderr, "ingestlog series=%d fast=%d histograms=%d (samples %d) exemplars=%d createdTimestamp=%d noSamples=%d other=%d leftover: unknown=%d noRef=%d stale=%d\n",
+		s.series.Load(), s.fast.Load(), s.histograms.Load(), s.histogramSamples.Load(), s.exemplars.Load(), s.createdTimestamp.Load(), s.noSamples.Load(), s.others.Load(), leftovers[0], leftovers[1], leftovers[2])
 }
