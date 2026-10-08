@@ -850,14 +850,14 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: false,
 		},
 		{
-			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
+			name: "should pass with the offset catalogue enabled together with more than one write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.Compartments.Write.NumCompartments = 2
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
 				return cfg
 			},
-			expectAnyError: true,
+			expectAnyError: false,
 		},
 		{
 			name: "should pass with the offset catalogue enabled together with a single write compartment",
