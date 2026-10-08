@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"runtime"
 	"sync/atomic"
@@ -667,4 +668,64 @@ func TestEngineMergesSmallColdBlocks(t *testing.T) {
 	require.NoError(t, engine.Close())
 	engine = openEngine(t, dir, differentialOptions{}, nil)
 	require.Equal(t, everything, read(eq("__name__", "old")))
+}
+
+// BenchmarkEngineIngestScattered is AppendFloats on a tenant of a million series that a request picks out of at random,
+// as the requests of many targets do: what a lookup reads isn't in the processor's caches the way the series of the
+// batches of BenchmarkEngineIngestBatch, which come one after the other, are.
+func BenchmarkEngineIngestScattered(b *testing.B) {
+	const (
+		series    = 1_000_000
+		batchSize = 2000
+	)
+	ctx := context.Background()
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 64, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	request := make([]mimirpb.PreallocTimeseries, series)
+	app := engine.Appender(ctx)
+	for n := range request {
+		lset := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%5000), "job", fmt.Sprintf("job-%d", n%20), "instance", fmt.Sprintf("instance-%d", n%700), "pod", fmt.Sprintf("pod-%d", n))
+		var adapters []mimirpb.LabelAdapter
+		lset.Range(func(l promlabels.Label) {
+			adapters = append(adapters, mimirpb.LabelAdapter{Name: l.Name, Value: l.Value})
+		})
+		request[n] = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: adapters, Samples: make([]mimirpb.Sample, 1)}}
+		_, err := app.Append(0, lset, 1_000, 1)
+		require.NoError(b, err)
+		if n%100_000 == 99_999 {
+			require.NoError(b, app.Commit())
+			app = engine.Appender(ctx)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	indices := make([]int, batchSize)
+	for n := range indices {
+		indices[n] = n
+	}
+	var worker, clock atomic.Int32
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		random := rand.New(rand.NewPCG(uint64(worker.Add(1)), 7))
+		// The workers' batches share the labels of the series, and nothing else.
+		batch := make([]mimirpb.PreallocTimeseries, batchSize)
+		for n := range batch {
+			batch[n] = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Samples: make([]mimirpb.Sample, 1)}}
+		}
+		for i := 0; pb.Next(); i++ {
+			ts := int64(clock.Add(1))*100 + 10_000
+			for n := range batch {
+				batch[n].Labels = request[random.IntN(series)].Labels
+				batch[n].Samples[0] = mimirpb.Sample{TimestampMs: ts, Value: float64(i)}
+			}
+			sink := &countingFloatSink{}
+			if _, _, err := engine.AppendFloats(batch, indices, 0, math.MaxInt64, 0, false, sink); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	})
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*batchSize), "ns/series")
 }

@@ -161,12 +161,25 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 				ts := &timeseries[prep.index]
 				seriesPairs := pairs[prep.pairsAt:prep.pairsTo]
 				var entry *seriesEntry
-				if groupID, ok := t.series.names[prep.name]; ok {
-					g := &t.series.groups[groupID]
-					for index, ok := g.first.get(prep.hash, g.entries); ok && index >= 0; index = g.entries[index].next {
-						if candidate := &g.entries[index]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
+				// Where the series was last found is one read; its name group and the group's table are more.
+				t.series.locs.findAll(prep.hash, func(group uint32, index int) bool {
+					if entries := t.series.groups[group].entries; index < len(entries) {
+						if candidate := &entries[index]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
 							entry = candidate
-							break
+							return true
+						}
+					}
+					return false
+				})
+				if entry == nil {
+					if groupID, ok := t.series.names[prep.name]; ok {
+						g := &t.series.groups[groupID]
+						for index, ok := g.first.get(prep.hash, g.entries); ok && index >= 0; index = g.entries[index].next {
+							if candidate := &g.entries[index]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
+								entry = candidate
+								t.series.locs.remember(prep.hash, groupID, int(index), t.series.len)
+								break
+							}
 						}
 					}
 				}
