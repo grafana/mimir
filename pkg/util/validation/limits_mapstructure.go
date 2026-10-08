@@ -38,7 +38,8 @@ func NewLimitsMapDecoder(out any) (*mapstructure.Decoder, error) {
 		TagName:     "yaml",
 		Squash:      true,
 		ErrorUnused: true,
-		ZeroFields:  false,
+		ZeroFields:  true,
+		ErrorNil:    true,
 		MatchName:   func(mapKey, fieldName string) bool { return mapKey == fieldName },
 	})
 }
