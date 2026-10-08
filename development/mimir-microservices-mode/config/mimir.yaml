@@ -59,10 +59,9 @@ blocks_storage:
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
     ignore_blocks_within: 2m
 
-    # Uncomment index_header and index_header_cache for experimental bucket-based index-header reader
+    # Uncomment index_header and index_header_cache for experimental index-header version 2
     #index_header:
-    #  bucket_reader:
-    #    enabled: true
+    #  version: 2
 
     #index_header_cache:
     #  backend: memcached

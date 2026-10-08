@@ -157,6 +157,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                     indexheader.BinaryFormatV1,
 				EagerLoadingPersistInterval: time.Minute,
 				LazyLoadingEnabled:          true,
 				LazyLoadingIdleTimeout:      time.Minute,
@@ -190,10 +191,7 @@ func withManyParts() prepareStoreConfigOption {
 // withIndexHeaderBucketReaderEnabled configures the store to use the experimental index-header bucket reader path.
 func withIndexHeaderBucketReaderEnabled() prepareStoreConfigOption {
 	return func(config *prepareStoreConfig) {
-		config.bucketStoreConfig.IndexHeader.BucketReader = indexheader.BucketReaderConfig{
-			Enabled:             true,
-			BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
-		}
+		config.bucketStoreConfig.IndexHeader.Version = indexheader.BinaryFormatV2
 	}
 }
 
