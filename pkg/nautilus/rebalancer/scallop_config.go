@@ -20,6 +20,8 @@ type ScallopConfig struct {
 	FragmentationWeight       float64 `yaml:"fragmentation_weight"`
 	ResolutionWeight          float64 `yaml:"resolution_weight"`
 	MovePartitionMultiplier   float64 `yaml:"move_partition_multiplier"`
+	MaxMergesPerRound         int     `yaml:"max_merges_per_round"`
+	MaxMergesPerTenant        int     `yaml:"max_merges_per_tenant"`
 
 	registered bool
 }
@@ -36,6 +38,8 @@ func defaultScallopConfig() ScallopConfig {
 		FragmentationWeight:       policy.Weights.Fragmentation,
 		ResolutionWeight:          policy.Weights.Resolution,
 		MovePartitionMultiplier:   policy.ActionMultipliers.MovePartition,
+		MaxMergesPerRound:         policy.ActionLimits.Merge,
+		MaxMergesPerTenant:        policy.ActionLimits.MergePerTenant,
 	}
 }
 
@@ -51,6 +55,8 @@ func (cfg *ScallopConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet
 	f.Float64Var(&cfg.FragmentationWeight, prefix+"fragmentation-weight", cfg.FragmentationWeight, "Scallop weight for mean hash-range count per tenant.")
 	f.Float64Var(&cfg.ResolutionWeight, prefix+"resolution-weight", cfg.ResolutionWeight, "Scallop weight for coarse hot ranges, computed from load times hash width.")
 	f.Float64Var(&cfg.MovePartitionMultiplier, prefix+"move-partition-multiplier", cfg.MovePartitionMultiplier, "Multiplier applied to Scallop's transition-event cost for moving a Kafka partition between readcache replicas.")
+	f.IntVar(&cfg.MaxMergesPerRound, prefix+"max-merges-per-round", cfg.MaxMergesPerRound, "Maximum Scallop hash-range merge actions selected cluster-wide per planning round. 0 disables merges; the total action limit still applies.")
+	f.IntVar(&cfg.MaxMergesPerTenant, prefix+"max-merges-per-tenant", cfg.MaxMergesPerTenant, "Maximum Scallop hash-range merge actions selected for one tenant per planning round. Must be positive; cluster-wide merge and total action limits still apply.")
 }
 
 // policy overlays configured cost parameters onto Scallop's non-cost defaults and limits.
@@ -67,6 +73,8 @@ func (cfg ScallopConfig) policy() scallop.Policy {
 	policy.Weights.Fragmentation = cfg.FragmentationWeight
 	policy.Weights.Resolution = cfg.ResolutionWeight
 	policy.ActionMultipliers.MovePartition = cfg.MovePartitionMultiplier
+	policy.ActionLimits.Merge = cfg.MaxMergesPerRound
+	policy.ActionLimits.MergePerTenant = cfg.MaxMergesPerTenant
 	return policy
 }
 
@@ -90,6 +98,12 @@ func (cfg ScallopConfig) validate() error {
 		if math.IsNaN(parameter.value) || math.IsInf(parameter.value, 0) || parameter.value < 0 {
 			return fmt.Errorf("scallop.%s must be finite and non-negative, got %v", parameter.name, parameter.value)
 		}
+	}
+	if policy.ActionLimits.MergePerTenant <= 0 {
+		return fmt.Errorf("scallop.max-merges-per-tenant must be positive, got %d", policy.ActionLimits.MergePerTenant)
+	}
+	if policy.ActionLimits.Merge < 0 {
+		return fmt.Errorf("scallop.max-merges-per-round must be non-negative, got %d", policy.ActionLimits.Merge)
 	}
 	return nil
 }

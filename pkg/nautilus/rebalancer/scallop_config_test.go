@@ -4,6 +4,7 @@ package rebalancer
 
 import (
 	"flag"
+	"fmt"
 	"math"
 	"testing"
 
@@ -25,6 +26,8 @@ func TestScallopConfigFlagsBuildRoundPolicy(t *testing.T) {
 		"-nautilus-rebalancer.scallop.fragmentation-weight=0.7",
 		"-nautilus-rebalancer.scallop.resolution-weight=0.8",
 		"-nautilus-rebalancer.scallop.move-partition-multiplier=44.668359",
+		"-nautilus-rebalancer.scallop.max-merges-per-round=777",
+		"-nautilus-rebalancer.scallop.max-merges-per-tenant=17",
 	}))
 
 	policy := cfg.Scallop.policy()
@@ -39,7 +42,10 @@ func TestScallopConfigFlagsBuildRoundPolicy(t *testing.T) {
 	}, policy.Weights)
 	require.Equal(t, 44.668359, policy.ActionMultipliers.MovePartition)
 	require.Equal(t, scallop.DefaultPolicy().CandidateSearch, policy.CandidateSearch)
-	require.Equal(t, scallop.DefaultPolicy().ActionLimits, policy.ActionLimits)
+	expectedActionLimits := scallop.DefaultPolicy().ActionLimits
+	expectedActionLimits.Merge = 777
+	expectedActionLimits.MergePerTenant = 17
+	require.Equal(t, expectedActionLimits, policy.ActionLimits)
 }
 
 func TestScallopConfigUsesPlannerDefaultsWhenUnconfigured(t *testing.T) {
@@ -93,4 +99,35 @@ func TestScallopConfigRejectsInvalidCosts(t *testing.T) {
 			require.ErrorContains(t, cfg.Validate(), "must be finite and non-negative")
 		})
 	}
+}
+
+func TestScallopConfigRejectsNonPositiveMaxMergesPerTenant(t *testing.T) {
+	for _, value := range []int{-1, 0} {
+		t.Run(fmt.Sprintf("%d", value), func(t *testing.T) {
+			scallopConfig := defaultScallopConfig()
+			scallopConfig.MaxMergesPerTenant = value
+			cfg := Config{
+				Planner:        plannerScallop,
+				Scallop:        scallopConfig,
+				PartitionCount: 1,
+			}
+			require.ErrorContains(t, cfg.Validate(), "scallop.max-merges-per-tenant must be positive")
+		})
+	}
+}
+
+func TestScallopConfigValidatesMaxMergesPerRound(t *testing.T) {
+	scallopConfig := defaultScallopConfig()
+	scallopConfig.MaxMergesPerRound = -1
+	cfg := Config{
+		Planner:        plannerScallop,
+		Scallop:        scallopConfig,
+		PartitionCount: 1,
+	}
+	require.ErrorContains(t, cfg.Validate(), "scallop.max-merges-per-round must be non-negative")
+
+	scallopConfig.MaxMergesPerRound = 0
+	cfg.Scallop = scallopConfig
+	require.NoError(t, cfg.Validate(), "zero disables merges")
+	require.Zero(t, cfg.Scallop.policy().ActionLimits.Merge)
 }
