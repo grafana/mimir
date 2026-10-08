@@ -1147,7 +1147,7 @@
   "ruler.notification-timeout": 10000000000,
   "ruler.for-outage-tolerance": 3600000000000,
   "ruler.for-grace-period": 120000000000,
-  "ruler.resend-delay": 60000000000,
+  "ruler.resend-delay": 300000000000,
   "ruler.ring.store": "memberlist",
   "ruler.ring.prefix": "rulers/",
   "ruler.ring.consul.hostname": "localhost:8500",

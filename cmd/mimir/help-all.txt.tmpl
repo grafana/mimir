@@ -3622,7 +3622,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.recording-rules-evaluation-enabled
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
-    	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
+    	Minimum amount of time to wait before resending an alert to Alertmanager. (default 5m0s)
   -ruler.ring-change-debounce duration
     	[experimental] How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.
   -ruler.ring-change-max-debounce duration

@@ -16556,7 +16556,7 @@
           "required": false,
           "desc": "Minimum amount of time to wait before resending an alert to Alertmanager.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "ruler.resend-delay",
           "fieldType": "duration",
           "fieldCategory": "advanced"

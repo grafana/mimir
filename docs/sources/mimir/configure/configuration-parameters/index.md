@@ -2988,7 +2988,7 @@ alertmanager_client:
 # (advanced) Minimum amount of time to wait before resending an alert to
 # Alertmanager.
 # CLI flag: -ruler.resend-delay
-[resend_delay: <duration> | default = 1m]
+[resend_delay: <duration> | default = 5m]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
