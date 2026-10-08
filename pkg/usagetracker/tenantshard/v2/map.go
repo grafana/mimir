@@ -22,6 +22,11 @@ const (
 	maxAvgGroupLoad = groupSize / 2
 	// last is the last element in the group, just to make the code more readable
 	last = groupSize - 1
+
+	// groupsPerBlock is the number of groups that Cleanup checks at once: the data of 8 groups fills one
+	// 64-byte cache line. The number of groups is always a multiple of it, see numGroups.
+	// Cleanup is unrolled by hand for exactly this value.
+	groupsPerBlock = 8
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -275,32 +280,56 @@ func (m *Map) Stats() Stats {
 }
 
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
+	// Each group is checked as one uint64, without a branch per slot (see expiredSlots), and the groups are
+	// checked a block at a time, with one branch per block: a block with nothing to remove is not written.
+	// A block that has something to remove is written whole: clearSlots writes a group with nothing to remove
+	// back unchanged, and the cache lines of that block's data and index are dirty anyway.
+	//
+	// The loop below is intentionally unrolled and doesn't use helper functions,
+	// as those helpers become too expensive to inline and we end up paying a function call.
 	removed := 0
-	for i := range m.data {
-		occupied := m.index[i].matchOccupied()
-		for occupied != 0 {
-			j := nextMatch(&occupied)
-			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
-				removed++
-				m.resident--
+	w := loBits * uint64(watermark)
+	for b := 0; b < len(m.data); b += groupsPerBlock {
+		d := (*[groupsPerBlock]data)(m.data[b:])
+		// x holds a block of groups, but represented as uint64.
+		var x [groupsPerBlock]uint64
+		x[0] = *groupWord(&d[0])
+		x[1] = *groupWord(&d[1])
+		x[2] = *groupWord(&d[2])
+		x[3] = *groupWord(&d[3])
+		x[4] = *groupWord(&d[4])
+		x[5] = *groupWord(&d[5])
+		x[6] = *groupWord(&d[6])
+		x[7] = *groupWord(&d[7])
 
-				if j == last {
-					// This is the last element, if it was previously set,
-					// then group may have spilled to the next one.
-					// We need to keep that signal, so we leave a spillmark here.
-					m.data[i][j] = spillmark
-					// We need to leave spillmark in the data because that's what iterator uses.
-					m.index[i][j] = spillmark
-					// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
-					// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
-				} else {
-					// This is not the last element, so just mark it as empty.
-					m.data[i][j] = empty
-					m.index[i][j] = empty
-				}
-			}
+		// r holds the slots to remove in each group of the block.
+		var r [groupsPerBlock]uint64
+		r[0] = expiredSlots(x[0], w) &^ freeSlots(x[0])
+		r[1] = expiredSlots(x[1], w) &^ freeSlots(x[1])
+		r[2] = expiredSlots(x[2], w) &^ freeSlots(x[2])
+		r[3] = expiredSlots(x[3], w) &^ freeSlots(x[3])
+		r[4] = expiredSlots(x[4], w) &^ freeSlots(x[4])
+		r[5] = expiredSlots(x[5], w) &^ freeSlots(x[5])
+		r[6] = expiredSlots(x[6], w) &^ freeSlots(x[6])
+		r[7] = expiredSlots(x[7], w) &^ freeSlots(x[7])
+
+		if r[0]|r[1]|r[2]|r[3]|r[4]|r[5]|r[6]|r[7] == 0 {
+			continue
 		}
+
+		idx := (*[groupsPerBlock]index)(m.index[b:])
+		removed += 0 + // Just to align the lines below.
+			clearSlots(&idx[0], &d[0], x[0], r[0]) +
+			clearSlots(&idx[1], &d[1], x[1], r[1]) +
+			clearSlots(&idx[2], &d[2], x[2], r[2]) +
+			clearSlots(&idx[3], &d[3], x[3], r[3]) +
+			clearSlots(&idx[4], &d[4], x[4], r[4]) +
+			clearSlots(&idx[5], &d[5], x[5], r[5]) +
+			clearSlots(&idx[6], &d[6], x[6], r[6]) +
+			clearSlots(&idx[7], &d[7], x[7], r[7])
 	}
+
+	m.resident -= uint32(removed)
 	if limit == nil {
 		return removed
 	}
@@ -370,13 +399,15 @@ func (m *Map) rehash(groups uint32) {
 	}
 }
 
-// numGroups returns the minimum number of groups needed to store |n| elems.
+// numGroups returns the minimum number of groups needed to store |n| elems, rounded up to whole blocks of
+// groupsPerBlock groups, which Cleanup relies on.
 func numGroups(n uint32) uint32 {
 	if n == 0 {
-		return 1
+		return groupsPerBlock
 	}
 	// Use (n-1)/d+1 instead of (n+d-1)/d to avoid uint32 overflow when n is large.
-	return (n-1)/maxAvgGroupLoad + 1
+	groups := (n-1)/maxAvgGroupLoad + 1
+	return (groups + groupsPerBlock - 1) / groupsPerBlock * groupsPerBlock
 }
 
 // splitHash extracts the prefix and suffix components from a 64 bit hash.

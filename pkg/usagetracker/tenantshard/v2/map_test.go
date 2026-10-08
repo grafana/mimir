@@ -133,7 +133,8 @@ func TestSpillTriggeredRehashCompacts(t *testing.T) {
 }
 
 func TestLimitAwareGrowth(t *testing.T) {
-	const perShard uint64 = 1000
+	// A whole number of blocks at maxAvgGroupLoad, so that the map is exactly full.
+	const perShard uint64 = 32 * groupsPerBlock * maxAvgGroupLoad
 	m := New(uint32(perShard), testNumShards)
 	total := atomic.NewUint64(0)
 
@@ -145,6 +146,7 @@ func TestLimitAwareGrowth(t *testing.T) {
 	// Trigger a rehash by adding one more element (no series limit check since limit arg is nil).
 	m.Put(perShard, 1, total, nil, false)
 	groupsAfter := len(m.index)
+	require.Greater(t, groupsAfter, groupsBefore, "one more element than the limit must grow the map")
 
 	// Without limit-aware growth the map would double.
 	// With limit-aware growth it should grow to ~1.25x, not 2x.
@@ -461,7 +463,7 @@ func BenchmarkMapRehash(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				m.rehash(size)
+				m.rehash(numGroups(size))
 			}
 		})
 	}
@@ -472,14 +474,37 @@ func BenchmarkMapCleanup(b *testing.B) {
 
 	const size = 1e6
 
+	// spread spreads the series over 4/3 of the idle timeout, so that about 25% of them expire in one cleanup.
+	// That is a corner case, like a deployment that stops a quarter of a tenant's series in the same minute.
+	spread := func(r *rand.Rand, now time.Time) time.Time {
+		return now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+	}
+	// churn looks like production: a tenant churns 1/3 to 2/3 of its series every 2h, and the watermark moves
+	// once a minute, so a cleanup removes at most one minute of stopped series, 1/360 to 1/180 of them.
+	// The other series are active. A cleanup that runs before the watermark moves again removes nothing.
+	churn := func(expired float64) func(r *rand.Rand, now time.Time) time.Time {
+		return func(r *rand.Rand, now time.Time) time.Time {
+			if r.Float64() < expired {
+				// Seen for the last time exactly idleTimeout ago, so it expires in this cleanup.
+				return now.Add(-idleTimeout)
+			}
+			return now
+		}
+	}
+
 	for _, tc := range []struct {
-		name string
-		now  time.Time
+		name     string
+		now      time.Time
+		lastSeen func(r *rand.Rand, now time.Time) time.Time
 	}{
 		// The watermark and all the series are before the same two-hour boundary.
-		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "same-period", now: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC), lastSeen: spread},
 		// The watermark is before a two-hour boundary, and the series are on both sides of it.
-		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC)},
+		{name: "across-boundary", now: time.Date(2025, 12, 1, 0, 10, 0, 0, time.UTC), lastSeen: spread},
+		// Production churn: 2/3 and 1/3 of the series every 2h, and a cleanup with nothing to remove.
+		{name: "churn=2of3", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(1.0 / 180)},
+		{name: "churn=1of3", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(1.0 / 360)},
+		{name: "churn=0", now: time.Date(2025, 12, 1, 0, 30, 0, 0, time.UTC), lastSeen: churn(0)},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			maps := make([]*Map, b.N)
@@ -489,15 +514,17 @@ func BenchmarkMapCleanup(b *testing.B) {
 			r := rand.New(rand.NewSource(1))
 			for _, m := range maps {
 				for i := 0; i < size; i++ {
-					ts := tc.now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+					ts := tc.lastSeen(r, tc.now)
 					m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
 				}
 			}
 			b.ResetTimer()
 			watermark := tc.now.Add(-idleTimeout)
+			removed := 0
 			for i := 0; i < b.N; i++ {
-				maps[i].Cleanup(clock.ToMinutes(watermark), nil)
+				removed += maps[i].Cleanup(clock.ToMinutes(watermark), nil)
 			}
+			b.ReportMetric(float64(removed)/float64(b.N), "removed/op")
 		})
 	}
 }
@@ -640,5 +667,93 @@ func TestMatchOccupied(t *testing.T) {
 			require.Equal(t, uint32(i), nextMatch(&set))
 		}
 		require.Zero(t, set)
+	})
+}
+
+// referenceCleanupGroup is the slot by slot definition of what Cleanup does to a group, which the implementation
+// is checked against.
+func referenceCleanupGroup(idx *index, d *data, watermark clock.Minutes) int {
+	removed := 0
+	for j := range groupSize {
+		if d[j] == empty || d[j] == spillmark {
+			continue
+		}
+		if !watermark.GreaterOrEqualThan(d[j].clockMinutes()) {
+			continue
+		}
+		removed++
+		if j == last {
+			idx[j], d[j] = spillmark, spillmark
+		} else {
+			idx[j], d[j] = empty, empty
+		}
+	}
+	return removed
+}
+
+func TestMapCleanupBlock(t *testing.T) {
+	m := New(1, testNumShards)
+	require.Len(t, m.index, groupsPerBlock, "a map always has whole blocks of groups")
+	const resident = 1000
+
+	// check runs Cleanup on a one-block map that holds idx and d, and compares the result with
+	// referenceCleanupGroup applied to every group of the block.
+	check := func(t *testing.T, idx [groupsPerBlock]index, d [groupsPerBlock]data, watermark clock.Minutes) {
+		t.Helper()
+		wantIdx, wantData := idx, d
+		wantRemoved := 0
+		for g := range groupsPerBlock {
+			wantRemoved += referenceCleanupGroup(&wantIdx[g], &wantData[g], watermark)
+		}
+		copy(m.index, idx[:])
+		copy(m.data, d[:])
+		m.resident = resident
+		gotRemoved := m.Cleanup(watermark, nil)
+		gotIdx, gotData := [groupsPerBlock]index(m.index), [groupsPerBlock]data(m.data)
+		if gotRemoved != wantRemoved || gotIdx != wantIdx || gotData != wantData || m.resident != resident-uint32(wantRemoved) {
+			t.Fatalf("watermark %d, index %v, data %v:\ngot  removed %d, index %v, data %v, resident %d\nwant removed %d, index %v, data %v, resident %d",
+				watermark, idx, d, gotRemoved, gotIdx, gotData, m.resident, wantRemoved, wantIdx, wantData, resident-wantRemoved)
+		}
+	}
+
+	t.Run("one entry", func(t *testing.T) {
+		// Every value that Put accepts against every watermark byte, in every slot, and in every group
+		// of the block, since Cleanup has one unrolled copy of the code per group. This includes bytes
+		// that clock.ToMinutes never produces, so that Cleanup matches GreaterOrEqualThan for any input,
+		// not only for valid minutes.
+		for w := range 256 {
+			watermark := clock.Minutes(w)
+			for v := range 0xfe {
+				value := clock.Minutes(v)
+				g := (w + v) % groupsPerBlock
+				for j := range groupSize {
+					var idx [groupsPerBlock]index
+					var d [groupsPerBlock]data
+					idx[g][j], d[g][j] = prefix(prefixOffset+j), xor(value)
+					check(t, idx, d, watermark)
+				}
+			}
+		}
+	})
+
+	t.Run("random blocks", func(t *testing.T) {
+		r := rand.New(rand.NewSource(1))
+		for range 100_000 {
+			var idx [groupsPerBlock]index
+			var d [groupsPerBlock]data
+			for g := range groupsPerBlock {
+				for j := range groupSize {
+					switch p := r.Intn(10); {
+					case p < 3:
+						// Leave the slot empty.
+					case p < 4:
+						idx[g][j], d[g][j] = spillmark, spillmark
+					default:
+						idx[g][j], d[g][j] = prefix(prefixOffset+r.Intn(128)), xor(clock.Minutes(r.Intn(0xfe)))
+					}
+				}
+			}
+			check(t, idx, d, clock.Minutes(r.Intn(256)))
+		}
 	})
 }
