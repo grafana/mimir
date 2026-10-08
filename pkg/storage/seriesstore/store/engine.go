@@ -50,7 +50,11 @@ type EngineOptions struct {
 	// JitterCompaction starts the engine's head compactions a random time, up to a quarter of a block range, later
 	// than they are due: the ingesters of a partition ring would otherwise compact at the same wall-clock time, as the
 	// block ranges are aligned on it, and slow their queries together.
-	JitterCompaction        bool
+	JitterCompaction bool
+	// IdleEvictionMs is how long a series' newest sample is behind the head's before every compaction takes it out of the
+	// head, instead of when the head's min time passes it: series that stopped, such as the ones of a pod that is gone, would
+	// otherwise stay in memory for the hours until then. Zero keeps them until then.
+	IdleEvictionMs          int64
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
@@ -477,6 +481,11 @@ func (e *Engine) Compact(context.Context) error {
 	if compacted {
 		e.compactOOOHead()
 	}
+	if e.opts.IdleEvictionMs > 0 {
+		if err := e.evictIdleLocked(); err != nil {
+			return err
+		}
+	}
 	if e.opts.RetentionMs > 0 {
 		home, t := e.home()
 		home.RLock()
@@ -756,6 +765,40 @@ func (e *Engine) CompactSelectedSeries(refs []storage.SeriesRef) error {
 	}
 	e.compactionLock.Lock()
 	defer e.compactionLock.Unlock()
+	return e.compactSelectedLocked(refs)
+}
+
+// evictIdleLocked takes the series whose newest sample is older than the idle time behind the head's out of it, with the
+// compaction lock held.
+func (e *Engine) evictIdleLocked() error {
+	_, maxt, _ := e.headTimes()
+	if maxt == math.MinInt64 {
+		return nil
+	}
+	cutoff := satSub(maxt, e.opts.IdleEvictionMs)
+	var refs []storage.SeriesRef
+	for _, shard := range e.store.shards {
+		shard.RLock()
+		if t, ok := shard.tenants[e.tenantID]; ok {
+			t.series.forEach(func(entry *seriesEntry) {
+				series := &entry.series
+				if series.ref == 0 || !series.inHead || series.headEvicted {
+					return
+				}
+				if newest, ok := series.maxTime(); ok && newest < cutoff {
+					refs = append(refs, storage.SeriesRef(series.ref))
+				}
+			})
+		}
+		shard.RUnlock()
+	}
+	return e.compactSelectedLocked(refs)
+}
+
+func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
 	minTime, maxt, _ := e.headTimes()
 	if minTime > maxt {
 		return nil

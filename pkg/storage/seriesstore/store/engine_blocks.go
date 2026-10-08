@@ -106,9 +106,23 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder bool, holds func(
 	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, series: slices.Compact(hashes), createdMs: nowMs()}
 	home, t := e.home()
 	home.Lock()
+	defer home.Unlock()
+	// A block of the same range is the one that was written for the same range before, as the series that leave on their own are
+	// each time: a block each time would make every lookup of label names read hundreds. Lookups read their copy of the
+	// slice, whose elements change in a copy of it.
+	for index := len(t.blocks) - 1; index >= 0; index-- {
+		existing := &t.blocks[index]
+		if existing.minTime == minTime && existing.maxTime == maxTime && existing.outOfOrder == outOfOrder {
+			merged := block
+			merged.series = mergeSortedHashes(existing.series, block.series)
+			blocks := slices.Clone(t.blocks)
+			blocks[index] = merged
+			t.blocks = blocks
+			return true
+		}
+	}
 	// Appending never changes the elements a lookup's copy of the slice reads.
 	t.blocks = append(t.blocks, block)
-	home.Unlock()
 	return true
 }
 
@@ -412,4 +426,21 @@ func inOrderCuts(blocks []emulatedBlock, meta ChunkMeta) []int64 {
 	}
 	slices.Sort(cuts)
 	return slices.Compact(cuts)
+}
+
+// mergeSortedHashes is the union of two sorted lists of hashes, sorted.
+func mergeSortedHashes(a, b []uint64) []uint64 {
+	out := make([]uint64, 0, len(a)+len(b))
+	for len(a) > 0 && len(b) > 0 {
+		switch {
+		case a[0] < b[0]:
+			out, a = append(out, a[0]), a[1:]
+		case a[0] > b[0]:
+			out, b = append(out, b[0]), b[1:]
+		default:
+			out, a, b = append(out, a[0]), a[1:], b[1:]
+		}
+	}
+	out = append(out, a...)
+	return append(out, b...)
 }
