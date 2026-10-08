@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -110,12 +109,10 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	began := time.Now()
 	selected, buffers, err := q.e.selectRaw(start, end, compiled)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	selectors.observe(q.e.tenantID, selectorKey(compiled), time.Since(began), len(selected))
 	q.mu.Lock()
 	q.buffers = append(q.buffers, buffers...)
 	q.mu.Unlock()
@@ -174,10 +171,26 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		shardOf[shard.disk] = index
 	}
 	var headMetas, compacted []ChunkMeta
+	// A selector with a metric name that comes in again finds its series in the shard's candidates.
+	var (
+		cached     *cachedSelector
+		cachedName string
+		cachedRest []compiledMatcher
+	)
+	if name, rest, ok := cacheableName(coldLabels); ok {
+		cached, cachedName, cachedRest = e.selectors.get(selectorKey(coldLabels), len(e.store.shards)), name, rest
+	}
 	e.store.perShardWithCold(e.tenantID, func(t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shardOf[disk]]
 		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, start, end, prunedBefore)
-		t.series.matching(compiled, func(entry *seriesEntry) bool {
+		matchHead := func(visit func(entry *seriesEntry) bool) {
+			if cached != nil {
+				t.series.matchingCached(cached, shardOf[disk], cachedName, coldShard, coldLabels, cachedRest, visit)
+				return
+			}
+			t.series.matching(compiled, visit)
+		}
+		matchHead(func(entry *seriesEntry) bool {
 			series := &entry.series
 			metas = series.chunks.appendTo(metas[:0])
 			overlaps := false

@@ -94,6 +94,8 @@ type Engine struct {
 	// Whether out-of-order samples came in since the out-of-order head was last compacted: it has nothing to compact
 	// otherwise, and walking every series to find out is most of what a compaction holds the shards' locks for.
 	oooDirty atomic.Bool
+	// What the selectors that come in again match.
+	selectors selectorCache
 	// How long past 1.5 block ranges the head has to span to be compacted.
 	compactionJitterMs int64
 	// Whether Open restored the head as it was at the last Close, or started without any data.
