@@ -54,7 +54,6 @@ type EngineOpts struct {
 	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
 	EnableRangeQueryRangeVectorCommonSubexpressionElimination bool `yaml:"enable_range_query_range_vector_common_subexpression_elimination" category:"experimental"`
-	EnableScalarCommonSubexpressionElimination                bool `yaml:"enable_scalar_common_subexpression_elimination" category:"experimental"`
 	EnableNarrowBinarySelectors                               bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                        bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 	EnablePropagateMatchers                                   bool `yaml:"enable_propagate_matchers" category:"experimental"`
@@ -131,7 +130,6 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", true, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
-	f.BoolVar(&o.EnableScalarCommonSubexpressionElimination, "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination", false, "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnablePropagateMatchers, "querier.mimir-query-engine.enable-propagate-matchers", false, "Enable propagating label matchers across binary expressions.")
@@ -248,7 +246,6 @@ func NewTestEngineOpts() EngineOpts {
 
 		EnableCommonSubexpressionElimination:                      true,
 		EnableSubsetSelectorElimination:                           true,
-		EnableScalarCommonSubexpressionElimination:                true,
 		EnableNarrowBinarySelectors:                               true,
 		EnableEliminateDeduplicateAndMerge:                        true,
 		EnablePropagateMatchers:                                   true,
