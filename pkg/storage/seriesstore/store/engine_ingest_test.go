@@ -345,8 +345,9 @@ func BenchmarkEngineSelectColdBlocks(b *testing.B) {
 	for round := range blocks {
 		app := engine.Appender(ctx)
 		// A few series each round, which only stay in the head for it.
-		for n := range 64 {
-			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, 1)
+		for n := range 1000 {
+			// The cluster is on all the series, so its posting list is the whole block's.
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "cluster", "c1", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, 1)
 			require.NoError(b, err)
 		}
 		require.NoError(b, app.Commit())
@@ -355,21 +356,33 @@ func BenchmarkEngineSelectColdBlocks(b *testing.B) {
 		require.NoError(b, err)
 		require.NoError(b, engine.Compact(ctx))
 	}
-	matchers := []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "old"), promlabels.MustNewMatcher(promlabels.MatchEqual, "round", "3"), promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "5")}
-	b.ResetTimer()
-	for range b.N {
-		if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
-			b.StopTimer()
-			evictCaches()
-			b.StartTimer()
-		}
-		q, err := engine.ChunkQuerier(0, blocks*chunkRangeMs*3)
-		require.NoError(b, err)
-		set := q.Select(ctx, true, nil, matchers...)
-		for set.Next() {
-		}
-		require.NoError(b, set.Err())
-		_ = q.Close()
+	eq := func(name, value string) *promlabels.Matcher {
+		return promlabels.MustNewMatcher(promlabels.MatchEqual, name, value)
+	}
+	for name, matchers := range map[string][]*promlabels.Matcher{
+		// The lists of the cluster and the name are the whole block's: only the pod's is read.
+		"one-series": {eq("__name__", "old"), eq("cluster", "c1"), eq("round", "3"), eq("pod", "5")},
+		// Every series of a block, each of which has its labels copied out.
+		"one-block": {eq("__name__", "old"), eq("cluster", "c1"), eq("round", "3")},
+	} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if os.Getenv("MIMIR_REALISTIC_COLD") != "" {
+					b.StopTimer()
+					evictCaches()
+					b.StartTimer()
+				}
+				q, err := engine.ChunkQuerier(0, blocks*chunkRangeMs*3)
+				require.NoError(b, err)
+				set := q.Select(ctx, true, nil, matchers...)
+				for set.Next() {
+				}
+				require.NoError(b, set.Err())
+				_ = q.Close()
+			}
+		})
 	}
 }
 
