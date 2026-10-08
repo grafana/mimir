@@ -98,12 +98,74 @@ func TestOffsetCatalogue(t *testing.T) {
 		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}}, data.Data[id.String()])
 	})
 
-	t.Run("rejects version mismatch", func(t *testing.T) {
+	t.Run("overwrites version mismatch", func(t *testing.T) {
 		dir := t.TempDir()
 		content := `{"version":99,"updated_at":0,"data":{}}`
 		require.NoError(t, os.WriteFile(filepath.Join(dir, offsetCatalogueFilename), []byte(content), 0o644))
 
 		_, err := readOffsetCatalogueFromFile(dir)
-		require.Error(t, err)
+		require.Error(t, err, "catalogue file version mismatch")
+
+		// Next sync overwrites corrupted version.
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewSingleClusterPartitionOffsets(42)))
+
+		data, err := readOffsetCatalogueFromFile(dir)
+		require.NoError(t, err)
+		require.Empty(t, data.Data)
 	})
+}
+
+func TestOffsetWatermarksCommitted(t *testing.T) {
+	tests := map[string]struct {
+		watermarks map[int]offsetWatermark
+		committed  kmeta.PartitionOffsets
+		expected   bool
+	}{
+		"no watermarks": {
+			watermarks: map[int]offsetWatermark{},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   false,
+		},
+		"single cluster below watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(99),
+			expected:   false,
+		},
+		"single cluster at watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   true,
+		},
+		"multiple clusters, one below watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, 249}),
+			expected:   false,
+		},
+		"multiple clusters, all reached watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{150, 250}),
+			expected:   true,
+		},
+		"cluster without committed offset": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1}),
+			expected:   false,
+		},
+		"cluster without consumed records nor committed offset": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: -1}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1}),
+			expected:   true,
+		},
+		"cluster missing from committed offsets": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, offsetWatermarksCommitted(tc.watermarks, tc.committed))
+		})
+	}
 }

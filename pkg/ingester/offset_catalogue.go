@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
@@ -79,6 +81,9 @@ type offsetCatalogue struct {
 	dir       string
 	userID    string
 	partition int32
+
+	// cachedData is a pointer to the latest version of catalogue data.
+	cachedData atomic.Pointer[offsetCatalogueData]
 }
 
 func newOffsetCatalogue(logger log.Logger, metrics *offsetCatalogueMetrics, dir, userID string, partition int32) *offsetCatalogue {
@@ -104,11 +109,13 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 	}()
 
 	oldData, err := readOffsetCatalogueFromFile(c.dir)
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errOffsetCatalogueVersionTooOld) {
+	if err != nil {
 		// Missing or outdated catalogues are rebuilt from the blocks on disk.
+		// Corrupted catalogues are always overwritten with a fresh copy.
+		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errOffsetCatalogueVersionTooOld) {
+			level.Warn(spanLogger).Log("msg", "reading offset catalogue failed, will override", "err", err)
+		}
 		oldData.Data = map[string]map[int]offsetWatermark{}
-	} else if err != nil {
-		return fmt.Errorf("read offset catalogue: %w", err)
 	}
 
 	blocks := make(map[string]struct{})
@@ -149,6 +156,8 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 		return err
 	}
 
+	c.cachedData.Store(&data)
+
 	c.metrics.syncs.Inc()
 	c.metrics.lastSyncTime.SetToCurrentTime()
 	for clusterID, offset := range offsetHWs {
@@ -157,6 +166,31 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 	}
 
 	return nil
+}
+
+func (c *offsetCatalogue) Data() offsetCatalogueData {
+	// cachedData is replaced on successful sync; it's safe to return the current copy.
+	if data := c.cachedData.Load(); data != nil {
+		return *data
+	}
+	// Return a dummy version of data, to simplify how the method is used.
+	return offsetCatalogueData{
+		Version: offsetCatalogueVersion,
+		Data:    make(map[string]map[int]offsetWatermark),
+	}
+}
+
+// offsetWatermarksCommitted returns true if the committed offset of every Kafka cluster reached the block's watermark in that cluster.
+func offsetWatermarksCommitted(watermarks map[int]offsetWatermark, committed kmeta.PartitionOffsets) bool {
+	if len(watermarks) == 0 {
+		return false
+	}
+	for clusterID, wm := range watermarks {
+		if wm.Offset > committed.ForKafkaCluster(clusterID) {
+			return false
+		}
+	}
+	return true
 }
 
 func readOffsetCatalogueFromFile(dir string) (_ offsetCatalogueData, retErr error) {

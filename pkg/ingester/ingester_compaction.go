@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/timeutil"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -250,6 +251,43 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 
 		return nil
 	})
+}
+
+func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
+	if !i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		return nil
+	}
+
+	// Each Kafka cluster has an independent offset space.
+	offsets := make([]int64, len(i.committedOffsetClients))
+	anyExists := false
+	for clusterID, c := range i.committedOffsetClients {
+		offset, exists, err := c.FetchLastCommittedOffset(ctx)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "write_compartment", clusterID, "err", err)
+			return nil
+		}
+		if !exists {
+			offset = -1
+		}
+		offsets[clusterID] = offset
+		anyExists = anyExists || exists
+	}
+	// Keep committed offsets unknown until the consumer group commits to any cluster.
+	if !anyExists {
+		return nil
+	}
+	committed := kmeta.NewMultiClusterPartitionOffsets(offsets)
+
+	level.Info(i.logger).Log("msg", "updating committed offset", "partition", i.ingestPartitionID, "offsets", committed)
+
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	for _, db := range i.tsdbs {
+		db.committedOffsets.Store(&committed)
+	}
+	return nil
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.

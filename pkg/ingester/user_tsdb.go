@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -150,6 +151,11 @@ type userTSDB struct {
 	// offsetCatalogue tracks Kafka offset watermarks for compacted blocks.
 	// Only set when ingest storage is enabled.
 	offsetCatalogue *offsetCatalogue
+
+	// committedOffsets are the last committed offsets, per Kafka cluster, observed from the consumer group
+	// configured in offset catalogue. Updated by a background service on the ingester.
+	// nil means unknown (no offset fetched yet).
+	committedOffsets atomic.Pointer[kmeta.PartitionOffsets]
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
@@ -444,6 +450,22 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
+
+	// Offset-catalogue path drops any block whose watermarks are at or below the block-builder's committed offsets in every Kafka cluster.
+	// Those series are guaranteed to be in object storage already.
+	committedOffsets := u.committedOffsets.Load()
+	if u.offsetCatalogue != nil && committedOffsets != nil {
+		catalogue := u.offsetCatalogue.Data()
+		if len(catalogue.Data) > 0 {
+			for blockID := range deletable {
+				if wms, ok := catalogue.Data[blockID.String()]; ok && offsetWatermarksCommitted(wms, *committedOffsets) {
+					result[blockID] = struct{}{}
+				}
+			}
+		}
+		return result
+	}
+
 	deadline := time.Now().Add(-u.blockMinRetention)
 
 	// The shipper enabled case goes first because its common in the way we run the ingesters
