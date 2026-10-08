@@ -34,7 +34,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -148,8 +147,7 @@ type Config struct {
 
 	// Configuration for the compactor to upload sparse-index-header files set based
 	// on store-gateway/bucket store index-header configuration.
-	SparseIndexHeadersSamplingRate int                `yaml:"-"`
-	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
+	SparseIndexHeadersSamplingRate int `yaml:"-"`
 
 	// Configuration for interacting with a compaction job scheduler
 	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client"`
@@ -973,7 +971,6 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.compactorCfg.BlockHealthValidationConcurrency,
 		c.bucketCompactorMetrics,
 		c.compactorCfg.SparseIndexHeadersSamplingRate,
-		c.compactorCfg.SparseIndexHeadersConfig,
 		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
 }
