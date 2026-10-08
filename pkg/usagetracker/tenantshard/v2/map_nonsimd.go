@@ -89,8 +89,9 @@ func freeSlots(x uint64) uint64 {
 // and keys are groups of uint64 that fill a whole cache line.
 func clearSlots(idx *index, d *data, x, remove uint64) int {
 	mask := (remove >> 7) * 0xff // 0xff in every byte to remove.
-	setUint64Data(d, x&^mask|spillmarkInLastSlot&mask)
-	setUint64(idx, castUint64(idx)&^mask|spillmarkInLastSlot&mask)
+	*groupWord(d) = x&^mask | spillmarkInLastSlot&mask
+	i := groupWord(idx)
+	*i = *i&^mask | spillmarkInLastSlot&mask
 	return bits.OnesCount64(remove)
 }
 
@@ -110,17 +111,12 @@ func findZeroBytes(x uint64) bitset {
 }
 
 func castUint64(m *index) uint64 {
-	return *(*uint64)((unsafe.Pointer)(m))
+	return *groupWord(m)
 }
 
-func setUint64(m *index, v uint64) {
-	*(*uint64)((unsafe.Pointer)(m)) = v
-}
-
-func castUint64Data(d *data) uint64 {
-	return *(*uint64)((unsafe.Pointer)(d))
-}
-
-func setUint64Data(d *data, v uint64) {
-	*(*uint64)((unsafe.Pointer)(d)) = v
+// groupWord returns the 8 bytes of an index or data group as one uint64, so that the whole group is read
+// or written at once. This is the only use of unsafe in this file: a group is exactly 8 bytes, and the
+// bit tricks above assume the little-endian byte order of amd64 and arm64.
+func groupWord[T index | data](g *T) *uint64 {
+	return (*uint64)(unsafe.Pointer(g)) // #nosec G103 -- nosemgrep: use-of-unsafe-block
 }

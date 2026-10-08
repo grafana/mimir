@@ -279,7 +279,7 @@ func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 	w := loBits * uint64(watermark)
 	for i := range m.data {
-		x := castUint64Data(&m.data[i])
+		x := *groupWord(&m.data[i])
 		remove := expiredSlots(x, w) &^ freeSlots(x)
 		if remove == 0 {
 			// Nothing to remove, so the group is not written.
