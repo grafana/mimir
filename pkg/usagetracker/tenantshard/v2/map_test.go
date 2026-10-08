@@ -642,3 +642,79 @@ func TestMatchOccupied(t *testing.T) {
 		require.Zero(t, set)
 	})
 }
+
+// referenceCleanupGroup is the slot by slot definition of what Cleanup does to a group, which the implementation
+// is checked against.
+func referenceCleanupGroup(idx *index, d *data, watermark clock.Minutes) int {
+	removed := 0
+	for j := range groupSize {
+		if d[j] == empty || d[j] == spillmark {
+			continue
+		}
+		if !watermark.GreaterOrEqualThan(d[j].clockMinutes()) {
+			continue
+		}
+		removed++
+		if j == last {
+			idx[j], d[j] = spillmark, spillmark
+		} else {
+			idx[j], d[j] = empty, empty
+		}
+	}
+	return removed
+}
+
+func TestMapCleanupGroup(t *testing.T) {
+	m := New(1, testNumShards)
+	require.Len(t, m.index, 1)
+	const resident = 100
+
+	check := func(t *testing.T, idx index, d data, watermark clock.Minutes) {
+		t.Helper()
+		wantIdx, wantData := idx, d
+		wantRemoved := referenceCleanupGroup(&wantIdx, &wantData, watermark)
+		m.index[0], m.data[0], m.resident = idx, d, resident
+		gotRemoved := m.Cleanup(watermark, nil)
+		if gotRemoved != wantRemoved || m.index[0] != wantIdx || m.data[0] != wantData || m.resident != resident-uint32(wantRemoved) {
+			t.Fatalf("watermark %d, index %v, data %v:\ngot  removed %d, index %v, data %v, resident %d\nwant removed %d, index %v, data %v, resident %d",
+				watermark, idx, d, gotRemoved, m.index[0], m.data[0], m.resident, wantRemoved, wantIdx, wantData, resident-wantRemoved)
+		}
+	}
+
+	t.Run("one entry", func(t *testing.T) {
+		// Every value that Put accepts against every watermark byte, in every slot. This includes
+		// bytes that clock.ToMinutes never produces, so that Cleanup matches GreaterOrEqualThan
+		// for any input, not only for valid minutes.
+		for w := range 256 {
+			watermark := clock.Minutes(w)
+			for v := range 0xfe {
+				value := clock.Minutes(v)
+				for j := range groupSize {
+					var idx index
+					var d data
+					idx[j], d[j] = prefix(prefixOffset+j), xor(value)
+					check(t, idx, d, watermark)
+				}
+			}
+		}
+	})
+
+	t.Run("random groups", func(t *testing.T) {
+		r := rand.New(rand.NewSource(1))
+		for range 100_000 {
+			var idx index
+			var d data
+			for j := range groupSize {
+				switch p := r.Intn(10); {
+				case p < 3:
+					// Leave the slot empty.
+				case p < 4:
+					idx[j], d[j] = spillmark, spillmark
+				default:
+					idx[j], d[j] = prefix(prefixOffset+r.Intn(128)), xor(clock.Minutes(r.Intn(0xfe)))
+				}
+			}
+			check(t, idx, d, clock.Minutes(r.Intn(256)))
+		}
+	})
+}

@@ -275,31 +275,19 @@ func (m *Map) Stats() Stats {
 }
 
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
+	// Each group is checked as one uint64, without a branch per slot. See expiredSlots for how.
 	removed := 0
+	w := loBits * uint64(watermark)
 	for i := range m.data {
-		occupied := m.index[i].matchOccupied()
-		for occupied != 0 {
-			j := nextMatch(&occupied)
-			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
-				removed++
-				m.resident--
-
-				if j == last {
-					// This is the last element, if it was previously set,
-					// then group may have spilled to the next one.
-					// We need to keep that signal, so we leave a spillmark here.
-					m.data[i][j] = spillmark
-					// We need to leave spillmark in the data because that's what iterator uses.
-					m.index[i][j] = spillmark
-					// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
-					// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
-				} else {
-					// This is not the last element, so just mark it as empty.
-					m.data[i][j] = empty
-					m.index[i][j] = empty
-				}
-			}
+		x := castUint64Data(&m.data[i])
+		remove := expiredSlots(x, w) &^ freeSlots(x)
+		if remove == 0 {
+			// Nothing to remove, so the group is not written.
+			continue
 		}
+		n := clearSlots(&m.index[i], &m.data[i], x, remove)
+		removed += n
+		m.resident -= uint32(n)
 	}
 	if limit == nil {
 		return removed
