@@ -779,3 +779,67 @@ func benchmarkSelectRepeated(b *testing.B, names, perName int) {
 		})
 	}
 }
+
+// A series that stopped leaves the head at a compaction once it is idle long enough, with its data still queryable, and
+// the series that left don't make a block of label names each time.
+func TestEngineEvictsIdleSeriesAtCompaction(t *testing.T) {
+	ctx := context.Background()
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+
+	const minute = int64(60_000)
+	base := int64(10) * 60 * minute
+	// Pods of ten series that live ten minutes each, one after the other: the head ends an hour in.
+	for pod := range 6 {
+		app := engine.Appender(ctx)
+		for n := range 10 {
+			for at := int64(0); at <= 10; at += 5 {
+				_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("pod-%d-%d", pod, n)), base+(int64(pod)*10+at)*minute, float64(at))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+	require.Equal(t, uint64(60), engine.NumSeries())
+	// The pods that stopped more than 30 minutes before the head's end leave: the first two.
+	require.NoError(t, engine.Compact(ctx))
+	require.Equal(t, uint64(40), engine.NumSeries(), "only the pods that had samples within the last 30 minutes stay")
+	blocks := len(engine.home2().blocks)
+	require.NoError(t, engine.Compact(ctx))
+	require.NoError(t, engine.Compact(ctx))
+	require.Equal(t, blocks, len(engine.home2().blocks), "compactions that find nothing to take add no blocks")
+
+	query := func() map[string]int {
+		q, err := engine.ChunkQuerier(0, base+200*minute)
+		require.NoError(t, err)
+		defer q.Close()
+		out := map[string]int{}
+		set := q.Select(ctx, true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"))
+		for set.Next() {
+			out[set.At().Labels().Get("pod")] = len(mergedSamples(t, set.At()))
+		}
+		require.NoError(t, set.Err())
+		return out
+	}
+	before := query()
+	require.Len(t, before, 60, "what left the head is still queried")
+	require.Equal(t, 3, before["pod-0-0"])
+	require.Equal(t, 3, before["pod-5-0"])
+
+	// A series that had left takes samples again: it is in the head, with all its samples.
+	app := engine.Appender(ctx)
+	_, err = app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", "pod-0-0"), base+65*minute, 99)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(41), engine.NumSeries())
+	after := query()
+	require.Len(t, after, 60)
+	require.Equal(t, 4, after["pod-0-0"])
+}
+
+// home2 is the tenant of the home shard, for tests.
+func (e *Engine) home2() *tenant {
+	_, t := e.home()
+	return t
+}
