@@ -19,8 +19,11 @@ import (
 const (
 	// A name with fewer series in a shard is scanned each time.
 	minCachedGroup = 8
-	// A selector matching more series in a shard than this isn't kept.
-	maxCachedRefs = 20_000
+	// A selector matching more series in a shard than this isn't kept: a lookup that returns that many spends its time
+	// building the result, and a few of them were most of what the cache held.
+	maxCachedRefs = 256
+	// How many series, in all the selectors, are kept: 16 bytes each. At this many, they are all dropped.
+	maxCachedTotalRefs = 2_000_000
 	// How many selectors are kept; at this many, they are all dropped, which the selectors in use fill again.
 	maxCachedSelectors = 8192
 )
@@ -28,11 +31,28 @@ const (
 type selectorCache struct {
 	mu        sync.RWMutex
 	selectors map[string]*cachedSelector
+	// How many series the selectors hold.
+	refs atomic.Int64
 }
 
 // cachedSelector is what one selector matches, by shard.
 type cachedSelector struct {
+	owner  *selectorCache
 	shards []atomic.Pointer[cachedShard]
+}
+
+// keep records what a selector matched in a shard, and drops everything the cache holds when it holds too much.
+func (c *cachedSelector) keep(shard int, kept *cachedShard) {
+	added := int64(len(kept.refs))
+	if old := c.shards[shard].Swap(kept); old != nil {
+		added -= int64(len(old.refs))
+	}
+	if c.owner.refs.Add(added) > maxCachedTotalRefs {
+		c.owner.mu.Lock()
+		c.owner.selectors = map[string]*cachedSelector{}
+		c.owner.refs.Store(0)
+		c.owner.mu.Unlock()
+	}
 }
 
 // cachedShard is immutable: the series of the name's group in a shard that matched the selector, as of the group's
@@ -57,8 +77,9 @@ func (c *selectorCache) get(key string, shards int) *cachedSelector {
 	}
 	if c.selectors == nil || len(c.selectors) >= maxCachedSelectors {
 		c.selectors = map[string]*cachedSelector{}
+		c.refs.Store(0)
 	}
-	selector = &cachedSelector{shards: make([]atomic.Pointer[cachedShard], shards)}
+	selector = &cachedSelector{owner: c, shards: make([]atomic.Pointer[cachedShard], shards)}
 	c.selectors[key] = selector
 	return selector
 }
@@ -132,6 +153,6 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return !inQueryShard(entry) || visit(entry)
 	})
 	if len(refs) <= maxCachedRefs {
-		selector.shards[shard].Store(&cachedShard{group: groupID, version: g.version, refs: sortRefs(refs)})
+		selector.keep(shard, &cachedShard{group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
 	}
 }
