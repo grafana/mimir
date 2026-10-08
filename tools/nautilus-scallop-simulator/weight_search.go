@@ -186,6 +186,15 @@ func evaluatePolicy(fixtures []Fixture, policy scallop.Policy, generation int) (
 				fixture.SettledRanges,
 			))
 		}
+		if fixture.Name == "dev30-fluctuating" &&
+			result.Evaluation.AdaptationStability.ReversedPartitionMoves > 0 {
+			out.Eligible = false
+			out.ConstraintErrors = append(out.ConstraintErrors, fmt.Sprintf(
+				"%s: %d partition moves reversed within the churn window",
+				fixture.Name,
+				result.Evaluation.AdaptationStability.ReversedPartitionMoves,
+			))
+		}
 	}
 	out.MeanUtility /= float64(len(fixtures))
 	out.AggregateUtility = out.MeanUtility + out.WorstUtility
@@ -270,7 +279,7 @@ func policyKey(policy scallop.Policy) string {
 	}
 	limits := policy.CandidateSearch
 	actions := policy.ActionLimits
-	return fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d",
+	return fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d",
 		strings.Join(values, "/"),
 		limits.MaxMoveSources,
 		limits.MaxDestinationsPerRange,
@@ -279,6 +288,13 @@ func policyKey(policy scallop.Policy) string {
 		limits.MaxDestinationsPerPartition,
 		limits.MaxPartitionMoveCandidates,
 		limits.MaxFullyScored,
+		limits.MaxPartitionOffenders,
+		limits.MaxReplicaOffenders,
+		limits.MaxTenantOffenders,
+		limits.MaxRangesPerOffender,
+		limits.MaxAdjacencyPerTenant,
+		limits.MaxDestinationPartitions,
+		limits.MaxDestinationReplicas,
 		actions.Total,
 		actions.Move,
 		actions.MovePerTenant,

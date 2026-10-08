@@ -153,3 +153,26 @@ four initial ranges apiece. Its varied static Gaussian hotspots receive the
 same default correlated noise as every other fixture over 16 30-second ticks,
 making repeated and reversed partition moves visible to the common evaluation
 and beam-search paths.
+
+## Production-scale planner benchmark
+
+Scallop's candidate discovery benchmarks model 1,000 partitions, 300 logical
+readcache replicas, and 10,000 tenants at both four ranges per tenant (40,000
+ranges) and bootstrap-scale 64 ranges per tenant (640,000 ranges):
+
+```bash
+go test ./pkg/nautilus/scallop \
+  -run '^$' \
+  -bench 'BenchmarkProductionScale(CandidateGeneration|Plan)' \
+  -benchmem -benchtime=1x
+```
+
+The initial production target is at most five seconds for one 640,000-range
+planning round. On an Apple M3 Pro, the Phase 7 implementation plans that
+topology in approximately 1.1 seconds with a one-action execution budget.
+Wall-clock timings are informational; tests enforce deterministic discovery
+work counts, exact-delta counts, and complete-projection bounds instead.
+
+On the same Apple M3 Pro, the complete deterministic 171-policy, six-fixture
+weight search takes approximately 129 seconds after Phase 7, compared with the
+431-second Phase 6b baseline.

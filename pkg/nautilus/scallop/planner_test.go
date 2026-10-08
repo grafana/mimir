@@ -617,15 +617,13 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 	}
 	snapshot := testSnapshot(partitions, loads, owners)
 	policy := zeroCostPolicy()
-	policy.CandidateSearch = CandidateSearchLimits{
-		MaxMoveSources:              3,
-		MaxDestinationsPerRange:     2,
-		MaxMergeCandidates:          2,
-		MaxPartitionMoveSources:     2,
-		MaxDestinationsPerPartition: 2,
-		MaxPartitionMoveCandidates:  2,
-		MaxFullyScored:              5,
-	}
+	policy.CandidateSearch.MaxMoveSources = 3
+	policy.CandidateSearch.MaxDestinationsPerRange = 2
+	policy.CandidateSearch.MaxMergeCandidates = 2
+	policy.CandidateSearch.MaxPartitionMoveSources = 2
+	policy.CandidateSearch.MaxDestinationsPerPartition = 2
+	policy.CandidateSearch.MaxPartitionMoveCandidates = 2
+	policy.CandidateSearch.MaxFullyScored = 5
 
 	candidates, diagnostics := generateCandidates(stateFromSnapshot(snapshot), snapshot, policy)
 	require.LessOrEqual(t, len(candidates), policy.CandidateSearch.MaxFullyScored)
@@ -652,6 +650,13 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 		result.CandidateSearch.FullyScored.Total,
 		result.CandidateSearch.Iterations*policy.CandidateSearch.MaxFullyScored,
 	)
+	require.LessOrEqual(t,
+		result.CandidateSearch.Work.RangesInspected,
+		result.CandidateSearch.Iterations*
+			(policy.CandidateSearch.MaxPartitionOffenders+policy.CandidateSearch.MaxReplicaOffenders)*
+			policy.CandidateSearch.MaxRangesPerOffender,
+	)
+	require.Greater(t, result.CandidateSearch.Work.ExactDeltaScores, result.CandidateSearch.Work.CompleteProjections)
 }
 
 // TestCandidateSearchOmitsLeastLoadedNonOverloadedSourceWhenBounded protects the primary source-pruning heuristic.
@@ -673,6 +678,33 @@ func TestCandidateSearchOmitsLeastLoadedNonOverloadedSourceWhenBounded(t *testin
 	}
 }
 
+func TestCostDirectedDiscoveryExpandsPastFirstPartitionOffender(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1, 2, 3, 4},
+		[]float64{10, 8, 4, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c", 3: "rc-d", 4: "rc-e"},
+	)
+	state := stateFromSnapshot(snapshot)
+	policy := zeroCostPolicy()
+	policy.CandidateSearch.MaxMoveSources = 2
+	policy.CandidateSearch.MaxPartitionOffenders = 2
+	policy.CandidateSearch.MaxReplicaOffenders = 1
+	policy.CandidateSearch.MaxRangesPerOffender = 1
+
+	candidates, diagnostics := generateCandidates(state, snapshot, policy)
+	sourcePartitions := map[int32]struct{}{}
+	for _, candidate := range candidates {
+		if candidate.kind == ActionMove {
+			sourcePartitions[candidate.fromPartition] = struct{}{}
+		}
+	}
+	require.Contains(t, sourcePartitions, int32(0))
+	require.Contains(t, sourcePartitions, int32(1),
+		"the second offender must be expanded even after the first yields candidates")
+	require.Equal(t, 2, diagnostics.Work.OffendersExpanded.Partitions)
+	require.LessOrEqual(t, diagnostics.Work.RangesInspected, 3)
+}
+
 // TestReplicaSurplusCanAdmitRangeFromUnderloadedPartition prevents partition-only pruning from hiding replica relief.
 func TestReplicaSurplusCanAdmitRangeFromUnderloadedPartition(t *testing.T) {
 	snapshot := testSnapshot(
@@ -688,6 +720,15 @@ func TestReplicaSurplusCanAdmitRangeFromUnderloadedPartition(t *testing.T) {
 	require.Less(t, index.partitionLoads[1], index.partitionMean)
 	require.Greater(t, index.replicaLoads["rc-a"], index.replicaMean)
 	require.Greater(t, moveSourcePriority(state.ranges[1], index, policy), 0.0)
+
+	policy.CandidateSearch.MaxMoveSources = 2
+	policy.CandidateSearch.MaxPartitionOffenders = 1
+	policy.CandidateSearch.MaxReplicaOffenders = 1
+	candidates, diagnostics := generateCandidates(state, snapshot, policy)
+	require.Positive(t, diagnostics.Work.OffendersExpanded.Replicas)
+	require.True(t, slices.ContainsFunc(candidates, func(candidate candidate) bool {
+		return candidate.kind == ActionMove && candidate.fromPartition == 1
+	}), "replica pressure must admit a range from an underloaded partition")
 }
 
 // TestPlanIsDeterministicUnderTopologyInputReordering prevents caller slice order from affecting ties or shortlists.

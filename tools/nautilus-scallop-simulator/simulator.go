@@ -63,6 +63,8 @@ type CandidateSearchSummary struct {
 	FullyScored                    scallop.CandidateCounts         `json:"fully_scored"`
 	Discarded                      scallop.CandidateCounts         `json:"discarded"`
 	DiscardedByBudget              scallop.CandidateBudgetDiscards `json:"discarded_by_budget"`
+	Work                           scallop.CandidateSearchWork     `json:"work"`
+	Pruned                         scallop.CandidateSearchPruned   `json:"pruned"`
 }
 
 type SimulationResult struct {
@@ -250,6 +252,22 @@ func summarizeCandidateSearch(rounds []RoundRecord, limits scallop.CandidateSear
 		out.DiscardedByBudget.PartitionMoveDestinations += diagnostics.DiscardedByBudget.PartitionMoveDestinations
 		out.DiscardedByBudget.PartitionMoves += diagnostics.DiscardedByBudget.PartitionMoves
 		out.DiscardedByBudget.FullyScored += diagnostics.DiscardedByBudget.FullyScored
+		out.Work.OffendersExpanded.Partitions += diagnostics.Work.OffendersExpanded.Partitions
+		out.Work.OffendersExpanded.Replicas += diagnostics.Work.OffendersExpanded.Replicas
+		out.Work.OffendersExpanded.Tenants += diagnostics.Work.OffendersExpanded.Tenants
+		out.Work.RangesInspected += diagnostics.Work.RangesInspected
+		out.Work.AdjacencyEdgesInspected += diagnostics.Work.AdjacencyEdgesInspected
+		out.Work.DestinationsInspected += diagnostics.Work.DestinationsInspected
+		addCandidateCounts(&out.Work.Yielded, diagnostics.Work.Yielded)
+		out.Work.ExactDeltaScores += diagnostics.Work.ExactDeltaScores
+		out.Work.CompleteProjections += diagnostics.Work.CompleteProjections
+		out.Pruned.PartitionOffenders += diagnostics.Pruned.PartitionOffenders
+		out.Pruned.ReplicaOffenders += diagnostics.Pruned.ReplicaOffenders
+		out.Pruned.TenantOffenders += diagnostics.Pruned.TenantOffenders
+		out.Pruned.Ranges += diagnostics.Pruned.Ranges
+		out.Pruned.AdjacencyEdges += diagnostics.Pruned.AdjacencyEdges
+		out.Pruned.DestinationPartitions += diagnostics.Pruned.DestinationPartitions
+		out.Pruned.DestinationReplicas += diagnostics.Pruned.DestinationReplicas
 	}
 	return out
 }

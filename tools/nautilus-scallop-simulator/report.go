@@ -131,6 +131,12 @@ func writeCSV(path string, result SearchResult) error {
 		"discarded_by_merge_budget",
 		"discarded_by_partition_source_budget", "discarded_by_partition_destination_budget",
 		"discarded_by_partition_move_budget", "discarded_by_fully_scored_budget",
+		"partition_offenders_expanded", "replica_offenders_expanded", "tenant_offenders_expanded",
+		"ranges_inspected", "adjacency_edges_inspected", "destinations_inspected",
+		"candidates_yielded", "exact_delta_scores", "complete_projections",
+		"pruned_partition_offenders", "pruned_replica_offenders", "pruned_tenant_offenders",
+		"pruned_ranges", "pruned_adjacency_edges",
+		"pruned_destination_partitions", "pruned_destination_replicas",
 	}
 	if err := writer.Write(header); err != nil {
 		return err
@@ -240,6 +246,22 @@ func csvEvaluationRow(
 		strconv.Itoa(search.DiscardedByBudget.PartitionMoveDestinations),
 		strconv.Itoa(search.DiscardedByBudget.PartitionMoves),
 		strconv.Itoa(search.DiscardedByBudget.FullyScored),
+		strconv.Itoa(search.Work.OffendersExpanded.Partitions),
+		strconv.Itoa(search.Work.OffendersExpanded.Replicas),
+		strconv.Itoa(search.Work.OffendersExpanded.Tenants),
+		strconv.Itoa(search.Work.RangesInspected),
+		strconv.Itoa(search.Work.AdjacencyEdgesInspected),
+		strconv.Itoa(search.Work.DestinationsInspected),
+		strconv.Itoa(search.Work.Yielded.Total),
+		strconv.Itoa(search.Work.ExactDeltaScores),
+		strconv.Itoa(search.Work.CompleteProjections),
+		strconv.Itoa(search.Pruned.PartitionOffenders),
+		strconv.Itoa(search.Pruned.ReplicaOffenders),
+		strconv.Itoa(search.Pruned.TenantOffenders),
+		strconv.Itoa(search.Pruned.Ranges),
+		strconv.Itoa(search.Pruned.AdjacencyEdges),
+		strconv.Itoa(search.Pruned.DestinationPartitions),
+		strconv.Itoa(search.Pruned.DestinationReplicas),
 	}
 }
 

@@ -35,13 +35,8 @@ type candidate struct {
 	priority          float64
 }
 
-// candidateIndex is the cheap first-stage view used to avoid fully projecting
-// every legal action. Candidate generation first aggregates current partition
-// and replica load here, uses those aggregates to rank likely range and
-// partition actions, and then sends only the bounded shortlist to Plan for exact
-// projection, validation, and cost comparison. The index is rebuilt after
-// every selected action, so priorities always describe the current projected
-// state rather than the original snapshot.
+// candidateIndex is the shared cost and topology view used by discovery,
+// exact delta scoring, and committed-action updates.
 type candidateIndex struct {
 	partitionLoads    map[int32]float64
 	replicaLoads      map[string]float64
@@ -50,8 +45,23 @@ type candidateIndex struct {
 	replicaMean       float64
 	partitionPeak     float64
 	replicaPeak       float64
+	partitionPressure loadPeak[int32]
+	replicaPressure   loadPeak[string]
 	totals            planTotals
 	tenantRangeCounts map[string]int
+	resolution        float64
+	rangeCount        int
+
+	partitions              []int32
+	replicas                []string
+	partitionsByDeficit     []int32
+	replicasByDeficit       []string
+	rangeIndexesByPartition map[int32][]int
+	rangeIndexesByReplica   map[string][]int
+	partitionIDsByReplica   map[string][]int32
+	rangeIndexesByTenant    map[string][]int
+	tenantIDs               []string
+	splittableRangeIndexes  []int
 }
 
 type rankedRange struct {
@@ -101,146 +111,8 @@ func generateCandidatesFor(
 	policy Policy,
 	generation candidateGeneration,
 ) ([]candidate, CandidateSearchDiagnostics) {
-	partitions := append([]int32(nil), snapshot.ActivePartitions...)
-	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
-	replicas := append([]string(nil), snapshot.ActiveReplicas...)
-	sort.Strings(replicas)
-	limits := policy.CandidateSearch
-	diagnostics := CandidateSearchDiagnostics{Limits: limits}
 	index := buildCandidateIndex(state, totals, snapshot)
-
-	moveSources := make([]rankedRange, 0, len(state.ranges))
-	for i, r := range state.ranges {
-		if !r.observed ||
-			!generation.move ||
-			len(partitions) < 2 ||
-			generation.selectedMovesByTenant[r.entry.TenantID] >= generation.movePerTenant {
-			continue
-		}
-		diagnostics.LegalMoveSources++
-		diagnostics.LegalMoveDestinations += len(partitions) - 1
-		diagnostics.Legal.Move += len(partitions) - 1
-		moveSources = append(moveSources, rankedRange{
-			index:    i,
-			priority: moveSourcePriority(r, index, policy),
-			key:      rangeStateKey(r),
-		})
-	}
-
-	selectedSources := selectMoveSources(moveSources, limits.MaxMoveSources)
-	diagnostics.DiscardedByBudget.MoveSources =
-		(len(moveSources) - len(selectedSources)) * max(0, len(partitions)-1)
-	moves := make([]candidate, 0, len(selectedSources)*limits.MaxDestinationsPerRange)
-	for _, source := range selectedSources {
-		r := state.ranges[source.index]
-		destinations := selectDestinations(r, partitions, index, state, snapshot, policy, limits.MaxDestinationsPerRange)
-		diagnostics.DiscardedByBudget.Destinations += len(partitions) - 1 - len(destinations)
-		for _, destination := range destinations {
-			moves = append(moves, candidate{
-				kind:              ActionMove,
-				index:             source.index,
-				otherIndex:        -1,
-				tenantID:          r.entry.TenantID,
-				r:                 r.entry.Range,
-				fromPartition:     r.entry.PartitionID,
-				toPartition:       destination.id,
-				load:              r.load,
-				movedLoad:         r.load,
-				movedHashFraction: rangeFraction(r.entry.Range),
-				priority:          source.priority + destination.priority,
-			})
-		}
-	}
-
-	merges := make([]candidate, 0, min(len(state.ranges), limits.MaxMergeCandidates))
-	for i := 0; generation.merge && i+1 < len(state.ranges); i++ {
-		left, right := state.ranges[i], state.ranges[i+1]
-		if !left.observed || !right.observed {
-			continue
-		}
-		if left.entry.TenantID != right.entry.TenantID ||
-			generation.selectedMergesByTenant[left.entry.TenantID] >= generation.mergePerTenant ||
-			left.entry.Range.Hi == ^uint32(0) ||
-			left.entry.Range.Hi+1 != right.entry.Range.Lo {
-			continue
-		}
-
-		targets := []int32{left.entry.PartitionID}
-		if right.entry.PartitionID != left.entry.PartitionID {
-			targets = append(targets, right.entry.PartitionID)
-		}
-		for _, target := range targets {
-			merge := mergeCandidateForTarget(i, left, right, target)
-			merge.priority = mergePriority(merge, left, right, state, index, snapshot, policy)
-			merges = append(merges, merge)
-			diagnostics.Legal.Merge++
-		}
-	}
-
-	moves = limitCandidates(moves, len(moves))
-	diagnostics.DiscardedByBudget.Merges = max(0, len(merges)-limits.MaxMergeCandidates)
-	merges = limitMergesFair(merges, index.tenantRangeCounts, limits.MaxMergeCandidates)
-
-	partitionMoves := make([]candidate, 0, limits.MaxPartitionMoveCandidates)
-	partitionSources := make([]rankedPartition, 0, len(partitions))
-	if generation.movePartition && len(replicas) > 1 {
-		for _, partitionID := range partitions {
-			diagnostics.LegalPartitionMoveSources++
-			diagnostics.LegalPartitionMoveDestinations += len(replicas) - 1
-			diagnostics.Legal.MovePartition += len(replicas) - 1
-			sourceReplica := state.partitionOwners[partitionID]
-			surplus := math.Max(0, index.replicaLoads[sourceReplica]-index.replicaMean)
-			partitionSources = append(partitionSources, rankedPartition{
-				id:       partitionID,
-				priority: math.Min(index.partitionLoads[partitionID], surplus),
-			})
-		}
-	}
-	selectedPartitionSources := selectPartitionSources(partitionSources, limits.MaxPartitionMoveSources)
-	diagnostics.DiscardedByBudget.PartitionMoveSources =
-		(len(partitionSources) - len(selectedPartitionSources)) * max(0, len(replicas)-1)
-	for _, source := range selectedPartitionSources {
-		sourceReplica := state.partitionOwners[source.id]
-		destinations := selectReplicaDestinations(source.id, replicas, index, state, limits.MaxDestinationsPerPartition)
-		diagnostics.DiscardedByBudget.PartitionMoveDestinations += len(replicas) - 1 - len(destinations)
-		tenantLoads := partitionTenantLoads(state, source.id)
-		for _, destination := range destinations {
-			move := candidate{
-				kind:          ActionMovePartition,
-				partitionID:   source.id,
-				fromPartition: source.id,
-				toPartition:   source.id,
-				fromReplica:   sourceReplica,
-				toReplica:     destination.id,
-				load:          index.partitionLoads[source.id],
-				movedLoad:     index.partitionLoads[source.id],
-				tenantLoads:   tenantLoads,
-				priority:      source.priority + destination.priority,
-			}
-			move.priority -= transitionCost(move, state, totals, snapshot, policy).WeightedTotal
-			partitionMoves = append(partitionMoves, move)
-		}
-	}
-	diagnostics.DiscardedByBudget.PartitionMoves =
-		max(0, len(partitionMoves)-limits.MaxPartitionMoveCandidates)
-	partitionMoves = limitCandidates(partitionMoves, limits.MaxPartitionMoveCandidates)
-	diagnostics.Admitted = candidateCounts(moves, merges, partitionMoves)
-
-	candidates := make([]candidate, 0, diagnostics.Admitted.Total)
-	candidates = append(candidates, moves...)
-	candidates = append(candidates, merges...)
-	candidates = append(candidates, partitionMoves...)
-	diagnostics.DiscardedByBudget.FullyScored = max(0, len(candidates)-limits.MaxFullyScored)
-	candidates = limitCandidates(candidates, limits.MaxFullyScored)
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].key() < candidates[j].key()
-	})
-	diagnostics.FullyScored = countCandidates(candidates)
-	diagnostics.Legal.Total = diagnostics.Legal.Move + diagnostics.Legal.Split +
-		diagnostics.Legal.Merge + diagnostics.Legal.MovePartition
-	diagnostics.Discarded = subtractCounts(diagnostics.Legal, diagnostics.FullyScored)
-	diagnostics.Truncated = diagnostics.Discarded.Total > 0
-	return candidates, diagnostics
+	return generateCandidatesFromIndex(state, index, snapshot, policy, generation)
 }
 
 // mergeCandidateForTarget describes one legal destination for an adjacent pair.
@@ -273,38 +145,6 @@ func mergeCandidateForTarget(index int, left, right rangeState, target int32) ca
 		movedLoad:         movedLoad,
 		movedHashFraction: movedHashFraction,
 	}
-}
-
-// buildCandidateIndex caches aggregate loads used to rank candidates cheaply.
-func buildCandidateIndex(state planningState, totals planTotals, snapshot Snapshot) candidateIndex {
-	index := candidateIndex{
-		partitionLoads:    make(map[int32]float64, len(snapshot.ActivePartitions)),
-		replicaLoads:      make(map[string]float64, len(snapshot.ActiveReplicas)),
-		partitionOwners:   state.partitionOwners,
-		totals:            totals,
-		tenantRangeCounts: make(map[string]int, totals.tenants),
-	}
-	for _, partitionID := range snapshot.ActivePartitions {
-		index.partitionLoads[partitionID] = 0
-	}
-	for _, replica := range snapshot.ActiveReplicas {
-		index.replicaLoads[replica] = 0
-	}
-	for _, r := range state.ranges {
-		index.partitionLoads[r.entry.PartitionID] += r.load
-		index.tenantRangeCounts[r.entry.TenantID]++
-	}
-	partitions := append([]int32(nil), snapshot.ActivePartitions...)
-	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
-	for _, partitionID := range partitions {
-		load := index.partitionLoads[partitionID]
-		index.replicaLoads[state.partitionOwners[partitionID]] += load
-	}
-	index.partitionMean = totals.load / float64(len(snapshot.ActivePartitions))
-	index.replicaMean = totals.load / float64(len(snapshot.ActiveReplicas))
-	index.partitionPeak = peakExcessWithMean(index.partitionLoads, index.partitionMean)
-	index.replicaPeak = peakExcessWithMean(index.replicaLoads, index.replicaMean)
-	return index
 }
 
 // moveSourcePriority estimates the weighted balance relief available from relocating one range.
@@ -417,8 +257,9 @@ func mergeBalanceBenefit(
 		return 0
 	}
 	beforePartition := index.partitionPeak
-	afterPartition := peakExcessAfterTransfer(
-		index.partitionLoads, merge.fromPartition, merge.toPartition, merge.movedLoad, index.partitionMean,
+	afterPartition := peakAfterTransfer(
+		index.partitionLoads, index.partitionPressure,
+		merge.fromPartition, merge.toPartition, merge.movedLoad, index.partitionMean,
 	)
 	partitionBenefit := beforePartition - afterPartition
 
@@ -428,36 +269,12 @@ func mergeBalanceBenefit(
 		return partitionBenefit
 	}
 	beforeReplica := index.replicaPeak
-	afterReplica := peakExcessAfterTransfer(
-		index.replicaLoads, fromReplica, toReplica, merge.movedLoad, index.replicaMean,
+	afterReplica := peakAfterTransfer(
+		index.replicaLoads, index.replicaPressure,
+		fromReplica, toReplica, merge.movedLoad, index.replicaMean,
 	)
 	replicaBenefit := beforeReplica - afterReplica
 	return partitionBenefit + policy.Weights.ReplicaBalance*replicaBenefit
-}
-
-// peakExcessAfterTransfer evaluates an affected-load move without cloning an aggregate map.
-func peakExcessAfterTransfer[K comparable](
-	loads map[K]float64,
-	from, to K,
-	amount, mean float64,
-) float64 {
-	if from == to {
-		return peakExcessWithMean(loads, mean)
-	}
-	if mean <= 0 {
-		return 0
-	}
-	maximum := 0.0
-	for key, load := range loads {
-		switch key {
-		case from:
-			load -= amount
-		case to:
-			load += amount
-		}
-		maximum = math.Max(maximum, load)
-	}
-	return maximum/mean - 1
 }
 
 // peakExcessWithMean computes max/mean minus one when the stable mean is already known.
@@ -533,44 +350,6 @@ func selectPartitionSources(sources []rankedPartition, limit int) []rankedPartit
 		selected = append(selected, source)
 	}
 	return selected
-}
-
-// selectReplicaDestinations ranks replica owners by their current load deficit.
-func selectReplicaDestinations(
-	partitionID int32,
-	replicas []string,
-	index candidateIndex,
-	state planningState,
-	limit int,
-) []rankedReplica {
-	source := state.partitionOwners[partitionID]
-	load := index.partitionLoads[partitionID]
-	destinations := make([]rankedReplica, 0, len(replicas)-1)
-	for _, replica := range replicas {
-		if replica == source {
-			continue
-		}
-		deficit := math.Max(0, index.replicaMean-index.replicaLoads[replica])
-		destinations = append(destinations, rankedReplica{id: replica, priority: math.Min(load, deficit)})
-	}
-	sort.Slice(destinations, func(i, j int) bool {
-		if math.Abs(destinations[i].priority-destinations[j].priority) > costEpsilon {
-			return destinations[i].priority > destinations[j].priority
-		}
-		return destinations[i].id < destinations[j].id
-	})
-	return destinations[:min(limit, len(destinations))]
-}
-
-// partitionTenantLoads captures the tenant composition needed for partition-move locality cost.
-func partitionTenantLoads(state planningState, partitionID int32) map[string]float64 {
-	loads := map[string]float64{}
-	for _, r := range state.ranges {
-		if r.entry.PartitionID == partitionID {
-			loads[r.entry.TenantID] += r.load
-		}
-	}
-	return loads
 }
 
 // sortCandidatesByPriority orders a shortlist by estimated benefit and stable identity.

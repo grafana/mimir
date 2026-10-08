@@ -146,3 +146,113 @@ func TestRangeMoveUsesProjectedPartitionOwnerForLocality(t *testing.T) {
 func TestPeakExcessZeroLoad(t *testing.T) {
 	require.Zero(t, peakExcess(map[int32]float64{0: 0, 1: 0}))
 }
+
+func TestExactCandidateDeltasMatchCompleteProjection(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 1, 2, 3, 3},
+		[]float64{12, 4, 7, 2, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b", 3: "rc-c"},
+	)
+	snapshot.LastHostedAt = map[string]map[string]time.Time{
+		"tenant-a": {"rc-b": snapshot.At},
+	}
+	state := stateFromSnapshot(snapshot)
+	totals := totalsOf(state)
+	index := buildCandidateIndex(state, totals, snapshot)
+	policy := DefaultPolicy()
+	policy.CandidateSearch.MaxMoveSources = len(state.ranges)
+	policy.CandidateSearch.MaxDestinationPartitions = len(snapshot.ActivePartitions)
+	policy.CandidateSearch.MaxDestinationReplicas = len(snapshot.ActiveReplicas)
+	before := stateCost(state, totals, snapshot, policy)
+	candidates, _ := generateCandidates(state, snapshot, policy)
+	require.NotEmpty(t, candidates)
+
+	for _, candidate := range candidates {
+		t.Run(candidate.key(), func(t *testing.T) {
+			after, transition, total := scoreCandidate(candidate, before, index, state, snapshot, policy)
+			projected := project(state, candidate)
+			wantAfter := stateCost(projected, totals, snapshot, policy)
+			wantTransition := transitionCost(candidate, state, totals, snapshot, policy)
+			requireCostBreakdownInDelta(t, wantAfter, after)
+			requireCostBreakdownInDelta(t, wantTransition, transition)
+			require.InDelta(t, wantAfter.WeightedTotal+wantTransition.WeightedTotal, total, 1e-9)
+		})
+	}
+}
+
+func TestCommittedIndexMatchesRebuild(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 1, 2},
+		[]float64{9, 3, 2, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b"},
+	)
+	state := stateFromSnapshot(snapshot)
+	totals := totalsOf(state)
+	index := buildCandidateIndex(state, totals, snapshot)
+	policy := zeroCostPolicy()
+	candidates, _ := generateCandidates(state, snapshot, policy)
+
+	for _, candidate := range candidates {
+		if candidate.kind != ActionMove && candidate.kind != ActionMovePartition {
+			continue
+		}
+		trial := index.cloneLoads()
+		if candidate.kind == ActionMove {
+			updateMoveStructures(&trial, candidate, state)
+		} else {
+			updatePartitionMoveStructures(&trial, candidate, state)
+		}
+		applyCandidateToIndex(&trial, candidate, state)
+		projected := project(state, candidate)
+		rebuilt := buildCandidateIndex(projected, totals, snapshot)
+		require.Equal(t, rebuilt.partitionOwners, trial.partitionOwners)
+		require.Equal(t, rebuilt.partitionLoads, trial.partitionLoads)
+		require.Equal(t, rebuilt.replicaLoads, trial.replicaLoads)
+		requireCostBreakdownInDelta(t, stateCostFromIndex(rebuilt, policy), stateCostFromIndex(trial, policy))
+	}
+}
+
+func TestMergeWaveDeltaMatchesCompleteProjection(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1, 0, 1, 2, 2, 3, 3},
+		[]float64{9, 2, 8, 1, 4, 3, 2, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c", 3: "rc-d"},
+	)
+	state := stateFromSnapshot(snapshot)
+	totals := totalsOf(state)
+	index := buildCandidateIndex(state, totals, snapshot)
+	policy := zeroCostPolicy()
+	policy.Weights.Fragmentation = 10
+	candidates, _ := generateCandidates(state, snapshot, policy)
+	wave := selectMergeWave(candidates, state, 4, map[string]int{}, 4)
+	require.NotEmpty(t, wave)
+
+	before := stateCost(state, totals, snapshot, policy)
+	after, transition, resolved, total, err := scoreMergeWave(
+		state, index, before, wave, snapshot, policy,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, resolved)
+	projected := projectMergeBatch(state, resolved)
+	wantAfter := stateCost(projected, totals, snapshot, policy)
+	var wantTransition CostBreakdown
+	for _, candidate := range resolved {
+		accumulateTransition(&wantTransition, transitionCost(candidate, state, totals, snapshot, policy))
+	}
+	requireCostBreakdownInDelta(t, wantAfter, after)
+	requireCostBreakdownInDelta(t, wantTransition, transition)
+	require.InDelta(t, wantAfter.WeightedTotal+wantTransition.WeightedTotal, total, 1e-9)
+}
+
+func requireCostBreakdownInDelta(t *testing.T, expected, actual CostBreakdown) {
+	t.Helper()
+	require.InDelta(t, expected.PartitionBalance, actual.PartitionBalance, 1e-9)
+	require.InDelta(t, expected.ReplicaBalance, actual.ReplicaBalance, 1e-9)
+	require.InDelta(t, expected.TransitionEvents, actual.TransitionEvents, 1e-9)
+	require.InDelta(t, expected.TransitionLoad, actual.TransitionLoad, 1e-9)
+	require.InDelta(t, expected.TransitionHashSpace, actual.TransitionHashSpace, 1e-9)
+	require.InDelta(t, expected.LocalityMiss, actual.LocalityMiss, 1e-9)
+	require.InDelta(t, expected.Fragmentation, actual.Fragmentation, 1e-9)
+	require.InDelta(t, expected.Resolution, actual.Resolution, 1e-9)
+	require.InDelta(t, expected.WeightedTotal, actual.WeightedTotal, 1e-9)
+}

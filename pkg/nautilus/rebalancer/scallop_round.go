@@ -168,6 +168,13 @@ func (r *Rebalancer) runScallopRound(ctx context.Context, input scallopRoundInpu
 		"candidate_admitted", result.CandidateSearch.Admitted.Total,
 		"candidate_fully_scored", result.CandidateSearch.FullyScored.Total,
 		"candidate_discarded", result.CandidateSearch.Discarded.Total,
+		"offenders_expanded_partitions", result.CandidateSearch.Work.OffendersExpanded.Partitions,
+		"offenders_expanded_replicas", result.CandidateSearch.Work.OffendersExpanded.Replicas,
+		"offenders_expanded_tenants", result.CandidateSearch.Work.OffendersExpanded.Tenants,
+		"ranges_inspected", result.CandidateSearch.Work.RangesInspected,
+		"adjacency_edges_inspected", result.CandidateSearch.Work.AdjacencyEdgesInspected,
+		"exact_delta_scores", result.CandidateSearch.Work.ExactDeltaScores,
+		"complete_projections", result.CandidateSearch.Work.CompleteProjections,
 	)
 	return nil
 }

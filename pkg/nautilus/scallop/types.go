@@ -102,6 +102,13 @@ type CandidateSearchLimits struct {
 	MaxDestinationsPerPartition int `json:"max_destinations_per_partition"`
 	MaxPartitionMoveCandidates  int `json:"max_partition_move_candidates"`
 	MaxFullyScored              int `json:"max_fully_scored"`
+	MaxPartitionOffenders       int `json:"max_partition_offenders"`
+	MaxReplicaOffenders         int `json:"max_replica_offenders"`
+	MaxTenantOffenders          int `json:"max_tenant_offenders"`
+	MaxRangesPerOffender        int `json:"max_ranges_per_offender"`
+	MaxAdjacencyPerTenant       int `json:"max_adjacency_per_tenant"`
+	MaxDestinationPartitions    int `json:"max_destination_partitions"`
+	MaxDestinationReplicas      int `json:"max_destination_replicas"`
 }
 
 // DefaultCandidateSearchLimits bounds large-cell work while admitting complete fair merge waves.
@@ -114,6 +121,13 @@ func DefaultCandidateSearchLimits() CandidateSearchLimits {
 		MaxDestinationsPerPartition: 4,
 		MaxPartitionMoveCandidates:  128,
 		MaxFullyScored:              4096,
+		MaxPartitionOffenders:       80,
+		MaxReplicaOffenders:         80,
+		MaxTenantOffenders:          3200,
+		MaxRangesPerOffender:        80,
+		MaxAdjacencyPerTenant:       128,
+		MaxDestinationPartitions:    32,
+		MaxDestinationReplicas:      32,
 	}
 }
 
@@ -249,6 +263,40 @@ type CandidateBudgetDiscards struct {
 	FullyScored               int `json:"fully_scored"`
 }
 
+// OffenderCounts reports how many cost-violating topology objects were expanded.
+type OffenderCounts struct {
+	Partitions int `json:"partitions"`
+	Replicas   int `json:"replicas"`
+	Tenants    int `json:"tenants"`
+}
+
+// CandidateSearchWork reports bounded discovery and exact-scoring work.
+type CandidateSearchWork struct {
+	OffendersExpanded       OffenderCounts  `json:"offenders_expanded"`
+	RangesInspected         int             `json:"ranges_inspected"`
+	AdjacencyEdgesInspected int             `json:"adjacency_edges_inspected"`
+	DestinationsInspected   int             `json:"destinations_inspected"`
+	Yielded                 CandidateCounts `json:"yielded"`
+	ExactDeltaScores        int             `json:"exact_delta_scores"`
+	CompleteProjections     int             `json:"complete_projections"`
+}
+
+// CandidateSearchPruned attributes discovery work skipped before candidates exist.
+type CandidateSearchPruned struct {
+	PartitionOffenders    int `json:"partition_offenders"`
+	ReplicaOffenders      int `json:"replica_offenders"`
+	TenantOffenders       int `json:"tenant_offenders"`
+	Ranges                int `json:"ranges"`
+	AdjacencyEdges        int `json:"adjacency_edges"`
+	DestinationPartitions int `json:"destination_partitions"`
+	DestinationReplicas   int `json:"destination_replicas"`
+}
+
+func (p CandidateSearchPruned) total() int {
+	return p.PartitionOffenders + p.ReplicaOffenders + p.TenantOffenders +
+		p.Ranges + p.AdjacencyEdges + p.DestinationPartitions + p.DestinationReplicas
+}
+
 // CandidateSearchDiagnostics makes bounded-search decisions inspectable.
 type CandidateSearchDiagnostics struct {
 	Limits                         CandidateSearchLimits   `json:"limits"`
@@ -262,6 +310,8 @@ type CandidateSearchDiagnostics struct {
 	FullyScored                    CandidateCounts         `json:"fully_scored"`
 	Discarded                      CandidateCounts         `json:"discarded"`
 	DiscardedByBudget              CandidateBudgetDiscards `json:"discarded_by_budget"`
+	Work                           CandidateSearchWork     `json:"work"`
+	Pruned                         CandidateSearchPruned   `json:"pruned"`
 	Truncated                      bool                    `json:"truncated"`
 }
 
@@ -313,7 +363,14 @@ func (p Policy) validate() error {
 		limits.MaxPartitionMoveSources <= 0 ||
 		limits.MaxDestinationsPerPartition <= 0 ||
 		limits.MaxPartitionMoveCandidates <= 0 ||
-		limits.MaxFullyScored <= 0 {
+		limits.MaxFullyScored <= 0 ||
+		limits.MaxPartitionOffenders <= 0 ||
+		limits.MaxReplicaOffenders <= 0 ||
+		limits.MaxTenantOffenders <= 0 ||
+		limits.MaxRangesPerOffender <= 0 ||
+		limits.MaxAdjacencyPerTenant <= 0 ||
+		limits.MaxDestinationPartitions <= 0 ||
+		limits.MaxDestinationReplicas <= 0 {
 		return fmt.Errorf("all candidate search limits must be positive")
 	}
 	values := map[string]float64{

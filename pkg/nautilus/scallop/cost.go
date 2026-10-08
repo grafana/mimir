@@ -41,14 +41,7 @@ func stateCost(state planningState, totals planTotals, snapshot Snapshot, policy
 		Fragmentation:    float64(len(state.ranges)) / float64(max(1, totals.tenants)),
 		Resolution:       resolution,
 	}
-	out.WeightedPartitionBalance = out.PartitionBalance
-	out.WeightedReplicaBalance = policy.Weights.ReplicaBalance * out.ReplicaBalance
-	out.WeightedFragmentation = policy.Weights.Fragmentation * out.Fragmentation
-	out.WeightedResolution = policy.Weights.Resolution * out.Resolution
-	out.WeightedTotal = out.WeightedPartitionBalance +
-		out.WeightedReplicaBalance +
-		out.WeightedFragmentation +
-		out.WeightedResolution
+	weightStateCost(&out, policy)
 	return out
 }
 
