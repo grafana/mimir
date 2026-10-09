@@ -47,8 +47,8 @@ const (
 	// Filesystem is the value for the filesystem storage backend.
 	Filesystem = "filesystem"
 
-	// validPrefixCharactersRegex allows only alphanumeric characters to prevent subtle bugs and simplify validation
-	validPrefixCharactersRegex = `^[\da-zA-Z]+$`
+	// validPrefixCharactersRegex allows slash-separated path segments containing alphanumeric characters, hyphens, and underscores.
+	validPrefixCharactersRegex = `^[\da-zA-Z_-]+(?:/[\da-zA-Z_-]+)*$`
 
 	// MimirInternalsPrefix is the bucket prefix under which all Mimir internal cluster-wide objects are stored.
 	// The object storage path delimiter (/) is appended to this prefix when building the full object path.
@@ -59,7 +59,7 @@ var (
 	SupportedBackends = []string{S3, GCS, Azure, Swift, Filesystem}
 
 	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
-	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
+	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain slash-separated path segments made of digits, English alphabet letters, hyphens, and underscores")
 )
 
 type StorageBackendConfig struct {
@@ -142,7 +142,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
 	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
-	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
+	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. It may only contain slash-separated path segments made of digits, English alphabet letters, hyphens, and underscores.")
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
