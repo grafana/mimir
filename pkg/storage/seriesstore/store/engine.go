@@ -915,41 +915,80 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef) error {
 	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
 	var builder promlabels.ScratchBuilder
 	for index, shard := range e.store.shards {
-		shard.Lock()
-		t, ok := shard.tenants[e.tenantID]
-		if !ok {
-			shard.Unlock()
-			continue
+		var inShard []uint64
+		for ref := range selected {
+			if refShard(ref) == index {
+				inShard = append(inShard, ref)
+			}
 		}
 		leaving := map[uint64]labels.Labels{}
-		for ref := range selected {
-			if refShard(ref) != index {
-				continue
+		// The newest sample each had when it was looked at: one that has a newer one when the shard is locked again took
+		// samples meanwhile.
+		newestSeen := map[uint64]int64{}
+		var t *tenant
+		locked := false
+		// The series are looked at a batch at a time, with the shard unlocked between them.
+		for start := 0; ; start += scanBatch {
+			shard.Lock()
+			var ok bool
+			if t, ok = shard.tenants[e.tenantID]; !ok {
+				shard.Unlock()
+				break
 			}
+			for _, ref := range inShard[min(start, len(inShard)):min(start+scanBatch, len(inShard))] {
+				entry, ok := e.lookupLocked(t, ref)
+				if !ok {
+					continue
+				}
+				series := &entry.series
+				if !e.canLeave(index, series, maxt) {
+					continue
+				}
+				if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
+					if !meta.OutOfOrder {
+						return alignedCuts(meta)
+					}
+					return nil
+				}); err != nil {
+					shard.Unlock()
+					return err
+				}
+				// Not in the head yet: a sample that comes before the shard is locked again brings the series back.
+				series.headEvicted = true
+				leaving[ref] = entry.labels
+				newestSeen[ref], _ = series.maxTime()
+			}
+			if start+scanBatch >= len(inShard) {
+				locked = true
+				break
+			}
+			shard.Unlock()
+			if scanGapHook != nil {
+				scanGapHook()
+			}
+		}
+		if !locked {
+			continue
+		}
+		// The shard is locked again for good: what took samples meanwhile stays.
+		for ref := range leaving {
 			entry, ok := e.lookupLocked(t, ref)
 			if !ok {
+				delete(leaving, ref)
 				continue
 			}
-			series := &entry.series
-			if !e.canLeave(index, series, maxt) {
+			if newest, _ := entry.series.maxTime(); newest != newestSeen[ref] || !e.canLeave(index, &entry.series, maxt) {
+				entry.series.headEvicted = false
+				delete(leaving, ref)
 				continue
 			}
-			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
-				if !meta.OutOfOrder {
-					return alignedCuts(meta)
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			series.headEvicted = true
 			e.store.evictEpoch.Add(1)
-			series.inHead = false
-			leaving[ref] = entry.labels
+			entry.series.inHead = false
 		}
 		if len(leaving) > 0 {
-			// Only the selected series leave.
-			t.series.forEach(func(entry *seriesEntry) {
+			// Only the selected series leave: the rest of their groups, which the freeze goes over, stay.
+			scope := e.freezeScopeOf(t, leaving)
+			scope.forEach(shard, func(_ string, entry *seriesEntry) {
 				if _, ok := leaving[entry.series.ref]; !ok {
 					entry.series.inHead = true
 				}

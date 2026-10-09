@@ -918,3 +918,93 @@ func TestLabelQueriesDontReturnStringsOfColdBlocks(t *testing.T) {
 	}
 	require.Positive(t, checked)
 }
+
+// Series are taken out of the head a batch at a time: one that takes a sample before the shard is locked again for the
+// freeze stays in the head, with all its samples.
+func TestEvictionKeepsSeriesThatTakeSamplesBetweenBatches(t *testing.T) {
+	ctx := context.Background()
+	oldBatch, oldHook := scanBatch, scanGapHook
+	t.Cleanup(func() { scanBatch, scanGapHook = oldBatch, oldHook })
+	scanBatch = 8
+
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+
+	const minute = int64(60_000)
+	base := int64(10) * 60 * minute
+	app := engine.Appender(ctx)
+	for n := range 40 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("idle-%d", n)), base, 1)
+		require.NoError(t, err)
+	}
+	// What moves the head's end an hour on.
+	_, err = app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", "live"), base+60*minute, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(41), engine.NumSeries())
+
+	// All the idle series take a sample in the gap after the first batch.
+	gaps := 0
+	scanGapHook = func() {
+		gaps++
+		if gaps != 1 {
+			return
+		}
+		app := engine.Appender(ctx)
+		for n := range 40 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("idle-%d", n)), base+59*minute, 2)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, engine.Compact(ctx))
+	require.Positive(t, gaps)
+	// The first batch's series took their sample after it was looked at and stay; the others took theirs before theirs
+	// was, and leave with it.
+	require.Equal(t, uint64(1+scanBatch), engine.NumSeries())
+
+	q, err := engine.ChunkQuerier(0, base+120*minute)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(ctx, true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"))
+	count := 0
+	for set.Next() {
+		if set.At().Labels().Get("pod") != "live" {
+			require.Len(t, mergedSamples(t, set.At()), 2)
+		}
+		count++
+	}
+	require.NoError(t, set.Err())
+	require.Equal(t, 41, count)
+}
+
+// A block written by a freeze has the hashes that queries use computed, so the first queries don't all wait for one to
+// hash every series.
+func TestFrozenBlocksHaveTheirHashesComputed(t *testing.T) {
+	ctx := context.Background()
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+
+	const minute = int64(60_000)
+	base := int64(10) * 60 * minute
+	app := engine.Appender(ctx)
+	for n := range 20 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("idle-%d", n)), base, 1)
+		require.NoError(t, err)
+	}
+	_, err = app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", "live"), base+60*minute, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, engine.Compact(ctx))
+
+	blocks := engine.store.shards[0].cold.blocks
+	require.NotEmpty(t, blocks)
+	for _, block := range blocks {
+		for _, table := range block.tenants {
+			require.NotNil(t, table.labelHashes)
+			require.NotNil(t, table.shardHashes)
+		}
+	}
+}

@@ -177,3 +177,18 @@ func TestPruneStall(t *testing.T) {
 		})
 	}
 }
+
+// TestCompactSelectedStall moves a fifth of the series out of the head, like the eviction of idle series does.
+func TestCompactSelectedStall(t *testing.T) {
+	requireBench(t)
+	engine, lsets, refs := stallEngine(t, 0)
+	var selected []storage.SeriesRef
+	for n, ref := range refs {
+		if n%5 == 0 {
+			selected = append(selected, ref)
+		}
+	}
+	measureStall(t, "compact selected", engine, lsets, refs, func() {
+		require.NoError(t, engine.CompactSelectedSeries(selected))
+	})
+}

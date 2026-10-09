@@ -670,6 +670,16 @@ func (s *coldSeries) rangeNameIDs(visit func(id uint64)) {
 	}
 }
 
+// warmHashes computes the hashes the queries use, which they would otherwise compute on first use.
+func (b *coldBlock) warmHashes() {
+	for _, table := range b.tenants {
+		if table.seriesCount > 0 {
+			b.labelsHash(table, 0)
+			b.shardHash(table, 0)
+		}
+	}
+}
+
 // shardHash returns the query shard hash of the series at index.
 func (b *coldBlock) shardHash(table *coldTenantIndex, index int) uint64 {
 	table.shardHashesOnce.Do(func() {
