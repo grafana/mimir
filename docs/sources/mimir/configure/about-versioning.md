@@ -47,7 +47,7 @@ Experimental configuration and flags are subject to change.
 The following features are currently experimental:
 
 - Ingester query-tee
-  - Compare read responses from primary and shadow ingesters owning the same partition. This standalone tool is enabled only when explicitly deployed. See [Ingester query-tee](../manage/tools/ingester-query-tee.md).
+  - Compare read responses from primary and shadow ingesters owning the same partition. This standalone tool is enabled only when explicitly deployed. See [Ingester query-tee](/docs/mimir/<MIMIR_VERSION>/manage/tools/ingester-query-tee/).
 - Auth
   - Label-Based Access Control (LBAC) for metric read queries
     - `-auth.label-access-control-enabled`
