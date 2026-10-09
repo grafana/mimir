@@ -93,8 +93,10 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
 		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
-		idx := userDB.Head().MustIndex()
+		idx := mustIndex(userDB.Head())
 
+		// One instance for both, as the order of the tracker names, which the counts follow, is not the same for two.
+		newMatchers := asmodel.NewMatchers(newMatchersConfig)
 		var oldMatcherNames []string
 		if matchersChanged || catChanged {
 			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
@@ -104,16 +106,31 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
 			}
 			userDB.activeSeries.ReloadSeriesConfig(
-				asmodel.NewMatchers(newMatchersConfig),
+				newMatchers,
 				newCostAttributionActiveSeriesTracker,
 				matchersChanged, catChanged, idx,
 			)
 		}
 
-		userDB.activeSeries.Purge(now, idx)
 		idx.Close()
+		if userDB.nativeActive != nil {
+			// The engine counts by the new trackers from now on, and reports to the new cost attribution.
+			if matchersChanged {
+				userDB.nativeActive.SetActiveTrackers(newMatchers)
+			}
+			if catChanged {
+				userDB.setCostAttribution(newCostAttributionActiveSeriesTracker)
+			}
+		}
 
-		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		counts := userDB.activeSeriesCounts(now)
+		allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets := counts.Total, counts.OTLP, counts.NativeHistograms, counts.NativeHistogramBuckets
+		activeMatching := make([]int, len(counts.Trackers))
+		activeMatchingHistograms := make([]int, len(counts.Trackers))
+		activeMatchingBuckets := make([]int, len(counts.Trackers))
+		for tracker, c := range counts.Trackers {
+			activeMatching[tracker], activeMatchingHistograms[tracker], activeMatchingBuckets[tracker] = c.Total, c.NativeHistograms, c.NativeHistogramBuckets
+		}
 		if allActive > 0 {
 			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
@@ -202,8 +219,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _, _ := userDB.activeSeries.Active()
-		activeSeriesCount += int64(activeSeries)
+		activeSeriesCount += int64(userDB.activeSeriesTotal(time.Now()))
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {
