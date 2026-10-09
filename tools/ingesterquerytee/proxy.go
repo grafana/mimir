@@ -4,9 +4,10 @@ package ingesterquerytee
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"io"
-	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -104,8 +105,13 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 }
 
 func outgoingContext(ctx context.Context) context.Context {
+	return metadata.NewOutgoingContext(ctx, incomingMetadata(ctx))
+}
+
+func incomingMetadata(ctx context.Context) metadata.MD {
+	//lint:ignore faillint A transparent proxy must propagate all metadata, including keys added by future clients.
 	md, _ := metadata.FromIncomingContext(ctx)
-	return metadata.NewOutgoingContext(ctx, md.Copy())
+	return md.Copy()
 }
 
 func openStream(ctx context.Context, conn grpc.ClientConnInterface, method string, req *frame) (grpc.ClientStream, error) {
@@ -127,7 +133,7 @@ func (p *Proxy) mirror(method string) bool {
 	if !comparable(method) {
 		return false
 	}
-	if rand.Float64() >= p.cfg.SampleRate {
+	if !sampleRequest(p.cfg.SampleRate) {
 		p.comparisons.WithLabelValues(method, "skipped").Inc()
 		return false
 	}
@@ -138,6 +144,22 @@ func (p *Proxy) mirror(method string) bool {
 		p.comparisons.WithLabelValues(method, "skipped").Inc()
 		return false
 	}
+}
+
+func sampleRequest(rate float64) bool {
+	if rate <= 0 {
+		return false
+	}
+	if rate >= 1 {
+		return true
+	}
+	var data [8]byte
+	if _, err := rand.Read(data[:]); err != nil {
+		return false
+	}
+	// Using 53 bits keeps the conversion exact and the sampled value strictly below one.
+	sample := float64(binary.LittleEndian.Uint64(data[:])>>11) / (1 << 53)
+	return sample < rate
 }
 
 func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
@@ -155,8 +177,7 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && p.mirror(method) {
 		captured = &response{}
 		primaryDone := make(chan response, 1)
-		md, _ := metadata.FromIncomingContext(downstream.Context())
-		go p.compare(fullMethod, method, req, md.Copy(), primaryDone, start)
+		go p.compare(fullMethod, method, req, incomingMetadata(downstream.Context()), primaryDone, start)
 		defer func() { captured.err = retErr; primaryDone <- *captured }()
 	}
 	ctx, cancel := context.WithCancelCause(outgoingContext(downstream.Context()))
