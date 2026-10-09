@@ -49,12 +49,12 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*
 // object storage without having to fully download it.
 type bucketIndexReader struct {
 	block             *bucketBlock
-	postingsStrategy  postingsSelectionStrategy
+	postingsStrategy  batchPostingsSelectionStrategy
 	dec               *index.Decoder
 	indexHeaderReader indexheader.Reader
 }
 
-func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
+func newBucketIndexReader(block *bucketBlock, postingsStrategy batchPostingsSelectionStrategy) *bucketIndexReader {
 	r := &bucketIndexReader{
 		block:            block,
 		postingsStrategy: postingsStrategy,
@@ -72,7 +72,7 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // This is because we need to have them buffered anyway to perform efficient lookup
 // on object storage. The returned postings are sorted.
 //
-// Depending on the postingsSelectionStrategy there may be some pendingMatchers returned.
+// Depending on the postings selection strategy there may be some pendingMatchers returned.
 // If pendingMatchers is not empty, then the returned postings may or may not match the pendingMatchers.
 // The caller is responsible for filtering the series of the postings with the pendingMatchers.
 //

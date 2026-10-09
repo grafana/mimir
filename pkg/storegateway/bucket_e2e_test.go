@@ -123,7 +123,7 @@ type prepareStoreConfig struct {
 	indexCache           indexcache.IndexCache
 	metricsRegistry      *prometheus.Registry
 	logger               log.Logger
-	postingsStrategy     postingsSelectionStrategy
+	postingsStrategy     batchPostingsSelectionStrategy
 	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
 	// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
 	// This way the first and the last blocks created have no overlapping blocks.

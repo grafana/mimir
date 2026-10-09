@@ -344,7 +344,13 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 	return p
 }
 
-type postingsSelectionStrategy interface {
+// batchPostingsSelectionStrategy decides, for fully resolved ("batch") posting
+// groups, which of them the caller resolves through posting-list fetches, and
+// which it defers to post-fetch series filtering. The streaming counterpart is
+// postingsSelectionStrategy; the two share the decision logic but not the
+// resolution model: the batch strategies see every group's keys materialized
+// before they run.
+type batchPostingsSelectionStrategy interface {
 	// name should be a static string which identifies this strategy.
 	// The return value can be later used to find the strategy which yielded a partitioning of postingGroups.
 	name() string
@@ -457,7 +463,7 @@ func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 //     this is useful in LabelValues calls where we have to decide between fetching (some expanded postings + series),
 //     (expanded postings + series), or (expanded postings + postings for each label value).
 type labelValuesPostingsStrategy struct {
-	matchersStrategy postingsSelectionStrategy
+	matchersStrategy batchPostingsSelectionStrategy
 	allLabelValues   []streamindex.PostingListOffset
 }
 

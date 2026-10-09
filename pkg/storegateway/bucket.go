@@ -127,7 +127,7 @@ type BucketStore struct {
 	indexHeaderCfg indexheader.Config
 
 	// postingsStrategy is a strategy shared among all tenants.
-	postingsStrategy postingsSelectionStrategy
+	postingsStrategy batchPostingsSelectionStrategy
 }
 
 type noopCache struct{}
@@ -207,7 +207,7 @@ func NewBucketStore(
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
-	postingsStrategy postingsSelectionStrategy,
+	postingsStrategy batchPostingsSelectionStrategy,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioners blockPartitioners,
@@ -1557,7 +1557,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 //
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
-func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy batchPostingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
 	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
 	if ok {
 		return values, nil
@@ -2093,7 +2093,7 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
+func (b *bucketBlock) indexReader(postingsStrategy batchPostingsSelectionStrategy) *bucketIndexReader {
 	b.pendingReaders.Add(1)
 	return newBucketIndexReader(b, postingsStrategy)
 }
