@@ -61,7 +61,7 @@ func NewAgentPool(client *kgo.Client) *AgentPool {
 	p := &AgentPool{client: client}
 	p.state.Store(&poolState{
 		topicIDs: map[string][16]byte{},
-		strategy: newDefaultPartitionAssignmentStrategy(nil, nil, nil, nil),
+		strategy: newDefaultPartitionAssignmentStrategy(nil, nil, nil, nil, nil),
 	})
 	return p
 }
@@ -99,13 +99,13 @@ func (p *AgentPool) refresh(ctx context.Context) (removed []int32, dropped leade
 	}
 
 	prev := p.state.Load()
-	newLeaders, newTopicIDs, noLiveLeader, noLeader, dropped := buildLeadersAndTopicIDs(meta.Topics, agentSet, prev.topicIDs)
+	newLeaders, newTopicIDs, noLiveLeader, noLeader, partitionCounts, dropped := buildLeadersAndTopicIDs(meta.Topics, agentSet, prev.topicIDs)
 	removed = diffRemovedAgents(prev.agents, agentSet)
 
 	p.state.Store(&poolState{
 		agents:   newAgents,
 		topicIDs: newTopicIDs,
-		strategy: newDefaultPartitionAssignmentStrategy(newAgents, newLeaders, noLiveLeader, noLeader),
+		strategy: newDefaultPartitionAssignmentStrategy(newAgents, newLeaders, noLiveLeader, noLeader, partitionCounts),
 	})
 	return removed, dropped, nil
 }
@@ -139,20 +139,23 @@ type leaderDrops struct {
 
 // buildLeadersAndTopicIDs extracts the leader map and topic UUIDs from a
 // Metadata response, plus topics whose named leaders were all excluded (nil
-// when there are none) and the excluded-leader count with one sample.
+// when there are none), each known topic's partition count (one past the
+// highest index reported), and the excluded-leader count with one sample.
 // Drops leaders pointing to NodeIDs absent from agentSet (transient
 // mid-update window). Carries previous UUIDs forward for topics returned
 // with a non-zero ErrorCode, so transient errors don't blank the topic
 // from the producer's view. A topic-level ErrorCode is not a drop. A
 // partition Leader below 0 names no node, so it is not a drop and not a
-// fallback. noLeader is nil when there are none.
+// fallback. noLeader is nil when there are none. partitionCounts isn't
+// carried forward: an ErrorCode topic already skips leaders too.
 func buildLeadersAndTopicIDs(
 	respTopics []kmsg.MetadataResponseTopic,
 	agentSet map[int32]struct{},
 	prevTopicIDs map[string][16]byte,
-) (map[topicPartition]int32, map[string][16]byte, map[string]struct{}, map[topicPartition]struct{}, leaderDrops) {
+) (map[topicPartition]int32, map[string][16]byte, map[string]struct{}, map[topicPartition]struct{}, map[string]int32, leaderDrops) {
 	topicIDs := make(map[string][16]byte, len(respTopics))
 	leaders := make(map[topicPartition]int32, len(respTopics)*8)
+	partitionCounts := make(map[string]int32, len(respTopics))
 	var topicsWithNoLiveLeader map[string]struct{}
 	var noLeader map[topicPartition]struct{}
 	var dropped leaderDrops
@@ -170,7 +173,14 @@ func buildLeadersAndTopicIDs(
 		}
 		topicIDs[name] = t.TopicID
 		kept, excluded := 0, 0
+		maxPartition := int32(-1)
 		for _, part := range t.Partitions {
+			// Highest index, not len(t.Partitions): a sparse response then
+			// risks wasted guesses into holes, never a wrongly-rejected
+			// real partition.
+			if part.Partition > maxPartition {
+				maxPartition = part.Partition
+			}
 			// Leader below 0 names nobody. It is not a node id missing from
 			// the broker list, so it must not count as a drop or fall back.
 			if part.Leader < 0 {
@@ -193,6 +203,7 @@ func buildLeadersAndTopicIDs(
 			kept++
 			leaders[topicPartition{topic: name, partition: part.Partition}] = part.Leader
 		}
+		partitionCounts[name] = maxPartition + 1
 		if excluded > 0 && kept == 0 {
 			if topicsWithNoLiveLeader == nil {
 				topicsWithNoLiveLeader = make(map[string]struct{})
@@ -200,7 +211,7 @@ func buildLeadersAndTopicIDs(
 			topicsWithNoLiveLeader[name] = struct{}{}
 		}
 	}
-	return leaders, topicIDs, topicsWithNoLiveLeader, noLeader, dropped
+	return leaders, topicIDs, topicsWithNoLiveLeader, noLeader, partitionCounts, dropped
 }
 
 // diffRemovedAgents returns NodeIDs in old that are absent from newSet.

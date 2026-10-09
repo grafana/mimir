@@ -120,9 +120,15 @@ type DefaultPartitionAssignmentStrategy struct {
 	// even when this topic is known through some other partition.
 	knownTopics map[string]struct{}
 	noLeader    map[topicPartition]struct{}
+
+	// partitionCounts is one past the highest partition index Metadata
+	// reported for each known topic. Candidates uses it to reject a
+	// partition that doesn't exist instead of guessing a fallback agent
+	// for it — no agent owns a partition that was never created.
+	partitionCounts map[string]int32
 }
 
-func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPartition]int32, topicsWithNoLiveLeader map[string]struct{}, noLeader map[topicPartition]struct{}) *DefaultPartitionAssignmentStrategy {
+func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPartition]int32, topicsWithNoLiveLeader map[string]struct{}, noLeader map[topicPartition]struct{}, partitionCounts map[string]int32) *DefaultPartitionAssignmentStrategy {
 	// Built from empty, not sized off leaders: there are far fewer
 	// distinct topics than partitions.
 	knownTopics := make(map[string]struct{})
@@ -133,10 +139,11 @@ func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPart
 		knownTopics[tp.topic] = struct{}{}
 	}
 	return &DefaultPartitionAssignmentStrategy{
-		agents:      agents,
-		leaders:     leaders,
-		knownTopics: knownTopics,
-		noLeader:    noLeader,
+		agents:          agents,
+		leaders:         leaders,
+		knownTopics:     knownTopics,
+		noLeader:        noLeader,
+		partitionCounts: partitionCounts,
 	}
 }
 
@@ -152,7 +159,11 @@ func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPart
 // whose partitions this refresh listed and then excluded entirely counts
 // as known. A topic Metadata has never returned is left alone, so it still
 // gets an on-demand refresh. A partition whose Leader was below 0 returns
-// nil: WarpStream named no agent, so this does not pick one.
+// nil: WarpStream named no agent, so this does not pick one. A partition
+// index at or beyond the topic's last-reported count (or negative) also
+// returns nil: no agent owns a partition that doesn't exist. A later
+// refresh that grows the count (e.g. WarpStream's partition auto-scaler)
+// makes it routable again.
 //
 // Caveat: two clients that refreshed at different times can pick
 // different fallback agents for the same partition — a real leader
@@ -174,6 +185,9 @@ func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition 
 			return nil
 		}
 		if _, topicKnown := s.knownTopics[topic]; !topicKnown {
+			return nil
+		}
+		if partition < 0 || partition >= s.partitionCounts[topic] {
 			return nil
 		}
 		h = hashTopicPartition(topic, partition)
