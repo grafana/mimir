@@ -1735,7 +1735,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, enablePerNodeAnnotations bool, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
 	require.NotEmpty(t, nodePaths, "invalid test case: must provide at least one node path to evaluate")
 
-	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, nil, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	nodes := make([]planning.Node, 0, len(nodePaths))
@@ -2319,7 +2319,7 @@ func TestDispatcher_RingErrorTranslation(t *testing.T) {
 
 			errorStorage := &errorReturningStorage{err: testCase.storageError}
 
-			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			encodedPlan, nodeIndices, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), plan.Root)

@@ -202,7 +202,7 @@ type PlanningStage struct {
 // Analyze performs query planning and produces a report on the query planning process.
 func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool) (*Result, error) {
 	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, observer)
+	_, err := planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, nil, observer)
 	if err != nil {
 		return nil, err
 	}
@@ -248,12 +248,12 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 		return err
 	}
 
-	plan, _, err := updatedPlan.ToEncodedPlan(
-		planning.QueryPlanEncodingOptions{
-			IncludeDescriptions: true,
-			IncludeDetails:      false,
-			IncludeNodeId:       true,
-		})
+	plan, _, err := updatedPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+		IncludeDescriptions: true,
+		IncludeDetails:      false,
+		IncludeNodeId:       true,
+	})
+
 	if err != nil {
 		return err
 	}
@@ -273,12 +273,11 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 }
 
 func (o *PlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	plan, _, err := finalPlan.ToEncodedPlan(
-		planning.QueryPlanEncodingOptions{
-			IncludeDescriptions: true,
-			IncludeDetails:      false,
-			IncludeNodeId:       true,
-		})
+	plan, _, err := finalPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+		IncludeDescriptions: true,
+		IncludeDetails:      false,
+		IncludeNodeId:       true,
+	})
 	if err != nil {
 		return err
 	}
