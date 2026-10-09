@@ -61,10 +61,10 @@ func TestMergeSampleSets(t *testing.T) {
 
 func TestMergeHistogramSets(t *testing.T) {
 	now := model.Now()
-	sample1 := mimirpb.FromFloatHistogramToHistogramProto(int64(now), test.GenerateTestFloatHistogram(1))
-	sample2 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(1*time.Second)), test.GenerateTestHistogram(2))
-	sample3 := mimirpb.FromFloatHistogramToHistogramProto(int64(now.Add(4*time.Second)), test.GenerateTestFloatHistogram(3))
-	sample4 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(8*time.Second)), test.GenerateTestHistogram(7))
+	sample1 := mimirpb.FromFloatHistogramToHistogramProto(int64(now), 0, test.GenerateTestFloatHistogram(1))
+	sample2 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(1*time.Second)), 0, test.GenerateTestHistogram(2))
+	sample3 := mimirpb.FromFloatHistogramToHistogramProto(int64(now.Add(4*time.Second)), 0, test.GenerateTestFloatHistogram(3))
+	sample4 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(8*time.Second)), 0, test.GenerateTestHistogram(7))
 
 	for _, c := range []struct {
 		samplesA []mimirpb.Histogram

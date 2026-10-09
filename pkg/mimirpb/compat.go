@@ -342,8 +342,11 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	return *(*[]histogram.Span)(unsafe.Pointer(&s))
 }
 
-// FromHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+// FromHistogramToHistogramProto does not make a deepcopy, slices are
+// referenced. The second parameter will be Start Time, once that field is
+// available in the type. For now that parameter is ignored, but it exists so
+// we can do a no-op refactor of the callsites for this function.
+func FromHistogramToHistogramProto(timestamp, _ int64, h *histogram.Histogram) Histogram {
 	if h == nil {
 		panic("FromHistogramToHistogramProto called on nil histogram")
 	}
@@ -365,8 +368,11 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 	}
 }
 
-// FromFloatHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+// FromFloatHistogramToHistogramProto does not make a deepcopy, slices are
+// referenced. The second parameter will be Start Time, once that field is
+// available in the type. For now that parameter is ignored, but it exists so we
+// can do a no-op refactor of the callsites for this function.
+func FromFloatHistogramToHistogramProto(timestamp, _ int64, fh *histogram.FloatHistogram) Histogram {
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}

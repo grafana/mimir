@@ -76,9 +76,9 @@ func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, st, t int6
 	a.histogramLabels = append(a.histogramLabels, mimirpb.FromLabelsToLabelAdapters(l))
 	var hp mimirpb.Histogram
 	if h != nil {
-		hp = mimirpb.FromHistogramToHistogramProto(t, h)
+		hp = mimirpb.FromHistogramToHistogramProto(t, 0, h)
 	} else {
-		hp = mimirpb.FromFloatHistogramToHistogramProto(t, fh)
+		hp = mimirpb.FromFloatHistogramToHistogramProto(t, 0, fh)
 	}
 	a.histograms = append(a.histograms, hp)
 	return 0, nil
