@@ -17,6 +17,7 @@ import (
 type limiterTenantLimits interface {
 	MaxGlobalSeriesPerUser(userID string) int
 	MaxGlobalSeriesPerMetric(userID string) int
+	MaxGlobalLabelValueBytesPerLabelName(userID string) int
 	MaxGlobalMetadataPerMetric(userID string) int
 	MaxGlobalMetricsWithMetadataPerUser(userID string) int
 	MaxGlobalExemplarsPerUser(userID string) int
@@ -63,6 +64,17 @@ func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int, minLocalLi
 func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics int) bool {
 	actualLimit := l.maxMetadataPerUser(userID)
 	return metrics < actualLimit
+}
+
+// IsWithinMaxLabelValueBytesPerLabelName returns true if the limit has not been reached
+// compared to the bytes of distinct label values in input; otherwise returns false.
+func (l *Limiter) IsWithinMaxLabelValueBytesPerLabelName(userID string, bytes uint64) bool {
+	actualLimit := l.maxLabelValueBytesPerLabelName(userID)
+	return bytes < uint64(actualLimit)
+}
+
+func (l *Limiter) maxLabelValueBytesPerLabelName(userID string) int {
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalLabelValueBytesPerLabelName, 0)
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {

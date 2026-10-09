@@ -1,9 +1,9 @@
 ---
 aliases:
-  - ../operators-guide/configure/reference-configuration-parameters/
-  - ../operators-guide/configuring/reference-configuration-parameters/
-  - ../reference-configuration-parameters/
-  - ../references/configuration-parameters/
+- ../operators-guide/configure/reference-configuration-parameters/
+- ../operators-guide/configuring/reference-configuration-parameters/
+- ../reference-configuration-parameters/
+- ../references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -1944,7 +1944,7 @@ store_gateway_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -1959,7 +1959,7 @@ store_gateway_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2777,7 +2777,7 @@ ruler_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2792,7 +2792,7 @@ ruler_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2915,7 +2915,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2930,7 +2930,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3478,7 +3478,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3493,7 +3493,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3752,7 +3752,7 @@ backoff_config:
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -3767,7 +3767,7 @@ backoff_config:
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3928,7 +3928,7 @@ grpc_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3943,7 +3943,7 @@ grpc_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4073,7 +4073,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4088,7 +4088,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4413,7 +4413,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4428,7 +4428,7 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4590,6 +4590,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.label-value-length-over-limit-strategy
 [label_value_length_over_limit_strategy: <string> | default = "error"]
 
+# (experimental) Label names for which the distinct label value bytes tracked by
+# -ingester.max-global-label-value-bytes-per-label-name have exceeded the limit.
+# Series carrying a value for one of these label names are rejected. This is a
+# decision that is expected to be populated by an operator or automation
+# reacting to that limit being breached, not derived automatically from it. The
+# __name__ label is never blocked, regardless of this setting.
+# CLI flag: -validation.blocked-label-names-for-label-value-bytes
+[blocked_label_names_for_label_value_bytes: <string> | default = ""]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -4667,6 +4676,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # before replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
+
+# (experimental) The maximum total size, in bytes, of the distinct values of a
+# single label name held in memory per tenant, across the cluster before
+# replication. Only values longer than 128 bytes are counted, and each distinct
+# value is counted once however many series carry it. 0 to disable.
+# CLI flag: -ingester.max-global-label-value-bytes-per-label-name
+[max_global_label_value_bytes_per_label_name: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
@@ -5327,7 +5343,7 @@ ruler_alertmanager_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5342,7 +5358,7 @@ ruler_alertmanager_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -5877,7 +5893,7 @@ kafka:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5892,7 +5908,7 @@ kafka:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -7330,7 +7346,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -7345,7 +7361,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
