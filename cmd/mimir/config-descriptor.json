@@ -5998,8 +5998,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "xor",
           "fieldFlag": "blocks-storage.tsdb.float-chunk-encoding",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
