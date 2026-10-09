@@ -47,6 +47,27 @@ func (a Agent) cloneWithState(state AgentState) Agent {
 	return a
 }
 
+// routeOutcome is how a strategy resolved one initial lookup. The zero value
+// means the lookup was not classified, as for a custom strategy: a successful
+// route is not counted, and a miss is counted as "other".
+type routeOutcome int8
+
+const (
+	routeUnclassified routeOutcome = iota
+	routeLeader
+	routeStandIn
+	routeMissEmptyPool
+	routeMissUnknownTopic
+	routeMissNoLeader
+	routeMissOutOfRange
+)
+
+// routeClassifier is implemented by strategies that report the outcome from the
+// same snapshot that produced the candidates.
+type routeClassifier interface {
+	candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome)
+}
+
 // PartitionAssignmentStrategy maps a partition to an ordered list of
 // candidate agents. The first candidate is the primary (used for normal
 // routing); the rest are deterministic alternates used for hedging.
@@ -94,6 +115,19 @@ func NewLazyPartitionAssignmentStrategy(resolve func() PartitionAssignmentStrate
 // Candidates implements PartitionAssignmentStrategy.
 func (l *LazyPartitionAssignmentStrategy) Candidates(topic string, partition int32, maxCandidates int) []Agent {
 	return l.resolve().Candidates(topic, partition, maxCandidates)
+}
+
+func (l *LazyPartitionAssignmentStrategy) candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
+	return candidatesOf(l.resolve(), topic, partition, maxCandidates)
+}
+
+// candidatesOf looks up candidates with the strategy's classification when it
+// reports one.
+func candidatesOf(s PartitionAssignmentStrategy, topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
+	if rc, ok := s.(routeClassifier); ok {
+		return rc.candidatesWithRoute(topic, partition, maxCandidates)
+	}
+	return s.Candidates(topic, partition, maxCandidates), routeUnclassified
 }
 
 // DefaultPartitionAssignmentStrategy is an immutable snapshot of the agent
@@ -170,34 +204,47 @@ func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPart
 // doesn't have that problem. The extra cost from that (more segment
 // streams per partition) is unmeasured; not assumed to be small.
 func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition int32, maxCandidates int) []Agent {
+	agents, _ := s.candidatesWithRoute(topic, partition, maxCandidates)
+	return agents
+}
+
+func (s *DefaultPartitionAssignmentStrategy) candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
 	if maxCandidates <= 0 {
-		return nil
+		return nil, routeUnclassified
 	}
 
 	var h uint64
 	tp := topicPartition{topic: topic, partition: partition}
 	leader, ok := s.leaders[tp]
+	route := routeLeader
 	if !ok {
 		if _, unnamed := s.noLeader[tp]; unnamed {
-			return nil
+			return nil, routeMissNoLeader
 		}
 		if len(s.agents) == 0 {
-			return nil
+			return nil, routeMissEmptyPool
 		}
 		if _, topicKnown := s.knownTopics[topic]; !topicKnown {
-			return nil
+			// A topic with no named leaders is in partitionCounts but not in
+			// knownTopics. Use the count only to pick the label. Adding the
+			// topic to knownTopics would route its holes to a stand-in.
+			if n, listed := s.partitionCounts[topic]; listed && (partition < 0 || partition >= n) {
+				return nil, routeMissOutOfRange
+			}
+			return nil, routeMissUnknownTopic
 		}
 		if partition < 0 || partition >= s.partitionCounts[topic] {
-			return nil
+			return nil, routeMissOutOfRange
 		}
 		h = hashTopicPartition(topic, partition)
 		leader = s.agents[h%uint64(len(s.agents))]
+		route = routeStandIn
 	}
 
 	out := make([]Agent, 0, maxCandidates)
 	out = append(out, Agent{NodeID: leader, State: AgentStateHealthy})
 	if maxCandidates == 1 {
-		return out
+		return out, route
 	}
 
 	// Walk the non-leader agents in deterministic hash order: start at
@@ -206,7 +253,7 @@ func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition 
 	// acceptable here because n (agent count) is small.
 	nonLeaderCount := len(s.agents) - 1
 	if nonLeaderCount <= 0 {
-		return out
+		return out, route
 	}
 	// The one-candidate return above never reaches this hash. A fallback
 	// pick already stored it.
@@ -218,7 +265,7 @@ func (s *DefaultPartitionAssignmentStrategy) Candidates(topic string, partition 
 		idx := (start + offset) % nonLeaderCount
 		out = append(out, Agent{NodeID: nthNonLeader(s.agents, leader, idx), State: AgentStateHealthy})
 	}
-	return out
+	return out, route
 }
 
 // nthNonLeader returns the idx-th element of agents skipping leader. idx is

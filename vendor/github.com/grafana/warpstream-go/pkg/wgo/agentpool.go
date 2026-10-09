@@ -224,3 +224,25 @@ func diffRemovedAgents(old []int32, newSet map[int32]struct{}) []int32 {
 	}
 	return removed
 }
+
+// diffAgentMembership counts NodeIDs that appeared or disappeared between two
+// sorted, unique agent lists.
+func diffAgentMembership(old, new []int32) (added, removed int) {
+	i, j := 0, 0
+	for i < len(old) && j < len(new) {
+		switch {
+		case old[i] == new[j]:
+			i++
+			j++
+		case old[i] < new[j]:
+			removed++
+			i++
+		default:
+			added++
+			j++
+		}
+	}
+	removed += len(old) - i
+	added += len(new) - j
+	return added, removed
+}

@@ -151,7 +151,7 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 		refreshCancel:  refreshCancel,
 		refreshNowCh:   make(chan struct{}, 1),
 	}
-	// Count a dropped leader and do not nudge: the refresh goroutine starts below.
+	// Publish the excluded-leader count and do not nudge: the refresh goroutine starts below.
 	// The periodic tick fetches the next snapshot.
 	c.noteLeaderDrops(dropped, false)
 	// Demoter sits on top of the lazy pool strategy so refresh-driven
@@ -503,12 +503,14 @@ func (c *WarpstreamClient) refreshPool(trigger metadataRefreshTrigger) {
 	c.noteLeaderDrops(dropped, true)
 }
 
-// noteLeaderDrops counts and logs excluded leaders. nudge asks for another fetch.
+// noteLeaderDrops publishes the excluded-leader count and logs it when it is
+// above zero. nudge asks for another fetch. The gauge is set even at zero so it
+// clears when the exclusion does.
 func (c *WarpstreamClient) noteLeaderDrops(dropped leaderDrops, nudge bool) {
+	c.metrics.agentPoolExcludedLeaders.Set(float64(dropped.Count))
 	if dropped.Count == 0 {
 		return
 	}
-	c.metrics.agentPoolLeaderDroppedTotal.Add(float64(dropped.Count))
 	log(c.logger, kgo.LogLevelWarn, "warpstream agentpool: leaders excluded from map",
 		"count", dropped.Count,
 		"first_topic", dropped.Topic,
@@ -537,12 +539,20 @@ func (c *WarpstreamClient) waitRefreshCooldown(delay, elapsed time.Duration) {
 type rejectedTopicPartitionRecords struct {
 	topicPartitionRecords
 	err error
+	// miss is why the lookup found no agent, for the routing-miss counter.
+	miss routingMissReason
+}
+
+// routedGroup is a routed partition group plus how its agent was chosen.
+type routedGroup struct {
+	promised[routedTopicPartitionRecords]
+	outcome routeOutcome
 }
 
 // routeRecords routes each partition once. A partition with no candidate is
 // returned unsent. The first miss requests a metadata refresh.
 func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(groupRecords []*kgo.Record) func(ProduceResult)) ([]promised[routedTopicPartitionRecords], []rejectedTopicPartitionRecords) {
-	groups := make(map[topicPartition]*promised[routedTopicPartitionRecords])
+	groups := make(map[topicPartition]*routedGroup)
 	order := make([]topicPartition, 0)
 	var rejectedByKey map[topicPartition]int
 	var rejected []rejectedTopicPartitionRecords
@@ -560,7 +570,7 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 			}
 		}
 
-		cands := c.demoter.Candidates(r.Topic, r.Partition, 1)
+		cands, outcome := c.demoter.candidatesWithRoute(r.Topic, r.Partition, 1)
 		if len(cands) == 0 {
 			if rejectedByKey == nil {
 				rejectedByKey = make(map[topicPartition]int)
@@ -573,30 +583,54 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 					partition: r.Partition,
 					records:   []*kgo.Record{r},
 				},
-				err: fmt.Errorf("no agent assigned for topic %q partition %d", r.Topic, r.Partition),
+				err:  fmt.Errorf("no agent assigned for topic %q partition %d", r.Topic, r.Partition),
+				miss: outcome.missReason(),
 			})
 			continue
 		}
 
-		groups[key] = &promised[routedTopicPartitionRecords]{
-			item: routedTopicPartitionRecords{
-				topicPartitionRecords: topicPartitionRecords{
-					topic:     r.Topic,
-					partition: r.Partition,
-					records:   []*kgo.Record{r},
+		groups[key] = &routedGroup{
+			promised: promised[routedTopicPartitionRecords]{
+				item: routedTopicPartitionRecords{
+					topicPartitionRecords: topicPartitionRecords{
+						topic:     r.Topic,
+						partition: r.Partition,
+						records:   []*kgo.Record{r},
+					},
+					nodeID:    cands[0].NodeID,
+					nodeState: cands[0].State,
 				},
-				nodeID:    cands[0].NodeID,
-				nodeState: cands[0].State,
 			},
+			outcome: outcome,
 		}
 		order = append(order, key)
 	}
 
+	var (
+		routes [routeSourceCount]int
+		misses [routingMissCount]int
+	)
 	out := make([]promised[routedTopicPartitionRecords], 0, len(order))
 	for _, key := range order {
 		g := groups[key]
 		g.done = doneFor(g.item.records)
-		out = append(out, *g)
+		out = append(out, g.promised)
+		if src, ok := g.outcome.routeSource(); ok {
+			routes[src] += len(g.item.records)
+		}
+	}
+	for i := range rejected {
+		misses[rejected[i].miss] += len(rejected[i].records)
+	}
+	for src, n := range routes {
+		if n > 0 {
+			c.metrics.partitionRoutes[src].Add(float64(n))
+		}
+	}
+	for reason, n := range misses {
+		if n > 0 {
+			c.metrics.routingMisses[reason].Add(float64(n))
+		}
 	}
 	return out, rejected
 }
@@ -605,10 +639,14 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 // skips the per-partition map and avoids heap-allocating an intermediate
 // group. Returns an error if the record's partition has no known candidate.
 func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResult)) (promised[routedTopicPartitionRecords], error) {
-	cands := c.demoter.Candidates(record.Topic, record.Partition, 1)
+	cands, outcome := c.demoter.candidatesWithRoute(record.Topic, record.Partition, 1)
 	if len(cands) == 0 {
+		c.metrics.routingMisses[outcome.missReason()].Inc()
 		c.triggerRefresh()
 		return promised[routedTopicPartitionRecords]{}, fmt.Errorf("no agent assigned for topic %q partition %d", record.Topic, record.Partition)
+	}
+	if src, ok := outcome.routeSource(); ok {
+		c.metrics.partitionRoutes[src].Inc()
 	}
 	return promised[routedTopicPartitionRecords]{
 		item: routedTopicPartitionRecords{

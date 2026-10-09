@@ -276,6 +276,17 @@ func (a *produceResultAccumulator) accumulate(res scopedProduceResult) {
 	}
 }
 
+// terminalErr reports whether the abort policy stopped retries, and the error
+// that tripped it.
+func (a *produceResultAccumulator) terminalErr() (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.aborted {
+		return false, nil
+	}
+	return true, a.lastErr.err
+}
+
 // done reports whether the caller should stop retrying.
 func (a *produceResultAccumulator) done() bool {
 	a.mu.Lock()
