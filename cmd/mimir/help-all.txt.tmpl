@@ -2540,13 +2540,13 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-propagate-matchers
     	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
+    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-remove-statically-empty-expressions
     	[experimental] Enable removing expressions that are guaranteed to produce no results. (default true)
   -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
-    	[experimental] Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
+    	[experimental] Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-subset-selector-elimination
     	[experimental] Enable subset selector elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.range-vector-splitting.backend string

@@ -2630,7 +2630,7 @@
               "required": false,
               "desc": "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
@@ -2641,7 +2641,7 @@
               "required": false,
               "desc": "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"

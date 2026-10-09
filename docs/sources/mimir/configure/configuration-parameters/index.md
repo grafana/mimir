@@ -2133,13 +2133,13 @@ mimir_query_engine:
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable deduplication of scalar expressions as part of common
   # subexpression elimination. Requires common subexpression elimination to be
   # enabled.
   # CLI flag: -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
-  [enable_scalar_common_subexpression_elimination: <boolean> | default = false]
+  [enable_scalar_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.

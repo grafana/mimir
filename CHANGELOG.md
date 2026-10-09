@@ -53,6 +53,7 @@
 * [ENHANCEMENT] MQE: Reduce CPU and memory consumption of the experimental PromQL function `info`. #16790
 * [ENHANCEMENT] Ruler: Make the default resend delay for alerts 5m instead of 1m to avoid alerts spuriously resolving when rulers take longer to restart. #16822
 * [ENHANCEMENT] Store-gateway: Release the omitted posting groups before fetching postings. This reduces the risk of OOM when concurrent requests query high-cardinality matchers. #16837
+* [ENHANCEMENT] MQE: Enable `querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination` and `querier.mimir-query-engine.enable-scalar-common-subexpression-elimination` by default. #16842
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
 * [BUGFIX] Continuous-test: Apply `-tests.read-timeout` to metadata requests. Previously a metadata request could block indefinitely if the server never responded. #16728
