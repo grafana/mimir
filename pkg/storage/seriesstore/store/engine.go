@@ -553,34 +553,46 @@ func (e *Engine) compactOOOHead() {
 	watermarks := slices.Clone(e.oooWatermarks)
 	compactedFrom, compactedTo := int64(math.MaxInt64), int64(math.MinInt64)
 	for index, shard := range e.store.shards {
-		shard.Lock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
-			t.series.forEach(func(entry *seriesEntry) {
-				series := &entry.series
-				if err := flushOutOfOrder(series, shard.disk); err != nil {
-					fmt.Fprintf(os.Stderr, "phase=ooo_flush_error tenant=%s error=%v\n", e.tenantID, err)
-					failed = true
+		visit := func(entry *seriesEntry) {
+			series := &entry.series
+			if err := flushOutOfOrder(series, shard.disk); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=ooo_flush_error tenant=%s error=%v\n", e.tenantID, err)
+				failed = true
+			}
+			// Out-of-order blocks are aligned on block ranges.
+			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
+				if meta.OutOfOrder && uint64(meta.Ref) >= e.oooWatermarks[index] {
+					return alignedCuts(meta)
 				}
-				// Out-of-order blocks are aligned on block ranges.
-				if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
-					if meta.OutOfOrder && uint64(meta.Ref) >= e.oooWatermarks[index] {
-						return alignedCuts(meta)
+				return nil
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=ooo_split_error tenant=%s error=%v\n", e.tenantID, err)
+				failed = true
+			}
+			it := series.chunks.iter()
+			for chunk, more := it.next(); more; chunk, more = it.next() {
+				if chunk.OutOfOrder && uint64(chunk.Ref) >= e.oooWatermarks[index] {
+					compactedFrom = min(compactedFrom, chunk.MinTime)
+					compactedTo = max(compactedTo, chunk.MaxTime)
+					watermarks[index] = max(watermarks[index], uint64(chunk.Ref)+1)
+					if oooCompactedHook != nil {
+						oooCompactedHook(uint64(chunk.Ref))
 					}
-					return nil
-				}); err != nil {
-					fmt.Fprintf(os.Stderr, "phase=ooo_split_error tenant=%s error=%v\n", e.tenantID, err)
-					failed = true
 				}
-				it := series.chunks.iter()
-				for chunk, more := it.next(); more; chunk, more = it.next() {
-					if chunk.OutOfOrder && uint64(chunk.Ref) >= e.oooWatermarks[index] {
-						compactedFrom = min(compactedFrom, chunk.MinTime)
-						compactedTo = max(compactedTo, chunk.MaxTime)
-						watermarks[index] = max(watermarks[index], uint64(chunk.Ref)+1)
-					}
-				}
-			})
+			}
+			series.oooChunked = false
 		}
+		t, ok := e.scanShard(shard, nil, visit)
+		if !ok {
+			continue
+		}
+		// The watermark moves past every chunk of the shard, so the series that wrote chunks after the scan went over
+		// them are visited again, with the shard locked.
+		t.series.forEach(func(entry *seriesEntry) {
+			if entry.series.oooChunked {
+				visit(entry)
+			}
+		})
 		shard.Unlock()
 	}
 	if failed {
@@ -658,17 +670,30 @@ func (e *Engine) headGC() {
 	// rather than reaching each next shard just after it was locked and waiting on all of them.
 	for index := len(e.store.shards) - 1; index >= 0; index-- {
 		shard := e.store.shards[index]
-		shard.Lock()
-		if headGCShardHook != nil {
-			headGCShardHook(index)
-		}
-		t, ok := shard.tenants[e.tenantID]
-		if !ok {
-			shard.Unlock()
-			continue
-		}
 		leaving := map[uint64]labels.Labels{}
-		t.series.forEach(func(entry *seriesEntry) {
+		// classify decides whether a series stays in the head, and takes what it contributes to the head's times.
+		classify := func(series *Series) bool {
+			inOrder, seriesMint := inOrderFrom(series, mint)
+			ooo, oooMint := e.oooState(index, series)
+			if series.headEvicted || (!inOrder && !ooo) {
+				return false
+			}
+			series.inHead = true
+			// A series with only out-of-order data has no in-order min time.
+			if !inOrder {
+				seriesMint = math.MinInt64
+			}
+			actualMint = min(actualMint, seriesMint)
+			if ooo {
+				minOOOTime = min(minOOOTime, oooMint)
+			}
+			return true
+		}
+		var hook func()
+		if headGCShardHook != nil {
+			hook = func() { headGCShardHook(index) }
+		}
+		t, ok := e.scanShard(shard, hook, func(entry *seriesEntry) {
 			series := &entry.series
 			// Chunks the collection drops are only in blocks, as their pieces.
 			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
@@ -679,22 +704,23 @@ func (e *Engine) headGC() {
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "phase=chunk_split_error tenant=%s error=%v\n", e.tenantID, err)
 			}
-			inOrder, seriesMint := inOrderFrom(series, mint)
-			ooo, oooMint := e.oooState(index, series)
-			series.inHead = !series.headEvicted && (inOrder || ooo)
-			if !series.inHead {
+			if !classify(series) {
+				// Left in the head as it was until the shard is locked again: appends in between may bring it back.
 				leaving[series.ref] = entry.labels
-				return
-			}
-			// A series with only out-of-order data has no in-order min time.
-			if !inOrder {
-				seriesMint = math.MinInt64
-			}
-			actualMint = min(actualMint, seriesMint)
-			if ooo {
-				minOOOTime = min(minOOOTime, oooMint)
 			}
 		})
+		if !ok {
+			continue
+		}
+		// Series that took samples while the shard was unlocked between batches stay.
+		for ref := range leaving {
+			entry, found := e.lookupLocked(t, ref)
+			if !found || classify(&entry.series) {
+				delete(leaving, ref)
+				continue
+			}
+			entry.series.inHead = false
+		}
 		e.freezeLeaving(shard, t, leaving, deleted, &builder)
 		shard.Unlock()
 	}
@@ -722,6 +748,58 @@ func (e *Engine) headGC() {
 	e.rebuildStalePostings()
 	if len(deleted) > 0 {
 		e.callback.PostDeletion(deleted)
+	}
+}
+
+// scanBatch is how many series a scan of a shard visits per time it holds the shard's write lock: a scan of all of
+// a tenant's series at once made the appends and queries of the shard wait for all of it.
+var scanBatch = 512
+
+// oooCompactedHook runs with each out-of-order chunk the out-of-order compaction takes into its blocks, for tests.
+var oooCompactedHook func(ref uint64)
+
+// scanGapHook runs while a scan has the shard unlocked between two batches, for tests.
+var scanGapHook func()
+
+// scanShard visits the tenant's series of a shard in batches, with the shard's write lock released between them, and
+// returns with it held and the tenant, or false with it released when the shard has none. Series added meanwhile may
+// or may not be visited: the callers go over series that can't be removed besides by the compaction they run in. hook
+// runs the first time the shard is locked, for tests.
+func (e *Engine) scanShard(shard *shardState, hook func(), visit func(entry *seriesEntry)) (*tenant, bool) {
+	group, position := 0, 0
+	for first := true; ; first = false {
+		shard.Lock()
+		if first && hook != nil {
+			hook()
+		}
+		t, ok := shard.tenants[e.tenantID]
+		if !ok {
+			shard.Unlock()
+			return nil, false
+		}
+		visited, done := 0, true
+	scan:
+		for group < len(t.series.groups) {
+			entries := t.series.groups[group].entries
+			for position < len(entries) {
+				if visited == scanBatch {
+					done = false
+					break scan
+				}
+				visit(&entries[position])
+				position++
+				visited++
+			}
+			group++
+			position = 0
+		}
+		if done {
+			return t, true
+		}
+		shard.Unlock()
+		if scanGapHook != nil {
+			scanGapHook()
+		}
 	}
 }
 
