@@ -462,7 +462,7 @@ func TestPartitionState_CompartmentsDetectPerClusterGap(t *testing.T) {
 		0: {StartOffset: 100, EndOffset: 150},
 		1: {StartOffset: 500, EndOffset: 550},
 	}}
-	require.True(t, pt.plannedValidNextSpec(contiguous))
+	require.True(t, pt.plannedValidNextSpec(contiguous, nil))
 	pt.addPlannedJob("job1", contiguous)
 	requireGaps(t, reg, 0, 0, "a contiguous multi-cluster job should not register a gap")
 
@@ -472,7 +472,7 @@ func TestPartitionState_CompartmentsDetectPerClusterGap(t *testing.T) {
 		0: {StartOffset: 150, EndOffset: 200},
 		1: {StartOffset: 600, EndOffset: 650},
 	}}
-	require.False(t, pt.plannedValidNextSpec(gapped))
+	require.False(t, pt.plannedValidNextSpec(gapped, nil))
 	pt.addPlannedJob("job2", gapped)
 	requireGaps(t, reg, 1, 0, "a gap in a single cluster's range should register one planned gap")
 
@@ -483,7 +483,7 @@ func TestPartitionState_CompartmentsDetectPerClusterGap(t *testing.T) {
 		1: {StartOffset: 700, EndOffset: 750},
 		2: {StartOffset: 1000, EndOffset: 1050},
 	}}
-	require.False(t, pt.plannedValidNextSpec(multiGap))
+	require.False(t, pt.plannedValidNextSpec(multiGap, nil))
 	pt.addPlannedJob("job3", multiGap)
 	requireGaps(t, reg, 3, 0, "gaps in two clusters within one job should register two planned gaps")
 }

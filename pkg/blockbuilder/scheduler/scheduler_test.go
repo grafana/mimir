@@ -545,6 +545,8 @@ func TestStartup_MultiCluster(t *testing.T) {
 // back to committed offsets.
 func TestStartup_MultiCluster_GapOnOneCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
+	// jobA continues the commits, so the import is truncated by jobB's gap alone.
+	initCommits(sched, "ingest", 64, map[int]int64{0: 100, 1: 100})
 
 	jobA := observedJob(10, schedulerpb.JobSpec{
 		Topic:     "ingest",
@@ -664,6 +666,121 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	require.Equal(t, int64(100), pB.plannedOffset(1), "the unflushed cluster should resume from its stale commit, re-covering jobJ's range")
 	require.Equal(t, int64(150), pB.plannedOffset(2))
 	requireOffsets(t, schedB, "ingest", 0, map[int]int64{0: 200, 1: 100, 2: 150})
+}
+
+// TestStartup_NoCommit_LookbackOffsetBoundsImport verifies observation import for a partition
+// with no committed offset. Without a commit the scheduler resumes from the lookback offset (the
+// first offset within -block-builder-scheduler.lookback-on-no-commit), so observed jobs are only
+// honored when the first one starts at or before it. Otherwise the data between the lookback
+// offset and the first observed job, whose worker may just not have reported during the
+// observation window, would never be planned.
+func TestStartup_NoCommit_LookbackOffsetBoundsImport(t *testing.T) {
+	spec := func(start, end int64) schedulerpb.JobSpec {
+		return schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: start, EndOffset: end}
+	}
+
+	// Kafka holds [0, 100) outside the lookback window and [100, 300) inside it, so the lookback
+	// offset is 100.
+	tests := map[string]struct {
+		observed     []schedulerpb.JobSpec
+		expectedJobs map[string]schedulerpb.JobSpec
+	}{
+		"first observed job starting after the lookback offset is dropped": {
+			// The worker holding [100, 200) didn't report during the observation window.
+			observed: []schedulerpb.JobSpec{spec(200, 300)},
+			expectedJobs: map[string]schedulerpb.JobSpec{
+				"ingest/0/100": spec(100, 300),
+			},
+		},
+		"observed jobs starting at the lookback offset are imported": {
+			observed: []schedulerpb.JobSpec{spec(100, 200), spec(200, 300)},
+			expectedJobs: map[string]schedulerpb.JobSpec{
+				"ingest/0/100": spec(100, 200),
+				"ingest/0/200": spec(200, 300),
+			},
+		},
+		"observed job starting before the lookback offset is imported": {
+			// A previous scheduler resumed from an earlier lookback offset.
+			observed: []schedulerpb.JobSpec{spec(50, 200)},
+			expectedJobs: map[string]schedulerpb.JobSpec{
+				"ingest/0/50":  spec(50, 200),
+				"ingest/0/200": spec(200, 300),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			sched, cli := mustScheduler(t, 1)
+			sched.cfg.MaxJobsPerPartition = 0
+			sched.cfg.LookbackOnNoCommit = 6 * time.Hour
+			sched.cfg.MaxScanAge = 24 * time.Hour
+
+			produceRecordsAt(t.Context(), t, cli, 0, 100, time.Now().Add(-10*time.Hour))
+			produceRecordsAt(t.Context(), t, cli, 0, 200, time.Now().Add(-2*time.Hour))
+
+			for i, s := range tc.observed {
+				key := jobKey{id: jobIDForSpec(false, &s), epoch: int64(10 + i)}
+				require.NoError(t, sched.updateJob(key, fmt.Sprintf("w%d", i), false, s))
+			}
+
+			require.NoError(t, sched.completeObservationMode(t.Context()))
+			sched.enqueuePendingJobs()
+
+			require.Equal(t, tc.expectedJobs, queuedJobSpecs(sched))
+		})
+	}
+}
+
+// TestStartup_MultiCluster_NoCommitOnOneCluster verifies that the lookback bound applies per
+// cluster: a partition committed on one cluster but not another still drops an observed job whose
+// range on the uncommitted cluster starts after that cluster's lookback offset.
+func TestStartup_MultiCluster_NoCommitOnOneCluster(t *testing.T) {
+	sched, clients := mustMultiClusterScheduler(t, 1, 2)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.cfg.LookbackOnNoCommit = 6 * time.Hour
+	sched.cfg.MaxScanAge = 24 * time.Hour
+
+	// Every record is inside the lookback window, so cluster 1's lookback offset is 0.
+	recordTime := time.Now().Add(-2 * time.Hour)
+	produceRecordsAt(t.Context(), t, clients[0], 0, 200, recordTime)
+	produceRecordsAt(t.Context(), t, clients[1], 0, 300, recordTime)
+	initCommits(sched, "ingest", 0, map[int]int64{0: 100})
+
+	// The observed job continues cluster 0 from its commit, but starts cluster 1 at 200, leaving
+	// cluster 1's [0, 200) unobserved.
+	observed := observedJob(10, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 100, EndOffset: 200},
+			1: {StartOffset: 200, EndOffset: 300},
+		},
+	})
+	require.NoError(t, sched.updateJob(observed.key, "w0", false, observed.spec))
+
+	require.NoError(t, sched.completeObservationMode(t.Context()))
+	sched.enqueuePendingJobs()
+
+	require.Equal(t, map[string]schedulerpb.JobSpec{
+		"ingest/0/0:100-1:0": {
+			Topic:     "ingest",
+			Partition: 0,
+			OffsetRanges: map[int32]schedulerpb.OffsetRange{
+				0: {StartOffset: 100, EndOffset: 200},
+				1: {StartOffset: 0, EndOffset: 300},
+			},
+		},
+	}, queuedJobSpecs(sched), "the observed job should be dropped, and cluster 1 replanned from its lookback offset")
+}
+
+// queuedJobSpecs returns the spec of every job in the scheduler's job queue, keyed by job ID.
+func queuedJobSpecs(sched *BlockBuilderScheduler) map[string]schedulerpb.JobSpec {
+	specs := make(map[string]schedulerpb.JobSpec, len(sched.jobs.jobs))
+	for id, j := range sched.jobs.jobs {
+		specs[id] = j.spec
+	}
+	return specs
 }
 
 // TestCompleteObservationMode_ResumesFromImportedPlan verifies that startup cuts pending jobs
@@ -935,7 +1052,7 @@ func TestObservations(t *testing.T) {
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
 		sched.jobs = nq
-		sched.finalizeObservations()
+		sched.finalizeObservations(nil)
 		require.Empty(t, nq.jobs, "No observations, no jobs")
 	}
 
@@ -998,12 +1115,13 @@ func TestObservations(t *testing.T) {
 	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, 12000, 13000, maybeBadEpoch, errBadEpoch)
 	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, 12000, 13000, nil, nil)
 
-	// Partition 6 has a complete job but had no commit at startup. We allow
-	// transitioning from empty to commit to any offset.
-	mkJob(complete, "w0", 6, "ingest/6/500", 48, 500, 600, nil, nil)
-	// Partition 7 has an in-progress job, but had no commit at startup. We
-	// honor this job and allow it to influence the planned/resumption offset.
-	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, nil)
+	// Partitions 6 and 7 had no commit at startup, and Kafka is empty, so their lookback
+	// offset is 0. Partition 6's complete job starts at the lookback offset, so it's honored
+	// and moves the commit.
+	mkJob(complete, "w0", 6, "ingest/6/0", 48, 0, 100, nil, nil)
+	// Partition 7's in-progress job starts after the lookback offset, so it could be skipping
+	// unobserved jobs. It's dropped, and its lease can't be renewed.
+	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, errJobNotFound)
 
 	// Partition 8 has a number of reports and has a hole that should should not be passed.
 	mkJob(complete, "w0", 8, "ingest/8/1000", 53, 1000, 1100, nil, nil)
@@ -1053,8 +1171,8 @@ func TestObservations(t *testing.T) {
 		requireOffsets(t, sched, "ingest", 3, map[int]int64{0: 974}, "ingest/3 should be unchanged - no updates")
 		requireOffsets(t, sched, "ingest", 4, map[int]int64{0: 900}, "ingest/4 should be moved forward to account for the completed jobs")
 		requireOffsets(t, sched, "ingest", 5, map[int]int64{0: 12000}, "ingest/5 has nothing new completed")
-		requireOffsets(t, sched, "ingest", 6, map[int]int64{0: 600}, "ingest/6 allowed to move the commit")
-		requireOffsets(t, sched, "ingest", 7, map[int]int64{}, "ingest/7 has an in-progress job, but had no commit at startup")
+		requireOffsets(t, sched, "ingest", 6, map[int]int64{0: 100}, "ingest/6 had no commit, but its job starts at the lookback offset, so it moves the commit")
+		requireOffsets(t, sched, "ingest", 7, map[int]int64{}, "ingest/7 had no commit, and its job was dropped")
 		requireOffsets(t, sched, "ingest", 8, map[int]int64{0: 1300}, "ingest/8 should be committed only until the gap")
 		requireOffsets(t, sched, "ingest", 9, map[int]int64{0: 1300}, "ingest/9 should be committed only until the gap")
 	}
@@ -1065,26 +1183,31 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now(), 0)
+	offsetsByPartition, err := sched.fetchConsumptionOffsets(t.Context(), time.Now())
 	require.NoError(t, err)
-	require.ElementsMatch(t, []partitionOffsets{
-		{partition: 0, resume: 0},
-		{partition: 1, resume: 6000},
-		{partition: 2, resume: 1600},
-		{partition: 3, resume: 974},
-		{partition: 4, resume: 900},
-		{partition: 5, resume: 13000},
-		{partition: 6, resume: 600},
-		{partition: 7, resume: 93874},
-		{partition: 8, resume: 1300},
-		{partition: 9, resume: 1300},
-	}, offs)
+	sched.resolveResumeOffsets(offsetsByPartition)
+	resumes := make(map[int32]int64, len(offsetsByPartition))
+	for partition, clusterOffsets := range offsetsByPartition {
+		resumes[partition] = clusterOffsets[0].resume
+	}
+	require.Equal(t, map[int32]int64{
+		0: 0,
+		1: 6000,
+		2: 1600,
+		3: 974,
+		4: 900,
+		5: 13000,
+		6: 100,
+		7: 0,
+		8: 1300,
+		9: 1300,
+	}, resumes)
 
-	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
+	require.Len(t, sched.jobs.jobs, 3, "should be 3 in-progress jobs")
 	require.Equal(t, 65, int(sched.jobs.epoch))
 
-	require.Equal(t, 4.0, promtest.ToFloat64(sched.metrics.startupJobsSkipped),
-		"3 jobs after ingest/8's gap and 1 after ingest/9's, excluding ingest/2's already-committed job")
+	require.Equal(t, 5.0, promtest.ToFloat64(sched.metrics.startupJobsSkipped),
+		"3 jobs after ingest/8's gap, 1 after ingest/9's, and ingest/7's job after its lookback offset, excluding ingest/2's already-committed job")
 
 	// Verify that the same set of updates can be sent now that we're out of
 	// observation mode, and that offsets are not changed.
@@ -1525,10 +1648,10 @@ func TestPopulateInitialJobs_MultiCluster(t *testing.T) {
 	}
 }
 
-// TestInitConsumptionOffsets_PartitionOnSubsetOfClusters verifies that probing clusters with
+// TestFetchConsumptionOffsets_PartitionOnSubsetOfClusters verifies that probing clusters with
 // uneven partition counts groups offsets by partition, with a nil entry for each cluster that
 // doesn't host the partition.
-func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
+func TestFetchConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -1542,12 +1665,14 @@ func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 	produceRecords(ctx, t, clients[2], 0, 6)
 	produceRecords(ctx, t, clients[2], 1, 7)
 
-	offs, err := sched.initConsumptionOffsets(ctx, time.Now().Add(-time.Minute))
+	offs, err := sched.fetchConsumptionOffsets(ctx, time.Now().Add(-time.Minute))
 	require.NoError(t, err)
+	sched.resolveResumeOffsets(offs)
 
-	// The records' timestamps predate the fallback time, so each cell resumes from its end offset.
+	// The records' timestamps predate the fallback time, so each cell's lookback offset is its
+	// end offset, and with nothing planned, it resumes from there.
 	po := func(partition int32, offset int64) *partitionOffsets {
-		return &partitionOffsets{partition: partition, start: 0, resume: offset, end: offset}
+		return &partitionOffsets{partition: partition, start: 0, lookback: offset, resume: offset, end: offset}
 	}
 	require.Equal(t, map[int32][]*partitionOffsets{
 		0: {po(0, 3), po(0, 5), po(0, 6)},
@@ -2537,6 +2662,17 @@ func produceRecords(ctx context.Context, t *testing.T, cli *kgo.Client, partitio
 		})
 		require.NoError(t, produceResult.FirstErr())
 	}
+}
+
+// produceRecordsAt produces n records with the given timestamp to the given partition of the
+// "ingest" topic.
+func produceRecordsAt(ctx context.Context, t *testing.T, cli *kgo.Client, partition int32, n int, ts time.Time) {
+	t.Helper()
+	records := make([]*kgo.Record, n)
+	for i := range records {
+		records[i] = &kgo.Record{Timestamp: ts, Value: []byte("value"), Topic: "ingest", Partition: partition}
+	}
+	require.NoError(t, cli.ProduceSync(ctx, records...).FirstErr())
 }
 
 // testCluster is one fake Kafka cluster and the coordinates needed to connect more clients to it.

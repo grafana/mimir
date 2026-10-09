@@ -217,13 +217,16 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) err
 	}
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
-	s.finalizeObservations()
 
-	offsetsByPartition, err := s.initConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	// Kafka's offsets are fetched before importing observations: a cluster with nothing planned
+	// resumes from its lookback offset, which also bounds where its first imported job may start.
+	offsetsByPartition, err := s.fetchConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
 		return fmt.Errorf("init consumption offsets: %w", err)
 	}
+	s.finalizeObservations(offsetsByPartition)
+	s.resolveResumeOffsets(offsetsByPartition)
 
 	stores := make([]offsetStore, len(s.adminClients))
 	for clusterID := range s.adminClients {
@@ -429,17 +432,23 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 }
 
 type partitionOffsets struct {
-	partition          int32
-	start, resume, end int64
+	partition  int32
+	start, end int64
+	// lookback is where consumption resumes without a planned offset: the higher of start and
+	// the first offset at or after the lookback-on-no-commit fallback time.
+	lookback int64
+	// resume is where job planning resumes: the planned offset, or lookback without one.
+	resume int64
 }
 
-// initConsumptionOffsets probes every cluster's consumption offsets and groups them by
-// partition. The returned slice for each partition is indexed by cluster ID; a nil entry means
-// that cluster had no offsets for the partition.
-func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fallbackTime time.Time) (map[int32][]*partitionOffsets, error) {
+// fetchConsumptionOffsets fetches every cluster's start, end, and lookback offsets and groups
+// them by partition. The returned slice for each partition is indexed by cluster ID; a nil entry
+// means that cluster had no offsets for the partition. Resume offsets are set separately, by
+// resolveResumeOffsets, once observations have been imported.
+func (s *BlockBuilderScheduler) fetchConsumptionOffsets(ctx context.Context, fallbackTime time.Time) (map[int32][]*partitionOffsets, error) {
 	offsetsByPartition := make(map[int32][]*partitionOffsets)
 	for clusterID := range s.adminClients {
-		consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, clusterID)
+		consumeOffs, err := s.fetchSingleClusterConsumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, clusterID)
 		if err != nil {
 			return nil, s.compartmentError(clusterID, err)
 		}
@@ -459,9 +468,10 @@ func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fall
 	return offsetsByPartition, nil
 }
 
-// initSingleClusterConsumptionOffsets returns the resumption and end offsets for each partition on the given
-// cluster, falling back to the fallbackTime if there is no planned offset for a partition.
-func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, clusterID int) ([]partitionOffsets, error) {
+// fetchSingleClusterConsumptionOffsets returns the start, end, and lookback offsets for each
+// partition on the given cluster. The lookback offset is the higher of the partition's start
+// offset and its first offset at or after fallbackTime.
+func (s *BlockBuilderScheduler) fetchSingleClusterConsumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, clusterID int) ([]partitionOffsets, error) {
 	logger := s.compartmentLogger(clusterID)
 	startOffsets, err := s.adminClients[clusterID].ListStartOffsets(ctx, topic)
 	if err != nil {
@@ -493,53 +503,83 @@ func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.
 			continue
 		}
 		for partition, startOffset := range pt {
-			partStr := fmt.Sprint(partition)
-			ps := s.getPartitionState(t, partition)
-
-			// Where to resume from? The partition's lowest planned offset, if
-			// available. Otherwise, we choose the higher of the partition's
-			// fallback and start offset.
-
-			var resumeOffset int64
-
-			if !ps.plannedEmpty(clusterID) {
-				planned := ps.plannedOffset(clusterID)
-				s.metrics.perClusterMetrics[clusterID].plannedOffset.WithLabelValues(partStr).Set(float64(planned))
-				resumeOffset = planned
-			} else {
-				// Nothing planned offset for this partition. Resume from fallback offset instead.
-				o, ok := fallbackOffsets.Lookup(t, partition)
-				if !ok {
-					return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
-				}
-
-				level.Debug(logger).Log("msg", "no planned offset; falling back to max of startOffset and fallbackOffset",
-					"topic", t, "partition", partition, "startOffset", startOffset.At, "fallbackOffset", o.Offset)
-
-				resumeOffset = max(startOffset.At, o.Offset)
-			}
-
 			end, ok := endOffsets.Lookup(t, partition)
 			if !ok {
 				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
 			}
+			fallback, ok := fallbackOffsets.Lookup(t, partition)
+			if !ok {
+				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
+			}
+			lookback := max(startOffset.At, fallback.Offset)
 
-			level.Debug(logger).Log("msg", "initSingleClusterConsumptionOffsets", "topic", t, "partition", partition,
-				"start", startOffset.At, "end", end.Offset, "consumeOffset", resumeOffset)
+			level.Debug(logger).Log("msg", "fetched consumption offsets", "topic", t, "partition", partition,
+				"start", startOffset.At, "end", end.Offset, "fallbackOffset", fallback.Offset, "lookback", lookback)
 
+			partStr := fmt.Sprint(partition)
 			s.metrics.perClusterMetrics[clusterID].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
 			s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
 
 			offs = append(offs, partitionOffsets{
 				partition: partition,
 				start:     startOffset.At,
-				resume:    resumeOffset,
 				end:       end.Offset,
+				lookback:  lookback,
 			})
 		}
 	}
 
 	return offs, nil
+}
+
+// resolveResumeOffsets sets each partition's per-cluster resume offset: the cluster's planned
+// offset if it has one, otherwise its lookback offset.
+func (s *BlockBuilderScheduler) resolveResumeOffsets(offsetsByPartition map[int32][]*partitionOffsets) {
+	loggers := make([]log.Logger, len(s.adminClients))
+	for clusterID := range loggers {
+		loggers[clusterID] = s.compartmentLogger(clusterID)
+	}
+	for partition, clusterOffsets := range offsetsByPartition {
+		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
+		partStr := fmt.Sprint(partition)
+		for clusterID, po := range clusterOffsets {
+			if po == nil {
+				continue
+			}
+			if ps.plannedEmpty(clusterID) {
+				level.Debug(loggers[clusterID]).Log("msg", "no planned offset; resuming from lookback offset",
+					"partition", partition, "lookback", po.lookback)
+				po.resume = po.lookback
+				continue
+			}
+			po.resume = ps.plannedOffset(clusterID)
+			s.metrics.perClusterMetrics[clusterID].plannedOffset.WithLabelValues(partStr).Set(float64(po.resume))
+		}
+	}
+}
+
+// lookbackOffsetsSummary returns a per-cluster summary of a partition's lookback offsets for
+// debugging, formatted like partitionState.offsetsSummary. clusterOffsets is indexed by cluster
+// ID; a nil entry, or no entries at all, means the lookback offset is unknown.
+func (s *BlockBuilderScheduler) lookbackOffsetsSummary(clusterOffsets []*partitionOffsets) string {
+	if len(clusterOffsets) == 0 {
+		return "unknown"
+	}
+	var b strings.Builder
+	for clusterID, po := range clusterOffsets {
+		if clusterID > 0 {
+			b.WriteByte(' ')
+		}
+		if s.cfg.Compartments.Enabled {
+			fmt.Fprintf(&b, "%d:", clusterID)
+		}
+		if po == nil {
+			b.WriteString("unknown")
+		} else {
+			fmt.Fprint(&b, po.lookback)
+		}
+	}
+	return b.String()
 }
 
 // fetchCommittedOffsets fetches the topic's committed offsets for the given consumer group on
@@ -833,8 +873,9 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 }
 
 // finalizeObservations considers the observations and offsets from Kafka, rectifying them into
-// the starting state of the scheduler's normal operation.
-func (s *BlockBuilderScheduler) finalizeObservations() {
+// the starting state of the scheduler's normal operation. offsetsByPartition is as returned by
+// fetchConsumptionOffsets.
+func (s *BlockBuilderScheduler) finalizeObservations(offsetsByPartition map[int32][]*partitionOffsets) {
 
 	// Group observations by partition for gap analysis
 	partitionObservations := make(map[int32][]*observation)
@@ -911,12 +952,14 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				// Fully ahead of the planned frontier; validate contiguity below.
 			}
 
-			if !ps.plannedValidNextSpec(obs.spec) {
-				// Found a gap, can't continue the contiguous range
+			if !ps.plannedValidNextSpec(obs.spec, offsetsByPartition[partition]) {
+				// Found a gap, or a cluster with nothing planned starts after its lookback offset
+				// and could be skipping unobserved jobs. Can't continue the contiguous range.
 				contiguous = false
 				level.Warn(s.logger).Log("msg", "startup: skipping job due to detected offset gap",
 					"partition", partition, "job_id", obs.key.id, "job", obs.spec.RangesString(),
-					"offsets", ps.offsetsSummary(false, true))
+					"offsets", ps.offsetsSummary(false, true),
+					"lookback_offsets", s.lookbackOffsetsSummary(offsetsByPartition[partition]))
 				skippedJobs++
 				continue
 			}
