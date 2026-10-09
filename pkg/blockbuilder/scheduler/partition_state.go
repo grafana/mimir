@@ -346,13 +346,23 @@ func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) specBeyond 
 	})
 }
 
-// plannedValidNextSpec reports whether spec is the contiguous next job for
-// every cluster, i.e. each cluster entry's start offset equals that cluster's
-// planned offset (or that cluster's planned offset is still empty). A gap in any
-// cluster makes it false.
-func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec) bool {
+// plannedValidNextSpec reports whether spec is the contiguous next job for every cluster at
+// startup. A cluster with a planned offset must start exactly at it. A cluster without one (no
+// commit, and no job imported for it yet) must start at or before its lookback offset, where
+// planning resumes without this job; starting later could skip jobs that weren't observed.
+// lookbacks is indexed by cluster ID; a nil or missing entry means the lookback offset is
+// unknown, so the cluster can't start without a planned offset. A gap in any cluster makes it
+// false.
+func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec, lookbacks []*partitionOffsets) bool {
 	for clusterID, offsetRange := range spec.Ranges() {
-		if !s.offsets[clusterID].planned.validNextOffsetRange(offsetRange) {
+		planned := s.offsets[clusterID].planned
+		if !planned.empty() {
+			if planned.offset() != offsetRange.StartOffset {
+				return false
+			}
+			continue
+		}
+		if int(clusterID) >= len(lookbacks) || lookbacks[clusterID] == nil || offsetRange.StartOffset > lookbacks[clusterID].lookback {
 			return false
 		}
 	}
