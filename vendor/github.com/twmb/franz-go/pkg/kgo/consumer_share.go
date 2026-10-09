@@ -55,6 +55,13 @@ type (
 		lastSentSubscribedTopics []string
 		lastSentRack             bool
 
+		// resubscribe makes the next heartbeat send the subscribed
+		// topics even if they did not change. A purge sets it: the
+		// broker returns the assignment only to a full heartbeat, and a
+		// topic purged and added back before the next heartbeat needs
+		// its new cursors assigned.
+		resubscribe atomic.Bool
+
 		// ackMu/ackC/pendingAcks: used by FlushAcks to wait for
 		// all in-flight acks to drain. pendingAcks is an
 		// atomic counter (free reads/writes on the Record.Ack
@@ -69,7 +76,7 @@ type (
 		// callbackRing serializes shareAckCallback invocations
 		// via the same ring + spawn-on-empty pattern that
 		// producer.go uses for batchPromises. Each entry carries
-		// a pendingAcks count that is subtracted AFTER the user
+		// a pendingAcks count that is subtracted after the user
 		// callback returns, so FlushAcks blocks until callbacks
 		// have completed.
 		callbackRing ring[shareCallbackEntry]
@@ -211,20 +218,18 @@ type (
 	// The sc.pendingAcks counter still increments once per appended
 	// entry; subtraction at callback time uses the entry count.
 	//
-	// KNOWN WINDOW (2026-07 audit, deliberately unfixed): the
-	// offset-dedupe only covers duplicates within one build. If a
-	// drain snapshots a renew entry and the user's terminal ack
+	// The offset-dedupe only covers duplicates within one build. If
+	// a drain snapshots a renew entry and the user's terminal ack
 	// lands between the drain and the build's status read, the CAS
-	// re-appends the pointer to the (new) pending list while the
+	// re-appends the pointer to the new pending list while the
 	// drained copy also reads the terminal status: two requests
 	// carry the same terminal ack, and the broker rejects the
 	// second with INVALID_RECORD_STATE at partition granularity,
-	// erroring innocent co-batched acks (they redeliver via the
-	// acquisition-lock timeout; at-least-once holds and the error
-	// is surfaced via the ack callback). Closing this needs
-	// per-state sent tracking (+8 bytes per acquired record) or a
-	// synchronized consume point; the microsecond window and
-	// loud+recoverable outcome did not justify either.
+	// erroring innocent co-batched acks. Those redeliver via the
+	// acquisition-lock timeout and the error is surfaced via the
+	// ack callback, so we deliberately leave this window open
+	// rather than track per-state sent status on every acquired
+	// record.
 	shareAckState struct {
 		status        atomic.Int32  // CAS target for ack transitions
 		deliveryCount int32         // broker's delivery count for this record (>= 1)
@@ -916,10 +921,9 @@ func (s *source) closeShareSession(ctx context.Context) {
 //  1. Local (here): revoke cursors, drain-and-close them (so
 //     post-purge Record.Ack returns errShareConsumerLeft), remove
 //     from tps and reSeen.
-//  2. Server (async): the next heartbeat sends the updated
-//     SubscribedTopicNames; the coordinator revokes; the next
-//     heartbeat response drives assignPartitions to clean up
-//     nowAssigned.
+//  2. Server (async): the next heartbeat sends SubscribedTopicNames;
+//     the coordinator revokes, or assigns anew what was added back;
+//     the heartbeat response drives assignPartitions.
 func (sc *shareConsumer) purgeTopics(topics []string) {
 	sc.cfg.logger.Log(LogLevelDebug, "purging share group topics",
 		"group", sc.cfg.shareGroup,
@@ -946,6 +950,7 @@ func (sc *shareConsumer) purgeTopics(topics []string) {
 		delete(sc.reSeen, topic)
 	}
 	sc.tps.purgeTopics(topics)
+	sc.resubscribe.Store(true)
 }
 
 ////////////
@@ -1098,6 +1103,9 @@ func (sc *shareConsumer) heartbeat() (time.Duration, error) {
 		req.RackID = &sc.cfg.rack
 	}
 
+	if sc.resubscribe.Swap(false) {
+		sc.lastSentSubscribedTopics = nil
+	}
 	tps := sc.tps.load()
 	subscribedTopics := slices.Sorted(maps.Keys(tps))
 	if sc.lastSentSubscribedTopics == nil || !slices.Equal(subscribedTopics, sc.lastSentSubscribedTopics) {
@@ -2383,10 +2391,10 @@ func (s *source) shareFetch(doneFetch chan<- bool) (fetched bool) {
 
 	// Renew acks (type 4) cannot be piggybacked on a ShareFetch
 	// (the broker requires IsRenewAck + zero fetch params). If any
-	// are present, send ALL drained acks via standalone
+	// are present, send all drained acks via standalone
 	// ShareAcknowledge first, then rebuild the request without
-	// re-draining acks (they were already sent, new ones COULD
-	// have happened but we need forward progress...).
+	// re-draining acks: they were already sent, and any new ones
+	// wait for the next cycle.
 	if hasRenew {
 		sc.enqueueCallback(staleResults, nStaleAcks)
 		s.shareAck(piggybackAcks)
@@ -2585,7 +2593,7 @@ func (s *source) handleShareReqResp(req *kmsg.ShareFetchRequest, resp *kmsg.Shar
 	if !sessionStale {
 		s.share.sessionEpoch++
 		// Mirror the broker's session bookkeeping exactly: the broker
-		// adds EVERY partition we list in the request topics to its
+		// adds every partition we list in the request topics to its
 		// share session, whether the partition carries a fetch or only
 		// piggybacked acks (a cursor that was revoked, paused, or
 		// migrated after we drained its acks). It removes a partition
@@ -2945,27 +2953,16 @@ func (s *source) processSharePartition(topicName string, cursor *shareCursor, se
 	gapType := int8(0) // 0 = gap
 	if fp.Err != nil { // error codes are handled before entering; an error here is a decode error
 		// fp.Err here is a whole-batch decode failure: the batch
-		// header, CRC, or compressed payload could not be parsed. kgo
-		// does not have per-record deserializers, so there is no
-		// per-record decode error to surface -- any future
-		// per-record error (e.g. key/value decompression of an
-		// individual record inside a decoded batch) is not reported
-		// via fp.Err. Current enumeration of causes:
-		//   - batch CRC mismatch
-		//   - whole-batch decompression failure
-		//   - malformed batch header / length
-		// Because the entire batch failed to decode, we can't
-		// distinguish which acquired offsets belonged to the bad
-		// batch vs a successfully-decoded one. We RELEASE the
-		// unfilled offsets so the broker re-delivers them after
-		// acquisition-lock expiry; Reject would permanently archive
-		// records that could be fine on a redelivery from another
-		// consumer (e.g. transient corruption on the wire).
-		//
-		// If the underlying error indicates irrecoverable corruption
-		// (not a network/transport issue), reject would be more
-		// correct -- but kgo does not currently distinguish those
-		// classes, so RELEASE is the safe default.
+		// header, CRC, or compressed payload could not be parsed
+		// (kgo has no per-record deserializers, so there is no
+		// per-record decode error to surface). We cannot tell which
+		// acquired offsets belonged to the bad batch, so we release
+		// the unfilled offsets and the broker re-delivers them after
+		// acquisition-lock expiry. Reject would permanently archive
+		// records that could be fine on redelivery (e.g. transient
+		// corruption on the wire); kgo cannot distinguish
+		// irrecoverable corruption from transport issues, so release
+		// is the safe default.
 		gapType = int8(AckRelease)
 		sc.cl.cfg.logger.Log(LogLevelWarn, "share fetch decode error on batch; releasing affected offsets for broker redelivery",
 			"topic", topicName,
@@ -3095,7 +3092,7 @@ func (s *source) createShareReq(skipAckDrain bool) (
 		return
 	}
 
-	// Drain acks from ALL cursors on this source (not just usable
+	// Drain acks from all cursors on this source (not just usable
 	// ones) to piggyback on the ShareFetch request.
 	if !skipAckDrain {
 		piggybackAcks = s.drainAllShareAcks(false)
