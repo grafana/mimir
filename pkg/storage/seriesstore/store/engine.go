@@ -582,7 +582,7 @@ func (e *Engine) compactOOOHead() {
 			}
 			series.oooChunked = false
 		}
-		t, ok := e.scanShard(shard, nil, visit)
+		t, ok := e.scanShard(shard, nil, func(_ uint32, entry *seriesEntry) { visit(entry) })
 		if !ok {
 			continue
 		}
@@ -693,7 +693,7 @@ func (e *Engine) headGC() {
 		if headGCShardHook != nil {
 			hook = func() { headGCShardHook(index) }
 		}
-		t, ok := e.scanShard(shard, hook, func(entry *seriesEntry) {
+		t, ok := e.scanShard(shard, hook, func(_ uint32, entry *seriesEntry) {
 			series := &entry.series
 			// Chunks the collection drops are only in blocks, as their pieces.
 			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
@@ -765,7 +765,7 @@ var scanGapHook func()
 // returns with it held and the tenant, or false with it released when the shard has none. Series added meanwhile may
 // or may not be visited: the callers go over series that can't be removed besides by the compaction they run in. hook
 // runs the first time the shard is locked, for tests.
-func (e *Engine) scanShard(shard *shardState, hook func(), visit func(entry *seriesEntry)) (*tenant, bool) {
+func (e *Engine) scanShard(shard *shardState, hook func(), visit func(group uint32, entry *seriesEntry)) (*tenant, bool) {
 	group, position := 0, 0
 	for first := true; ; first = false {
 		shard.Lock()
@@ -786,7 +786,7 @@ func (e *Engine) scanShard(shard *shardState, hook func(), visit func(entry *ser
 					done = false
 					break scan
 				}
-				visit(&entries[position])
+				visit(uint32(group), &entries[position])
 				position++
 				visited++
 			}
@@ -816,7 +816,8 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	if len(leaving) == 0 {
 		return
 	}
-	pending := prepareFreeze(shard)
+	scope := e.freezeScopeOf(t, leaving)
+	pending := prepareFreeze(shard, scope)
 	if pending == nil {
 		return
 	}
@@ -826,7 +827,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	}
 	block := pending.build(shard.cold.directory)
 	shard.Lock()
-	removed := installFreeze(shard, pending, block)
+	removed := installFreeze(shard, pending, block, scope)
 	for ref, stored := range leaving {
 		if _, gone := removed[ref]; gone {
 			deleted[tsdbchunks.HeadSeriesRef(ref)] = toPromLabels(stored, builder)
@@ -986,9 +987,19 @@ func (e *Engine) prune(cutoff int64) error {
 	var builder promlabels.ScratchBuilder
 	var errs []error
 	for _, shard := range e.store.shards {
-		shard.Lock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
-			changed := t.series.retain(func(entry *seriesEntry) bool {
+		// Which groups hold series to remove is found a batch at a time, so the shard is locked for all of its series
+		// only when there are some, and then only for those groups.
+		var removable []uint32
+		_, found := e.scanShard(shard, nil, func(group uint32, entry *seriesEntry) {
+			if !pruneSeries(&entry.series, cutoff) && (len(removable) == 0 || removable[len(removable)-1] != group) {
+				removable = append(removable, group)
+			}
+		})
+		if !found {
+			shard.Lock()
+		}
+		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
+			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
 				keep := pruneSeries(&entry.series, cutoff)
 				if !keep {
 					t.uncount(entry, &builder)
@@ -1112,4 +1123,22 @@ func (e *Engine) FsyncWLSegments() error {
 // with a staleness marker.
 func (e *Engine) FloatLeftovers() [3]uint64 {
 	return [3]uint64{e.leftovers[0].Load(), e.leftovers[1].Load(), e.leftovers[2].Load()}
+}
+
+// freezeScopeOf is the name groups of the series leaving.
+func (e *Engine) freezeScopeOf(t *tenant, leaving map[uint64]labels.Labels) *freezeScope {
+	seen := map[uint32]struct{}{}
+	groups := []uint32{}
+	for ref := range leaving {
+		location, ok := t.byRef.get(ref)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[location.group]; !dup {
+			seen[location.group] = struct{}{}
+			groups = append(groups, location.group)
+		}
+	}
+	slices.Sort(groups)
+	return &freezeScope{tenant: e.tenantID, groups: groups}
 }
