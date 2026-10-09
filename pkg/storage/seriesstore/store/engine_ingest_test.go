@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"unsafe"
 )
 
 type recordingFloatSink struct {
@@ -842,4 +843,78 @@ func TestEngineEvictsIdleSeriesAtCompaction(t *testing.T) {
 func (e *Engine) home2() *tenant {
 	_, t := e.home()
 	return t
+}
+
+// What a label query returns outlives the shard lock that keeps the cold blocks mapped: a block merged or dropped after
+// it is unmapped, so none of its strings may point into one.
+func TestLabelQueriesDontReturnStringsOfColdBlocks(t *testing.T) {
+	ctx := context.Background()
+	const hourMs = int64(3_600_000)
+	dir := t.TempDir()
+	options := EngineOptions{Shards: 4, SecondaryHashFunction: secondaryHash}
+	engine, err := OpenEngine(dir, "tenant", options)
+	require.NoError(t, err)
+
+	// Series with an old sample only leave the head with the compaction of its first block range.
+	app := engine.Appender(ctx)
+	for n := range 40 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("old-%d", n), "unique", fmt.Sprintf("only-%d", n)), 1000, 1)
+		require.NoError(t, err)
+		_, err = app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("new-%d", n), "unique", fmt.Sprintf("fresh-%d", n)), 4*hourMs, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, engine.Compact(ctx))
+	require.Equal(t, uint64(40), engine.NumSeries(), "the series of the old sample left the head")
+	// A block is mapped from its file when the engine opens.
+	require.NoError(t, engine.Close())
+	engine, err = OpenEngine(dir, "tenant", options)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	mapped := 0
+	for _, shard := range engine.store.shards {
+		for _, block := range shard.cold.blocks {
+			if block.mapped {
+				mapped++
+			}
+		}
+	}
+	require.Positive(t, mapped)
+
+	q, err := engine.Querier(0, hourMs)
+	require.NoError(t, err)
+	defer q.Close()
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric")
+	aliasesBlock := func(value string) bool {
+		start := uintptr(unsafe.Pointer(unsafe.StringData(value)))
+		for _, shard := range engine.store.shards {
+			for _, block := range shard.cold.blocks {
+				if len(block.data) == 0 {
+					continue
+				}
+				base := uintptr(unsafe.Pointer(&block.data[0]))
+				if start >= base && start < base+uintptr(len(block.data)) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	// Between the shards unlocking and the sets being merged a compaction may unmap a block.
+	checked := 0
+	labelValuesHook = func(sets []map[string]struct{}) {
+		for _, set := range sets {
+			for value := range set {
+				checked++
+				require.False(t, aliasesBlock(value), "value %q points into a cold block", value)
+			}
+		}
+	}
+	t.Cleanup(func() { labelValuesHook = nil })
+	for _, name := range []string{"pod", "unique"} {
+		values, _, err := q.LabelValues(ctx, name, nil, matcher)
+		require.NoError(t, err)
+		require.Len(t, values, 40)
+	}
+	require.Positive(t, checked)
 }
