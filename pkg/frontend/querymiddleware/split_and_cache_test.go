@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -2469,7 +2470,11 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 				return nil, fmt.Errorf("expected memory tracker in context: %w", err)
 			}
 			if err := tracker.IncreaseMemoryConsumption(memoryPerSplit, limiter.IngesterChunks); err != nil {
-				return nil, err
+				// The real handlers at the end of the middleware chain classify their errors:
+				// engineQueryRequestRoundTripperHandler through convertToAPIError() and
+				// httpQueryRequestRoundTripperHandler through the codec. Do the same here, so that
+				// the downstream error has the shape the middleware sees in production.
+				return nil, convertToAPIError(err, apierror.TypeExec)
 			}
 			// Memory is intentionally not released here to simulate the MQE holding
 			// allocations across the lifetime of the query.
@@ -2606,6 +2611,13 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 			if tc.expectError {
 				require.Error(t, err)
 				require.ErrorContains(t, err, "the query exceeded the maximum allowed estimated amount of memory consumed by a single query")
+
+				// The error must be classified as an execution error so that the query-frontend
+				// responds with HTTP 422 rather than falling back to HTTP 500.
+				var apiErr *apierror.APIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, apierror.TypeExec, apiErr.Type)
+				require.Equal(t, http.StatusUnprocessableEntity, apiErr.StatusCode())
 			} else {
 				require.NoError(t, err)
 			}
