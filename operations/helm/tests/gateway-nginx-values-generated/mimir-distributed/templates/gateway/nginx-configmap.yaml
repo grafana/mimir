@@ -12,6 +12,8 @@ metadata:
   namespace: "citestns"
 data:
   nginx.conf: |
+    load_module /etc/nginx/modules/ndk_http_module.so;
+    load_module /etc/nginx/modules/ngx_http_lua_module.so;
     worker_processes  5;  ## Default: 1
     error_log  /dev/stderr error;
     pid        /tmp/nginx.pid;
