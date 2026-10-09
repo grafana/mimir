@@ -505,6 +505,7 @@ func flushOutOfOrder(series *Series, disk *chunks.DiskMapper) error {
 	if err != nil {
 		return err
 	}
+	series.oooChunked = true
 	for _, chunk := range encoded {
 		if err := writeChunk(series, disk, chunk.Encoding, chunk.Data, chunk.MinTime, chunk.MaxTime, true); err != nil {
 			return err

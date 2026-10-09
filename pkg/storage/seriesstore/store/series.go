@@ -81,6 +81,9 @@ type Series struct {
 	// Evicted from the emulated head as non-owned, like Mimir's early compaction of non-owned
 	// series, until its next sample; its data stays queryable as a compacted block's.
 	headEvicted bool
+	// Whether out-of-order samples were written out to chunks since the out-of-order compaction last went over the
+	// series, so a pass that doesn't hold the shard locked all along still finds what was written after it looked.
+	oooChunked bool
 	// Go's `labels.StableHash`, by which sharded queries pick series. Kept like Go's head keeps it:
 	// rehashing every series' labels for each query shard was a fifth of a busy ingester's CPU.
 	shardHash uint64
