@@ -1381,6 +1381,7 @@ Forcefully adds one or more partitions to the partition ring.
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
 | `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
+| `--partition-ring.prefix`    | The KV store key prefix. Must match Mimir's `-ingester.partition-ring.prefix`. Default: `collectors/`.      |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1405,6 +1406,7 @@ Forcefully removes one or more partitions from the partition ring. A partition c
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
 | `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
+| `--partition-ring.prefix`    | The KV store key prefix. Must match Mimir's `-ingester.partition-ring.prefix`. Default: `collectors/`.      |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1429,6 +1431,7 @@ Forcefully adds one or more owners (ingester instances) to the partition ring, a
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
 | `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
+| `--partition-ring.prefix`    | The KV store key prefix. Must match Mimir's `-ingester.partition-ring.prefix`. Default: `collectors/`.      |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1453,6 +1456,7 @@ Forcefully removes one or more owners (ingester instances) from the partition ri
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
 | `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
+| `--partition-ring.prefix`    | The KV store key prefix. Must match Mimir's `-ingester.partition-ring.prefix`. Default: `collectors/`.      |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
