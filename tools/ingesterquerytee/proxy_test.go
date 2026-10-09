@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -81,13 +81,20 @@ func awaitOutcome(t *testing.T, p *Proxy, method, result string) {
 	require.Eventually(t, func() bool { return testutil.ToFloat64(p.comparisons.WithLabelValues(method, result)) == 1 }, 5*time.Second, time.Millisecond)
 }
 
+func testMetadata(ctx context.Context) metadata.MD {
+	md := metadata.MD{}
+	for _, key := range []string{"x-scope-orgid", "__consistency_level__", "__consistency_offsets__", "__only_replica__", "x-tee-test"} {
+		md[key] = metadata.ValueFromIncomingContext(ctx, key)
+	}
+	return md
+}
+
 func TestProxyUnaryMetadataAndAsyncComparison(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	seen := make(chan metadata.MD, 1)
 	primary := &testIngester{labelNames: func(ctx context.Context, _ *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
-		md, _ := metadata.FromIncomingContext(ctx)
-		seen <- md
+		seen <- testMetadata(ctx)
 		if err := grpc.SendHeader(ctx, metadata.Pairs("primary-header", "yes")); err != nil {
 			return nil, err
 		}
@@ -98,8 +105,7 @@ func TestProxyUnaryMetadataAndAsyncComparison(t *testing.T) {
 	}}
 	shadowSeen := make(chan metadata.MD, 1)
 	shadow := &testIngester{labelNames: func(ctx context.Context, _ *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
-		md, _ := metadata.FromIncomingContext(ctx)
-		shadowSeen <- md
+		shadowSeen <- testMetadata(ctx)
 		select {
 		case <-release:
 		case <-ctx.Done():
@@ -110,7 +116,7 @@ func TestProxyUnaryMetadataAndAsyncComparison(t *testing.T) {
 	p, cli := testProxy(t, primary, shadow, testConfig())
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-scope-orgid", "tenant", "__consistency_level__", "strong", "__consistency_offsets__", "v1=0:123", "__only_replica__", "true"))
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-scope-orgid", "tenant", "__consistency_level__", "strong", "__consistency_offsets__", "v1=0:123", "__only_replica__", "true", "x-tee-test", "custom-value"))
 	var header, trailer metadata.MD
 	resp, err := cli.LabelNames(ctx, &client.LabelNamesRequest{}, grpc.Header(&header), grpc.Trailer(&trailer))
 	require.NoError(t, err)
@@ -122,6 +128,7 @@ func TestProxyUnaryMetadataAndAsyncComparison(t *testing.T) {
 		require.Equal(t, []string{"strong"}, md.Get("__consistency_level__"))
 		require.Equal(t, []string{"v1=0:123"}, md.Get("__consistency_offsets__"))
 		require.Equal(t, []string{"true"}, md.Get("__only_replica__"))
+		require.Equal(t, []string{"custom-value"}, md.Get("x-tee-test"))
 	}
 	// Returning from the caller cancels its server context; the shadow must finish independently.
 	release <- struct{}{}
