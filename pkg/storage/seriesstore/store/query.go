@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -733,6 +734,9 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 	return sortedKeys(mergeSets(perShard)), nil
 }
 
+// labelValuesHook runs with the sets of values found in each shard, once the shards are unlocked, for tests.
+var labelValuesHook func(sets []map[string]struct{})
+
 // LabelValues returns the values of name of the matching series the label window of [start, end]
 // sees, sorted.
 func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []LabelMatcher) ([]string, error) {
@@ -765,10 +769,17 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 		}
 		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
 			if value, ok := series.lookup(name); ok {
-				values[value] = struct{}{}
+				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before
+				// the sets are merged.
+				if _, seen := values[value]; !seen {
+					values[strings.Clone(value)] = struct{}{}
+				}
 			}
 		})
 	})
+	if labelValuesHook != nil {
+		labelValuesHook(perShard)
+	}
 	return sortedKeys(mergeSets(perShard)), nil
 }
 
