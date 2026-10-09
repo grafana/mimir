@@ -323,9 +323,48 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 // Go's head truncation after compacting them into a block. Their open chunks are cut first, so
 // the block has all their data; they stay in memory if the block can't be written.
 func freezeOutOfHead(state *shardState) {
-	if pending := prepareFreeze(state); pending != nil {
-		installFreeze(state, pending, pending.build(state.cold.directory))
+	if pending := prepareFreeze(state, nil); pending != nil {
+		installFreeze(state, pending, pending.build(state.cold.directory), nil)
 	}
+}
+
+// freezeScope narrows the series a freeze goes over to some name groups of one tenant, which the engine that moves its
+// series out of the head knows: going over every series of every tenant of the shard held its lock for as long as
+// they were many, however few left. A nil scope is the whole shard.
+type freezeScope struct {
+	tenant string
+	groups []uint32
+}
+
+// forEach visits the series the scope covers, with the shard locked.
+func (f *freezeScope) forEach(state *shardState, visit func(tenantID string, entry *seriesEntry)) {
+	if f == nil {
+		for tenantID, t := range state.tenants {
+			t.series.forEach(func(entry *seriesEntry) { visit(tenantID, entry) })
+		}
+		return
+	}
+	t, ok := state.tenants[f.tenant]
+	if !ok {
+		return
+	}
+	for _, group := range f.groups {
+		entries := t.series.groups[group].entries
+		for index := range entries {
+			visit(f.tenant, &entries[index])
+		}
+	}
+}
+
+// groupsOf is the groups to remove series from for a tenant, or nil for all of them.
+func (f *freezeScope) groupsOf(tenantID string) []uint32 {
+	if f == nil || f.tenant != tenantID {
+		return nil
+	}
+	if f.groups == nil {
+		return []uint32{}
+	}
+	return f.groups
 }
 
 type frozenKey struct {
@@ -344,10 +383,10 @@ type pendingFreeze struct {
 
 // prepareFreeze cuts the open chunks of the series out of the head and takes their data for a
 // cold block, or returns nil when there are none. With the shard locked.
-func prepareFreeze(state *shardState) *pendingFreeze {
+func prepareFreeze(state *shardState, scope *freezeScope) *pendingFreeze {
 	pending := &pendingFreeze{keys: map[frozenKey]chunkList{}, started: time.Now()}
-	for tenantID, t := range state.tenants {
-		t.series.forEach(func(entry *seriesEntry) {
+	scope.forEach(state, func(tenantID string, entry *seriesEntry) {
+		{
 			series := &entry.series
 			if series.inHead {
 				return
@@ -370,8 +409,8 @@ func prepareFreeze(state *shardState) *pendingFreeze {
 			if !chunks.isEmpty() {
 				pending.frozen = append(pending.frozen, frozenSeries{tenant: tenantID, labels: entry.labels, chunks: chunks, nativeHistogram: series.nativeHistogram})
 			}
-		})
-	}
+		}
+	})
 	if len(pending.keys) == 0 {
 		return nil
 	}
@@ -397,24 +436,22 @@ func (p *pendingFreeze) build(directory string) *coldBlock {
 // installFreeze adds the block and drops its series from memory, with the shard locked. If any
 // of them took samples since it was prepared, the block is discarded and they all stay in
 // memory, for the next freeze: the block would miss the new samples.
-func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) (removed map[uint64]struct{}) {
+func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock, scope *freezeScope) (removed map[uint64]struct{}) {
 	if pending.keys == nil {
 		return nil
 	}
 	unchanged := 0
-	for tenantID, t := range state.tenants {
-		t.series.forEach(func(entry *seriesEntry) {
-			series := &entry.series
-			// Most series stay in the head: no need to hash their labels.
-			if series.inHead {
-				return
-			}
-			chunks, ok := pending.keys[frozenKey{tenantID, entry.labels}]
-			if ok && series.floatHead == nil && series.histogram() == nil && len(series.ooo()) == 0 && bytes.Equal(series.chunks, chunks) {
-				unchanged++
-			}
-		})
-	}
+	scope.forEach(state, func(tenantID string, entry *seriesEntry) {
+		series := &entry.series
+		// Most series stay in the head: no need to hash their labels.
+		if series.inHead {
+			return
+		}
+		chunks, ok := pending.keys[frozenKey{tenantID, entry.labels}]
+		if ok && series.floatHead == nil && series.histogram() == nil && len(series.ooo()) == 0 && bytes.Equal(series.chunks, chunks) {
+			unchanged++
+		}
+	})
 	if unchanged != len(pending.keys) {
 		fmt.Fprintf(os.Stderr, "phase=cold_block_discarded id=%d series=%d changed=%d\n", pending.id, len(pending.keys), len(pending.keys)-unchanged)
 		if block != nil {
@@ -429,7 +466,10 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock) 
 	var builder promlabels.ScratchBuilder
 	removed = map[uint64]struct{}{}
 	for tenantID, t := range state.tenants {
-		changed := t.series.retain(func(entry *seriesEntry) bool {
+		if scope != nil && scope.tenant != tenantID {
+			continue
+		}
+		changed := t.series.retainGroups(scope.groupsOf(tenantID), func(entry *seriesEntry) bool {
 			if entry.series.inHead {
 				return true
 			}

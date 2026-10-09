@@ -136,3 +136,46 @@ func TestOutOfOrderCompactionKeepsChunksWrittenBetweenBatches(t *testing.T) {
 	})
 	require.Empty(t, missed, "out-of-order chunks that no block took")
 }
+
+// The retention pass removes the series that have nothing past the cutoff, found a batch at a time: a series that takes
+// a sample after its batch was looked at stays.
+func TestPruneRemovesSeriesFoundInBatches(t *testing.T) {
+	const hourMs = int64(3_600_000)
+	oldBatch, oldHook := scanBatch, scanGapHook
+	t.Cleanup(func() { scanBatch, scanGapHook = oldBatch, oldHook })
+	scanBatch = 8
+
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	app := engine.Appender(context.Background())
+	for n := range 30 {
+		for _, metric := range []string{"first", "second", "third"} {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", metric, "n", fmt.Sprint(n)), 1000, 1)
+			require.NoError(t, err)
+			_, err = app.Append(0, promlabels.FromStrings("__name__", metric, "kept", fmt.Sprint(n)), 5*hourMs, 1)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(180), engine.NumSeries())
+
+	revived := promlabels.FromStrings("__name__", "second", "n", "7")
+	scanGapHook = func() {
+		scanGapHook = nil
+		app := engine.Appender(context.Background())
+		_, err := app.Append(0, revived, 6*hourMs, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, engine.prune(2*hourMs))
+	require.Equal(t, uint64(91), engine.NumSeries(), "the series with only old samples are gone, but the one that took a sample")
+
+	q, err := engine.Querier(0, 7*hourMs)
+	require.NoError(t, err)
+	defer q.Close()
+	values, _, err := q.LabelValues(context.Background(), "n", nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "second"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"7"}, values)
+}
