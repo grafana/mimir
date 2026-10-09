@@ -35,6 +35,9 @@ message EncodedQueryPlan {
   // cacheDisabled carries the request's Cache-Control: no-store option to the querier, where the
   // splitting/caching passes run and cannot otherwise see the request's options.
   bool cacheDisabled = 8;
+
+  // explain requests extra diagnostic information in the query response.
+  repeated string explain = 9 [(gogoproto.casttype) = "github.com/grafana/mimir/pkg/streamingpromql/types.ExplainValue"];
 }
 
 message EncodedNode {

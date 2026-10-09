@@ -49,6 +49,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 		expr                     string
 		timeRange                types.QueryTimeRange
 		enableDelayedNameRemoval bool
+		explain                  []types.ExplainValue
 
 		expectedPlan *planning.EncodedQueryPlan
 	}{
@@ -283,6 +284,32 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} offset 30s`,
+					},
+				},
+			},
+		},
+		"vector selector with explain cost": {
+			expr:      `some_metric`,
+			timeRange: instantQuery,
+			explain:   []types.ExplainValue{types.ExplainValueCost},
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				Explain:       []types.ExplainValue{types.ExplainValueCost},
+				RootNode:      0,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
 					},
 				},
 			},
@@ -1746,7 +1773,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, lookbackDelta, testCase.enableDelayedNameRemoval, nil, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, lookbackDelta, testCase.enableDelayedNameRemoval, testCase.explain, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
