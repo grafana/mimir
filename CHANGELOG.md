@@ -129,6 +129,10 @@
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 
+### Mimirtool
+
+* [BUGFIX] Fix `rules diff` and `rules sync` ignoring changes to a rule's `keep_firing_for`, so a change to only that field was never uploaded. #16717
+
 ### Documentation
 
 * [ENHANCEMENT] Add documentation for deploying Mimir with Juju. #16485
