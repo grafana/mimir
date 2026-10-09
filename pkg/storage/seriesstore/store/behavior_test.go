@@ -120,9 +120,9 @@ func TestShardedReadsOfColdSeriesMatchTheHead(t *testing.T) {
 	require.Equal(t, uint64(21), s.NumSeries("tenant"), "old left memory")
 	hashed := coldShardHashings.Load()
 	require.Equal(t, before, reads(s))
-	// Each block's shard hashes are computed once, not for every sharded query.
-	require.Greater(t, coldShardHashings.Load(), hashed)
-	hashed = coldShardHashings.Load()
+	// Each block's shard hashes are computed once, when the block is written, not for every sharded query.
+	require.Positive(t, hashed)
+	require.Equal(t, hashed, coldShardHashings.Load())
 	require.Equal(t, before, reads(s))
 	require.Equal(t, hashed, coldShardHashings.Load())
 	require.NoError(t, s.WriteSnapshot([]SnapshotOffset{{Offset: 1, HasOffset: true, TimestampMs: 1}}))
