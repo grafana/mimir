@@ -24,17 +24,6 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-oss-emptydir-values-mimir-compactor
-  volumeClaimTemplates:
-    - apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: storage
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: "2Gi"
   template:
     metadata:
       labels:
@@ -74,6 +63,10 @@ spec:
         - name: runtime-config
           configMap:
             name: test-oss-emptydir-values-mimir-runtime
+        - name: storage
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
         - name: active-queries
           emptyDir: {}
       containers:
