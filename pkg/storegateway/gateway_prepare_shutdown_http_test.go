@@ -5,7 +5,9 @@ package storegateway
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
 	"testing"
 
@@ -139,6 +141,20 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	response6 := httptest.NewRecorder()
 	g.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/store-gateway/prepare-shutdown", nil))
 	require.Equal(t, 503, response6.Code)
+}
+
+func TestStoreGateway_PrepareShutdownHandler_DeleteWithoutSyncDir(t *testing.T) {
+	test.VerifyNoLeak(t)
+	g, _ := createStoreGateway(t, prometheus.NewPedanticRegistry())
+
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), g))
+	require.NoError(t, os.RemoveAll(g.storageCfg.BucketStore.SyncDir))
+
+	response := httptest.NewRecorder()
+	g.PrepareShutdownHandler(response, httptest.NewRequest(http.MethodDelete, "/store-gateway/prepare-shutdown", nil))
+
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.True(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 }
 
 func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
