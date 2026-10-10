@@ -46,6 +46,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
 * [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values. #16761
 * [BUGFIX] Kafka: set `KAFKA_MESSAGE_MAX_BYTES` to `16000000` on the bundled broker, as recommended in the Kafka backend documentation. Previously the broker used Kafka's 1 MB default, so it rejected records and batches larger than that with `MESSAGE_TOO_LARGE`, while Mimir produces up to about 16 MB. The value can be overridden through `kafka.env`. #16804
+* [BUGFIX] Target this Helm release's gossip-ring Service in the bundled endpoint alerts and retain its endpoint addresses in the kube-state-metrics scrape filter. #16730
 
 ## 6.2.1
 

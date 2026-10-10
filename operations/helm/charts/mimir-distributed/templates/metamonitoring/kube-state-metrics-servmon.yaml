@@ -20,11 +20,15 @@ spec:
     - port: {{ $.Values.metaMonitoring.grafanaAgent.metrics.scrapeK8s.kubeStateMetrics.service.port }}
       metricRelabelings:
         - action: keep
-          regex: "(^|.*;){{ include "mimir.resourceName" (dict "ctx"  $) }}.*"
+          # Retain workload metrics and this release gossip-ring endpoint addresses.
+          regex: "(?:[^;]*;){0,2}{{ include "mimir.resourceName" (dict "ctx" $) }}[^;]*;.*|;;;kube_endpoint_address;{{ $.Release.Namespace }};{{ include "mimir.resourceName" (dict "ctx" $ "component" "gossip-ring") }}"
           sourceLabels:
             - deployment
             - statefulset
             - pod
+            - __name__
+            - namespace
+            - endpoint
           separator: ';'
       {{- if kindIs "string" .clusterLabel }}
       relabelings:
