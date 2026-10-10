@@ -14,25 +14,31 @@ import (
 )
 
 type nonOverlappingIterator struct {
-	curr   int
-	chunks []chunk.Chunk
-	iter   chunkIterator
+	curr    int
+	chunks  []chunk.Chunk
+	iter    chunkIterator
+	options IteratorOptions
 	// id is used to detect when the iterator has changed when merging
 	id int
 }
 
 // newNonOverlappingIterator returns a single iterator over a slice of sorted,
 // non-overlapping iterators.
-func newNonOverlappingIterator(it *nonOverlappingIterator, id int, chunks []chunk.Chunk, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) *nonOverlappingIterator {
+func newNonOverlappingIterator(it *nonOverlappingIterator, id int, chunks []chunk.Chunk, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram], stPool *zeropool.Pool[*[chunk.BatchSize]int64], options IteratorOptions) *nonOverlappingIterator {
 	if it == nil {
 		it = &nonOverlappingIterator{}
+	} else {
+		// Release through the old pool before replacing the configuration.
+		it.iter.invalidateBatch()
 	}
 	it.id = id
 	it.chunks = chunks
 	it.curr = 0
+	it.options = options
 	it.iter.hPool = hPool
 	it.iter.fhPool = fhPool
-	it.iter.reset(it.chunks[0])
+	it.iter.stPool = stPool
+	it.iter.reset(it.chunks[0], options)
 	return it
 }
 
@@ -63,7 +69,7 @@ func (it *nonOverlappingIterator) Next(size int) chunkenc.ValueType {
 func (it *nonOverlappingIterator) next() bool {
 	it.curr++
 	if it.curr < len(it.chunks) {
-		it.iter.reset(it.chunks[it.curr])
+		it.iter.reset(it.chunks[it.curr], it.options)
 	}
 	return it.curr < len(it.chunks)
 }
