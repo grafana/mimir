@@ -73,6 +73,8 @@
 (import 'compartments-query-frontend.libsonnet') +
 (import 'compartments-compactor.libsonnet') +
 (import 'compartments-compactor-scheduler.libsonnet') +
+(import 'compartments-block-builder.libsonnet') +
+(import 'compartments-block-builder-scheduler.libsonnet') +
 (import 'compartments-store-gateway.libsonnet') +
 (import 'compartments-memcached.libsonnet') +
 
