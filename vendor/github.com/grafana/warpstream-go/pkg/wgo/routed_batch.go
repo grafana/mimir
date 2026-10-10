@@ -58,6 +58,12 @@ func splitPromisedRoutedBatchByBatchMaxBytes[W routedBatch[W]](in promised[W], b
 	// Capture the done func, not in itself: referencing in.done directly would
 	// make the closure retain all of in until the last chunk completes.
 	origDone := in.done
+	tp := in.item.getTopicPartition()
+	// res.error() is set when any partition in the result failed. That is not
+	// a failure of this partition, and keeping it would hide a later one.
+	failed := func(res ProduceResult) bool {
+		return recordErrFromResult(res, tp.topic, tp.partition) != nil
+	}
 	var (
 		mu         sync.Mutex
 		remaining  = len(chunks)
@@ -65,18 +71,17 @@ func splitPromisedRoutedBatchByBatchMaxBytes[W routedBatch[W]](in promised[W], b
 		haveChosen bool
 		chosenOK   bool
 	)
-	// The chunks all share in's single (topic, partition), so origDone fires once
-	// after every chunk resolves, choosing a failing result over a success.
-	// Per-chunk responses need no merging: reporting any failure triggers a safe
-	// whole-partition retry under at-least-once.
+	// Chunks share in's (topic, partition), so origDone fires once after all
+	// resolve, keeping a failure of this partition over a success. Per-chunk
+	// responses need no merging: any such failure retries the whole partition.
 	done := func(res ProduceResult) {
 		mu.Lock()
 		remaining--
 		if !haveChosen {
 			chosen = res
 			haveChosen = true
-			chosenOK = res.error() == nil
-		} else if chosenOK && res.error() != nil {
+			chosenOK = !failed(res)
+		} else if chosenOK && failed(res) {
 			chosen = res
 			chosenOK = false
 		}

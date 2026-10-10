@@ -123,6 +123,14 @@ func unrouteEncodedTopicPartitionRecords(parts []routedEncodedTopicPartitionReco
 	return out
 }
 
+func sumEncodedStats(parts []routedEncodedTopicPartitionRecords) produceRequestStats {
+	var s produceRequestStats
+	for _, p := range parts {
+		s = s.add(p.encodedStats)
+	}
+	return s
+}
+
 // agentFromRouted resolves the destination Agent for one wire attempt: nodeID,
 // plus AgentStateDemoted if any partition was routed there as a probe. A mixed
 // group only arises when demotion flipped mid-linger, and demoted wins so a
