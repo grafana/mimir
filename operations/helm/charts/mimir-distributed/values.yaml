@@ -2503,6 +2503,12 @@ compactor:
     #
     enabled: true
 
+    # additional settings for emptyDir like medium or sizeLimit
+    #
+    emptyDir: {}
+    #  medium: Memory
+    #  sizeLimit: 1Gi
+
     # compactor data Persistent Volume Claim template name
     #
     name: storage

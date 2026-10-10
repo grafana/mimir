@@ -5,3 +5,11 @@ store_gateway:
     emptyDir:
       medium: Memory
       sizeLimit: 1Gi
+
+compactor:
+  enabled: true
+  persistentVolume:
+    enabled: false
+    emptyDir:
+      medium: Memory
+      sizeLimit: 1Gi
