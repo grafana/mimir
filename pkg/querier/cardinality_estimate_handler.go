@@ -297,6 +297,11 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 			return req, opts, errors.New("sketch_above must be a non-negative integer")
 		}
 	}
+	if v := r.FormValue("shards"); v != "" {
+		if req.Shards, err = strconv.Atoi(v); err != nil || req.Shards < 0 || req.Shards > 128 {
+			return req, opts, errors.New("shards must be an integer from 0 to 128")
+		}
+	}
 	if v := r.FormValue("min_count"); v != "" {
 		if opts.minCount, err = strconv.ParseInt(v, 10, 64); err != nil || opts.minCount < 0 {
 			return req, opts, errors.New("min_count must be a non-negative integer")
