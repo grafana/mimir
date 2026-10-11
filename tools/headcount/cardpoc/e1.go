@@ -43,8 +43,8 @@ func (res E1Result) Exact() bool {
 // bucketDir/anonymous: a label value's index-header postings byte span
 // gives (End-Start-4)/4, and that must equal a real postings walk over the
 // full index for the same value. This is checked for the no-matcher
-// ("", "") case specifically, since that is the whole-block count Proposal
-// 1 relies on, and then for every other label value in the block.
+// ("", "") case specifically, since that is the whole-block count the
+// cardinality estimate relies on, and then for every other label value in the block.
 func RunE1(bucketDir string) ([]E1Result, error) {
 	anonymousDir := filepath.Join(bucketDir, "anonymous")
 	entries, err := os.ReadDir(anonymousDir)
