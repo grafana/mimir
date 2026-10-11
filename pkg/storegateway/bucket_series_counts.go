@@ -6,8 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/grafana/dskit/runutil"
@@ -15,10 +18,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -28,6 +33,16 @@ import (
 // SeriesCountsSketchPrecision is the HLL precision of a group's sketch:
 // 2^11 registers, a standard error of about 2.3%.
 const SeriesCountsSketchPrecision = 11
+
+// countBlockConcurrency is how many blocks one count request reads at once.
+// HEADCOUNT_BLOCK_CONCURRENCY overrides it; 1 reads blocks one after another,
+// as the prototype did before 2026-10-12.
+var countBlockConcurrency = func() int {
+	if n, err := strconv.Atoi(os.Getenv("HEADCOUNT_BLOCK_CONCURRENCY")); err == nil && n > 0 {
+		return n
+	}
+	return 16
+}()
 
 // maxSeriesCountsBuckets caps step_ms so a request can't ask for a huge
 // count slice per group.
@@ -228,6 +243,14 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// A __query_shard__ matcher, as query sharding sends to Series, counts only
+	// the series whose label-set hash falls in that shard. Shards share no
+	// series, so their counts add up and their hashes union to the total.
+	shard, matchers, err := sharding.RemoveShardFromMatchers(c.matchers)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	c.matchers = matchers
 	want := make(map[ulid.ULID]bool, len(req.BlockIds))
 	for _, id := range req.BlockIds {
 		parsed, err := ulid.Parse(id)
@@ -263,32 +286,52 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		s.recordPostingsStats(st)
 		s.recordSeriesStats(st)
 	}()
-	series := 0
+	pg, pctx := errgroup.WithContext(ctx)
+	pg.SetLimit(countBlockConcurrency)
 	for i := range blocks {
 		o := &blocks[i]
-		o.b.ensureIndexHeaderLoaded(ctx, stats)
-		if len(c.matchers) == 0 {
-			o.postings, err = allPostingsForBlock(ctx, o.indexr, stats)
-		} else {
-			o.postings, o.pending, err = o.indexr.ExpandedPostings(ctx, c.matchers, stats)
-		}
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
-		}
+		pg.Go(func() error {
+			o.b.ensureIndexHeaderLoaded(pctx, stats)
+			var err error
+			if len(c.matchers) == 0 {
+				o.postings, err = allPostingsForBlock(pctx, o.indexr, stats)
+			} else {
+				o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, stats)
+			}
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
+			}
+			return nil
+		})
+	}
+	if err := pg.Wait(); err != nil {
+		return nil, err
+	}
+	series := 0
+	for _, o := range blocks {
 		series += len(o.postings)
 	}
 	if err := c.checkPlan(indexBytes(stats), series); err != nil {
 		return nil, err
 	}
 	resp := &storegatewaypb.SeriesCountsResponse{}
+	var mtx sync.Mutex
+	sg, sctx := errgroup.WithContext(ctx)
+	sg.SetLimit(countBlockConcurrency)
 	for _, o := range blocks {
-		if err := s.addBlockSeriesCounts(ctx, o.b, o.indexr, o.postings, o.pending, c, stats); err != nil {
-			if _, ok := status.FromError(err); ok {
-				return nil, err
+		sg.Go(func() error {
+			if err := s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, shard, c, &mtx, stats); err != nil {
+				if _, ok := status.FromError(err); ok {
+					return err
+				}
+				return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 			}
-			return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
-		}
+			return nil
+		})
 		resp.BlockIds = append(resp.BlockIds, o.b.meta.ULID.String())
+	}
+	if err := sg.Wait(); err != nil {
+		return nil, err
 	}
 	if resp.Groups, err = c.groups(); err != nil {
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
@@ -302,19 +345,26 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 }
 
 // addBlockSeriesCounts adds one block's matching series to c, from postings
-// already resolved, and fails once max_index_bytes is passed.
-func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, c *seriesCounts, stats *safeQueryStats) error {
+// already resolved, and fails once max_index_bytes is passed. Blocks run
+// concurrently, so additions to c hold mtx; reading the block does not.
+func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, shard *sharding.ShardSelector, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
+	hasher := cachedSeriesHasher{nil}
+	if shard != nil {
+		hasher = cachedSeriesHasher{s.seriesHashCache.GetBlockCache(b.meta.ULID.String())}
+	}
 	var it iterator[seriesChunkRefsSet] = newLoadingSeriesChunkRefsSetIterator(
 		ctx, newPostingsSetsIterator(postings, s.maxSeriesPerBatch), indexr, b.indexCache, stats, b.meta,
-		nil, nil, c.strategy(b.meta), c.minT, c.maxT-1, b.userID, b.logger,
+		shard, hasher, c.strategy(b.meta), c.minT, c.maxT-1, b.userID, b.logger,
 	)
 	if len(pending) > 0 {
 		it = newFilteringSeriesChunkRefsSetIterator(pending, it, stats)
 	}
 	for it.Next() {
+		mtx.Lock()
 		for _, series := range it.At().series {
 			c.add(series)
 		}
+		mtx.Unlock()
 		if err := c.checkRead(indexBytes(stats)); err != nil {
 			return err
 		}
