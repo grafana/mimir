@@ -118,7 +118,7 @@ func NameCountsForRange(bucketDir string, r BlockRange) (NameCounts, error) {
 func addBlockNameCounts(bkt objstore.InstrumentedBucketReader, anonymousDir string, id ulid.ULID, counts map[string]int) error {
 	ctx := context.Background()
 	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
-	hr, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, anonymousDir, indexheader.Config{}, 32, gokitlog.NewNopLogger(), metrics)
+	hr, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, anonymousDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, 32, gokitlog.NewNopLogger(), metrics)
 	if err != nil {
 		return fmt.Errorf("opening index-header: %w", err)
 	}
