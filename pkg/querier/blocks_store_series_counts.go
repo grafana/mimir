@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -35,6 +36,10 @@ type CardinalityEstimateRequest struct {
 	SketchAbove int64
 	// Snap widens a window inside one block range to that range.
 	Snap bool
+	// Shards splits every store-gateway call into this many calls, each
+	// counting one series-hash shard, as query sharding does for Series.
+	// 0 or 1 sends one call.
+	Shards int
 }
 
 // CardinalityEstimateResult holds one count per bucket for each group.
@@ -87,6 +92,23 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 	pbMatchers := make([]*storepb.LabelMatcher, len(matchers))
 	for i := range matchers {
 		pbMatchers[i] = &matchers[i]
+	}
+	shards := max(req.Shards, 1)
+	// One matcher list per shard. Shards share no series, so their counts
+	// add up and their hashes union to the same total as one call.
+	shardMatchers := make([][]*storepb.LabelMatcher, shards)
+	for i := range shards {
+		if shards == 1 {
+			shardMatchers[i] = pbMatchers
+			continue
+		}
+		sel := sharding.ShardSelector{ShardIndex: uint64(i), ShardCount: uint64(shards)}
+		m := sel.Matcher()
+		pm, err := storepb.PromMatchersToMatchers(m)
+		if err != nil {
+			return CardinalityEstimateResult{}, err
+		}
+		shardMatchers[i] = append(append([]*storepb.LabelMatcher{}, pbMatchers...), &pm[0])
 	}
 
 	var (
@@ -165,9 +187,10 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 
 	// Find every call first, so max_index_bytes can be split across them.
 	type call struct {
-		p      estimatePart
-		client BlocksStoreClient
-		ids    []ulid.ULID
+		p        estimatePart
+		client   BlocksStoreClient
+		ids      []ulid.ULID
+		matchers []*storepb.LabelMatcher
 	}
 	var calls []call
 	for _, p := range parts {
@@ -181,7 +204,9 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 		for client, partitions := range clients {
 			gateways[client.RemoteAddress()] = true
 			for _, ids := range partitions {
-				calls = append(calls, call{p, client, ids})
+				for _, m := range shardMatchers {
+					calls = append(calls, call{p, client, ids, m})
+				}
 			}
 		}
 	}
@@ -196,7 +221,7 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 			g.Go(func() error {
 				resp, err := cl.client.SeriesCounts(gCtx, &storegatewaypb.SeriesCountsRequest{
 					BlockIds:      convertULIDsToString(cl.ids),
-					Matchers:      pbMatchers,
+					Matchers:      cl.matchers,
 					MinTime:       req.MinT,
 					MaxTime:       req.MaxT,
 					StepMs:        req.Step,
