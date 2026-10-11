@@ -6,10 +6,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -61,14 +63,30 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 
 	counts := map[string]int64{}
 	blockIDs := make([]string, 0, len(blocks))
+	var mtx sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(countBlockConcurrency)
 	for _, o := range blocks {
-		if err := addBlockMetricNameCounts(ctx, o.b, counts); err != nil {
-			if _, ok := status.FromError(err); ok {
-				return err
+		g.Go(func() error {
+			// Each block is read into its own map, then added under the lock.
+			own := map[string]int64{}
+			if err := addBlockMetricNameCounts(gctx, o.b, own); err != nil {
+				if _, ok := status.FromError(err); ok {
+					return err
+				}
+				return status.Error(codes.Internal, err.Error())
 			}
-			return status.Error(codes.Internal, err.Error())
-		}
+			mtx.Lock()
+			for name, n := range own {
+				counts[name] += n
+			}
+			mtx.Unlock()
+			return nil
+		})
 		blockIDs = append(blockIDs, o.b.meta.ULID.String())
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 	if req.MaxNames > 0 && int64(len(counts)) > req.MaxNames {
 		return status.Errorf(codes.ResourceExhausted, "the blocks hold %d distinct metric names, more than max_names %d", len(counts), req.MaxNames)
