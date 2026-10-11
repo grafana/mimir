@@ -79,7 +79,7 @@ func checkBlockE1(bkt objstore.InstrumentedBucketReader, anonymousDir string, id
 	res := E1Result{Block: id.String()}
 
 	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
-	hr, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, anonymousDir, indexheader.Config{}, 32, gokitlog.NewNopLogger(), metrics)
+	hr, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, anonymousDir, indexheader.Config{Version: indexheader.BinaryFormatV1}, 32, gokitlog.NewNopLogger(), metrics)
 	if err != nil {
 		return res, fmt.Errorf("opening index-header: %w", err)
 	}
