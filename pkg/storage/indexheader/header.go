@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,6 +30,7 @@ var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
 var (
 	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
+	errInvalidIndexHeaderVersion                = fmt.Errorf("invalid index-header version; must be %d or %d", BinaryFormatV1, BinaryFormatV2)
 )
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
@@ -84,8 +84,8 @@ type Config struct {
 	// EagerLoadingPersistInterval is injected for testing purposes only.
 	EagerLoadingPersistInterval time.Duration `yaml:"-" doc:"hidden"`
 
-	// Controls experimental options for reading index-header from object storage.
-	BucketReader BucketReaderConfig `yaml:"bucket_reader" category:"experimental"`
+	// Version is the index-header format version that the store-gateway keeps on local disk.
+	Version int `yaml:"version" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -96,51 +96,15 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.LazyLoadingConcurrencyQueueTimeout, prefix+"lazy-loading-concurrency-queue-timeout", 5*time.Second, "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.")
 	f.DurationVar(&cfg.EagerLoadingPersistInterval, prefix+"eager-loading-persist-interval", time.Minute, "Interval at which the store-gateway persists block IDs of lazy loaded index-headers. Ignored if index-header eager loading is disabled.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
-
-	cfg.BucketReader.RegisterFlagsWithPrefix(f, prefix+"bucket-reader.")
+	f.IntVar(&cfg.Version, prefix+"version", BinaryFormatV1, fmt.Sprintf("Index-header format version. Version %d keeps the symbols and postings offsets tables on local disk. Version %d keeps only the symbols table on local disk and reads the postings offsets table from the TSDB index in object storage.", BinaryFormatV1, BinaryFormatV2))
 }
 
 func (cfg *Config) Validate() error {
 	if cfg.LazyLoadingConcurrency < 0 {
 		return errInvalidIndexHeaderLazyLoadingConcurrency
 	}
-	return cfg.BucketReader.Validate()
-}
-
-// requiredIndexHeaderVersion returns the index-header format version that cfg requires on disk:
-// BinaryFormatV2 (symbols-only) when the bucket reader is enabled, BinaryFormatV1 otherwise.
-func requiredIndexHeaderVersion(cfg Config) int {
-	if cfg.BucketReader.Enabled {
-		return BinaryFormatV2
-	}
-	return BinaryFormatV1
-}
-
-const (
-	//SectionSymbolsTable        Section = "symbols-table"
-
-	SectionPostingsOffsetsTable string = "postings-offsets-table"
-
-	//SectionAll Section = "all"
-)
-
-var (
-	errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionPostingsOffsetsTable))
-)
-
-type BucketReaderConfig struct {
-	Enabled             bool   `yaml:"enabled" category:"experimental"`
-	BucketIndexSections string `yaml:"index_sections"  category:"experimental"`
-}
-
-func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, fmt.Sprintf("Enable reading TSDB index-header sections from object storage. When enabled, the configured -%s are not downloaded to local disk.", prefix+"index-sections"))
-	f.StringVar(&cfg.BucketIndexSections, prefix+"index-sections", SectionPostingsOffsetsTable, fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionPostingsOffsetsTable))
-}
-
-func (cfg *BucketReaderConfig) Validate() error {
-	if !slices.Contains([]string{SectionPostingsOffsetsTable}, cfg.BucketIndexSections) {
-		return errInvalidIndexHeaderSection
+	if cfg.Version != BinaryFormatV1 && cfg.Version != BinaryFormatV2 {
+		return fmt.Errorf("%w: %d", errInvalidIndexHeaderVersion, cfg.Version)
 	}
 	return nil
 }

@@ -63,6 +63,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
@@ -90,6 +91,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
@@ -118,6 +120,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -143,6 +146,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -155,6 +159,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
@@ -175,6 +180,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -200,6 +206,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -212,6 +219,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
@@ -232,6 +240,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -244,6 +253,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
@@ -263,6 +273,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -287,6 +298,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -311,6 +323,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -337,6 +350,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   4,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -350,6 +364,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   3,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
@@ -361,6 +376,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         2,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
@@ -369,6 +385,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
@@ -390,6 +407,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   4,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -403,6 +421,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   3,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 29},
@@ -414,6 +433,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         2,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
@@ -422,6 +442,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
@@ -442,6 +463,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -465,6 +487,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   1,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              12,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 2},
@@ -486,6 +509,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_STRING_LITERAL,
+						NodeId:   1,
 						Details: marshalDetails(&core.StringLiteralDetails{
 							Value:              "abc",
 							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
@@ -507,6 +531,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   1,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_TIME,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
@@ -528,6 +553,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   2,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_YEAR,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
@@ -537,6 +563,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{0},
@@ -557,6 +584,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -568,6 +596,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   2,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_YEAR,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
@@ -579,6 +608,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
@@ -600,6 +630,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -611,6 +642,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_AGGREGATE_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.AggregateExpressionDetails{
 							Op:                 core.AGGREGATION_SUM,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 16},
@@ -634,6 +666,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -645,6 +678,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_AGGREGATE_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.AggregateExpressionDetails{
 							Op:                 core.AGGREGATION_SUM,
 							Grouping:           []string{"foo"},
@@ -669,6 +703,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -680,6 +715,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_AGGREGATE_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.AggregateExpressionDetails{
 							Op:                 core.AGGREGATION_SUM,
 							Grouping:           []string{"foo"},
@@ -705,6 +741,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -716,6 +753,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   3,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              3,
 							ExpressionPosition: core.PositionRange{Start: 5, End: 6},
@@ -725,6 +763,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_AGGREGATE_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.AggregateExpressionDetails{
 							Op:                 core.AGGREGATION_TOPK,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
@@ -749,6 +788,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   2,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
@@ -758,6 +798,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   3,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              3,
 							ExpressionPosition: core.PositionRange{Start: 4, End: 5},
@@ -767,6 +808,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op:                 core.BINARY_ADD,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
@@ -791,6 +833,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   3,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
@@ -800,6 +843,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   4,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              3,
 							ExpressionPosition: core.PositionRange{Start: 4, End: 5},
@@ -809,6 +853,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   2,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op:                 core.BINARY_ADD,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
@@ -820,6 +865,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						ChildrenLabels: []string{""},
 						Children:       []int64{2},
@@ -839,6 +885,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   3,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
@@ -848,6 +895,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   4,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -859,6 +907,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   2,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op:                 core.BINARY_MUL,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
@@ -870,6 +919,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{2},
@@ -890,6 +940,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -901,6 +952,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						NodeId:   4,
 						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
 							ExpressionPosition: core.PositionRange{Start: 19, End: 20},
@@ -910,6 +962,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   2,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op:                 core.BINARY_GTR,
 							ReturnBool:         true,
@@ -922,6 +975,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{2},
@@ -942,6 +996,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -953,6 +1008,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
@@ -964,6 +1020,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op:                 core.BINARY_MUL,
 							VectorMatching:     &core.VectorMatching{},
@@ -988,6 +1045,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -999,6 +1057,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
@@ -1010,6 +1069,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op: core.BINARY_MUL,
 							VectorMatching: &core.VectorMatching{
@@ -1037,6 +1097,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1048,6 +1109,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
@@ -1059,6 +1121,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op: core.BINARY_MUL,
 							VectorMatching: &core.VectorMatching{
@@ -1086,6 +1149,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1097,6 +1161,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
@@ -1108,6 +1173,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						NodeId:   1,
 						Details: marshalDetails(&core.BinaryExpressionDetails{
 							Op: core.BINARY_MUL,
 							VectorMatching: &core.VectorMatching{
@@ -1137,6 +1203,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1148,6 +1215,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_SUBQUERY,
+						NodeId:   1,
 						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
@@ -1172,6 +1240,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1183,6 +1252,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_SUBQUERY,
+						NodeId:   1,
 						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               23 * time.Second,
@@ -1207,6 +1277,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1218,6 +1289,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_SUBQUERY,
+						NodeId:   1,
 						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
@@ -1244,6 +1316,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1255,6 +1328,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_SUBQUERY,
+						NodeId:   1,
 						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
@@ -1283,6 +1357,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1294,6 +1369,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						NodeId:         2,
 						Details:        marshalDetails(&core.DropNameDetails{}),
 						Type:           "DropName",
 						Description:    "",
@@ -1302,6 +1378,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Description:    "",
@@ -1325,6 +1402,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   4,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
@@ -1338,6 +1416,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   3,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_TIMESTAMP,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
@@ -1349,6 +1428,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						NodeId:         2,
 						Details:        marshalDetails(&core.DropNameDetails{}),
 						Type:           "DropName",
 						Description:    "",
@@ -1357,6 +1437,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{2},
@@ -1380,6 +1461,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   4,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
@@ -1394,6 +1476,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   3,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_TIMESTAMP,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
@@ -1405,6 +1488,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         2,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
@@ -1413,6 +1497,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         1,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
@@ -1435,6 +1520,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   6,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
@@ -1449,6 +1535,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   5,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_ABS,
 							ExpressionPosition: core.PositionRange{Start: 10, End: 25},
@@ -1460,6 +1547,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         4,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
@@ -1468,6 +1556,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						NodeId:         3,
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
@@ -1475,6 +1564,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   2,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_TIMESTAMP,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 26},
@@ -1486,6 +1576,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						NodeId:         1,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{4},
@@ -1507,6 +1598,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1533,6 +1625,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						NodeId:   1,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
@@ -1560,6 +1653,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
@@ -1572,6 +1666,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   1,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_INFO,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
@@ -1596,6 +1691,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						NodeId:   2,
 						Details: marshalDetails(&core.VectorSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
@@ -1608,6 +1704,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_DATA_LABEL_SELECTOR,
+						NodeId:   3,
 						Details: marshalDetails(&core.DataLabelSelectorDetails{
 							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "svc_info"},
@@ -1619,6 +1716,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						NodeId:   1,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_INFO,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 35},
@@ -1665,7 +1763,11 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(planning.QueryPlanEncodingOptions{
+				IncludeDescriptions: true,
+				IncludeDetails:      true,
+				IncludeNodeId:       true,
+			})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
 			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodeIndices)
@@ -1693,7 +1795,7 @@ func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Parameters.CacheDisabled)
 
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 	require.NoError(t, err)
 	require.True(t, encoded.CacheDisabled)
 
@@ -1720,7 +1822,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 	numberLiteralNode := aggregationNode.Param
 	vectorSelectorNode := aggregationNode.Inner
 
-	encoded, nodes, err := plan.ToEncodedPlan(false, true, numberLiteralNode, vectorSelectorNode)
+	encoded, nodes, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), numberLiteralNode, vectorSelectorNode)
 	require.NoError(t, err)
 	require.Len(t, nodes, 2)
 	require.Len(t, encoded.Nodes, 2)
@@ -1738,7 +1840,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
+	encoded, nodes, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), plan.Root, plan.Root)
 	require.NoError(t, err)
 	require.Len(t, encoded.Nodes, 2)
 	require.Equal(t, []int64{1, 1}, nodes)
@@ -1748,7 +1850,9 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+		return &versioningTestNode{
+			NumberLiteralDetails: &core.NumberLiteralDetails{},
+		}
 	})
 
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
@@ -1767,7 +1871,7 @@ func TestPlanVersioning(t *testing.T) {
 	err := plan.DeterminePlanVersion()
 	require.NoError(t, err)
 
-	encoded, _, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
@@ -1944,7 +2048,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 				var marshalled []byte
 
 				for b.Loop() {
-					encoded, _, err := plan.ToEncodedPlan(false, true)
+					encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1959,7 +2063,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 			})
 
 			b.Run("decode", func(b *testing.B) {
-				encoded, _, err := plan.ToEncodedPlan(false, true)
+				encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
 				require.NoError(b, err)
 
 				marshalled, err := encoded.Marshal()
@@ -2210,6 +2314,7 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 // It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
 // Note that most of the Node interface functions return dummy values, and it does not support children.
 type versioningTestNode struct {
+	core.NodeIdentifier
 	*core.NumberLiteralDetails
 }
 
@@ -2333,4 +2438,30 @@ func TestInfoQueriedTimeRange(t *testing.T) {
 			require.Equal(t, tc.expectedMaxT, queried.MaxT)
 		})
 	}
+}
+
+func TestPlanningAssignsNodeIds(t *testing.T) {
+	// Create a query planner with optimization passes enabled so that we can test how
+	// node IDs are assigned when nodes appear in the query plan more than once (such as
+	// when common subexpression elimination is enabled).
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `foo + foo`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	require.Equal(t, int64(1), plan.Root.GetNodeId())
+
+	lhsDuplicate := plan.Root.Child(0)
+	require.Equal(t, int64(2), lhsDuplicate.GetNodeId())
+	rhsDuplicate := plan.Root.Child(1)
+	require.Equal(t, int64(2), rhsDuplicate.GetNodeId())
+
+	lhsSelector := lhsDuplicate.Child(0)
+	require.Equal(t, int64(3), lhsSelector.GetNodeId())
+	rhsSelector := rhsDuplicate.Child(0)
+	require.Equal(t, int64(3), rhsSelector.GetNodeId())
 }

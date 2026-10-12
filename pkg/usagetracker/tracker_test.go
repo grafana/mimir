@@ -31,6 +31,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -917,6 +918,40 @@ func newTestUsageTrackerConfig(tb testing.TB, instanceID, zone string, ikv, pkv 
 
 	require.NoError(tb, cfg.ValidateForUsageTracker())
 	return cfg
+}
+
+func TestConfig_ValidateNumShards(t *testing.T) {
+	for _, tc := range []struct {
+		numShards   int
+		expectedErr string
+	}{
+		{numShards: 1},
+		{numShards: 2},
+		{numShards: tenantshard.DefaultNumShards},
+		{numShards: tenantshard.MaxNumShards},
+		// The shard of a series comes from masking its hash, so a count that isn't a power of 2
+		// would silently use only part of the shards.
+		{numShards: 0, expectedErr: "invalid number of shards 0, must be a power of 2 between 1 and 256"},
+		{numShards: -1, expectedErr: "invalid number of shards -1, must be a power of 2 between 1 and 256"},
+		{numShards: 3, expectedErr: "invalid number of shards 3, must be a power of 2 between 1 and 256"},
+		{numShards: 100, expectedErr: "invalid number of shards 100, must be a power of 2 between 1 and 256"},
+		{numShards: 255, expectedErr: "invalid number of shards 255, must be a power of 2 between 1 and 256"},
+		{numShards: tenantshard.MaxNumShards * 2, expectedErr: "invalid number of shards 512, must be a power of 2 between 1 and 256"},
+	} {
+		t.Run(strconv.Itoa(tc.numShards), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.Enabled = true
+			cfg.NumShards = tc.numShards
+
+			err := cfg.ValidateForClient()
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tc.expectedErr)
+		})
+	}
 }
 
 func fakeKafkaCluster(tb testing.TB, topicsToSeed ...string) *kfake.Cluster {

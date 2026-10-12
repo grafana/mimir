@@ -379,6 +379,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
 
+	plan = p.assignNodeIdentifiers(plan)
+
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
 	}
@@ -503,6 +505,25 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	return plan, nil
+}
+
+// assignNodeIdentifiers assigns a unique ID to each node in a query plan in a deterministic order
+// (depth first). The same IDs will be generated for the same nodes given the same query plan. This
+// must be run after all optimization passes have run and made all modifications to the plan that
+// they will make.
+func (p *QueryPlanner) assignNodeIdentifiers(plan *planning.QueryPlan) *planning.QueryPlan {
+	id := int64(1)
+
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if node.GetNodeId() == 0 {
+			node.SetNodeId(id)
+			id++
+		}
+
+		return true, nil
+	}))
+
+	return plan
 }
 
 func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
@@ -657,8 +678,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			}
 
 			return &core.EvaluationRoot{
-				EvaluationRootDetails: &core.EvaluationRootDetails{},
 				Inner:                 inner,
+				EvaluationRootDetails: &core.EvaluationRootDetails{},
 			}, nil
 		}
 

@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
@@ -581,7 +582,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
 	var userBkt objstore.InstrumentedBucketReader
-	if u.cfg.BucketStore.IndexHeader.BucketReader.Enabled {
+	if u.cfg.BucketStore.IndexHeader.Version == indexheader.BinaryFormatV2 {
 		userBkt = objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, u.bucket, u.limits), tracer)
 	} else {
 		userBkt = bucket.NewUserBucketClient(userID, u.bucket, u.limits)
