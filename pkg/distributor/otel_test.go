@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1116,7 +1117,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		retryafter.Config{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1207,7 +1208,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		200000000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		retryafter.Config{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1910,7 +1911,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
+			retryConfig := retryafter.Config{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, false, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
@@ -1978,7 +1979,7 @@ func TestOTLPHandler_TooFarInPast(t *testing.T) {
 
 	handler := OTLPHandler(
 		100000, nil, nil, false, ds[0].limits,
-		nil, nil, RetryConfig{}, nil,
+		nil, nil, retryafter.Config{}, nil,
 		ds[0].PushWithMiddlewares,
 		nil, nil, log.NewNopLogger(),
 	)
@@ -2300,7 +2301,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			handler := OTLPHandler(
 				100000, nil, nil, tt.allowTranslationHeaders, limits,
 				nil, nil,
-				RetryConfig{}, nil, pusher, nil, nil,
+				retryafter.Config{}, nil, pusher, nil, nil,
 				log.NewNopLogger(),
 			)
 
@@ -2370,7 +2371,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		retryafter.Config{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
 			assert.Len(t, request.Timeseries, 3)
@@ -2417,7 +2418,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		retryafter.Config{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -2448,7 +2449,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
 		100000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		retryafter.Config{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -2481,7 +2482,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		140, nil, nil, false, nil, nil, nil,
-		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		retryafter.Config{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2809,7 +2810,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: boolPtr(false)},
 				}),
 			)
-			handler := OTLPHandler(100000, nil, nil, false, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
+			handler := OTLPHandler(100000, nil, nil, false, limits, nil, nil, retryafter.Config{}, nil, func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest()
 				return err
 			}, nil, nil, log.NewNopLogger())
