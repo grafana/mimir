@@ -19,6 +19,21 @@ As a general guideline, provision nodes with a CPU-to-memory ratio of at least 1
 For example, a node with 8 CPU cores should have at least 32 GB of memory.
 Ingesters and store-gateways are the most memory-intensive components.
 
+## CPU microarchitecture
+
+Published Grafana Mimir release binaries and Docker images are compiled with the Go microarchitecture levels `GOAMD64=v3` and `GOARM64=v8.1`.
+
+Those published builds require:
+
+- On `amd64`: an x86-64-v3 CPU that includes AVX2
+- On `arm64`: ARMv8.1 or newer
+
+To build binaries for older CPUs, override the defaults when you compile from source. For example:
+
+```bash
+make GOAMD64=v1 GOARM64=v8.0 exes
+```
+
 ## Disk storage
 
 Components such as ingesters, store-gateways, and compactors require fast and persistent, local disk resources to be available to the host machine storage for the write-ahead log (WAL), TSDB blocks, and temporary data during compaction.
