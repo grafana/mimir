@@ -1559,6 +1559,7 @@ func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 // TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
 // each partition's state, and that commits for other topics in the group don't pollute it.
 func TestLoadInitialCommittedOffsets(t *testing.T) {
+	// Partition 2 has no committed offset; GatherAndCompare below checks its absence in the full metric family.
 	sched, _ := mustScheduler(t, 3)
 	ctx := t.Context()
 	admin := sched.adminClients[0]
