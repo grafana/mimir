@@ -127,7 +127,7 @@ chmod +x mimirtool
 ```
 
 Published `mimirtool` release binaries require an x86-64-v3 CPU on `amd64`, or ARMv8.1 or newer on `arm64`.
-For details and how to build for older CPUs, refer to [Grafana Mimir hardware requirements](../hardware-requirements/#cpu-microarchitecture).
+For details and how to build for older CPUs, refer to [Grafana Mimir hardware requirements](../../hardware-requirements/#cpu-microarchitecture).
 
 ### Use mimirtool
 
