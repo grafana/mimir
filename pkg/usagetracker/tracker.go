@@ -95,6 +95,23 @@ type Config struct {
 	MinTimeBetweenShardsCleanup time.Duration `yaml:"min_time_between_shards_cleanup" category:"experimental"`
 
 	TenantshardImplVersion int `yaml:"tenantshard_impl_version" category:"experimental"`
+
+	// NumShards is how many shards each tenant's series are split into within a partition.
+	// Sharding reduces lock contention on the hot tracking path and shortens the per-shard
+	// mutex hold during idle-series cleanup, which improves tail latency on partitions with
+	// very large tenants (>~100M series). The cost is fixed per-tenant overhead: every tenant
+	// allocates a map per shard and is iterated per shard during cleanup, snapshotting and
+	// stats, so a high count is wasteful when there are many small tenants.
+	//
+	// It must be a power of 2, so that the shard of a series comes from masking its hash
+	// rather than from a divide on the hot tracking path.
+	//
+	// Changing it doesn't lose any state: a snapshot written with a different count is
+	// re-sharded on load, so instances don't need to use the same value. Only a non-default
+	// count records itself in the snapshot, in an encoding version that a usage-tracker built
+	// before this flag existed refuses to start on, so move off the default only once the whole
+	// fleet can read it.
+	NumShards int `yaml:"num_shards" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -138,9 +155,11 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
 
-	f.IntVar(&c.TenantshardImplVersion, "usage-tracker.tenantshard-impl-version", tenantshard.DefaultImplVersion, "Implementation of the per-tenant shard map to use. Version 1 keeps a tombstone for every series that the idle-series cleanup removes from a full group. Version 2 keeps one mark per group instead, so the cleanup does not write to the series keys.")
+	f.IntVar(&c.TenantshardImplVersion, "usage-tracker.tenantshard-impl-version", tenantshard.DefaultImplVersion, "Implementation of the per-tenant shard map to use. The only supported version is 2, which keeps one mark per group for the series that the idle-series cleanup removes, so the cleanup does not write to the series keys.")
 
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
+
+	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant's series are split into within a partition. Must be a power of 2, between 1 and %d. A higher value reduces lock contention on the tracking path and shortens the per-shard mutex hold during idle-series cleanup, improving tail latency on partitions with very large tenants (roughly more than 100M series per partition); it also adds fixed per-tenant overhead, because every tenant allocates a map per shard and is iterated per shard during cleanup, snapshotting and stats, which is wasteful when there are many small tenants. The default suits most deployments. Changing it does not lose any state: a usage-tracker re-shards any snapshot that was written with a different shard count when it loads it, so the usage-tracker instances do not need to use the same value. Only a non-default value is recorded in the snapshots, in a newer encoding version, so move off the default only once every usage-tracker runs a version that reads it.", tenantshard.MaxNumShards))
 }
 
 func (c *Config) ValidateForClient() error {
@@ -157,7 +176,11 @@ func (c *Config) validateCommon() error {
 		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
 	}
 
-	if _, err := tenantshard.NewFactory(c.TenantshardImplVersion); err != nil {
+	if !isPowerOfTwo(c.NumShards) || c.NumShards > tenantshard.MaxNumShards {
+		return fmt.Errorf("invalid number of shards %d, must be a power of 2 between 1 and %d", c.NumShards, tenantshard.MaxNumShards)
+	}
+
+	if _, err := tenantshard.NewFactory(c.TenantshardImplVersion, c.NumShards); err != nil {
 		return err
 	}
 
@@ -257,7 +280,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 	}
 	registerer = usageTrackerRegisterer
 
-	newShard, err := tenantshard.NewFactory(cfg.TenantshardImplVersion)
+	newShard, err := tenantshard.NewFactory(cfg.TenantshardImplVersion, cfg.NumShards)
 	if err != nil {
 		return nil, err
 	}

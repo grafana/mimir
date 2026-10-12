@@ -908,28 +908,23 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
-	bucketPostingsOffsets := indexheader.BucketReaderConfig{
-		Enabled:             true,
-		BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
-	}
-
 	storeConfigs := []struct {
-		name            string
-		bucketReaderCfg indexheader.BucketReaderConfig
-		wrapBucket      func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
+		name               string
+		indexHeaderVersion int
+		wrapBucket         func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 	}{
 		{
-			name:            "Reader=disk",
-			bucketReaderCfg: indexheader.BucketReaderConfig{},
+			name:               "Reader=disk",
+			indexHeaderVersion: indexheader.BinaryFormatV1,
 		},
 		{
-			name:            "Reader=bucket/BucketCache=off",
-			bucketReaderCfg: bucketPostingsOffsets,
+			name:               "Reader=bucket/BucketCache=off",
+			indexHeaderVersion: indexheader.BinaryFormatV2,
 		},
 		{
-			name:            "Reader=bucket/BucketCache=index-header",
-			bucketReaderCfg: bucketPostingsOffsets,
-			wrapBucket:      indexHeaderCachingBucket,
+			name:               "Reader=bucket/BucketCache=index-header",
+			indexHeaderVersion: indexheader.BinaryFormatV2,
+			wrapBucket:         indexHeaderCachingBucket,
 		},
 	}
 
@@ -945,7 +940,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			prepareCfg.tempDir = dir
 			prepareCfg.series = series
 			prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
-			prepareCfg.bucketStoreConfig.IndexHeader.BucketReader = storeCfg.bucketReaderCfg
+			prepareCfg.bucketStoreConfig.IndexHeader.Version = storeCfg.indexHeaderVersion
 			prepareCfg.wrapBucket = storeCfg.wrapBucket
 
 			s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)

@@ -18,10 +18,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -65,27 +63,16 @@ type PusherAppender struct {
 	userID          string
 }
 
-func (a *PusherAppender) SetOptions(*storage.AppendOptions) {
-}
+func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, _ storage.AppendV2Options) (storage.SeriesRef, error) {
+	if h == nil && fh == nil {
+		a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
+		a.samples = append(a.samples, mimirpb.Sample{
+			TimestampMs: t,
+			Value:       v,
+		})
+		return 0, nil
+	}
 
-func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
-	a.samples = append(a.samples, mimirpb.Sample{
-		TimestampMs: t,
-		Value:       v,
-	})
-	return 0, nil
-}
-
-func (a *PusherAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, errors.New("exemplars are unsupported")
-}
-
-func (a *PusherAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, errors.New("metadata updates are unsupported")
-}
-
-func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	a.histogramLabels = append(a.histogramLabels, mimirpb.FromLabelsToLabelAdapters(l))
 	var hp mimirpb.Histogram
 	if h != nil {
@@ -95,14 +82,6 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 	a.histograms = append(a.histograms, hp)
 	return 0, nil
-}
-
-func (a *PusherAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
-}
-
-func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *PusherAppender) Commit() error {
@@ -153,7 +132,7 @@ func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites
 }
 
 // Appender returns a storage.Appender
-func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
+func (t *PusherAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return &PusherAppender{
 		failedWrites: t.failedWrites,
 		totalWrites:  t.totalWrites,
@@ -166,31 +145,8 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 
 type NoopAppender struct{}
 
-func (a *NoopAppender) SetOptions(*storage.AppendOptions) {
-}
-
-func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, _ storage.AppendV2Options) (storage.SeriesRef, error) {
 	return 0, nil
-}
-
-func (a *NoopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, errors.New("exemplars are unsupported")
-}
-
-func (a *NoopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, errors.New("metadata updates are unsupported")
-}
-
-func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
-}
-
-func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {
@@ -208,7 +164,7 @@ func NewNoopAppendable() *NoopAppendable {
 }
 
 // Appender returns a storage.Appender.
-func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
+func (t *NoopAppendable) AppenderV2(_ context.Context) storage.AppenderV2 {
 	return &NoopAppender{}
 }
 
@@ -479,7 +435,7 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
-		var appendeable storage.Appendable
+		var appendeable storage.AppendableV2
 		if cfg.RuleEvaluationWriteEnabled {
 			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
 		} else {
@@ -490,7 +446,7 @@ func DefaultTenantManagerFactory(
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 appendeable,
+			AppendableV2:               appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    ctx,

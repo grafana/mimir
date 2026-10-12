@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 
@@ -159,6 +160,56 @@ func TestPartitionHandler(t *testing.T) {
 
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 			})
+		}
+	})
+
+	t.Run("snapshot is loaded after the shard count changes", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 0 // no limit.
+
+		const otherNumShards = 2 * shards
+		// Enough series to have some in every shard of every count used below.
+		series := make([]uint64, 4*otherNumShards)
+		for i := range series {
+			series[i] = uint64(i)
+		}
+
+		// First partitionHandler has the default shard count, so it publishes a v1 snapshot.
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		// Track one series first, so that the snapshot doesn't point at offset 0 of the events topic:
+		// on load, offset 0 means that there's no snapshot, and the events alone would rebuild the state.
+		requireTrackSeries(t, ph, tenantID, series[:1], noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, series[:1]})
+		requireTrackSeries(t, ph, tenantID, slices.Clone(series[1:]), noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, slices.Clone(series[1:])})
+		require.Eventually(t, func() bool { return ph.lastPublishedEventOffset.Load() > 0 }, 5*time.Second, 10*time.Millisecond)
+		require.NoError(t, ph.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+
+		// Change the shard count, then change it back, as a rollback of the change would.
+		for _, numShards := range []int{otherNumShards, shards} {
+			ph = h.newHandler(t, func(cfg *Config) { cfg.NumShards = numShards })
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: uint64(len(series))})
+
+			// Every loaded series is in the shard where tracking it looks for it, so only the new
+			// series is created.
+			newSeries := uint64(len(series))
+			requireTrackSeries(t, ph, tenantID, append(slices.Clone(series), newSeries), noRejected)
+			h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{newSeries}})
+			series = append(series, newSeries)
+			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: uint64(len(series))})
+
+			require.NoError(t, ph.publishSnapshot(ctx))
+			h.expectEvents(t, expectedSnapshotEvent{})
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 		}
 	})
 
@@ -496,6 +547,38 @@ func TestPartitionHandler(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
+	t.Run("startup doesn't wait for snapshot records that were deleted by retention", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler tracks some series, creates a snapshot, and shuts down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// Delete all snapshot records, like retention does, so the end offset is not zero but the partition is empty.
+		adm := kadm.NewClient(h.snapshotsKafkaWriter)
+		endOffsets, err := adm.ListEndOffsets(ctx, snapshotsMetadataTopic)
+		require.NoError(t, err)
+		require.NoError(t, endOffsets.Error())
+		deleted, err := adm.DeleteRecords(ctx, endOffsets.Offsets())
+		require.NoError(t, err)
+		require.NoError(t, deleted.Error())
+
+		// New partitionHandler with a long idle timeout, so waiting for a snapshot record would exceed the test timeout.
+		ph := h.newHandler(t, func(cfg *Config) { cfg.IdleTimeout = time.Hour })
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		require.Equal(t, float64(0), testutil.ToFloat64(ph.snapshotLoadFailedAtStartup))
+		// Series are still loaded from the events topic, which wasn't deleted.
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+	})
+
 	t.Run("snapshot loading timeout at startup is tolerated and flagged", func(t *testing.T) {
 		t.Parallel()
 
@@ -669,7 +752,7 @@ func (h *partitionHandlerTestHelper) newHandlerForPartitionID(t *testing.T, part
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
 
-	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, newTestShardFactory(), logger, reg)
+	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, newTestShardFactoryWithShards(cfg.NumShards), logger, reg)
 	require.NoError(t, err)
 	return p
 }

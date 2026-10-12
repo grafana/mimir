@@ -62,7 +62,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		msg = append(msg,
 			"msg", "evaluation stats",
 			"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
-			"originalExpression", e.originalExpression,
 			"nodeCount", len(e.nodeRequests),
 		)
 
@@ -94,6 +93,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 				"err", err,
 			)
 		}
+
+		// Put the expression last, so that the other fields stay readable when the expression is long.
+		msg = append(msg, "originalExpression", e.originalExpression)
 
 		level.Info(logger).Log(msg...)
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))

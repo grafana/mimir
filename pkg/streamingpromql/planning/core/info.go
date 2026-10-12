@@ -19,6 +19,7 @@ import (
 
 //node:generate
 type DataLabelSelector struct {
+	NodeIdentifier
 	*DataLabelSelectorDetails
 }
 
