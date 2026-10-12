@@ -226,6 +226,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
+		EnableSTAsZeroSample:                 true, // Gated per tenant in the distributor, which only sets CreatedTimestamp when enabled.
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
