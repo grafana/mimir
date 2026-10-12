@@ -2626,7 +2626,7 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 			// sharding so each spun-off subquery is sharded independently. Split-and-cache is a plan
 			// pass registered before remote execution.
 			if testCase.spinOffEnabled {
-				planner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(mockSubquerySpinOffLimits{}, func(int64) int64 { return 1000 }, frontendsubqueryspinoff.Options{}, reg, logger))
+				planner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(mockSubquerySpinOffLimits{}, func(int64) int64 { return 1000 }, frontendsubqueryspinoff.Options{}, reg, opts.RangeVectorSplitting.EnableSubquerySplitting, logger))
 			}
 			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, nil, logger))
 
