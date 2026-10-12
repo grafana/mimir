@@ -52,6 +52,9 @@ type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers 
 var (
 	errNonPositiveMinBackoffDuration = errors.New("min-backoff should be greater than or equal to 1s")
 	errNonPositiveMaxBackoffDuration = errors.New("max-backoff should be greater than or equal to 1s")
+	errFractionalMinBackoffDuration  = errors.New("min-backoff should be a whole number of seconds")
+	errFractionalMaxBackoffDuration  = errors.New("max-backoff should be a whole number of seconds")
+	errMinBackoffAboveMaxBackoff     = errors.New("min-backoff should be less than or equal to max-backoff")
 )
 
 const (
