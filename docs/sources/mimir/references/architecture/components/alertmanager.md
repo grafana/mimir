@@ -27,6 +27,11 @@ Each tenant has an isolated alert routing configuration.
 Each tenant has an Alertmanager configuration that defines notifications receivers and alerting routes.
 The Mimir Alertmanager uses the same [configuration file](https://prometheus.io/docs/alerting/latest/configuration/#configuration-file) that the Prometheus Alertmanager uses.
 
+Tenant configurations can't use settings that load secrets or other values from files on the Alertmanager host.
+Grafana Mimir rejects uploads that set any non-empty YAML field whose name ends with `_file`, or that load HTTP header values from `http_headers.<header-name>.files`.
+Provide those values inline in the configuration instead.
+For details, refer to [Set Alertmanager configuration](../../../http-api/#set-alertmanager-configuration) and [Securing Grafana Mimir Alertmanager](../../../../manage/secure/securing-alertmanager/#reject-file-loading-settings-in-tenant-configurations).
+
 {{< admonition type="note" >}}
 The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag.
 It doesn't use the path set by the `-http.alertmanager-http-prefix` flag.

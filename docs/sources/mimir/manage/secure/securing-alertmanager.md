@@ -23,6 +23,21 @@ Although hardening the network is out of the scope for Grafana Mimir, Grafana Mi
 
 You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration](../../../configure/about-runtime-configuration/).
 
+## Reject file-loading settings in tenant configurations
+
+Tenant Alertmanager configurations must not tell Alertmanager to read secrets or other values from the Alertmanager host filesystem.
+If a tenant could set file-loading fields such as `password_file` or `api_url_file`, the Alertmanager process might open paths on the local disk.
+
+When a tenant uploads a configuration through the Alertmanager configuration API, Grafana Mimir rejects settings that load files:
+
+- Any non-empty YAML field whose name ends with `_file`, such as `password_file`, `bearer_token_file`, `credentials_file`, `client_secret_file`, or `api_url_file`
+- HTTP header values loaded from files through `http_headers.<header-name>.files`
+
+If you upload such a configuration, the API returns HTTP `400` with an error that includes `settings that load files are not allowed` or `setting http_headers.*.files is not allowed`.
+
+Provide secrets and URLs as inline values in the tenant configuration instead of file paths.
+For the request format and an example body, refer to [Set Alertmanager configuration](../../../references/http-api/#set-alertmanager-configuration).
+
 {{< admonition type="note" >}}
 You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.
 {{< /admonition >}}

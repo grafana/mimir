@@ -1347,6 +1347,17 @@ This endpoint expects the Alertmanager **YAML** configuration in the request bod
 
 The names of the templates in `template_files` must be valid file names and not contain any path separators. For example, both `/templates/my-template.tpl` and `./my-template.tpl` are invalid, whereas `my-template.tpl` is valid.
 
+Grafana Mimir rejects tenant Alertmanager configurations that load values from files on the Alertmanager host.
+The following settings in `alertmanager_config` cause the request to fail with HTTP `400`:
+
+- Any non-empty YAML field whose name ends with `_file`, for example `password_file`, `bearer_token_file`, `credentials_file`, `client_secret_file`, or `api_url_file`
+- HTTP header values loaded from files through `http_headers.<header-name>.files`
+
+The response body includes `error validating Alertmanager config` and either `settings that load files are not allowed` or `setting http_headers.*.files is not allowed`.
+Use inline values instead of file paths.
+This restriction is separate from the `template_files` map in the request body, which stores template content inline rather than reading paths from disk.
+For the security rationale, refer to [Securing Grafana Mimir Alertmanager](../../manage/secure/securing-alertmanager/#reject-file-loading-settings-in-tenant-configurations).
+
 This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
@@ -1380,6 +1391,22 @@ alertmanager_config: |
     - name: example-email
       email_configs:
       - to: 'youraddress@example.org'
+```
+
+#### Example rejected configuration
+
+The following request body is rejected because `password_file` loads a value from a local path:
+
+```yaml
+alertmanager_config: |
+  global:
+    http_config:
+      basic_auth:
+        password_file: /secrets
+  route:
+    receiver: default-receiver
+  receivers:
+    - name: default-receiver
 ```
 
 ### Delete Alertmanager configuration
