@@ -73,8 +73,8 @@ type RetryConfig struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
-	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
-	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
+	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be a whole number of seconds, greater than or equal to 1s, and less than or equal to -distributor.retry-after-header.max-backoff. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
+	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be a whole number of seconds, and greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
 }
 
 func (cfg *RetryConfig) Validate() error {
@@ -83,6 +83,15 @@ func (cfg *RetryConfig) Validate() error {
 	}
 	if cfg.MaxBackoff < time.Second {
 		return errNonPositiveMaxBackoffDuration
+	}
+	if cfg.MinBackoff%time.Second != 0 {
+		return errFractionalMinBackoffDuration
+	}
+	if cfg.MaxBackoff%time.Second != 0 {
+		return errFractionalMaxBackoffDuration
+	}
+	if cfg.MinBackoff > cfg.MaxBackoff {
+		return errMinBackoffAboveMaxBackoff
 	}
 	return nil
 }
