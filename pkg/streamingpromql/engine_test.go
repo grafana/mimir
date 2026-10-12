@@ -1498,6 +1498,116 @@ func (q *contextCapturingQuerier) Close() error {
 	return q.inner.Close()
 }
 
+func TestInfoFunction_FetchMatchers(t *testing.T) {
+	// target_info{job="c"} has no instance label, so selecting it with the first argument could make instance
+	// optional in the matchers used to fetch info series.
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{job="a", instance="x"} 1
+			target_info{job="a", instance="x", data="1"} 1
+			target_info{job="b", instance="y", data="2"} 1
+			target_info{job="c", data="3"} 1
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		expr string
+		// expectedFirstArgumentSelect are the matchers of the select for the first argument of info(), which is
+		// made first.
+		expectedFirstArgumentSelect []string
+		// expectedInfoSelect are the matchers of the select that info() makes for the info series to enrich the
+		// first argument's series with, or nil if info() should not make that select.
+		expectedInfoSelect []string
+	}{
+		"info series selected by the first argument do not add their identifying label values": {
+			expr:                        `info({__name__=~"metric|target_info", job=~"a|b"})`,
+			expectedFirstArgumentSelect: []string{`__name__=~"metric|target_info"`, `job=~"a|b"`},
+			expectedInfoSelect:          []string{`__name__="target_info"`, `instance="x"`, `job="a"`},
+		},
+		"info series selected by the first argument do not make an identifying label optional": {
+			expr:                        `info({__name__=~"metric|target_info", job=~"a|c"})`,
+			expectedFirstArgumentSelect: []string{`__name__=~"metric|target_info"`, `job=~"a|c"`},
+			expectedInfoSelect:          []string{`__name__="target_info"`, `instance="x"`, `job="a"`},
+		},
+		"no select for info series if the first argument only selects info series": {
+			expr:                        `info({__name__="target_info", job="b"})`,
+			expectedFirstArgumentSelect: []string{`__name__="target_info"`, `job="b"`},
+			expectedInfoSelect:          nil,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			queryable := &matcherCapturingQueryable{inner: storage}
+			q, err := engine.NewInstantQuery(t.Context(), queryable, nil, testCase.expr, timestamp.Time(0))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(t.Context())
+			require.NoError(t, res.Err)
+
+			require.NotEmpty(t, queryable.capturedMatchers, "expected a select for the first argument")
+			require.Equal(t, testCase.expectedFirstArgumentSelect, queryable.capturedMatchers[0], "select for the first argument")
+
+			infoSelects := queryable.capturedMatchers[1:]
+			if testCase.expectedInfoSelect == nil {
+				require.Empty(t, infoSelects, "expected no select for info series")
+			} else {
+				require.Equal(t, [][]string{testCase.expectedInfoSelect}, infoSelects, "select for info series")
+			}
+		})
+	}
+}
+
+// matcherCapturingQueryable records the matchers of each Select call, sorted, as strings.
+type matcherCapturingQueryable struct {
+	capturedMatchers [][]string
+	inner            storage.Queryable
+}
+
+func (q *matcherCapturingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	innerQuerier, err := q.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &matcherCapturingQuerier{queryable: q, inner: innerQuerier}, nil
+}
+
+type matcherCapturingQuerier struct {
+	queryable *matcherCapturingQueryable
+	inner     storage.Querier
+}
+
+func (q *matcherCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.inner.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (q *matcherCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.inner.LabelNames(ctx, hints, matchers...)
+}
+
+func (q *matcherCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	captured := make([]string, 0, len(matchers))
+	for _, m := range matchers {
+		captured = append(captured, m.String())
+	}
+	slices.Sort(captured)
+	q.queryable.capturedMatchers = append(q.queryable.capturedMatchers, captured)
+
+	return q.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (q *matcherCapturingQuerier) Close() error {
+	return q.inner.Close()
+}
+
 func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m

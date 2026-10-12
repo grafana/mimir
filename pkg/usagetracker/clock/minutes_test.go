@@ -40,4 +40,15 @@ func TestMinutes(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("all valid values", func(t *testing.T) {
+		for a := Minutes(0); a < 120; a++ {
+			for b := Minutes(0); b < 120; b++ {
+				// How many minutes a is ahead of b on the two-hour clock face.
+				ahead := (int(a) - int(b) + 120) % 120
+				require.Equal(t, ahead > 0 && ahead < 60, a.GreaterThan(b), "%s > %s", a, b)
+				require.Equal(t, ahead < 60, a.GreaterOrEqualThan(b), "%s >= %s", a, b)
+			}
+		}
+	})
 }

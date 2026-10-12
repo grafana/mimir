@@ -18,9 +18,6 @@ import (
 const (
 	indexEntryBits = 7
 
-	// NumShards is the number of shards used by the tracker store per tenant.
-	NumShards = 16
-
 	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
 	maxAvgGroupLoad = groupSize / 2
 	// last is the last element in the group, just to make the code more readable
@@ -46,6 +43,10 @@ type Map struct {
 
 	resident uint32
 	limit    uint32
+
+	// numShards is the total number of shards the owning tenant is split into.
+	// It is used to derive the per-shard target size from the total tenant limit.
+	numShards uint32
 
 	// spilled is the number of groups that (may) have spilled to the next one.
 	// i.e. their last slot is empty (either by data or by a spillmark)
@@ -87,14 +88,17 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32) (m *Map) {
+// numShards is the total number of shards the owning tenant is split into; it is used to
+// derive the per-shard target size from the total tenant limit during rehashes.
+func New(sz uint32, numShards uint32) (m *Map) {
 	groups := numGroups(sz)
 	return &Map{
 		index: make([]index, groups),
 		keys:  make([]keys, groups),
 		data:  make([]data, groups),
 
-		limit: groups * maxAvgGroupLoad,
+		limit:     groups * maxAvgGroupLoad,
+		numShards: numShards,
 	}
 }
 
@@ -329,10 +333,10 @@ func (m *Map) EnsureCapacity(n uint32) {
 }
 
 // nextSize computes the number of groups for the next rehash.
-// limit is the total tenant series limit across all shards; it is divided by NumShards internally.
+// limit is the total tenant series limit across all shards; it is divided by m.numShards internally.
 // limit=0 means no limit (used by Load): grows by resident*1.25.
 func (m *Map) nextSize(limit uint64) uint32 {
-	perShard := limit / NumShards
+	perShard := limit / uint64(m.numShards)
 	alive := uint64(m.resident)
 	target := alive * 5 / 4
 	// Only let the limit influence growth when it represents a real constraint.

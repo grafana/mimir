@@ -86,6 +86,8 @@ spec:
               value: "1"
             - name: KAFKA_LOG_RETENTION_HOURS
               value: "24"
+            - name: KAFKA_MESSAGE_MAX_BYTES
+              value: "16000000"
           resources:
             limits: {}
             requests:

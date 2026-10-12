@@ -560,7 +560,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 				fetch := func(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
 					return fetcher.FetchMetricMetadata(ctx, names, matcherSets)
 				}
-				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetch, fetchBatchSize, logger)
+				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetch, fetchBatchSize, req.limit, logger)
 			}
 		}
 
