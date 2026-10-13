@@ -3928,7 +3928,16 @@ type IngesterClient interface {
 	MetricsForLabelMatchers(ctx context.Context, in *MetricsForLabelMatchersRequest, opts ...grpc.CallOption) (*MetricsForLabelMatchersResponse, error)
 	MetricsMetadata(ctx context.Context, in *MetricsMetadataRequest, opts ...grpc.CallOption) (*MetricsMetadataResponse, error)
 	// LabelNamesAndValues provides all values for each label that matches the matchers.
-	// The order of the labels and values is not guaranteed.
+	//
+	// Label names MUST be streamed in ascending order across the whole stream: a label name must not
+	// reappear once a greater one has been sent, and all of a label name's values must be contiguous,
+	// though they may be split across several items and messages. This holds for every released
+	// version, because it follows from tsdb.IndexReader.LabelNames returning sorted names and the
+	// response being built in that order. The querier relies on it to merge the ingesters' streams one
+	// label name at a time instead of accumulating every distinct value in memory.
+	//
+	// The order of the values within a label name is NOT guaranteed: the ingester reads them from
+	// tsdb.IndexReader.LabelValues, which is explicitly unsorted.
 	LabelNamesAndValues(ctx context.Context, in *LabelNamesAndValuesRequest, opts ...grpc.CallOption) (Ingester_LabelNamesAndValuesClient, error)
 	// LabelValuesCardinality returns all values and series total count for label_names labels
 	// that match the matchers.
@@ -4225,7 +4234,16 @@ type IngesterServer interface {
 	MetricsForLabelMatchers(context.Context, *MetricsForLabelMatchersRequest) (*MetricsForLabelMatchersResponse, error)
 	MetricsMetadata(context.Context, *MetricsMetadataRequest) (*MetricsMetadataResponse, error)
 	// LabelNamesAndValues provides all values for each label that matches the matchers.
-	// The order of the labels and values is not guaranteed.
+	//
+	// Label names MUST be streamed in ascending order across the whole stream: a label name must not
+	// reappear once a greater one has been sent, and all of a label name's values must be contiguous,
+	// though they may be split across several items and messages. This holds for every released
+	// version, because it follows from tsdb.IndexReader.LabelNames returning sorted names and the
+	// response being built in that order. The querier relies on it to merge the ingesters' streams one
+	// label name at a time instead of accumulating every distinct value in memory.
+	//
+	// The order of the values within a label name is NOT guaranteed: the ingester reads them from
+	// tsdb.IndexReader.LabelValues, which is explicitly unsorted.
 	LabelNamesAndValues(*LabelNamesAndValuesRequest, Ingester_LabelNamesAndValuesServer) error
 	// LabelValuesCardinality returns all values and series total count for label_names labels
 	// that match the matchers.
