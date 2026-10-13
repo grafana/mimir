@@ -887,7 +887,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 }
 
 func writeRuleGroupToFiles(t *testing.T, fs afero.Fs, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
-	_, files, err := newMapper(path, fs, logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
+	_, files, err := newMapper(path, fs, logger, false, nil, nil).MapRules(userID, map[string][]rulefmt.RuleGroup{
 		"namespace": {rulespb.FromProto(&ruleGroup)},
 	})
 	require.NoError(t, err)
