@@ -12,6 +12,7 @@ Deploy one tee per pair of primary and shadow ingesters that own the same Kafka 
 Each tee forwards requests to its primary ingester and mirrors sampled read requests to the corresponding shadow ingester.
 Callers receive the primary response, including its streaming messages, headers, trailers, and errors.
 Comparisons run asynchronously; callers do not wait for the shadow.
+The tee always returns only primary responses. It never falls back to the shadow, even when the primary is unavailable and the shadow succeeds.
 
 ## Build and run
 
@@ -96,7 +97,8 @@ Run the binary with `-help` for the complete client and server options.
 ## Metrics
 
 `ingester_query_tee_comparisons_total{method,result}` counts comparisons and skipped requests.
-The `result` label is one of `match`, `mismatch`, `skipped`, `limit`, `primary_error`, `shadow_error`, or `comparison_error`.
+The `result` label is one of `match`, `mismatch`, `skipped`, `limit`, `unavailable`, `primary_error`, `shadow_error`, or `comparison_error`.
+If either backend returns gRPC `Unavailable` or `DeadlineExceeded`, the result is `unavailable`. This includes the shadow request timeout. These outcomes increment the metric without emitting comparison or RPC error logs. Other errors retain the `primary_error` or `shadow_error` classification.
 Backend errors are counted separately from data mismatches; malformed responses are comparison errors.
 No comparison is reported as a match when either backend fails or a comparison limit is exceeded.
 
