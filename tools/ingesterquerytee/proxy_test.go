@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,23 @@ type testIngester struct {
 	labelNames func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error)
 	query      func(*client.QueryRequest, client.Ingester_QueryStreamServer) error
 	pushes     atomic.Int32
+}
+
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (s *testIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
@@ -79,7 +97,7 @@ func testProxyWithLogger(t *testing.T, primary, shadow *testIngester, cfg Config
 	t.Cleanup(cancel)
 	p, err := New(ctx, cfg, testBackend(t, primary), testBackend(t, shadow), prometheus.NewRegistry(), logger)
 	require.NoError(t, err)
-	rpcLog := middleware.GRPCServerLog{Log: QuietUnavailableLogger(logger), DisableRequestSuccessLog: true}
+	rpcLog := middleware.GRPCServerLog{Log: log.NewNopLogger(), DisableRequestSuccessLog: true}
 	srv := grpc.NewServer(grpc.ForceServerCodec(WireCodec{}), grpc.UnknownServiceHandler(p.Handler), grpc.StreamInterceptor(rpcLog.StreamServerInterceptor))
 	return p, client.NewIngesterClient(testConnection(t, srv))
 }
@@ -207,7 +225,7 @@ func TestUnavailableIsMetricOnlyAndNeverReturnsShadow(t *testing.T) {
 				}
 				return &client.LabelNamesResponse{LabelNames: []string{"shadow"}}, nil
 			}}
-			var logs bytes.Buffer
+			var logs logBuffer
 			p, cli := testProxyWithLogger(t, primary, shadow, testConfig(), log.NewLogfmtLogger(log.NewSyncWriter(&logs)))
 			resp, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 			if test.primary != nil {
@@ -249,7 +267,7 @@ func TestUnavailableStreamNeverFallsBackToShadow(t *testing.T) {
 		}
 		return nil
 	}}
-	var logs bytes.Buffer
+	var logs logBuffer
 	p, cli := testProxyWithLogger(t, primary, shadow, testConfig(), log.NewLogfmtLogger(log.NewSyncWriter(&logs)))
 	s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 100})
 	require.NoError(t, err)
@@ -263,6 +281,24 @@ func TestUnavailableStreamNeverFallsBackToShadow(t *testing.T) {
 	awaitOutcome(t, p, "QueryStream", "unavailable")
 	require.Eventually(t, func() bool { return len(p.slots) == 0 }, time.Second, time.Millisecond)
 	require.Empty(t, logs.String())
+}
+
+func TestBackendErrorDetailsAreNotLogged(t *testing.T) {
+	const sensitive = "tenant-secret\nforged-log-entry"
+	shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+		return nil, status.Error(codes.Internal, sensitive)
+	}}
+	var logs logBuffer
+	p, cli := testProxyWithLogger(t, &testIngester{}, shadow, testConfig(), log.NewLogfmtLogger(log.NewSyncWriter(&logs)))
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("x-scope-orgid", "tenant-secret", "authorization", "tenant-secret"))
+	resp, err := cli.LabelNames(ctx, &client.LabelNamesRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, resp.LabelNames)
+	awaitOutcome(t, p, "LabelNames", "shadow_error")
+	require.Eventually(t, func() bool { return len(p.slots) == 0 }, time.Second, time.Millisecond)
+	require.Contains(t, logs.String(), "result=shadow_error")
+	require.NotContains(t, logs.String(), "tenant-secret")
+	require.NotContains(t, logs.String(), "forged-log-entry")
 }
 
 func TestProxyStreamingReturnsBeforeShadow(t *testing.T) {
