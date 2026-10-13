@@ -75,7 +75,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}
 
 	var encodeCacheHits, encodeCacheMisses prometheus.Counter
-	if cfg.RuleFileParseCachingEnabled {
+	if cfg.RuleFileCachingEnabled {
 		encodeCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ruler_rule_file_encode_cache_hits_total",
 			Help: "Total number of rule file encodes served from the encode cache instead of re-encoding.",
@@ -93,7 +93,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		dnsResolver:        dnsResolver,
 		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
-		mapper:             newMapper(cfg.RulePath, rulesFS, logger, cfg.RuleFileParseCachingEnabled, encodeCacheHits, encodeCacheMisses),
+		mapper:             newMapper(cfg.RulePath, rulesFS, logger, cfg.RuleFileCachingEnabled, encodeCacheHits, encodeCacheMisses),
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{

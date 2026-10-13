@@ -3187,12 +3187,12 @@ tenant_federation:
 # CLI flag: -ruler.rule-evaluation-write-enabled
 [rule_evaluation_write_enabled: <boolean> | default = true]
 
-# (experimental) Cache the result of parsing rule files on disk, keyed by exact
-# file content, to avoid re-parsing unchanged rule files belonging to the same
-# tenant on every rule sync. Internal performance optimization, no effect on
-# rule evaluation behavior.
-# CLI flag: -ruler.rule-file-parse-caching-enabled
-[rule_file_parse_caching_enabled: <boolean> | default = false]
+# (experimental) Cache the YAML encoding and the parsed result of each rule file
+# on disk, to avoid re-encoding and re-parsing unchanged rule files on every
+# rule sync. Internal performance optimization, no effect on rule evaluation
+# behavior.
+# CLI flag: -ruler.rule-file-caching-enabled
+[rule_file_caching_enabled: <boolean> | default = false]
 ```
 
 ### ruler_storage
