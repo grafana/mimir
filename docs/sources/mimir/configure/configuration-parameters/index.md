@@ -2133,7 +2133,7 @@ mimir_query_engine:
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2432,7 +2432,7 @@ results_cache:
 # -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
 # remote execution and sharding inside MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = true]
 
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors

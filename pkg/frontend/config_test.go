@@ -45,6 +45,8 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(config)
 			config.QueryMiddleware.EnableRemoteExecution = testCase.enableRemoteExecution
 			config.QueryMiddleware.ShardedQueries = false
+			config.QueryMiddleware.SplitQueriesByInterval = 0
+			config.QueryMiddleware.UseMQEForSplittingAndCachingResults = testCase.enableRemoteExecution
 			config.QueryEngine = testCase.queryEngine
 			err := config.Validate()
 
