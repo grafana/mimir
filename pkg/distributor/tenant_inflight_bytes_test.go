@@ -75,8 +75,11 @@ func TestDistributor_MaxInflightPushRequestsBytesPerTenant(t *testing.T) {
 
 	require.Equal(t, int64(compressedSize), d.tenantInflightBytes.get("blocked"))
 
-	// A second request from the same tenant exceeds its limit, and is rejected with a 503.
+	// A second request from the same tenant exceeds its limit, and is rejected with a 503 before it reaches the
+	// reactive limiter: a reactive limiter that rejects every request would otherwise return its own error.
+	d.reactiveLimiter = &mockReactiveLimiter{canAcquire: true, failOnAcquire: true}
 	err := doPush("blocked")
+	d.reactiveLimiter = nil
 	require.ErrorIs(t, err, errMaxInflightRequestsBytesPerTenantReached)
 	var distributorErr Error
 	require.True(t, errors.As(err, &distributorErr))

@@ -2302,6 +2302,18 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.decreaseInflightPushRequestCounters(rs)
 		})
 
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		// Charge the compressed request size against the tenant's budget before decompressing, so that a single
+		// tenant can't hold most of this distributor's memory. This runs before the reactive limiter, so that
+		// a tenant over its budget doesn't take or queue for permits that other tenants need.
+		if err := d.chargeTenantInflightBytes(rs, userID, rs.httpgrpcRequestSize); err != nil {
+			return err
+		}
+
 		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
@@ -2311,17 +2323,6 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			defer func() {
 				reactiveLimiterCleanup(retErr)
 			}()
-		}
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		// Charge the compressed request size against the tenant's budget before decompressing, so that a single
-		// tenant can't hold most of this distributor's memory.
-		if err := d.chargeTenantInflightBytes(rs, userID, rs.httpgrpcRequestSize); err != nil {
-			return err
 		}
 
 		now := mtime.Now()
