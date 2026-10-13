@@ -277,22 +277,3 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 func isUnavailable(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.Unavailable || status.Code(err) == codes.DeadlineExceeded
 }
-
-// QuietUnavailableLogger also suppresses the server middleware's RPC error logs,
-// while preserving the primary's original status for callers.
-func QuietUnavailableLogger(logger log.Logger) log.Logger {
-	return unavailableLogger{Logger: logger}
-}
-
-type unavailableLogger struct{ log.Logger }
-
-func (l unavailableLogger) Log(keyvals ...any) error {
-	for i := 0; i+1 < len(keyvals); i += 2 {
-		if key, ok := keyvals[i].(string); ok && key == "err" {
-			if err, ok := keyvals[i+1].(error); ok && isUnavailable(err) {
-				return nil
-			}
-		}
-	}
-	return l.Logger.Log(keyvals...)
-}
