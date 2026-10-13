@@ -83,7 +83,7 @@ func run() error {
 	serverCfg.Registerer = registry
 	serverCfg.Gatherer = registry
 	serverCfg.MetricsNamespace = "ingester_query_tee"
-	serverCfg.Log = logger
+	serverCfg.Log = ingesterquerytee.QuietUnavailableLogger(logger)
 	serverCfg.GRPCOptions = append(serverCfg.GRPCOptions, grpc.ForceServerCodec(ingesterquerytee.WireCodec{}), grpc.UnknownServiceHandler(proxy.Handler))
 	srv, err := server.New(serverCfg)
 	if err != nil {
