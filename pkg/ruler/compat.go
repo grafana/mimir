@@ -448,7 +448,7 @@ func DefaultTenantManagerFactory(
 	}
 	var ruleFileParseCacheHits *prometheus.CounterVec
 	var ruleFileParseCacheMisses *prometheus.CounterVec
-	if cfg.RuleFileParseCachingEnabled {
+	if cfg.RuleFileCachingEnabled {
 		ruleFileParseCacheHits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_rule_file_parse_cache_hits_total",
 			Help: "Total number of rule file parses served from the parse cache instead of re-parsing.",
@@ -466,7 +466,7 @@ func DefaultTenantManagerFactory(
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
 		var cacheHits, cacheMisses prometheus.Counter
-		if cfg.RuleFileParseCachingEnabled {
+		if cfg.RuleFileCachingEnabled {
 			cacheHits = ruleFileParseCacheHits.WithLabelValues(userID)
 			cacheMisses = ruleFileParseCacheMisses.WithLabelValues(userID)
 		}
@@ -502,7 +502,7 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
-			GroupLoader:                NewFSLoader(rulesFS, cfg.RuleFileParseCachingEnabled, cacheHits, cacheMisses),
+			GroupLoader:                NewFSLoader(rulesFS, cfg.RuleFileCachingEnabled, cacheHits, cacheMisses),
 			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer

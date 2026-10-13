@@ -170,7 +170,7 @@ type Config struct {
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
 
-	RuleFileParseCachingEnabled bool `yaml:"rule_file_parse_caching_enabled" category:"experimental"`
+	RuleFileCachingEnabled bool `yaml:"rule_file_caching_enabled" category:"experimental"`
 }
 
 type ClientConfig struct {
@@ -250,7 +250,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
 
-	f.BoolVar(&cfg.RuleFileParseCachingEnabled, "ruler.rule-file-parse-caching-enabled", false, "Cache the result of parsing rule files on disk, keyed by exact file content, to avoid re-parsing unchanged rule files belonging to the same tenant on every rule sync. Internal performance optimization, no effect on rule evaluation behavior.")
+	f.BoolVar(&cfg.RuleFileCachingEnabled, "ruler.rule-file-caching-enabled", false, "Cache the YAML encoding and the parsed result of each rule file on disk, to avoid re-encoding and re-parsing unchanged rule files on every rule sync. Internal performance optimization, no effect on rule evaluation behavior.")
 
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)

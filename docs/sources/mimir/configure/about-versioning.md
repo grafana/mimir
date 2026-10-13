@@ -85,8 +85,8 @@ The following features are currently experimental:
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
   - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
   - `-ruler.rule-evaluation-write-enabled`
-  - Cache the result of parsing rule files on disk to avoid re-parsing unchanged rule files on every rule sync.
-    - `-ruler.rule-file-parse-caching-enabled`
+  - Cache the YAML encoding and the parsed result of each rule file on disk to avoid re-encoding and re-parsing unchanged rule files on every rule sync.
+    - `-ruler.rule-file-caching-enabled`
   - Push rule-result series to remote distributors over native gRPC instead of using the internal distributor.
     - `-ruler.distributor.address`
     - `-ruler.distributor.remote-timeout`
