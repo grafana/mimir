@@ -1048,7 +1048,8 @@ func TestRustCompatLifecycleHandlers(t *testing.T) {
 
 	store, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { _ = closer.Close() })
-	partition := ring.NewPartitionInstanceLifecycler(cfg.IngesterPartitionRing.ToLifecyclerConfig(0, "shadow"), "shadow-partitions", "shadow-partitions", store, log.NewNopLogger(), nil)
+	partition, err := ring.NewPartitionInstanceLifecycler(cfg.IngesterPartitionRing.ToLifecyclerConfig(0, "shadow"), "shadow-partitions", "shadow-partitions", store, log.NewNopLogger(), nil)
+	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), partition))
 	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), partition) })
 	require.Eventually(t, func() bool {
