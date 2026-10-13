@@ -7507,6 +7507,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7620,6 +7623,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7732,6 +7738,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
