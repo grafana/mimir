@@ -160,10 +160,11 @@ var conflicts *appendHistory
 type appendHistory struct {
 	appended  map[string]map[int64]string
 	conflicts map[string]map[int64]bool
+	exemplars map[string]struct{}
 }
 
 func newAppendHistory() *appendHistory {
-	return &appendHistory{appended: map[string]map[int64]string{}, conflicts: map[string]map[int64]bool{}}
+	return &appendHistory{appended: map[string]map[int64]string{}, conflicts: map[string]map[int64]bool{}, exemplars: map[string]struct{}{}}
 }
 
 func (h *appendHistory) record(lset promlabels.Labels, ts int64, content string) {
@@ -359,7 +360,10 @@ func runRound(t *testing.T, r *rand.Rand, heads [2]headUnderTest, series []workl
 				refs[side][index] = got
 				if kind%10 == 0 {
 					e := exemplar.Exemplar{Labels: promlabels.FromStrings("trace_id", fmt.Sprint(ts%97)), Value: v, Ts: ts, HasTs: true}
-					_, _ = app.AppendExemplar(got, s.lset, e)
+					exemplarRef, exemplarErr := app.AppendExemplar(got, s.lset, e)
+					if side == 0 && exemplarErr == nil && exemplarRef != 0 && conflicts != nil {
+						conflicts.exemplars[s.lset.String()] = struct{}{}
+					}
 				}
 			}
 			outcomes[side] = outcomeOf(got, err)
@@ -791,6 +795,12 @@ func TestEngineMatchesPrometheusHead(t *testing.T) {
 								app := head.Appender(context.Background())
 								var refs []storage.SeriesRef
 								for _, s := range picked {
+									// Prometheus retains identities for exemplar WAL replay, while seriesstore
+									// snapshots exemplars independently. Compare eviction lifecycles for
+									// series without accepted exemplars, including rolled-back appends.
+									if _, hasExemplar := conflicts.exemplars[s.lset.String()]; hasExemplar {
+										continue
+									}
 									if ref, _ := app.GetRef(s.lset, s.lset.Hash()); ref != 0 {
 										refs = append(refs, ref)
 									}
@@ -821,6 +831,51 @@ func TestEngineMatchesPrometheusHead(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestEngineSelectedSeriesWithExemplars(t *testing.T) {
+	ctx := t.Context()
+	opts := differentialOptions{maxExemplars: 10}
+	dir := t.TempDir()
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, dir, opts, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			require.NoError(t, head.Close())
+		}
+	})
+	lset := promlabels.FromStrings("__name__", "up")
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "up")
+	wantExemplar := exemplar.Exemplar{Labels: promlabels.FromStrings("trace_id", "a"), Value: 1, Ts: 1000, HasTs: true}
+	var wantSamples []queriedSeries
+	for _, head := range heads {
+		app := head.Appender(ctx)
+		ref, err := app.Append(0, lset, 1000, 1)
+		require.NoError(t, err)
+		_, err = app.AppendExemplar(ref, lset, wantExemplar)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		wantSamples = querySamples(t, head, 0, 2000, nil, matcher)
+		require.Len(t, wantSamples, 1)
+		require.NoError(t, head.CompactSelectedSeries([]storage.SeriesRef{ref}))
+		require.Equal(t, wantSamples, querySamples(t, head, 0, 2000, nil, matcher))
+	}
+	// Prometheus keeps the identity for exemplar WAL replay; seriesstore stores exemplars
+	// outside the series and must preserve them even after eviction and a clean restart.
+	require.Equal(t, uint64(1), heads[0].NumSeries())
+	require.Zero(t, heads[1].NumSeries())
+	require.NoError(t, heads[1].Close())
+	heads[1] = openEngine(t, dir, opts, nil)
+	require.True(t, heads[1].(*Engine).Restored())
+	require.Equal(t, wantSamples, querySamples(t, heads[1], 0, 2000, nil, matcher))
+	for _, head := range heads {
+		q, err := head.ExemplarQuerier(ctx)
+		require.NoError(t, err)
+		results, err := q.Select(0, 2000, []*promlabels.Matcher{matcher})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, lset, results[0].SeriesLabels)
+		require.Equal(t, []exemplar.Exemplar{wantExemplar}, results[0].Exemplars)
 	}
 }
 
