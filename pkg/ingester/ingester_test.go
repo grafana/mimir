@@ -9138,7 +9138,7 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	require.NoError(t, err)
 
 	meta, err := ing.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
-		Metric: "test_metric_total",
+		Metric: "test_metric_total", //nolint:staticcheck // We want to intentionally access a deprecated field
 		Limit:  1, LimitPerMetric: 1,
 	})
 	require.NoError(t, err)

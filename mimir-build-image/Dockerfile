@@ -6,7 +6,7 @@
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.2.3@sha256:b97ba4f9b27fe7af16ee3d37e6815783c9d4a51289b6240a9024ec471611ae9b AS helm
 FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
-FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c
+FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
@@ -74,11 +74,11 @@ RUN set -o pipefail && \
     chmod a+x /usr/bin/tk
 
 # renovate: datasource=github-release-attachments depName=golangci/golangci-lint
-ENV GOLANGCI_LINT_VERSION=v2.12.2
-# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
-ENV GOLANGCI_LINT_AMD64_DIGEST=8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
-# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
-ENV GOLANGCI_LINT_ARM64_DIGEST=44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a
+ENV GOLANGCI_LINT_VERSION=v2.14.0
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.14.0
+ENV GOLANGCI_LINT_AMD64_DIGEST=ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.14.0
+ENV GOLANGCI_LINT_ARM64_DIGEST=ee7ec5f3453d15ddf106fae5a4d6c71737712348a979d1fe9cd52ec7ea299bae
 RUN set -o pipefail && \
     GOARCH=$(go env GOARCH) && \
     DIGEST=$(case "$GOARCH" in amd64) echo $GOLANGCI_LINT_AMD64_DIGEST;; arm64) echo $GOLANGCI_LINT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
