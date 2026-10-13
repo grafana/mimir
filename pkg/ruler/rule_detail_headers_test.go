@@ -187,7 +187,7 @@ func TestDefaultTenantManagerFactory_RuleDetailHeaders(t *testing.T) {
 	}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
 
 	fs := afero.NewMemMapFs()
-	_, files, err := newMapper(cfg.RulePath, fs, options.logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
+	_, files, err := newMapper(cfg.RulePath, fs, options.logger, false, nil, nil).MapRules(userID, map[string][]rulefmt.RuleGroup{
 		namespace: {{
 			Name: groupName,
 			Rules: []rulefmt.Rule{

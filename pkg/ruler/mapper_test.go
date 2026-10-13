@@ -963,6 +963,187 @@ func Test_FSLoader_ParseCache_EvictsRemovedNamespaces(t *testing.T) {
 	require.Len(t, loader.prev, 1, "the removed namespace's entry must be gone after a second rotation")
 }
 
+func Test_mapper_EncodeCache(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+
+	t.Run("unchanged rule groups reuse the previous encoding", func(t *testing.T) {
+		setupRuleSets()
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+
+		updated, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		require.True(t, updated)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+
+		updated, _, err = m.MapRules(testUser1, outOfOrderRuleSet)
+		require.NoError(t, err)
+		require.False(t, updated)
+		require.Equal(t, 1.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+	})
+
+	t.Run("changed rule groups are encoded and written again", func(t *testing.T) {
+		setupRuleSets()
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+
+		_, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		updated, _, err := m.MapRules(testUser1, updatedRuleSet)
+		require.NoError(t, err)
+		require.True(t, updated)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+
+		content, err := afero.ReadFile(m.FS, fileOneUserOnePath)
+		require.NoError(t, err)
+		var written rulefmt.RuleGroups
+		require.NoError(t, yaml.Unmarshal(content, &written))
+		require.Len(t, written.Groups, 3)
+	})
+
+	t.Run("a cache hit rewrites a rule file that differs on disk", func(t *testing.T) {
+		setupRuleSets()
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+
+		_, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		want, err := afero.ReadFile(m.FS, fileOneUserOnePath)
+		require.NoError(t, err)
+
+		require.NoError(t, afero.WriteFile(m.FS, fileOneUserOnePath, []byte("groups: []\n"), 0777))
+
+		updated, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		require.True(t, updated)
+		require.Equal(t, 1.0, testutil.ToFloat64(hits))
+
+		got, err := afero.ReadFile(m.FS, fileOneUserOnePath)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("mutating the input after MapRules doesn't corrupt the cache", func(t *testing.T) {
+		// cleanRuleGroupExprs copies the rules, but the copies share the Labels maps with the input.
+		// If the cache kept those maps, a mutated input would compare equal to the cached groups.
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+		ruleConfigs := map[string][]rulefmt.RuleGroup{
+			"file /one": {
+				{
+					Name: "rulegroup_one",
+					Rules: []rulefmt.Rule{
+						{Record: "example_rule", Expr: "example_expr", Labels: map[string]string{"team": "a"}},
+					},
+				},
+			},
+		}
+
+		_, _, err := m.MapRules(testUser1, ruleConfigs)
+		require.NoError(t, err)
+
+		ruleConfigs["file /one"][0].Rules[0].Labels["team"] = "b"
+
+		updated, _, err := m.MapRules(testUser1, ruleConfigs)
+		require.NoError(t, err)
+		require.True(t, updated)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+	})
+
+	t.Run("removing a rule file removes its cache entry", func(t *testing.T) {
+		setupRuleSets()
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+
+		_, _, err := m.MapRules(testUser1, twoFilesRuleSet)
+		require.NoError(t, err)
+		require.Len(t, m.encoded, 2)
+
+		_, _, err = m.MapRules(testUser1, twoFilesDeletedRuleSet)
+		require.NoError(t, err)
+		require.Len(t, m.encoded, 1)
+		require.Contains(t, m.encoded, fileOneUserOnePath)
+	})
+
+	t.Run("cleanupUser removes only that user's cache entries", func(t *testing.T) {
+		setupRuleSets()
+		hits, misses := newTestCacheCounters()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, true, hits, misses)
+
+		_, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		_, _, err = m.MapRules(testUser2, initialRuleSet)
+		require.NoError(t, err)
+		require.Len(t, m.encoded, 2)
+
+		m.cleanupUser(testUser1)
+		require.Len(t, m.encoded, 1)
+		require.Contains(t, m.encoded, fileOneUserTwoPath)
+	})
+
+	t.Run("cache disabled keeps no entries", func(t *testing.T) {
+		setupRuleSets()
+		m := newMapper("/rules", afero.NewMemMapFs(), l, false, nil, nil)
+
+		_, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		updated, _, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+		require.False(t, updated)
+		require.Empty(t, m.encoded)
+	})
+}
+
+// BenchmarkMapper_MapRules simulates the steady-state case the encode cache
+// targets: a tenant's namespace that hasn't changed being mapped on every rule sync.
+// cache_enabled=false re-encodes the rule groups on every call.
+func BenchmarkMapper_MapRules(b *testing.B) {
+	l := util_log.MakeLeveledLogger(io.Discard, "info")
+
+	const numGroups = 20
+	const rulesPerGroup = 5
+	groups := make([]rulefmt.RuleGroup, numGroups)
+	for i := range groups {
+		rules := make([]rulefmt.Rule, rulesPerGroup)
+		for j := range rules {
+			rules[j] = rulefmt.Rule{
+				Record: fmt.Sprintf("rule_%d_%d", i, j),
+				Expr:   fmt.Sprintf("sum(rate(some_metric_%d_%d[5m]))", i, j),
+				Labels: map[string]string{"team": "observability"},
+			}
+		}
+		groups[i] = rulefmt.RuleGroup{Name: fmt.Sprintf("group_%d", i), Rules: rules}
+	}
+	ruleConfigs := map[string][]rulefmt.RuleGroup{"namespace": groups}
+
+	for _, cacheEnabled := range []bool{false, true} {
+		b.Run(fmt.Sprintf("cache_enabled=%v", cacheEnabled), func(b *testing.B) {
+			var hits, misses prometheus.Counter
+			if cacheEnabled {
+				hits, misses = newTestCacheCounters()
+			}
+			m := newMapper("/rules", afero.NewMemMapFs(), l, cacheEnabled, hits, misses)
+			// Warm up so the steady-state (already-written-once) case is measured.
+			if _, _, err := m.MapRules("bench_user", ruleConfigs); err != nil {
+				b.Fatal(err)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, _, err := m.MapRules("bench_user", ruleConfigs); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func requireFileExists(t *testing.T, fs afero.Fs, path string) {
 	t.Helper()
 

@@ -37,13 +37,34 @@ type mapper struct {
 
 	FS     afero.Fs
 	logger log.Logger
+
+	cacheEnabled bool
+	cacheHits    prometheus.Counter
+	cacheMisses  prometheus.Counter
+
+	mu      sync.Mutex
+	encoded map[string]encodedRuleGroups
 }
 
-func newMapper(path string, FS afero.Fs, logger log.Logger) *mapper {
+type encodedRuleGroups struct {
+	groups  []rulefmt.RuleGroup
+	encoded []byte
+}
+
+// newMapper returns a mapper that writes rule files to path in FS. When
+// cacheEnabled is true, cacheHits and cacheMisses must be non-nil and are
+// incremented on every rule file encode.
+func newMapper(path string, FS afero.Fs, logger log.Logger, cacheEnabled bool, cacheHits, cacheMisses prometheus.Counter) *mapper {
 	m := &mapper{
-		Path:   path,
-		FS:     FS,
-		logger: logger,
+		Path:         path,
+		FS:           FS,
+		logger:       logger,
+		cacheEnabled: cacheEnabled,
+		cacheHits:    cacheHits,
+		cacheMisses:  cacheMisses,
+	}
+	if cacheEnabled {
+		m.encoded = make(map[string]encodedRuleGroups)
 	}
 	m.cleanup()
 
@@ -156,6 +177,9 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	rgs := rulefmt.RuleGroups{Groups: cleanRuleGroupExprs(groups)}
 
+	if m.cacheEnabled {
+		m.cacheMisses.Inc()
+	}
 	d, err := yaml.Marshal(&rgs)
 	if err != nil {
 		return false, err
