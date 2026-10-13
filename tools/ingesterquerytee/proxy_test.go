@@ -3,6 +3,7 @@
 package ingesterquerytee
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -68,11 +70,17 @@ func testBackend(t *testing.T, backend *testIngester) *grpc.ClientConn {
 
 func testProxy(t *testing.T, primary, shadow *testIngester, cfg Config) (*Proxy, client.IngesterClient) {
 	t.Helper()
+	return testProxyWithLogger(t, primary, shadow, cfg, log.NewNopLogger())
+}
+
+func testProxyWithLogger(t *testing.T, primary, shadow *testIngester, cfg Config, logger log.Logger) (*Proxy, client.IngesterClient) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	p, err := New(ctx, cfg, testBackend(t, primary), testBackend(t, shadow), prometheus.NewRegistry(), log.NewNopLogger())
+	p, err := New(ctx, cfg, testBackend(t, primary), testBackend(t, shadow), prometheus.NewRegistry(), logger)
 	require.NoError(t, err)
-	srv := grpc.NewServer(grpc.ForceServerCodec(WireCodec{}), grpc.UnknownServiceHandler(p.Handler))
+	rpcLog := middleware.GRPCServerLog{Log: QuietUnavailableLogger(logger), DisableRequestSuccessLog: true}
+	srv := grpc.NewServer(grpc.ForceServerCodec(WireCodec{}), grpc.UnknownServiceHandler(p.Handler), grpc.StreamInterceptor(rpcLog.StreamServerInterceptor))
 	return p, client.NewIngesterClient(testConnection(t, srv))
 }
 
@@ -147,7 +155,7 @@ func TestProxyShadowTimeoutAndMismatch(t *testing.T) {
 		resp, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, resp.LabelNames)
-		awaitOutcome(t, p, "LabelNames", "shadow_error")
+		awaitOutcome(t, p, "LabelNames", "unavailable")
 	})
 	t.Run("mismatch", func(t *testing.T) {
 		shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
@@ -173,6 +181,88 @@ func TestProxyShadowTimeoutAndMismatch(t *testing.T) {
 		require.Equal(t, []string{"primary"}, trailer.Get("reason"))
 		awaitOutcome(t, p, "LabelNames", "primary_error")
 	})
+}
+
+func TestUnavailableIsMetricOnlyAndNeverReturnsShadow(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		primary, shadow error
+	}{
+		{"shadow unavailable", nil, status.Error(codes.Unavailable, "spot instance gone")},
+		{"primary unavailable", status.Error(codes.Unavailable, "spot instance gone"), nil},
+		{"both unavailable", status.Error(codes.Unavailable, "primary gone"), status.Error(codes.Unavailable, "shadow gone")},
+		{"shadow timed out", nil, status.Error(codes.DeadlineExceeded, "shadow timed out")},
+		{"primary timed out", status.Error(codes.DeadlineExceeded, "primary timed out"), nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			primary := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+				if test.primary != nil {
+					return nil, test.primary
+				}
+				return &client.LabelNamesResponse{LabelNames: []string{"primary"}}, nil
+			}}
+			shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+				if test.shadow != nil {
+					return nil, test.shadow
+				}
+				return &client.LabelNamesResponse{LabelNames: []string{"shadow"}}, nil
+			}}
+			var logs bytes.Buffer
+			p, cli := testProxyWithLogger(t, primary, shadow, testConfig(), log.NewLogfmtLogger(log.NewSyncWriter(&logs)))
+			resp, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+			if test.primary != nil {
+				require.Nil(t, resp)
+				require.Equal(t, status.Code(test.primary), status.Code(err))
+				require.Equal(t, status.Convert(test.primary).Message(), status.Convert(err).Message())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, []string{"primary"}, resp.LabelNames)
+			}
+			awaitOutcome(t, p, "LabelNames", "unavailable")
+			require.Eventually(t, func() bool { return len(p.slots) == 0 }, time.Second, time.Millisecond)
+			require.Empty(t, logs.String())
+		})
+	}
+}
+
+func TestUnavailableStreamNeverFallsBackToShadow(t *testing.T) {
+	frames := streamFrames(t, floatChunk(t, []int64{100}, []float64{1}))
+	primary := &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+		var msg client.QueryStreamResponse
+		if err := msg.Unmarshal(frames[0]); err != nil {
+			return err
+		}
+		if err := stream.Send(&msg); err != nil {
+			return err
+		}
+		return status.Error(codes.Unavailable, "primary disappeared mid-stream")
+	}}
+	shadow := &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+		for _, f := range frames {
+			var msg client.QueryStreamResponse
+			if err := msg.Unmarshal(f); err != nil {
+				return err
+			}
+			if err := stream.Send(&msg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+	var logs bytes.Buffer
+	p, cli := testProxyWithLogger(t, primary, shadow, testConfig(), log.NewLogfmtLogger(log.NewSyncWriter(&logs)))
+	s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 100})
+	require.NoError(t, err)
+	msg, err := s.Recv()
+	require.NoError(t, err)
+	require.Equal(t, frames[0], wire(t, msg))
+	msg, err = s.Recv()
+	require.Nil(t, msg)
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Equal(t, "primary disappeared mid-stream", status.Convert(err).Message())
+	awaitOutcome(t, p, "QueryStream", "unavailable")
+	require.Eventually(t, func() bool { return len(p.slots) == 0 }, time.Second, time.Millisecond)
+	require.Empty(t, logs.String())
 }
 
 func TestProxyStreamingReturnsBeforeShadow(t *testing.T) {
