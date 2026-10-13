@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/grafana/dskit/log"
+	dslog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -73,7 +74,7 @@ func run() error {
 	defer shadow.Close()
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	logger := log.NewGoKitWithLevel(serverCfg.LogLevel, serverCfg.LogFormat)
+	logger := dslog.NewGoKitWithLevel(serverCfg.LogLevel, serverCfg.LogFormat)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	proxy, err := ingesterquerytee.New(ctx, cfg, primary, shadow, registry, logger)
@@ -83,7 +84,8 @@ func run() error {
 	serverCfg.Registerer = registry
 	serverCfg.Gatherer = registry
 	serverCfg.MetricsNamespace = "ingester_query_tee"
-	serverCfg.Log = ingesterquerytee.QuietUnavailableLogger(logger)
+	// Backend errors and RPC middleware fields can contain tenant data; the proxy emits safe comparison logs.
+	serverCfg.Log = log.NewNopLogger()
 	serverCfg.GRPCOptions = append(serverCfg.GRPCOptions, grpc.ForceServerCodec(ingesterquerytee.WireCodec{}), grpc.UnknownServiceHandler(proxy.Handler))
 	srv, err := server.New(serverCfg)
 	if err != nil {
