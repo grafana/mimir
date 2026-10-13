@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -117,13 +118,45 @@ type RangeQuerySplittingAndCachingConfig struct {
 }
 
 type CardinalityEstimationConfig struct {
-	Backend           caching.Backend            `yaml:"-"`
-	CacheKeyGenerator *caching.CacheKeyGenerator `yaml:"-"`
+	Backend           caching.Backend               `yaml:"-"`
+	CacheKeyGenerator *caching.CacheKeyGenerator    `yaml:"-"`
+	Metrics           *CardinalityEstimationMetrics `yaml:"-"`
 
 	BucketSize                time.Duration `yaml:"bucket_size" category:"experimental"`
 	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
 	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
 	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
+}
+
+type CardinalityEstimationMetrics struct {
+	ReadCacheKeys      prometheus.Observer
+	ReadCacheKeyBytes  prometheus.Observer
+	WriteCacheKeys     prometheus.Observer
+	WriteCacheKeyBytes prometheus.Observer
+}
+
+func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
+	cacheKeys := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_mimir_query_engine_cardinality_estimation_cache_keys",
+		Help:                            "Number of cardinality estimation cache keys generated per call to estimate or store cardinality.",
+		NativeHistogramBucketFactor:     1.4,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	}, []string{"path"})
+	cacheKeyBytes := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes",
+		Help:                            "Total bytes of cardinality estimation cache keys generated per call to estimate or store cardinality.",
+		NativeHistogramBucketFactor:     1.4,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	}, []string{"path"})
+
+	return &CardinalityEstimationMetrics{
+		ReadCacheKeys:      cacheKeys.WithLabelValues("read"),
+		ReadCacheKeyBytes:  cacheKeyBytes.WithLabelValues("read"),
+		WriteCacheKeys:     cacheKeys.WithLabelValues("write"),
+		WriteCacheKeyBytes: cacheKeyBytes.WithLabelValues("write"),
+	}
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {

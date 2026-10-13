@@ -193,6 +193,7 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 
 	// Only return each unique selector once, so we don't over-count selectors that will be deduplicated by CSE.
 	seenSelectors := make(map[selectorTimeRangeDeduplicationKey]struct{}, len(selectorRanges))
+	generatedKeys, generatedKeyBytes := 0, 0
 
 	for _, sr := range selectorRanges {
 		selector := selectorString(sr.matchers)
@@ -213,13 +214,18 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 			cacheKeys: cacheKeys,
 		})
 
+		generatedKeys += len(cacheKeys)
 		for _, k := range cacheKeys {
+			generatedKeyBytes += len(k.plain)
 			if _, ok := keysToLookUp[k.hashed]; ok {
 				continue
 			}
 			keysToLookUp[k.hashed] = struct{}{}
 		}
 	}
+
+	e.cfg.Metrics.ReadCacheKeys.Observe(float64(generatedKeys))
+	e.cfg.Metrics.ReadCacheKeyBytes.Observe(float64(generatedKeyBytes))
 
 	return selectorsToLookUp, slices.Collect(maps.Keys(keysToLookUp)), nil
 }
@@ -374,6 +380,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
 	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
 	seenGroups := make(map[bucketedSelector]*bucketedSelectorCardinality)
+	generatedKeys, generatedKeyBytes := 0, 0
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
@@ -384,7 +391,9 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 			return nil, err
 		}
 
+		generatedKeys += len(keys)
 		for _, k := range keys {
+			generatedKeyBytes += len(k.plain)
 			gk := bucketedSelector{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
 
 			group, ok := seenGroups[gk]
@@ -415,6 +424,9 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 			group.cardinalityByShardingFactor[shardCount][index] = max(group.cardinalityByShardingFactor[shardCount][index], c.SeriesCount)
 		}
 	}
+
+	p.cfg.Metrics.WriteCacheKeys.Observe(float64(generatedKeys))
+	p.cfg.Metrics.WriteCacheKeyBytes.Observe(float64(generatedKeyBytes))
 
 	return seenGroups, nil
 }
