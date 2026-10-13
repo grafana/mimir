@@ -336,11 +336,11 @@ func Test_queryStatsMiddleware_QueryExpressionSizeLimitExceeded(t *testing.T) {
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
 			`)
 			for _, tenantID := range strings.Split(tt.orgID, "|") {
-				expected.WriteString(fmt.Sprintf(`
+				fmt.Fprintf(&expected, `
 			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="%[1]s",user="%[2]s",le="+Inf"} 1
 			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="%[1]s",user="%[2]s"} 6
 			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="%[1]s",user="%[2]s"} 1
-			`, tt.expectedLimitExceeded, tenantID))
+			`, tt.expectedLimitExceeded, tenantID)
 			}
 
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected.String()), "cortex_query_frontend_queries_expression_bytes"))
