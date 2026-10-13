@@ -7,21 +7,17 @@ import (
 	"time"
 )
 
-// ExplainValue is an optional piece of information about a query that can be requested by a caller
-// during the query execution (e.g. the cost on each selector, the optimized plan, etc.).
-type ExplainValue string
-
-// ExplainValueCost is a request for per-selector "cost" information during the execution of a query.
-const ExplainValueCost = ExplainValue("cost")
-
-// ParseExplainValues parses strings to known explain values and ignores unknown values.
+// ParseExplainValues parses strings to explain values, using EXPLAIN_VALUE_UNKNOWN for
+// any unknown string representations.
 func ParseExplainValues(vals []string) []ExplainValue {
 	var out []ExplainValue
 
 	for _, v := range vals {
-		switch ExplainValue(strings.ToLower(v)) {
-		case ExplainValueCost:
-			out = append(out, ExplainValueCost)
+		switch strings.ToLower(v) {
+		case "cost":
+			out = append(out, EXPLAIN_VALUE_COST)
+		default:
+			out = append(out, EXPLAIN_VALUE_UNKNOWN)
 		}
 	}
 

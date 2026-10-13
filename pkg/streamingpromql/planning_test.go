@@ -291,12 +291,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 		"vector selector with explain cost": {
 			expr:      `some_metric`,
 			timeRange: instantQuery,
-			explain:   []types.ExplainValue{types.ExplainValueCost},
+			explain:   []types.ExplainValue{types.EXPLAIN_VALUE_COST},
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:     instantQueryEncodedTimeRange,
 				LookbackDelta: lookbackDelta,
-				Explain:       []types.ExplainValue{types.ExplainValueCost},
+				Explain:       []types.ExplainValue{types.EXPLAIN_VALUE_COST},
 				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{

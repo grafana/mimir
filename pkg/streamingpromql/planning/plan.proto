@@ -37,7 +37,7 @@ message EncodedQueryPlan {
   bool cacheDisabled = 8;
 
   // explain requests extra diagnostic information in the query response.
-  repeated string explain = 9 [(gogoproto.casttype) = "github.com/grafana/mimir/pkg/streamingpromql/types.ExplainValue"];
+  repeated types.ExplainValue explain = 9;
 }
 
 message EncodedNode {
