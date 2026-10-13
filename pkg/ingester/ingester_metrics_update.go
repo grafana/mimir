@@ -229,8 +229,6 @@ func (i *Ingester) updateUsageStats() {
 }
 
 func (i *Ingester) updateLimitMetrics() {
-	overLimit := 0
-
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -250,22 +248,20 @@ func (i *Ingester) updateLimitMetrics() {
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 
-		overLimit += i.updateLabelValueBytesMetrics(userID, db)
+		i.updateLabelValueBytesMetrics(userID, db)
 	}
-
-	i.metrics.labelNamesOverValueBytesLimit.Set(float64(overLimit))
 }
 
 // updateLabelValueBytesMetrics reports the tenant's label names whose distinct value bytes are
-// over the local per-label-name bytes limit, and returns how many there are.
-func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (overLimit int) {
+// over the local per-label-name bytes limit.
+func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) {
 	// Drop the previously reported label names, as the set changes over time and stale entries
 	// would otherwise linger.
 	i.metrics.labelValueBytesOverLimit.DeletePartialMatch(prometheus.Labels{"user": userID})
 
 	// Reporting is driven by the limit, so there is nothing to report while it is disabled.
 	if i.limits.MaxGlobalLabelValueBytesPerLabelName(userID) <= 0 {
-		return 0
+		return
 	}
 
 	for labelName, bytes := range db.Head().LabelValuesBytes() {
@@ -274,10 +270,7 @@ func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (ov
 			continue
 		}
 		if !i.limiter.IsWithinMaxLabelValueBytesPerLabelName(userID, bytes) {
-			overLimit++
 			i.metrics.labelValueBytesOverLimit.WithLabelValues(userID, labelName).Set(1)
 		}
 	}
-
-	return overLimit
 }

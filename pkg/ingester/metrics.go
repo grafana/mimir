@@ -51,8 +51,7 @@ type ingesterMetrics struct {
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
 
-	labelNamesOverValueBytesLimit prometheus.Gauge
-	labelValueBytesOverLimit      *prometheus.GaugeVec
+	labelValueBytesOverLimit *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
@@ -221,10 +220,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
-		labelNamesOverValueBytesLimit: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ingester_label_names_over_value_bytes_limit",
-			Help: "Number of (user, label name) pairs whose distinct label values exceed the local per-label-name bytes limit on this ingester.",
-		}),
 		labelValueBytesOverLimit: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_label_value_bytes_over_limit",
 			Help: "Set to 1 for each (user, label name) pair whose distinct label values currently exceed the local per-label-name bytes limit on this ingester.",
