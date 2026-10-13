@@ -89,7 +89,7 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 	}
 	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent)}
 	p.comparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, mismatch, skipped, primary_error, shadow_error, comparison_error, or limit.",
+		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
 	}, []string{"method", "result"})
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response.", Buckets: prometheus.DefBuckets,
@@ -249,6 +249,8 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 	}
 	result := "match"
 	switch {
+	case isUnavailable(primary.err) || isUnavailable(shadow.err):
+		result = "unavailable"
 	case primary.limited || shadow.limited:
 		result = "limit"
 	case primary.err != nil:
@@ -270,4 +272,27 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 		// Queries and returned values may contain tenant data; only log the RPC and classification.
 		level.Warn(p.logger).Log("msg", "ingester query comparison failed", "method", method, "result", result)
 	}
+}
+
+func isUnavailable(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.Unavailable || status.Code(err) == codes.DeadlineExceeded
+}
+
+// QuietUnavailableLogger also suppresses the server middleware's RPC error logs,
+// while preserving the primary's original status for callers.
+func QuietUnavailableLogger(logger log.Logger) log.Logger {
+	return unavailableLogger{Logger: logger}
+}
+
+type unavailableLogger struct{ log.Logger }
+
+func (l unavailableLogger) Log(keyvals ...any) error {
+	for i := 0; i+1 < len(keyvals); i += 2 {
+		if key, ok := keyvals[i].(string); ok && key == "err" {
+			if err, ok := keyvals[i+1].(error); ok && isUnavailable(err) {
+				return nil
+			}
+		}
+	}
+	return l.Logger.Log(keyvals...)
 }
