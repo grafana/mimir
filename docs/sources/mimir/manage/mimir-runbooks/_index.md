@@ -2879,6 +2879,23 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of the increased size of requests or the increased latency (the higher the latency, the higher the number of in-flight write requests, the higher their combined size).
 - Consider scaling out the distributors.
 
+### err-mimir-distributor-max-inflight-push-requests-bytes-per-tenant
+
+This error occurs when a distributor rejects a write request because the tenant's in-flight requests on that distributor have reached their total size limit in bytes.
+
+How it **works**:
+
+- The distributor has a per-instance limit on the total compressed size in bytes of each tenant's in-flight write (push) requests. Requests are checked before they are decompressed.
+- The limit applies to each tenant separately, so a single tenant can't use most of a distributor's memory. Other tenants' requests are unaffected.
+- The rejection is returned with a 5xx status code, so clients retry it.
+- To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant` option.
+
+How to **fix** it:
+
+- Check whether the tenant's write traffic increased, or its write requests got larger.
+- Scale out the distributors. The limit applies per distributor, so more distributors increase the tenant's total allowance.
+- Increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant` option.
+
 ### err-mimir-ingester-max-ingestion-rate
 
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.

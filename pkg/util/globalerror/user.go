@@ -43,6 +43,8 @@ const (
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
 	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"
 
+	DistributorMaxInflightPushRequestsBytesPerTenant ID = "distributor-max-inflight-push-requests-bytes-per-tenant"
+
 	IngesterMaxIngestionRate             ID = "ingester-max-ingestion-rate"
 	IngesterMaxTenants                   ID = "ingester-max-tenants"
 	IngesterMaxInMemorySeries            ID = "ingester-max-series"

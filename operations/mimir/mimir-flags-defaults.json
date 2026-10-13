@@ -122,6 +122,7 @@
   "distributor.instance-limits.max-ingestion-rate": 0,
   "distributor.instance-limits.max-inflight-push-requests": 2000,
   "distributor.instance-limits.max-inflight-push-requests-bytes": 0,
+  "distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant": 0,
   "distributor.write-requests-buffer-pooling-enabled": true,
   "distributor.reusable-ingester-push-workers": 2000,
   "distributor.reactive-limiter.min-limit": 2,

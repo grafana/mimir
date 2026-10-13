@@ -188,6 +188,7 @@ The following features are currently experimental:
     - `-distributor.reactive-limiter.correlation-window`
     - `-distributor.reactive-limiter.initial-rejection-factor`
     - `-distributor.reactive-limiter.max-rejection-factor`
+    - `-distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant`
     - `-ingester.push-reactive-limiter.enabled`
     - `-ingester.push-reactive-limiter.min-limit`
     - `-ingester.push-reactive-limiter.max-limit`

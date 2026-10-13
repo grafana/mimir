@@ -77,6 +77,8 @@ var (
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
 	reasonDistributorMaxInflightPushRequestsBytes = globalerror.DistributorMaxInflightPushRequestsBytes.LabelValue()
+
+	reasonDistributorMaxInflightPushRequestsBytesPerTenant = globalerror.DistributorMaxInflightPushRequestsBytesPerTenant.LabelValue()
 )
 
 const (
@@ -161,6 +163,9 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
+	// In-flight push request bytes per tenant, for the per-tenant instance limit.
+	tenantInflightBytes *tenantInflightBytes
+
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	queryIngesterCompartmentsHit     prometheus.Histogram
@@ -198,6 +203,8 @@ type Distributor struct {
 	discardedRequestsRateLimited       *prometheus.CounterVec
 	discardedExemplarsRateLimited      *prometheus.CounterVec
 	discardedMetadataRateLimited       *prometheus.CounterVec
+
+	discardedRequestsInflightBytesPerTenant *prometheus.CounterVec
 
 	// Metrics for data rejected for hitting per-instance limits
 	rejectedRequests *prometheus.CounterVec
@@ -686,6 +693,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		discardedExemplarsRateLimited:      validation.DiscardedExemplarsCounter(reg, reasonRateLimited),
 		discardedMetadataRateLimited:       validation.DiscardedMetadataCounter(reg, reasonRateLimited),
 
+		discardedRequestsInflightBytesPerTenant: validation.DiscardedRequestsCounter(reg, reasonDistributorMaxInflightPushRequestsBytesPerTenant),
+		tenantInflightBytes:                     newTenantInflightBytes(),
+
 		rejectedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_instance_rejected_requests_total",
 			Help: "Requests discarded for hitting per-instance limits",
@@ -1022,6 +1032,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedSamplesPerUserSeriesLimit.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
+	d.discardedRequestsInflightBytesPerTenant.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
@@ -2098,6 +2109,10 @@ type requestState struct {
 
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
+
+	// Compressed bytes this request holds against its tenant's per-instance in-flight bytes limit, and the tenant it's charged to.
+	tenantInflightBytes int64
+	tenantUserID        string
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -2268,6 +2283,9 @@ func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	if rs.tenantInflightBytes > 0 {
+		d.tenantInflightBytes.add(rs.tenantUserID, -rs.tenantInflightBytes)
+	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
@@ -2284,6 +2302,18 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.decreaseInflightPushRequestCounters(rs)
 		})
 
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		// Charge the compressed request size against the tenant's budget before decompressing, so that a single
+		// tenant can't hold most of this distributor's memory. This runs before the reactive limiter, so that
+		// a tenant over its budget doesn't take or queue for permits that other tenants need.
+		if err := d.chargeTenantInflightBytes(rs, userID, rs.httpgrpcRequestSize); err != nil {
+			return err
+		}
+
 		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
@@ -2293,11 +2323,6 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			defer func() {
 				reactiveLimiterCleanup(retErr)
 			}()
-		}
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
 		}
 
 		now := mtime.Now()

@@ -35,6 +35,9 @@
     autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
+    // Scale up distributors while they reject requests from tenants over their in-flight bytes budget, so a tenant's
+    // total allowance grows with the number of distributors. Target rejections per second per pod. 0 to disable.
+    autoscaling_distributor_tenant_budget_rejections_target: 0,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas_per_zone: error 'you must set autoscaling_ruler_min_replicas_per_zone in the _config',
@@ -760,6 +763,25 @@
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
       weight=weight,
+      extra_triggers=if $._config.autoscaling_distributor_tenant_budget_rejections_target <= 0 then [] else [
+        {
+          local query_params = {
+            namespace: $._config.namespace,
+            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+          },
+
+          metric_name: 'cortex_distributor_tenant_budget_rejections_hpa_%s' % $._config.namespace,
+
+          // Rejecting a tenant's requests keeps CPU and in-flight bytes flat, so the other triggers wouldn't add
+          // capacity for a growing tenant. This trigger scales up while those rejections continue.
+          query: 'sum(rate(cortex_distributor_instance_rejected_requests_total{container="distributor",namespace="%(namespace)s",reason="distributor_max_inflight_push_requests_bytes_per_tenant"%(extra_matchers)s}[1m]))' % query_params,
+
+          threshold: '%d' % $._config.autoscaling_distributor_tenant_budget_rejections_target,
+
+          // Do not let KEDA use the value "0" as scaling metric if the query returns no result.
+          ignore_null_values: false,
+        },
+      ],
     ) + (
       {
         spec+: {
