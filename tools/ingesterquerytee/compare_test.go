@@ -247,3 +247,14 @@ func TestConfigValidation(t *testing.T) {
 	cfg.SkipRecentSamples = -time.Second
 	require.EqualError(t, cfg.Validate(), "skip-recent-samples must be nonnegative")
 }
+
+func TestSampleMismatchCounts(t *testing.T) {
+	keyA, keyB := labelKey([]mimirpb.LabelAdapter{{Name: "a", Value: "1"}}), labelKey([]mimirpb.LabelAdapter{{Name: "b", Value: "2"}, {Name: "c", Value: "3"}})
+	a := samplesBySeries{keyA: {sampleKey{timestamp: 1}: normalizedSample{}, sampleKey{timestamp: 2}: normalizedSample{}}}
+	b := samplesBySeries{keyB: {sampleKey{timestamp: 1}: normalizedSample{}}}
+	var detail *mismatchError
+	err := describeSampleMismatch(a, b)
+	require.ErrorIs(t, err, errMismatch)
+	require.ErrorAs(t, err, &detail)
+	require.Equal(t, []any{"primary_series", 1, "shadow_series", 1, "primary_labels", 1, "shadow_labels", 2, "primary_samples", 2, "shadow_samples", 1, "series_missing_from_shadow", 1, "series_extra_in_shadow", 1, "samples_missing_from_shadow", 2, "samples_extra_in_shadow", 1, "samples_with_different_values", 0}, detail.fields)
+}

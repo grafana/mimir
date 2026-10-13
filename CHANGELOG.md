@@ -139,7 +139,7 @@
 
 ### Tools
 
-* [FEATURE] Add experimental ingester query-tee to mirror read RPCs to a shadow ingester owning the same partition and compare decoded responses asynchronously. #16840
+* [FEATURE] Add experimental ingester query-tee to fully mirror read RPCs to a shadow ingester owning the same partition, independently sample comparisons, and log mismatch diagnostics. #16840
 
 ## 3.2.2
 
