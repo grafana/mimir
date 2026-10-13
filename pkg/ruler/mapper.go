@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -32,6 +33,11 @@ import (
 
 // mapper is designed to enusre the provided rule sets are identical
 // to the on-disk rules tracked by the prometheus manager
+//
+// If cacheEnabled is set, it caches the YAML encoding of each rule file.
+// A rule file whose rule groups are equal to the last ones encoded skips yaml.Marshal.
+// The comparison with the file on disk still runs, so a file that differs on disk is rewritten.
+// An entry is removed when its rule file or its user directory is removed.
 type mapper struct {
 	Path string // Path specifies the directory in which rule files will be mapped.
 
@@ -76,6 +82,14 @@ func (m *mapper) cleanupUser(userID string) {
 	err := m.FS.RemoveAll(dirPath)
 	if err != nil {
 		level.Warn(m.logger).Log("msg", "unable to remove user directory", "path", dirPath, "user", userID, "err", err)
+	}
+
+	if m.cacheEnabled {
+		m.mu.Lock()
+		maps.DeleteFunc(m.encoded, func(path string, _ encodedRuleGroups) bool {
+			return strings.HasPrefix(path, dirPath+string(filepath.Separator))
+		})
+		m.mu.Unlock()
 	}
 }
 
@@ -163,6 +177,11 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 			if err != nil {
 				level.Warn(logger).Log("msg", "unable to remove rule file on disk", "file", fullFileName, "err", err)
 			}
+			if m.cacheEnabled {
+				m.mu.Lock()
+				delete(m.encoded, fullFileName)
+				m.mu.Unlock()
+			}
 			anyUpdated = true
 		}
 	}
@@ -177,10 +196,7 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	rgs := rulefmt.RuleGroups{Groups: cleanRuleGroupExprs(groups)}
 
-	if m.cacheEnabled {
-		m.cacheMisses.Inc()
-	}
-	d, err := yaml.Marshal(&rgs)
+	d, err := m.encode(filename, &rgs)
 	if err != nil {
 		return false, err
 	}
@@ -205,6 +221,34 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 	}
 
 	return true, nil
+}
+
+// encode returns the YAML encoding of rgs.
+// If the cache is enabled and rgs is equal to the rule groups last encoded for filename, it returns the cached encoding.
+func (m *mapper) encode(filename string, rgs *rulefmt.RuleGroups) ([]byte, error) {
+	if !m.cacheEnabled {
+		return yaml.Marshal(rgs)
+	}
+
+	m.mu.Lock()
+	entry, ok := m.encoded[filename]
+	m.mu.Unlock()
+	if ok && reflect.DeepEqual(entry.groups, rgs.Groups) {
+		m.cacheHits.Inc()
+		return entry.encoded, nil
+	}
+	m.cacheMisses.Inc()
+
+	d, err := yaml.Marshal(rgs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache a copy, not rgs itself: its maps are shared with the caller's input.
+	m.mu.Lock()
+	m.encoded[filename] = encodedRuleGroups{groups: copyRuleGroups(rgs).Groups, encoded: d}
+	m.mu.Unlock()
+	return d, nil
 }
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
