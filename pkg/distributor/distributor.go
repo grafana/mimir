@@ -63,6 +63,7 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -76,7 +77,8 @@ var (
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
 	reasonDistributorMaxInflightPushRequestsBytes = globalerror.DistributorMaxInflightPushRequestsBytes.LabelValue()
-	reasonDistributorMemoryUtilizationLimit       = globalerror.DistributorMemoryUtilizationLimit.LabelValue()
+
+	reasonDistributorMaxInflightPushRequestsBytesPerTenant = globalerror.DistributorMaxInflightPushRequestsBytesPerTenant.LabelValue()
 )
 
 const (
@@ -161,6 +163,9 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
+	// In-flight push request bytes per tenant, for the per-tenant instance limit.
+	tenantInflightBytes *tenantInflightBytes
+
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	queryIngesterCompartmentsHit     prometheus.Histogram
@@ -198,6 +203,8 @@ type Distributor struct {
 	discardedRequestsRateLimited       *prometheus.CounterVec
 	discardedExemplarsRateLimited      *prometheus.CounterVec
 	discardedMetadataRateLimited       *prometheus.CounterVec
+
+	discardedRequestsInflightBytesPerTenant *prometheus.CounterVec
 
 	// Metrics for data rejected for hitting per-instance limits
 	rejectedRequests *prometheus.CounterVec
@@ -241,7 +248,7 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
-	reactiveLimiter *distributorReactiveLimiter
+	reactiveLimiter reactivelimiter.ReactiveLimiter
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -340,7 +347,7 @@ type Config struct {
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
-	ReactiveLimiter ReactiveLimiterConfig `yaml:"reactive_limiter"`
+	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -371,7 +378,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
-	cfg.ReactiveLimiter.RegisterFlags(f)
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -686,6 +693,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		discardedExemplarsRateLimited:      validation.DiscardedExemplarsCounter(reg, reasonRateLimited),
 		discardedMetadataRateLimited:       validation.DiscardedMetadataCounter(reg, reasonRateLimited),
 
+		discardedRequestsInflightBytesPerTenant: validation.DiscardedRequestsCounter(reg, reasonDistributorMaxInflightPushRequestsBytesPerTenant),
+		tenantInflightBytes:                     newTenantInflightBytes(),
+
 		rejectedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_instance_rejected_requests_total",
 			Help: "Requests discarded for hitting per-instance limits",
@@ -797,9 +807,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
 	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg.ReactiveLimiter, log, reg)
-	if d.reactiveLimiter != nil {
-		subservices = append(subservices, d.reactiveLimiter.services...)
-	}
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -1025,6 +1032,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedSamplesPerUserSeriesLimit.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
+	d.discardedRequestsInflightBytesPerTenant.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
@@ -2101,6 +2109,10 @@ type requestState struct {
 
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
+
+	// Bytes this request holds against its tenant's per-instance in-flight bytes budget, and the tenant it's charged to.
+	tenantInflightBytes int64
+	tenantUserID        string
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -2120,7 +2132,7 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 //
 // If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
 // If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
-func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, userID string) (cleanup func(error), _ error) {
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup func(error), _ error) {
 	if d.reactiveLimiter == nil {
 		return nil, nil
 	}
@@ -2132,21 +2144,18 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, userID s
 		return nil, errReactiveLimiterPermitAlreadyAcquired
 	}
 
-	// Under memory pressure, reject instead of queueing: a queued request keeps its body in memory.
-	if d.reactiveLimiter.overMemoryLimit() {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMemoryUtilizationLimit).Inc()
-		return nil, errReactiveLimiterMemoryUtilizationExceeded
-	}
-
 	// Acquire a permit, blocking if needed
-	release, err := d.reactiveLimiter.acquirePermit(ctx, userID)
+	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return nil, errReactiveLimiterLimitExceeded
 	}
 	cleanup = func(err error) {
-		dropped := errors.Is(err, context.Canceled) || ctx.Err() != nil
-		release(dropped, rs.httpgrpcRequestSize+rs.writeRequestSize)
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			permit.Drop()
+		} else {
+			permit.Record()
+		}
 	}
 	rs.reactiveLimiterPermitAcquired = true
 	return cleanup, nil
@@ -2177,11 +2186,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
-	if d.reactiveLimiter.overMemoryLimit() {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMemoryUtilizationLimit).Inc()
-		return ctx, nil, errReactiveLimiterMemoryUtilizationExceeded
-	}
-	if d.reactiveLimiter != nil && !d.reactiveLimiter.canAcquirePermit() {
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return ctx, nil, errReactiveLimiterLimitExceeded
 	}
@@ -2242,7 +2247,15 @@ func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize i
 
 	rs.writeRequestSize = writeRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(writeRequestSize)
-	return d.checkInflightBytes(inflightBytes)
+	if err := d.checkInflightBytes(inflightBytes); err != nil {
+		return err
+	}
+
+	// Replace the tenant's decoded-size estimate with the actual decoded size.
+	if rs.tenantUserID != "" {
+		return d.chargeTenantInflightBytes(rs, rs.tenantUserID, rs.httpgrpcRequestSize+writeRequestSize)
+	}
+	return nil
 }
 
 func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
@@ -2278,6 +2291,9 @@ func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	if rs.tenantInflightBytes > 0 {
+		d.tenantInflightBytes.add(rs.tenantUserID, -rs.tenantInflightBytes)
+	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
@@ -2294,19 +2310,28 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.decreaseInflightPushRequestCounters(rs)
 		})
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, userID)
+		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return reactiveLimiterErr
 		}
 		if reactiveLimiterCleanup != nil {
 			defer func() {
 				reactiveLimiterCleanup(retErr)
 			}()
+		}
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		// Reserve the estimated decoded size against the tenant's budget before decompressing, so that a single
+		// tenant can't hold most of this distributor's memory. The estimate is replaced by the actual size once decoded.
+		if rs.httpgrpcRequestSize > 0 {
+			if err := d.chargeTenantInflightBytes(rs, userID, (1+decompressionEstMultiplier)*rs.httpgrpcRequestSize); err != nil {
+				return err
+			}
 		}
 
 		now := mtime.Now()

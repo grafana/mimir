@@ -16,25 +16,32 @@ const (
 	maxIngestionRateFlag             = "distributor.instance-limits.max-ingestion-rate"
 	maxInflightPushRequestsFlag      = "distributor.instance-limits.max-inflight-push-requests"
 	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-bytes"
+
+	maxInflightPushRequestsBytesPerTenantFlag = "distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant"
 )
 
 var (
 	// Distributor instance limits errors.
-	errMaxInflightRequestsReached      = newInstanceLimitReachedError(errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag)))
-	errMaxIngestionRateReached         = newInstanceLimitReachedError(errors.New(globalerror.DistributorMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag)))
-	errMaxInflightRequestsBytesReached = newInstanceLimitReachedError(errors.New(globalerror.DistributorMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag)))
+	errMaxInflightRequestsReached      = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxIngestionRateReached         = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
+	errMaxInflightRequestsBytesReached = errors.New(globalerror.DistributorMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
+
+	errMaxInflightRequestsBytesPerTenantReached = newInstanceLimitReachedError(errors.New(globalerror.DistributorMaxInflightPushRequestsBytesPerTenant.MessageWithPerInstanceLimitConfig("the write request has been rejected because the tenant exceeded the allowed total size in bytes of inflight push requests on this distributor", maxInflightPushRequestsBytesPerTenantFlag)))
 )
 
 type InstanceLimits struct {
 	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInflightPushRequests      int     `yaml:"max_inflight_push_requests" category:"advanced"`
 	MaxInflightPushRequestsBytes int     `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
+
+	MaxInflightPushRequestsBytesPerTenant int `yaml:"max_inflight_push_requests_bytes_per_tenant" category:"experimental"`
 }
 
 func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&l.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&l.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&l.MaxInflightPushRequestsBytesPerTenant, maxInflightPushRequestsBytesPerTenantFlag, 0, "The sum of the estimated in-memory sizes in bytes of a single tenant's inflight push requests that this distributor can handle. Each request is charged its compressed size plus an estimate of its decoded size before decompression, then its actual decoded size. Additional requests from that tenant are rejected, while other tenants are unaffected. 0 = unlimited.")
 }
 
 // Sets default limit values for unmarshalling.

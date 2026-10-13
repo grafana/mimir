@@ -1521,6 +1521,8 @@ Usage of ./cmd/mimir/mimir:
     	Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited. (default 2000)
   -distributor.instance-limits.max-inflight-push-requests-bytes int
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
+  -distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant int
+    	[experimental] The sum of the estimated in-memory sizes in bytes of a single tenant's inflight push requests that this distributor can handle. Each request is charged its compressed size plus an estimate of its decoded size before decompression, then its actual decoded size. Additional requests from that tenant are rejected, while other tenants are unaffected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -distributor.max-exemplars-per-series-per-request int
@@ -1571,8 +1573,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Logarithmic decay applied to the maxLimitFactor based on current inflight requests (default 1)
   -distributor.reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 2)
-  -distributor.reactive-limiter.memory-utilization-limit uint
-    	[experimental] Go heap size, in bytes, above which the distributor rejects new push requests instead of queueing them. 0 to disable.
   -distributor.reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
   -distributor.reactive-limiter.min-limit-factor float
@@ -1585,14 +1585,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
   -distributor.reactive-limiter.recent-window-min-samples uint
     	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
-  -distributor.reactive-limiter.tenant-fairness-calibration-interval duration
-    	[experimental] Interval at which per-tenant usage and the rejection threshold are recalibrated. (default 1s)
-  -distributor.reactive-limiter.tenant-fairness-enabled
-    	[experimental] When the reactive limiter is overloaded, reject requests from tenants with the highest recent in-flight bytes first. Requires the reactive limiter to be enabled.
-  -distributor.reactive-limiter.tenant-fairness-max-tenants int
-    	[experimental] Maximum number of tenants tracked for fair rejection. The least recently active tenants are evicted first. (default 20000)
-  -distributor.reactive-limiter.tenant-fairness-window duration
-    	[experimental] Window over which per-tenant usage is tracked for fair rejection. (default 1m0s)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int

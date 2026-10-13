@@ -181,7 +181,7 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 var _ Error = reactiveLimiterExceededError{}
 
 // instanceLimitReachedError is returned when a distributor instance limit rejects a request.
-// It maps to 503, so that correct rejections are retried and can be told apart from internal errors.
+// It maps to 503, so that the rejection is retried and can be told apart from internal errors.
 type instanceLimitReachedError struct {
 	error
 }

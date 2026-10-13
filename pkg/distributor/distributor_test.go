@@ -915,7 +915,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				} else {
 					assert.Error(t, err)
 					assert.Nil(t, resp)
-					checkGRPCError(t, status.New(codes.Unavailable, push.expectedError.Error()), &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}, err)
+					checkGRPCError(t, status.New(codes.Internal, push.expectedError.Error()), nil, err)
 				}
 
 				d.ingestionRate.Tick()
@@ -8705,7 +8705,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// First push request returned, but there's still an ingester call inflight.
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
 	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
-	checkGRPCError(t, status.New(codes.Unavailable, errMaxInflightRequestsReached.Error()), &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}, err)
+	checkGRPCError(t, status.New(codes.Internal, errMaxInflightRequestsReached.Error()), nil, err)
 }
 
 func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
@@ -9149,7 +9149,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					failOnAcquire: tc.reactiveLimiterFailOnAcquire,
 					permit:        &mockPermit{},
 				}
-				ds[0].reactiveLimiter = &distributorReactiveLimiter{limiter: mockLimiter}
+				ds[0].reactiveLimiter = mockLimiter
 			}
 
 			// Setup inflight values before calling push.
@@ -9253,7 +9253,7 @@ func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
 				failOnAcquire: tc.reactiveLimiterFailOnAcquire,
 				permit:        &mockPermit{},
 			}
-			ds[0].reactiveLimiter = &distributorReactiveLimiter{limiter: mockLimiter}
+			ds[0].reactiveLimiter = mockLimiter
 
 			ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -9393,7 +9393,7 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 					failOnAcquire: !tc.reactiveLimiterCanAcquire,
 					permit:        &mockPermit{},
 				}
-				ds[0].reactiveLimiter = &distributorReactiveLimiter{limiter: mockLimiter}
+				ds[0].reactiveLimiter = mockLimiter
 			}
 
 			// Create context
@@ -9408,7 +9408,7 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			}
 
 			// Call acquireReactiveLimiterPermit
-			cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx, "user")
+			cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 			rs, ok := ctx.Value(requestStateKey).(*requestState)
 			// Check error
 			if tc.expectedError != nil {
@@ -9473,17 +9473,17 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 					failOnAcquire: false,
 					permit:        &mockPermit{},
 				}
-				ds[0].reactiveLimiter = &distributorReactiveLimiter{limiter: mockLimiter}
+				ds[0].reactiveLimiter = mockLimiter
 			}
 
 			// Create context
 			ctx := user.InjectOrgID(context.Background(), "user")
 			if !tc.enabled {
-				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx, "user")
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
 				require.Nil(t, cleanup)
 			} else if !tc.addRequestState {
-				_, err := ds[0].acquireReactiveLimiterPermit(ctx, "user")
+				_, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, errMissingRequestState, err)
 			} else {
@@ -9491,13 +9491,13 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 				checkRequestState(t, ctx, false)
 
 				// First call to acquireReactiveLimiterPermit should actually get a new permit.
-				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx, "user")
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
 				require.NotNil(t, cleanup)
 				checkRequestState(t, ctx, true)
 
 				// Second call to acquireReactiveLimiterPermit should fail.
-				_, err = ds[0].acquireReactiveLimiterPermit(ctx, "user")
+				_, err = ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, err, errReactiveLimiterPermitAlreadyAcquired)
 				checkRequestState(t, ctx, true)

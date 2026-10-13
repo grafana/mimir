@@ -29,17 +29,6 @@ func NewPrioritizer(logger log.Logger) *Prioritizer {
 	}
 }
 
-// NewPrioritizerWithUsageTracker returns a Prioritizer that ranks requests by the recent usage of the user found in
-// the request context, so the heaviest users are rejected first when limiters are overloaded.
-func NewPrioritizerWithUsageTracker(logger log.Logger, usageTracker priority.UsageTracker) *Prioritizer {
-	return &Prioritizer{
-		Prioritizer: adaptivelimiter.NewPrioritizerBuilder().
-			WithUsageTracker(usageTracker).
-			WithLogger(util_log.SlogFromGoKit(logger)).
-			Build(),
-	}
-}
-
 type Prioritizer struct {
 	priority.Prioritizer
 }
