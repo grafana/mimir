@@ -1889,7 +1889,7 @@
               "kind": "field",
               "name": "max_inflight_push_requests_bytes_per_tenant",
               "required": false,
-              "desc": "The sum of the estimated in-memory sizes in bytes of a single tenant's inflight push requests that this distributor can handle. Each request is charged its compressed size plus an estimate of its decoded size before decompression, then its actual decoded size. Additional requests from that tenant are rejected, while other tenants are unaffected. 0 = unlimited.",
+              "desc": "The sum of the compressed request sizes in bytes of a single tenant's inflight push requests that this distributor can handle. Requests are checked before they are decompressed. Additional requests from that tenant are rejected, while other tenants are unaffected. Requests whose size isn't known before decompression aren't counted. 0 = unlimited.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant",

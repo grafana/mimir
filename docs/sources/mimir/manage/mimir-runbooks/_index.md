@@ -2885,7 +2885,7 @@ This error occurs when a distributor rejects a write request because the tenant'
 
 How it **works**:
 
-- The distributor has a per-instance limit on the total size in bytes of each tenant's in-flight write (push) requests. A request is charged its compressed size plus an estimate of its decoded size before it is decompressed, then its actual decoded size.
+- The distributor has a per-instance limit on the total compressed size in bytes of each tenant's in-flight write (push) requests. Requests are checked before they are decompressed.
 - The limit applies to each tenant separately, so a single tenant can't use most of a distributor's memory. Other tenants' requests are unaffected.
 - The rejection is returned with a 5xx status code, so clients retry it.
 - To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant` option.

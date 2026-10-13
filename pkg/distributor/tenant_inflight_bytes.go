@@ -34,21 +34,18 @@ func (t *tenantInflightBytes) get(userID string) int64 {
 	return t.bytes[userID]
 }
 
-// chargeTenantInflightBytes sets the bytes this request holds against its tenant's per-instance budget to charge.
-// It rejects the request if growing the charge takes the tenant over the budget. The charge is released by
-// decreaseInflightPushRequestCounters.
-func (d *Distributor) chargeTenantInflightBytes(rs *requestState, userID string, charge int64) error {
+// chargeTenantInflightBytes charges the request's compressed size to its tenant, and rejects the request if that takes
+// the tenant over its per-instance limit. Requests whose size isn't known before decompression aren't charged.
+// The charge is released by decreaseInflightPushRequestCounters.
+func (d *Distributor) chargeTenantInflightBytes(rs *requestState, userID string, compressedSize int64) error {
 	limit := int64(d.getInstanceLimits().MaxInflightPushRequestsBytesPerTenant)
-	if limit <= 0 && rs.tenantInflightBytes == 0 {
+	if limit <= 0 || compressedSize <= 0 || rs.tenantInflightBytes > 0 {
 		return nil
 	}
 
-	delta := charge - rs.tenantInflightBytes
 	rs.tenantUserID = userID
-	rs.tenantInflightBytes = charge
-	total := d.tenantInflightBytes.add(userID, delta)
-
-	if limit > 0 && delta > 0 && total > limit {
+	rs.tenantInflightBytes = compressedSize
+	if d.tenantInflightBytes.add(userID, compressedSize) > limit {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytesPerTenant).Inc()
 		d.discardedRequestsInflightBytesPerTenant.WithLabelValues(userID).Inc()
 		return errMaxInflightRequestsBytesPerTenantReached

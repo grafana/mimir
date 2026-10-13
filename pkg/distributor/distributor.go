@@ -2110,7 +2110,7 @@ type requestState struct {
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
 
-	// Bytes this request holds against its tenant's per-instance in-flight bytes budget, and the tenant it's charged to.
+	// Compressed bytes this request holds against its tenant's per-instance in-flight bytes limit, and the tenant it's charged to.
 	tenantInflightBytes int64
 	tenantUserID        string
 }
@@ -2247,15 +2247,7 @@ func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize i
 
 	rs.writeRequestSize = writeRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(writeRequestSize)
-	if err := d.checkInflightBytes(inflightBytes); err != nil {
-		return err
-	}
-
-	// Replace the tenant's decoded-size estimate with the actual decoded size.
-	if rs.tenantUserID != "" {
-		return d.chargeTenantInflightBytes(rs, rs.tenantUserID, rs.httpgrpcRequestSize+writeRequestSize)
-	}
-	return nil
+	return d.checkInflightBytes(inflightBytes)
 }
 
 func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
@@ -2326,12 +2318,10 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		// Reserve the estimated decoded size against the tenant's budget before decompressing, so that a single
-		// tenant can't hold most of this distributor's memory. The estimate is replaced by the actual size once decoded.
-		if rs.httpgrpcRequestSize > 0 {
-			if err := d.chargeTenantInflightBytes(rs, userID, (1+decompressionEstMultiplier)*rs.httpgrpcRequestSize); err != nil {
-				return err
-			}
+		// Charge the compressed request size against the tenant's budget before decompressing, so that a single
+		// tenant can't hold most of this distributor's memory.
+		if err := d.chargeTenantInflightBytes(rs, userID, rs.httpgrpcRequestSize); err != nil {
+			return err
 		}
 
 		now := mtime.Now()

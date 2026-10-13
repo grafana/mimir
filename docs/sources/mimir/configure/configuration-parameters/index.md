@@ -1204,11 +1204,11 @@ instance_limits:
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
 
-  # (experimental) The sum of the estimated in-memory sizes in bytes of a single
-  # tenant's inflight push requests that this distributor can handle. Each
-  # request is charged its compressed size plus an estimate of its decoded size
-  # before decompression, then its actual decoded size. Additional requests from
-  # that tenant are rejected, while other tenants are unaffected. 0 = unlimited.
+  # (experimental) The sum of the compressed request sizes in bytes of a single
+  # tenant's inflight push requests that this distributor can handle. Requests
+  # are checked before they are decompressed. Additional requests from that
+  # tenant are rejected, while other tenants are unaffected. Requests whose size
+  # isn't known before decompression aren't counted. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes-per-tenant
   [max_inflight_push_requests_bytes_per_tenant: <int> | default = 0]
 

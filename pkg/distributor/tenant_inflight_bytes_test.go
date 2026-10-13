@@ -30,9 +30,8 @@ func TestTenantInflightBytes(t *testing.T) {
 func TestDistributor_MaxInflightPushRequestsBytesPerTenant(t *testing.T) {
 	const (
 		compressedSize = 1000
-		// The budget fits one request's decoded-size estimate, (1+decompressionEstMultiplier)*compressedSize,
-		// but not a second request's estimate on top of an admitted request.
-		budget = (1+decompressionEstMultiplier)*compressedSize + 500
+		// The limit fits one in-flight request per tenant, but not two.
+		limit = compressedSize + compressedSize/2
 	)
 
 	var limits validation.Limits
@@ -41,7 +40,7 @@ func TestDistributor_MaxInflightPushRequestsBytesPerTenant(t *testing.T) {
 		numDistributors: 1,
 		limits:          &limits,
 		configure: func(cfg *Config) {
-			cfg.DefaultLimits.MaxInflightPushRequestsBytesPerTenant = budget
+			cfg.DefaultLimits.MaxInflightPushRequestsBytesPerTenant = limit
 		},
 	})
 	d := ds[0]
@@ -74,10 +73,9 @@ func TestDistributor_MaxInflightPushRequestsBytesPerTenant(t *testing.T) {
 	go func() { firstDone <- doPush("blocked") }()
 	<-admitted
 
-	// Once decoded, the request holds its actual size, not the estimate.
-	require.Equal(t, int64(compressedSize+req.Size()), d.tenantInflightBytes.get("blocked"))
+	require.Equal(t, int64(compressedSize), d.tenantInflightBytes.get("blocked"))
 
-	// A second request from the same tenant exceeds its budget, and is rejected with a 503 before decompression.
+	// A second request from the same tenant exceeds its limit, and is rejected with a 503.
 	err := doPush("blocked")
 	require.ErrorIs(t, err, errMaxInflightRequestsBytesPerTenantReached)
 	var distributorErr Error
