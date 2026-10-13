@@ -32,10 +32,14 @@ import (
 
 const (
 	// BinaryFormatV1 represents first version of index-header file.
+	// It contains copies of the symbols table and the postings offsets table of the TSDB index.
+	// The store-gateway reads both tables from the index-header on local disk.
 	BinaryFormatV1 = 1
 
 	// BinaryFormatV2 represents the second version of the index-header file,
 	// which contains only the symbols table.
+	// The store-gateway reads the symbols table from the index-header on local disk,
+	// and reads the postings offsets table from the TSDB index in object storage.
 	BinaryFormatV2 = 2
 
 	indexTOCLen  = 6*8 + crc32.Size

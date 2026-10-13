@@ -1362,6 +1362,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
+		// ALERTS_FOR_STATE series are stored in the tenant owning the rule group. Query them
+		// without tenant federation: the federated queryable adds the __tenant_id__ label, so
+		// restored series would never match the alert labels.
+		embeddedQueryable = queryable
+
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
 				return nil, errors.New("-" + ruler.TenantFederationFlag + "=true requires -tenant-federation.enabled=true")
@@ -1376,11 +1381,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
 
-			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
-			embeddedQueryable = queryable
 			queryFunc = ruler.EngineQueryFunc(eng, queryable)
 		}
 	}

@@ -83,9 +83,9 @@ type StreamBinaryReader struct {
 }
 
 // newSetupSpan starts a child span for a setup phase of NewStreamBinaryReader,
-// but only when the bucket-reader is enabled.
+// but only when index header version is BinaryFormatV2, which reads the postings offsets table from object storage.
 func newSetupSpan(ctx context.Context, l log.Logger, cfg Config, name string) (*spanlogger.SpanLogger, context.Context, func()) {
-	if !cfg.BucketReader.Enabled {
+	if cfg.Version != BinaryFormatV2 {
 		return spanlogger.FromContext(ctx, l), ctx, func() {}
 	}
 	spanLog, ctx := spanlogger.New(ctx, l, tracer, name)
@@ -143,7 +143,7 @@ func NewStreamBinaryReader(
 	// Ensure full index-header is downloaded to local block directory.
 	// If we did not get an existing sparse index-header from disk or bucket,
 	// we have to consume the full index-header to build the sparse header.
-	localIndexHeaderPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
+	localIndexHeaderPath := indexHeaderPath(localBlockDir, cfg.Version)
 	if _, err = os.Stat(localIndexHeaderPath); err != nil {
 		buildErr := func() error {
 			spanLog, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.buildIndexHeader")
@@ -154,7 +154,7 @@ func NewStreamBinaryReader(
 				"path", localIndexHeaderPath, "err", err,
 			)
 			start := time.Now()
-			if err = buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg), headers, spanLog); err != nil {
+			if err = buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, cfg.Version, headers, spanLog); err != nil {
 				return fmt.Errorf("failed to write index header: %w", err)
 			}
 			level.Info(spanLog).Log(
@@ -187,7 +187,7 @@ func NewStreamBinaryReader(
 	}()
 
 	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
-	if initialTOCErr != nil || indexHeaderVersion != requiredIndexHeaderVersion(cfg) {
+	if initialTOCErr != nil || indexHeaderVersion != cfg.Version {
 		rebuildErr := func() error {
 			spanLog, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.rebuildIndexHeader")
 			defer finish()
@@ -201,7 +201,7 @@ func NewStreamBinaryReader(
 				"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 			)
 			start := time.Now()
-			if err = WriteBinary(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
+			if err = WriteBinary(ctx, bkt, blockID, localBlockDir, cfg.Version); err != nil {
 				return fmt.Errorf("failed to write index header: %w", err)
 			}
 			level.Info(spanLog).Log(
@@ -238,12 +238,12 @@ func NewStreamBinaryReader(
 
 	// Set up each of the Symbols table and Postings Offsets table readers
 	// and their respective table of contents and DecbufFactory implementation.
-	// Currently, the only supported index-header section to read from the bucket is SectionPostingsOffsetTable.
+	// With index-header version 2, the postings offsets table is read from the TSDB index in the bucket.
 	// Symbols are always read from disk, so we can assign the TOC and DecbufFactory here already.
 	streamBinaryReader.symbolsDecbufFactory = filePoolDecbufFactory
 	streamBinaryReader.symbolsTOC = indexHeaderTOC
 
-	if cfg.BucketReader.Enabled {
+	if cfg.Version == BinaryFormatV2 {
 		bucketReaderErr := func() error {
 			spanLog, ctx := spanlogger.New(ctx, l, tracer, "indexheader.setUpBucketReader")
 			defer spanLog.Finish()
@@ -259,14 +259,8 @@ func NewStreamBinaryReader(
 				return err
 			}
 
-			switch cfg.BucketReader.BucketIndexSections {
-			case SectionPostingsOffsetsTable:
-				streamBinaryReader.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
-				streamBinaryReader.postingsOffsetsTOC = bucketBlockTOC
-			default:
-				// Invalid BucketIndexSections should already be rejected by config validation; protect anyway.
-				return errInvalidIndexHeaderSection
-			}
+			streamBinaryReader.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
+			streamBinaryReader.postingsOffsetsTOC = bucketBlockTOC
 			return nil
 		}()
 		if bucketReaderErr != nil {
@@ -280,9 +274,9 @@ func NewStreamBinaryReader(
 
 	// Required index-header section(s) are now on disk.
 	// If we previously failed to load the sparse index-header, build it now from the index-header.
-	// If the bucket reader is enabled, the postings offsets sparse index-header is built from the index-header in the bucket.
-	// This may be slow, which is why when the bucket-reader is enabled,
-	// we offload building the sparse index-header to the block builder and compactor.
+	// With index-header version 2, the Postings Offsets table is not on disk and is read from the bucket.
+	// Bucket reads to build the sparse postings offset table may be slow,
+	// so we offload building the sparse index-header to the block builder and compactor.
 	if !sparseHeaderLoaded {
 		sparseHeaderBuildErr := func() error {
 			spanLog, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.buildSparseHeaderFromIndexHeader")

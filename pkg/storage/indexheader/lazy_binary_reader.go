@@ -138,7 +138,7 @@ func NewLazyBinaryReader(
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	localBlockDir := filepath.Join(localDir, id.String())
-	headerPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
+	headerPath := indexHeaderPath(localBlockDir, cfg.Version)
 
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
@@ -195,7 +195,6 @@ func ensureIndexHeaderOnDisk(
 	logger log.Logger,
 ) error {
 	localBlockDir := filepath.Join(dir, blockID.String())
-	requiredVersion := requiredIndexHeaderVersion(cfg)
 
 	headers, err := IndexHeadersOnDisk(localBlockDir)
 	if err != nil {
@@ -203,7 +202,7 @@ func ensureIndexHeaderOnDisk(
 	}
 
 	for i, h := range headers {
-		if h.Version == requiredVersion {
+		if h.Version == cfg.Version {
 			// We already have the right header; update headers to remove the correct version, and sweep the rest
 			headers = append(headers[:i], headers[i+1:]...)
 			return removeIndexHeaders(localBlockDir, headers...)
@@ -212,16 +211,16 @@ func ensureIndexHeaderOnDisk(
 
 	level.Debug(logger).Log(
 		"msg", "index-header for required version not found on disk; will build from bucket",
-		"path", indexHeaderPath(localBlockDir, requiredVersion), "requiredVersion", requiredVersion,
+		"path", indexHeaderPath(localBlockDir, cfg.Version), "requiredVersion", cfg.Version,
 	)
 
 	start := time.Now()
-	if err := buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, requiredVersion, headers, logger); err != nil {
+	if err := buildRequiredIndexHeader(ctx, bkt, blockID, localBlockDir, cfg.Version, headers, logger); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
 
-	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath(localBlockDir, requiredVersion), "elapsed", time.Since(start))
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath(localBlockDir, cfg.Version), "elapsed", time.Since(start))
 
 	// headers was created before we built the correct index-header file, we can remove all of these
 	return removeIndexHeaders(localBlockDir, headers...)

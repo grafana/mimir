@@ -266,7 +266,6 @@ The following features are currently experimental:
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
   - Range query range vector common subexpression elimination: `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`
-  - Scalar common subexpression elimination: `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
@@ -282,7 +281,7 @@ The following features are currently experimental:
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
-  - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.bucket-reader.enabled`
+  - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
