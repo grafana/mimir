@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryStatsMiddleware struct {
@@ -24,10 +25,11 @@ type queryStatsMiddleware struct {
 	regexpMatcherOptimizedCount       prometheus.Counter
 	consistencyCounter                *prometheus.CounterVec
 	queryExpressionSizeBytesHistogram *prometheus.HistogramVec
+	limits                            Limits
 	next                              MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer, limits Limits) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
@@ -46,7 +48,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
 		NativeHistogramBucketFactor:     1.4,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
-	}, []string{"user"})
+	}, []string{"user", "limit_exceeded"})
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
@@ -54,6 +56,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
 			regexpMatcherOptimizedCount:       regexpMatcherOptimizedCount,
 			consistencyCounter:                consistencyCounter,
 			queryExpressionSizeBytesHistogram: queryExpressionSizeBytesHistogram,
+			limits:                            limits,
 			next:                              next,
 		}
 	})
@@ -99,8 +102,15 @@ func (s queryStatsMiddleware) trackQueryExpressionSize(ctx context.Context, req 
 		return
 	}
 
+	// Keep in sync with the max query expression size check in limitsMiddleware, which rejects the
+	// whole request when the smallest limit across tenants is exceeded.
+	limitExceeded := "false"
+	if maxQuerySize := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueryExpressionSizeBytes); maxQuerySize > 0 && queryExpressionLength > maxQuerySize {
+		limitExceeded = "true"
+	}
+
 	for _, tenantID := range tenantIDs {
-		s.queryExpressionSizeBytesHistogram.WithLabelValues(tenantID).Observe(float64(queryExpressionLength))
+		s.queryExpressionSizeBytesHistogram.WithLabelValues(tenantID, limitExceeded).Observe(float64(queryExpressionLength))
 	}
 }
 

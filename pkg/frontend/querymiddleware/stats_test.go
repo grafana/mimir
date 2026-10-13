@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -50,9 +51,9 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
-			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
-			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
-			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="false",user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="false",user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="false",user="test"} 1
 			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matchers_total counter
 			cortex_query_frontend_regexp_matchers_total 1
@@ -84,9 +85,9 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
-			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
-			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
-			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="false",user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="false",user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="false",user="test"} 1
 			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matchers_total counter
 			cortex_query_frontend_regexp_matchers_total 1
@@ -122,9 +123,9 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
-			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
-			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 42
-			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="false",user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="false",user="test"} 42
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="false",user="test"} 1
 			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matchers_total counter
 			cortex_query_frontend_regexp_matchers_total 1
@@ -177,9 +178,9 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
-			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 2
-			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 26
-			cortex_query_frontend_queries_expression_bytes_count{user="test"} 2
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="false",user="test",le="+Inf"} 2
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="false",user="test"} 26
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="false",user="test"} 2
 			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matchers_total counter
 			cortex_query_frontend_regexp_matchers_total 2
@@ -222,9 +223,9 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
 			# TYPE cortex_query_frontend_queries_expression_bytes histogram
-			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
-			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 13
-			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="false",user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="false",user="test"} 13
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="false",user="test"} 1
 			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matchers_total counter
 			cortex_query_frontend_regexp_matchers_total 1
@@ -245,7 +246,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
-				mw := newQueryStatsMiddleware(reg)
+				mw := newQueryStatsMiddleware(reg, mockLimits{})
 				ctx := context.Background()
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx
@@ -261,6 +262,88 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tt.expectedMetrics)))
 				assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
 			})
+		})
+	}
+}
+
+func Test_queryStatsMiddleware_QueryExpressionSizeLimitExceeded(t *testing.T) {
+	// The query expression "metric" is 6 bytes long.
+	req := &PrometheusInstantQueryRequest{
+		path:      "/query",
+		time:      util.TimeToMillis(start),
+		queryExpr: parseQuery(t, `metric`),
+	}
+
+	tests := map[string]struct {
+		orgID                 string
+		limits                map[string]int
+		expectedLimitExceeded string
+	}{
+		"limit disabled": {
+			orgID:                 "test1",
+			limits:                map[string]int{"test1": 0},
+			expectedLimitExceeded: "false",
+		},
+		"expression smaller than the limit": {
+			orgID:                 "test1",
+			limits:                map[string]int{"test1": 7},
+			expectedLimitExceeded: "false",
+		},
+		"expression equal to the limit": {
+			orgID:                 "test1",
+			limits:                map[string]int{"test1": 6},
+			expectedLimitExceeded: "false",
+		},
+		"expression larger than the limit": {
+			orgID:                 "test1",
+			limits:                map[string]int{"test1": 5},
+			expectedLimitExceeded: "true",
+		},
+		"multiple tenants, expression within all limits": {
+			orgID:                 "test1|test2",
+			limits:                map[string]int{"test1": 0, "test2": 6},
+			expectedLimitExceeded: "false",
+		},
+		"multiple tenants, expression larger than the smallest limit": {
+			orgID:                 "test1|test2",
+			limits:                map[string]int{"test1": 100, "test2": 5},
+			expectedLimitExceeded: "true",
+		},
+		"multiple tenants, expression larger than the only enabled limit": {
+			orgID:                 "test1|test2",
+			limits:                map[string]int{"test1": 0, "test2": 5},
+			expectedLimitExceeded: "true",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			limits := multiTenantMockLimits{byTenant: map[string]mockLimits{}}
+			for tenantID, limit := range tt.limits {
+				limits.byTenant[tenantID] = mockLimits{maxQueryExpressionSizeBytes: limit}
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			mw := newQueryStatsMiddleware(reg, limits)
+			ctx := user.InjectOrgID(context.Background(), tt.orgID)
+
+			_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(ctx, req)
+			require.NoError(t, err)
+
+			expected := strings.Builder{}
+			expected.WriteString(`
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			`)
+			for _, tenantID := range strings.Split(tt.orgID, "|") {
+				expected.WriteString(fmt.Sprintf(`
+			cortex_query_frontend_queries_expression_bytes_bucket{limit_exceeded="%[1]s",user="%[2]s",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{limit_exceeded="%[1]s",user="%[2]s"} 6
+			cortex_query_frontend_queries_expression_bytes_count{limit_exceeded="%[1]s",user="%[2]s"} 1
+			`, tt.expectedLimitExceeded, tenantID))
+			}
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected.String()), "cortex_query_frontend_queries_expression_bytes"))
 		})
 	}
 }
@@ -372,7 +455,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			mw := newQueryStatsMiddleware(reg)
+			mw := newQueryStatsMiddleware(reg, mockLimits{})
 			actualDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 			ctx = user.InjectOrgID(ctx, tenantID)
 
