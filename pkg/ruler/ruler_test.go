@@ -99,6 +99,10 @@ type mockRulerClient struct {
 
 func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
 	c.rulesCallsCount.Inc()
+	// Like a real gRPC client, fail if the context is already done.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return c.ruler.Rules(ctx, in)
 }
 

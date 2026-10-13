@@ -77,8 +77,6 @@ type MemPostings struct {
 
 	// labelValueBytes holds, per label name, the sum of the lengths of its distinct label
 	// values. Each distinct value is counted once, regardless of how many series carry it,
-	// mirroring how values are stored in the index symbol table and postings offset table.
-	// mtx must be held when interacting with labelValueBytes.
 	labelValueBytes map[string]uint64
 
 	ordered bool
@@ -87,11 +85,7 @@ type MemPostings struct {
 const defaultLabelNamesMapSize = 512
 
 // LabelValueBytesMinLength is the length a label value must exceed to count towards the
-// per-label-name byte accounting. The accounting exists to find label names holding
-// log-shaped data, and short values are what ordinary high-cardinality labels (pod names,
-// instance IDs, UUIDs) are made of, so counting them would only add noise. Measured against
-// the tenant that motivated the accounting, 128 retains all of the offending bytes, whereas
-// 256 would already discard three quarters of its offending values.
+// per-label-name byte accounting.
 const LabelValueBytesMinLength = 128
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
@@ -115,16 +109,14 @@ func NewUnorderedMemPostings() *MemPostings {
 	}
 }
 
-// countsTowardsLabelValueBytes must stay a pure function of the label, so that a value is
-// counted and uncounted symmetrically and the totals cannot drift. The empty name is
-// allPostingsKey, which is not a real label.
+// countsTowardsLabelValueBytes returns true if the length of a label value exceeds
+// LabelValueBytesMinLength.
 func countsTowardsLabelValueBytes(l labels.Label) bool {
-	return l.Name != "" && len(l.Value) > LabelValueBytesMinLength
+	return len(l.Value) > LabelValueBytesMinLength
 }
 
 // LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
-// values. Each distinct value counts once, no matter how many series carry it, which is how
-// the index stores them: once in the symbol table, and once more in the postings offset table.
+// values. Each distinct value counts once, no matter how many series carry it.
 func (p *MemPostings) LabelValuesBytes() map[string]uint64 {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()

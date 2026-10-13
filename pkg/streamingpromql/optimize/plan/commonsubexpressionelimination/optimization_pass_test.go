@@ -1220,7 +1220,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -1488,7 +1488,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1511,7 +1511,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxSupportedQueryPlanVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, true, true, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, true, nil, opts.Logger))
 
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1567,7 +1567,7 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, enabled, true, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, enabled, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1665,7 +1665,7 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorCSEEnabled, true, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorCSEEnabled, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1736,14 +1736,14 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 }
 
 func TestOptimizationPass_ScalarCSEVersionGating(t *testing.T) {
-	runTest := func(t *testing.T, expr string, maxVersion planning.QueryPlanVersion, scalarCSEEnabled bool, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
+	runTest := func(t *testing.T, expr string, maxVersion planning.QueryPlanVersion, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, scalarCSEEnabled, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
 
 		timeRange := types.NewInstantQueryTimeRange(time.Now())
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
@@ -1774,32 +1774,14 @@ func TestOptimizationPass_ScalarCSEVersionGating(t *testing.T) {
 				- RHS: NumberLiteral: 2
 	`
 
-	t.Run("enabled", func(t *testing.T) {
-		scalarCSEEnabled := true
-
-		t.Run("querier supports v19", func(t *testing.T) {
-			// CSE should be applied.
-			runTest(t, expr, planning.QueryPlanV19, scalarCSEEnabled, deduplicatedPlan, planning.QueryPlanV19)
-		})
-
-		t.Run("querier does not support v19", func(t *testing.T) {
-			// CSE should not be applied.
-			runTest(t, expr, planning.QueryPlanV18, scalarCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
-		})
+	t.Run("querier supports v19", func(t *testing.T) {
+		// CSE should be applied.
+		runTest(t, expr, planning.QueryPlanV19, deduplicatedPlan, planning.QueryPlanV19)
 	})
 
-	t.Run("disabled", func(t *testing.T) {
-		rangeQueryRangeVectorCSEEnabled := false
-
-		t.Run("range query, querier supports v19", func(t *testing.T) {
-			// CSE should not be applied.
-			runTest(t, expr, planning.QueryPlanV19, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
-		})
-
-		t.Run("range query, querier does not support v19", func(t *testing.T) {
-			// CSE should not be applied.
-			runTest(t, expr, planning.QueryPlanV18, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
-		})
+	t.Run("querier does not support v19", func(t *testing.T) {
+		// CSE should not be applied.
+		runTest(t, expr, planning.QueryPlanV18, unchangedPlan, planning.QueryPlanVersionZero)
 	})
 }
 
@@ -1853,7 +1835,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, reg, opts.Logger))
 
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
@@ -1871,7 +1853,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 }
 
 func TestShouldSkipChild(t *testing.T) {
-	pass := commonsubexpressionelimination.NewOptimizationPass(true, true, true, nil, nil)
+	pass := commonsubexpressionelimination.NewOptimizationPass(true, true, nil, nil)
 
 	// Test info function - should skip only 2nd children
 	infoFunctionCall := &core.FunctionCall{

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
 )
 
 // This test confirms that the test cases in testdata/upstream are in sync with the test cases
@@ -60,14 +62,7 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(ourUpstreamTestCase), ".disabled") // Remove the .disabled suffix, if it's there.
 
 		t.Run(name, func(t *testing.T) {
-			licenseHeader := strings.Join([]string{
-				"# SPDX-License-Identifier: AGPL-3.0-only",
-				"# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/" + name,
-				"# Provenance-includes-license: Apache-2.0",
-				"# Provenance-includes-copyright: The Prometheus Authors",
-				"",
-				"",
-			}, "\n")
+			licenseHeader := upstreamtestdata.LicenseHeader(name)
 
 			isDisabled := strings.HasSuffix(ourUpstreamTestCase, ".disabled")
 
@@ -81,8 +76,8 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 			ourString := string(ourBytes)
 
 			// Some of the upstream test cases have trailing whitespace which we don't care about.
-			sourceString = stripLineTrailingWhitespace(sourceString)
-			ourString = stripLineTrailingWhitespace(ourString)
+			sourceString = upstreamtestdata.StripLineTrailingWhitespace(sourceString)
+			ourString = upstreamtestdata.StripLineTrailingWhitespace(ourString)
 
 			require.Truef(t, strings.HasPrefix(ourString, licenseHeader), "%v does not have the expected license header:\n%v", ourUpstreamTestCase, licenseHeader)
 			ourString = strings.TrimPrefix(ourString, licenseHeader) // Ignore the license header in later checks.
@@ -92,42 +87,9 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v", ourUpstreamTestCase, sourcePath)
 			} else {
 				// Check test cases are equivalent, after re-enabling disabled test cases.
-				ourString = restoreUnsupportedTestCases(ourString)
+				ourString = upstreamtestdata.RestoreUnsupportedTestCases(ourString)
 				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v after unignoring unsupported test cases", ourUpstreamTestCase, sourcePath)
 			}
 		})
 	}
-}
-
-func stripLineTrailingWhitespace(s string) string {
-	lines := strings.Split(s, "\n")
-
-	for i := range lines {
-		lines[i] = strings.TrimRight(lines[i], " \t")
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func restoreUnsupportedTestCases(s string) string {
-	lines := strings.Split(s, "\n")
-	inUnsupportedTestCase := false
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		if line == "# Unsupported by streaming engine." {
-			lines = slices.Delete(lines, i, i+1)
-			inUnsupportedTestCase = true
-			i--
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "# ") {
-			lines[i] = strings.TrimPrefix(line, "# ")
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "#\t") {
-			lines[i] = strings.TrimPrefix(line, "#")
-		} else {
-			inUnsupportedTestCase = false
-		}
-	}
-
-	return strings.Join(lines, "\n")
 }
