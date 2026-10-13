@@ -3,21 +3,25 @@
 package types
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
 
-// ParseExplainValues parses strings to explain values, using EXPLAIN_VALUE_UNKNOWN for
-// any unknown string representations.
+// ParseExplainValues parses strings to explain values, ignoring any unknown
+// string representations or duplicates.
 func ParseExplainValues(vals []string) []ExplainValue {
 	var out []ExplainValue
 
+	// Ignore unknown values or duplicates since this is expected to be user
+	// controlled values: we don't want the slices of ExplainValue to grow
+	// without bound.
 	for _, v := range vals {
 		switch strings.ToLower(v) {
 		case "cost":
-			out = append(out, EXPLAIN_VALUE_COST)
-		default:
-			out = append(out, EXPLAIN_VALUE_UNKNOWN)
+			if !slices.Contains(out, EXPLAIN_VALUE_COST) {
+				out = append(out, EXPLAIN_VALUE_COST)
+			}
 		}
 	}
 
