@@ -8,7 +8,8 @@ weight: 31
 # Ingester query-tee
 
 Ingester query-tee is an experimental standalone gRPC proxy for comparing ingester implementations or configurations.
-Deploy one tee per pair of primary and shadow ingesters that own the same Kafka partition and ingest the same data.
+The recommended deployment is one tee sidecar in each primary ingester pod in the zone being validated.
+Pair each sidecar with a shadow ingester that owns the same Kafka partition and ingests the same data.
 Each tee forwards requests to its primary ingester and mirrors sampled read requests to the corresponding shadow ingester.
 Callers receive the primary response, including its streaming messages, headers, trailers, and errors.
 Comparisons run asynchronously; callers do not wait for the shadow.
@@ -22,22 +23,46 @@ Build from the Mimir source tree:
 go build -o ingester-query-tee ./cmd/ingester-query-tee
 ```
 
-For a single partition pair:
+## Recommended deployment: primary pod sidecar
+
+Keep the primary ingester's gRPC listener on port `9095` and configure it to advertise the sidecar's port in the ring:
+
+```text
+-server.grpc-listen-port=9095
+-ingester.ring.instance-port=9096
+```
+
+Run the tee in the same pod, with its own gRPC listener on port `9096`:
 
 ```bash
 ./ingester-query-tee \
-  -primary-address=ingester-zone-a-0.ingester-zone-a:9095 \
+  -primary-address=127.0.0.1:9095 \
   -shadow-address=ingester-shadow-0.ingester-shadow:9095 \
-  -server.grpc-listen-port=9095 \
+  -server.grpc-listen-port=9096 \
   -server.http-listen-port=9900 \
   -skip-recent-samples=30s
 ```
 
-Use the primary pod's read RPC address in the ring to route queries through its tee, or deploy the tee beside that pod and expose the tee port to queriers.
-Keep the primary backend address pointed at the actual ingester port, so requests cannot loop back into the tee.
-Repeat the pairing for every partition in the selected zone.
+Queriers use the primary ingester's existing pod address in the ring, with the advertised tee port `9096`.
+The tee forwards primary requests to the ingester over localhost and mirrors reads to the matching shadow pod.
+The ingester retains its ring identity, zone, and partition ownership; the sidecar does not register a separate ring instance.
+Kafka ingestion continues in the primary ingester.
+
+Repeat this setup for every primary pod in the selected zone, updating the shadow address for each partition.
+Expose port `9096` in the relevant Services and NetworkPolicies, and expose port `9900` for metrics and readiness probes.
+Keep the primary ingester's existing readiness probe; the tee's `/ready` endpoint checks only proxy startup.
+Keep shadow ingesters isolated from normal query selection during comparison.
+For deployments using gRPC TLS or mTLS, configure the tee's incoming TLS and each backend's TLS settings as described below.
+
 A load-balanced Service for an entire zone is unsuitable as a backend: it can select an ingester owning a different partition.
-The tee does not register itself in the ring or discover partitions.
+Always point the primary backend at the actual ingester port `9095`, so requests cannot loop back into the tee.
+
+When a primary pod is evicted or restarted, its tee sidecar stops with it.
+Availability comes from Mimir's remaining serving zones; the tee never substitutes the shadow response.
+To promote the shadow zone after validation, use the normal ingester ring and rollout process.
+The tee does not discover partitions or perform the zone cutover.
+
+Dedicated tee pods are an alternative when separate placement is required, but need explicit per-partition ring address wiring.
 
 The HTTP server exposes `/metrics` and `/ready`.
 Readiness indicates that the proxy has started; it does not verify backend health or data parity.
