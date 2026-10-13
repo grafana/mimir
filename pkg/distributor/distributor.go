@@ -63,7 +63,6 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
-	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -77,6 +76,7 @@ var (
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
 	reasonDistributorMaxInflightPushRequestsBytes = globalerror.DistributorMaxInflightPushRequestsBytes.LabelValue()
+	reasonDistributorMemoryUtilizationLimit       = globalerror.DistributorMemoryUtilizationLimit.LabelValue()
 )
 
 const (
@@ -241,7 +241,7 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
-	reactiveLimiter reactivelimiter.ReactiveLimiter
+	reactiveLimiter *distributorReactiveLimiter
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -340,7 +340,7 @@ type Config struct {
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
-	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+	ReactiveLimiter ReactiveLimiterConfig `yaml:"reactive_limiter"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -371,7 +371,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
-	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
+	cfg.ReactiveLimiter.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -797,6 +797,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
 	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg.ReactiveLimiter, log, reg)
+	if d.reactiveLimiter != nil {
+		subservices = append(subservices, d.reactiveLimiter.services...)
+	}
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -2117,7 +2120,7 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 //
 // If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
 // If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
-func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup func(error), _ error) {
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, userID string) (cleanup func(error), _ error) {
 	if d.reactiveLimiter == nil {
 		return nil, nil
 	}
@@ -2129,18 +2132,21 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup
 		return nil, errReactiveLimiterPermitAlreadyAcquired
 	}
 
+	// Under memory pressure, reject instead of queueing: a queued request keeps its body in memory.
+	if d.reactiveLimiter.overMemoryLimit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMemoryUtilizationLimit).Inc()
+		return nil, errReactiveLimiterMemoryUtilizationExceeded
+	}
+
 	// Acquire a permit, blocking if needed
-	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+	release, err := d.reactiveLimiter.acquirePermit(ctx, userID)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return nil, errReactiveLimiterLimitExceeded
 	}
 	cleanup = func(err error) {
-		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-			permit.Drop()
-		} else {
-			permit.Record()
-		}
+		dropped := errors.Is(err, context.Canceled) || ctx.Err() != nil
+		release(dropped, rs.httpgrpcRequestSize+rs.writeRequestSize)
 	}
 	rs.reactiveLimiterPermitAcquired = true
 	return cleanup, nil
@@ -2171,7 +2177,11 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
-	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+	if d.reactiveLimiter.overMemoryLimit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMemoryUtilizationLimit).Inc()
+		return ctx, nil, errReactiveLimiterMemoryUtilizationExceeded
+	}
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.canAcquirePermit() {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return ctx, nil, errReactiveLimiterLimitExceeded
 	}
@@ -2284,20 +2294,19 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.decreaseInflightPushRequestCounters(rs)
 		})
 
-		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, userID)
 		if reactiveLimiterErr != nil {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return reactiveLimiterErr
 		}
 		if reactiveLimiterCleanup != nil {
 			defer func() {
 				reactiveLimiterCleanup(retErr)
 			}()
-		}
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
 		}
 
 		now := mtime.Now()

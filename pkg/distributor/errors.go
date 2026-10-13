@@ -180,6 +180,30 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
+// instanceLimitReachedError is returned when a distributor instance limit rejects a request.
+// It maps to 503, so that correct rejections are retried and can be told apart from internal errors.
+type instanceLimitReachedError struct {
+	error
+}
+
+func newInstanceLimitReachedError(err error) instanceLimitReachedError {
+	return instanceLimitReachedError{err}
+}
+
+func (e instanceLimitReachedError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
+}
+
+func (e instanceLimitReachedError) IsSoft() bool {
+	return false
+}
+
+func (e instanceLimitReachedError) Unwrap() error {
+	return e.error
+}
+
+var _ Error = instanceLimitReachedError{}
+
 func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,

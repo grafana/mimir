@@ -1287,6 +1287,32 @@ reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -distributor.reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 2]
+
+  # (experimental) Go heap size, in bytes, above which the distributor rejects
+  # new push requests instead of queueing them. 0 to disable.
+  # CLI flag: -distributor.reactive-limiter.memory-utilization-limit
+  [memory_utilization_limit: <int> | default = 0]
+
+  # (experimental) When the reactive limiter is overloaded, reject requests from
+  # tenants with the highest recent in-flight bytes first. Requires the reactive
+  # limiter to be enabled.
+  # CLI flag: -distributor.reactive-limiter.tenant-fairness-enabled
+  [tenant_fairness_enabled: <boolean> | default = false]
+
+  # (experimental) Window over which per-tenant usage is tracked for fair
+  # rejection.
+  # CLI flag: -distributor.reactive-limiter.tenant-fairness-window
+  [tenant_fairness_window: <duration> | default = 1m]
+
+  # (experimental) Maximum number of tenants tracked for fair rejection. The
+  # least recently active tenants are evicted first.
+  # CLI flag: -distributor.reactive-limiter.tenant-fairness-max-tenants
+  [tenant_fairness_max_tenants: <int> | default = 20000]
+
+  # (experimental) Interval at which per-tenant usage and the rejection
+  # threshold are recalibrated.
+  # CLI flag: -distributor.reactive-limiter.tenant-fairness-calibration-interval
+  [tenant_fairness_calibration_interval: <duration> | default = 1s]
 ```
 
 ### ingester

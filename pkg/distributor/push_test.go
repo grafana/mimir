@@ -1342,15 +1342,15 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="push",use
 		},
 		"starts_below_threshold_estimated_over_threshold": {
 			startingInflightBytes: MiB - 3*reqLen,
-			expectedStatusCode:    http.StatusInternalServerError,
+			expectedStatusCode:    http.StatusServiceUnavailable,
 		},
 		"starts_above_threshold_stays_above_threshold": {
 			startingInflightBytes: MiB + reqLen,
-			expectedStatusCode:    http.StatusInternalServerError,
+			expectedStatusCode:    http.StatusServiceUnavailable,
 		},
 		"starts_at_threshold_incoming_request_exceeds_threshold": {
 			startingInflightBytes: MiB,
-			expectedStatusCode:    http.StatusInternalServerError,
+			expectedStatusCode:    http.StatusServiceUnavailable,
 		},
 	}
 

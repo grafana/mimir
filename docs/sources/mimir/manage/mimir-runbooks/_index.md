@@ -2879,6 +2879,21 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of the increased size of requests or the increased latency (the higher the latency, the higher the number of in-flight write requests, the higher their combined size).
 - Consider scaling out the distributors.
 
+### err-mimir-distributor-memory-utilization-limit
+
+This error occurs when a distributor rejects a write request because its Go heap size is above the configured memory utilization limit.
+
+How it **works**:
+
+- The distributor samples its Go heap size every second. While the heap is above the limit, new write requests are rejected instead of being queued, so that requests already in flight can complete and the distributor doesn't run out of memory.
+- The limit applies to the whole distributor, across all tenants.
+- To configure the limit, set the `-distributor.reactive-limiter.memory-utilization-limit` option.
+
+How to **fix** it:
+
+- Check the write requests latency through the `Mimir / Writes` dashboard. High latency on the write path increases the memory held by in-flight requests.
+- Consider scaling out the distributors, or increasing their memory request together with the limit.
+
 ### err-mimir-ingester-max-ingestion-rate
 
 This critical error occurs when the rate of received samples per second is exceeded in an ingester.

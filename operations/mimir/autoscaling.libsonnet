@@ -35,6 +35,10 @@
     autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
+    // Scale distributors on in-flight push request bytes per pod. 0 to disable.
+    autoscaling_distributor_inflight_bytes_target: 0,
+    // Scale distributors when the reactive limiter is saturated (requests queued or rejected) per pod. 0 to disable.
+    autoscaling_distributor_admission_saturation_target: 0,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas_per_zone: error 'you must set autoscaling_ruler_min_replicas_per_zone in the _config',
@@ -745,6 +749,34 @@
   // Distributors
   //
 
+  // Distributor triggers that keep scaling up when CPU doesn't reflect demand: requests holding memory while
+  // waiting (in-flight bytes), or requests being queued or shed by admission control (saturation).
+  distributorAdmissionTriggers(extra_matchers)::
+    local query_params = {
+      namespace: $._config.namespace,
+      extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+    };
+    (if $._config.autoscaling_distributor_inflight_bytes_target <= 0 then [] else [
+       {
+         metric_name: 'cortex_distributor_inflight_bytes_hpa_%s' % $._config.namespace,
+         query: 'sum(max_over_time(cortex_distributor_inflight_push_requests_bytes{container="distributor",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % query_params,
+         threshold: '%d' % $._config.autoscaling_distributor_inflight_bytes_target,
+         ignore_null_values: false,
+       },
+     ]) +
+    (if $._config.autoscaling_distributor_admission_saturation_target <= 0 then [] else [
+       {
+         metric_name: 'cortex_distributor_admission_saturation_hpa_%s' % $._config.namespace,
+         query: |||
+           sum(max_over_time(cortex_distributor_reactive_limiter_queued_requests{container="distributor",namespace="%(namespace)s"%(extra_matchers)s}[1m]))
+           +
+           sum(rate(cortex_distributor_instance_rejected_requests_total{container="distributor",namespace="%(namespace)s",reason=~"distributor_max_inflight_push_requests|distributor_memory_utilization_limit"%(extra_matchers)s}[1m]))
+         ||| % query_params,
+         threshold: '%d' % $._config.autoscaling_distributor_admission_saturation_target,
+         ignore_null_values: false,
+       },
+     ]),
+
   newDistributorScaledObject(name, extra_matchers='', weight=1)::
     $.newResourceScaledObject(
       name=name,
@@ -760,6 +792,7 @@
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
       weight=weight,
+      extra_triggers=$.distributorAdmissionTriggers(extra_matchers),
     ) + (
       {
         spec+: {
