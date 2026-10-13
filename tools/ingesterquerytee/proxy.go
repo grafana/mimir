@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -20,6 +21,8 @@ import (
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 var errResponseLimit = errors.New("response exceeds comparison limit")
@@ -80,6 +83,7 @@ type Proxy struct {
 	logger      log.Logger
 	slots       chan struct{}
 	comparisons *prometheus.CounterVec
+	mirrored    *prometheus.CounterVec
 	duration    *prometheus.HistogramVec
 }
 
@@ -91,14 +95,22 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 	p.comparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
 	}, []string{"method", "result"})
+	p.mirrored = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC and outcome: success, unavailable, or shadow_error.",
+	}, []string{"method", "result"})
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response.", Buckets: prometheus.DefBuckets,
 	}, []string{"method", "backend"})
 	if err := reg.Register(p.comparisons); err != nil {
 		return nil, err
 	}
+	if err := reg.Register(p.mirrored); err != nil {
+		reg.Unregister(p.comparisons)
+		return nil, err
+	}
 	if err := reg.Register(p.duration); err != nil {
 		reg.Unregister(p.comparisons)
+		reg.Unregister(p.mirrored)
 		return nil, err
 	}
 	return p, nil
@@ -129,7 +141,7 @@ func openStream(ctx context.Context, conn grpc.ClientConnInterface, method strin
 	return s, nil
 }
 
-func (p *Proxy) mirror(method string) bool {
+func (p *Proxy) selectComparison(method string) bool {
 	if !comparable(method) {
 		return false
 	}
@@ -174,11 +186,14 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 	start := time.Now()
 	var captured *response
-	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && p.mirror(method) {
-		captured = &response{}
-		primaryDone := make(chan response, 1)
-		go p.compare(fullMethod, method, req, incomingMetadata(downstream.Context()), primaryDone, start)
-		defer func() { captured.err = retErr; primaryDone <- *captured }()
+	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && comparable(method) {
+		var primaryDone chan response
+		if p.selectComparison(method) {
+			captured = &response{}
+			primaryDone = make(chan response, 1)
+			defer func() { captured.err = retErr; primaryDone <- *captured }()
+		}
+		go p.mirror(fullMethod, method, req, incomingMetadata(downstream.Context()), primaryDone, start)
 	}
 	ctx, cancel := context.WithCancelCause(outgoingContext(downstream.Context()))
 	defer cancel(nil)
@@ -216,24 +231,29 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 }
 
-func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, primaryDone <-chan response, start time.Time) {
-	defer func() { <-p.slots }()
+func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, primaryDone <-chan response, start time.Time) {
+	if primaryDone != nil {
+		defer func() { <-p.slots }()
+	}
 	ctx, cancel := context.WithTimeout(p.ctx, p.cfg.ShadowTimeout)
 	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	shadow := response{}
 	upstream, err := openStream(ctx, p.shadow, fullMethod, &req)
 	if err == nil {
+		// Uncompared responses reuse one buffer instead of retaining the whole stream.
+		var f frame
 		for {
-			var f frame
 			err = upstream.RecvMsg(&f)
 			if err != nil {
 				break
 			}
-			shadow.add(f, p.cfg.MaxResponseBytes)
-			if shadow.limited {
-				cancel()
-				break
+			if primaryDone != nil {
+				shadow.add(f, p.cfg.MaxResponseBytes)
+				if !shadow.limited {
+					// Captured frames must not share the next receive buffer.
+					f = nil
+				}
 			}
 		}
 	}
@@ -241,6 +261,16 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 		shadow.err = err
 	}
 	p.duration.WithLabelValues(method, "shadow").Observe(time.Since(start).Seconds())
+	mirrorResult := "success"
+	if isUnavailable(shadow.err) {
+		mirrorResult = "unavailable"
+	} else if shadow.err != nil {
+		mirrorResult = "shadow_error"
+	}
+	p.mirrored.WithLabelValues(method, mirrorResult).Inc()
+	if primaryDone == nil {
+		return
+	}
 	var primary response
 	select {
 	case primary = <-primaryDone:
@@ -248,6 +278,7 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 		return
 	}
 	result := "match"
+	var comparisonErr error
 	switch {
 	case isUnavailable(primary.err) || isUnavailable(shadow.err):
 		result = "unavailable"
@@ -259,6 +290,7 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 		result = "shadow_error"
 	default:
 		err = compareResponses(method, req, primary.frames, shadow.frames, p.cfg, start)
+		comparisonErr = err
 		if errors.Is(err, errResponseLimit) {
 			result = "limit"
 		} else if errors.Is(err, errMismatch) {
@@ -269,8 +301,20 @@ func (p *Proxy) compare(fullMethod, method string, req frame, md metadata.MD, pr
 	}
 	p.comparisons.WithLabelValues(method, result).Inc()
 	if result == "mismatch" || result == "comparison_error" || result == "shadow_error" {
-		// Queries and returned values may contain tenant data; only log the RPC and classification.
-		level.Warn(p.logger).Log("msg", "ingester query comparison failed", "method", method, "result", result)
+		fields := []any{"msg", "ingester query comparison failed", "method", method, "result", result}
+		var mismatch *mismatchError
+		if errors.As(comparisonErr, &mismatch) {
+			fields = append(fields, mismatch.fields...)
+			if p.cfg.LogMismatchedQueries && method == "QueryStream" {
+				var query client.QueryRequest
+				if query.Unmarshal(req) == nil {
+					if data, err := json.Marshal(&query); err == nil {
+						fields = append(fields, "query", string(data))
+					}
+				}
+			}
+		}
+		level.Warn(p.logger).Log(fields...)
 	}
 }
 

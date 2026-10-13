@@ -5,8 +5,10 @@ package ingesterquerytee
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -363,20 +365,32 @@ func TestProxyLimitsAndWrites(t *testing.T) {
 	t.Run("saturation", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.MaxConcurrent = 1
-		p, cli := testProxy(t, &testIngester{}, &testIngester{}, cfg)
+		var calls atomic.Int32
+		shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+			calls.Inc()
+			return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
+		}}
+		p, cli := testProxy(t, &testIngester{}, shadow, cfg)
 		p.slots <- struct{}{}
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 		awaitOutcome(t, p, "LabelNames", "skipped")
+		require.Eventually(t, func() bool { return calls.Load() == 1 }, time.Second, time.Millisecond)
 		<-p.slots
 	})
 	t.Run("sample rate zero", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.SampleRate = 0
-		p, cli := testProxy(t, &testIngester{}, &testIngester{}, cfg)
+		var calls atomic.Int32
+		shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+			calls.Inc()
+			return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
+		}}
+		p, cli := testProxy(t, &testIngester{}, shadow, cfg)
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 		awaitOutcome(t, p, "LabelNames", "skipped")
+		require.Eventually(t, func() bool { return calls.Load() == 1 }, time.Second, time.Millisecond)
 	})
 	t.Run("push primary only", func(t *testing.T) {
 		primary, shadow := &testIngester{}, &testIngester{}
@@ -435,4 +449,98 @@ func TestProxyCallerCancellation(t *testing.T) {
 	}
 	awaitOutcome(t, p, "LabelNames", "primary_error")
 	require.Eventually(t, func() bool { return len(p.slots) == 0 }, time.Second, time.Millisecond)
+}
+
+func TestProxyDrainsShadowBeyondComparisonBudget(t *testing.T) {
+	for _, compare := range []bool{true, false} {
+		t.Run(fmt.Sprint(compare), func(t *testing.T) {
+			cfg := testConfig()
+			cfg.MaxResponseBytes = 1
+			if !compare {
+				cfg.SampleRate = 0
+			}
+			done := make(chan error, 1)
+			primary := &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+				return stream.Send(&client.QueryStreamResponse{IsEndOfSeriesStream: true})
+			}}
+			shadow := &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+				msg := &client.QueryStreamResponse{StreamingSeries: []client.QueryStreamSeries{{Labels: []mimirpb.LabelAdapter{{Name: "test", Value: strings.Repeat("x", 256<<10)}}}}}
+				for range 16 {
+					if err := stream.Send(msg); err != nil {
+						done <- err
+						return err
+					}
+				}
+				done <- nil
+				return nil
+			}}
+			p, cli := testProxy(t, primary, shadow, cfg)
+			s, err := cli.QueryStream(t.Context(), &client.QueryRequest{})
+			require.NoError(t, err)
+			_, err = s.Recv()
+			require.NoError(t, err)
+			_, err = s.Recv()
+			require.ErrorIs(t, err, io.EOF)
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("shadow response was not fully drained")
+			}
+			result := "skipped"
+			if compare {
+				result = "limit"
+			}
+			awaitOutcome(t, p, "QueryStream", result)
+			require.Eventually(t, func() bool { return testutil.ToFloat64(p.mirrored.WithLabelValues("QueryStream", "success")) == 1 }, time.Second, time.Millisecond)
+		})
+	}
+}
+
+func TestProxyMismatchDiagnostics(t *testing.T) {
+	for _, logQuery := range []bool{false, true} {
+		t.Run(fmt.Sprint(logQuery), func(t *testing.T) {
+			cfg := testConfig()
+			cfg.LogMismatchedQueries = logQuery
+			logs := &logBuffer{}
+			backend := func(values []float64) *testIngester {
+				frames := streamFrames(t, floatChunk(t, []int64{100, 200}, values))
+				return &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+					for _, f := range frames {
+						var msg client.QueryStreamResponse
+						if err := msg.Unmarshal(f); err != nil {
+							return err
+						}
+						if err := stream.Send(&msg); err != nil {
+							return err
+						}
+					}
+					return nil
+				}}
+			}
+			p, cli := testProxyWithLogger(t, backend([]float64{1, 2}), backend([]float64{1, 9}), cfg, log.NewLogfmtLogger(logs))
+			s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200, Matchers: []*client.LabelMatcher{{Name: "secret_query", Value: "secret_value"}}})
+			require.NoError(t, err)
+			for {
+				_, err = s.Recv()
+				if err != nil {
+					break
+				}
+			}
+			require.ErrorIs(t, err, io.EOF)
+			awaitOutcome(t, p, "QueryStream", "mismatch")
+			require.Eventually(t, func() bool { return strings.Contains(logs.String(), "samples_with_different_values=1") }, time.Second, time.Millisecond)
+			for _, field := range []string{"primary_series=1", "shadow_series=1", "primary_labels=1", "shadow_labels=1", "primary_samples=2", "shadow_samples=2"} {
+				require.Contains(t, logs.String(), field)
+			}
+			if logQuery {
+				require.Contains(t, logs.String(), "secret_query")
+				require.Contains(t, logs.String(), "secret_value")
+				require.Contains(t, logs.String(), "start_timestamp_ms")
+			} else {
+				require.NotContains(t, logs.String(), "secret_query")
+				require.NotContains(t, logs.String(), "secret_value")
+			}
+		})
+	}
 }

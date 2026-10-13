@@ -53,7 +53,7 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 			return err
 		}
 		if !equalSamples(a, b) {
-			return errMismatch
+			return describeSampleMismatch(a, b)
 		}
 		return nil
 	}
@@ -66,7 +66,7 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		return err
 	}
 	if !slices.Equal(a, b) {
-		return errMismatch
+		return &mismatchError{fields: []any{"primary_items", len(a), "shadow_items", len(b)}}
 	}
 	return nil
 }
@@ -81,6 +81,65 @@ type samplesBySeries map[string]map[sampleKey]normalizedSample
 
 func equalSample(a, b normalizedSample) bool {
 	return a.digest == b.digest && (a.hint == b.hint || a.hint == histogram.UnknownCounterReset || b.hint == histogram.UnknownCounterReset)
+}
+
+type mismatchError struct{ fields []any }
+
+func (*mismatchError) Error() string { return errMismatch.Error() }
+func (*mismatchError) Unwrap() error { return errMismatch }
+
+func describeSampleMismatch(a, b samplesBySeries) error {
+	var primaryLabels, shadowLabels, primarySamples, shadowSamples int
+	var missingSeries, extraSeries, missingSamples, extraSamples, differentValues int
+	labelCount := func(key string) int {
+		data := []byte(key)
+		count := 0
+		for len(data) > 0 {
+			for range 2 {
+				n, size := binary.Uvarint(data)
+				data = data[size+int(n):]
+			}
+			count++
+		}
+		return count
+	}
+	for labels, samples := range a {
+		primaryLabels += labelCount(labels)
+		primarySamples += len(samples)
+		other, exists := b[labels]
+		if !exists {
+			missingSeries++
+		}
+		for key, sample := range samples {
+			otherSample, exists := other[key]
+			if !exists {
+				missingSamples++
+			} else if !equalSample(sample, otherSample) {
+				differentValues++
+			}
+		}
+	}
+	for labels, samples := range b {
+		shadowLabels += labelCount(labels)
+		shadowSamples += len(samples)
+		other, exists := a[labels]
+		if !exists {
+			extraSeries++
+		}
+		for key := range samples {
+			if _, exists := other[key]; !exists {
+				extraSamples++
+			}
+		}
+	}
+	return &mismatchError{fields: []any{
+		"primary_series", len(a), "shadow_series", len(b),
+		"primary_labels", primaryLabels, "shadow_labels", shadowLabels,
+		"primary_samples", primarySamples, "shadow_samples", shadowSamples,
+		"series_missing_from_shadow", missingSeries, "series_extra_in_shadow", extraSeries,
+		"samples_missing_from_shadow", missingSamples, "samples_extra_in_shadow", extraSamples,
+		"samples_with_different_values", differentValues,
+	}}
 }
 
 func equalSamples(a, b samplesBySeries) bool {
