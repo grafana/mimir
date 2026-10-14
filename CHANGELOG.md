@@ -25,7 +25,7 @@
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.scheduler-client.enable-ring-based-cleanup` option, which when disabled stops a scheduler-mode compactor from running the ring-based background blocks cleaner. #16457
 * [ENHANCEMENT] Block-builder-scheduler: Add `cortex_blockbuilder_scheduler_end_offset_probe_failed_total`, counting failures to list a cluster's end offsets, and `cortex_blockbuilder_scheduler_startup_jobs_skipped_total`, counting observed jobs that startup recovery could not import. #16134
 * [ENHANCEMENT] Store-gateway: The `/store-gateway/tenant/{tenant}/blocks` admin page now lists the blocks from the bucket index by default, and has filters and pagination. #16549
-* [ENHANCEMENT] Runtimeconfig: Add the experimental flag `-runtime-config.loader`. Pass value `map` to skip YAML re-encoding when loading config sources. #16415
+* [ENHANCEMENT] Runtimeconfig: Add the experimental flag `-runtime-config.loader`. Pass value `map` to skip YAML re-encoding when loading config sources. #16415 #16817
 * [ENHANCEMENT] Compactor scheduler: Add per-lane queue metrics. #16489
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
 * [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444

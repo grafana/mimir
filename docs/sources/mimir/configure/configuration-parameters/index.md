@@ -4320,6 +4320,13 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.cas-retry-max-backoff
 [cas_retry_max_backoff: <duration> | default = 10s]
 
+# (experimental) Cache the serialized form of each key, so that push/pull sync
+# doesn't re-encode entries that haven't changed since the last sync. Reduces
+# CPU and lock contention in large clusters, at the cost of memory proportional
+# to the size of the KV store.
+# CLI flag: -memberlist.local-state-cache-enabled
+[local_state_cache_enabled: <boolean> | default = false]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
