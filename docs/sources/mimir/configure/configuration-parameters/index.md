@@ -2133,7 +2133,7 @@ mimir_query_engine:
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2432,7 +2432,7 @@ results_cache:
 # -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
 # remote execution and sharding inside MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = true]
 
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
@@ -4351,6 +4351,13 @@ The `memberlist` block configures the Gossip memberlist.
 # Only takes effect if cas-retry-min-backoff is also set.
 # CLI flag: -memberlist.cas-retry-max-backoff
 [cas_retry_max_backoff: <duration> | default = 10s]
+
+# (experimental) Cache the serialized form of each key, so that push/pull sync
+# doesn't re-encode entries that haven't changed since the last sync. Reduces
+# CPU and lock contention in large clusters, at the cost of memory proportional
+# to the size of the KV store.
+# CLI flag: -memberlist.local-state-cache-enabled
+[local_state_cache_enabled: <boolean> | default = false]
 
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0

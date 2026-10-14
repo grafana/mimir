@@ -443,7 +443,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 
@@ -531,7 +531,7 @@ func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
 	buildPlan := func(t *testing.T, expr string) *planning.QueryPlan {
 		t.Helper()
 		p, err := planner.NewQueryPlan(context.Background(), expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
-			streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+			streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 		require.NoError(t, err)
 		return p
 	}
@@ -646,7 +646,7 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	p, err := planner.NewQueryPlan(ctx, `histogram_count(rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, `histogram_count(rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	require.Equal(t, testutils.TrimIndent(`
@@ -764,7 +764,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	// Checking there's no include annotation on MatrixSelector

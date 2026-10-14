@@ -552,7 +552,7 @@ func createPlan(t *testing.T, expr string, enableOptimizationPass bool, minimumQ
 		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
 	}
 
-	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 	require.NoError(t, err)
 	return plan.String()
 }

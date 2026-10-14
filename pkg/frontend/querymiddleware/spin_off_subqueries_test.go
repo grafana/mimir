@@ -201,7 +201,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 		downstreamErr := errors.Errorf("some err")
 		downstream := mockHandlerWith(nil, downstreamErr)
 
-		spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, nil, nil, defaultStepFunc, subqueryspinoff.Options{})
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, false, log.NewNopLogger(), eng, nil, nil, defaultStepFunc, subqueryspinoff.Options{})
 
 		// Run the query with subquery spin-off middleware wrapping the downstream one.
 		// We expect to get the downstream error.
@@ -217,12 +217,38 @@ var defaultStepFunc = func(int64) int64 {
 }
 
 type subquerySpinOffTest struct {
-	query                     string
-	expectedSkippedReason     string
-	expectedSpunOffSubqueries int
-	expectSpecificOrder       bool
-	expectEmptyResult         bool
-	offsetQueryTime           time.Duration
+	query                       string
+	rvsSubquerySplittingEnabled bool
+	expectedSkippedReason       string
+	expectedSpunOffSubqueries   int
+	expectSpecificOrder         bool
+	expectEmptyResult           bool
+	offsetQueryTime             time.Duration
+}
+
+func TestSubquerySpinOff_PreferRangeVectorSplitting(t *testing.T) {
+	tests := map[string]subquerySpinOffTest{
+		"rvs subquery support disabled": {
+			query:                     `avg_over_time(sum(metric_counter)[2h:1m])`,
+			expectedSpunOffSubqueries: 1,
+		},
+		"supported function stays downstream": {
+			query:                       `avg_over_time(sum(metric_counter)[2h:1m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSkippedReason:       subqueryspinoff.SkippedReasonRangeVectorSplitting,
+		},
+		"all supported functions stay downstream": {
+			query:                       `avg_over_time(sum(metric_counter)[2h:1m]) + max_over_time(sum(metric_counter)[2h:1m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSkippedReason:       subqueryspinoff.SkippedReasonRangeVectorSplitting,
+		},
+		"unsupported function still spins off": {
+			query:                       `quantile_over_time(0.9, sum(metric_counter)[2h:1m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSpunOffSubqueries:   1,
+		},
+	}
+	runSubquerySpinOffTests(t, tests, setupSubquerySpinOffTestSeries(t, 2*time.Hour))
 }
 
 func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) storage.Queryable {
@@ -321,6 +347,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 					mockLimits{
 						subquerySpinOffEnabled: true,
 					},
+					testData.rvsSubquerySplittingEnabled,
 					log.NewNopLogger(),
 					eng,
 					reg,
@@ -347,9 +374,15 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				}
 				approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
-				var noSubqueries int
+				var noSubqueries, skippedForRVS, successes int
 				if testData.expectedSkippedReason == "no-subquery" {
 					noSubqueries = 1
+				}
+				if testData.expectedSkippedReason == subqueryspinoff.SkippedReasonRangeVectorSplitting {
+					skippedForRVS = 1
+				}
+				if testData.expectedSpunOffSubqueries > 0 {
+					successes = 1
 				}
 
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -364,11 +397,12 @@ cortex_frontend_subquery_spinoff_attempts_total 1
 cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
 cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
 cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
+cortex_frontend_subquery_spinoff_skipped_total{reason="range-vector-splitting"} %d
 cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
 # HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_successes_total counter
 cortex_frontend_subquery_spinoff_successes_total %d
-				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
+				`, testData.expectedSpunOffSubqueries, noSubqueries, skippedForRVS, successes)),
 					"cortex_frontend_subquery_spinoff_attempts_total",
 					"cortex_frontend_subquery_spinoff_successes_total",
 					"cortex_frontend_subquery_spinoff_skipped_total",
@@ -388,6 +422,7 @@ func TestSpinOffSubqueries_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 
 		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 			mockLimits{subquerySpinOffEnabled: true},
+			false,
 			log.NewNopLogger(),
 			eng,
 			reg,
@@ -450,7 +485,7 @@ func TestSubquerySpinOff_MatchesNativeEvaluation(t *testing.T) {
 				return next.Do(ctx, r)
 			})
 		})
-		mw := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, prometheus.NewPedanticRegistry(), rangeMiddleware, defaultStepFunc, subqueryspinoff.Options{})
+		mw := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, false, log.NewNopLogger(), eng, prometheus.NewPedanticRegistry(), rangeMiddleware, defaultStepFunc, subqueryspinoff.Options{})
 		res, err := mw.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 		require.NoError(t, err)
 		require.True(t, spunOff, "the subquery should have been spun off")

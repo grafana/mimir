@@ -28,6 +28,7 @@ func TestMap(t *testing.T) {
 		name                               string
 		in                                 string
 		spinOffWithExcessDownstreamQueries bool
+		rvsSubquerySplittingEnabled        bool
 		// cancelContext cancels the context before Map runs, to exercise the mapping-failure path.
 		cancelContext bool
 
@@ -146,13 +147,56 @@ func TestMap(t *testing.T) {
 			expectedOK:         false,
 			expectedSkipReason: SkippedReasonMappingFailed,
 		},
+		{
+			name:                        "supported function stays downstream for rvs",
+			in:                          `avg_over_time(sum(foo)[6h:5m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSkipReason:          SkippedReasonRangeVectorSplitting,
+		},
+		{
+			name:                        "all supported subqueries stay downstream for rvs",
+			in:                          `avg_over_time(sum(foo)[6h:5m]) + max_over_time(sum(bar)[6h:5m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSkipReason:          SkippedReasonRangeVectorSplitting,
+		},
+		{
+			name:                        "no spin-off when an outer function is eligible for rvs",
+			in:                          `avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedSkipReason:          SkippedReasonRangeVectorSplitting,
+		},
+		{
+			name:                        "nested subquery stays intact while a sibling spins off",
+			in:                          `avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m]) + quantile_over_time(0.9, sum(bar)[6h:5m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedOK:                  true,
+			expectedOut:                 `__downstream_query__{__query__="avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m])"} + quantile_over_time(0.9, __subquery_spinoff__{__query__="sum(bar)",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			expectedSpunOff:             1,
+		},
+		{
+			name:                        "unsupported function still spins off with rvs enabled",
+			in:                          `quantile_over_time(0.9, sum(foo)[6h:5m])`,
+			rvsSubquerySplittingEnabled: true,
+			expectedOK:                  true,
+			expectedOut:                 `quantile_over_time(0.9, __subquery_spinoff__{__query__="sum(foo)",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			expectedSpunOff:             1,
+		},
+		{
+			name:                               "excess downstream option still applies to RVS branches",
+			in:                                 `avg_over_time(sum(foo)[6h:5m]) + max_over_time(sum(bar)[6h:5m]) + quantile_over_time(0.9, sum(baz)[6h:5m])`,
+			rvsSubquerySplittingEnabled:        true,
+			spinOffWithExcessDownstreamQueries: true,
+			expectedOK:                         true,
+			expectedOut:                        `__downstream_query__{__query__="avg_over_time(sum(foo)[6h:5m])"} + __downstream_query__{__query__="max_over_time(sum(bar)[6h:5m])"} + quantile_over_time(0.9, __subquery_spinoff__{__query__="sum(baz)",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			expectedSpunOff:                    1,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := NewMetrics(reg)
 			wrapper := astmapper.NewSelectorSubquerySpinOffWrapper()
 
-			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
 			if tt.cancelContext {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -166,7 +210,7 @@ func TestMap(t *testing.T) {
 			// Capture the original expression so we can assert it is not modified when Map returns false.
 			originalExpr := expr.String()
 
-			out, ok := Map(ctx, expr, wrapper, metrics, testDefaultStepFunc, mapperTimeout, logger, Options{SpinOffWithExcessDownstreamQueries: tt.spinOffWithExcessDownstreamQueries})
+			out, ok := Map(ctx, expr, wrapper, metrics, testDefaultStepFunc, mapperTimeout, tt.rvsSubquerySplittingEnabled, logger, Options{SpinOffWithExcessDownstreamQueries: tt.spinOffWithExcessDownstreamQueries})
 
 			require.Equal(t, tt.expectedOK, ok)
 
@@ -203,6 +247,7 @@ func assertSkippedCounts(t *testing.T, metrics Metrics, expected map[string]floa
 		SkippedReasonMappingFailed,
 		SkippedReasonNoSubqueries,
 		SkippedReasonDownstreamQueries,
+		SkippedReasonRangeVectorSplitting,
 	} {
 		require.Equalf(t, expected[reason], testutil.ToFloat64(metrics.SpinOffSkipped.WithLabelValues(reason)), "skipped reason %q", reason)
 	}
