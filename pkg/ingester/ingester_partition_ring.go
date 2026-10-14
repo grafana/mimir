@@ -24,10 +24,12 @@ type PartitionRingConfig struct {
 	// DeleteInactivePartitionAfter maps to ring.PartitionInstanceLifecyclerConfig's DeleteInactivePartitionAfterDuration.
 	DeleteInactivePartitionAfter time.Duration `yaml:"delete_inactive_partition_after"`
 
-	// CreatePartitionsWithDerivedTokens maps to ring.PartitionInstanceLifecyclerConfig's CreatePartitionsWithDerivedTokens.
+	// CreatePartitionsWithDerivedTokens makes the ingester create its partition without stored tokens.
+	// Components that read the ring derive the tokens from the partition ID.
 	CreatePartitionsWithDerivedTokens bool `yaml:"create_partitions_with_derived_tokens" category:"experimental"`
 
-	// MaxDerivedTokenPartitions maps to ring.PartitionInstanceLifecyclerConfig's MaxDerivedTokenPartitions.
+	// MaxDerivedTokenPartitions is the exclusive upper limit of partition IDs that can use derived tokens.
+	// Components that read the ring pre-generate the tokens of these partitions.
 	MaxDerivedTokenPartitions int `yaml:"max_derived_token_partitions" category:"experimental"`
 
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
@@ -43,9 +45,12 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MinOwnersCount, "ingester.partition-ring.min-partition-owners-count", 1, "Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.MinOwnersDuration, "ingester.partition-ring.min-partition-owners-duration", 10*time.Second, "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.DeleteInactivePartitionAfter, "ingester.partition-ring.delete-inactive-partition-after", 13*time.Hour, "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.")
-	f.BoolVar(&cfg.CreatePartitionsWithDerivedTokens, "ingester.partition-ring.create-partitions-with-derived-tokens", false, "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring.")
-	f.IntVar(&cfg.MaxDerivedTokenPartitions, "ingester.partition-ring.max-derived-token-partitions", 0, "The number of partition IDs, starting from 0, that can use derived tokens. "+
-		"Components that read the ring generate the tokens of these partitions at startup.")
+	f.BoolVar(&cfg.CreatePartitionsWithDerivedTokens, "ingester.partition-ring.create-partitions-with-derived-tokens", false, "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.")
+	f.IntVar(&cfg.MaxDerivedTokenPartitions, "ingester.partition-ring.max-derived-token-partitions", 0, "Partitions with an ID lower than this value can use derived tokens. "+
+		"Set it on all partition ring readers and ingesters. "+
+		"Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. "+
+		"Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. "+
+		"Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.")
 }
 
 func (cfg *PartitionRingConfig) Validate() error {

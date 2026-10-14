@@ -17,6 +17,7 @@ import (
 // behaving exactly as before compartments existed (numCompartments is ignored). When compartmentsEnabled
 // is true it watches numCompartments rings, each keyed for its read compartment via
 // compartments.WithReadCompartmentSuffix. Watchers are indexed by read compartment ID.
+// tokenGenerator resolves the tokens of partitions that use derived tokens.
 func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, ringName, ringKey string, kvClient kv.Client, tokenGenerator ring.PartitionTokenGenerator, logger log.Logger, reg prometheus.Registerer) (*ring.PartitionRingWatchers, error) {
 	opts := ring.DefaultPartitionRingOptions()
 	opts.TokenGenerator = tokenGenerator
