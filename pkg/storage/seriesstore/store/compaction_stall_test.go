@@ -192,3 +192,10 @@ func TestCompactSelectedStall(t *testing.T) {
 		require.NoError(t, engine.CompactSelectedSeries(selected))
 	})
 }
+
+// TestShrinkEntriesStall gives back the room of the groups the series were appended to, as the head's collection does.
+func TestShrinkEntriesStall(t *testing.T) {
+	requireBench(t)
+	engine, lsets, refs := stallEngine(t, 0)
+	measureStall(t, "shrink entries", engine, lsets, refs, engine.shrinkEntries)
+}

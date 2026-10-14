@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/oklog/ulid/v2"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -657,7 +658,42 @@ func inOrderFrom(series *Series, mint int64) (bool, int64) {
 // chunks since the head's min time nor out-of-order data in the out-of-order head leave for cold
 // blocks and are reported deleted. The head's min time then moves to its oldest remaining data,
 // and its out-of-order min time to what remains of the out-of-order head.
+// shrinkBudget is how many bytes of entries shrinkEntries copies with a shard locked: a millisecond or so.
+var shrinkBudget = 4 << 20
+
+// shrinkEntries gives back the room of the groups that stopped growing, a shard at a time and a few groups at a
+// time, which queries and appends wait for.
+func (e *Engine) shrinkEntries() {
+	var series, roomBefore, freed int
+	for _, shard := range e.store.shards {
+		for from := 0; ; {
+			shard.Lock()
+			t, ok := shard.tenants[e.tenantID]
+			if !ok {
+				shard.Unlock()
+				break
+			}
+			if from == 0 {
+				count, room := t.series.entriesSlack()
+				series, roomBefore = series+count, roomBefore+room
+			}
+			next, shardFreed := t.series.shrinkGroups(from, shrinkBudget)
+			freed += shardFreed
+			done := next >= len(t.series.groups)
+			shard.Unlock()
+			if done {
+				break
+			}
+			from = next
+		}
+	}
+	if freed > 0 {
+		fmt.Fprintf(os.Stderr, "phase=entries_shrunk tenant=%s series=%d room_before=%d freed=%d freed_bytes=%d\n", e.tenantID, series, roomBefore, freed, freed*int(unsafe.Sizeof(seriesEntry{})))
+	}
+}
+
 func (e *Engine) headGC() {
+	defer e.shrinkEntries()
 	mint, headMaxt, _ := e.headTimes()
 	home, t := e.home()
 	home.RLock()
