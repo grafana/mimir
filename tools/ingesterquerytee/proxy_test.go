@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -502,6 +503,7 @@ func TestProxyMismatchDiagnostics(t *testing.T) {
 		t.Run(fmt.Sprint(logQuery), func(t *testing.T) {
 			cfg := testConfig()
 			cfg.LogMismatchedQueries = logQuery
+			cfg.LogMismatchedSamples = logQuery
 			logs := &logBuffer{}
 			backend := func(values []float64) *testIngester {
 				frames := streamFrames(t, floatChunk(t, []int64{100, 200}, values))
@@ -519,7 +521,8 @@ func TestProxyMismatchDiagnostics(t *testing.T) {
 				}}
 			}
 			p, cli := testProxyWithLogger(t, backend([]float64{1, 2}), backend([]float64{1, 9}), cfg, log.NewLogfmtLogger(logs))
-			s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200, Matchers: []*client.LabelMatcher{{Name: "secret_query", Value: "secret_value"}}})
+			ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("x-scope-orgid", "replay-tenant", "__consistency_level__", "strong", "__consistency_offsets__", "offsets-value", "__consistency_max_delay__", "2s", "__only_replica__", "true", "authorization", "Bearer private-token", "private-header", "do-not-log"))
+			s, err := cli.QueryStream(ctx, &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200, Matchers: []*client.LabelMatcher{{Name: "secret_query", Value: "secret_value"}}})
 			require.NoError(t, err)
 			for {
 				_, err = s.Recv()
@@ -537,10 +540,20 @@ func TestProxyMismatchDiagnostics(t *testing.T) {
 				require.Contains(t, logs.String(), "secret_query")
 				require.Contains(t, logs.String(), "secret_value")
 				require.Contains(t, logs.String(), "start_timestamp_ms")
+				require.Contains(t, logs.String(), "replay-tenant")
+				require.Contains(t, logs.String(), "offsets-value")
+				require.Contains(t, logs.String(), "__consistency_max_delay__")
+				require.Contains(t, logs.String(), "difference=")
+				require.Contains(t, logs.String(), "0x4000000000000000")
+				require.Contains(t, logs.String(), "0x4022000000000000")
 			} else {
 				require.NotContains(t, logs.String(), "secret_query")
 				require.NotContains(t, logs.String(), "secret_value")
+				require.NotContains(t, logs.String(), "replay-tenant")
+				require.NotContains(t, logs.String(), "difference=")
 			}
+			require.NotContains(t, logs.String(), "private-token")
+			require.NotContains(t, logs.String(), "do-not-log")
 		})
 	}
 }
@@ -589,4 +602,41 @@ func TestProxyComparisonErrorDiagnostics(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestProxyDetailedDiagnosticRateLimit(t *testing.T) {
+	cfg := testConfig()
+	cfg.LogMismatchedQueries, cfg.LogMismatchedSamples = true, true
+	backend := func(value float64) *testIngester {
+		frames := streamFrames(t, floatChunk(t, []int64{100}, []float64{value}))
+		return &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+			for _, f := range frames {
+				var msg client.QueryStreamResponse
+				if err := msg.Unmarshal(f); err != nil {
+					return err
+				}
+				if err := stream.Send(&msg); err != nil {
+					return err
+				}
+			}
+			return nil
+		}}
+	}
+	logs := &logBuffer{}
+	p, cli := testProxyWithLogger(t, backend(1), backend(2), cfg, log.NewLogfmtLogger(logs))
+	p.diagnosticLogs = rate.NewLimiter(rate.Every(time.Hour), 1)
+	for range 2 {
+		s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 100})
+		require.NoError(t, err)
+		for {
+			_, err = s.Recv()
+			if err != nil {
+				break
+			}
+		}
+		require.ErrorIs(t, err, io.EOF)
+	}
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "diagnostics_suppressed=true") }, time.Second, time.Millisecond)
+	require.Equal(t, 1, strings.Count(logs.String(), "difference="))
+	require.Equal(t, float64(2), testutil.ToFloat64(p.comparisons.WithLabelValues("QueryStream", "mismatch")))
 }
