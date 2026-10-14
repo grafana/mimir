@@ -865,6 +865,9 @@ func (c *coldState) matching(tenant string, matchers []compiledMatcher, start, e
 // matchingIndexed is matching, with each series' tenant table and index in its block.
 func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldTenantIndex, int, *coldSeries)) {
 	nameHash, byName := metricNameHash(matchers)
+	// One for every series, as visit gets its address and so it lives on the heap: made at the first candidate, as most
+	// calls skip every block.
+	var series *coldSeries
 	for _, block := range c.blocks {
 		if !block.overlaps(tenant, start, end) {
 			continue
@@ -874,9 +877,12 @@ func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, s
 			continue
 		}
 		for _, index := range block.candidates(tenant, matchers) {
-			series := block.seriesIn(table, int(index))
-			if series.hasData(start, end) && matches(&series, matchers) {
-				visit(table, int(index), &series)
+			if series == nil {
+				series = new(coldSeries)
+			}
+			*series = block.seriesIn(table, int(index))
+			if series.hasData(start, end) && matches(series, matchers) {
+				visit(table, int(index), series)
 			}
 		}
 	}

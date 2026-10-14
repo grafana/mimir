@@ -223,6 +223,9 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	var pairs [][2]string
 	// Most selectors name one metric, and most blocks have few of the metrics.
 	nameHash, byName := metricNameHash(compiled)
+	// One for every series, as matches gets its address and so it lives on the heap: made at the first candidate, as
+	// most calls skip every block.
+	var series *coldSeries
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
 		if table == nil || table.minTime > end || table.maxTime < start {
@@ -240,7 +243,10 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			if len(coldShard) > 0 && !inQueryShard(block.shardHash(table, int(index)), coldShard) {
 				continue
 			}
-			series := block.seriesIn(table, int(index))
+			if series == nil {
+				series = new(coldSeries)
+			}
+			*series = block.seriesIn(table, int(index))
 			if !series.hasData(start, end) {
 				continue
 			}
@@ -268,7 +274,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 					}
 				}
 				if matcher.kind != kindRegex && matcher.kind != kindNotRegex {
-					if !matches(&series, coldLabels[m:m+1]) {
+					if !matches(series, coldLabels[m:m+1]) {
 						matched = false
 						break
 					}
