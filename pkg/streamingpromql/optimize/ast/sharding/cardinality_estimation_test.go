@@ -921,6 +921,8 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, expression))
 
+		// The metrics count keys generated, not entries written. Each of the 2 shards generates the key for every
+		// bucket, but only one entry per bucket is written.
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{count: 1, keys: 2 * bucketKeys, keyBytes: 2 * bucketKeyBytes})), metricNames...))
 	})
 
