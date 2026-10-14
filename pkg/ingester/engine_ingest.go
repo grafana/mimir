@@ -20,6 +20,10 @@ import (
 // ingestBatch is what the ingester asks an engine to store: the series of one write request.
 type ingestBatch struct {
 	Series []mimirpb.PreallocTimeseries
+	// Record, when set, is the batch's record as the engine read it with ReadRecord: series are identified by their
+	// index in it as in Series, which is nil, and which Decoded decodes the record for.
+	Record  ingestRecord
+	Decoded func() []mimirpb.PreallocTimeseries
 	// Samples, histograms and exemplars outside [MinTimestampMs, MaxTimestampMs] are rejected.
 	MinTimestampMs, MaxTimestampMs int64
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
@@ -29,6 +33,26 @@ type ingestBatch struct {
 	// records in the series it ingests.
 	IngestedAt time.Time
 	OTLP       bool
+}
+
+// ingestRecord is a Kafka record an engine read itself, to ingest its series without them being decoded.
+type ingestRecord interface {
+	// Len is how many series the record has.
+	Len() int
+	Source() mimirpb.WriteRequest_SourceEnum
+	// OnlyFloats reports whether the record has nothing but series of floats: what else it has is only read by
+	// decoding it.
+	OnlyFloats() bool
+	// MinTimestamp is the oldest timestamp of the record's samples, math.MaxInt64 without any.
+	MinTimestamp() int64
+	// Release gives back what the record holds once it is ingested.
+	Release()
+}
+
+// recordReader is an engine that reads Kafka records itself: ok is false for a record it doesn't read, which is
+// decoded. The record refers to content, which it must not outlive.
+type recordReader interface {
+	ReadRecord(content []byte, version int) (record ingestRecord, ok bool)
 }
 
 // ingestSink is what the ingester wants to know while an engine ingests a batch: series are identified by their

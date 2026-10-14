@@ -1771,3 +1771,70 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 		}
 	}
 }
+
+// recordPusherFunc is a RecordPusher that also decodes, for a Pusher that only gets the records it doesn't accept.
+type recordPusherFunc struct {
+	pusherFunc
+	accepts bool
+	push    func(ctx context.Context, content []byte, version int) error
+}
+
+func (p recordPusherFunc) AcceptsRecords() bool { return p.accepts }
+
+func (p recordPusherFunc) PushRecord(ctx context.Context, content []byte, version int) error {
+	return p.push(ctx, content, version)
+}
+
+// A pusher that accepts records gets each of them as it is, in order and with its tenant, and the consumer skips
+// those it couldn't read and those of client errors, and stops at a server error.
+func TestPusherConsumer_PushesRecordsToARecordPusher(t *testing.T) {
+	records := []testRecord{
+		{version: 2, tenantID: "t1", content: []byte("first")},
+		{version: 1, tenantID: "t2", content: []byte("malformed")},
+		{version: 2, tenantID: "t1", content: []byte("client error")},
+		{version: 2, tenantID: "t2", content: []byte("fourth")},
+		{version: 2, tenantID: "t1", content: []byte("server error")},
+		{version: 2, tenantID: "t1", content: []byte("never pushed")},
+	}
+	var pushed []string
+	pusher := recordPusherFunc{
+		pusherFunc: func(context.Context, *mimirpb.WriteRequest) error {
+			t.Fatal("records aren't decoded for a pusher that accepts them")
+			return nil
+		},
+		accepts: true,
+		push: func(ctx context.Context, content []byte, version int) error {
+			tenantID, err := tenant.TenantID(ctx)
+			require.NoError(t, err)
+			pushed = append(pushed, fmt.Sprintf("%s/%d/%s", tenantID, version, content))
+			switch string(content) {
+			case "malformed":
+				return fmt.Errorf("%w: bad bytes", ErrMalformedRecord)
+			case "client error":
+				return ingesterError(mimirpb.ERROR_CAUSE_BAD_DATA, codes.InvalidArgument, "bad sample")
+			case "server error":
+				return errors.New("disk full")
+			}
+			return nil
+		},
+	}
+	c := NewPusherConsumer(pusher, KafkaConfig{IngestionConcurrencyMax: 8}, NewPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	err := c.Consume(context.Background(), kafkaRecordsAll(t, records))
+	require.ErrorContains(t, err, "disk full")
+	require.Equal(t, []string{"t1/2/first", "t2/1/malformed", "t1/2/client error", "t2/2/fourth", "t1/2/server error"}, pushed)
+
+	// A pusher that doesn't accept them gets them decoded.
+	decoded := 0
+	pusher = recordPusherFunc{
+		pusherFunc: func(context.Context, *mimirpb.WriteRequest) error { decoded++; return nil },
+		push: func(context.Context, []byte, int) error {
+			t.Fatal("records aren't pushed as they are to a pusher that doesn't accept them")
+			return nil
+		},
+	}
+	content, err := (&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}).Marshal()
+	require.NoError(t, err)
+	c = NewPusherConsumer(pusher, KafkaConfig{}, NewPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	require.NoError(t, c.Consume(context.Background(), kafkaRecordsAll(t, []testRecord{{version: 1, tenantID: "t1", content: content}})))
+	require.Equal(t, 1, decoded)
+}

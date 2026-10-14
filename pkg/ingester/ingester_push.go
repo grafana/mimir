@@ -209,13 +209,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
+	return i.push(ctx, &pushRequest{req: req})
+}
 
+func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error) {
 	start := time.Now()
 	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
 	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled {
-		reqSize := int64(req.Size())
+		reqSize := req.size()
 		var (
 			shouldFinish bool
 			startPushErr error
@@ -250,13 +253,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
-	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+	if ingestedMetadata := i.pushMetadata(ctx, userID, req.metadata()); ingestedMetadata > 0 {
 		// Distributor counts both samples and metadata, so for consistency ingester does the same.
 		i.ingestionRate.Add(int64(ingestedMetadata))
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 {
+	if req.len() == 0 {
 		return nil
 	}
 
@@ -264,8 +267,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
+	if _, ok := db.db.(recordReader); !ok {
+		req.withoutRecord()
+	}
 
-	lockState, err := db.acquireAppendLock(req.MinTimestamp())
+	lockState, err := db.acquireAppendLock(req.minTimestamp())
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
@@ -402,14 +408,14 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	sink := &pushSink{
 		i:                                i,
 		userID:                           userID,
-		timeseries:                       req.Timeseries,
+		request:                          req,
 		stats:                            &stats,
 		errProcessor:                     &errProcessor,
 		updateFirstPartial:               updateFirstPartial,
 		startAppend:                      startAppend,
 		activeSeries:                     activeSeries,
 		idx:                              idx,
-		isOTLP:                           req.Source == mimirpb.OTLP,
+		isOTLP:                           req.source() == mimirpb.OTLP,
 		outOfOrderWindow:                 outOfOrderWindow,
 		minAppendTimeAvailable:           minAppendTimeAvailable,
 		minAppendTime:                    minAppendTime,
@@ -418,13 +424,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		minTimestampMs:                   minTimestampMs,
 	}
 	outcome, ingestErr := db.db.Ingest(ctx, ingestBatch{
-		Series:           req.Timeseries,
+		Series:           req.series(),
+		Record:           req.record,
+		Decoded:          func() []mimirpb.PreallocTimeseries { return req.decoded().Timeseries },
 		MinTimestampMs:   minTimestampMs,
 		MaxTimestampMs:   sink.maxTimestampMs,
 		NativeHistograms: nativeHistogramsIngestionEnabled,
 		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
 		IngestedAt:       startAppend,
-		OTLP:             req.Source == mimirpb.OTLP,
+		OTLP:             req.source() == mimirpb.OTLP,
 	}, sink)
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars
@@ -460,9 +468,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
-	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
+	var groupSeries []mimirpb.PreallocTimeseries
+	if req.record == nil || i.limits.SeparateMetricsGroupLabel(userID) != "" {
+		groupSeries = req.decoded().Timeseries
+	}
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, groupSeries), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
+	i.updateMetricsFromPushStats(userID, group, &stats, req.source(), db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
 		wrappedErr := softErrorWithRejectedSamples{
@@ -519,7 +531,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 type pushSink struct {
 	i                  *Ingester
 	userID             string
-	timeseries         []mimirpb.PreallocTimeseries
+	request            *pushRequest
 	stats              *pushStats
 	errProcessor       *mimir_storage.SoftAppendErrorProcessor
 	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
@@ -542,7 +554,7 @@ type pushSink struct {
 // Skip drops the series whose samples are all too old to be appended, before the engine looks it up: a fast path
 // for when out-of-order support is not enabled.
 func (s *pushSink) Skip(series int) bool {
-	ts := s.timeseries[series]
+	ts := s.request.at(series)
 	i, userID := s.i, s.userID
 
 	// TODO(jesus.vazquez) If we had too many old samples we might want to
@@ -589,11 +601,11 @@ func (s *pushSink) Skip(series int) bool {
 }
 
 func (s *pushSink) Error(series int, err error, timestampMs int64) bool {
-	return s.errProcessor.ProcessErr(err, timestampMs, s.timeseries[series].Labels)
+	return s.errProcessor.ProcessErr(err, timestampMs, s.request.at(series).Labels)
 }
 
 func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
-	ts := s.timeseries[series]
+	ts := s.request.at(series)
 	ex := ts.Exemplars[exemplarIndex]
 
 	// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
@@ -641,6 +653,11 @@ func (s *pushSink) ExemplarFailed(series, exemplarIndex int, err error) {
 // NeedsLabels is false: the tracker only needs a series' labels when it doesn't have it yet, which Ingested builds them for.
 func (s *pushSink) NeedsLabels() bool { return false }
 
+// IngestedRef reports whether nothing more than the series' ref is needed: the tracker has it already, or there is none.
+func (s *pushSink) IngestedRef(_ int, ref storage.SeriesRef) bool {
+	return s.activeSeries == nil || s.activeSeries.UpdateSeriesIfTracked(ref, s.startAppend, -1)
+}
+
 func (s *pushSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef, histogramBuckets int) {
 	if s.activeSeries == nil {
 		return
@@ -651,7 +668,7 @@ func (s *pushSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRe
 	if lbls.IsEmpty() {
 		// An engine that didn't build them, as they're mostly not needed.
 		var builder labels.ScratchBuilder
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, s.timeseries[series].Labels, &lbls)
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, s.request.at(series).Labels, &lbls)
 	}
 	s.activeSeries.UpdateSeries(lbls, ref, s.startAppend, histogramBuckets, s.isOTLP, s.idx)
 }

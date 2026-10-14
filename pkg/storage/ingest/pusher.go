@@ -30,6 +30,19 @@ type Pusher interface {
 	PreCommitNotifier
 }
 
+// RecordPusher is a Pusher that may ingest records as they are, without the reader decoding them first.
+type RecordPusher interface {
+	// AcceptsRecords reports whether records go to PushRecord: all of them then do, one at a time and in order.
+	AcceptsRecords() bool
+	// PushRecord ingests the content of a record of the version for the tenant of the context. The content is valid
+	// only during the call. An error that wraps ErrMalformedRecord is of a record that couldn't be read, which is
+	// skipped, as the records the reader can't decode are.
+	PushRecord(ctx context.Context, content []byte, version int) error
+}
+
+// ErrMalformedRecord is the error a RecordPusher wraps for a record it couldn't read.
+var ErrMalformedRecord = errors.New("malformed record")
+
 type PreCommitNotifier interface {
 	// NotifyPreCommit is called before committing a Kafka offset to allow for
 	// synchronization or cleanup operations. The offset to commit is determined before this call.
@@ -82,6 +95,10 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
+
+	if pusher, ok := c.pusher.(RecordPusher); ok && pusher.AcceptsRecords() {
+		return c.consumeRecords(ctx, records, pusher)
+	}
 
 	type parsedRecord struct {
 		*mimirpb.PreallocWriteRequest
@@ -181,6 +198,40 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 
 	cancel(cancellation.NewErrorf("done unmarshalling records"))
 	return nil
+}
+
+// consumeRecords pushes each record as it is, in order: what a RecordPusher does with a record replaces decoding it and
+// spreading its series over goroutines.
+func (c PusherConsumer) consumeRecords(ctx context.Context, records iter.Seq[*kgo.Record], pusher RecordPusher) error {
+	metrics := c.metrics.storagePusherMetrics
+	errorHandler := newPushErrorHandler(metrics, util_log.NewSampler(c.kafkaConfig.FallbackClientErrorSampleRate), c.logger)
+	for rec := range records {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		tenantID := string(rec.Key)
+		start := time.Now()
+		err := c.pushRecord(rec.Context, tenantID, rec, pusher)
+		metrics.processingTime.WithLabelValues("record").Observe(time.Since(start).Seconds())
+		if errors.Is(err, ErrMalformedRecord) {
+			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", err)
+			continue
+		}
+		// Client errors are logged and the record is skipped, as the storage writers do.
+		if errorHandler.IsServerError(ctx, err) {
+			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", rec.Offset, tenantID, err)
+		}
+	}
+	return nil
+}
+
+func (c PusherConsumer) pushRecord(ctx context.Context, tenantID string, rec *kgo.Record, pusher RecordPusher) error {
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "PusherConsumer.pushRecord")
+	defer spanLog.Finish()
+
+	// Note that the implementation of the Pusher expects the tenantID to be in the context.
+	ctx = user.InjectOrgID(ctx, tenantID)
+	return pusher.PushRecord(ctx, rec.Value, ParseRecordVersion(rec))
 }
 
 func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
