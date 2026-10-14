@@ -156,7 +156,10 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 func TestExperimentalFeaturesMiddleware_ExtendedRangeSelectorSettingIsNoOp(t *testing.T) {
 	for _, enabled := range []string{"", "anchored", "smoothed", "anchored,smoothed", "all"} {
 		t.Run(fmt.Sprintf("enabled=%q", enabled), func(t *testing.T) {
-			tenantLimits := validation.Limits{IngestStorageReadConsistency: "eventual"}
+			tenantLimits := validation.Limits{
+				IngestStorageReadConsistency: "eventual",
+				FloatChunkEncoding:           validation.DefaultFloatChunkEncodingValue,
+			}
 			err := yaml.Unmarshal([]byte(fmt.Sprintf("enabled_promql_extended_range_selectors: %q\n", enabled)), &tenantLimits)
 			require.NoError(t, err)
 			limits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{
