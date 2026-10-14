@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/cache"
+	"golang.org/x/crypto/blake2b"
 )
 
 type Backend interface {
@@ -19,7 +20,12 @@ type Backend interface {
 
 // HashCacheKey returns a hashed version of key that is small enough to fit within the Memcached key limit
 // and contains no unprintable characters.
-func HashCacheKey(key []byte) string {
+func HashCacheKey(key []byte, useCryptographicHash bool) string {
+	if useCryptographicHash {
+		h := blake2b.Sum256(key)
+		return hex.EncodeToString(h[:])
+	}
+
 	hasher := fnv.New64a()
 	_, _ = hasher.Write(key)
 	return hex.EncodeToString(hasher.Sum(nil))

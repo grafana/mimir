@@ -2529,6 +2529,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168)
   -querier.mimir-query-engine.cardinality-estimation.ttl duration
     	[experimental] The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168h0m0s)
+  -querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash
+    	[experimental] If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge

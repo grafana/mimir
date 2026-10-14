@@ -1566,7 +1566,7 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 }
 
 func createEmptyPrefixCacheKeyGenerator() *caching.CacheKeyGenerator {
-	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil })
+	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil }, false)
 }
 
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *caching.InMemoryCache) {
