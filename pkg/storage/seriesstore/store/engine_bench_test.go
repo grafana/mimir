@@ -205,6 +205,15 @@ func BenchmarkEngineColdLabels(b *testing.B) {
 			_, _, err := q.LabelValues(context.Background(), "pod", nil, matcher)
 			return err
 		}},
+		// A label of few values, which most series repeat: the common label values lookup of a dashboard variable.
+		{"few values with matcher", func(q storage.Querier) error {
+			_, _, err := q.LabelValues(context.Background(), "job", nil, matcher)
+			return err
+		}},
+		{"few values", func(q storage.Querier) error {
+			_, _, err := q.LabelValues(context.Background(), "job", nil)
+			return err
+		}},
 	} {
 		b.Run(lookup.name, func(b *testing.B) {
 			b.ReportAllocs()
