@@ -32,6 +32,7 @@
 * [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
 * [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
 * [FEATURE] MQE: Add experimental functionality to expose per-selector query cost information. #16613 #16619 #16652 #16653
+* [FEATURE] Alertmanager: Add Jira as a supported integration. #16870
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
@@ -55,9 +56,11 @@
 * [ENHANCEMENT] Runtime config: Optimize loading of overrides for many tenants. #16765
 * [ENHANCEMENT] Usage-tracker: Make the per-tenant shard count configurable via `-usage-tracker.num-shards`, which must be a power of 2. #15888
 * [ENHANCEMENT] MQE: Reduce CPU and memory consumption of the experimental PromQL function `info`. #16790
+* [ENHANCEMENT] Ingester: Support multiple write compartments in the experimental offset catalogue. Existing offset catalogue is rebuilt gracefully. #16815
 * [ENHANCEMENT] Usage-tracker: Speed up the idle-series cleanup about 4x on amd64 and 5x on arm64, by checking a whole group of the per-tenant shard map at once with 64-bit arithmetic, instead of one series at a time. #16825
 * [ENHANCEMENT] Ruler: Make the default resend delay for alerts 5m instead of 1m to avoid alerts spuriously resolving when rulers take longer to restart. #16822
 * [ENHANCEMENT] Store-gateway: Release the omitted posting groups before fetching postings. This reduces the risk of OOM when concurrent requests query high-cardinality matchers. #16837
+* [ENHANCEMENT] Block-builder-scheduler: Do not emit `cortex_blockbuilder_scheduler_partition_start_offset` and `cortex_blockbuilder_scheduler_partition_end_offset` for empty partitions. #16871
 * [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
