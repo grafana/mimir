@@ -60,6 +60,10 @@ type coldTenantIndex struct {
 	// The series of the names each name matcher other than an equality accepted.
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey][]uint32
+	// The candidates of the selectors that came in again, by their key: the block never changes, and most selectors
+	// have none in most blocks.
+	candidatesLock  sync.RWMutex
+	candidatesCache map[string][]uint32
 }
 
 type coldMetricName struct {
@@ -562,6 +566,37 @@ func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32
 // candidates returns indexes of the tenant's series that may match matchers: the smallest posting
 // list of their equality matchers or, without one, of the series with the label of a matcher that
 // rejects the empty value, or every series. Callers still check the matchers.
+// maxCachedCandidates is how many candidates a selector's list can have to be kept, and maxCachedSelectorsPerBlock how many
+// selectors a block keeps the lists of: at this many they are all dropped.
+const (
+	maxCachedCandidates        = 256
+	maxCachedSelectorsPerBlock = 16
+)
+
+// candidatesCached is candidates, kept by the selector's key for the next time it comes in.
+func (b *coldBlock) candidatesCached(tenant, key string, matchers []compiledMatcher) []uint32 {
+	table := b.tenant(tenant)
+	if table == nil {
+		return nil
+	}
+	table.candidatesLock.RLock()
+	list, ok := table.candidatesCache[key]
+	table.candidatesLock.RUnlock()
+	if ok {
+		return list
+	}
+	list = b.candidates(tenant, matchers)
+	if len(list) <= maxCachedCandidates {
+		table.candidatesLock.Lock()
+		if table.candidatesCache == nil || len(table.candidatesCache) >= maxCachedSelectorsPerBlock {
+			table.candidatesCache = map[string][]uint32{}
+		}
+		table.candidatesCache[key] = list
+		table.candidatesLock.Unlock()
+	}
+	return list
+}
+
 func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint32 {
 	table := b.tenant(tenant)
 	if table == nil {

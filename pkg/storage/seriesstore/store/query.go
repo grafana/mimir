@@ -152,6 +152,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 		return nil, err
 	}
 	prunedBefore := s.prunedBefore.Load()
+	coldKey := selectorKey(coldLabels)
 	var (
 		selected []selectedSeries
 		a        arena
@@ -159,7 +160,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 	)
 	s.perShardWithCold(tenantID, func(t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		// Cold series, by labels: one may be in several blocks, and also back in memory.
-		coldSeries := s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, start, end, prunedBefore)
+		coldSeries := s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, prunedBefore)
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
 			if countersEnabled {
 				chunkBoundsDecodes.Add(1)
@@ -212,7 +213,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 
 // selectCold returns the tenant's cold series of one store shard that match, by labels, with
 // their chunks newer than prunedBefore.
-func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, start, end, prunedBefore int64) map[labels.Labels]*coldCandidateSeries {
+func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end, prunedBefore int64) map[labels.Labels]*coldCandidateSeries {
 	if len(cold.blocks) == 0 {
 		return nil
 	}
@@ -229,7 +230,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 		// are: the others match it without reading their labels.
 		var sets [][]uint32
 		setsComputed := false
-		for _, index := range block.candidates(tenantID, compiled) {
+		for _, index := range block.candidatesCached(tenantID, coldKey, compiled) {
 			// A hash comparison, where the rest decodes the series.
 			if len(coldShard) > 0 && !inQueryShard(block.shardHash(table, int(index)), coldShard) {
 				continue
