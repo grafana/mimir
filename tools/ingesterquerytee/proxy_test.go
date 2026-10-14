@@ -544,3 +544,49 @@ func TestProxyMismatchDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+func TestProxyComparisonErrorDiagnostics(t *testing.T) {
+	for _, backend := range []string{"primary", "shadow"} {
+		for _, logQuery := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%t", backend, logQuery), func(t *testing.T) {
+				cfg := testConfig()
+				cfg.LogMismatchedQueries = logQuery
+				logs := &logBuffer{}
+				good := func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+					return stream.Send(&client.QueryStreamResponse{IsEndOfSeriesStream: true})
+				}
+				bad := func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+					return stream.Send(&client.QueryStreamResponse{StreamingSeriesChunks: []client.QueryStreamSeriesChunks{{SeriesIndex: 5}}})
+				}
+				primary, shadow := &testIngester{query: good}, &testIngester{query: good}
+				if backend == "primary" {
+					primary.query = bad
+				} else {
+					shadow.query = bad
+				}
+				p, cli := testProxyWithLogger(t, primary, shadow, cfg, log.NewLogfmtLogger(logs))
+				s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200, Matchers: []*client.LabelMatcher{{Name: "secret_query", Value: "secret_value"}}})
+				require.NoError(t, err)
+				for {
+					_, err = s.Recv()
+					if err != nil {
+						break
+					}
+				}
+				require.ErrorIs(t, err, io.EOF)
+				awaitOutcome(t, p, "QueryStream", "comparison_error")
+				require.Eventually(t, func() bool { return strings.Contains(logs.String(), "backend="+backend) }, time.Second, time.Millisecond)
+				require.Contains(t, logs.String(), "invalid series index or missing end marker")
+				require.Contains(t, logs.String(), "primary_frames=1")
+				require.Contains(t, logs.String(), "shadow_frames=1")
+				if logQuery {
+					require.Contains(t, logs.String(), "secret_query")
+					require.Contains(t, logs.String(), "start_timestamp_ms")
+				} else {
+					require.NotContains(t, logs.String(), "secret_query")
+					require.NotContains(t, logs.String(), "secret_value")
+				}
+			})
+		}
+	}
+}

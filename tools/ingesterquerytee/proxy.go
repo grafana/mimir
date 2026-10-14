@@ -305,12 +305,18 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 		var mismatch *mismatchError
 		if errors.As(comparisonErr, &mismatch) {
 			fields = append(fields, mismatch.fields...)
-			if p.cfg.LogMismatchedQueries && method == "QueryStream" {
-				var query client.QueryRequest
-				if query.Unmarshal(req) == nil {
-					if data, err := json.Marshal(&query); err == nil {
-						fields = append(fields, "query", string(data))
-					}
+		}
+		var decodeError *comparisonError
+		if errors.As(comparisonErr, &decodeError) {
+			fields = append(fields, "backend", decodeError.backend, "error", decodeError.Error(),
+				"primary_frames", len(primary.frames), "shadow_frames", len(shadow.frames),
+				"primary_bytes", primary.bytes, "shadow_bytes", shadow.bytes)
+		}
+		if p.cfg.LogMismatchedQueries && method == "QueryStream" && (result == "mismatch" || result == "comparison_error") {
+			var query client.QueryRequest
+			if query.Unmarshal(req) == nil {
+				if data, err := json.Marshal(&query); err == nil {
+					fields = append(fields, "query", string(data))
 				}
 			}
 		}

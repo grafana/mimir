@@ -136,4 +136,5 @@ The result is `success` when the full response has been consumed, `unavailable` 
 
 `ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.
-Set `-log-mismatched-queries=true` to include the QueryStream request, including matchers and time range, in mismatch logs. This is disabled by default because matchers can contain sensitive data. Returned labels, sample values, and tenant metadata are not logged.
+Comparison errors log the failing backend (`primary`, `shadow`, `request`, or `comparison`), the decoder/validation error, and captured frame/byte counts. A successful empty QueryStream is compared as an empty result.
+Set `-log-mismatched-queries=true` to include the QueryStream request, including matchers and time range, in mismatch and comparison-error logs. This is disabled by default because matchers can contain sensitive data. Returned labels, sample values, and tenant metadata are not logged.
