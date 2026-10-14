@@ -162,8 +162,15 @@ func differenceDiagnostic(d *sampleDifference, primary, shadow []frame) (out *di
 				out.HistogramFields = append(out.HistogramFields, a.Type().Field(i).Name)
 			}
 		}
-		for _, name := range []string{"PositiveBuckets", "NegativeBuckets", "CustomValues"} {
-			left, right := a.FieldByName(name).Interface().([]float64), b.FieldByName(name).Interface().([]float64)
+		for _, buckets := range []struct {
+			name            string
+			primary, shadow []float64
+		}{
+			{"PositiveBuckets", out.Primary.histogram.PositiveBuckets, out.Shadow.histogram.PositiveBuckets},
+			{"NegativeBuckets", out.Primary.histogram.NegativeBuckets, out.Shadow.histogram.NegativeBuckets},
+			{"CustomValues", out.Primary.histogram.CustomValues, out.Shadow.histogram.CustomValues},
+		} {
+			left, right := buckets.primary, buckets.shadow
 			for i := range max(len(left), len(right)) {
 				if i < len(left) && i < len(right) && math.Float64bits(left[i]) == math.Float64bits(right[i]) {
 					continue
@@ -177,7 +184,7 @@ func differenceDiagnostic(d *sampleDifference, primary, shadow []frame) (out *di
 					value := floatDiagnostic(right[i])
 					shadowValue = &value
 				}
-				out.HistogramBucketDifference = map[string]any{"field": name, "index": i, "primary": primaryValue, "shadow": shadowValue}
+				out.HistogramBucketDifference = map[string]any{"field": buckets.name, "index": i, "primary": primaryValue, "shadow": shadowValue}
 				break
 			}
 			if out.HistogramBucketDifference != nil {
