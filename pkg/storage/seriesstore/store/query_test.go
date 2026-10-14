@@ -19,7 +19,6 @@ import (
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
 )
@@ -273,49 +272,6 @@ func TestLabelMatchersSelectTheSameWhateverSeriesHaveTheirLabel(t *testing.T) {
 		evaluations := regexEvaluations.Load() - before
 		require.LessOrEqual(t, evaluations, uint64(5*16), "regex evaluations of %s for 5 values in 16 shards", name)
 	}
-}
-
-// The Rust store's head snapshot and cold blocks of the same data restore to the same reads.
-func TestRestoresTheSnapshotAndColdBlocksTheRustStoreWrote(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "store")
-	copyFixture(t, filepath.Join("testdata", "rust-presence-snapshot"), directory)
-	restored, err := Restore(20*60*1000, Retention{}, directory, 2)
-	require.NoError(t, err)
-	require.NotNil(t, restored)
-	defer restored.Store.Close()
-	require.Equal(t, []SnapshotOffset{{Offset: 7, HasOffset: true, TimestampMs: 3}}, restored.Offsets)
-	checkPresenceResults(t, restored.Store, rustResults(t))
-}
-
-// copyFixture copies a store directory, extending chunk files, of which fixtures keep the written
-// part, to their mapped size.
-func copyFixture(t testing.TB, from, to string) {
-	t.Helper()
-	require.NoError(t, filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(from, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(to, relative)
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		bytes, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(target, bytes, 0o644); err != nil {
-			return err
-		}
-		parent := filepath.Base(filepath.Dir(path))
-		if strings.HasPrefix(parent, "shard-") && !strings.Contains(path, string(filepath.Separator)+"cold"+string(filepath.Separator)) && isDigits(entry.Name()) {
-			return os.Truncate(target, chunks.FileSize)
-		}
-		return nil
-	}))
 }
 
 func isDigits(name string) bool {

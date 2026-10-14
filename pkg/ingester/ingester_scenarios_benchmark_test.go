@@ -31,15 +31,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// The cases mimir-dev-15 can't show, on the three ingester implementations: the Prometheus
-// TSDB, the seriesstore engine and the Rust ingester. mimir-dev-15 is one big tenant with a few
+// The cases mimir-dev-15 can't show, on the two ingester engines: the Prometheus TSDB and the
+// seriesstore engine. mimir-dev-15 is one big tenant with a few
 // hundred requests a second per ingester; production cells have thousands of tenants, most of a
 // few hundred series, and up to thousands of requests a second per ingester.
 //
 // Each scenario writes one dataset to Kafka, and each implementation consumes it in turn, alone
 // in the process, so its memory can be measured. MIMIR_SCENARIO_SCALE scales the datasets.
 
-var scenarioImplementations = []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore, "rust"}
+var scenarioImplementations = []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore}
 
 type scenarioQuery struct {
 	name     string
@@ -233,7 +233,7 @@ func BenchmarkIngesterScenarios(b *testing.B) {
 }
 
 // startScenarioImplementation starts an implementation on the dataset up to offset, and returns
-// its API, its memory (Go heap in use, Rust RSS) and open files over what the process had before.
+// its API, its memory (Go heap in use) and open files over what the process had before.
 func startScenarioImplementation(
 	b *testing.B,
 	implementation string,
@@ -242,22 +242,6 @@ func startScenarioImplementation(
 	kafkaCfg ingest.KafkaConfig,
 	offset int64,
 ) (api client.IngesterClient, memory func() uint64, files func() int, stop func()) {
-	if implementation == "rust" {
-		buildRustIngester(b)
-		process, connection := startRustIngesterAndWait(b, kafkaCfg.Address[0], kafkaCfg.Topic, b.TempDir(), offset, "--ingester.max-global-series-per-user=0")
-		pid := process.Process.Pid
-		return client.NewIngesterClient(connection),
-			func() uint64 {
-				rss, err := readProcessRSSBytes(pid)
-				require.NoError(b, err)
-				return rss
-			},
-			func() int { return processOpenFiles(b, pid) },
-			func() {
-				_ = connection.Close()
-				stopRustIngester(b, process)
-			}
-	}
 	ingester := first
 	if ingester == nil || implementation != mimir_tsdb.EnginePrometheus {
 		ingester, _ = newGoIngester(implementation, kafkaCfg.Address[0])

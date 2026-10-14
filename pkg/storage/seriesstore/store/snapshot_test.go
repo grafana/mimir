@@ -5,18 +5,15 @@ package store
 import (
 	"bufio"
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
@@ -272,144 +269,6 @@ func TestRestoresLegacySnapshotsWithTheirExemplarsAndHeadMaxTime(t *testing.T) {
 	old, err := rs.SelectLabels("tenant", math.MinInt64, math.MaxInt64, []LabelMatcher{matcher(0, "job", "c")})
 	require.NoError(t, err)
 	require.Empty(t, old)
-}
-
-// v3FixtureRequests are the requests the Rust ingester's `testdata/head-snapshot-v*` fixtures were
-// written from, by the ingesters that wrote those versions.
-func v3FixtureRequests() [2]record.DecodedRequest {
-	series := func(job string, samples []sample, histograms [][2]int64) record.DecodedSeries {
-		s := record.DecodedSeries{
-			Labels:    [][2]string{{"__name__", "metric"}, {"job", job}},
-			Exemplars: []mimirpb.Exemplar{{Value: 1, TimestampMs: 5}},
-		}
-		for _, sample := range samples {
-			s.Samples = append(s.Samples, mimirpb.Sample{TimestampMs: sample.t, Value: sample.v})
-		}
-		for _, h := range histograms {
-			timestamp, buckets := h[0], uint32(h[1])
-			deltas := make([]int64, buckets)
-			deltas[0] = 1
-			s.Histograms = append(s.Histograms, mimirpb.Histogram{
-				Timestamp:      timestamp,
-				Count:          &mimirpb.Histogram_CountInt{CountInt: uint64(buckets)},
-				Sum:            float64(timestamp % 997),
-				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: buckets}},
-				PositiveDeltas: deltas,
-			})
-		}
-		return s
-	}
-	request := func(series ...record.DecodedSeries) record.DecodedRequest {
-		return record.DecodedRequest{Series: series, Metadata: []mimirpb.MetricMetadata{{Type: 1, MetricFamilyName: "metric", Help: "help"}}}
-	}
-	var histograms [][2]int64
-	for t := int64(0); t < 400; t++ {
-		histograms = append(histograms, [2]int64{t*15_000 + 3, 3 + t/100})
-	}
-	return [2]record.DecodedRequest{
-		request(
-			series("floats", samplesRange(0, 500, func(t int64) sample { return sample{t * 15_000, float64(t)} }), nil),
-			series("histograms", nil, histograms),
-		),
-		request(
-			series("floats", []sample{{7_000_001, 1.5}, {7_000_002, 2.5}}, nil),
-			series("histograms", nil, [][2]int64{{5_900_001, 2}}),
-		),
-	}
-}
-
-// normalizedSample is a sample with histogram buckets as absolute counts and without its counter
-// reset hint, since recoding a chunk for new buckets or cutting a new one store the same histogram
-// with different spans, and a new chunk's first sample has an unknown counter reset.
-func normalizedSample(s chunks.Sample) string {
-	if s.H == nil {
-		return fmt.Sprintf("%d F %v", s.T, math.Float64bits(s.F))
-	}
-	h := s.H
-	var buckets [][2]int64
-	index, count, delta := int32(0), int64(0), 0
-	for _, span := range h.PositiveSpans {
-		index += span.Offset
-		for range span.Length {
-			count += h.PositiveDeltas[delta]
-			delta++
-			if count != 0 {
-				buckets = append(buckets, [2]int64{int64(index), count})
-			}
-			index++
-		}
-	}
-	return fmt.Sprintf("%d %v %v %v %v", s.T, h.Sum, h.GetCountInt(), h.GetZeroCountInt(), buckets)
-}
-
-func samplesEverything(t testing.TB, s *Store) []string {
-	t.Helper()
-	views, err := s.SelectChunks("tenant", math.MinInt64, math.MaxInt64, nil)
-	require.NoError(t, err)
-	var out []string
-	for _, view := range views {
-		labels := fmt.Sprint(decodeLabels(t, view.EncodedLabels))
-		for _, chunk := range decodeChunks(t, []QuerySeriesView{view}) {
-			samples, err := chunks.Decode(chunk.Encoding, chunk.Data)
-			require.NoError(t, err)
-			for _, sample := range samples {
-				out = append(out, labels+" "+normalizedSample(sample))
-			}
-		}
-	}
-	return out
-}
-
-// restoresRustFixture restores a head snapshot the deployed Rust ingester wrote from
-// v3FixtureRequests, which the Rust ingester's own tests restore too.
-func restoresRustFixture(t *testing.T, name string) {
-	directory := filepath.Join(t.TempDir(), "store")
-	copyFixture(t, filepath.Join("..", "..", "..", "..", "cmd", "rust-kafka-ingester", "testdata", name), directory)
-	for shard := range DefaultShards {
-		require.NoError(t, os.MkdirAll(filepath.Join(directory, fmt.Sprintf("shard-%03d", shard)), 0o755))
-	}
-	l := limits.DefaultLimits()
-	l.OutOfOrderTimeWindowMs = 3_600_000
-	l.MaxGlobalExemplarsPerUser = 100
-	l.NativeHistogramsIngestionEnabled = true
-	overrides := limits.NewOverrides(l)
-	restored, err := Restore(20*60*1000, Retention{}, directory, 2)
-	require.NoError(t, err)
-	require.NotNil(t, restored, "fixture snapshot restores")
-	rs := restored.Store.WithOverrides(overrides)
-	defer rs.Close()
-	fresh, err := New(20*60*1000, Retention{}, filepath.Join(directory, "fresh"))
-	require.NoError(t, err)
-	fresh.WithOverrides(overrides)
-	defer fresh.Close()
-	for _, request := range v3FixtureRequests() {
-		require.NoError(t, fresh.Ingest("tenant", request))
-	}
-	require.Equal(t, []SnapshotOffset{{Offset: 41, HasOffset: true, TimestampMs: 99}}, restored.Offsets)
-	require.Equal(t, samplesEverything(t, fresh), samplesEverything(t, rs))
-	exemplars, err := rs.SelectExemplars("tenant", math.MinInt64, math.MaxInt64, nil)
-	require.NoError(t, err)
-	require.Len(t, exemplars, 2)
-	// Both keep appending to the restored heads alike.
-	more := v3FixtureRequests()[0]
-	more.Series[0].Samples = []mimirpb.Sample{{TimestampMs: 7_500_000, Value: 9}}
-	more.Series[1].Histograms = more.Series[1].Histograms[:1]
-	more.Series[1].Histograms[0].Timestamp = 7_500_003
-	again := v3FixtureRequests()[0]
-	again.Series[0].Samples = slices.Clone(more.Series[0].Samples)
-	again.Series[1].Histograms = slices.Clone(more.Series[1].Histograms)
-	require.NoError(t, rs.Ingest("tenant", more))
-	require.NoError(t, fresh.Ingest("tenant", again))
-	require.Equal(t, samplesEverything(t, fresh), samplesEverything(t, rs))
-}
-
-func TestRestoresV3SnapshotsWrittenByTheDeployedRustIngester(t *testing.T) {
-	restoresRustFixture(t, "head-snapshot-v3")
-}
-
-// Written by Mimir `1fbdfb2100` from the same requests.
-func TestRestoresV4SnapshotsWrittenByTheDeployedRustIngester(t *testing.T) {
-	restoresRustFixture(t, "head-snapshot-v4")
 }
 
 func TestRestoresTheEmulatedHeadLikeAGoHeadReplayedFromItsWAL(t *testing.T) {
