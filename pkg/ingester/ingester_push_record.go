@@ -183,9 +183,10 @@ var recordStats struct {
 	records, direct, whole, subsets atomic.Uint64
 }
 
-// AcceptsRecords implements ingest.RecordPusher: records are pushed as they are, for the engines that read them.
+// AcceptsRecords implements ingest.RecordPusher: records are pushed as they are when the ingester's engines read them,
+// and else decoded by the reader, which spreads their series over its goroutines.
 func (i *Ingester) AcceptsRecords() bool {
-	return i.cfg.IngestStorageConfig.Enabled && i.cfg.PushRecordsToEngine
+	return i.cfg.IngestStorageConfig.Enabled && i.enginesReadRecords()
 }
 
 // PushRecord implements ingest.RecordPusher.

@@ -98,6 +98,12 @@ func mustIndex(head engineHead) tsdb.IndexReader {
 // to compare them (MIMIR_TEST_NO_NATIVE_ACTIVE); it's always false outside tests.
 var testNoNativeActive bool
 
+// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the Prometheus
+// TSDB doesn't.
+func (i *Ingester) enginesReadRecords() bool {
+	return false
+}
+
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
 type prometheusEngine struct {
 	*tsdb.DB

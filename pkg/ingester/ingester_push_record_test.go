@@ -30,7 +30,6 @@ import (
 func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T) {
 	start := func() (*Ingester, *prometheus.Registry) {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.PushRecordsToEngine = true
 		limitsCfg := defaultLimitsTestConfig()
 		limitsCfg.NativeHistogramsIngestionEnabled = true
 		limitsCfg.MaxGlobalExemplarsPerUser = 100
