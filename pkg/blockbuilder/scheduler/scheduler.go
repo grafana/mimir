@@ -193,6 +193,8 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 		c.Each(func(o kadm.Offset) {
 			ps := s.getPartitionState(o.Topic, o.Partition)
 			ps.initCommit(clusterID, o.At)
+			// Publish loaded offsets without waiting for observation mode and the first periodic flush.
+			s.metrics.perClusterMetrics[clusterID].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 		})
 		s.mu.Unlock()
 	}

@@ -304,6 +304,17 @@ func (p *partitionHandler) loadLastSnapshotRecordAndGetEventsOffset(ctx context.
 		return 0, nil
 	}
 
+	// The end offset can be greater than zero while the partition has no records, for example when retention deleted them.
+	// Polling would then wait for a new record until the startup timeout, so make sure there's a recent enough record first.
+	offsetAfterIdleTimeout, err := findOffsetAfter(ctx, p.snapshotsKafkaReader, snapshotsTopic, p.partitionID, time.Now().Add(-p.cfg.IdleTimeout))
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to find first offset after idle timeout for topic %s", snapshotsTopic)
+	}
+	if offsetAfterIdleTimeout >= offset {
+		level.Warn(p.logger).Log("msg", "no snapshot records within idle timeout, not loading snapshot", "topic", snapshotsTopic, "end_offset", offset, "first_offset_after_idle_timeout", offsetAfterIdleTimeout, "idle_timeout", p.cfg.IdleTimeout)
+		return 0, nil
+	}
+
 	// Start reading the last snapshot.
 	fetches := p.snapshotsKafkaReader.PollFetches(ctx)
 	if err := fetches.Err(); err != nil {

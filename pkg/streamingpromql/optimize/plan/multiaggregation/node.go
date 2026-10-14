@@ -29,6 +29,7 @@ func init() {
 
 //node:generate
 type MultiAggregationGroup struct {
+	core.NodeIdentifier
 	*MultiAggregationGroupDetails
 	Inner planning.Node `node:"child"`
 }
@@ -76,6 +77,7 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 
 //node:generate
 type MultiAggregationInstance struct {
+	core.NodeIdentifier
 	*MultiAggregationInstanceDetails
 	Group *MultiAggregationGroup `node:"child,label=expression"`
 	Param planning.Node          `node:"child,nilable,label=parameter"` // nil for non-parameterized aggregations (eg. sum), set for quantile.

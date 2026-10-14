@@ -602,6 +602,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 	cfg.UseMQEForSharding = false
+	cfg.UseMQEForSplittingAndCachingResults = false
 	cfg.RewriteQueriesHistogram = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.

@@ -12,14 +12,26 @@
 * [CHANGE] Removed the following deprecated config: `-querier.filter-queryables-enabled`, `-query-frontend.cache-samples-processed-stats`, `-ingest-storage.kafka.write-clients`, `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`, `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`. #16352
 * [CHANGE] The `bucket` label of the `thanos_objstore_bucket_*` metrics, previously always empty, is now set to the name of the bucket the metrics refer to. This lets a component that accesses more than one bucket report each of them separately. The `thanos_store_bucket_cache_*` and `cortex_bucket_index_load*` metrics gained a `bucket` label carrying the same bucket name, for the same reason. #16265
 * [CHANGE] Compactor: Stabilize `-compactor.first-level-compaction-skip-future-max-time` to `true` and `-compactor.first-level-compaction-ooo-wait-period` to 5 minutes, both of which have been shown to improve batching during the split phase and reduce the total volume of L2 blocks in deployments with lots of out-of-order writes. #16464
+* [CHANGE] Compactor: Sparse index-header generation for compacted blocks is now required. A failure to build a block's sparse index-header now fails the compaction job, instead of just skipping the upload of that block's sparse index-header. #16657
 * [CHANGE] Querier, Store-gateway: Remove support for opaque GRPC hint types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.2. See associated release notes for more information. #16481
 * [CHANGE] Ingester: Rename experimental index lookup planning metrics from `cortex_ingester_lookup_planning_*` to `cortex_tsdb_index_lookup_planning_*` to reflect they are component-agnostic. #16665
   [CHANGE] Query-frontend: Deprecate the flag `-query-frontend.log-queries-longer-than` since it is redundant with query stats logging. #16655
 * [CHANGE] Query-frontend: The `query stats` log line no longer includes stats that an endpoint never sets. For example, label values requests no longer log `fetched_series_count` or `sharded_queries`. As a result, the fetched series and fetched chunks panels of the `Mimir / Slow queries` dashboard no longer include zero values from these requests. #16760
+* [CHANGE] Usage-tracker: Replaced the per-tenant shard map with an implementation that keeps one mark per group for the series that the idle-series cleanup removes, instead of one tombstone per removed series, so the cleanup does not write to the series keys. The experimental `-usage-tracker.tenantshard-impl-version` flag now defaults to `2`, and version `1` is no longer supported. #16532 #16800
+* [CHANGE] Build: Binaries and Docker images are now built with `GOAMD64=v3` and `GOARM64=v8.1`, the same microarchitecture levels Grafana Labs uses for its enterprise and cloud binaries. amd64 binaries now require an x86-64-v3 CPU (with AVX2), and arm64 binaries require ARMv8.1 or newer. To build for older CPUs, override the variables, for example `make GOAMD64=v1 GOARM64=v8.0 exes`. #16805
+* [CHANGE] MQE: The experimental `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination` flag has been removed, and scalar CSE is now always enabled whenever CSE is enabled. #16824
+* [CHANGE] Query-frontend: Enable `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results` by default, so splitting range queries by interval, caching results for range queries and spinning off subqueries from instant queries are performed inside the query engine rather than in query-frontend middleware when the corresponding features are enabled. #16856
+* [CHANGE] MQE: Enable `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination` by default, so range vector selectors in range queries are deduplicated as part of common subexpression elimination. #16856
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615
 * [FEATURE] Distributor: add experimental per-tenant limit configuration `-distributor.merge-duplicate-timeseries` to merge timeseries objects that share the same label set and created timestamp within a write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to the ingesters, where they were silently dropped without incrementing `cortex_discarded_samples_total`. Disabled by default. #15589
 * [FEATURE] Query-frontend: Add the experimental `cortex_query_frontend_max_inflight_requests` and `cortex_query_frontend_max_inflight_request_age_seconds` metrics, reporting the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Both reset on each scrape. The `type` label is `http` for requests entering the query-frontend, or `dispatched` for the sub-requests sent on to query-schedulers. Enable with `-query-frontend.max-inflight-metrics-enabled=true`. #16575
-* [FEATURE] Store-gateway: add experimental on-disk index-header format behind `-blocks-storage.bucket-store.index-header.bucket-reader.enabled`, which only contains the symbols table. Postings offset table is resolved via object storage reads instead. Disabled by default. #16483
+* [FEATURE] Block-builder: Add the experimental `-block-builder.verify-blocks-before-upload` flag to verify blocks before uploading them to object storage. Disabled by default. #16480
+* [FEATURE] Store-gateway: add experimental on-disk index-header format behind `-blocks-storage.bucket-store.index-header.version=2`, which only contains the symbols table. Postings offset table is resolved via object storage reads instead. Existing stable format `version=1` remains as the default. #16483 #16797
+* [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
+* [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572
+* [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
+* [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
+* [FEATURE] MQE: Add experimental functionality to expose per-selector query cost information. #16613 #16619
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
@@ -42,10 +54,12 @@
 * [ENHANCEMENT] MQE: Move `originalExpression` to end of `evaluation stats` log line to improve readability. #16743
 * [ENHANCEMENT] Runtime config: Optimize loading of overrides for many tenants. #16765
 * [ENHANCEMENT] Usage-tracker: Make the per-tenant shard count configurable via `-usage-tracker.num-shards`, which must be a power of 2. #15888
-* [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
-* [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572
-* [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
-* [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
+* [ENHANCEMENT] MQE: Reduce CPU and memory consumption of the experimental PromQL function `info`. #16790
+* [ENHANCEMENT] Usage-tracker: Speed up the idle-series cleanup about 4x on amd64 and 5x on arm64, by checking a whole group of the per-tenant shard map at once with 64-bit arithmetic, instead of one series at a time. #16825
+* [ENHANCEMENT] Ruler: Make the default resend delay for alerts 5m instead of 1m to avoid alerts spuriously resolving when rulers take longer to restart. #16822
+* [ENHANCEMENT] Store-gateway: Release the omitted posting groups before fetching postings. This reduces the risk of OOM when concurrent requests query high-cardinality matchers. #16837
+* [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
+* [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
 * [BUGFIX] Continuous-test: Apply `-tests.read-timeout` to metadata requests. Previously a metadata request could block indefinitely if the server never responded. #16728
@@ -68,9 +82,10 @@
 * [BUGFIX] MQE: Never skip decoding histogram buckets for `histogram_stddev` and `histogram_stdvar`, as this could return wrong results when these functions are nested in other functions that skip decoding histogram buckets like `histogram_sum`, `histogram_count` or `histogram_avg`. #16486
 * [BUGFIX] MQE: Honour `Cache-Control: no-store` for the experimental range vector splitting intermediate-results cache when remote execution is enabled. The option was decoded on the query-frontend but not propagated to the querier, where the cache is read and written, so it had no effect. #16674
 * [BUGFIX] MQE: Fix instant queries with a top-level subquery that removes the metric name (e.g. `(rate(foo[5m]))[1h:5m]`) failing with an error when delayed name removal is enabled. #16666 #16672
-* [BUGFIX] Upgrade Go to 1.26 latest with fixes for [CVE-2026-33818](https://pkg.go.dev/vuln/GO-2026-5972), [CVE-2026-39821](https://pkg.go.dev/vuln/GO-2026-5026), [CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), [CVE-2026-56853](https://pkg.go.dev/vuln/GO-2026-6089), [CVE-2026-56858](https://pkg.go.dev/vuln/GO-2026-6091), [CVE-2026-56859](https://pkg.go.dev/vuln/GO-2026-6088), [CVE-2026-56860](https://pkg.go.dev/vuln/GO-2026-6218), and [CVE-2026-56862](https://pkg.go.dev/vuln/GO-2026-6090). #16408 #16430
+* [BUGFIX] Upgrade Go to 1.26 latest with fixes for [CVE-2026-33818](https://pkg.go.dev/vuln/GO-2026-5972), [CVE-2026-39821](https://pkg.go.dev/vuln/GO-2026-5026), [CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), [CVE-2026-56853](https://pkg.go.dev/vuln/GO-2026-6089), [CVE-2026-56858](https://pkg.go.dev/vuln/GO-2026-6091), [CVE-2026-56859](https://pkg.go.dev/vuln/GO-2026-6088), [CVE-2026-56860](https://pkg.go.dev/vuln/GO-2026-6218), [CVE-2026-56862](https://pkg.go.dev/vuln/GO-2026-6090), [CVE-2026-56857](https://pkg.go.dev/vuln/GO-2026-6604), [CVE-2026-56866](https://pkg.go.dev/vuln/GO-2026-6605), [CVE-2026-78659](https://pkg.go.dev/vuln/GO-2026-6603), [CVE-2026-78660](https://pkg.go.dev/vuln/GO-2026-6610), [CVE-2026-78663](https://pkg.go.dev/vuln/GO-2026-6612), [CVE-2026-78667](https://pkg.go.dev/vuln/GO-2026-6609), [CVE-2026-78669](https://pkg.go.dev/vuln/GO-2026-6611), [CVE-2026-94439](https://pkg.go.dev/vuln/GO-2026-6613), [CVE-2026-94440](https://pkg.go.dev/vuln/GO-2026-6608), [CVE-2026-94448](https://pkg.go.dev/vuln/GO-2026-6599), [CVE-2026-97030](https://pkg.go.dev/vuln/GO-2026-6600), [CVE-2026-97031](https://pkg.go.dev/vuln/GO-2026-6607), and [CVE-2026-97032](https://pkg.go.dev/vuln/GO-2026-6617). #16408 #16430 #16861
 * [BUGFIX] Store-gateway: Drain the chunks range reader before closing it so HTTP object storage connections can be reused. #16338
 * [BUGFIX] Block-builder-scheduler: Fail startup instead of silently switching to normal operation without assigning any jobs when probing the initial consumption offsets fails. #16028
+* [BUGFIX] Block-builder-scheduler: Publish `cortex_blockbuilder_scheduler_partition_committed_offset` when committed offsets are loaded during startup, instead of waiting for the observation period and first periodic flush to complete. #16838
 * [BUGFIX] Block-builder: Fix silent data loss for jobs spanning exactly one record. #16493
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the cardinality `label_names` and `label_values` endpoints when the merged response exceeds `-querier.label-names-and-values-results-max-size-bytes`. #16452
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the active series endpoint's framed response format when a single series' JSON exceeds the maximum frame size. #16452
@@ -80,9 +95,13 @@
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
+* [BUGFIX] Ruler: Restore the `for` state of alerts from `ALERTS_FOR_STATE` when `-ruler.tenant-federation.enabled=true`. Previously the ruler queried `ALERTS_FOR_STATE` through the federated queryable, which adds the `__tenant_id__` label. Restored series never matched the alert labels, so every ruler restart or rule group move reset alerts to `pending`. #16745
 * [BUGFIX] Ruler: Return HTTP 499 from the ruler API when the client cancels the request. Previously, client cancellations were reported as 500 by the Prometheus rules and alerts endpoints and the rule group write and delete endpoints, and as 400 by the rule group read endpoints. #16726
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
 * [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16783
+* [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search API `/api/v1/search/metric_names` when `include_metadata=true` is set. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #16759
+* [BUGFIX] Usage-tracker: Fix startup waiting for the whole snapshot loading timeout (half of `-usage-tracker.idle-timeout`) before becoming ready when retention deleted all records from the snapshots metadata topic. #16786
+* [BUGFIX] Query-frontend: Return HTTP 422 instead of HTTP 500 when a query exceeds `-querier.max-estimated-memory-consumption-per-query`. The limit error was returned unclassified, so it fell through to the generic HTTP 500 handling. #16716
 
 ### Mixin
 
@@ -101,6 +120,7 @@
 * [ENHANCEMENT] Dashboards: Support collapsing the compactor standalone-mode panels by default with the `compactor_standalone_summary_collapsed` flag. #16482
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
 * [BUGFIX] Alerts: `MimirMemberlistBridgeZoneUnavailable` fired for every zone whenever kube-state-metrics stopped exporting the memberlist-bridge Pod series, because it compared a Deployment-object series against Pod-object series with `unless`. It now compares the Deployment's ready replica count against its spec replica count, so both operands come from one object and a missing export suppresses the alert instead of firing it. #16774
+* [BUGFIX] Alerts: Support `keda_scaler_detail_errors_total` in `MimirAutoscalerKedaFailing`, with a fallback to `keda_scaler_errors` for older KEDA versions. #16739
 * [BUGFIX] Recording rules: Add the `image!=""` selector to the `cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate` recording rule, consistently with the memory one. Where cAdvisor sandbox and parent cgroup series are not dropped at scrape time, CPU usage was counted twice, which also inflated the replica count recommended by the Scaling dashboard. #16320
 * [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #16329
 * [BUGFIX] Dashboards: Fix the ingest mode latency panels not working with classic histogram metrics. #16556
@@ -129,6 +149,12 @@
 
 ### Tools
 
+
+## 3.2.2
+
+### Grafana Mimir
+
+* [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16789
 
 ## 3.2.1
 
@@ -323,6 +349,12 @@
 * [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
+
+## 3.1.7
+
+### Grafana Mimir
+
+* [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16791
 
 ## 3.1.6
 

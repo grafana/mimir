@@ -19,7 +19,7 @@ import (
 // package.
 func forEachImplementation(t *testing.T, test func(t *testing.T, newMap Factory)) {
 	t.Helper()
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{2} {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			newMap, err := NewFactory(version, DefaultNumShards)
 			require.NoError(t, err)
@@ -48,9 +48,12 @@ func TestNewFactory(t *testing.T) {
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {
-		newMap, err := NewFactory(3, DefaultNumShards)
-		require.EqualError(t, err, "unsupported tenant shard map implementation version 3, supported versions are 1 and 2")
-		require.Zero(t, newMap.NumShards())
+		// Version 1 was removed, so it is rejected like any version that never existed.
+		for _, version := range []int{0, 1, 3} {
+			newMap, err := NewFactory(version, DefaultNumShards)
+			require.EqualError(t, err, fmt.Sprintf("unsupported tenant shard map implementation version %d, the only supported version is 2", version))
+			require.Zero(t, newMap.NumShards())
+		}
 	})
 
 	t.Run("invalid shard count", func(t *testing.T) {
@@ -63,7 +66,7 @@ func TestNewFactory(t *testing.T) {
 	})
 
 	t.Run("shard count is reported back and reaches the maps", func(t *testing.T) {
-		for _, version := range []int{1, 2} {
+		for _, version := range []int{2} {
 			t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 				// The maps turn the tenant-wide limit into a per-shard one by dividing it by the
 				// shard count, so a map built for more shards grows to a smaller size.

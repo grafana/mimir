@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 
@@ -542,6 +543,38 @@ func TestPartitionHandler(t *testing.T) {
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
 		requirePerTenantSeries(t, ph, map[string]uint64{}) // Should be empty.
 		require.Equal(t, int64(0), getCalls.Load(), "snapshot should not be loaded because it's too old")
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+	})
+
+	t.Run("startup doesn't wait for snapshot records that were deleted by retention", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler tracks some series, creates a snapshot, and shuts down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// Delete all snapshot records, like retention does, so the end offset is not zero but the partition is empty.
+		adm := kadm.NewClient(h.snapshotsKafkaWriter)
+		endOffsets, err := adm.ListEndOffsets(ctx, snapshotsMetadataTopic)
+		require.NoError(t, err)
+		require.NoError(t, endOffsets.Error())
+		deleted, err := adm.DeleteRecords(ctx, endOffsets.Offsets())
+		require.NoError(t, err)
+		require.NoError(t, deleted.Error())
+
+		// New partitionHandler with a long idle timeout, so waiting for a snapshot record would exceed the test timeout.
+		ph := h.newHandler(t, func(cfg *Config) { cfg.IdleTimeout = time.Hour })
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		require.Equal(t, float64(0), testutil.ToFloat64(ph.snapshotLoadFailedAtStartup))
+		// Series are still loaded from the events topic, which wasn't deleted.
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})

@@ -2133,13 +2133,7 @@ mimir_query_engine:
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
-
-  # (experimental) Enable deduplication of scalar expressions as part of common
-  # subexpression elimination. Requires common subexpression elimination to be
-  # enabled.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
-  [enable_scalar_common_subexpression_elimination: <boolean> | default = false]
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2438,7 +2432,7 @@ results_cache:
 # -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
 # remote execution and sharding inside MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = true]
 
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
@@ -2988,7 +2982,7 @@ alertmanager_client:
 # (advanced) Minimum amount of time to wait before resending an alert to
 # Alertmanager.
 # CLI flag: -ruler.resend-delay
-[resend_delay: <duration> | default = 1m]
+[resend_delay: <duration> | default = 5m]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -6222,7 +6216,7 @@ bucket_store:
 
   index_header_cache:
     # Backend for index-header cache, if not empty. Intended for use with
-    # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:
+    # -blocks-storage.bucket-store.index-header.version=2. Supported values:
     # memcached.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
     [backend: <string> | default = ""]
@@ -6458,18 +6452,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
     [verify_on_load: <boolean> | default = false]
 
-    bucket_reader:
-      # (experimental) Enable reading TSDB index-header sections from object
-      # storage. When enabled, the configured
-      # -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      # are not downloaded to local disk.
-      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.enabled
-      [enabled: <boolean> | default = false]
-
-      # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: postings-offsets-table
-      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "postings-offsets-table"]
+    # (experimental) Index-header format version. Version 1 keeps the symbols
+    # and postings offsets tables on local disk. Version 2 keeps only the
+    # symbols table on local disk and reads the postings offsets table from the
+    # TSDB index in object storage.
+    # CLI flag: -blocks-storage.bucket-store.index-header.version
+    [version: <int> | default = 1]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
@@ -7519,6 +7507,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7632,6 +7623,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7744,6 +7738,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 

@@ -15,7 +15,7 @@ import (
 )
 
 func BenchmarkTenantShard(b *testing.B) {
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{2} {
 		b.Run(fmt.Sprintf("impl=v%d", version), func(b *testing.B) {
 			newShard, err := tenantshard.NewFactory(version, tenantshard.DefaultNumShards)
 			require.NoError(b, err)

@@ -182,7 +182,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			for _, resp := range responses {
 				bytes := uint64(proto.Size(resp))
 				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.CachedResponses); err != nil {
-					return nil, err
+					return nil, convertToAPIError(err, apierror.TypeExec)
 				}
 				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.CachedResponses)
 			}

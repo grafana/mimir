@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -533,6 +534,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		cortex_usage_tracker_active_series{user="user1"} 2
 		cortex_usage_tracker_active_series{user="user2"} 3
 	`), "cortex_usage_tracker_active_series"))
+	requireShardCleanupDurationSampleCount(t, reg, 0)
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -550,6 +552,8 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		# TYPE cortex_usage_tracker_active_series gauge
 		cortex_usage_tracker_active_series{user="user2"} 2
 	`), "cortex_usage_tracker_active_series"))
+	// Each shard of both tenants was cleaned up.
+	requireShardCleanupDurationSampleCount(t, reg, 2*shards)
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -559,6 +563,23 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
 		# TYPE cortex_usage_tracker_active_series gauge
 	`), "cortex_usage_tracker_active_series"))
+	// Only the shards of testUser2 were cleaned up this time.
+	requireShardCleanupDurationSampleCount(t, reg, 3*shards)
+}
+
+func requireShardCleanupDurationSampleCount(t *testing.T, reg prometheus.Gatherer, expected uint64) {
+	t.Helper()
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	idx := slices.IndexFunc(families, func(mf *dto.MetricFamily) bool {
+		return mf.GetName() == "cortex_usage_tracker_shard_cleanup_duration_seconds"
+	})
+	require.NotEqual(t, -1, idx, "shard cleanup duration histogram not found")
+	require.Len(t, families[idx].GetMetric(), 1)
+	h := families[idx].GetMetric()[0].GetHistogram()
+	require.NotNil(t, h.Schema, "shard cleanup duration should be a native histogram")
+	require.Equal(t, expected, h.GetSampleCount())
 }
 
 type limiterMock map[string]uint64
@@ -752,7 +773,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
 		# TYPE cortex_usage_tracker_active_series gauge
-	`)))
+	`), "cortex_usage_tracker_active_series", "cortex_usage_tracker_series_created_total", "cortex_usage_tracker_series_removed_total"))
 }
 
 func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
