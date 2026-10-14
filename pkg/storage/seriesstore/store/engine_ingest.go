@@ -30,6 +30,12 @@ type FloatSink interface {
 	NeedsLabels() bool
 }
 
+// RefSink is a FloatSink that may know a series by its ref already: Ingested is then called, with the series' labels
+// built, only for the series IngestedRef doesn't know.
+type RefSink interface {
+	IngestedRef(series int, ref storage.SeriesRef) bool
+}
+
 type floatSeries struct {
 	index int
 	hash  uint64
@@ -305,9 +311,15 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 	// In the order of the request, which the prepared series are in.
 	slices.SortFunc(touched, func(a, b floatIngested) int { return cmp.Compare(a.series, b.series) })
 	needsLabels := sink.NeedsLabels()
+	refSink, byRef := sink.(RefSink)
 	for _, series := range touched {
 		prep := prepared[series.series]
-		if needsLabels {
+		if byRef {
+			if refSink.IngestedRef(prep.index, series.ref) {
+				continue
+			}
+			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
+		} else if needsLabels {
 			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
 		}
 		sink.Ingested(prep.index, scratch, series.ref)

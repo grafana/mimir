@@ -88,7 +88,10 @@ func appendDecoded(t testing.TB, engine *Engine, content []byte, sink FloatSink)
 }
 
 func appendRW2(t testing.TB, engine *Engine, content []byte, sink FloatSink) ([]int, int) {
-	leftover, ingested, err := engine.AppendRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset, 0, 1<<62, 0, false, sink)
+	record, err := ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+	require.NoError(t, err)
+	defer record.Release()
+	leftover, ingested, err := engine.AppendRW2(record, 0, 1<<62, 0, false, sink)
 	require.NoError(t, err)
 	return leftover, ingested
 }
@@ -133,10 +136,9 @@ func TestAppendRW2AppendsWhatDecodingDoes(t *testing.T) {
 }
 
 func TestAppendRW2RejectsMalformedRecords(t *testing.T) {
-	engine := rw2Engine(t, 10)
 	content := rw2Records(t, 0, 10, 10, 1000)[0]
 	for _, cut := range []int{1, len(content) / 2, len(content) - 1} {
-		_, _, err := engine.AppendRW2(content[:cut], ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset, 0, 1<<62, 0, false, &rw2Sink{})
+		_, err := ReadRW2(content[:cut], ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
 		require.ErrorIs(t, err, errMalformedRW2, "cut at %d", cut)
 	}
 }
