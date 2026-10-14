@@ -819,20 +819,20 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 		return fmt.Sprintf(`
 			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes Total bytes of cardinality estimation cache keys generated per call to estimate or store cardinality.
 			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes histogram
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_bucket{path="read",le="+Inf"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_sum{path="read"} %[3]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_count{path="read"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_bucket{path="write",le="+Inf"} %[4]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_sum{path="write"} %[6]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_count{path="write"} %[4]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_bucket{operation="read",le="+Inf"} %[1]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_sum{operation="read"} %[3]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_count{operation="read"} %[1]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_bucket{operation="write",le="+Inf"} %[4]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_sum{operation="write"} %[6]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes_count{operation="write"} %[4]d
 			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys Number of cardinality estimation cache keys generated per call to estimate or store cardinality.
 			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_keys histogram
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_bucket{path="read",le="+Inf"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_sum{path="read"} %[2]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_count{path="read"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_bucket{path="write",le="+Inf"} %[4]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_sum{path="write"} %[5]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_count{path="write"} %[4]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_bucket{operation="read",le="+Inf"} %[1]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_sum{operation="read"} %[2]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_count{operation="read"} %[1]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_bucket{operation="write",le="+Inf"} %[4]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_sum{operation="write"} %[5]d
+			cortex_mimir_query_engine_cardinality_estimation_cache_keys_count{operation="write"} %[4]d
 		`, read.count, read.keys, read.keyBytes, write.count, write.keys, write.keyBytes)
 	}
 
