@@ -22,7 +22,9 @@ type seriesEntry struct {
 	labels labels.Labels
 	// The next entry of the group with the same hash, or -1: a hash collision only adds a
 	// comparison.
-	next   int32
+	next int32
+	// The series' id in the postings, which index refs.
+	id     uint32
 	series Series
 }
 
@@ -47,14 +49,20 @@ func (g *group) lookup(hash uint64, visit func(entry *seriesEntry) bool) bool {
 	return false
 }
 
-// seriesRef locates a series: its name group and label hash.
+// seriesRef locates a series: its name group, where it is in the group's entries and its label hash. The position is where
+// the series was when the ref was taken: removals from a group record it again for the refs of the postings, and a ref
+// whose position doesn't hold the series' hash is found by the hash.
 type seriesRef struct {
 	group uint32
+	index int32
 	hash  uint64
 }
 
 func compareRefs(a, b seriesRef) int {
 	if c := cmp.Compare(a.group, b.group); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.index, b.index); c != 0 {
 		return c
 	}
 	return cmp.Compare(a.hash, b.hash)
@@ -83,6 +91,8 @@ type seriesByName struct {
 	postings       []map[uint32]uint32
 	sharedPostings [][]uint32
 	refs           []seriesRef
+	// Changes whenever the postings are rebuilt, which gives every series a new id.
+	idEpoch uint64
 	// By label name id, how many series have the label: its postings list them all, and queries
 	// compare their size with other candidates' before listing them.
 	labelSeries []uint32
@@ -158,7 +168,7 @@ func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, se
 	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
 	b.locs.remember(hash, groupID, len(g.entries)-1, b.len)
-	b.addPostings(stored, groupID, hash)
+	g.entries[len(g.entries)-1].id = b.addPostings(stored, groupID, len(g.entries)-1, hash)
 	return &g.entries[len(g.entries)-1]
 }
 
@@ -184,12 +194,12 @@ const metricNameLabel = "__name__"
 
 var metricNameID = labels.Intern(metricNameLabel)
 
-func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, hash uint64) {
+func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, index int, hash uint64) uint32 {
 	id := uint32(len(b.refs))
 	if id&sharedPosting != 0 {
 		panic("fewer than 2^31 series per tenant shard")
 	}
-	b.refs = append(b.refs, seriesRef{groupID, hash})
+	b.refs = append(b.refs, seriesRef{groupID, int32(index), hash})
 	rest := string(stored)
 	for len(rest) > 0 {
 		name := uint32(takeUvarintString(&rest))
@@ -222,6 +232,7 @@ func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, hash ui
 			b.sharedPostings[index] = append(b.sharedPostings[index], id)
 		}
 	}
+	return id
 }
 
 // posting returns the ids of a posting.
@@ -480,6 +491,18 @@ func (b *seriesByName) forEach(visit func(entry *seriesEntry)) {
 // visitRefs calls visit for every series of refs, stopping when it returns false.
 func (b *seriesByName) visitRefs(refs []seriesRef, visit func(entry *seriesEntry) bool) {
 	for _, ref := range refs {
+		if ref.index < 0 {
+			// Removed: another series with the same labels may have taken its place, with a ref of its own.
+			continue
+		}
+		entries := b.groups[ref.group].entries
+		if position := int(ref.index); position < len(entries) && entries[position].hash == ref.hash {
+			if !visit(&entries[position]) {
+				return
+			}
+			continue
+		}
+		// The series moved when its group lost series, or was removed: found by its hash, which finds none for a removed one.
 		stop := b.groups[ref.group].lookup(ref.hash, func(entry *seriesEntry) bool {
 			return entry.hash == ref.hash && !visit(entry)
 		})
@@ -513,11 +536,13 @@ func (b *seriesByName) retainGroups(only []uint32, keep func(entry *seriesEntry)
 			if keep(entry) {
 				if write != read {
 					g.entries[write] = *entry
+					b.refs[entry.id].index = int32(write)
 				}
 				write++
 				continue
 			}
 			b.forgetLabels(entry.labels)
+			b.refs[entry.id].index = -1
 		}
 		if write == before {
 			continue
@@ -595,6 +620,7 @@ type postingsSnapshot struct {
 
 type snapshotSeries struct {
 	group  uint32
+	index  int
 	hash   uint64
 	labels labels.Labels
 }
@@ -606,7 +632,7 @@ func (b *seriesByName) snapshotForPostings() postingsSnapshot {
 		entries := b.groups[groupID].entries
 		snapshot.groups[groupID] = len(entries)
 		for index := range entries {
-			snapshot.series = append(snapshot.series, snapshotSeries{uint32(groupID), entries[index].hash, entries[index].labels})
+			snapshot.series = append(snapshot.series, snapshotSeries{uint32(groupID), index, entries[index].hash, entries[index].labels})
 		}
 	}
 	return snapshot
@@ -616,7 +642,7 @@ func (b *seriesByName) snapshotForPostings() postingsSnapshot {
 func buildPostings(snapshot postingsSnapshot) *seriesByName {
 	built := &seriesByName{}
 	for _, series := range snapshot.series {
-		built.addPostings(series.labels, series.group, series.hash)
+		built.addPostings(series.labels, series.group, series.index, series.hash)
 	}
 	return built
 }
@@ -627,6 +653,18 @@ func (b *seriesByName) installPostings(built *seriesByName, snapshot postingsSna
 	if b.removals != snapshot.removals {
 		return false
 	}
+	// The snapshot's series have the ids the build gave them, in the order it took them.
+	id := uint32(0)
+	for groupID := range b.groups {
+		if groupID >= len(snapshot.groups) {
+			break
+		}
+		entries := b.groups[groupID].entries
+		for index := range snapshot.groups[groupID] {
+			entries[index].id = id
+			id++
+		}
+	}
 	for groupID := range b.groups {
 		from := 0
 		if groupID < len(snapshot.groups) {
@@ -634,11 +672,12 @@ func (b *seriesByName) installPostings(built *seriesByName, snapshot postingsSna
 		}
 		entries := b.groups[groupID].entries
 		for index := from; index < len(entries); index++ {
-			built.addPostings(entries[index].labels, uint32(groupID), entries[index].hash)
+			entries[index].id = built.addPostings(entries[index].labels, uint32(groupID), index, entries[index].hash)
 		}
 	}
 	b.postings, b.sharedPostings, b.refs, b.labelSeries = built.postings, built.sharedPostings, built.refs, built.labelSeries
 	b.stale = 0
+	b.idEpoch++
 	// What headLabels derived from the refs is by their position.
 	b.removals++
 	return true
@@ -786,20 +825,17 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 	if hasNameGroups {
 		nameGroups = b.nameGroups(nameMatcher)
 	}
-	// How many series the candidates below would be: a posting list, a name group, the groups of
-	// the names a name matcher accepts, or every series.
-	var chosen int
+	// The series a scan visits in order: a name group, the groups of the names a name matcher accepts, or every series.
+	var scanLen int
 	switch {
-	case hasBest && (!hasGroup || bestLen < groupLen):
-		chosen = bestLen
 	case hasGroup:
-		chosen = groupLen
+		scanLen = groupLen
 	case hasNameGroups:
 		for _, id := range nameGroups {
-			chosen += len(b.groups[id].entries)
+			scanLen += len(b.groups[id].entries)
 		}
 	default:
-		chosen = b.len
+		scanLen = b.len
 	}
 	// Like the Go head's postings for matchers that reject the empty value: only series with the
 	// label can match, and the label's postings list them. A nameless label regex visited every
@@ -819,8 +855,34 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 			presentCount, presentName, hasPresent = count, matcher.name, true
 		}
 	}
-	if hasPresent && presentCount >= chosen {
-		hasPresent = false
+	// A lookup by refs is cheaper by the series it visits than a scan is, but each costs more: the refs are collected and
+	// sorted, then each series is found by its hash, a read of memory nothing else touched. It is used when it visits
+	// refCost times fewer series than the scan does.
+	useBest, usePresent := hasBest, hasPresent
+	if hasBest && hasPresent {
+		if presentCount < bestLen {
+			useBest = false
+		} else {
+			usePresent = false
+		}
+	}
+	refsLen := bestLen
+	if usePresent {
+		refsLen = presentCount
+	}
+	lookupCost := refLookupCost
+	if scanLen < minScanForLookupCost {
+		// Both are quick, and reading only the series with the label is the cheaper by what it reads.
+		lookupCost = 1
+	}
+	if (useBest || usePresent) && float64(refsLen)*lookupCost >= float64(scanLen) {
+		useBest, usePresent = false, false
+	}
+	hasPresent = usePresent
+	hasBest = useBest
+	chosen := scanLen
+	if hasBest || hasPresent {
+		chosen = refsLen
 	}
 	// Name groups hold exactly one name, so candidates taken from groups already match the name
 	// matcher; checking it again read every candidate's labels, a cache miss per series.
@@ -835,7 +897,7 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 	case hasPresent:
 		nameMatched = false
 		fromRefs = b.refsWith(labels.Lookup(presentName))
-	case hasBest && (!hasGroup || bestLen < groupLen):
+	case hasBest:
 		nameMatched = false
 		fromRefs = b.refsOfFiltered(best, bestLen, filters, groupID, hasGroup)
 	}
@@ -921,7 +983,7 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		}
 	}()
 	switch {
-	case hasPresent || (hasBest && (!hasGroup || bestLen < groupLen)):
+	case hasPresent || hasBest:
 		b.visitRefs(fromRefs, emit)
 	case hasGroup:
 		entries := b.groups[groupID].entries
@@ -1002,6 +1064,14 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		}
 	}
 }
+
+// refLookupCost is how many times more a series costs to visit by its ref than in a scan, which decides between a lookup by
+// postings and a scan: a sweep of lookup shapes over 400k series (TestLookupPlannerCalibration) had the nameless regexes and
+// the name regex with an equality up to twice as fast at eight than at one, and the others the same. A variable for tests to sweep.
+var refLookupCost = 8.0
+
+// minScanForLookupCost is how many series a scan has to visit before refLookupCost applies.
+const minScanForLookupCost = 4096
 
 // minDictionarySeries is how many series a regex has to select among before the label's values
 // are looked up rather than every series' value checked.

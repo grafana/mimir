@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // What a selector matches in a name's series of a shard is kept for the next time it comes in: rulers and dashboards
@@ -19,6 +20,11 @@ import (
 const (
 	// A name with fewer series in a shard is scanned each time.
 	minCachedGroup = 8
+	// A selector without a metric name that took less than this to find its series isn't kept.
+	// A selector matching more series in a shard than this isn't kept: 4 bytes each.
+	maxGeneralIDs = 65_536
+	// How many series that came after what is kept a lookup tries before keeping them too.
+	generalTailRefresh = 256
 	// A selector matching more series in a shard than this isn't kept: a lookup that returns that many spends its time
 	// building the result, and a few of them were most of what the cache held.
 	maxCachedRefs = 256
@@ -27,6 +33,10 @@ const (
 	// How many selectors are kept; at this many, they are all dropped, which the selectors in use fill again.
 	maxCachedSelectors = 8192
 )
+
+// minGeneralBuild is how long a selector without a metric name takes to find its series before they are kept. A variable
+// for tests.
+var minGeneralBuild = 100 * time.Microsecond
 
 type selectorCache struct {
 	mu        sync.RWMutex
@@ -43,9 +53,9 @@ type cachedSelector struct {
 
 // keep records what a selector matched in a shard, and drops everything the cache holds when it holds too much.
 func (c *cachedSelector) keep(shard int, kept *cachedShard) {
-	added := int64(len(kept.refs))
+	added := int64(len(kept.refs) + len(kept.ids))
 	if old := c.shards[shard].Swap(kept); old != nil {
-		added -= int64(len(old.refs))
+		added -= int64(len(old.refs) + len(old.ids))
 	}
 	if c.owner.refs.Add(added) > maxCachedTotalRefs {
 		c.owner.mu.Lock()
@@ -61,6 +71,12 @@ type cachedShard struct {
 	group   uint32
 	version uint64
 	refs    []seriesRef
+	// For a selector without a metric name: the ids of the matching series among those the shard had by upto, of the
+	// postings that were built by epoch of that series-by-name.
+	owner *seriesByName
+	epoch uint64
+	upto  uint32
+	ids   []uint32
 }
 
 func (c *selectorCache) get(key string, shards int) *cachedSelector {
@@ -149,10 +165,89 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 	}
 	var refs []seriesRef
 	b.matching(labelMatchers, func(entry *seriesEntry) bool {
-		refs = append(refs, seriesRef{groupID, entry.hash})
+		refs = append(refs, b.refs[entry.id])
 		return !inQueryShard(entry) || visit(entry)
 	})
 	if len(refs) <= maxCachedRefs {
 		selector.keep(shard, &cachedShard{group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
 	}
+}
+
+// matchingGeneral is matching for a selector without a metric name that comes in again, which it answers from the ids of
+// the series it matched, and only looks at the series that came after: a series' labels never change, ids are never reused,
+// and a removed series' ref is marked, so what was found stays right. queryShard is the query's shard matchers and labelMatchers the others.
+func (b *seriesByName) matchingGeneral(selector *cachedSelector, shard int, queryShard, labelMatchers []compiledMatcher, visit func(entry *seriesEntry) bool) {
+	inShard := func(entry *seriesEntry) bool {
+		for index := range queryShard {
+			if entry.series.shardHash%queryShard[index].shardCount != queryShard[index].shardIndex {
+				return false
+			}
+		}
+		return true
+	}
+	cached := selector.shards[shard].Load()
+	if cached == nil || cached.owner != b || cached.epoch != b.idEpoch || cached.ids == nil {
+		start := time.Now()
+		var ids []uint32
+		stopped := false
+		b.matching(labelMatchers, func(entry *seriesEntry) bool {
+			ids = append(ids, entry.id)
+			if !inShard(entry) {
+				return true
+			}
+			if !visit(entry) {
+				stopped = true
+				return false
+			}
+			return true
+		})
+		if !stopped && len(ids) <= maxGeneralIDs && time.Since(start) >= minGeneralBuild {
+			slices.Sort(ids)
+			if ids == nil {
+				ids = []uint32{}
+			}
+			selector.keep(shard, &cachedShard{owner: b, epoch: b.idEpoch, upto: uint32(len(b.refs)), ids: ids})
+		}
+		return
+	}
+	for _, id := range cached.ids {
+		if entry := b.entryOf(id); entry != nil && inShard(entry) {
+			if !visit(entry) {
+				return
+			}
+		}
+	}
+	// The series that came after what was kept are checked against the matchers.
+	var added []uint32
+	for id := cached.upto; id < uint32(len(b.refs)); id++ {
+		entry := b.entryOf(id)
+		if entry == nil || !matches(entry.labels, labelMatchers) {
+			continue
+		}
+		added = append(added, id)
+		if inShard(entry) && !visit(entry) {
+			return
+		}
+	}
+	if int(uint32(len(b.refs))-cached.upto) >= generalTailRefresh && len(cached.ids)+len(added) <= maxGeneralIDs {
+		ids := make([]uint32, 0, len(cached.ids)+len(added))
+		ids = append(append(ids, cached.ids...), added...)
+		selector.keep(shard, &cachedShard{owner: b, epoch: b.idEpoch, upto: uint32(len(b.refs)), ids: ids})
+	}
+}
+
+// entryOf returns the live series with the id, or nil for a removed one.
+func (b *seriesByName) entryOf(id uint32) *seriesEntry {
+	if int(id) >= len(b.refs) {
+		return nil
+	}
+	ref := b.refs[id]
+	if ref.index < 0 {
+		return nil
+	}
+	entries := b.groups[ref.group].entries
+	if int(ref.index) >= len(entries) || entries[ref.index].id != id {
+		return nil
+	}
+	return &entries[ref.index]
 }
