@@ -67,6 +67,7 @@ func coldShardQueries() [][]LabelMatcher {
 }
 
 func TestShardedReadsOfColdSeriesMatchTheHead(t *testing.T) {
+	startHashings := coldShardHashings.Load()
 	directory := t.TempDir()
 	s, err := New(20*60*1000, Retention{}, directory)
 	require.NoError(t, err)
@@ -120,8 +121,8 @@ func TestShardedReadsOfColdSeriesMatchTheHead(t *testing.T) {
 	require.Equal(t, uint64(21), s.NumSeries("tenant"), "old left memory")
 	hashed := coldShardHashings.Load()
 	require.Equal(t, before, reads(s))
-	// Each block's shard hashes are computed once, when the block is written, not for every sharded query.
-	require.Positive(t, hashed)
+	// Each block has its series' shard hashes, which no sharded query computes.
+	require.Equal(t, startHashings, hashed)
 	require.Equal(t, hashed, coldShardHashings.Load())
 	require.Equal(t, before, reads(s))
 	require.Equal(t, hashed, coldShardHashings.Load())
