@@ -403,7 +403,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 				}
 				seenGroups[gk] = group
 				uniqueKeyBytes += len(k.plain)
-				p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(k.plain)))
+				p.cfg.Metrics.SeenCacheKeySize.Observe(float64(len(k.plain)))
 			}
 
 			if shard == "" {
@@ -426,8 +426,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 		}
 	}
 
-	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(len(seenGroups)))
-	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(uniqueKeyBytes))
+	p.cfg.Metrics.SeenCacheKeysPerQuery.Observe(float64(len(seenGroups)))
+	p.cfg.Metrics.SeenCacheKeysPerQueryBytes.Observe(float64(uniqueKeyBytes))
 
 	return seenGroups, nil
 }
@@ -447,6 +447,7 @@ func (p *cardinalityStoringPostProcessor) summariseExistingEstimates(estimatedCa
 func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.Context, seenGroups map[bucketedSelector]*bucketedSelectorCardinality, existingEstimates map[bucketedSelector]uint64, spanLogger *spanlogger.SpanLogger) error {
 	entries := make(map[string][]byte)
 	ignoredUpdates := 0
+	writtenKeyBytes := 0
 
 	for gk, group := range seenGroups {
 		seenCardinality := group.unshardedCardinality
@@ -496,7 +497,12 @@ func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.C
 		}
 
 		entries[group.cacheKey.hashed] = data
+		writtenKeyBytes += len(group.cacheKey.plain)
+		p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(group.cacheKey.plain)))
 	}
+
+	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(len(entries)))
+	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(writtenKeyBytes))
 
 	spanLogger.DebugLog(
 		"msg", "writing updated cardinality estimates (if any)",

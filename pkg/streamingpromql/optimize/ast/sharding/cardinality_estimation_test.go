@@ -815,33 +815,30 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 		count, keys, keyBytes int
 	}
 
-	expectedMetrics := func(read, write observation) string {
-		return fmt.Sprintf(`
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.
-			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes histogram
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_bucket{operation="read",le="+Inf"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_sum{operation="read"} %[3]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_count{operation="read"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_bucket{operation="write",le="+Inf"} %[4]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_sum{operation="write"} %[6]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_count{operation="write"} %[4]d
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.
-			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes histogram
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_bucket{operation="read",le="+Inf"} %[2]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_sum{operation="read"} %[3]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_count{operation="read"} %[2]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_bucket{operation="write",le="+Inf"} %[5]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_sum{operation="write"} %[6]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_count{operation="write"} %[5]d
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.
-			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query histogram
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bucket{operation="read",le="+Inf"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_sum{operation="read"} %[2]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_count{operation="read"} %[1]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bucket{operation="write",le="+Inf"} %[4]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_sum{operation="write"} %[5]d
-			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_count{operation="write"} %[4]d
-		`, read.count, read.keys, read.keyBytes, write.count, write.keys, write.keyBytes)
+	expectedMetrics := func(read, seen, write observation) string {
+		operations := []struct {
+			name string
+			observation
+		}{{"read", read}, {"seen", seen}, {"write", write}}
+
+		family := func(name, help string, value func(observation) (int, int)) string {
+			var b strings.Builder
+			fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s histogram\n", name, help, name)
+			for _, op := range operations {
+				count, sum := value(op.observation)
+				fmt.Fprintf(&b, "%s_bucket{operation=%q,le=\"+Inf\"} %d\n", name, op.name, count)
+				fmt.Fprintf(&b, "%s_sum{operation=%q} %d\n", name, op.name, sum)
+				fmt.Fprintf(&b, "%s_count{operation=%q} %d\n", name, op.name, count)
+			}
+			return b.String()
+		}
+
+		return family("cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query", "Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+			func(o observation) (int, int) { return o.count, o.keys }) +
+			family("cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes", "Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+				func(o observation) (int, int) { return o.count, o.keyBytes }) +
+			family("cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes", "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
+				func(o observation) (int, int) { return o.keys, o.keyBytes })
 	}
 
 	metricNames := []string{
@@ -871,7 +868,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 		estimate(t, cfg, expression, timeRange)
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: fooKeys + barKeys, keyBytes: fooKeyBytes + barKeyBytes}, observation{})), metricNames...))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: fooKeys + barKeys, keyBytes: fooKeyBytes + barKeyBytes}, observation{}, observation{})), metricNames...))
 	})
 
 	t.Run("read path counts only the sampled keys when the range exceeds the bucket limit", func(t *testing.T) {
@@ -886,25 +883,17 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 		estimate(t, cfg, expression, timeRange)
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: 2 * int(cfg.MaxBucketsReadPerSelector), keyBytes: fooKeyBytes + barKeyBytes}, observation{})), metricNames...))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: 2 * int(cfg.MaxBucketsReadPerSelector), keyBytes: fooKeyBytes + barKeyBytes}, observation{}, observation{})), metricNames...))
 	})
 
 	t.Run("read path records nothing for an expression without selectors", func(t *testing.T) {
 		cfg, reg := setup()
 		estimate(t, cfg, "vector(1)", types.NewInstantQueryTimeRange(start))
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{})), metricNames...))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{}, observation{})), metricNames...))
 	})
 
-	t.Run("write path counts each unique key once across reported shards", func(t *testing.T) {
-		cfg, reg := setup()
-		const expression = "foo"
-		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
-		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-
-		bucketKeys, bucketKeyBytes := generatedKeys(t, cfg, expression, `__name__="foo"`, minT, maxT, false)
-		require.GreaterOrEqual(t, bucketKeys, 3, "12h spans at least 3 buckets of 4h")
-
+	postProcess := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig, expression string, minT, maxT int64, existingEstimates []stats.SelectorCardinality) {
 		ctx := user.InjectOrgID(context.Background(), userID)
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		for _, shard := range []string{"1_of_2", "2_of_2"} {
@@ -918,10 +907,54 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 				SeriesCount: 10,
 			})
 		}
+		for _, e := range existingEstimates {
+			qs.AddEstimatedSelectorCardinality(e)
+		}
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, expression))
+	}
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{count: 1, keys: bucketKeys, keyBytes: bucketKeyBytes})), metricNames...))
+	t.Run("write path counts each unique key once across reported shards", func(t *testing.T) {
+		cfg, reg := setup()
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		bucketKeys, bucketKeyBytes := generatedKeys(t, cfg, expression, `__name__="foo"`, minT, maxT, false)
+		require.GreaterOrEqual(t, bucketKeys, 3, "12h spans at least 3 buckets of 4h")
+
+		postProcess(t, cfg, expression, minT, maxT, nil)
+
+		unique := observation{count: 1, keys: bucketKeys, keyBytes: bucketKeyBytes}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, unique, unique)), metricNames...))
+	})
+
+	t.Run("write path counts only the keys written to the cache", func(t *testing.T) {
+		cfg, reg := setup()
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, `__name__="foo"`, minT, maxT, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(keys), 3, "12h spans at least 3 buckets of 4h")
+		bucketKeyBytes := 0
+		for _, k := range keys {
+			bucketKeyBytes += len(k.plain)
+		}
+
+		// The existing estimate for the first bucket equals the seen cardinality, so the first bucket is not written.
+		skipped := keys[0]
+		postProcess(t, cfg, expression, minT, maxT, []stats.SelectorCardinality{{
+			Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+			MinT:        skipped.bucketMinT,
+			MaxT:        skipped.bucketMaxT,
+			SeriesCount: 20,
+		}})
+
+		seen := observation{count: 1, keys: len(keys), keyBytes: bucketKeyBytes}
+		written := observation{count: 1, keys: len(keys) - 1, keyBytes: bucketKeyBytes - len(skipped.plain)}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, seen, written)), metricNames...))
 	})
 
 	t.Run("write path records nothing when there are no reported cardinalities", func(t *testing.T) {
@@ -930,7 +963,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, "foo"))
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{})), metricNames...))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{}, observation{})), metricNames...))
 	})
 }
 

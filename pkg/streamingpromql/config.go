@@ -132,6 +132,9 @@ type CardinalityEstimationMetrics struct {
 	ReadCacheKeysPerQuery       prometheus.Observer
 	ReadCacheKeysPerQueryBytes  prometheus.Observer
 	ReadCacheKeySize            prometheus.Observer
+	SeenCacheKeysPerQuery       prometheus.Observer
+	SeenCacheKeysPerQueryBytes  prometheus.Observer
+	SeenCacheKeySize            prometheus.Observer
 	WriteCacheKeysPerQuery      prometheus.Observer
 	WriteCacheKeysPerQueryBytes prometheus.Observer
 	WriteCacheKeySize           prometheus.Observer
@@ -158,6 +161,9 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 		ReadCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("read"),
 		ReadCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("read"),
 		ReadCacheKeySize:            cacheKeySize.WithLabelValues("read"),
+		SeenCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("seen"),
+		SeenCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("seen"),
+		SeenCacheKeySize:            cacheKeySize.WithLabelValues("seen"),
 		WriteCacheKeysPerQuery:      cacheKeysPerQuery.WithLabelValues("write"),
 		WriteCacheKeysPerQueryBytes: cacheKeysPerQueryBytes.WithLabelValues("write"),
 		WriteCacheKeySize:           cacheKeySize.WithLabelValues("write"),
