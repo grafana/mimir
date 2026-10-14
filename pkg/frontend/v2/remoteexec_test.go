@@ -2362,7 +2362,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 	expr, err := promqlext.NewPromQLParser().ParseExpr("sum(foo)")
 	require.NoError(t, err)
-	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)
 	require.NoError(t, err)
 
@@ -2672,9 +2672,9 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 			end := time.Now()
 			var request querymiddleware.MetricsQueryRequest
 			if testCase.instant {
-				request = querymiddleware.NewPrometheusInstantQueryRequest("/api/v1/query", nil, timestamp.FromTime(end), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+				request = querymiddleware.NewPrometheusInstantQueryRequest("/api/v1/query", nil, timestamp.FromTime(end), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 			} else {
-				request = querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(end.Add(-queryRange)), timestamp.FromTime(end), time.Hour.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+				request = querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(end.Add(-queryRange)), timestamp.FromTime(end), time.Hour.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 			}
 
 			// Do is called with ctx directly, so the root query ID reaches the engine the same way it
