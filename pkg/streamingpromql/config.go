@@ -131,8 +131,10 @@ type CardinalityEstimationConfig struct {
 type CardinalityEstimationMetrics struct {
 	ReadCacheKeys      prometheus.Observer
 	ReadCacheKeyBytes  prometheus.Observer
+	ReadCacheKeySize   prometheus.Observer
 	WriteCacheKeys     prometheus.Observer
 	WriteCacheKeyBytes prometheus.Observer
+	WriteCacheKeySize  prometheus.Observer
 }
 
 func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
@@ -146,12 +148,19 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 		Help:                        "Total bytes of cardinality estimation cache keys generated per call to estimate or store cardinality.",
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"operation"})
+	cacheKeySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes",
+		Help:                        "Size in bytes of each cardinality estimation cache key generated to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
 
 	return &CardinalityEstimationMetrics{
 		ReadCacheKeys:      cacheKeys.WithLabelValues("read"),
 		ReadCacheKeyBytes:  cacheKeyBytes.WithLabelValues("read"),
+		ReadCacheKeySize:   cacheKeySize.WithLabelValues("read"),
 		WriteCacheKeys:     cacheKeys.WithLabelValues("write"),
 		WriteCacheKeyBytes: cacheKeyBytes.WithLabelValues("write"),
+		WriteCacheKeySize:  cacheKeySize.WithLabelValues("write"),
 	}
 }
 

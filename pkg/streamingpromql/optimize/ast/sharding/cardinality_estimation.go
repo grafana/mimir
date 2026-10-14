@@ -217,6 +217,7 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 		generatedKeys += len(cacheKeys)
 		for _, k := range cacheKeys {
 			generatedKeyBytes += len(k.plain)
+			e.cfg.Metrics.ReadCacheKeySize.Observe(float64(len(k.plain)))
 			if _, ok := keysToLookUp[k.hashed]; ok {
 				continue
 			}
@@ -394,6 +395,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 		generatedKeys += len(keys)
 		for _, k := range keys {
 			generatedKeyBytes += len(k.plain)
+			p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(k.plain)))
 			gk := bucketedSelector{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
 
 			group, ok := seenGroups[gk]
