@@ -67,12 +67,18 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 		batchSizeBytes = 0
 		// The chunks of a batch share an array, which is cut after the batch is sent.
 		arena []client.Chunk
+		// The chunks not yet in an arena: a request for a few series doesn't allocate room for 256.
+		remaining = 0
 	)
+	for index := range selected {
+		remaining += len(selected[index].Chunks)
+	}
 	for index := range selected {
 		list := selected[index].Chunks
 		if cap(arena)-len(arena) < len(list) {
-			arena = make([]client.Chunk, 0, max(len(list), 256))
+			arena = make([]client.Chunk, 0, min(max(len(list), 256), remaining))
 		}
+		remaining -= len(list)
 		start := len(arena)
 		for _, c := range list {
 			ch, samples, err := clientChunk(c.MinTime, c.MaxTime, c.Encoding, c.Data)

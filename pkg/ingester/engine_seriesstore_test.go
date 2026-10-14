@@ -382,3 +382,50 @@ func BenchmarkIngester_SeriesstoreQueryStream(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkIngester_QueryStreamOneSeries is a whole QueryStream request for one series of 130 samples among 5000, on
+// each engine: what the fixed cost of a small query is, which the median read latency is made of.
+func BenchmarkIngester_QueryStreamOneSeries(b *testing.B) {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		b.Run(engine, func(b *testing.B) {
+			cfg := defaultIngesterTestConfig(b)
+			cfg.BlocksStorageConfig.TSDB.Engine = engine
+			limitsCfg := defaultLimitsTestConfig()
+			limitsCfg.MaxGlobalSeriesPerMetric = 0
+			limitsCfg.MaxGlobalSeriesPerUser = 0
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+			now := time.Now().UnixMilli()
+			for first := 0; first < 5000; first += 500 {
+				var series []mimirpb.PreallocTimeseries
+				for n := first; n < first+500; n++ {
+					ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "cluster", Value: "c1"}, {Name: "namespace", Value: fmt.Sprintf("ns-%d", n%50)}, {Name: "pod", Value: fmt.Sprintf("pod-%05d", n)}}}
+					for sample := range 130 {
+						ts.Samples = append(ts.Samples, mimirpb.Sample{TimestampMs: now - int64(130-sample)*1000, Value: float64(sample * n)})
+					}
+					series = append(series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+				}
+				_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+				require.NoError(b, err)
+			}
+			req := &client.QueryRequest{
+				StartTimestampMs: now - 1_000_000,
+				EndTimestampMs:   now + 1000,
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: "__name__", Value: "metric"},
+					{Type: client.EQUAL, Name: "pod", Value: "pod-00007"},
+				},
+				StreamingChunksBatchSize: 128,
+			}
+			stream := &marshalingStream{ctx: ctx}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				require.NoError(b, ingester.QueryStream(req, stream))
+			}
+		})
+	}
+}

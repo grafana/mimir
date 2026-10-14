@@ -137,11 +137,6 @@ func cacheableName(matchers []compiledMatcher) (name string, rest []compiledMatc
 // group hasn't changed since, and the scan that finds them otherwise. queryShard is the query's shard matchers,
 // labelMatchers the others, and rest the others but the name.
 func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name string, queryShard, labelMatchers, rest []compiledMatcher, visit func(entry *seriesEntry) bool) {
-	groupID, ok := b.names[name]
-	if !ok {
-		return
-	}
-	g := &b.groups[groupID]
 	inQueryShard := func(entry *seriesEntry) bool {
 		for index := range queryShard {
 			if entry.series.shardHash%queryShard[index].shardCount != queryShard[index].shardIndex {
@@ -150,6 +145,21 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		}
 		return true
 	}
+	// What was kept for this selector names its group, so a lookup that finds it unchanged doesn't look the name up.
+	if cached := selector.shards[shard].Load(); cached != nil && cached.owner == b && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version && len(b.groups[cached.group].entries) >= minCachedGroup {
+		b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
+			if !inQueryShard(entry) || !matches(entry.labels, rest) {
+				return true
+			}
+			return visit(entry)
+		})
+		return
+	}
+	groupID, ok := b.names[name]
+	if !ok {
+		return
+	}
+	g := &b.groups[groupID]
 	if len(g.entries) < minCachedGroup {
 		b.matching(labelMatchers, func(entry *seriesEntry) bool { return !inQueryShard(entry) || visit(entry) })
 		return
@@ -169,7 +179,7 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return !inQueryShard(entry) || visit(entry)
 	})
 	if len(refs) <= maxCachedRefs {
-		selector.keep(shard, &cachedShard{group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
+		selector.keep(shard, &cachedShard{owner: b, group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
 	}
 }
 
@@ -229,7 +239,9 @@ func (b *seriesByName) matchingGeneral(selector *cachedSelector, shard int, quer
 			return
 		}
 	}
-	if int(uint32(len(b.refs))-cached.upto) >= generalTailRefresh && len(cached.ids)+len(added) <= maxGeneralIDs {
+	// A short kept list is copied cheaply, so it is refreshed sooner than a long one: the series that came after it are
+	// checked against the matchers by every lookup until then.
+	if int(uint32(len(b.refs))-cached.upto) >= min(generalTailRefresh, max(16, len(cached.ids)/32)) && len(cached.ids)+len(added) <= maxGeneralIDs {
 		ids := make([]uint32, 0, len(cached.ids)+len(added))
 		ids = append(append(ids, cached.ids...), added...)
 		selector.keep(shard, &cachedShard{owner: b, epoch: b.idEpoch, upto: uint32(len(b.refs)), ids: ids})
