@@ -127,8 +127,9 @@ func (j *baseTrackedJob) Epoch() int64 {
 }
 
 type CompactionJob struct {
-	blocks  [][]byte
-	isSplit bool
+	blocks     [][]byte
+	isSplit    bool
+	backfillID []byte
 }
 
 type TrackedCompactionJob struct {
@@ -169,6 +170,7 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			BlockIds:         j.value.blocks,
 			Split:            j.value.isSplit,
 			TotalBlocksBytes: j.totalBlockBytes,
+			BackfillId:       j.value.backfillID,
 		},
 		Order: j.order,
 	}
@@ -182,12 +184,13 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 			Epoch: j.epoch,
 		},
 		Spec: &compactorschedulerpb.JobSpec{
-			JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+			JobType: j.Type(),
 			Tenant:  tenant,
 			Job: &compactorschedulerpb.CompactionJob{
 				BlockIds:         j.value.blocks,
 				Split:            j.value.isSplit,
 				TotalBlocksBytes: j.totalBlockBytes,
+				BackfillId:       j.value.backfillID,
 			},
 		},
 	}
@@ -198,7 +201,10 @@ func (j *TrackedCompactionJob) Order() uint32 {
 }
 
 func (j *TrackedCompactionJob) Type() compactorschedulerpb.JobType {
-	return compactorschedulerpb.JOB_TYPE_COMPACTION
+	if j.value == nil || len(j.value.backfillID) == 0 {
+		return compactorschedulerpb.JOB_TYPE_COMPACTION
+	}
+	return compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION
 }
 
 type TrackedPlanJob struct {
@@ -346,8 +352,9 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			epoch:        stored.Info.Epoch,
 		},
 		value: &CompactionJob{
-			blocks:  stored.Job.BlockIds,
-			isSplit: stored.Job.Split,
+			blocks:     stored.Job.BlockIds,
+			isSplit:    stored.Job.Split,
+			backfillID: stored.Job.BackfillId,
 		},
 		order:           stored.Order,
 		totalBlockBytes: stored.Job.TotalBlocksBytes,

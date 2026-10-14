@@ -358,6 +358,18 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 	now := time.Now()
 
+	verifyCompactionJob := func(t *testing.T, written, read TrackedJob) {
+		writtenJob := written.(*TrackedCompactionJob)
+		readJob, ok := read.(*TrackedCompactionJob)
+		require.True(t, ok)
+		require.Equal(t, writtenJob.Type(), readJob.Type())
+		require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
+		require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
+		require.Equal(t, writtenJob.value.backfillID, readJob.value.backfillID)
+		require.Equal(t, writtenJob.order, readJob.order)
+		require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
+	}
+
 	tests := map[string]struct {
 		job                  TrackedJob
 		verifySpecificFields func(t *testing.T, written, read TrackedJob)
@@ -376,15 +388,23 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				order:           1,
 				totalBlockBytes: 12345,
 			},
-			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
-				writtenJob := written.(*TrackedCompactionJob)
-				readJob, ok := read.(*TrackedCompactionJob)
-				require.True(t, ok)
-				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
-				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
-				require.Equal(t, writtenJob.order, readJob.order)
-				require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
+			verifySpecificFields: verifyCompactionJob,
+		},
+		"backfill compaction job": {
+			job: &TrackedCompactionJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           "id",
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+				value:           &CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")},
+				order:           3,
+				totalBlockBytes: 734003200,
 			},
+			verifySpecificFields: verifyCompactionJob,
 		},
 		"plan job": {
 			job: &TrackedPlanJob{
