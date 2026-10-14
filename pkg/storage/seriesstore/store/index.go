@@ -115,6 +115,17 @@ type seriesByName struct {
 	// The distinct values of a label of a name group, and each series' value among them.
 	dicts       map[uint64]*valueDict
 	columnBytes int
+	// The hashes of the series with a label, by label name id, for the lookups that match the empty value.
+	withLabelLock sync.Mutex
+	withLabelSets map[uint32]*hashSet
+}
+
+// hashSet is the hashes of the series with a label as of when it was built.
+type hashSet struct {
+	count    int
+	removals uint64
+	epoch    uint64
+	set      map[uint64]struct{}
 }
 
 type nameMatch struct {
@@ -275,6 +286,44 @@ func (b *seriesByName) refsWith(name uint32, known bool) []seriesRef {
 		}
 	}
 	return sortRefs(refs)
+}
+
+// maxHashSets is how many labels' sets of hashes are kept, and maxHashSetSeries how many series they hold altogether.
+const (
+	maxHashSets      = 64
+	maxHashSetSeries = 1 << 20
+)
+
+// hashesWith returns the hashes of the series with the label, to be read and not changed: the lookups that match the empty
+// value check a series against it without reading its labels. It is kept until series are added, which changes the count of
+// series with the label, or removed or renumbered.
+func (b *seriesByName) hashesWith(name uint32, known bool) map[uint64]struct{} {
+	count := b.seriesWith(name, known)
+	b.withLabelLock.Lock()
+	if kept := b.withLabelSets[name]; kept != nil && kept.count == count && kept.removals == b.removals && kept.epoch == b.idEpoch {
+		set := kept.set
+		b.withLabelLock.Unlock()
+		return set
+	}
+	b.withLabelLock.Unlock()
+	refs := b.refsWith(name, known)
+	set := make(map[uint64]struct{}, len(refs))
+	for _, ref := range refs {
+		set[ref.hash] = struct{}{}
+	}
+	b.withLabelLock.Lock()
+	defer b.withLabelLock.Unlock()
+	total := len(set)
+	for other, kept := range b.withLabelSets {
+		if other != name {
+			total += len(kept.set)
+		}
+	}
+	if b.withLabelSets == nil || len(b.withLabelSets) >= maxHashSets || total > maxHashSetSeries {
+		b.withLabelSets = map[uint32]*hashSet{}
+	}
+	b.withLabelSets[name] = &hashSet{count: count, removals: b.removals, epoch: b.idEpoch, set: set}
+	return set
 }
 
 // refsOf returns the refs of the postings, once each.
@@ -910,11 +959,7 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		if name, ok := matcher.labelName(); ok {
 			r.nameID, r.known = labels.Lookup(name)
 			if name != metricNameLabel && matcher.matchesValue("") && b.seriesWith(r.nameID, r.known)*4 < candidatesLen {
-				refs := b.refsWith(r.nameID, r.known)
-				r.withLabel = make(map[uint64]struct{}, len(refs))
-				for _, ref := range refs {
-					r.withLabel[ref.hash] = struct{}{}
-				}
+				r.withLabel = b.hashesWith(r.nameID, r.known)
 			}
 		}
 		resolved = append(resolved, r)

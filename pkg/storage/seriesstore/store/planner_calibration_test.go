@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -435,4 +436,81 @@ func TestColdCandidatesCacheMatchesComputingThem(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A matcher that accepts the empty value is checked against the hashes of the series that have its label, which are kept
+// while series are added and removed.
+func TestRepeatedLookupsWithAMatcherOfARareLabelStayRight(t *testing.T) {
+	ctx := context.Background()
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	const hourMs = int64(3_600_000)
+	type seriesDef struct{ pod, rare string }
+	alive := map[string]seriesDef{}
+	add := func(def seriesDef, at int64) {
+		pairs := []string{"__name__", "metric", "pod", def.pod}
+		if def.rare != "" {
+			pairs = append(pairs, "rare", def.rare)
+		}
+		lset := promlabels.FromStrings(pairs...)
+		app := engine.Appender(ctx)
+		_, err := app.Append(0, lset, at, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		alive[lset.String()] = def
+	}
+	check := func(step string) {
+		for name, matchers := range map[string][]*promlabels.Matcher{
+			"rare!=1":   {promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "rare", "1")},
+			"rare!~1|2": {promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"), promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "rare", "1|2")},
+		} {
+			for range 2 {
+				q, err := engine.ChunkQuerier(0, 9*hourMs)
+				require.NoError(t, err)
+				set := q.Select(ctx, false, nil, matchers...)
+				got := map[string]bool{}
+				for set.Next() {
+					got[set.At().Labels().String()] = true
+				}
+				require.NoError(t, set.Err())
+				require.NoError(t, q.Close())
+				want := map[string]bool{}
+				for lset, def := range alive {
+					if (name == "rare!=1" && def.rare != "1") || (name == "rare!~1|2" && def.rare != "1" && def.rare != "2") {
+						want[lset] = true
+					}
+				}
+				require.Equal(t, want, got, "%s: %s", step, name)
+			}
+		}
+	}
+	// The old series first: a sample behind the head's is refused.
+	for _, parity := range []int{0, 1} {
+		for n := parity; n < 400; n += 2 {
+			def := seriesDef{pod: fmt.Sprintf("p-%d", n)}
+			at := 5 * hourMs
+			if parity == 0 {
+				at = 1000
+			}
+			if n%50 == 0 {
+				def.rare = fmt.Sprint(n % 3)
+			}
+			add(def, at)
+		}
+	}
+	check("first")
+	add(seriesDef{pod: "late", rare: "1"}, 5*hourMs)
+	add(seriesDef{pod: "late2", rare: "2"}, 5*hourMs)
+	check("with series added")
+	require.NoError(t, engine.prune(2*hourMs))
+	for lset, def := range alive {
+		if strings.HasPrefix(def.pod, "p-") {
+			if n, _ := strconv.Atoi(strings.TrimPrefix(def.pod, "p-")); n%2 == 0 {
+				delete(alive, lset)
+			}
+		}
+	}
+	check("after the old series were removed")
 }
