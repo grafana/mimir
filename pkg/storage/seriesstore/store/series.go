@@ -5,6 +5,10 @@ package store
 import (
 	"math/bits"
 	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
@@ -98,8 +102,6 @@ type seriesExtra struct {
 	histogramEndComputed bool
 	// The open out-of-order chunk, like Prometheus's OOO head chunk, sorted by timestamp.
 	outOfOrder []oooSample
-	// The custom trackers the series matches when it matches one past the first 32.
-	trackerMatches []uint16
 	// The native histogram buckets the cost attribution tracker counted the series with, plus one: zero is none.
 	countedBuckets int32
 }
@@ -171,14 +173,49 @@ func (s *Series) setOutOfOrder(samples []oooSample) {
 	s.dropEmptyExtra()
 }
 
-// bitTrackers is how many custom trackers a series keeps its matches of in its slot.
-const bitTrackers = 32
+// bitTrackers is how many custom trackers a series keeps its matches of in its slot as bits. The slot's last bit says
+// it holds the id of the set of the matches in trackerSets instead, for a series that matches one past them.
+const (
+	bitTrackers   = 31
+	trackerSetBit = uint32(1) << 31
+)
+
+// trackerSets holds each set of matches of more custom trackers than a series' bits, once for every series that has
+// it: series match the same few sets, and a copy each is an allocation of every one of millions of series.
+var trackerSets struct {
+	sync.Mutex
+	ids map[string]uint32
+	// Read without the lock: replaced, never changed.
+	sets atomic.Pointer[[][]uint16]
+}
+
+// trackerSetID is the id of the set of matches, which is kept from then on.
+func trackerSetID(matches []uint16) uint32 {
+	key := unsafe.String((*byte)(unsafe.Pointer(unsafe.SliceData(matches))), len(matches)*2)
+	trackerSets.Lock()
+	defer trackerSets.Unlock()
+	if id, ok := trackerSets.ids[key]; ok {
+		return id
+	}
+	var sets [][]uint16
+	if current := trackerSets.sets.Load(); current != nil {
+		sets = *current
+	}
+	id := uint32(len(sets))
+	next := append(sets[:len(sets):len(sets)], slices.Clone(matches))
+	trackerSets.sets.Store(&next)
+	if trackerSets.ids == nil {
+		trackerSets.ids = map[string]uint32{}
+	}
+	trackerSets.ids[strings.Clone(key)] = id
+	return id
+}
 
 // matchedTrackersInto appends the custom trackers the series matches to buf[:0].
 func (s *Series) matchedTrackersInto(buf []uint16) []uint16 {
 	buf = buf[:0]
-	if s.extra != nil && len(s.extra.trackerMatches) > 0 {
-		return append(buf, s.extra.trackerMatches...)
+	if s.trackerBits&trackerSetBit != 0 {
+		return append(buf, (*trackerSets.sets.Load())[s.trackerBits&^trackerSetBit]...)
 	}
 	for bits := s.trackerBits; bits != 0; bits &= bits - 1 {
 		buf = append(buf, uint16(bits2index(bits)))
@@ -190,26 +227,13 @@ func bits2index(b uint32) int { return bits.TrailingZeros32(b) }
 
 func (s *Series) setMatchedTrackers(matches []uint16) {
 	s.trackerBits = 0
-	wide := false
 	for _, match := range matches {
 		if match >= bitTrackers {
-			wide = true
-			break
+			s.trackerBits = trackerSetBit | trackerSetID(matches)
+			return
 		}
 		s.trackerBits |= 1 << match
 	}
-	if !wide {
-		if s.extra != nil && len(s.extra.trackerMatches) > 0 {
-			s.extra.trackerMatches = nil
-			s.dropEmptyExtra()
-		}
-		return
-	}
-	s.trackerBits = 0
-	if s.extra == nil {
-		s.extra = &seriesExtra{}
-	}
-	s.extra.trackerMatches = slices.Clone(matches)
 }
 
 // countedBucketCount is the buckets the cost attribution tracker counted the series with, or -1 for a float.
@@ -233,7 +257,7 @@ func (s *Series) setCountedBucketCount(buckets int) {
 
 // dropEmptyExtra frees the extra state once a series has none of it, as a histogram series that went idle.
 func (s *Series) dropEmptyExtra() {
-	if e := s.extra; e.histogramHead == nil && e.histogramNextAt == 0 && !e.histogramEndComputed && len(e.outOfOrder) == 0 && len(e.trackerMatches) == 0 && e.countedBuckets == 0 {
+	if e := s.extra; e.histogramHead == nil && e.histogramNextAt == 0 && !e.histogramEndComputed && len(e.outOfOrder) == 0 && e.countedBuckets == 0 {
 		s.extra = nil
 	}
 }
