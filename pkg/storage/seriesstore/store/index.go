@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
@@ -35,6 +36,47 @@ type group struct {
 	first   hashIndex
 	// Changes whenever the group gains or loses series, which what is cached of what a selector matches in it is by.
 	version uint64
+}
+
+// A group's entries grow by appending, which leaves up to a quarter of them as room for the series to come: in a
+// group that stopped growing, a quarter of the memory of its series for nothing. Groups with more room than this are
+// reallocated to their size, with some room still, which the next series take before the group grows again.
+const (
+	minShrinkEntries = 4
+	shrinkRoomShift  = 4
+)
+
+// shrinkGroups reallocates the entries of the groups from the group from on with more room than shrinking leaves,
+// until it copied budget bytes or there are no more: it returns the group to go on from, len(groups) once done, and
+// the entries it freed the room of.
+func (b *seriesByName) shrinkGroups(from, budget int) (next, freed int) {
+	copied := 0
+	for next = from; next < len(b.groups); next++ {
+		if copied >= budget {
+			return next, freed
+		}
+		g := &b.groups[next]
+		room := len(g.entries) >> shrinkRoomShift
+		// Most groups are a metric's few dozen series in a shard, whose room doubled with them.
+		if cap(g.entries)-len(g.entries) <= max(minShrinkEntries, 2*room) {
+			continue
+		}
+		entries := make([]seriesEntry, len(g.entries), len(g.entries)+room)
+		copy(entries, g.entries)
+		freed += cap(g.entries) - cap(entries)
+		copied += len(entries) * int(unsafe.Sizeof(seriesEntry{}))
+		g.entries = entries
+	}
+	return next, freed
+}
+
+// entriesSlack is how many series the groups have, and room for.
+func (b *seriesByName) entriesSlack() (series, room int) {
+	for index := range b.groups {
+		series += len(b.groups[index].entries)
+		room += cap(b.groups[index].entries) - len(b.groups[index].entries)
+	}
+	return series, room
 }
 
 func (g *group) lookup(hash uint64, visit func(entry *seriesEntry) bool) bool {

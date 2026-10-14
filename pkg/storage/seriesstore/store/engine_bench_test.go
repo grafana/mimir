@@ -280,6 +280,11 @@ func BenchmarkEngineHeapPerRealisticSeries(b *testing.B) {
 		engine.ActiveSeries(0)
 		runtime.GC()
 		runtime.ReadMemStats(&after)
+		b.ReportMetric(float64(after.HeapInuse-before.HeapInuse)/series, "unshrunk-heap-bytes/series")
+		// What the head's collection gives back of the room the groups grew with.
+		engine.shrinkEntries()
+		runtime.GC()
+		runtime.ReadMemStats(&after)
 		b.ReportMetric(float64(after.HeapInuse-before.HeapInuse)/series, "heap-bytes/series")
 		if path := os.Getenv("SERIESSTORE_HEAP_PROFILE"); path != "" {
 			// What the series hold, which the benchmark's profile, written once the engine is closed, doesn't have.
