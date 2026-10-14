@@ -124,7 +124,12 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	if shard != nil && matchAllSeries(matchers) {
 		postings = db.Head().ShardSeries(shard.ShardIndex, shard.ShardCount)
 	} else {
-		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		if native, ok := idx.(nativeMatchersIndex); ok {
+			// An index that selects by matchers itself doesn't read every series with a label for each regex or negation.
+			postings, err = native.PostingsForMatchersNative(ctx, matchers...)
+		} else {
+			postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error getting postings: %w", err)
 		}
@@ -139,6 +144,11 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	}
 
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
+}
+
+// nativeMatchersIndex is an index that has its own selection by matchers, better than assembling one from its postings.
+type nativeMatchersIndex interface {
+	PostingsForMatchersNative(ctx context.Context, matchers ...*labels.Matcher) (index.Postings, error)
 }
 
 // Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.

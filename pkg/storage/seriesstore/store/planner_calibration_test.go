@@ -11,6 +11,9 @@ import (
 	"time"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 )
 
@@ -298,5 +301,59 @@ func TestRepeatedSelectorTimes(t *testing.T) {
 			}
 		}
 		fmt.Printf("%-28s %10s %10s %8d\n", shape.name, first.Round(time.Microsecond), repeated.Round(time.Microsecond), matched)
+	}
+}
+
+func postingRefs(t *testing.T, postings index.Postings) []storage.SeriesRef {
+	var refs []storage.SeriesRef
+	for postings.Next() {
+		refs = append(refs, postings.At())
+	}
+	require.NoError(t, postings.Err())
+	return refs
+}
+
+// Selecting by matchers natively gives the series that assembling the postings from each matcher's does.
+func TestNativePostingsMatchTheAssembledOnes(t *testing.T) {
+	engine := plannerEngine(t, 20_000)
+	ix := &engineIndex{e: engine}
+	for _, shape := range plannerShapes() {
+		assembled, err := tsdb.PostingsForMatchers(context.Background(), ix, shape.matchers...)
+		require.NoError(t, err)
+		native, err := ix.PostingsForMatchersNative(context.Background(), shape.matchers...)
+		require.NoError(t, err)
+		want := postingRefs(t, assembled)
+		slices.Sort(want)
+		require.Equal(t, want, postingRefs(t, native), shape.name)
+	}
+}
+
+// Times both ways of selecting series by matchers over 400k series. Run with GO_INGESTER_BENCH=1.
+func TestNativePostingsTimes(t *testing.T) {
+	requireBench(t)
+	engine := plannerEngine(t, 400_000)
+	ix := &engineIndex{e: engine}
+	fmt.Printf("%-28s %12s %12s\n", "shape", "assembled", "native")
+	for _, shape := range plannerShapes() {
+		timeIt := func(run func()) time.Duration {
+			best := time.Duration(1 << 62)
+			for range 3 {
+				start := time.Now()
+				run()
+				best = min(best, time.Since(start))
+			}
+			return best
+		}
+		assembled := timeIt(func() {
+			p, err := tsdb.PostingsForMatchers(context.Background(), ix, shape.matchers...)
+			require.NoError(t, err)
+			postingRefs(t, p)
+		})
+		native := timeIt(func() {
+			p, err := ix.PostingsForMatchersNative(context.Background(), shape.matchers...)
+			require.NoError(t, err)
+			postingRefs(t, p)
+		})
+		fmt.Printf("%-28s %12s %12s\n", shape.name, assembled.Round(time.Microsecond), native.Round(time.Microsecond))
 	}
 }

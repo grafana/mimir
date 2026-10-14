@@ -885,6 +885,13 @@ func (ix *engineIndex) PostingsForMatchers(_ context.Context, _ bool, matchers .
 	return postingsOf(refs), nil
 }
 
+// PostingsForMatchersNative is PostingsForMatchers by the store's matching, for callers that would otherwise assemble
+// the postings from one list for each matcher with the index's per-label methods: those read every series that has the
+// label, to find the values that a regex or a negation accepts.
+func (ix *engineIndex) PostingsForMatchersNative(ctx context.Context, matchers ...*promlabels.Matcher) (index.Postings, error) {
+	return ix.PostingsForMatchers(ctx, false, matchers...)
+}
+
 // SortedPostings orders postings by their series' labels, like the head's.
 func (ix *engineIndex) SortedPostings(postings index.Postings) index.Postings {
 	type item struct {
