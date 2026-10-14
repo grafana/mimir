@@ -162,6 +162,18 @@ type rawSeries struct {
 
 // selectRaw returns the series matching compiled with chunks in [start, end], sorted by labels,
 // with the same chunks the store's QueryStream returns.
+// perShard is the store's perShardIndexed for the engine's tenant, which it finds by what it remembers of where it is
+// rather than by hashing its id in every shard of every query.
+func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	for index, shard := range e.store.shards {
+		shard.RLock()
+		if t, ok := e.tenantLocked(index); ok {
+			query(index, t, shard.disk, shard.cold)
+		}
+		shard.RUnlock()
+	}
+}
+
 func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawSeries, [][]byte, error) {
 	var coldLabels, coldShard []compiledMatcher
 	for _, matcher := range compiled {
@@ -215,7 +227,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
 		general = e.selectors.get("\x02"+selectorKey(coldLabels), len(e.store.shards))
 	}
-	e.store.perShardIndexed(e.tenantID, func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
+	e.perShard(func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
 		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, start, end, prunedBefore)
 		matchHead := func(visit func(entry *seriesEntry) bool) {

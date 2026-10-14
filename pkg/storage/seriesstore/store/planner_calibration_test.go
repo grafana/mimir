@@ -379,6 +379,9 @@ func TestRepeatedNameSelectorsTrackTheirGroup(t *testing.T) {
 		return pods
 	}
 	var want []string
+	// A name the tenant has no series of yet, asked for twice, then one that appears.
+	require.Empty(t, selected())
+	require.Empty(t, selected())
 	for n := range 30 {
 		pod := fmt.Sprintf("p-%02d", n)
 		app := engine.Appender(ctx)
