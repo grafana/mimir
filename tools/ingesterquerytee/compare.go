@@ -267,6 +267,8 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 						sample.digest = digestValue(struct{ Value float64 }{v})
 					} else {
 						_, h := it.AtFloatHistogram(nil)
+						// Compaction mutates slices owned by the iterator and would corrupt later samples.
+						h = h.Copy()
 						sample.hint = h.CounterResetHint
 						// Unknown reset hints at chunk boundaries can match either counter hint.
 						// Gauge identity must remain in the digest so it cannot match a counter.
