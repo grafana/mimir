@@ -22,6 +22,7 @@ const (
 	planLane lane = iota
 	compactionLane
 	backfillPhasePlanLane
+	backfillCompactionLane
 )
 
 func (l lane) String() string {
@@ -32,6 +33,8 @@ func (l lane) String() string {
 		return "compaction"
 	case backfillPhasePlanLane:
 		return "backfill_phase_plan"
+	case backfillCompactionLane:
+		return "backfill_compaction"
 	}
 	return ""
 }
@@ -116,7 +119,7 @@ func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobR
 	})
 }
 
-// backfillLanePolicy is simpleLanePolicy with a lane for backfill phase plan jobs
+// backfillLanePolicy is simpleLanePolicy with lanes for backfill phase plan jobs and backfill compaction jobs
 type backfillLanePolicy struct {
 	allLanes        []lane
 	compactionLanes []lane
@@ -125,9 +128,14 @@ type backfillLanePolicy struct {
 
 func newBackfillLanePolicy() lanePolicy {
 	return &backfillLanePolicy{
-		allLanes:        []lane{planLane, compactionLane, backfillPhasePlanLane},
-		compactionLanes: []lane{compactionLane},
-		jobTypes:        []compactorschedulerpb.JobType{compactorschedulerpb.JOB_TYPE_PLANNING, compactorschedulerpb.JOB_TYPE_COMPACTION, compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING},
+		allLanes:        []lane{planLane, compactionLane, backfillPhasePlanLane, backfillCompactionLane},
+		compactionLanes: []lane{compactionLane, backfillCompactionLane},
+		jobTypes: []compactorschedulerpb.JobType{
+			compactorschedulerpb.JOB_TYPE_PLANNING,
+			compactorschedulerpb.JOB_TYPE_COMPACTION,
+			compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION,
+		},
 	}
 }
 
@@ -137,6 +145,8 @@ func (blp *backfillLanePolicy) LaneForJob(j TrackedJob) lane {
 		return planLane
 	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
 		return backfillPhasePlanLane
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
+		return backfillCompactionLane
 	}
 	return compactionLane
 }
@@ -162,6 +172,8 @@ func (blp *backfillLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJo
 			return compactionLane, true
 		case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
 			return backfillPhasePlanLane, true
+		case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
+			return backfillCompactionLane, true
 		}
 		return 0, false
 	})
