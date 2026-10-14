@@ -25,11 +25,7 @@ import (
 // labels, chunk references and postings stay on disk, memory-mapped, so millions of series that
 // only queries of older ranges read cost no heap. The chunks themselves stay in the chunk files.
 
-// Version 2 blocks have each series' hashes, which version 1 blocks compute on their first query.
-var (
-	coldMagic   = []byte("MIMIRCB2")
-	coldMagicV1 = []byte("MIMIRCB1")
-)
+var coldMagic = []byte("MIMIRCB2")
 
 // frozenSeries is a series leaving the head, with every chunk it had in the chunk files.
 type frozenSeries struct {
@@ -46,16 +42,8 @@ type coldTenantIndex struct {
 	seriesCount   int
 	postingsTable int
 	postingsCount int
-	// The byte offset of each series' labels hash and query shard hash, 0 in a version 1 block, which computes them.
+	// The byte offset of each series' labels hash and query shard hash.
 	hashesTable int
-	// Each series' `labels.StableHash`, by which sharded queries pick series: computed on the first
-	// sharded query rather than from the labels for every series of every one.
-	shardHashesOnce sync.Once
-	shardHashes     []uint64
-	// Each series' labels hash, by which label lookups tell which emulated Prometheus blocks hold
-	// it: computed once rather than by rebuilding every series' labels on every lookup.
-	labelHashesOnce sync.Once
-	labelHashes     []uint64
 	// Each metric name, sorted, with its series: built on the first query by a name matcher other
 	// than an equality, from the series' own labels, since the postings only hold values' hashes.
 	metricNamesOnce sync.Once
@@ -103,11 +91,6 @@ func coldBlockPath(directory string, id uint64) string {
 
 // buildColdBlock writes series to a new block in directory, or keeps it in memory without one.
 func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
-	return buildColdBlockVersion(directory, id, series, 2)
-}
-
-// buildColdBlockVersion is buildColdBlock with the format of a version, for tests of the blocks of older versions.
-func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, version int) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
 			return series[a].tenant < series[b].tenant
@@ -124,11 +107,7 @@ func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, v
 			}
 		})
 	}
-	magic, headerSize := coldMagic, 56
-	if version == 1 {
-		magic, headerSize = coldMagicV1, 48
-	}
-	out := append([]byte(nil), magic...)
+	out := append([]byte(nil), coldMagic...)
 	out = putUvarint(out, uint64(len(names)))
 	for _, name := range names {
 		out = putUvarint(out, uint64(len(name)))
@@ -153,7 +132,7 @@ func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, v
 		out = append(out, tenant...)
 		headers[index] = len(out)
 		// min, max, series table, series count, postings table, postings count, hashes table.
-		out = append(out, make([]byte, headerSize)...)
+		out = append(out, make([]byte, 56)...)
 	}
 	blockMin, blockMax := int64(math.MaxInt64), int64(math.MinInt64)
 	type posting struct {
@@ -195,13 +174,10 @@ func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, v
 			out = binary.LittleEndian.AppendUint64(out, offset)
 		}
 		// Each series' labels hash and query shard hash, which queries need of every series they look at.
-		hashesTable := 0
-		if version >= 2 {
-			hashesTable = len(out)
-			for _, frozen := range series[r.start:r.end] {
-				out = binary.LittleEndian.AppendUint64(out, frozen.labels.Hash())
-				out = binary.LittleEndian.AppendUint64(out, labels.StableHash(frozen.labels))
-			}
+		hashesTable := len(out)
+		for _, frozen := range series[r.start:r.end] {
+			out = binary.LittleEndian.AppendUint64(out, frozen.labels.Hash())
+			out = binary.LittleEndian.AppendUint64(out, labels.StableHash(frozen.labels))
 		}
 		slices.SortFunc(postings, func(a, b posting) int {
 			switch {
@@ -252,7 +228,7 @@ func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, v
 			}
 		}
 		fields := [7]uint64{uint64(minTime), uint64(maxTime), uint64(seriesTable), uint64(len(offsets)), uint64(postingsTable), uint64(len(entries)), uint64(hashesTable)}
-		for slot, field := range fields[:headerSize/8] {
+		for slot, field := range fields {
 			binary.LittleEndian.PutUint64(out[headers[rangeIndex]+slot*8:], field)
 		}
 		blockMin = min(blockMin, minTime)
@@ -335,12 +311,7 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 		return nil, errors.New("cold block too short")
 	}
 	body, checksum := data[:len(data)-4], data[len(data)-4:]
-	version := 2
-	switch string(body[:8]) {
-	case string(coldMagic):
-	case string(coldMagicV1):
-		version = 1
-	default:
+	if string(body[:8]) != string(coldMagic) {
 		return nil, errors.New("cold block has invalid magic")
 	}
 	if crc32.ChecksumIEEE(body) != binary.LittleEndian.Uint32(checksum) {
@@ -379,13 +350,9 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 			seriesCount:   int(field(3)),
 			postingsTable: int(field(4)),
 			postingsCount: int(field(5)),
+			hashesTable:   int(field(6)),
 		}
-		if version >= 2 {
-			index.hashesTable = int(field(6))
-			cursor = cursor[56:]
-		} else {
-			cursor = cursor[48:]
-		}
+		cursor = cursor[56:]
 		minTime = min(minTime, index.minTime)
 		maxTime = max(maxTime, index.maxTime)
 		tenants[tenant] = index
@@ -777,19 +744,7 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 
 // labelsHash returns the labels hash of the series at index, like the head's series hash.
 func (b *coldBlock) labelsHash(table *coldTenantIndex, index int) uint64 {
-	if table.hashesTable > 0 {
-		return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16:])
-	}
-	table.labelHashesOnce.Do(func() {
-		hashes := make([]uint64, table.seriesCount)
-		var pairs [][2]string
-		for series := range hashes {
-			s := b.seriesIn(table, series)
-			hashes[series] = s.labelsInto(&pairs).Hash()
-		}
-		table.labelHashes = hashes
-	})
-	return table.labelHashes[index]
+	return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16:])
 }
 
 // rangeNameIDs calls visit with the block-local id of each of the series' label names.
@@ -802,33 +757,9 @@ func (s *coldSeries) rangeNameIDs(visit func(id uint64)) {
 	}
 }
 
-// warmHashes computes the hashes the queries use, which they would otherwise compute on first use.
-func (b *coldBlock) warmHashes() {
-	for _, table := range b.tenants {
-		if table.seriesCount > 0 {
-			b.labelsHash(table, 0)
-			b.shardHash(table, 0)
-		}
-	}
-}
-
 // shardHash returns the query shard hash of the series at index.
 func (b *coldBlock) shardHash(table *coldTenantIndex, index int) uint64 {
-	if table.hashesTable > 0 {
-		return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16+8:])
-	}
-	table.shardHashesOnce.Do(func() {
-		if countersEnabled {
-			coldShardHashings.Add(1)
-		}
-		hashes := make([]uint64, table.seriesCount)
-		for series := range hashes {
-			s := b.seriesIn(table, series)
-			hashes[series] = labels.StableHash(&s)
-		}
-		table.shardHashes = hashes
-	})
-	return table.shardHashes[index]
+	return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16+8:])
 }
 
 // coldSeries is a series of a cold block.

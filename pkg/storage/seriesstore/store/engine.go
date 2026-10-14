@@ -531,10 +531,6 @@ func (e *Engine) mergeColdBlocks() {
 				fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error tenant=%s error=%v\n", e.tenantID, err)
 				break
 			}
-			if block != nil {
-				// What queries would compute on their first look at the block.
-				block.warmHashes()
-			}
 			shard.Lock()
 			shard.cold.replace(from, to, block)
 			blocks := len(shard.cold.blocks)

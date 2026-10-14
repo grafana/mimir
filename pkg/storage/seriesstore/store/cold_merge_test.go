@@ -200,31 +200,24 @@ func BenchmarkColdBlocksQuery(b *testing.B) {
 	}
 }
 
-// A block keeps each series' hashes, which are those the series' labels have, as a version 1 block computes them.
+// A block keeps each series' hashes, which are those of the series' labels.
 func TestColdBlockHashesAreTheSeriesHashes(t *testing.T) {
 	var frozen []frozenSeries
 	for n := range 500 {
-		lset := rw2Labels(n)
 		var pairs [][2]string
-		lset.Range(func(l promlabels.Label) { pairs = append(pairs, [2]string{l.Name, l.Value}) })
+		rw2Labels(n).Range(func(l promlabels.Label) { pairs = append(pairs, [2]string{l.Name, l.Value}) })
 		frozen = append(frozen, frozenSeries{tenant: fmt.Sprintf("tenant-%d", n%2), labels: labels.FromSorted(pairs)})
 	}
-	current, err := buildColdBlockVersion(t.TempDir(), 1, slicesClone(frozen), 2)
-	require.NoError(t, err)
-	old, err := buildColdBlockVersion(t.TempDir(), 1, slicesClone(frozen), 1)
+	block, err := buildColdBlock(t.TempDir(), 1, frozen)
 	require.NoError(t, err)
 	for _, tenant := range []string{"tenant-0", "tenant-1"} {
-		table, oldTable := current.tenant(tenant), old.tenant(tenant)
-		require.NotZero(t, table.hashesTable)
-		require.Zero(t, oldTable.hashesTable)
-		require.Equal(t, oldTable.seriesCount, table.seriesCount)
+		table := block.tenant(tenant)
+		require.Equal(t, 250, table.seriesCount)
 		var pairs [][2]string
 		for index := range table.seriesCount {
-			series := current.seriesIn(table, index)
-			require.Equal(t, series.labelsInto(&pairs).Hash(), current.labelsHash(table, index))
-			require.Equal(t, labels.StableHash(&series), current.shardHash(table, index))
-			require.Equal(t, old.labelsHash(oldTable, index), current.labelsHash(table, index))
-			require.Equal(t, old.shardHash(oldTable, index), current.shardHash(table, index))
+			series := block.seriesIn(table, index)
+			require.Equal(t, series.labelsInto(&pairs).Hash(), block.labelsHash(table, index))
+			require.Equal(t, labels.StableHash(&series), block.shardHash(table, index))
 		}
 	}
 }

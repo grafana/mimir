@@ -14,12 +14,11 @@ var (
 	chunkBoundsDecodes atomic.Uint64
 	chunkListDecodes   atomic.Uint64
 	// Metric names name matchers were checked against, and cold blocks' label lists computed.
-	nameMatchCount    atomic.Uint64
-	coldLabelLists    atomic.Uint64
-	coldNameMatches   atomic.Uint64
-	regexEvaluations  atomic.Uint64
-	regexCompiles     atomic.Uint64
-	coldShardHashings atomic.Uint64
+	nameMatchCount   atomic.Uint64
+	coldLabelLists   atomic.Uint64
+	coldNameMatches  atomic.Uint64
+	regexEvaluations atomic.Uint64
+	regexCompiles    atomic.Uint64
 )
 
 func countLabelValueRead() {

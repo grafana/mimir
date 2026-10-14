@@ -978,33 +978,3 @@ func TestEvictionKeepsSeriesThatTakeSamplesBetweenBatches(t *testing.T) {
 	require.NoError(t, set.Err())
 	require.Equal(t, 41, count)
 }
-
-// A block written by a freeze has the hashes that queries use, so the first queries don't all wait for one to hash
-// every series.
-func TestFrozenBlocksHaveTheirHashesComputed(t *testing.T) {
-	ctx := context.Background()
-	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, engine.Close()) })
-
-	const minute = int64(60_000)
-	base := int64(10) * 60 * minute
-	app := engine.Appender(ctx)
-	for n := range 20 {
-		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("idle-%d", n)), base, 1)
-		require.NoError(t, err)
-	}
-	_, err = app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", "live"), base+60*minute, 1)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.NoError(t, engine.Compact(ctx))
-
-	blocks := engine.store.shards[0].cold.blocks
-	require.NotEmpty(t, blocks)
-	for _, block := range blocks {
-		for _, table := range block.tenants {
-			// In the block's file, where they need no computing.
-			require.NotZero(t, table.hashesTable)
-		}
-	}
-}

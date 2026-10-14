@@ -431,9 +431,6 @@ func (p *pendingFreeze) build(directory string) *coldBlock {
 		p.keys = nil
 		return block
 	}
-	// Computed here, with no lock held, rather than by the first queries that need them, which all wait for the first
-	// to hash every series of the block.
-	block.warmHashes()
 	return block
 }
 

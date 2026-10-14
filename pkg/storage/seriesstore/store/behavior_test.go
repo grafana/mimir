@@ -67,7 +67,6 @@ func coldShardQueries() [][]LabelMatcher {
 }
 
 func TestShardedReadsOfColdSeriesMatchTheHead(t *testing.T) {
-	startHashings := coldShardHashings.Load()
 	directory := t.TempDir()
 	s, err := New(20*60*1000, Retention{}, directory)
 	require.NoError(t, err)
@@ -119,13 +118,8 @@ func TestShardedReadsOfColdSeriesMatchTheHead(t *testing.T) {
 	require.True(t, len(shardedOld) > 0 && len(shardedOld) < 60, "a shard of old")
 	s.HeadTick(false, false)
 	require.Equal(t, uint64(21), s.NumSeries("tenant"), "old left memory")
-	hashed := coldShardHashings.Load()
 	require.Equal(t, before, reads(s))
-	// Each block has its series' shard hashes, which no sharded query computes.
-	require.Equal(t, startHashings, hashed)
-	require.Equal(t, hashed, coldShardHashings.Load())
 	require.Equal(t, before, reads(s))
-	require.Equal(t, hashed, coldShardHashings.Load())
 	require.NoError(t, s.WriteSnapshot([]SnapshotOffset{{Offset: 1, HasOffset: true, TimestampMs: 1}}))
 	require.NoError(t, s.Close())
 	restored, err := Restore(20*60*1000, Retention{}, directory, 2)
