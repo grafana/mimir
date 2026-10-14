@@ -41,8 +41,9 @@ const (
 	originCache  = "cache"
 	originBucket = "bucket"
 
-	memoryPoolContextKey         contextKey = 0
-	cacheLookupEnabledContextKey contextKey = 1
+	memoryPoolContextKey      contextKey = 0
+	skipCacheLookupContextKey contextKey = 1
+	skipCacheStoreContextKey  contextKey = 2
 
 	invalidationLockTTL = 15 * time.Second
 )
@@ -56,10 +57,18 @@ func WithMemoryPool(ctx context.Context, p pool.Interface, slabSize int) context
 	return context.WithValue(ctx, memoryPoolContextKey, pool.NewSafeSlabPool[byte](p, slabSize))
 }
 
-// WithCacheLookupEnabled returns a new context which will explicitly enable/disable the cache lookup but keep
-// storing the result to the cache. The cache lookup is enabled by default.
-func WithCacheLookupEnabled(ctx context.Context, enabled bool) context.Context {
-	return context.WithValue(ctx, cacheLookupEnabledContextKey, enabled)
+// WithSkipCacheLookup returns a derived context to disable looking up a bucket operation result from the cache.
+// This can only skip caching which was previously enabled via the CachingBucketConfig; otherwise has no effect.
+// This alone will not skip cache storage of operation results; combine with WithSkipCacheStore to bypass cache completely.
+func WithSkipCacheLookup(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipCacheLookupContextKey, true)
+}
+
+// WithSkipCacheStore returns a derived context to disable storing a bucket operation result to the cache.
+// This can only skip caching which was previously enabled via the CachingBucketConfig; otherwise has no effect.
+// This alone will not skip cache lookup; combine with WithSkipCacheLookup to bypass cache completely.
+func WithSkipCacheStore(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipCacheStoreContextKey, true)
 }
 
 func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
@@ -76,10 +85,19 @@ func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
 	return slabs
 }
 
-func isCacheLookupEnabled(ctx context.Context) bool {
-	val := ctx.Value(cacheLookupEnabledContextKey)
+func skipCacheLookup(ctx context.Context) bool {
+	val := ctx.Value(skipCacheLookupContextKey)
 	if val == nil {
-		return true
+		return false
+	}
+
+	return val.(bool)
+}
+
+func skipCacheStore(ctx context.Context) bool {
+	val := ctx.Value(skipCacheStoreContextKey)
+	if val == nil {
+		return false
 	}
 
 	return val.(bool)
@@ -226,7 +244,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	key := keyGen.iter(options...)
 
 	// Lookup the cache.
-	if isCacheLookupEnabled(ctx) {
+	if !skipCacheLookup(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
 
 		data := cfg.cache.GetMulti(ctx, []string{key})
@@ -255,7 +273,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	}, options...)
 
 	remainingTTL := cfg.ttl - time.Since(iterTime)
-	if err == nil && remainingTTL > 0 {
+	if err == nil && remainingTTL > 0 && !skipCacheStore(ctx) {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
 			cfg.cache.SetAsync(key, data, remainingTTL)
@@ -277,7 +295,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	lockKey := keyGen.existsLock()
 
 	// Lookup the cache.
-	if isCacheLookupEnabled(ctx) {
+	if !skipCacheLookup(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
 		hits := cfg.cache.GetMulti(ctx, []string{key})
@@ -309,7 +327,7 @@ func storeExistsCacheEntry(ctx context.Context, cachingKey, lockKey string, exis
 		ttl = doesntExistTTL - time.Since(ts)
 	}
 
-	if ttl > 0 {
+	if ttl > 0 && !skipCacheStore(ctx) {
 		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
 			cache.SetAsync(cachingKey, []byte(strconv.FormatBool(exists)), ttl)
 		}
@@ -329,7 +347,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	existsKey := keyGen.exists()
 
 	// Lookup the cache.
-	if isCacheLookupEnabled(ctx) {
+	if !skipCacheLookup(ctx) {
 		slabs := getMemoryPool(ctx)
 		cacheOpts := getCacheOptions(slabs)
 		releaseSlabs := true
@@ -382,6 +400,10 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	}
 
 	storeExistsCacheEntry(ctx, existsKey, existsLockKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+	if skipCacheStore(ctx) {
+		return reader, nil
+	}
+
 	return &getReader{
 		c:         cfg.cache,
 		r:         reader,
@@ -400,6 +422,12 @@ func (cb *CachingBucket) IsObjNotFoundErr(err error) bool {
 
 func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
 	if off < 0 || length <= 0 {
+		return cb.Bucket.GetRange(ctx, name, off, length)
+	}
+
+	// With both cache lookup and store skipped, the cache has no effect on the result.
+	// Read directly from the bucket instead of buffering all subranges in memory.
+	if skipCacheLookup(ctx) && skipCacheStore(ctx) {
 		return cb.Bucket.GetRange(ctx, name, off, length)
 	}
 
@@ -427,7 +455,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyG
 	key := keyGen.attributes()
 
 	// Lookup the cache.
-	if isCacheLookupEnabled(ctx) {
+	if !skipCacheLookup(ctx) {
 		cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
 		hits := cache.GetMulti(ctx, []string{key})
@@ -446,6 +474,10 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyG
 	attrs, err := cb.Bucket.Attributes(ctx, name)
 	if err != nil {
 		return objstore.ObjectAttributes{}, err
+	}
+
+	if skipCacheStore(ctx) {
+		return attrs, nil
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
@@ -515,7 +547,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen
 	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
 
 	// Lookup the cache.
-	if isCacheLookupEnabled(ctx) {
+	if !skipCacheLookup(ctx) {
 		cacheOpts := getCacheOptions(slabs)
 
 		// If there's an error after fetching things from cache but before we return the subrange
@@ -609,17 +641,19 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 					return errors.Wrapf(err, "fetching range [%d, %d]", m.start, m.end)
 				}
 
-				storeToCache := false
+				fetchedNew := false
 				hitsMutex.Lock()
 				if _, ok := hits[key]; !ok {
-					storeToCache = true
+					fetchedNew = true
 					hits[key] = subrangeData
 				}
 				hitsMutex.Unlock()
 
-				if storeToCache {
+				if fetchedNew {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.SetAsync(key, subrangeData, cfg.subrangeTTL)
+					if !skipCacheStore(gctx) {
+						cfg.cache.SetAsync(key, subrangeData, cfg.subrangeTTL)
+					}
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}

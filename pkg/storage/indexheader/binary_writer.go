@@ -27,6 +27,7 @@ import (
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
@@ -81,7 +82,7 @@ type BinaryTOC struct {
 
 // WriteBinary builds an index-header file of the given format version from the pieces of the index in object storage.
 func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, blockDir string, version int) error {
-	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
+	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id, version)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
 	}
@@ -249,11 +250,22 @@ type chunkedIndexReader struct {
 	toc  *index.TOC
 }
 
-func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID) (*chunkedIndexReader, int, error) {
+func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, indexHeaderVersion int) (*chunkedIndexReader, int, error) {
 	indexFilepath := filepath.Join(id.String(), block.IndexFilename)
 	attrs, err := bkt.Attributes(ctx, indexFilepath)
 	if err != nil {
 		return nil, 0, errors.Wrapf(err, "get object attributes of %s", indexFilepath)
+	}
+
+	// With the v2 index-header, the store-gateway reads the Postings Offsets table from the bucket
+	// and only downloads the Symbols table to local disk.
+	// In that case, the BucketReader implementation passed here is a (wrapped) CachingBucket,
+	// which is used to mitigate object storage latency for Postings Offsets table matcher resolution.
+	// We do not want to cache the Symbols table download done via GetRange here.
+	// It is possible, but not intended, to enable index-header caching for v1 index-header.
+	if indexHeaderVersion == BinaryFormatV2 {
+		ctx = bucketcache.WithSkipCacheLookup(ctx)
+		ctx = bucketcache.WithSkipCacheStore(ctx)
 	}
 
 	rc, err := bkt.GetRange(ctx, indexFilepath, 0, index.HeaderLen)
