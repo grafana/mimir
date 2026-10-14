@@ -222,14 +222,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	remembered := make([]map[string]bool, len(coldLabels))
 	var pairs [][2]string
 	// Most selectors name one metric, and most blocks have few of the metrics.
-	var nameHash uint64
-	byName := false
-	for index := range compiled {
-		if matcher := &compiled[index]; matcher.kind == kindEqual && matcher.name == metricNameLabel && matcher.value != "" {
-			nameHash, byName = labels.ValueHash(matcher.value), true
-			break
-		}
-	}
+	nameHash, byName := metricNameHash(compiled)
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
 		if table == nil || table.minTime > end || table.maxTime < start {
@@ -625,18 +618,24 @@ func (w *labelWindow) inBlocks(hash uint64) bool {
 	return false
 }
 
-// coldMatching calls visit for the cold series matching matchers the window sees.
-func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, visit func(*coldSeries)) {
+// coldMatching calls visit for the cold series matching matchers the window sees, of those useful says would add to
+// the result: whether the window sees a series is a search in the hashes of every block, where most series of a
+// lookup add nothing, having the names or the value of one before them.
+func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, useful func(*coldSeries) bool, visit func(*coldSeries)) {
 	if len(w.blocks) > 0 {
 		cold.matchingIndexed(tenantID, matchers, math.MinInt64, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
-			if w.inBlocks(series.block.labelsHash(table, index)) {
+			if useful(series) && w.inBlocks(series.block.labelsHash(table, index)) {
 				visit(series)
 			}
 		})
 		return
 	}
 	if w.hasBlocks {
-		cold.matching(tenantID, matchers, w.lower, w.upper, visit)
+		cold.matching(tenantID, matchers, w.lower, w.upper, func(series *coldSeries) {
+			if useful(series) {
+				visit(series)
+			}
+		})
 	}
 }
 
@@ -728,12 +727,20 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 		// Names are collected by block-local id, without decoding the values or inserting every
 		// series' names: a block's names are the same few for most of its series.
 		seen := map[*coldBlock][]bool{}
-		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
-			ids, ok := seen[series.block]
+		idsOf := func(block *coldBlock) []bool {
+			ids, ok := seen[block]
 			if !ok {
-				ids = make([]bool, len(series.block.names))
-				seen[series.block] = ids
+				ids = make([]bool, len(block.names))
+				seen[block] = ids
 			}
+			return ids
+		}
+		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) bool {
+			ids, unseen := idsOf(series.block), false
+			series.rangeNameIDs(func(id uint64) { unseen = unseen || !ids[id] })
+			return unseen
+		}, func(series *coldSeries) {
+			ids := idsOf(series.block)
 			series.rangeNameIDs(func(id uint64) { ids[id] = true })
 		})
 		for block, ids := range seen {
@@ -771,8 +778,9 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 			// A series' value is most often the previous series' value, which is already in the set.
 			previous := ""
 			t.series.matching(compiled, func(entry *seriesEntry) bool {
-				if window.includes(entry) {
-					if value, ok := labelValue(entry.labels, id); ok && value != previous {
+				// The value first: when it is known, the series adds nothing whether the window sees it or not.
+				if value, ok := labelValue(entry.labels, id); ok && value != previous {
+					if _, seen := values[value]; !seen && window.includes(entry) {
 						values[value] = struct{}{}
 						previous = value
 					}
@@ -780,14 +788,19 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 				return true
 			})
 		}
-		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) {
-			if value, ok := series.lookup(name); ok {
-				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before
-				// the sets are merged.
-				if _, seen := values[value]; !seen {
-					values[strings.Clone(value)] = struct{}{}
-				}
+		// The value of the series useful was last called with, which visit, if called, is for.
+		var value string
+		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) bool {
+			var ok bool
+			if value, ok = series.lookup(name); !ok {
+				return false
 			}
+			_, seen := values[value]
+			return !seen
+		}, func(*coldSeries) {
+			// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before the
+			// sets are merged.
+			values[strings.Clone(value)] = struct{}{}
 		})
 	})
 	if labelValuesHook != nil {

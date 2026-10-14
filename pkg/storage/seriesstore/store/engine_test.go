@@ -1144,7 +1144,8 @@ func TestColdLabelLookupsMatchTheHead(t *testing.T) {
 	t.Cleanup(func() { _ = engine.Close() })
 	app := engine.Appender(context.Background())
 	for n := range 200 {
-		pairs := []string{"__name__", fmt.Sprintf("metric_%d", n%7), "pod", fmt.Sprintf("pod-%d", n)}
+		// A label of few values, which most series have the value of one before them.
+		pairs := []string{"__name__", fmt.Sprintf("metric_%d", n%7), "pod", fmt.Sprintf("pod-%d", n), "team", fmt.Sprintf("t%d", n%3)}
 		// Names that only some series of a block carry.
 		if n%5 == 0 {
 			pairs = append(pairs, "rare", strconv.Itoa(n))
@@ -1170,12 +1171,18 @@ func TestColdLabelLookupsMatchTheHead(t *testing.T) {
 			require.NoError(t, err)
 			values, _, err := q.LabelValues(context.Background(), "rare", nil, matchers...)
 			require.NoError(t, err)
-			out = append(out, names, values)
+			teams, _, err := q.LabelValues(context.Background(), "team", nil, matchers...)
+			require.NoError(t, err)
+			metrics, _, err := q.LabelValues(context.Background(), "__name__", nil, matchers...)
+			require.NoError(t, err)
+			out = append(out, names, values, teams, metrics)
 		}
 		return out
 	}
 	before := reads()
 	require.Contains(t, before[0], "zz_once")
+	require.Equal(t, []string{"t0", "t1", "t2"}, before[2])
+	require.Len(t, before[3], 7)
 	app = engine.Appender(context.Background())
 	_, err := app.Append(0, promlabels.FromStrings("__name__", "fresh"), 6*3_600_000, 1)
 	require.NoError(t, err)

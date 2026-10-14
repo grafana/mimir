@@ -428,6 +428,16 @@ func (b *coldBlock) withLabel(table *coldTenantIndex, name string) []uint32 {
 	return series
 }
 
+// metricNameHash is the hash of the metric name an equality matcher selects, if there is one.
+func metricNameHash(matchers []compiledMatcher) (uint64, bool) {
+	for index := range matchers {
+		if matcher := &matchers[index]; matcher.kind == kindEqual && matcher.name == metricNameLabel && matcher.value != "" {
+			return labels.ValueHash(matcher.value), true
+		}
+	}
+	return 0, false
+}
+
 // mayHaveName is false when no series of the tenant in this block has the metric name of the hash.
 func (b *coldBlock) mayHaveName(table *coldTenantIndex, hash uint64) bool {
 	table.nameFilterOnce.Do(func() { table.nameFilter = b.buildNameFilter(table) })
@@ -883,11 +893,15 @@ func (c *coldState) matching(tenant string, matchers []compiledMatcher, start, e
 
 // matchingIndexed is matching, with each series' tenant table and index in its block.
 func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldTenantIndex, int, *coldSeries)) {
+	nameHash, byName := metricNameHash(matchers)
 	for _, block := range c.blocks {
 		if !block.overlaps(tenant, start, end) {
 			continue
 		}
 		table := block.tenant(tenant)
+		if byName && !block.mayHaveName(table, nameHash) {
+			continue
+		}
 		for _, index := range block.candidates(tenant, matchers) {
 			series := block.seriesIn(table, int(index))
 			if series.hasData(start, end) && matches(&series, matchers) {
