@@ -394,3 +394,45 @@ func TestRepeatedNameSelectorsTrackTheirGroup(t *testing.T) {
 		require.Equal(t, want, selected(), "repeated after %d series", n+1)
 	}
 }
+
+// A cold block's remembered candidates are what finding them again gives, including none, and the bounds drop them.
+func TestColdCandidatesCacheMatchesComputingThem(t *testing.T) {
+	engine := plannerEngine(t, 20_000)
+	var refs []storage.SeriesRef
+	for _, shard := range engine.store.shards {
+		shard.RLock()
+		shard.tenants["tenant"].series.forEach(func(entry *seriesEntry) {
+			if entry.series.ref%3 == 0 {
+				refs = append(refs, storage.SeriesRef(entry.series.ref))
+			}
+		})
+		shard.RUnlock()
+	}
+	require.NoError(t, engine.CompactSelectedSeries(refs))
+	blocks := 0
+	for _, shape := range plannerShapes() {
+		compiled, err := compileMatchers(storeMatchers(shape.matchers))
+		require.NoError(t, err)
+		key := selectorKey(compiled)
+		for _, shard := range engine.store.shards {
+			for _, block := range shard.cold.blocks {
+				blocks++
+				want := block.candidates("tenant", compiled)
+				for range 2 {
+					require.Equal(t, want, block.candidatesCached("tenant", key, compiled), shape.name)
+				}
+			}
+		}
+	}
+	require.Positive(t, blocks, "series moved to cold blocks")
+	// More selectors than a block keeps are all still right.
+	for n := range 3 * maxCachedSelectorsPerBlock {
+		compiled, err := compileMatchers(storeMatchers([]*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", fmt.Sprintf("pod-%d", n))}))
+		require.NoError(t, err)
+		for _, shard := range engine.store.shards {
+			for _, block := range shard.cold.blocks {
+				require.Equal(t, block.candidates("tenant", compiled), block.candidatesCached("tenant", selectorKey(compiled), compiled))
+			}
+		}
+	}
+}

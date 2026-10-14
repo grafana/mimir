@@ -184,6 +184,8 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		}
 	}
 	prunedBefore := e.store.prunedBefore.Load()
+	// What a cold block remembers its candidates by.
+	coldKey := selectorKey(coldLabels)
 	var (
 		selected []rawSeries
 		metas    []ChunkMeta
@@ -229,7 +231,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 	}
 	e.perShard(func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
-		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, start, end, prunedBefore)
+		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, prunedBefore)
 		matchHead := func(visit func(entry *seriesEntry) bool) {
 			if cached != nil {
 				t.series.matchingCached(cached, shard, cachedName, coldShard, coldLabels, cachedRest, visit)
