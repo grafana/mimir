@@ -426,7 +426,7 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 	outcome, ingestErr := db.db.Ingest(ctx, ingestBatch{
 		Series:           req.series(),
 		Record:           req.record,
-		Decoded:          func() []mimirpb.PreallocTimeseries { return req.decoded().Timeseries },
+		Decoded:          req.decodedSubset,
 		MinTimestampMs:   minTimestampMs,
 		MaxTimestampMs:   sink.maxTimestampMs,
 		NativeHistograms: nativeHistogramsIngestionEnabled,
@@ -469,8 +469,11 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
 	var groupSeries []mimirpb.PreallocTimeseries
-	if req.record == nil || i.limits.SeparateMetricsGroupLabel(userID) != "" {
+	if req.record == nil {
 		groupSeries = req.decoded().Timeseries
+	} else if i.limits.SeparateMetricsGroupLabel(userID) != "" {
+		// Only the first series' labels are looked at.
+		groupSeries = []mimirpb.PreallocTimeseries{*req.at(0)}
 	}
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, groupSeries), startAppend)
 

@@ -207,10 +207,11 @@ func (e seriesstoreEngine) ingestRecord(ctx context.Context, batch ingestBatch, 
 	outcome.Samples = ingested
 	ingestPaths.series.Add(uint64(record.Len()))
 	ingestPaths.fast.Add(uint64(record.Len() - len(leftover)))
+	ingestPaths.maybeLog(e.Engine)
 	if err != nil || len(leftover) == 0 {
 		return outcome, err
 	}
-	batch.Series = batch.Decoded()
+	batch.Series = batch.Decoded(leftover)
 	other := leftover[:0]
 	for _, i := range leftover {
 		if !sink.Skip(i) {
@@ -553,6 +554,7 @@ func (s *ingestPathStats) maybeLog(engine *store.Engine) {
 		return
 	}
 	leftovers := engine.FloatLeftovers()
-	fmt.Fprintf(os.Stderr, "ingestlog series=%d fast=%d histograms=%d (samples %d) exemplars=%d createdTimestamp=%d noSamples=%d other=%d leftover: unknown=%d noRef=%d stale=%d\n",
-		s.series.Load(), s.fast.Load(), s.histograms.Load(), s.histogramSamples.Load(), s.exemplars.Load(), s.createdTimestamp.Load(), s.noSamples.Load(), s.others.Load(), leftovers[0], leftovers[1], leftovers[2])
+	fmt.Fprintf(os.Stderr, "ingestlog series=%d fast=%d histograms=%d (samples %d) exemplars=%d createdTimestamp=%d noSamples=%d other=%d leftover: unknown=%d noRef=%d stale=%d records=%d read=%d whole=%d subsets=%d\n",
+		s.series.Load(), s.fast.Load(), s.histograms.Load(), s.histogramSamples.Load(), s.exemplars.Load(), s.createdTimestamp.Load(), s.noSamples.Load(), s.others.Load(), leftovers[0], leftovers[1], leftovers[2],
+		recordStats.records.Load(), recordStats.direct.Load(), recordStats.whole.Load(), recordStats.subsets.Load())
 }
