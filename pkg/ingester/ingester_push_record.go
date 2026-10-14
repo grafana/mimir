@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"sync/atomic"
 
 	"github.com/grafana/dskit/tenant"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
