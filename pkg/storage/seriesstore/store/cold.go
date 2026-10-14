@@ -89,8 +89,9 @@ func coldBlockPath(directory string, id uint64) string {
 	return filepath.Join(directory, fmt.Sprintf("cold-%016x", id))
 }
 
-// buildColdBlock writes series to a new block in directory, or keeps it in memory without one.
-func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
+// buildColdBlock writes series to a new block in directory, or keeps it in memory without one. dropPages drops the
+// written block from the page cache.
+func buildColdBlock(directory string, id uint64, series []frozenSeries, dropPages bool) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
 			return series[a].tenant < series[b].tenant
@@ -240,20 +241,22 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		err   error
 	)
 	if directory == "" {
-		block, err = parseColdBlock(id, out, false, "")
+		block, err = parseColdBlock(id, out, false, "", false)
 	} else {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			return nil, fmt.Errorf("create cold block directory %s: %w", directory, err)
 		}
 		path := coldBlockPath(directory, id)
 		temporary := path + ".tmp"
-		if err := writeSynced(temporary, out); err != nil {
+		if err := writeSynced(temporary, out, dropPages); err != nil {
 			return nil, fmt.Errorf("create cold block %s: %w", temporary, err)
 		}
 		if err := os.Rename(temporary, path); err != nil {
 			return nil, err
 		}
-		block, err = openColdBlock(path, id)
+		// Not checksummed: out was, and reading the file back would touch every page of it a second time, which makes
+		// the kernel count all of them as the container's active working set.
+		block, err = openColdBlock(path, id, false)
 	}
 	if err != nil {
 		return nil, err
@@ -264,7 +267,7 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 	return block, nil
 }
 
-func writeSynced(path string, data []byte) error {
+func writeSynced(path string, data []byte, dropPages bool) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -277,10 +280,15 @@ func writeSynced(path string, data []byte) error {
 		_ = file.Close()
 		return err
 	}
+	if dropPages {
+		// Best effort: the pages are synced, so they can only be dropped, never lost.
+		_ = dropPageCache(file)
+	}
 	return file.Close()
 }
 
-func openColdBlock(path string, id uint64) (*coldBlock, error) {
+// openColdBlock maps the block at path, checking its checksum when verify says to.
+func openColdBlock(path string, id uint64, verify bool) (*coldBlock, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -298,7 +306,7 @@ func openColdBlock(path string, id uint64) (*coldBlock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("map %s: %w", path, err)
 	}
-	block, err := parseColdBlock(id, data, true, path)
+	block, err := parseColdBlock(id, data, true, path, verify)
 	if err != nil {
 		_ = unix.Munmap(data)
 		return nil, fmt.Errorf("open cold block %s: %w", path, err)
@@ -306,7 +314,7 @@ func openColdBlock(path string, id uint64) (*coldBlock, error) {
 	return block, nil
 }
 
-func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *coldBlock, err error) {
+func parseColdBlock(id uint64, data []byte, mapped bool, path string, verify bool) (block *coldBlock, err error) {
 	if len(data) < len(coldMagic)+4 {
 		return nil, errors.New("cold block too short")
 	}
@@ -314,7 +322,7 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 	if string(body[:8]) != string(coldMagic) {
 		return nil, errors.New("cold block has invalid magic")
 	}
-	if crc32.ChecksumIEEE(body) != binary.LittleEndian.Uint32(checksum) {
+	if verify && crc32.ChecksumIEEE(body) != binary.LittleEndian.Uint32(checksum) {
 		return nil, errors.New("cold block checksum mismatch")
 	}
 	defer func() {
@@ -843,8 +851,17 @@ func (s *coldSeries) hasData(start, end int64) bool {
 // blocks.
 type coldState struct {
 	directory string
-	blocks    []*coldBlock
-	nextID    uint64
+	// Whether the blocks written here are dropped from the page cache, EngineOptions.DropWrittenColdPages.
+	dropWrittenPages bool
+	blocks           []*coldBlock
+	nextID           uint64
+}
+
+// dropWrittenColdPages sets whether the blocks the store's shards write are dropped from the page cache.
+func (s *Store) dropWrittenColdPages(drop bool) {
+	for _, shard := range s.shards {
+		shard.cold.dropWrittenPages = drop
+	}
 }
 
 func newColdState(directory string) (*coldState, error) {
@@ -937,7 +954,7 @@ func (c *coldState) mergeSmallBlocks() {
 // merge replaces the blocks from to before with one that has their series.
 func (c *coldState) merge(from, to int) error {
 	id := c.nextID
-	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to])
+	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to], c.dropWrittenPages)
 	if err != nil {
 		return err
 	}
@@ -948,7 +965,7 @@ func (c *coldState) merge(from, to int) error {
 
 // buildMergedBlock writes the block with the series of blocks, which only reads them: a series in more than one gets
 // the chunks of all of them, the later blocks' after. The block is nil without any series.
-func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBlock, error) {
+func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, dropPages bool) (*coldBlock, error) {
 	type key struct {
 		tenant string
 		labels labels.Labels
@@ -984,7 +1001,7 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBl
 			}
 		}
 	}
-	return buildColdBlock(directory, id, frozen)
+	return buildColdBlock(directory, id, frozen, dropPages)
 }
 
 // replace puts block, or nothing when it is nil, in the place of the blocks from to before, which it removes.

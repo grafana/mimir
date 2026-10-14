@@ -208,7 +208,7 @@ func TestColdBlockHashesAreTheSeriesHashes(t *testing.T) {
 		rw2Labels(n).Range(func(l promlabels.Label) { pairs = append(pairs, [2]string{l.Name, l.Value}) })
 		frozen = append(frozen, frozenSeries{tenant: fmt.Sprintf("tenant-%d", n%2), labels: labels.FromSorted(pairs)})
 	}
-	block, err := buildColdBlock(t.TempDir(), 1, frozen)
+	block, err := buildColdBlock(t.TempDir(), 1, frozen, false)
 	require.NoError(t, err)
 	for _, tenant := range []string{"tenant-0", "tenant-1"} {
 		table := block.tenant(tenant)

@@ -56,7 +56,10 @@ type EngineOptions struct {
 	// IdleEvictionMs is how long a series' newest sample is behind the head's before every compaction takes it out of the
 	// head, instead of when the head's min time passes it: series that stopped, such as the ones of a pod that is gone, would
 	// otherwise stay in memory for the hours until then. Zero keeps them until then.
-	IdleEvictionMs          int64
+	IdleEvictionMs int64
+	// DropWrittenColdPages drops each cold block from the page cache once it is written: the kernel counts what a merge
+	// or a query reads again of it as the container's working set. The first reads of its pages then come from disk.
+	DropWrittenColdPages    bool
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
@@ -170,6 +173,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		if restored != nil && len(restored.Store.shards) <= maxShards {
 			e.store = restored.Store
 			e.store.memoryIsHead = true
+			e.store.dropWrittenColdPages(opts.DropWrittenColdPages)
 			e.oooWatermarks = make([]uint64, len(e.store.shards))
 			e.restored = true
 			e.createHome()
@@ -198,6 +202,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	}
 	e.store = s
 	s.memoryIsHead = true
+	s.dropWrittenColdPages(opts.DropWrittenColdPages)
 	e.oooWatermarks = make([]uint64, len(s.shards))
 	e.createHome()
 	return e, nil
@@ -520,13 +525,13 @@ func (e *Engine) mergeColdBlocks() {
 				id = shard.cold.nextID
 				shard.cold.nextID++
 			}
-			directory := shard.cold.directory
+			directory, dropPages := shard.cold.directory, shard.cold.dropWrittenPages
 			shard.Unlock()
 			if !ok {
 				break
 			}
 			started := time.Now()
-			block, err := buildMergedBlock(directory, id, run)
+			block, err := buildMergedBlock(directory, id, run, dropPages)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error tenant=%s error=%v\n", e.tenantID, err)
 				break
@@ -902,7 +907,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	if freezeUnlockedHook != nil {
 		freezeUnlockedHook()
 	}
-	block := pending.build(shard.cold.directory)
+	block := pending.build(shard.cold.directory, shard.cold.dropWrittenPages)
 	shard.Lock()
 	removed := installFreeze(shard, pending, block, scope)
 	for ref, stored := range leaving {

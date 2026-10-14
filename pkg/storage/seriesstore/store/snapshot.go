@@ -696,7 +696,7 @@ func reopenCold(directory string, nextID uint64, ids []uint64) (*coldState, erro
 		}
 	}
 	for _, id := range ids {
-		block, err := openColdBlock(coldBlockPath(directory, id), id)
+		block, err := openColdBlock(coldBlockPath(directory, id), id, true)
 		if err != nil {
 			return nil, err
 		}

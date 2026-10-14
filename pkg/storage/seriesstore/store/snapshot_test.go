@@ -343,13 +343,14 @@ func TestColdBlocksFindSeriesByPostingsAndSurviveReopening(t *testing.T) {
 			frozen("a", [][2]string{{"__name__", "down"}, {"job", "api"}}, [2]int64{50, 60}),
 		}
 	}
-	inMemory, err := buildColdBlock("", 1, fixture())
+	inMemory, err := buildColdBlock("", 1, fixture(), false)
 	require.NoError(t, err)
-	_, err = buildColdBlock(directory, 2, fixture())
+	// Dropped from the page cache, which the reads after don't notice.
+	written, err := buildColdBlock(directory, 2, fixture(), true)
 	require.NoError(t, err)
-	reopened, err := openColdBlock(coldBlockPath(directory, 2), 2)
+	reopened, err := openColdBlock(coldBlockPath(directory, 2), 2, true)
 	require.NoError(t, err)
-	for _, block := range []*coldBlock{inMemory, reopened} {
+	for _, block := range []*coldBlock{inMemory, written, reopened} {
 		require.Equal(t, [2]int64{1, 60}, [2]int64{block.minTime, block.maxTime})
 		require.Equal(t, 3, block.seriesCount("a"))
 		require.True(t, block.overlaps("a", 35, 45) && !block.overlaps("b", 35, 45))
@@ -383,13 +384,14 @@ func TestColdBlocksFindSeriesByPostingsAndSurviveReopening(t *testing.T) {
 		require.Equal(t, [][2]int64{{5, 8}, {30, 40}}, bounds)
 		require.True(t, db.hasData(9, 31) && !db.hasData(9, 29))
 	}
+	require.NoError(t, written.close())
 	require.NoError(t, reopened.close())
 	path := coldBlockPath(directory, 2)
 	corrupt, err := os.ReadFile(path)
 	require.NoError(t, err)
 	corrupt[20] ^= 1
 	require.NoError(t, os.WriteFile(path, corrupt, 0o644))
-	_, err = openColdBlock(path, 2)
+	_, err = openColdBlock(path, 2, true)
 	require.Error(t, err)
 }
 
