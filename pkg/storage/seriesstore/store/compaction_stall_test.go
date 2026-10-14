@@ -199,3 +199,38 @@ func TestShrinkEntriesStall(t *testing.T) {
 	engine, lsets, refs := stallEngine(t, 0)
 	measureStall(t, "shrink entries", engine, lsets, refs, engine.shrinkEntries)
 }
+
+// TestColdMergeStall merges the cold blocks of a tenant whose series left the head over rounds, as compactions do.
+func TestColdMergeStall(t *testing.T) {
+	requireBench(t)
+	defer func(small int) { coldSmallSeries = small }(coldSmallSeries)
+	coldSmallSeries = 0
+	engine, lsets, refs := stallEngine(t, 0)
+	// Fifteen rounds of a fifteenth of the series leaving the head, a block each in each shard.
+	for round := range 15 {
+		var leaving []storage.SeriesRef
+		for n, ref := range refs {
+			if n%15 == round {
+				leaving = append(leaving, ref)
+			}
+		}
+		require.NoError(t, engine.CompactSelectedSeries(leaving))
+	}
+	appendAll := func(ts int64) {
+		app := engine.Appender(context.Background())
+		for n := range lsets {
+			ref, err := app.Append(0, lsets[n], ts, 1)
+			require.NoError(t, err)
+			refs[n] = ref
+		}
+		require.NoError(t, app.Commit())
+	}
+	appendAll(4*stallHour + 500)
+	measureStall(t, "cold merge", engine, lsets, refs, func() {
+		engine.compactionLock.Lock()
+		defer engine.compactionLock.Unlock()
+		for range 10 {
+			engine.mergeColdBlocks()
+		}
+	})
+}

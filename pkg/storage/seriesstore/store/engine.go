@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/oklog/ulid/v2"
@@ -487,6 +488,7 @@ func (e *Engine) Compact(context.Context) error {
 			return err
 		}
 	}
+	e.mergeColdBlocks()
 	if e.opts.RetentionMs > 0 {
 		home, t := e.home()
 		home.RLock()
@@ -497,6 +499,49 @@ func (e *Engine) Compact(context.Context) error {
 		}
 	}
 	return nil
+}
+
+// coldMergesPerCompaction is how many merges a shard's cold blocks get at each compaction, which a shard with many
+// blocks, after a restart, takes a few compactions to get through.
+var coldMergesPerCompaction = 2
+
+// mergeColdBlocks merges each shard's cold blocks down to its target, with the compaction lock held: every change of
+// the blocks holds it, so the blocks a merge reads with the shard unlocked stay as they are. The shard is locked to
+// pick the blocks and to put the merged one in their place only.
+func (e *Engine) mergeColdBlocks() {
+	for _, shard := range e.store.shards {
+		for range coldMergesPerCompaction {
+			shard.Lock()
+			from, to, ok := shard.cold.pickMerge()
+			var run []*coldBlock
+			var id uint64
+			if ok {
+				run = slices.Clone(shard.cold.blocks[from:to])
+				id = shard.cold.nextID
+				shard.cold.nextID++
+			}
+			directory := shard.cold.directory
+			shard.Unlock()
+			if !ok {
+				break
+			}
+			started := time.Now()
+			block, err := buildMergedBlock(directory, id, run)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error tenant=%s error=%v\n", e.tenantID, err)
+				break
+			}
+			if block != nil {
+				// What queries would compute on their first look at the block.
+				block.warmHashes()
+			}
+			shard.Lock()
+			shard.cold.replace(from, to, block)
+			blocks := len(shard.cold.blocks)
+			shard.Unlock()
+			fmt.Fprintf(os.Stderr, "phase=cold_blocks_merged tenant=%s merged=%d blocks=%d duration_ms=%d\n", e.tenantID, len(run), blocks, time.Since(started).Milliseconds())
+		}
+	}
 }
 
 // CompactHead compacts the head up to maxt, like Prometheus's CompactHead of a RangeHead ending at

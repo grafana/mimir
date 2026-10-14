@@ -25,7 +25,11 @@ import (
 // labels, chunk references and postings stay on disk, memory-mapped, so millions of series that
 // only queries of older ranges read cost no heap. The chunks themselves stay in the chunk files.
 
-var coldMagic = []byte("MIMIRCB1")
+// Version 2 blocks have each series' hashes, which version 1 blocks compute on their first query.
+var (
+	coldMagic   = []byte("MIMIRCB2")
+	coldMagicV1 = []byte("MIMIRCB1")
+)
 
 // frozenSeries is a series leaving the head, with every chunk it had in the chunk files.
 type frozenSeries struct {
@@ -42,6 +46,8 @@ type coldTenantIndex struct {
 	seriesCount   int
 	postingsTable int
 	postingsCount int
+	// The byte offset of each series' labels hash and query shard hash, 0 in a version 1 block, which computes them.
+	hashesTable int
 	// Each series' `labels.StableHash`, by which sharded queries pick series: computed on the first
 	// sharded query rather than from the labels for every series of every one.
 	shardHashesOnce sync.Once
@@ -97,6 +103,11 @@ func coldBlockPath(directory string, id uint64) string {
 
 // buildColdBlock writes series to a new block in directory, or keeps it in memory without one.
 func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
+	return buildColdBlockVersion(directory, id, series, 2)
+}
+
+// buildColdBlockVersion is buildColdBlock with the format of a version, for tests of the blocks of older versions.
+func buildColdBlockVersion(directory string, id uint64, series []frozenSeries, version int) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
 			return series[a].tenant < series[b].tenant
@@ -113,7 +124,11 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 			}
 		})
 	}
-	out := append([]byte(nil), coldMagic...)
+	magic, headerSize := coldMagic, 56
+	if version == 1 {
+		magic, headerSize = coldMagicV1, 48
+	}
+	out := append([]byte(nil), magic...)
 	out = putUvarint(out, uint64(len(names)))
 	for _, name := range names {
 		out = putUvarint(out, uint64(len(name)))
@@ -137,8 +152,8 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		out = putUvarint(out, uint64(len(tenant)))
 		out = append(out, tenant...)
 		headers[index] = len(out)
-		// min, max, series table, series count, postings table, postings count.
-		out = append(out, make([]byte, 48)...)
+		// min, max, series table, series count, postings table, postings count, hashes table.
+		out = append(out, make([]byte, headerSize)...)
 	}
 	blockMin, blockMax := int64(math.MaxInt64), int64(math.MinInt64)
 	type posting struct {
@@ -178,6 +193,15 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		seriesTable := len(out)
 		for _, offset := range offsets {
 			out = binary.LittleEndian.AppendUint64(out, offset)
+		}
+		// Each series' labels hash and query shard hash, which queries need of every series they look at.
+		hashesTable := 0
+		if version >= 2 {
+			hashesTable = len(out)
+			for _, frozen := range series[r.start:r.end] {
+				out = binary.LittleEndian.AppendUint64(out, frozen.labels.Hash())
+				out = binary.LittleEndian.AppendUint64(out, labels.StableHash(frozen.labels))
+			}
 		}
 		slices.SortFunc(postings, func(a, b posting) int {
 			switch {
@@ -227,8 +251,8 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 				out = binary.LittleEndian.AppendUint32(out, index)
 			}
 		}
-		fields := [6]uint64{uint64(minTime), uint64(maxTime), uint64(seriesTable), uint64(len(offsets)), uint64(postingsTable), uint64(len(entries))}
-		for slot, field := range fields {
+		fields := [7]uint64{uint64(minTime), uint64(maxTime), uint64(seriesTable), uint64(len(offsets)), uint64(postingsTable), uint64(len(entries)), uint64(hashesTable)}
+		for slot, field := range fields[:headerSize/8] {
 			binary.LittleEndian.PutUint64(out[headers[rangeIndex]+slot*8:], field)
 		}
 		blockMin = min(blockMin, minTime)
@@ -311,7 +335,12 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 		return nil, errors.New("cold block too short")
 	}
 	body, checksum := data[:len(data)-4], data[len(data)-4:]
-	if string(body[:8]) != string(coldMagic) {
+	version := 2
+	switch string(body[:8]) {
+	case string(coldMagic):
+	case string(coldMagicV1):
+		version = 1
+	default:
 		return nil, errors.New("cold block has invalid magic")
 	}
 	if crc32.ChecksumIEEE(body) != binary.LittleEndian.Uint32(checksum) {
@@ -351,7 +380,12 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string) (block *co
 			postingsTable: int(field(4)),
 			postingsCount: int(field(5)),
 		}
-		cursor = cursor[48:]
+		if version >= 2 {
+			index.hashesTable = int(field(6))
+			cursor = cursor[56:]
+		} else {
+			cursor = cursor[48:]
+		}
 		minTime = min(minTime, index.minTime)
 		maxTime = max(maxTime, index.maxTime)
 		tenants[tenant] = index
@@ -743,6 +777,9 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 
 // labelsHash returns the labels hash of the series at index, like the head's series hash.
 func (b *coldBlock) labelsHash(table *coldTenantIndex, index int) uint64 {
+	if table.hashesTable > 0 {
+		return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16:])
+	}
 	table.labelHashesOnce.Do(func() {
 		hashes := make([]uint64, table.seriesCount)
 		var pairs [][2]string
@@ -777,6 +814,9 @@ func (b *coldBlock) warmHashes() {
 
 // shardHash returns the query shard hash of the series at index.
 func (b *coldBlock) shardHash(table *coldTenantIndex, index int) uint64 {
+	if table.hashesTable > 0 {
+		return binary.LittleEndian.Uint64(b.data[table.hashesTable+index*16+8:])
+	}
 	table.shardHashesOnce.Do(func() {
 		if countersEnabled {
 			coldShardHashings.Add(1)
@@ -911,7 +951,7 @@ func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, s
 	}
 }
 
-const (
+var (
 	// A block with fewer series than this is small, and the blocks that head compactions write every minute are: a query
 	// visits every block of every shard, so hundreds of them cost more than the series in them do.
 	coldSmallSeries = 2048
@@ -959,15 +999,27 @@ func (c *coldState) mergeSmallBlocks() {
 
 // merge replaces the blocks from to before with one that has their series.
 func (c *coldState) merge(from, to int) error {
+	id := c.nextID
+	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to])
+	if err != nil {
+		return err
+	}
+	c.nextID++
+	c.replace(from, to, block)
+	return nil
+}
+
+// buildMergedBlock writes the block with the series of blocks, which only reads them: a series in more than one gets
+// the chunks of all of them, the later blocks' after. The block is nil without any series.
+func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBlock, error) {
 	type key struct {
 		tenant string
 		labels labels.Labels
 	}
-	merged := c.blocks[from:to]
 	var frozen []frozenSeries
 	positions := map[key]int{}
 	var pairs [][2]string
-	for _, block := range merged {
+	for _, block := range blocks {
 		for tenant, table := range block.tenants {
 			for index := range table.seriesCount {
 				series := block.seriesIn(table, index)
@@ -995,13 +1047,12 @@ func (c *coldState) merge(from, to int) error {
 			}
 		}
 	}
-	id := c.nextID
-	block, err := buildColdBlock(c.directory, id, frozen)
-	if err != nil {
-		return err
-	}
-	c.nextID++
-	for _, old := range merged {
+	return buildColdBlock(directory, id, frozen)
+}
+
+// replace puts block, or nothing when it is nil, in the place of the blocks from to before, which it removes.
+func (c *coldState) replace(from, to int, block *coldBlock) {
+	for _, old := range c.blocks[from:to] {
 		if old.path != "" {
 			if err := os.Remove(old.path); err != nil {
 				fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", old.path, err)
@@ -1011,11 +1062,42 @@ func (c *coldState) merge(from, to int) error {
 	}
 	if block == nil {
 		c.blocks = slices.Delete(c.blocks, from, to)
-		return nil
+		return
 	}
 	c.blocks[from] = block
 	c.blocks = slices.Delete(c.blocks, from+1, to)
-	return nil
+}
+
+// A query visits every cold block of every shard of the tenant, so a shard's blocks are merged down to
+// coldTargetBlocks, the adjacent ones of the smallest total size first, up to coldMaxMergeBytes a merge, which bounds
+// what a merge rewrites.
+const (
+	coldTargetBlocks  = 4
+	coldMaxMergeBytes = 512 << 20
+)
+
+// pickMerge returns the blocks from to before to merge next, if the shard has more than its target.
+func (c *coldState) pickMerge() (from, to int, ok bool) {
+	excess := len(c.blocks) - coldTargetBlocks
+	if excess <= 0 {
+		return 0, 0, false
+	}
+	for width := min(excess+1, coldMergeFanout); width >= 2; width-- {
+		best, bestSize := -1, 0
+		for start := 0; start+width <= len(c.blocks); start++ {
+			size := 0
+			for _, block := range c.blocks[start : start+width] {
+				size += len(block.data)
+			}
+			if size <= coldMaxMergeBytes && (best < 0 || size < bestSize) {
+				best, bestSize = start, size
+			}
+		}
+		if best >= 0 {
+			return best, best + width, true
+		}
+	}
+	return 0, 0, false
 }
 
 // discardColdBlock removes a block no query has seen.
