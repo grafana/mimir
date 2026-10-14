@@ -4,7 +4,6 @@
 
   local isEnabled = $._config.compartments_block_builder_enabled,
   local numCompartments = $._config.compartments_read_count,
-  local isNoCompartmentsEnabled = $._config.no_compartments_block_builder_enabled,
 
   blockBuilderSchedulerCompartmentEndpoint(compartmentIdx)::
     'block-builder-scheduler-rc-%d.%s.svc.%s:9095' % [compartmentIdx, $._config.namespace, $._config.cluster_domain],
@@ -45,10 +44,10 @@
   block_builder_scheduler_services: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.newBlockBuilderSchedulerService('block-builder-scheduler-rc-%d' % compartment, $.block_builder_scheduler_statefulsets['compartment_%d' % compartment])),
   block_builder_scheduler_pdbs: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.newMimirPdb('block-builder-scheduler-rc-%d' % compartment)),
 
-  // Null out the non-compartments block-builder-scheduler when retired.
-  block_builder_scheduler_statefulset: if isEnabled && !isNoCompartmentsEnabled then null else super.block_builder_scheduler_statefulset,
-  block_builder_scheduler_service: if isEnabled && !isNoCompartmentsEnabled then null else super.block_builder_scheduler_service,
-  block_builder_scheduler_pdb: if isEnabled && !isNoCompartmentsEnabled then null else super.block_builder_scheduler_pdb,
+  // Null out the non-compartments block-builder-scheduler.
+  block_builder_scheduler_statefulset: if isEnabled then null else super.block_builder_scheduler_statefulset,
+  block_builder_scheduler_service: if isEnabled then null else super.block_builder_scheduler_service,
+  block_builder_scheduler_pdb: if isEnabled then null else super.block_builder_scheduler_pdb,
 
   // Config validation.
   local schedulerCompartmentConfigError = $.validateMimirCompartmentsConfig(['block_builder_scheduler_statefulsets']),

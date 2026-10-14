@@ -1,7 +1,6 @@
 {
   _config+:: {
     compartments_block_builder_enabled: $._config.compartments_enabled && $._config.block_builder.enabled,
-    no_compartments_block_builder_enabled: !self.compartments_block_builder_enabled,
 
     // Per-compartment block-builder autoscaling bounds (per read compartment).
     autoscaling_block_builder_min_replicas_per_compartment: 1,
@@ -30,7 +29,6 @@
 
   local isEnabled = $._config.compartments_block_builder_enabled,
   local numCompartments = $._config.compartments_read_count,
-  local isNoCompartmentsEnabled = $._config.no_compartments_block_builder_enabled,
   local isAutoscalingEnabled = $._config.block_builder.autoscaling_enabled,
   local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.autoscaling_block_builder_disabled_compartments, compartment),
   local compartmentStaticReplicas(compartment) = $._config.block_builder_compartment_static_replicas['compartment_%d' % compartment],
@@ -91,24 +89,11 @@
       blockbuilder_extra_matchers='pod=~"block-builder-rc-%d-.*"' % compartment,
     ), $._config.autoscaling_block_builder_disabled_compartments),
 
-  // Null out the non-compartments block-builder resources.
-  block_builder_deployment: if isEnabled && !isNoCompartmentsEnabled then null else super.block_builder_deployment,
-  block_builder_pdb: if isEnabled && !isNoCompartmentsEnabled then null else super.block_builder_pdb,
-
-  block_builder_scaled_object:
-    // When the non-compartments block-builder also runs (e.g. during a migration), scope its autoscaler to
-    // exclude the per-compartment pods, which share the same container names.
-    if isEnabled && isNoCompartmentsEnabled && isAutoscalingEnabled then
-      $.newBlockBuilderScaledObject(
-        service_name='block-builder',
-        min_replicas=$._config.block_builder.autoscaling_min_replicas,
-        max_replicas=$._config.block_builder.autoscaling_max_replicas,
-        target_kind='Deployment',
-        scheduler_extra_matchers='pod!~"block-builder-scheduler-rc-.*"',
-        blockbuilder_extra_matchers='pod!~"block-builder-rc-.*"',
-      )
-    else if isEnabled && !isNoCompartmentsEnabled then null
-    else super.block_builder_scaled_object,
+  // Null out the non-compartments block-builder resources. With compartments enabled the read path only
+  // queries the per-compartment buckets, so a non-compartments block-builder would build blocks nothing reads.
+  block_builder_deployment: if isEnabled then null else super.block_builder_deployment,
+  block_builder_pdb: if isEnabled then null else super.block_builder_pdb,
+  block_builder_scaled_object: if isEnabled then null else super.block_builder_scaled_object,
 
   // Config validation.
   local blockBuilderCompartmentConfigError = $.validateMimirCompartmentsConfig(['block_builder_deployments']),

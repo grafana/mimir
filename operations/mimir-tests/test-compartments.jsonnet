@@ -227,19 +227,6 @@ assert env.block_builder_deployment == null && env.block_builder_scaled_object =
        env.block_builder_scheduler_statefulset == null && env.block_builder_scheduler_service == null && env.block_builder_scheduler_pdb == null :
        'expected the non-compartments block-builder and scheduler to be retired';
 
-// When the non-compartments block-builder also runs, its autoscaler must ignore the per-compartment pods.
-local blockBuilderCoexistenceEnv = env {
-  _config+:: {
-    no_compartments_block_builder_enabled: true,
-  },
-};
-local blockBuilderCoexistenceQuery = blockBuilderCoexistenceEnv.block_builder_scaled_object.spec.triggers[0].metadata.query;
-assert blockBuilderCoexistenceEnv.block_builder_deployment != null && blockBuilderCoexistenceEnv.block_builder_scheduler_statefulset != null :
-       'expected coexistence to keep the non-compartments block-builder and scheduler';
-assert std.length(std.findSubstr('pod!~"block-builder-rc-.*"', blockBuilderCoexistenceQuery)) > 0 &&
-       std.length(std.findSubstr('pod!~"block-builder-scheduler-rc-.*"', blockBuilderCoexistenceQuery)) > 0 :
-       'expected the non-compartments block-builder autoscaler to exclude the per-compartment pods';
-
 // Patches layered onto the base block-builder and scheduler containers must reach every compartment's
 // workload, while each compartment keeps its own args.
 local blockBuilderBaseContainerEnv = env {
