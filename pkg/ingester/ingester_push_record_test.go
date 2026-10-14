@@ -31,7 +31,6 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 	start := func() (*Ingester, *prometheus.Registry) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
-		cfg.PushRecordsToEngine = true
 		limitsCfg := defaultLimitsTestConfig()
 		limitsCfg.NativeHistogramsIngestionEnabled = true
 		limitsCfg.MaxGlobalExemplarsPerUser = 100
@@ -233,7 +232,6 @@ func benchmarkPushRecord(b *testing.B, series, batch int, path string, extras bo
 	withoutRefLeaksInstrumentation(b)
 	cfg := defaultIngesterTestConfig(b)
 	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
-	cfg.PushRecordsToEngine = true
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.NativeHistogramsIngestionEnabled = true
 	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
@@ -324,4 +322,26 @@ func withoutRefLeaksInstrumentation(b *testing.B) {
 	b.Cleanup(func() {
 		mimirpb.CustomCodecConfig{InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{Percentage: 100}}.RegisterGlobally(prometheus.NewRegistry())
 	})
+}
+
+// The ingest reader passes records as they are only to an ingester whose engine reads them: it decodes them for the
+// Prometheus TSDB, which then takes them on as many goroutines as it has shards.
+func TestIngester_AcceptsRecordsOnlyForAnEngineThatReadsThem(t *testing.T) {
+	if testEngine != "" {
+		t.Skip("the engine is the test's")
+	}
+	for _, c := range []struct {
+		engine        string
+		ingestStorage bool
+		accepts       bool
+	}{
+		{mimir_tsdb.EngineSeriesstore, true, true},
+		{mimir_tsdb.EngineSeriesstore, false, false},
+		{mimir_tsdb.EnginePrometheus, true, false},
+	} {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.BlocksStorageConfig.TSDB.Engine = c.engine
+		cfg.IngestStorageConfig.Enabled = c.ingestStorage
+		require.Equal(t, c.accepts, (&Ingester{cfg: cfg}).AcceptsRecords(), "%+v", c)
+	}
 }

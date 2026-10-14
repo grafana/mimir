@@ -112,6 +112,12 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 	return openPrometheusEngine(dir, logger, reg, opts)
 }
 
+// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the seriesstore
+// engine does.
+func (i *Ingester) enginesReadRecords() bool {
+	return i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore
+}
+
 // prometheusEngine is the Prometheus TSDB as a tenantEngine.
 type prometheusEngine struct {
 	*tsdb.DB
