@@ -207,9 +207,13 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		cached     *cachedSelector
 		cachedName string
 		cachedRest []compiledMatcher
+		general    *cachedSelector
 	)
 	if name, rest, ok := cacheableName(coldLabels); ok {
 		cached, cachedName, cachedRest = e.selectors.get(selectorKey(coldLabels), len(e.store.shards)), name, rest
+	} else if len(coldLabels) > 0 {
+		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
+		general = e.selectors.get("\x02"+selectorKey(coldLabels), len(e.store.shards))
 	}
 	e.store.perShardIndexed(e.tenantID, func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
@@ -217,6 +221,10 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		matchHead := func(visit func(entry *seriesEntry) bool) {
 			if cached != nil {
 				t.series.matchingCached(cached, shard, cachedName, coldShard, coldLabels, cachedRest, visit)
+				return
+			}
+			if general != nil {
+				t.series.matchingGeneral(general, shard, coldShard, coldLabels, visit)
 				return
 			}
 			t.series.matching(compiled, visit)
