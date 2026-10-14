@@ -191,6 +191,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
 		userDB.offsetCatalogue = newOffsetCatalogue(userLogger, i.offsetCatalogueMetrics, udir, userID, i.ingestPartitionID)
+		userDB.committedOffsets = i.committedOffsets
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)

@@ -405,7 +405,11 @@ type Ingester struct {
 	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
-	committedOffsetClients    []*ingest.CommittedOffsetClient // Indexed by Kafka cluster ID.
+
+	// committedOffsets watches the committed offsets of the block-builder consumer group, gating
+	// the deletion of compacted blocks. nil unless the offset catalogue is enabled with a
+	// configured consumer group.
+	committedOffsets *committedOffsetsWatcher
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
@@ -473,6 +477,23 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 		),
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
+}
+
+// consumptionKafkaConfigs returns one KafkaConfig per Kafka cluster the ingester consumes its
+// partition from, indexed by cluster ID (the write compartment ID). Without write compartments
+// there is a single cluster; with them, each cluster hosts the ingester's read compartment topic,
+// and the per-client resource budgets are divided so that fanning out keeps the peak usage
+// independent of the cluster count (see ingest.WriteCompartmentConfigs).
+func consumptionKafkaConfigs(cfg Config) []ingest.KafkaConfig {
+	kafkaCfg := cfg.IngestStorageConfig.KafkaConfig
+	kafkaCfg.FallbackClientErrorSampleRate = cfg.ErrorSampleRate
+	kafkaCfg.MaxReplayPeriod = cfg.BlocksStorageConfig.TSDB.Retention
+
+	if !cfg.Compartments.Enabled {
+		return []ingest.KafkaConfig{kafkaCfg}
+	}
+	readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+	return ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 }
 
 // New returns an Ingester that uses Mimir block storage.
@@ -589,13 +610,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	var ownedSeriesStrategy ownedSeriesRingStrategy
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
-		kafkaCfg := ingestCfg.KafkaConfig
-
 		// We use the ingester instance ID as consumer group. This means that we have N consumer groups
 		// where N is the total number of ingesters. Each ingester is part of their own consumer group
 		// so that they all replay the owned partition with no gaps.
-		kafkaCfg.FallbackClientErrorSampleRate = cfg.ErrorSampleRate
-		kafkaCfg.MaxReplayPeriod = cfg.BlocksStorageConfig.TSDB.Retention
+		kafkaCfgs := consumptionKafkaConfigs(cfg)
 
 		// This is injected already higher up for methods invoked via the network.
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
@@ -605,8 +623,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			// With compartments enabled the ingester consumes its read compartment's topic from every
 			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
 			// alongside the ingester's data, one per write compartment.
-			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
-			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
 			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
@@ -617,7 +633,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			// The offset file is always stored in the TSDB directory alongside the ingester's data.
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
 
-			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfgs[0], i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
 			}
@@ -701,22 +717,21 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
 		}
 
+		// The consumer group is the one the block-builder consumes with: its committed offsets gate
+		// the deletion of the ingester's compacted blocks. The Config.Validate check that requires
+		// the group to be set is not enough here, because tests build Configs without validation.
 		if consumerGroup := cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup; consumerGroup != "" {
-			// The consumer group commits offsets to every Kafka cluster the ingester consumes from.
-			kafkaCfgs := []ingest.KafkaConfig{cfg.IngestStorageConfig.KafkaConfig}
-			if cfg.Compartments.Enabled {
-				readCompartmentTopic := compartments.ReplaceReadCompartment(cfg.IngestStorageConfig.KafkaConfig.Topic, cfg.ReadCompartmentID)
-				kafkaCfgs = ingest.WriteCompartmentConfigs(cfg.IngestStorageConfig.KafkaConfig, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
+			componentLogger := log.With(logger, "component", "committed-offsets")
+			client, err := ingest.NewCommittedOffsetsClient(consumptionKafkaConfigs(cfg), consumerGroup, i.ingestPartitionID, componentLogger)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating committed offsets client")
 			}
-
-			i.committedOffsetClients = make([]*ingest.CommittedOffsetClient, len(kafkaCfgs))
-			for clusterID, kafkaCfg := range kafkaCfgs {
-				cl, err := ingest.NewKafkaReaderClient(kafkaCfg, nil, log.With(logger, "component", "committed-offset-client"))
-				if err != nil {
-					return nil, fmt.Errorf("creating kafka client for committed offset reader of kafka cluster %d: %w", clusterID, err)
-				}
-				i.committedOffsetClients[clusterID] = ingest.NewCommittedOffsetClient(cl, consumerGroup, kafkaCfg.Topic, i.ingestPartitionID)
-			}
+			i.committedOffsets = newCommittedOffsetsWatcher(
+				client,
+				cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval,
+				componentLogger,
+				registerer,
+			)
 		}
 	}
 
@@ -864,11 +879,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.ingestPartitionLifecycler)
 	}
 
-	if len(i.committedOffsetClients) > 0 {
-		interval := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval
-		// Calling updateCommittedOffset on service's start: this expects all existing TSDBs were opened above.
-		committedOffsetService := services.NewTimerService(interval, i.updateCommittedOffset, i.updateCommittedOffset, nil)
-		servs = append(servs, committedOffsetService)
+	if i.committedOffsets != nil {
+		servs = append(servs, i.committedOffsets.service())
 	}
 
 	// Since subservices are conditional, We add an idle service if there are no subservices to

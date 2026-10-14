@@ -1502,6 +1502,9 @@ func TestIngester_TSDBRetention_offsetCatalogue(t *testing.T) {
 	// the offset-catalogue check then gates whether it actually gets deleted.
 	cfg.BlocksStorageConfig.TSDB.Retention = time.Second
 	cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled = true
+	// The group is never committed to in the test cluster, so the watcher never observes committed
+	// offsets on its own; the subtests store snapshots into it directly.
+	cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup = "test-block-builder"
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, logger)
@@ -1576,22 +1579,22 @@ func TestIngester_TSDBRetention_offsetCatalogue(t *testing.T) {
 		ingester.compactBlocks(ctx, true, math.MaxInt64, nil)
 	}
 
-	t.Run("block retained when committedOffset is unknown", func(t *testing.T) {
-		// committedOffsets=nil; offset-catalogue path is skipped entirely.
+	t.Run("block retained when committed offsets are not observed yet", func(t *testing.T) {
+		// The watcher never observed any committed offset: no block is deleted at all.
 		compactWithNewSeries("metric_guard_1")
 		require.Contains(t, listBlocksInDir(t, userBlocksDir), blocks[0])
 	})
 
-	t.Run("block retained when committedOffset is below watermark", func(t *testing.T) {
+	t.Run("block retained when committed offset is below watermark", func(t *testing.T) {
 		committed := kmeta.NewSingleClusterPartitionOffsets(watermark - 1)
-		db.committedOffsets.Store(&committed)
+		ingester.committedOffsets.committed.Store(&committed)
 		compactWithNewSeries("metric_guard_2")
 		require.Contains(t, listBlocksInDir(t, userBlocksDir), blocks[0])
 	})
 
-	t.Run("block deleted when committedOffset reaches watermark", func(t *testing.T) {
+	t.Run("block deleted when committed offset reaches watermark", func(t *testing.T) {
 		committed := kmeta.NewSingleClusterPartitionOffsets(watermark)
-		db.committedOffsets.Store(&committed)
+		ingester.committedOffsets.committed.Store(&committed)
 		compactWithNewSeries("metric_trigger")
 		remaining := listBlocksInDir(t, userBlocksDir)
 		for _, id := range remaining {

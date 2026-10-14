@@ -855,6 +855,7 @@ func TestConfigValidation(t *testing.T) {
 				cfg := validCompartmentsConfig()
 				cfg.Compartments.Write.NumCompartments = 2
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
 				return cfg
 			},
 			expectAnyError: false,
@@ -866,9 +867,19 @@ func TestConfigValidation(t *testing.T) {
 				cfg.Compartments.Write.NumCompartments = 1
 				cfg.Distributor.WriteCompartmentID = 0
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
 				return cfg
 			},
 			expectAnyError: false,
+		},
+		{
+			name: "should fail if the offset catalogue is enabled without a consumer group",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				return cfg
+			},
+			expectAnyError: true,
 		},
 		{
 			name: "should fail if distributor write compartment ID is out of range",

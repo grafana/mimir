@@ -27,7 +27,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
-	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -152,10 +151,10 @@ type userTSDB struct {
 	// Only set when ingest storage is enabled.
 	offsetCatalogue *offsetCatalogue
 
-	// committedOffsets are the last committed offsets, per Kafka cluster, observed from the consumer group
-	// configured in offset catalogue. Updated by a background service on the ingester.
-	// nil means unknown (no offset fetched yet).
-	committedOffsets atomic.Pointer[kmeta.PartitionOffsets]
+	// committedOffsets is the ingester-wide watcher of the block-builder consumer group's committed
+	// offsets; it gates the deletion of compacted blocks, see blocksToDelete. nil unless the offset
+	// catalogue is enabled with a configured consumer group.
+	committedOffsets *committedOffsetsWatcher
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
@@ -451,16 +450,19 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
 
-	// Offset-catalogue path drops any block whose watermarks are at or below the block-builder's committed offsets in every Kafka cluster.
-	// Those series are guaranteed to be in object storage already.
-	committedOffsets := u.committedOffsets.Load()
-	if u.offsetCatalogue != nil && committedOffsets != nil {
+	// When the offset catalogue is enabled with a configured consumer group, blocks are deleted only
+	// once the consumer group — the block-builder's — consumed the records their data came from: a
+	// block is deletable when its per-cluster watermark is at or below the committed offset of
+	// every cluster. Until committed offsets are observed, no block is deleted at all.
+	if u.offsetCatalogue != nil && u.committedOffsets != nil {
+		committed, observed := u.committedOffsets.Committed()
+		if !observed {
+			return result
+		}
 		catalogue := u.offsetCatalogue.Data()
-		if len(catalogue.Data) > 0 {
-			for blockID := range deletable {
-				if wms, ok := catalogue.Data[blockID.String()]; ok && offsetWatermarksCommitted(wms, *committedOffsets) {
-					result[blockID] = struct{}{}
-				}
+		for blockID := range deletable {
+			if wms, found := catalogue.Data[blockID.String()]; found && offsetWatermarksCommitted(wms, committed) {
+				result[blockID] = struct{}{}
 			}
 		}
 		return result

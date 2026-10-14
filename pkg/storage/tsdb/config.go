@@ -401,7 +401,12 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	}
 
 	if cfg.OffsetCatalogue.Enabled {
-		if cfg.OffsetCatalogue.ConsumerGroup != "" && cfg.OffsetCatalogue.ConsumerGroupPollInterval <= 0 {
+		// The consumer group is the one the block-builder consumes with: without it there is nothing to
+		// gate the deletion of compacted blocks on, and the catalogue would only stamp watermarks.
+		if cfg.OffsetCatalogue.ConsumerGroup == "" {
+			return errors.New("-blocks-storage.tsdb.offset-catalogue.consumer-group must be set when -blocks-storage.tsdb.offset-catalogue.enabled is set")
+		}
+		if cfg.OffsetCatalogue.ConsumerGroupPollInterval <= 0 {
 			return fmt.Errorf("offset catalogue poll interval for consumer group %s must be non-negative", cfg.OffsetCatalogue.ConsumerGroup)
 		}
 	}
