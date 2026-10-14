@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"sync/atomic"
 
 	"github.com/grafana/dskit/tenant"
@@ -26,6 +27,8 @@ type pushRequest struct {
 	// The decoding of the whole record, or of the series of subset only.
 	decode *mimirpb.PreallocWriteRequest
 	subset []int
+	// The content of the record of the subset's series, which its decoding refers to.
+	subsetContent *[]byte
 	// The series of the record built from it, by index, for what needs them without them being decoded.
 	built map[int]*mimirpb.PreallocTimeseries
 	// Why the record couldn't be decoded, which leaves it without series.
@@ -56,7 +59,9 @@ func (p *pushRequest) decodedSubset(indices []int) []mimirpb.PreallocTimeseries 
 	}
 	p.releaseDecode()
 	p.decode, p.subset = &mimirpb.PreallocWriteRequest{}, indices
-	p.decodeErr = ingest.DeserializeRecordContent(p.record.Subset(indices), p.decode, p.version)
+	p.subsetContent = subsetContents.Get().(*[]byte)
+	*p.subsetContent = p.record.Subset(indices, *p.subsetContent)
+	p.decodeErr = ingest.DeserializeRecordContent(*p.subsetContent, p.decode, p.version)
 	recordStats.subsets.Add(1)
 	for position, index := range indices {
 		if position < len(p.decode.Timeseries) {
@@ -155,7 +160,15 @@ func (p *pushRequest) releaseDecode() {
 		mimirpb.ReuseSlice(p.decode.Timeseries)
 		p.decode = nil
 	}
+	if p.subsetContent != nil {
+		subsetContents.Put(p.subsetContent)
+		p.subsetContent = nil
+	}
 }
+
+// subsetContents are the buffers of the records of subsets of series, which decoding them refers to until the push
+// is done.
+var subsetContents = sync.Pool{New: func() any { return new([]byte) }}
 
 func (p *pushRequest) release() {
 	if p.record != nil {
