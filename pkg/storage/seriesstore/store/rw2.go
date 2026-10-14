@@ -365,10 +365,19 @@ func (r *RW2Record) Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample)
 	return adapters, r.source.samples(index)
 }
 
-// Subset returns the content of a record with the series at indices, which are in order, and the record's symbols
-// and fields of its own: what decoding only those series needs.
-func (r *RW2Record) Subset(indices []int) []byte {
-	out := make([]byte, 0, len(r.source.content)/max(1, len(r.source.series)/max(1, len(indices))))
+// Subset appends to into the content of a record with the series at indices, which are in order, and the record's
+// symbols and fields of its own: what decoding only those series needs.
+func (r *RW2Record) Subset(indices []int, into []byte) []byte {
+	// The exact size first: the symbols are most of a record, which growing the copy would copy again.
+	size := 0
+	r.subsetFields(indices, func(raw []byte) { size += len(raw) })
+	into = slices.Grow(into[:0], size)
+	r.subsetFields(indices, func(raw []byte) { into = append(into, raw...) })
+	return into
+}
+
+// subsetFields calls visit with the encoding of each of the record's fields Subset keeps.
+func (r *RW2Record) subsetFields(indices []int, visit func(raw []byte)) {
 	rest, series := r.source.content, 0
 	for len(rest) > 0 {
 		field, _, _, next, _ := protoField(rest)
@@ -376,15 +385,14 @@ func (r *RW2Record) Subset(indices []int) []byte {
 		rest = next
 		if field == 5 {
 			if len(indices) > 0 && indices[0] == series {
-				out = append(out, raw...)
+				visit(raw)
 				indices = indices[1:]
 			}
 			series++
 			continue
 		}
-		out = append(out, raw...)
+		visit(raw)
 	}
-	return out
 }
 
 // AppendRW2 is AppendFloats for the series of a record. Series are identified by their index in the record; leftover
