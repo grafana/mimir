@@ -569,8 +569,8 @@ func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32
 // maxCachedCandidates is how many candidates a selector's list can have to be kept, and maxCachedSelectorsPerBlock how many
 // selectors a block keeps the lists of: at this many they are all dropped.
 const (
-	maxCachedCandidates        = 256
-	maxCachedSelectorsPerBlock = 16
+	maxCachedCandidates        = 64
+	maxCachedSelectorsPerBlock = 128
 )
 
 // candidatesCached is candidates, kept by the selector's key for the next time it comes in.
