@@ -409,8 +409,8 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	// The config validation guarantees the value fits a partition ID.
-	tokenTable, err := ring.NewPartitionTokenTable(int32(t.Cfg.PartitionRing.MaxDerivedTokenPartitions), util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	// The ingester config validation checks that the value fits in an int32.
+	tokenTable, err := ring.NewPartitionTokenTable(int32(t.Cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions), util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester partition token table")
 	}
@@ -826,7 +826,6 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.Cfg.Ingester.Compartments = t.Cfg.Compartments
-	t.Cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions = int32(t.Cfg.PartitionRing.MaxDerivedTokenPartitions)
 	t.tsdbIngesterConfig()
 
 	// The partition rings watcher is only built when ingest storage is enabled (otherwise

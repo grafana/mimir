@@ -58,7 +58,7 @@ overrides:
 			"-store-gateway.sharding-ring.store": "memberlist",
 			"-memberlist.bind-port":              "8000",
 
-			"-partition-ring.max-derived-token-partitions": strconv.Itoa(derivedTokensNumPartitions),
+			"-ingester.partition-ring.max-derived-token-partitions": strconv.Itoa(derivedTokensNumPartitions),
 		},
 	)
 	ingesterFlags := map[string]string{"-ingester.partition-ring.create-partitions-with-derived-tokens": "true"}

@@ -524,7 +524,7 @@ func TestMimir_InitIngesterPartitionRing_ResolvesDerivedTokensInEveryReadCompart
 	cfg.IngestStorage.Enabled = true
 	cfg.Compartments.Enabled = true
 	cfg.Compartments.Read.NumCompartments = numCompartments
-	cfg.PartitionRing.MaxDerivedTokenPartitions = len(partitionIDs)
+	cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions = len(partitionIDs)
 	cfg.Ingester.IngesterRing.KVStore.Store = "inmemory"
 	cfg.Ingester.IngesterPartitionRing.KVStore.Mock = kvClient
 

@@ -4,6 +4,8 @@ package ingester
 
 import (
 	"flag"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/grafana/dskit/kv"
@@ -26,8 +28,7 @@ type PartitionRingConfig struct {
 	CreatePartitionsWithDerivedTokens bool `yaml:"create_partitions_with_derived_tokens" category:"experimental"`
 
 	// MaxDerivedTokenPartitions maps to ring.PartitionInstanceLifecyclerConfig's MaxDerivedTokenPartitions.
-	// It's copied from the top-level partition ring config.
-	MaxDerivedTokenPartitions int32 `yaml:"-"`
+	MaxDerivedTokenPartitions int `yaml:"max_derived_token_partitions" category:"experimental"`
 
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
 	lifecyclerPollingInterval time.Duration
@@ -43,6 +44,15 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MinOwnersDuration, "ingester.partition-ring.min-partition-owners-duration", 10*time.Second, "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.")
 	f.DurationVar(&cfg.DeleteInactivePartitionAfter, "ingester.partition-ring.delete-inactive-partition-after", 13*time.Hour, "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.")
 	f.BoolVar(&cfg.CreatePartitionsWithDerivedTokens, "ingester.partition-ring.create-partitions-with-derived-tokens", false, "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring.")
+	f.IntVar(&cfg.MaxDerivedTokenPartitions, "ingester.partition-ring.max-derived-token-partitions", 0, "The number of partition IDs, starting from 0, that can use derived tokens. "+
+		"Components that read the ring generate the tokens of these partitions at startup.")
+}
+
+func (cfg *PartitionRingConfig) Validate() error {
+	if cfg.MaxDerivedTokenPartitions < 0 || cfg.MaxDerivedTokenPartitions > math.MaxInt32 {
+		return fmt.Errorf("-ingester.partition-ring.max-derived-token-partitions must be between 0 and %d, got %d", math.MaxInt32, cfg.MaxDerivedTokenPartitions)
+	}
+	return nil
 }
 
 func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID string) ring.PartitionInstanceLifecyclerConfig {
@@ -54,6 +64,6 @@ func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID
 		DeleteInactivePartitionAfterDuration: cfg.DeleteInactivePartitionAfter,
 		PollingInterval:                      cfg.lifecyclerPollingInterval,
 		CreatePartitionsWithDerivedTokens:    cfg.CreatePartitionsWithDerivedTokens,
-		MaxDerivedTokenPartitions:            cfg.MaxDerivedTokenPartitions,
+		MaxDerivedTokenPartitions:            int32(cfg.MaxDerivedTokenPartitions),
 	}
 }

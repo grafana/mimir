@@ -111,7 +111,7 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 	addPartitionCmd.Flag("partition.state", "The state of the partition to add. Must be one of: pending, active, inactive.").
 		Required().
 		StringVar(&addCmd.partitionState)
-	addPartitionCmd.Flag("partition.derived-tokens", "Add the partitions with tokens derived from the partition ID instead of storing the tokens in the ring. Experimental. Every component that reads the partition ring, including the ingesters, must have -partition-ring.max-derived-token-partitions set above the highest partition ID. Otherwise, it cannot resolve the tokens of the partition.").
+	addPartitionCmd.Flag("partition.derived-tokens", "Add the partitions with tokens derived from the partition ID instead of storing the tokens in the ring. Experimental. Every component that reads the partition ring, including the ingesters, must have -ingester.partition-ring.max-derived-token-partitions set above the highest partition ID. Otherwise, it cannot resolve the tokens of the partition.").
 		BoolVar(&addCmd.derivedTokens)
 
 	// Register remove-partition subcommand.
