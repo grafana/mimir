@@ -34,9 +34,13 @@ func comparable(method string) bool {
 }
 
 func compareResponses(method string, req frame, primary, shadow []frame, cfg Config, now time.Time) (err error) {
+	backend := "request"
 	defer func() {
 		if recover() != nil {
 			err = errors.New("invalid comparison response")
+		}
+		if err != nil && !errors.Is(err, errMismatch) && !errors.Is(err, errResponseLimit) {
+			err = &comparisonError{backend: backend, err: err}
 		}
 	}()
 	if method == "QueryStream" {
@@ -44,32 +48,46 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		if err := query.Unmarshal(req); err != nil {
 			return err
 		}
+		backend = "primary"
 		a, err := querySamples(primary, &query, cfg, now)
 		if err != nil {
 			return err
 		}
+		backend = "shadow"
 		b, err := querySamples(shadow, &query, cfg, now)
 		if err != nil {
 			return err
 		}
+		backend = "comparison"
 		if !equalSamples(a, b) {
 			return describeSampleMismatch(a, b)
 		}
 		return nil
 	}
+	backend = "primary"
 	a, err := responseItems(method, primary)
 	if err != nil {
 		return err
 	}
+	backend = "shadow"
 	b, err := responseItems(method, shadow)
 	if err != nil {
 		return err
 	}
+	backend = "comparison"
 	if !slices.Equal(a, b) {
 		return &mismatchError{fields: []any{"primary_items", len(a), "shadow_items", len(b)}}
 	}
 	return nil
 }
+
+type comparisonError struct {
+	backend string
+	err     error
+}
+
+func (e *comparisonError) Error() string { return e.err.Error() }
+func (e *comparisonError) Unwrap() error { return e.err }
 
 type sampleKey struct{ timestamp, startTimestamp int64 }
 type sampleDigest [sha256.Size]byte
@@ -171,6 +189,10 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 		}
 	}()
 	out = samplesBySeries{}
+	// Ingester QueryStream returns a successful empty stream when the tenant has no TSDB.
+	if len(frames) == 0 {
+		return out, nil
+	}
 	var keys []string
 	var expected, received []int64
 	ended := false
