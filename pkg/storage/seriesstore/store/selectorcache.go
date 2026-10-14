@@ -79,6 +79,9 @@ type cachedShard struct {
 	ids   []uint32
 	// For a name selector whose group had few series: only the group, which is scanned.
 	small bool
+	// For a name selector of a name the tenant has no series of in the shard: how many names it had, which a new one changes.
+	absent bool
+	names  int
 }
 
 func (c *selectorCache) get(key string, shards int) *cachedSelector {
@@ -148,7 +151,11 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return true
 	}
 	// What was kept for this selector names its group, so a lookup that finds it unchanged doesn't look the name up.
-	if cached := selector.shards[shard].Load(); cached != nil && cached.owner == b && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version {
+	cached := selector.shards[shard].Load()
+	if cached != nil && cached.owner == b && cached.absent && cached.names == len(b.groupNames) {
+		return
+	}
+	if cached != nil && cached.owner == b && !cached.absent && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version {
 		g := &b.groups[cached.group]
 		switch {
 		case cached.small && len(g.entries) < minCachedGroup:
@@ -172,6 +179,7 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 	}
 	groupID, ok := b.names[name]
 	if !ok {
+		selector.keep(shard, &cachedShard{owner: b, absent: true, names: len(b.groupNames)})
 		return
 	}
 	g := &b.groups[groupID]
@@ -180,7 +188,7 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		b.matching(labelMatchers, func(entry *seriesEntry) bool { return !inQueryShard(entry) || visit(entry) })
 		return
 	}
-	if cached := selector.shards[shard].Load(); cached != nil && !cached.small && cached.group == groupID && cached.version == g.version {
+	if cached != nil && !cached.absent && !cached.small && cached.group == groupID && cached.version == g.version {
 		b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
 			if !inQueryShard(entry) || !matches(entry.labels, rest) {
 				return true
