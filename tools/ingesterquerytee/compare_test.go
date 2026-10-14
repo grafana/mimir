@@ -258,3 +258,17 @@ func TestSampleMismatchCounts(t *testing.T) {
 	require.ErrorAs(t, err, &detail)
 	require.Equal(t, []any{"primary_series", 1, "shadow_series", 1, "primary_labels", 1, "shadow_labels", 2, "primary_samples", 2, "shadow_samples", 1, "series_missing_from_shadow", 1, "series_extra_in_shadow", 1, "samples_missing_from_shadow", 2, "samples_extra_in_shadow", 1, "samples_with_different_values", 0}, detail.fields)
 }
+
+func TestQueryComparisonEmptyStream(t *testing.T) {
+	req := wire(t, &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200})
+	marker := []frame{wire(t, &client.QueryStreamResponse{IsEndOfSeriesStream: true})}
+	data := streamFrames(t, floatChunk(t, []int64{100}, []float64{1}))
+	for _, streams := range [][2][]frame{{nil, nil}, {nil, marker}, {marker, nil}} {
+		require.NoError(t, compareResponses("QueryStream", req, streams[0], streams[1], testConfig(), time.Now()))
+	}
+	for _, streams := range [][2][]frame{{nil, data}, {data, nil}} {
+		require.ErrorIs(t, compareResponses("QueryStream", req, streams[0], streams[1], testConfig(), time.Now()), errMismatch)
+	}
+	// A partial stream still requires its end marker and every advertised chunk.
+	require.EqualError(t, compareResponses("QueryStream", req, data, data[:1], testConfig(), time.Now()), "incomplete query stream")
+}

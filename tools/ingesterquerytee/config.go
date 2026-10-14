@@ -29,7 +29,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&c.MaxConcurrent, "max-concurrent-comparisons", 8, "Maximum concurrent comparisons; excess requests still mirror and discard shadow responses.")
 	f.IntVar(&c.MaxResponseBytes, "max-response-bytes", 16<<20, "Maximum captured response bytes per backend; larger responses skip comparison.")
 	f.IntVar(&c.MaxSamples, "max-samples", 100000, "Maximum decoded samples per backend; larger responses skip comparison.")
-	f.BoolVar(&c.LogMismatchedQueries, "log-mismatched-queries", false, "Include QueryStream requests in mismatch logs; may contain sensitive query matchers.")
+	f.BoolVar(&c.LogMismatchedQueries, "log-mismatched-queries", false, "Include QueryStream requests in mismatch and comparison-error logs; may contain sensitive query matchers.")
 	f.DurationVar(&c.SkipRecentSamples, "skip-recent-samples", 0, "Exclude QueryStream samples newer than request start time minus this duration from comparisons.")
 }
 
