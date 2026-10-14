@@ -77,6 +77,8 @@ type cachedShard struct {
 	epoch uint64
 	upto  uint32
 	ids   []uint32
+	// For a name selector whose group had few series: only the group, which is scanned.
+	small bool
 }
 
 func (c *selectorCache) get(key string, shards int) *cachedSelector {
@@ -146,14 +148,27 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return true
 	}
 	// What was kept for this selector names its group, so a lookup that finds it unchanged doesn't look the name up.
-	if cached := selector.shards[shard].Load(); cached != nil && cached.owner == b && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version && len(b.groups[cached.group].entries) >= minCachedGroup {
-		b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
-			if !inQueryShard(entry) || !matches(entry.labels, rest) {
-				return true
+	if cached := selector.shards[shard].Load(); cached != nil && cached.owner == b && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version {
+		g := &b.groups[cached.group]
+		switch {
+		case cached.small && len(g.entries) < minCachedGroup:
+			// A group this small is scanned.
+			for index := range g.entries {
+				entry := &g.entries[index]
+				if inQueryShard(entry) && matches(entry.labels, rest) && !visit(entry) {
+					return
+				}
 			}
-			return visit(entry)
-		})
-		return
+			return
+		case !cached.small && len(g.entries) >= minCachedGroup:
+			b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
+				if !inQueryShard(entry) || !matches(entry.labels, rest) {
+					return true
+				}
+				return visit(entry)
+			})
+			return
+		}
 	}
 	groupID, ok := b.names[name]
 	if !ok {
@@ -161,10 +176,11 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 	}
 	g := &b.groups[groupID]
 	if len(g.entries) < minCachedGroup {
+		selector.keep(shard, &cachedShard{owner: b, group: groupID, version: g.version, small: true})
 		b.matching(labelMatchers, func(entry *seriesEntry) bool { return !inQueryShard(entry) || visit(entry) })
 		return
 	}
-	if cached := selector.shards[shard].Load(); cached != nil && cached.group == groupID && cached.version == g.version {
+	if cached := selector.shards[shard].Load(); cached != nil && !cached.small && cached.group == groupID && cached.version == g.version {
 		b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
 			if !inQueryShard(entry) || !matches(entry.labels, rest) {
 				return true
