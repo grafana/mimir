@@ -21,9 +21,10 @@ import (
 type ingestBatch struct {
 	Series []mimirpb.PreallocTimeseries
 	// Record, when set, is the batch's record as the engine read it with ReadRecord: series are identified by their
-	// index in it as in Series, which is nil, and which Decoded decodes the record for.
+	// index in it as in Series, which is nil. Decoded decodes the series at indices, which are in order, into a slice
+	// of all of them, only those set.
 	Record  ingestRecord
-	Decoded func() []mimirpb.PreallocTimeseries
+	Decoded func(indices []int) []mimirpb.PreallocTimeseries
 	// Samples, histograms and exemplars outside [MinTimestampMs, MaxTimestampMs] are rejected.
 	MinTimestampMs, MaxTimestampMs int64
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
@@ -40,11 +41,17 @@ type ingestRecord interface {
 	// Len is how many series the record has.
 	Len() int
 	Source() mimirpb.WriteRequest_SourceEnum
-	// OnlyFloats reports whether the record has nothing but series of floats: what else it has is only read by
-	// decoding it.
-	OnlyFloats() bool
-	// MinTimestamp is the oldest timestamp of the record's samples, math.MaxInt64 without any.
+	// Complete reports whether the engine read all of the record: one it didn't is decoded.
+	Complete() bool
+	// MinTimestamp is the oldest timestamp of the record's samples, histograms and exemplars, math.MaxInt64 without
+	// any.
 	MinTimestamp() int64
+	// Metadata is the record's metadata, as decoding it gives.
+	Metadata() []*mimirpb.MetricMetadata
+	// Series returns the labels and floats of the series at index, which refer to the record's content.
+	Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample)
+	// Subset returns the content of a record with only the series at indices, which are in order, to decode them.
+	Subset(indices []int) []byte
 	// Release gives back what the record holds once it is ingested.
 	Release()
 }
