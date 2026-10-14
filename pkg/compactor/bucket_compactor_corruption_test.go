@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -130,7 +131,7 @@ func newChunkCorruptionFixture(t *testing.T, corrupt bool) (*BucketCompactor, *J
 	reg := prometheus.NewRegistry()
 	comp, err := tsdb.NewLeveledCompactor(ctx, reg, promslog.NewNopLogger(), []int64{1000, 3000}, nil, nil)
 	require.NoError(t, err)
-	metrics := NewBucketCompactorMetrics(prometheus.NewCounter(prometheus.CounterOpts{Name: "deleted_blocks_total", Help: "Deleted blocks."}), prometheus.NewRegistry())
+	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "deleted_blocks_total", Help: "Deleted blocks."}), prometheus.NewRegistry())
 	c, err := NewBucketCompactor(logger, nil, planner, comp, t.TempDir(), bkt, 1, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 1, 1, metrics, 32, 1)
 	require.NoError(t, err)
 	return c, job, broken, healthy, bkt
