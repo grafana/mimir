@@ -381,7 +381,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
 	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
 	seenGroups := make(map[bucketedSelector]*bucketedSelectorCardinality)
-	generatedKeys, generatedKeyBytes := 0, 0
+	uniqueKeyBytes := 0
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
@@ -392,10 +392,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 			return nil, err
 		}
 
-		generatedKeys += len(keys)
 		for _, k := range keys {
-			generatedKeyBytes += len(k.plain)
-			p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(k.plain)))
 			gk := bucketedSelector{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
 
 			group, ok := seenGroups[gk]
@@ -405,6 +402,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 					cardinalityByShardingFactor: make(map[uint64][]uint64),
 				}
 				seenGroups[gk] = group
+				uniqueKeyBytes += len(k.plain)
+				p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(k.plain)))
 			}
 
 			if shard == "" {
@@ -427,8 +426,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 		}
 	}
 
-	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(generatedKeys))
-	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(generatedKeyBytes))
+	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(len(seenGroups)))
+	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(uniqueKeyBytes))
 
 	return seenGroups, nil
 }

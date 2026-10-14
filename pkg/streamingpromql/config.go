@@ -140,17 +140,17 @@ type CardinalityEstimationMetrics struct {
 func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
 	cacheKeysPerQuery := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query",
-		Help:                        "Number of cardinality estimation cache keys generated per query to estimate or store cardinality.",
+		Help:                        "Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"operation"})
 	cacheKeysPerQueryBytes := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes",
-		Help:                        "Total bytes of cardinality estimation cache keys generated per query to estimate or store cardinality.",
+		Help:                        "Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"operation"})
 	cacheKeySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes",
-		Help:                        "Size in bytes of each cardinality estimation cache key generated to estimate or store cardinality.",
+		Help:                        "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"operation"})
 

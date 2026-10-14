@@ -817,7 +817,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 	expectedMetrics := func(read, write observation) string {
 		return fmt.Sprintf(`
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes Total bytes of cardinality estimation cache keys generated per query to estimate or store cardinality.
+			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.
 			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes histogram
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_bucket{operation="read",le="+Inf"} %[1]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_sum{operation="read"} %[3]d
@@ -825,7 +825,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_bucket{operation="write",le="+Inf"} %[4]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_sum{operation="write"} %[6]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes_count{operation="write"} %[4]d
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes Size in bytes of each cardinality estimation cache key generated to estimate or store cardinality.
+			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.
 			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes histogram
 			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_bucket{operation="read",le="+Inf"} %[2]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_sum{operation="read"} %[3]d
@@ -833,7 +833,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_bucket{operation="write",le="+Inf"} %[5]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_sum{operation="write"} %[6]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes_count{operation="write"} %[5]d
-			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query Number of cardinality estimation cache keys generated per query to estimate or store cardinality.
+			# HELP cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.
 			# TYPE cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query histogram
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bucket{operation="read",le="+Inf"} %[1]d
 			cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_sum{operation="read"} %[2]d
@@ -896,7 +896,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{})), metricNames...))
 	})
 
-	t.Run("write path counts the keys generated for every reported shard", func(t *testing.T) {
+	t.Run("write path counts each unique key once across reported shards", func(t *testing.T) {
 		cfg, reg := setup()
 		const expression = "foo"
 		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
@@ -921,9 +921,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, expression))
 
-		// The metrics count keys generated, not entries written. Each of the 2 shards generates the key for every
-		// bucket, but only one entry per bucket is written.
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{count: 1, keys: 2 * bucketKeys, keyBytes: 2 * bucketKeyBytes})), metricNames...))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{count: 1, keys: bucketKeys, keyBytes: bucketKeyBytes})), metricNames...))
 	})
 
 	t.Run("write path records nothing when there are no reported cardinalities", func(t *testing.T) {
