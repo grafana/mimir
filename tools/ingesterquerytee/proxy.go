@@ -6,15 +6,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
@@ -76,22 +77,27 @@ func (r *response) add(f frame, limit int) {
 }
 
 type Proxy struct {
-	cfg         Config
-	primary     grpc.ClientConnInterface
-	shadow      grpc.ClientConnInterface
-	ctx         context.Context
-	logger      log.Logger
-	slots       chan struct{}
-	comparisons *prometheus.CounterVec
-	mirrored    *prometheus.CounterVec
-	duration    *prometheus.HistogramVec
+	cfg            Config
+	primary        grpc.ClientConnInterface
+	shadow         grpc.ClientConnInterface
+	ctx            context.Context
+	logger         log.Logger
+	slots          chan struct{}
+	comparisons    *prometheus.CounterVec
+	mirrored       *prometheus.CounterVec
+	duration       *prometheus.HistogramVec
+	diagnosticLogs *rate.Limiter
+	hostname       string
 }
 
 func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterface, reg prometheus.Registerer, logger log.Logger) (*Proxy, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent)}
+	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1)}
+	if hostname, err := os.Hostname(); err == nil {
+		p.hostname = hostname
+	}
 	p.comparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
 	}, []string{"method", "result"})
@@ -302,6 +308,14 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 	p.comparisons.WithLabelValues(method, result).Inc()
 	if result == "mismatch" || result == "comparison_error" || result == "shadow_error" {
 		fields := []any{"msg", "ingester query comparison failed", "method", method, "result", result}
+		if p.cfg.LogMismatchedQueries && method == "QueryStream" {
+			tenantID := strings.Join(md.Get("x-scope-orgid"), "|")
+			if len(tenantID) > 256 {
+				tenantID = tenantID[:256]
+				fields = append(fields, "tenant_id_truncated", true)
+			}
+			fields = append(fields, "tenant_id", tenantID)
+		}
 		var mismatch *mismatchError
 		if errors.As(comparisonErr, &mismatch) {
 			fields = append(fields, mismatch.fields...)
@@ -312,12 +326,38 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 				"primary_frames", len(primary.frames), "shadow_frames", len(shadow.frames),
 				"primary_bytes", primary.bytes, "shadow_bytes", shadow.bytes)
 		}
-		if p.cfg.LogMismatchedQueries && method == "QueryStream" && (result == "mismatch" || result == "comparison_error") {
-			var query client.QueryRequest
-			if query.Unmarshal(req) == nil {
-				if data, err := json.Marshal(&query); err == nil {
-					fields = append(fields, "query", string(data))
+		if method == "QueryStream" && (result == "mismatch" || result == "comparison_error") && (p.cfg.LogMismatchedQueries || p.cfg.LogMismatchedSamples) {
+			if p.diagnosticLogs.Allow() {
+				budget := diagnosticLogBytes
+				if p.cfg.LogMismatchedQueries {
+					var query client.QueryRequest
+					comparisonEnd := int64(0)
+					if query.Unmarshal(req) == nil {
+						comparisonEnd = query.EndTimestampMs
+						if p.cfg.SkipRecentSamples > 0 {
+							comparisonEnd = min(comparisonEnd, start.Add(-p.cfg.SkipRecentSamples).UnixMilli())
+						}
+						fields = appendDiagnosticJSON(fields, "query", &query, &budget)
+					}
+					// Replay needs read-consistency metadata, never credentials or arbitrary headers.
+					replayMetadata := map[string][]string{}
+					for _, name := range []string{"x-scope-orgid", "__consistency_level__", "__consistency_offsets__", "__consistency_max_delay__", "__only_replica__", "x-cluster"} {
+						if values := md.Get(name); len(values) > 0 {
+							replayMetadata[name] = values
+						}
+					}
+					fields = appendDiagnosticJSON(fields, "replay", map[string]any{
+						"metadata": replayMetadata, "tenant_id": strings.Join(md.Get("x-scope-orgid"), "|"),
+						"primary_address": p.cfg.PrimaryAddress, "shadow_address": p.cfg.ShadowAddress, "tee_host": p.hostname,
+						"request_start_ms": start.UnixMilli(), "comparison_end_ms": comparisonEnd,
+						"skip_recent_samples": p.cfg.SkipRecentSamples.String(), "shadow_timeout": p.cfg.ShadowTimeout.String(),
+					}, &budget)
 				}
+				if p.cfg.LogMismatchedSamples && mismatch != nil && mismatch.difference != nil {
+					fields = appendDiagnosticJSON(fields, "difference", differenceDiagnostic(mismatch.difference, primary.frames, shadow.frames), &budget)
+				}
+			} else {
+				fields = append(fields, "diagnostics_suppressed", true)
 			}
 		}
 		level.Warn(p.logger).Log(fields...)

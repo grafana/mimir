@@ -101,7 +101,10 @@ func equalSample(a, b normalizedSample) bool {
 	return a.digest == b.digest && (a.hint == b.hint || a.hint == histogram.UnknownCounterReset || b.hint == histogram.UnknownCounterReset)
 }
 
-type mismatchError struct{ fields []any }
+type mismatchError struct {
+	fields     []any
+	difference *sampleDifference
+}
 
 func (*mismatchError) Error() string { return errMismatch.Error() }
 func (*mismatchError) Unwrap() error { return errMismatch }
@@ -150,7 +153,7 @@ func describeSampleMismatch(a, b samplesBySeries) error {
 			}
 		}
 	}
-	return &mismatchError{fields: []any{
+	return &mismatchError{difference: firstSampleDifference(a, b), fields: []any{
 		"primary_series", len(a), "shadow_series", len(b),
 		"primary_labels", primaryLabels, "shadow_labels", shadowLabels,
 		"primary_samples", primarySamples, "shadow_samples", shadowSamples,
