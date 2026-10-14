@@ -57,6 +57,33 @@ type floatIngested struct {
 // visible when it returns, and the series that got samples are marked ingested at ingestedAtMs. It takes each store shard's lock once, where an appender takes it for every sample
 // twice. Series need floats and no histograms or exemplars, and the head needs to have its first sample.
 func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
+	return e.appendFloats(adapterSource(timeseries), indices, minTimestampMs, maxTimestampMs, ingestedAtMs, otlp, sink)
+}
+
+// floatSource is the series appendFloats ingests, by their index.
+type floatSource interface {
+	// pairs appends the series' label pairs to into, and returns its metric name.
+	pairs(index int, into [][2]string) ([][2]string, string)
+	samples(index int) []mimirpb.Sample
+}
+
+// adapterSource is the series of a decoded request.
+type adapterSource []mimirpb.PreallocTimeseries
+
+func (s adapterSource) pairs(index int, into [][2]string) ([][2]string, string) {
+	var name string
+	for _, adapter := range s[index].Labels {
+		into = append(into, [2]string{adapter.Name, adapter.Value})
+		if adapter.Name == metricNameLabel {
+			name = adapter.Value
+		}
+	}
+	return into, name
+}
+
+func (s adapterSource) samples(index int) []mimirpb.Sample { return s[index].Samples }
+
+func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
 		return indices, 0, nil
@@ -87,18 +114,13 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 	for _, index := range indices {
 		at := len(pairs)
 		var name string
-		for _, adapter := range timeseries[index].Labels {
-			pairs = append(pairs, [2]string{adapter.Name, adapter.Value})
-			if adapter.Name == metricNameLabel {
-				name = adapter.Value
-			}
-		}
+		pairs, name = source.pairs(index, pairs)
 		var hash uint64
 		if adapterHashMatches() {
 			// Without building the labels, which an appender does only to hash them.
 			hash = labels.HashPairs(pairs[at:])
 		} else {
-			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, timeseries[index].Labels, &scratch)
+			scratch = pairsLabels(&builder, pairs[at:])
 			hash = scratch.Hash()
 		}
 		prepared = append(prepared, floatSeries{index: index, hash: hash, name: name, pairsAt: int32(at), pairsTo: int32(len(pairs))})
@@ -158,7 +180,7 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 			}
 			for _, position := range positions {
 				prep := prepared[position]
-				ts := &timeseries[prep.index]
+				seriesSamples := source.samples(prep.index)
 				seriesPairs := pairs[prep.pairsAt:prep.pairsTo]
 				var entry *seriesEntry
 				// Where the series was last found is one read; its name group and the group's table are more.
@@ -183,7 +205,7 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 						}
 					}
 				}
-				if entry == nil || entry.series.ref == 0 || hasStaleMarker(ts.Samples) {
+				if entry == nil || entry.series.ref == 0 || hasStaleMarker(seriesSamples) {
 					switch {
 					case entry == nil:
 						e.leftovers[0].Add(1)
@@ -202,7 +224,7 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 				last := lastOf(&entry.series)
 				accepted = accepted[:0]
 				acceptedInOrder := true
-				for _, sample := range ts.Samples {
+				for _, sample := range seriesSamples {
 					if sample.TimestampMs > maxTimestampMs {
 						failures = append(failures, floatError{prep.index, globalerror.SampleTooFarInFuture, sample.TimestampMs})
 						continue
@@ -284,13 +306,22 @@ func (e *Engine) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices [
 	slices.SortFunc(touched, func(a, b floatIngested) int { return cmp.Compare(a.series, b.series) })
 	needsLabels := sink.NeedsLabels()
 	for _, series := range touched {
-		index := prepared[series.series].index
+		prep := prepared[series.series]
 		if needsLabels {
-			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, timeseries[index].Labels, &scratch)
+			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
 		}
-		sink.Ingested(index, scratch, series.ref)
+		sink.Ingested(prep.index, scratch, series.ref)
 	}
 	return leftover, ingested, nil
+}
+
+// pairsLabels builds the labels of the pairs, which are sorted, with builder.
+func pairsLabels(builder *promlabels.ScratchBuilder, pairs [][2]string) promlabels.Labels {
+	builder.Reset()
+	for _, pair := range pairs {
+		builder.Add(pair[0], pair[1])
+	}
+	return builder.Labels()
 }
 
 // adapterPairs returns the label pairs of the adapters, in the order they are in, reusing buffer.
