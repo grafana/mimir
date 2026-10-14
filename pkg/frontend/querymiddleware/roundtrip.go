@@ -83,6 +83,9 @@ type Config struct {
 
 	SubquerySpinOff subqueryspinoff.Options `yaml:",inline"`
 
+	// RVSSubquerySplittingEnabled is injected from the MQE configuration when constructing the query-frontend middleware.
+	RVSSubquerySplittingEnabled bool `yaml:"-"`
+
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
@@ -544,7 +547,7 @@ func newQueryMiddlewares(
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
 			newInstrumentMiddleware("spin_off_subqueries", metrics),
-			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn, cfg.SubquerySpinOff),
+			newSpinOffSubqueriesMiddleware(limits, cfg.RVSSubquerySplittingEnabled, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn, cfg.SubquerySpinOff),
 		)
 	}
 
