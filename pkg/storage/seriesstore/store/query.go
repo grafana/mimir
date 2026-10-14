@@ -221,9 +221,21 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	// Like the head's, each regex matcher's result for the label values it saw.
 	remembered := make([]map[string]bool, len(coldLabels))
 	var pairs [][2]string
+	// Most selectors name one metric, and most blocks have few of the metrics.
+	var nameHash uint64
+	byName := false
+	for index := range compiled {
+		if matcher := &compiled[index]; matcher.kind == kindEqual && matcher.name == metricNameLabel && matcher.value != "" {
+			nameHash, byName = labels.ValueHash(matcher.value), true
+			break
+		}
+	}
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
 		if table == nil || table.minTime > end || table.maxTime < start {
+			continue
+		}
+		if byName && !block.mayHaveName(table, nameHash) {
 			continue
 		}
 		// For each label matcher that accepts the empty value, the series with its label when few
