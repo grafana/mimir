@@ -232,6 +232,8 @@ func sampleDiagnostic(frames []frame, d *sampleDifference) (*diagnosticSample, e
 						sample.Type, sample.Float = "float", &detail
 					} else {
 						_, h := it.AtFloatHistogram(nil)
+						// Compaction mutates slices owned by the iterator and would corrupt later samples.
+						h = h.Copy()
 						hint := h.CounterResetHint
 						if hint != histogram.GaugeType {
 							h.CounterResetHint = histogram.UnknownCounterReset
