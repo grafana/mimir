@@ -4,6 +4,7 @@ package caching
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"hash/fnv"
 	"time"
@@ -23,7 +24,7 @@ type Backend interface {
 func HashCacheKey(key []byte, useCryptographicHash bool) string {
 	if useCryptographicHash {
 		h := blake2b.Sum256(key)
-		return hex.EncodeToString(h[:])
+		return base64.RawURLEncoding.EncodeToString(h[:])
 	}
 
 	hasher := fnv.New64a()
