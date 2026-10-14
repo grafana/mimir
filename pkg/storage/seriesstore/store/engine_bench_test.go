@@ -5,7 +5,9 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
+	"runtime/pprof"
 	"testing"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -247,5 +249,46 @@ func BenchmarkEngineHeapPerSeries(b *testing.B) {
 				runtime.KeepAlive(heads)
 			}
 		})
+	}
+}
+
+// BenchmarkEngineHeapPerRealisticSeries reports the heap each series holds with the labels of a Kubernetes scrape, a
+// few samples, and more custom trackers than a series' bits, as production has.
+func BenchmarkEngineHeapPerRealisticSeries(b *testing.B) {
+	const series = 200_000
+	for range b.N {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+		require.NoError(b, err)
+		engine.SetActiveTrackers(ActiveTrackers{Count: 40, Match: func(lset promlabels.Labels) []uint16 {
+			// A few trackers by namespace, and one past the bits by job.
+			namespace := lset.Get("namespace")
+			return []uint16{uint16(len(namespace) % 4), uint16(32 + len(lset.Get("job"))%8)}
+		}})
+		refs := make([]storage.SeriesRef, series)
+		for sample := range 4 {
+			app := engine.Appender(context.Background())
+			for n := range series {
+				ref, err := app.Append(refs[n], rw2Labels(n), int64(sample)*15_000, float64(sample))
+				require.NoError(b, err)
+				refs[n] = ref
+			}
+			require.NoError(b, app.Commit())
+		}
+		engine.ActiveSeries(0)
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		b.ReportMetric(float64(after.HeapInuse-before.HeapInuse)/series, "heap-bytes/series")
+		if path := os.Getenv("SERIESSTORE_HEAP_PROFILE"); path != "" {
+			// What the series hold, which the benchmark's profile, written once the engine is closed, doesn't have.
+			file, err := os.Create(path)
+			require.NoError(b, err)
+			require.NoError(b, pprof.WriteHeapProfile(file))
+			require.NoError(b, file.Close())
+		}
+		runtime.KeepAlive(engine)
+		require.NoError(b, engine.Close())
 	}
 }
