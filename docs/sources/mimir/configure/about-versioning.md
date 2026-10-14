@@ -272,8 +272,8 @@ The following features are currently experimental:
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
   - Cardinality estimation cache key metrics. Report the number, the total size and the size of each of the cache keys generated for each estimate and each store of seen cardinality:
-    - `cortex_mimir_query_engine_cardinality_estimation_cache_keys`
-    - `cortex_mimir_query_engine_cardinality_estimation_cache_key_bytes`
+    - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query`
+    - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
 - Query-scheduler

@@ -225,8 +225,8 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 		}
 	}
 
-	e.cfg.Metrics.ReadCacheKeys.Observe(float64(generatedKeys))
-	e.cfg.Metrics.ReadCacheKeyBytes.Observe(float64(generatedKeyBytes))
+	e.cfg.Metrics.ReadCacheKeysPerQuery.Observe(float64(generatedKeys))
+	e.cfg.Metrics.ReadCacheKeysPerQueryBytes.Observe(float64(generatedKeyBytes))
 
 	return selectorsToLookUp, slices.Collect(maps.Keys(keysToLookUp)), nil
 }
@@ -427,8 +427,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 		}
 	}
 
-	p.cfg.Metrics.WriteCacheKeys.Observe(float64(generatedKeys))
-	p.cfg.Metrics.WriteCacheKeyBytes.Observe(float64(generatedKeyBytes))
+	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(generatedKeys))
+	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(generatedKeyBytes))
 
 	return seenGroups, nil
 }
