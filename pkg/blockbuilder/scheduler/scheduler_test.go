@@ -1065,7 +1065,7 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now(), 0)
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), 0, "ingest", time.Now())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
 		{partition: 0, resume: 0},
@@ -1271,8 +1271,7 @@ func TestKafkaFlush_MultiCluster_ClustersFailToCommit(t *testing.T) {
 }
 
 func TestUpdateSchedule(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
+	ctx := t.Context()
 
 	var vnet kfake.VirtualNetwork
 
@@ -1280,9 +1279,18 @@ func TestUpdateSchedule(t *testing.T) {
 	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 	reg := sched.register.(*prometheus.Registry)
 
+	// Partition 0 has pre-existing data. The scheduler will record its start_offset only.
+	produceResult := cli.ProduceSync(ctx, &kgo.Record{
+		Timestamp: time.Unix(int64(0), 1),
+		Value:     []byte("initial value"),
+		Topic:     "ingest",
+		Partition: 0,
+	})
+	require.NoError(t, produceResult.FirstErr())
+
 	require.NoError(t, sched.completeObservationMode(ctx))
 
-	// Partition i gets i records.
+	// Push more data to all partitions: partition i gets i records.
 	for i := range int32(4) {
 		for n := range i {
 			produceResult := cli.ProduceSync(ctx, &kgo.Record{
@@ -1301,14 +1309,11 @@ func TestUpdateSchedule(t *testing.T) {
 		`# HELP cortex_blockbuilder_scheduler_partition_start_offset The observed start offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_start_offset gauge
 		cortex_blockbuilder_scheduler_partition_start_offset{partition="0"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="1"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="2"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="3"} 0
 	`), "cortex_blockbuilder_scheduler_partition_start_offset"))
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
 		`# HELP cortex_blockbuilder_scheduler_partition_end_offset The observed end offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_end_offset gauge
-		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 0
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="1"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
