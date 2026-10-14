@@ -241,9 +241,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		cfg := testIndexHeaderV1Config()
-		cfg.VerifyOnLoad = true
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -516,14 +514,12 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		reg := prometheus.NewPedanticRegistry()
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, reg)
-		cfg := testIndexHeaderV1Config()
-		cfg.VerifyOnLoad = true
 
 		// The merged block will have ~104 symbols with on-disk symbol table ~1400 bytes.
 		// This threshold sits below it.
 		const testSymbolTableSizeThreshold = 500
 
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Generate 50 series per block with distinct label values to produce enough symbols.
@@ -548,6 +544,7 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason))))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompactByLevel.WithLabelValues(string(block.PreemptiveNoCompactReason), "2")))
 
 		// Verify the compacted block has expected no-compact marker.
 		var noCompactBlockID ulid.ULID

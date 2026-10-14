@@ -37,7 +37,7 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.ExpectContinueTimeout, prefix+"expect-continue-timeout", 1*time.Second, "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately.")
 	f.IntVar(&cfg.MaxIdleConns, prefix+"max-idle-connections", 100, "Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit.")
 	f.IntVar(&cfg.MaxIdleConnsPerHost, prefix+"max-idle-connections-per-host", 100, "Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2.")
-	f.IntVar(&cfg.MaxConnsPerHost, prefix+"max-connections-per-host", 0, "Maximum number of connections per host. Set to 0 for no limit.")
+	f.IntVar(&cfg.MaxConnsPerHost, prefix+"max-connections-per-host", 0, "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.")
 	f.BoolVar(&cfg.ForceAttemptHTTP2, prefix+"http.force-attempt-http2", false, "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.")
 	cfg.TLSConfig.RegisterFlagsWithPrefix(prefix, f)
 }

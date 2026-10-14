@@ -2133,13 +2133,7 @@ mimir_query_engine:
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
-
-  # (experimental) Enable deduplication of scalar expressions as part of common
-  # subexpression elimination. Requires common subexpression elimination to be
-  # enabled.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
-  [enable_scalar_common_subexpression_elimination: <boolean> | default = false]
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = true]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2438,7 +2432,7 @@ results_cache:
 # -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
 # remote execution and sharding inside MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = true]
 
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
@@ -7513,6 +7507,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7626,6 +7623,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
@@ -7738,6 +7738,9 @@ http:
   [max_idle_connections_per_host: <int> | default = 100]
 
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # The limit applies per bucket client, and a single process can create several
+  # clients for the same storage configuration, so its total connections to a
+  # host can exceed this value.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
