@@ -50,8 +50,9 @@ type ingestRecord interface {
 	Metadata() []*mimirpb.MetricMetadata
 	// Series returns the labels and floats of the series at index, which refer to the record's content.
 	Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample)
-	// Subset returns the content of a record with only the series at indices, which are in order, to decode them.
-	Subset(indices []int) []byte
+	// Subset appends to into the content of a record with only the series at indices, which are in order, to decode
+	// them.
+	Subset(indices []int, into []byte) []byte
 	// Release gives back what the record holds once it is ingested.
 	Release()
 }
