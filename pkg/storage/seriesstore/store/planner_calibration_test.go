@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // plannerEngine opens an engine with total series of skewed metrics and labels of several cardinalities.
@@ -513,4 +515,48 @@ func TestRepeatedLookupsWithAMatcherOfARareLabelStayRight(t *testing.T) {
 		}
 	}
 	check("after the old series were removed")
+}
+
+// A block's name filter never rejects a name the block has, and mostly rejects the ones it hasn't.
+func TestColdNameFilterKeepsEveryName(t *testing.T) {
+	engine := plannerEngine(t, 20_000)
+	var refs []storage.SeriesRef
+	for _, shard := range engine.store.shards {
+		shard.RLock()
+		shard.tenants["tenant"].series.forEach(func(entry *seriesEntry) {
+			if entry.series.ref%3 == 0 {
+				refs = append(refs, storage.SeriesRef(entry.series.ref))
+			}
+		})
+		shard.RUnlock()
+	}
+	require.NoError(t, engine.CompactSelectedSeries(refs))
+	blocks, absent, rejected := 0, 0, 0
+	for _, shard := range engine.store.shards {
+		for _, block := range shard.cold.blocks {
+			table := block.tenant("tenant")
+			if table == nil {
+				continue
+			}
+			blocks++
+			has := map[string]bool{}
+			for index := range table.seriesCount {
+				series := block.seriesIn(table, index)
+				name, _ := series.lookup(metricNameLabel)
+				has[name] = true
+				require.True(t, block.mayHaveName(table, labels.ValueHash(name)), name)
+			}
+			for n := range 200 {
+				name := fmt.Sprintf("no_such_metric_%d", n)
+				if !has[name] {
+					absent++
+					if !block.mayHaveName(table, labels.ValueHash(name)) {
+						rejected++
+					}
+				}
+			}
+		}
+	}
+	require.Positive(t, blocks, "series moved to cold blocks")
+	require.Greater(t, rejected*10, absent*9, "most absent names are rejected")
 }

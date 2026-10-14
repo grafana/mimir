@@ -64,6 +64,10 @@ type coldTenantIndex struct {
 	// have none in most blocks.
 	candidatesLock  sync.RWMutex
 	candidatesCache map[string][]uint32
+	// A filter of the block's metric names: a query for a name this block has no series of skips it without a search in
+	// its postings, which on a block of a cold file is a cache miss per step.
+	nameFilterOnce sync.Once
+	nameFilter     []uint64
 }
 
 type coldMetricName struct {
@@ -422,6 +426,52 @@ func (b *coldBlock) withLabel(table *coldTenantIndex, name string) []uint32 {
 	}
 	table.withLabel[strings.Clone(name)] = series
 	return series
+}
+
+// mayHaveName is false when no series of the tenant in this block has the metric name of the hash.
+func (b *coldBlock) mayHaveName(table *coldTenantIndex, hash uint64) bool {
+	table.nameFilterOnce.Do(func() { table.nameFilter = b.buildNameFilter(table) })
+	bits := uint64(len(table.nameFilter)) * 64
+	if bits == 0 {
+		return false
+	}
+	// The hash is xxhash's: any of its bits are uniform, so two parts of it make the two probes.
+	first, second := hash%bits, (hash>>32|hash<<32)%bits
+	return table.nameFilter[first/64]&(1<<(first%64)) != 0 && table.nameFilter[second/64]&(1<<(second%64)) != 0
+}
+
+// buildNameFilter sets the bits of the hashes of the metric names in the postings: the entries of a label are adjacent
+// in the table, as it is sorted by the label's local id.
+func (b *coldBlock) buildNameFilter(table *coldTenantIndex) []uint64 {
+	local, ok := b.localIDs[metricNameLabel]
+	if !ok {
+		return nil
+	}
+	first := sort.Search(table.postingsCount, func(index int) bool {
+		name, _, _ := b.entry(table, index)
+		return name >= local
+	})
+	var hashes []uint64
+	for index := first; index < table.postingsCount; index++ {
+		name, hash, _ := b.entry(table, index)
+		if name != local {
+			break
+		}
+		hashes = append(hashes, hash)
+	}
+	if len(hashes) == 0 {
+		return nil
+	}
+	// Sixteen bits for a name keeps false positives at about one in a hundred.
+	words := max(1, (len(hashes)*16+63)/64)
+	filter := make([]uint64, words)
+	bits := uint64(words) * 64
+	for _, hash := range hashes {
+		first, second := hash%bits, (hash>>32|hash<<32)%bits
+		filter[first/64] |= 1 << (first % 64)
+		filter[second/64] |= 1 << (second % 64)
+	}
+	return filter
 }
 
 func (b *coldBlock) entry(table *coldTenantIndex, index int) (name uint32, hash uint64, offset uint32) {
