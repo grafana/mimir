@@ -21783,6 +21783,17 @@
         },
         {
           "kind": "field",
+          "name": "local_state_cache_enabled",
+          "required": false,
+          "desc": "Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.local-state-cache-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "bind_addr",
           "required": false,
           "desc": "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0",
