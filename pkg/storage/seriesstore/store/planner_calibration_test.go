@@ -357,3 +357,37 @@ func TestNativePostingsTimes(t *testing.T) {
 		fmt.Printf("%-28s %12s %12s\n", shape.name, assembled.Round(time.Microsecond), native.Round(time.Microsecond))
 	}
 }
+
+// A name selector remembers a small group by its name, and notices when the group grows past what is scanned.
+func TestRepeatedNameSelectorsTrackTheirGroup(t *testing.T) {
+	ctx := context.Background()
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	selected := func() []string {
+		q, err := engine.ChunkQuerier(0, 9_000_000)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(ctx, false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "grows"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "pod", "p-.*"))
+		var pods []string
+		for set.Next() {
+			pods = append(pods, set.At().Labels().Get("pod"))
+		}
+		require.NoError(t, set.Err())
+		slices.Sort(pods)
+		return pods
+	}
+	var want []string
+	for n := range 30 {
+		pod := fmt.Sprintf("p-%02d", n)
+		app := engine.Appender(ctx)
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "grows", "pod", pod), 1000, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		want = append(want, pod)
+		// A group of one series, a few, eight and more, each asked for twice so the second answer comes from what the first kept.
+		require.Equal(t, want, selected(), "after %d series", n+1)
+		require.Equal(t, want, selected(), "repeated after %d series", n+1)
+	}
+}
