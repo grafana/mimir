@@ -33,6 +33,12 @@ type rw2Source struct {
 	refs   []uint32
 	floats []mimirpb.Sample
 	series []rw2Series
+	bodies [][]byte
+	source mimirpb.WriteRequest_SourceEnum
+	// Whether the record has more than series of floats, which only decoding it reads: a series with more, or
+	// metadata of the record's own.
+	other        bool
+	minTimestamp int64
 }
 
 var rw2Sources = sync.Pool{New: func() any { return &rw2Source{} }}
@@ -74,10 +80,9 @@ func (s *rw2Source) samples(index int) []mimirpb.Sample {
 
 // read reads the record's symbols and series. Strings refer to content.
 func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
-	s.symbols, s.refs, s.floats, s.series = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0]
-	s.common, s.offset = common, offset
+	s.symbols, s.refs, s.floats, s.series, s.bodies = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0], s.bodies[:0]
+	s.common, s.offset, s.source, s.other, s.minTimestamp = common, offset, mimirpb.API, false, math.MaxInt64
 	// The series reference symbols, which a writer may put after them: they are read first.
-	var series [][]byte
 	rest := content
 	for len(rest) > 0 {
 		field, wire, body, next, ok := protoField(rest)
@@ -89,14 +94,25 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 		case field == 4 && wire == 2:
 			s.symbols = append(s.symbols, unsafe.String(unsafe.SliceData(body), len(body)))
 		case field == 5 && wire == 2:
-			series = append(series, body)
+			s.bodies = append(s.bodies, body)
+		case field == 2 && wire == 0:
+			source, _ := binary.Uvarint(body)
+			s.source = mimirpb.WriteRequest_SourceEnum(source)
+		case field == 1:
+			// Series of a version 1 request, which this doesn't read.
+			return errMalformedRW2
+		case field == 1000 || field == 1001:
+			// Validation the distributor did.
+		default:
+			s.other = true
 		}
 	}
-	for _, body := range series {
+	for _, body := range s.bodies {
 		if err := s.readSeries(body); err != nil {
 			return err
 		}
 	}
+	clear(s.bodies)
 	return nil
 }
 
@@ -138,6 +154,7 @@ func (s *rw2Source) readSeries(body []byte) error {
 				}
 			}
 			s.floats = append(s.floats, sample)
+			s.minTimestamp = min(s.minTimestamp, sample.TimestampMs)
 		case field == 5 && len(value) == 0:
 			// The empty metadata writers put in every series.
 		default:
@@ -148,6 +165,7 @@ func (s *rw2Source) readSeries(body []byte) error {
 	if (series.refsTo-series.refsAt)%2 != 0 {
 		return errMalformedRW2
 	}
+	s.other = s.other || series.other
 	s.series = append(s.series, series)
 	return nil
 }
@@ -189,20 +207,53 @@ func protoField(data []byte) (field uint64, wire uint64, value, rest []byte, ok 
 	return 0, 0, nil, nil, false
 }
 
-// AppendRW2 is AppendFloats for the series of a remote write 2.0 record's content, read without decoding it into a
-// request. Series are identified by their index in the record; leftover has the ones it didn't handle, which the
-// caller decodes and appends another way, those with more than floats among them. Nothing of content is kept.
-func (e *Engine) AppendRW2(content []byte, commonSymbols []string, symbolOffset uint32, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
+// RW2Record is the content of a remote write 2.0 record read in place, which AppendRW2 appends the floats of. Its
+// strings refer to the content, which it must not outlive.
+type RW2Record struct {
+	source *rw2Source
+}
+
+// ReadRW2 reads a record's content, whose symbol references below symbolOffset are to commonSymbols.
+func ReadRW2(content []byte, commonSymbols []string, symbolOffset uint32) (*RW2Record, error) {
 	source := rw2Sources.Get().(*rw2Source)
-	defer func() {
-		// The symbols refer to content.
-		clear(source.symbols)
-		source.common = nil
-		rw2Sources.Put(source)
-	}()
 	if err := source.read(content, commonSymbols, symbolOffset); err != nil {
-		return nil, 0, err
+		releaseRW2Source(source)
+		return nil, err
 	}
+	return &RW2Record{source: source}, nil
+}
+
+func releaseRW2Source(source *rw2Source) {
+	// The symbols refer to the content.
+	clear(source.symbols)
+	source.common = nil
+	rw2Sources.Put(source)
+}
+
+// Release gives back what the record holds; it can't be used after.
+func (r *RW2Record) Release() {
+	releaseRW2Source(r.source)
+	r.source = nil
+}
+
+// Len is how many series the record has.
+func (r *RW2Record) Len() int { return len(r.source.series) }
+
+// Source is where the request the record has came from.
+func (r *RW2Record) Source() mimirpb.WriteRequest_SourceEnum { return r.source.source }
+
+// OnlyFloats reports whether the record has only series of floats, without metadata: what else it has is only read
+// by decoding it.
+func (r *RW2Record) OnlyFloats() bool { return !r.source.other }
+
+// MinTimestamp is the oldest timestamp of the record's floats, math.MaxInt64 without any.
+func (r *RW2Record) MinTimestamp() int64 { return r.source.minTimestamp }
+
+// AppendRW2 is AppendFloats for the series of a record. Series are identified by their index in the record; leftover
+// has the ones it didn't handle, which the caller decodes and appends another way, those with more than floats among
+// them.
+func (e *Engine) AppendRW2(record *RW2Record, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
+	source := record.source
 	fast := make([]int, 0, len(source.series))
 	for index := range source.series {
 		if series := &source.series[index]; series.other || series.samplesTo == series.samplesAt {

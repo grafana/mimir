@@ -21,15 +21,15 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // Pushing a record as it is ingests what pushing it decoded does: the same samples, histograms, exemplars and
-// metadata, the same errors and the same metrics, for series the engine has and doesn't have yet. An engine that
-// doesn't read records gets them decoded.
+// metadata, the same errors and the same metrics, for series the engine has and doesn't have yet.
 func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T) {
 	start := func() (*Ingester, *prometheus.Registry) {
 		cfg := defaultIngesterTestConfig(t)
+		cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
 		cfg.PushRecordsToEngine = true
 		limitsCfg := defaultLimitsTestConfig()
 		limitsCfg.NativeHistogramsIngestionEnabled = true
@@ -62,7 +62,7 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 				req.Timeseries = append(req.Timeseries, floats(n, now-10_000))
 			}
 			histogram := floats(100)
-			histogram.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(now-10_000, util_test.GenerateTestHistogram(1))}
+			histogram.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(now-10_000, streamTestHistogram(1))}
 			req.Timeseries = append(req.Timeseries, histogram)
 			req.Timeseries[3].Exemplars = []mimirpb.Exemplar{{Labels: []mimirpb.LabelAdapter{{Name: "trace_id", Value: "abc"}}, Value: 1, TimestampMs: now - 10_000}}
 			req.Metadata = []*mimirpb.MetricMetadata{{MetricFamilyName: "metric_1", Type: mimirpb.COUNTER, Help: "a counter"}}
@@ -189,4 +189,87 @@ func gatheredText(t *testing.T, reg *prometheus.Registry, metric string) *string
 		}
 	}
 	return strings.NewReader(text.String())
+}
+
+// BenchmarkIngester_PushRecord pushes records of series the ingester has, a sample each, as the ingest reader does:
+// decoded into a request first, or as they are.
+func BenchmarkIngester_PushRecord(b *testing.B) {
+	const series, batch = 100_000, 2000
+	for _, path := range []string{"decoded", "record"} {
+		b.Run(path, func(b *testing.B) {
+			cfg := defaultIngesterTestConfig(b)
+			cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+			cfg.PushRecordsToEngine = true
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, defaultLimitsTestConfig(), nil, b.TempDir(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+			b.Cleanup(func() { require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			serializer := ingest.RecordSerializerFromVersion(2)
+			start := time.Now().Add(-time.Hour).UnixMilli()
+			records := func(step int) [][]byte {
+				var out [][]byte
+				for at := 0; at < series; at += batch {
+					req := &mimirpb.WriteRequest{Source: mimirpb.API}
+					for n := at; n < at+batch; n++ {
+						req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+							Labels:  mimirpb.FromLabelsToLabelAdapters(benchRecordLabels(n)),
+							Samples: []mimirpb.Sample{{TimestampMs: start + int64(step)*15_000, Value: float64(n)}},
+						}})
+					}
+					recs, _, err := serializer.ToRecords("ingest", 0, userID, req, 64<<20)
+					require.NoError(b, err)
+					for _, rec := range recs {
+						out = append(out, rec.Value)
+					}
+				}
+				return out
+			}
+			push := func(content []byte) {
+				if path == "record" {
+					require.NoError(b, ingester.PushRecord(ctx, content, 2))
+					return
+				}
+				req := &mimirpb.PreallocWriteRequest{}
+				require.NoError(b, ingest.DeserializeRecordContent(content, req, 2))
+				require.NoError(b, ingester.PushToStorageAndReleaseRequest(ctx, &req.WriteRequest))
+			}
+			// The series exist, and the active series tracker has them.
+			for _, content := range records(0) {
+				push(content)
+			}
+			step, pending := 1, records(1)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if len(pending) == 0 {
+					b.StopTimer()
+					step++
+					pending = records(step)
+					b.StartTimer()
+				}
+				push(pending[0])
+				pending = pending[1:]
+			}
+			b.ReportMetric(float64(b.N*batch)/b.Elapsed().Seconds(), "series/s")
+		})
+	}
+}
+
+// benchRecordLabels is a series of a Kubernetes scrape: a dozen labels, most of them of few values.
+func benchRecordLabels(n int) labels.Labels {
+	return labels.FromStrings(
+		"__name__", fmt.Sprintf("container_metric_%d", n%300),
+		"cluster", "dev-us-central-0",
+		"container", fmt.Sprintf("container-%d", n%40),
+		"endpoint", "http-metrics",
+		"image", fmt.Sprintf("us-docker.pkg.dev/project/image-%d:v1.2.%d", n%40, n%7),
+		"instance", fmt.Sprintf("10.132.%d.%d:9100", (n/256)%256, n%256),
+		"job", fmt.Sprintf("namespace-%d/job-%d", n%30, n%60),
+		"namespace", fmt.Sprintf("namespace-%d", n%30),
+		"node", fmt.Sprintf("gke-dev-us-central-0-pool-%d", n%80),
+		"pod", fmt.Sprintf("pod-%d-%x", n%2000, n*2654435761%65536),
+		"service", fmt.Sprintf("service-%d", n%60),
+	)
 }

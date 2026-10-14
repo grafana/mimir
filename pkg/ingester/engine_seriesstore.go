@@ -136,6 +136,9 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 // rest of the batch with the engine's Prometheus-style appender: new series, histograms, exemplars, created
 // timestamps and staleness markers.
 func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+	if batch.Record != nil {
+		return e.ingestRecord(ctx, batch, sink)
+	}
 	var fast, other []int
 	for i := range batch.Series {
 		if sink.Skip(i) {
@@ -167,14 +170,58 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 		return outcome, nil
 	}
 
+	return e.ingestThroughAppender(ctx, batch, sink, other, outcome)
+}
+
+// ingestThroughAppender ingests the series at indices with the engine's appender, adding to outcome.
+func (e seriesstoreEngine) ingestThroughAppender(ctx context.Context, batch ingestBatch, sink ingestSink, indices []int, outcome ingestOutcome) (ingestOutcome, error) {
 	// The series the appender ingests are marked ingested once it has, for the active series.
 	marker := &ingestedMarker{ingestSink: sink}
-	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, marker, other)
-	e.Engine.MarkIngested(marker.series, atMs, batch.OTLP)
+	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, marker, indices)
+	e.Engine.MarkIngested(marker.series, batch.IngestedAt.UnixMilli(), batch.OTLP)
 	outcome.Samples += rest.Samples
 	outcome.Exemplars += rest.Exemplars
 	outcome.CommitDuration = rest.CommitDuration
 	return outcome, err
+}
+
+// ReadRecord reads a version 2 record in place.
+func (e seriesstoreEngine) ReadRecord(content []byte, version int) (ingestRecord, bool) {
+	if version != 2 {
+		return nil, false
+	}
+	record, err := store.ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+	if err != nil {
+		// Decoding it tells what is wrong with it.
+		return nil, false
+	}
+	return record, true
+}
+
+// ingestRecord appends the floats of the series of the batch's record the engine has without decoding it, and decodes
+// it for the others: series it doesn't have yet, and series with more than floats.
+func (e seriesstoreEngine) ingestRecord(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+	var outcome ingestOutcome
+	record := batch.Record.(*store.RW2Record)
+	leftover, ingested, err := e.Engine.AppendRW2(record, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), batch.OTLP, floatSink{sink})
+	outcome.Samples = ingested
+	ingestPaths.series.Add(uint64(record.Len()))
+	ingestPaths.fast.Add(uint64(record.Len() - len(leftover)))
+	if err != nil || len(leftover) == 0 {
+		return outcome, err
+	}
+	batch.Series = batch.Decoded()
+	other := leftover[:0]
+	for _, i := range leftover {
+		if !sink.Skip(i) {
+			other = append(other, i)
+			ingestPaths.count(&batch.Series[i], batch)
+		}
+	}
+	if len(other) == 0 {
+		return outcome, nil
+	}
+	return e.ingestThroughAppender(ctx, batch, sink, other, outcome)
 }
 
 // ingestedMarker collects the series an ingest got samples for.
@@ -200,6 +247,23 @@ func (s floatSink) NeedsLabels() bool {
 
 func (s floatSink) Ingested(series int, lbls labels.Labels, ref storage.SeriesRef) {
 	s.ingestSink.Ingested(series, lbls, ref, -1)
+}
+
+// refIngestSink is an ingestSink that may know an ingested series by its ref, without its labels.
+type refIngestSink interface {
+	IngestedRef(series int, ref storage.SeriesRef) bool
+}
+
+// IngestedRef has the engine build a series' labels only for a sink that doesn't know the series and wants them.
+func (s floatSink) IngestedRef(series int, ref storage.SeriesRef) bool {
+	if known, ok := s.ingestSink.(refIngestSink); ok {
+		return known.IngestedRef(series, ref)
+	}
+	if s.ingestSink.NeedsLabels() {
+		return false
+	}
+	s.ingestSink.Ingested(series, labels.EmptyLabels(), ref, -1)
+	return true
 }
 
 func (e seriesstoreEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {

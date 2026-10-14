@@ -5,11 +5,8 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"slices"
-	"sync"
 
 	"github.com/grafana/dskit/tenant"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -24,13 +21,7 @@ type pushRequest struct {
 	content []byte
 	version int
 	record  ingestRecord
-	// The decoding of the whole record, or of the series of subset only.
-	decode *mimirpb.PreallocWriteRequest
-	subset []int
-	// The content of the record of the subset's series, which its decoding refers to.
-	subsetContent *[]byte
-	// The series of the record built from it, by index, for what needs them without them being decoded.
-	built map[int]*mimirpb.PreallocTimeseries
+	decode  *mimirpb.PreallocWriteRequest
 	// Why the record couldn't be decoded, which leaves it without series.
 	decodeErr error
 }
@@ -38,71 +29,24 @@ type pushRequest struct {
 // emptyPushSeries is the series of a record that couldn't be decoded.
 var emptyPushSeries = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{}}
 
-// decoded is the whole record decoded.
 func (p *pushRequest) decoded() *mimirpb.WriteRequest {
 	if p.req == nil {
-		p.releaseDecode()
-		p.decode, p.subset = &mimirpb.PreallocWriteRequest{}, nil
+		p.decode = &mimirpb.PreallocWriteRequest{}
 		p.decodeErr = ingest.DeserializeRecordContent(p.content, p.decode, p.version)
 		p.req = &p.decode.WriteRequest
-		recordStats.whole.Add(1)
 	}
 	return p.req
 }
 
-// decodedSubset decodes the series of the record at indices, which are in order, into a slice of all of them.
-func (p *pushRequest) decodedSubset(indices []int) []mimirpb.PreallocTimeseries {
-	all := make([]mimirpb.PreallocTimeseries, p.record.Len())
-	if p.req != nil {
-		copy(all, p.req.Timeseries)
-		return all
-	}
-	p.releaseDecode()
-	p.decode, p.subset = &mimirpb.PreallocWriteRequest{}, indices
-	p.subsetContent = subsetContents.Get().(*[]byte)
-	*p.subsetContent = p.record.Subset(indices, *p.subsetContent)
-	p.decodeErr = ingest.DeserializeRecordContent(*p.subsetContent, p.decode, p.version)
-	recordStats.subsets.Add(1)
-	for position, index := range indices {
-		if position < len(p.decode.Timeseries) {
-			all[index] = p.decode.Timeseries[position]
-		} else {
-			all[index] = emptyPushSeries
-		}
-	}
-	return all
-}
-
-// at is the series at index: decoded, or built from the record.
+// at is the series at index, decoding the record if it is one.
 func (p *pushRequest) at(index int) *mimirpb.PreallocTimeseries {
-	if p.record == nil {
-		if req := p.decoded(); index < len(req.Timeseries) {
-			return &req.Timeseries[index]
-		}
-		return &emptyPushSeries
+	if req := p.decoded(); index < len(req.Timeseries) {
+		return &req.Timeseries[index]
 	}
-	if p.req != nil {
-		if index < len(p.req.Timeseries) {
-			return &p.req.Timeseries[index]
-		}
-		return &emptyPushSeries
-	}
-	if position, ok := slices.BinarySearch(p.subset, index); ok && position < len(p.decode.Timeseries) {
-		return &p.decode.Timeseries[position]
-	}
-	if series, ok := p.built[index]; ok {
-		return series
-	}
-	if p.built == nil {
-		p.built = map[int]*mimirpb.PreallocTimeseries{}
-	}
-	lbls, samples := p.record.Series(index)
-	series := &mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: lbls, Samples: samples}}
-	p.built[index] = series
-	return series
+	return &emptyPushSeries
 }
 
-// series is the decoded series, none for a record whose series the engine ingests.
+// series is the decoded series, none for a record whose floats the engine appends.
 func (p *pushRequest) series() []mimirpb.PreallocTimeseries {
 	if p.record != nil {
 		return nil
@@ -131,11 +75,12 @@ func (p *pushRequest) source() mimirpb.WriteRequest_SourceEnum {
 	return p.decoded().Source
 }
 
+// metadata is the request's metadata: a record with any is decoded before the push.
 func (p *pushRequest) metadata() []*mimirpb.MetricMetadata {
-	if p.req != nil {
-		return p.req.GetMetadata()
+	if p.req == nil {
+		return nil
 	}
-	return p.record.Metadata()
+	return p.req.GetMetadata()
 }
 
 func (p *pushRequest) minTimestamp() int64 {
@@ -154,33 +99,16 @@ func (p *pushRequest) withoutRecord() {
 	}
 }
 
-func (p *pushRequest) releaseDecode() {
-	if p.decode != nil {
-		p.decode.FreeBuffer()
-		mimirpb.ReuseSlice(p.decode.Timeseries)
-		p.decode = nil
-	}
-	if p.subsetContent != nil {
-		subsetContents.Put(p.subsetContent)
-		p.subsetContent = nil
-	}
-}
-
-// subsetContents are the buffers of the records of subsets of series, which decoding them refers to until the push
-// is done.
-var subsetContents = sync.Pool{New: func() any { return new([]byte) }}
-
 func (p *pushRequest) release() {
 	if p.record != nil {
 		p.record.Release()
 		p.record = nil
 	}
-	p.releaseDecode()
-}
-
-// recordStats counts how records are ingested. Temporary.
-var recordStats struct {
-	records, direct, whole, subsets atomic.Uint64
+	if p.decode != nil {
+		p.decode.FreeBuffer()
+		mimirpb.ReuseSlice(p.decode.Timeseries)
+		p.decode = nil
+	}
 }
 
 // AcceptsRecords implements ingest.RecordPusher: records are pushed as they are, for the engines that read them.
@@ -190,9 +118,6 @@ func (i *Ingester) AcceptsRecords() bool {
 
 // PushRecord implements ingest.RecordPusher.
 func (i *Ingester) PushRecord(ctx context.Context, content []byte, version int) error {
-	// What decoding the record would instrument, which reading it in place doesn't go through.
-	content, releaseContent := mimirpb.InstrumentRefLeaks(content)
-	defer releaseContent()
 	req := &pushRequest{content: content, version: version}
 	defer req.release()
 	// The tenant's engine reads the record, if it does: a tenant without a TSDB yet gets it with its first push.
@@ -203,11 +128,7 @@ func (i *Ingester) PushRecord(ctx context.Context, content []byte, version int) 
 			}
 		}
 	}
-	recordStats.records.Add(1)
-	if req.record != nil {
-		recordStats.direct.Add(1)
-	}
-	if req.record == nil || !req.record.Complete() {
+	if req.record == nil || !req.record.OnlyFloats() {
 		// What else the record has, or all of it, is read by decoding it, as the reader would have.
 		req.decoded()
 		if req.decodeErr != nil {
