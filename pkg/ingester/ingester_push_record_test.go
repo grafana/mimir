@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,20 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 			req.Timeseries[1].Samples[1].Value++
 			return req
 		},
+		// What only decoding reads, in a record of the floats of series the engine has: the histograms of one, an
+		// exemplar, a series it doesn't have, metadata, and a series of metadata only.
+		func() *mimirpb.WriteRequest {
+			req := &mimirpb.WriteRequest{Source: mimirpb.OTLP}
+			for n := range 20 {
+				req.Timeseries = append(req.Timeseries, floats(n, now-2500))
+			}
+			histogram := floats(100)
+			histogram.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(now-2500, streamTestHistogram(2))}
+			req.Timeseries = append(req.Timeseries, histogram, floats(200, now-2500), floats(201))
+			req.Timeseries[5].Exemplars = []mimirpb.Exemplar{{Labels: []mimirpb.LabelAdapter{{Name: "trace_id", Value: "def"}}, Value: 2, TimestampMs: now - 2500}}
+			req.Metadata = []*mimirpb.MetricMetadata{{MetricFamilyName: "metric_2", Type: mimirpb.GAUGE, Help: "a gauge", Unit: "seconds"}}
+			return req
+		},
 		// Floats from OTLP.
 		func() *mimirpb.WriteRequest {
 			req := &mimirpb.WriteRequest{Source: mimirpb.OTLP}
@@ -98,7 +113,12 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 		records, _, err := serializer.ToRecords("ingest", 0, userID, build(), 64<<20)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
+		wholeBefore, subsetsBefore := recordStats.whole.Load(), recordStats.subsets.Load()
 		gotErr := direct.PushRecord(ctx, records[0].Value, 2)
+		if step == 3 {
+			require.Equal(t, wholeBefore, recordStats.whole.Load(), "the record isn't decoded whole")
+			require.Equal(t, subsetsBefore+1, recordStats.subsets.Load(), "only its series the engine doesn't append are decoded")
+		}
 		if step == 2 {
 			require.Error(t, wantErr, "the step with rejected samples")
 		}
@@ -139,7 +159,7 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 		return out
 	}
 	require.Equal(t, read(decoded), read(direct))
-	require.Len(t, read(direct), 52)
+	require.Len(t, read(direct), 53)
 	require.Contains(t, read(direct)[0], "@")
 
 	exemplars := func(ingester *Ingester) string {
@@ -155,10 +175,17 @@ func TestIngester_PushRecordIngestsWhatPushingTheDecodedRequestDoes(t *testing.T
 	metadata := func(ingester *Ingester) string {
 		response, err := ingester.MetricsMetadata(ctx, &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1})
 		require.NoError(t, err)
-		return fmt.Sprint(response.Metadata)
+		// In no order.
+		var out []string
+		for _, metadata := range response.Metadata {
+			out = append(out, metadata.String())
+		}
+		slices.Sort(out)
+		return strings.Join(out, " ")
 	}
 	require.Equal(t, metadata(decoded), metadata(direct))
 	require.Contains(t, metadata(direct), "a counter")
+	require.Contains(t, metadata(direct), "a gauge")
 
 	for _, metric := range []string{
 		"cortex_ingester_ingested_samples_total",
@@ -195,66 +222,82 @@ func gatheredText(t *testing.T, reg *prometheus.Registry, metric string) *string
 // decoded into a request first, or as they are.
 func BenchmarkIngester_PushRecord(b *testing.B) {
 	const series, batch = 100_000, 2000
-	for _, path := range []string{"decoded", "record"} {
-		b.Run(path, func(b *testing.B) {
-			cfg := defaultIngesterTestConfig(b)
-			cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
-			cfg.PushRecordsToEngine = true
-			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, defaultLimitsTestConfig(), nil, b.TempDir(), nil)
-			require.NoError(b, err)
-			startAndWaitHealthy(b, ingester, r)
-			b.Cleanup(func() { require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester)) })
-			ctx := user.InjectOrgID(context.Background(), userID)
-
-			serializer := ingest.RecordSerializerFromVersion(2)
-			start := time.Now().Add(-time.Hour).UnixMilli()
-			records := func(step int) [][]byte {
-				var out [][]byte
-				for at := 0; at < series; at += batch {
-					req := &mimirpb.WriteRequest{Source: mimirpb.API}
-					for n := at; n < at+batch; n++ {
-						req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-							Labels:  mimirpb.FromLabelsToLabelAdapters(benchRecordLabels(n)),
-							Samples: []mimirpb.Sample{{TimestampMs: start + int64(step)*15_000, Value: float64(n)}},
-						}})
-					}
-					recs, _, err := serializer.ToRecords("ingest", 0, userID, req, 64<<20)
-					require.NoError(b, err)
-					for _, rec := range recs {
-						out = append(out, rec.Value)
-					}
-				}
-				return out
-			}
-			push := func(content []byte) {
-				if path == "record" {
-					require.NoError(b, ingester.PushRecord(ctx, content, 2))
-					return
-				}
-				req := &mimirpb.PreallocWriteRequest{}
-				require.NoError(b, ingest.DeserializeRecordContent(content, req, 2))
-				require.NoError(b, ingester.PushToStorageAndReleaseRequest(ctx, &req.WriteRequest))
-			}
-			// The series exist, and the active series tracker has them.
-			for _, content := range records(0) {
-				push(content)
-			}
-			step, pending := 1, records(1)
-			b.ReportAllocs()
-			b.ResetTimer()
-			for range b.N {
-				if len(pending) == 0 {
-					b.StopTimer()
-					step++
-					pending = records(step)
-					b.StartTimer()
-				}
-				push(pending[0])
-				pending = pending[1:]
-			}
-			b.ReportMetric(float64(b.N*batch)/b.Elapsed().Seconds(), "series/s")
-		})
+	for _, shape := range []string{"floats", "with metadata and histograms"} {
+		for _, path := range []string{"decoded", "record"} {
+			b.Run(shape+"/"+path, func(b *testing.B) { benchmarkPushRecord(b, series, batch, path, shape != "floats") })
+		}
 	}
+}
+
+func benchmarkPushRecord(b *testing.B, series, batch int, path string, extras bool) {
+	withoutRefLeaksInstrumentation(b)
+	cfg := defaultIngesterTestConfig(b)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	cfg.PushRecordsToEngine = true
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.NativeHistogramsIngestionEnabled = true
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+	require.NoError(b, err)
+	startAndWaitHealthy(b, ingester, r)
+	b.Cleanup(func() { require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	serializer := ingest.RecordSerializerFromVersion(2)
+	start := time.Now().Add(-time.Hour).UnixMilli()
+	records := func(step int) [][]byte {
+		var out [][]byte
+		for at := 0; at < series; at += batch {
+			req := &mimirpb.WriteRequest{Source: mimirpb.API}
+			for n := at; n < at+batch; n++ {
+				ts := &mimirpb.TimeSeries{Labels: mimirpb.FromLabelsToLabelAdapters(benchRecordLabels(n))}
+				if extras && n%200 == 0 {
+					ts.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(start+int64(step)*15_000, streamTestHistogram(step))}
+				} else {
+					ts.Samples = []mimirpb.Sample{{TimestampMs: start + int64(step)*15_000, Value: float64(n)}}
+				}
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: ts})
+			}
+			if extras {
+				// As OTLP writes have, for every metric.
+				for metric := range 300 {
+					req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: fmt.Sprintf("container_metric_%d", metric), Type: mimirpb.COUNTER, Help: "A counter of the containers."})
+				}
+			}
+			recs, _, err := serializer.ToRecords("ingest", 0, userID, req, 64<<20)
+			require.NoError(b, err)
+			for _, rec := range recs {
+				out = append(out, rec.Value)
+			}
+		}
+		return out
+	}
+	push := func(content []byte) {
+		if path == "record" {
+			require.NoError(b, ingester.PushRecord(ctx, content, 2))
+			return
+		}
+		req := &mimirpb.PreallocWriteRequest{}
+		require.NoError(b, ingest.DeserializeRecordContent(content, req, 2))
+		require.NoError(b, ingester.PushToStorageAndReleaseRequest(ctx, &req.WriteRequest))
+	}
+	// The series exist, and the active series tracker has them.
+	for _, content := range records(0) {
+		push(content)
+	}
+	step, pending := 1, records(1)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if len(pending) == 0 {
+			b.StopTimer()
+			step++
+			pending = records(step)
+			b.StartTimer()
+		}
+		push(pending[0])
+		pending = pending[1:]
+	}
+	b.ReportMetric(float64(b.N*batch)/b.Elapsed().Seconds(), "series/s")
 }
 
 // benchRecordLabels is a series of a Kubernetes scrape: a dozen labels, most of them of few values.
@@ -272,4 +315,13 @@ func benchRecordLabels(n int) labels.Labels {
 		"pod", fmt.Sprintf("pod-%d-%x", n%2000, n*2654435761%65536),
 		"service", fmt.Sprintf("service-%d", n%60),
 	)
+}
+
+// withoutRefLeaksInstrumentation decodes as production does: tests otherwise copy every buffer they decode into its own
+// mapping, to find references to it that outlive it.
+func withoutRefLeaksInstrumentation(b *testing.B) {
+	mimirpb.CustomCodecConfig{}.RegisterGlobally(nil)
+	b.Cleanup(func() {
+		mimirpb.CustomCodecConfig{InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{Percentage: 100}}.RegisterGlobally(prometheus.NewRegistry())
+	})
 }

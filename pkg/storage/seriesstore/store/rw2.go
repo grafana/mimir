@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -19,8 +20,18 @@ var errMalformedRW2 = errors.New("malformed remote write 2.0 record")
 type rw2Series struct {
 	refsAt, refsTo       int32
 	samplesAt, samplesTo int32
-	// Whether the series has more than floats: histograms, exemplars, metadata or a created timestamp.
+	// The position of the series' metadata in the source's, or -1.
+	metadata int32
+	// Whether the series has more than floats, which only decoding it reads: histograms, exemplars or a created
+	// timestamp.
 	other bool
+}
+
+// rw2Metadata is a series' metadata.
+type rw2Metadata struct {
+	series     int32
+	metricType mimirpb.MetricMetadata_MetricType
+	help, unit string
 }
 
 // rw2Source is the series of a remote write 2.0 record, read without decoding it into a request: the labels are
@@ -28,16 +39,18 @@ type rw2Series struct {
 type rw2Source struct {
 	symbols []string
 	// The references below offset are to common, the ones from it to symbols.
-	common []string
-	offset uint32
-	refs   []uint32
-	floats []mimirpb.Sample
-	series []rw2Series
-	bodies [][]byte
-	source mimirpb.WriteRequest_SourceEnum
-	// Whether the record has more than series of floats, which only decoding it reads: a series with more, or
-	// metadata of the record's own.
-	other        bool
+	common   []string
+	offset   uint32
+	refs     []uint32
+	floats   []mimirpb.Sample
+	series   []rw2Series
+	metadata []rw2Metadata
+	bodies   [][]byte
+	content  []byte
+	source   mimirpb.WriteRequest_SourceEnum
+	// Whether the record has fields of its own this doesn't read, which only decoding it does.
+	partial bool
+	// The oldest timestamp of the record's samples, histograms and exemplars.
 	minTimestamp int64
 }
 
@@ -80,8 +93,8 @@ func (s *rw2Source) samples(index int) []mimirpb.Sample {
 
 // read reads the record's symbols and series. Strings refer to content.
 func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
-	s.symbols, s.refs, s.floats, s.series, s.bodies = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0], s.bodies[:0]
-	s.common, s.offset, s.source, s.other, s.minTimestamp = common, offset, mimirpb.API, false, math.MaxInt64
+	s.symbols, s.refs, s.floats, s.series, s.metadata, s.bodies = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0], s.metadata[:0], s.bodies[:0]
+	s.common, s.offset, s.content, s.source, s.partial, s.minTimestamp = common, offset, content, mimirpb.API, false, math.MaxInt64
 	// The series reference symbols, which a writer may put after them: they are read first.
 	rest := content
 	for len(rest) > 0 {
@@ -104,7 +117,7 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 		case field == 1000 || field == 1001:
 			// Validation the distributor did.
 		default:
-			s.other = true
+			s.partial = true
 		}
 	}
 	for _, body := range s.bodies {
@@ -117,7 +130,7 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 }
 
 func (s *rw2Source) readSeries(body []byte) error {
-	series := rw2Series{refsAt: int32(len(s.refs)), samplesAt: int32(len(s.floats))}
+	series := rw2Series{refsAt: int32(len(s.refs)), samplesAt: int32(len(s.floats)), metadata: -1}
 	for len(body) > 0 {
 		field, wire, value, next, ok := protoField(body)
 		if !ok {
@@ -155,8 +168,30 @@ func (s *rw2Source) readSeries(body []byte) error {
 			}
 			s.floats = append(s.floats, sample)
 			s.minTimestamp = min(s.minTimestamp, sample.TimestampMs)
-		case field == 5 && len(value) == 0:
-			// The empty metadata writers put in every series.
+		case field == 5 && wire == 2:
+			if len(value) == 0 {
+				// The empty metadata writers put in every series.
+				continue
+			}
+			metadata, err := s.readMetadata(value)
+			if err != nil {
+				return err
+			}
+			metadata.series = int32(len(s.series))
+			series.metadata = int32(len(s.metadata))
+			s.metadata = append(s.metadata, metadata)
+		case field == 3 && wire == 2:
+			// A histogram, whose timestamp is its field 15.
+			series.other = true
+			if err := s.observeTimestamp(value, 15); err != nil {
+				return err
+			}
+		case field == 4 && wire == 2:
+			// An exemplar, whose timestamp is its field 3.
+			series.other = true
+			if err := s.observeTimestamp(value, 3); err != nil {
+				return err
+			}
 		default:
 			series.other = true
 		}
@@ -165,9 +200,54 @@ func (s *rw2Source) readSeries(body []byte) error {
 	if (series.refsTo-series.refsAt)%2 != 0 {
 		return errMalformedRW2
 	}
-	s.other = s.other || series.other
 	s.series = append(s.series, series)
 	return nil
+}
+
+// observeTimestamp takes the varint field of message into the record's oldest timestamp.
+func (s *rw2Source) observeTimestamp(message []byte, timestampField uint64) error {
+	for len(message) > 0 {
+		field, wire, value, next, ok := protoField(message)
+		if !ok {
+			return errMalformedRW2
+		}
+		message = next
+		if field == timestampField && wire == 0 {
+			timestamp, _ := binary.Uvarint(value)
+			s.minTimestamp = min(s.minTimestamp, int64(timestamp))
+		}
+	}
+	return nil
+}
+
+func (s *rw2Source) readMetadata(message []byte) (rw2Metadata, error) {
+	var metadata rw2Metadata
+	for len(message) > 0 {
+		field, wire, value, next, ok := protoField(message)
+		if !ok {
+			return metadata, errMalformedRW2
+		}
+		message = next
+		if wire != 0 {
+			continue
+		}
+		number, _ := binary.Uvarint(value)
+		switch field {
+		case 1:
+			metadata.metricType = mimirpb.MetricMetadata_MetricType(number)
+		case 3, 4:
+			symbol, ok := s.symbol(uint32(number))
+			if !ok {
+				return metadata, errMalformedRW2
+			}
+			if field == 3 {
+				metadata.help = symbol
+			} else {
+				metadata.unit = symbol
+			}
+		}
+	}
+	return metadata, nil
 }
 
 // protoField reads one field of a protobuf message: for a varint, value holds its encoding, for a fixed64 its eight
@@ -224,9 +304,10 @@ func ReadRW2(content []byte, commonSymbols []string, symbolOffset uint32) (*RW2R
 }
 
 func releaseRW2Source(source *rw2Source) {
-	// The symbols refer to the content.
+	// The strings refer to the content.
 	clear(source.symbols)
-	source.common = nil
+	clear(source.metadata)
+	source.common, source.content = nil, nil
 	rw2Sources.Put(source)
 }
 
@@ -242,23 +323,81 @@ func (r *RW2Record) Len() int { return len(r.source.series) }
 // Source is where the request the record has came from.
 func (r *RW2Record) Source() mimirpb.WriteRequest_SourceEnum { return r.source.source }
 
-// OnlyFloats reports whether the record has only series of floats, without metadata: what else it has is only read
-// by decoding it.
-func (r *RW2Record) OnlyFloats() bool { return !r.source.other }
+// Complete reports whether the record was read whole: one with fields of its own this doesn't read is only read by
+// decoding it.
+func (r *RW2Record) Complete() bool { return !r.source.partial }
 
-// MinTimestamp is the oldest timestamp of the record's floats, math.MaxInt64 without any.
+// MinTimestamp is the oldest timestamp of the record's samples, histograms and exemplars, math.MaxInt64 without any.
 func (r *RW2Record) MinTimestamp() int64 { return r.source.minTimestamp }
+
+// Metadata is the metadata of the record's series, as decoding it without deduplicating nor normalizing the metric
+// names gives: one for each series with any, in order.
+func (r *RW2Record) Metadata() []*mimirpb.MetricMetadata {
+	source := r.source
+	if len(source.metadata) == 0 {
+		return nil
+	}
+	var pairs [][2]string
+	out := make([]*mimirpb.MetricMetadata, 0, len(source.metadata))
+	for _, metadata := range source.metadata {
+		var name string
+		pairs, name = source.pairs(int(metadata.series), pairs[:0])
+		if name == "" || metadata.help == "" && metadata.unit == "" && metadata.metricType == 0 {
+			continue
+		}
+		out = append(out, &mimirpb.MetricMetadata{
+			MetricFamilyName: strings.Clone(name),
+			Help:             strings.Clone(metadata.help),
+			Unit:             strings.Clone(metadata.unit),
+			Type:             metadata.metricType,
+		})
+	}
+	return out
+}
+
+// Series returns the labels and floats of the series at index, which refer to the record's content.
+func (r *RW2Record) Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample) {
+	pairs, _ := r.source.pairs(index, nil)
+	adapters := make([]mimirpb.LabelAdapter, len(pairs))
+	for i, pair := range pairs {
+		adapters[i] = mimirpb.LabelAdapter{Name: pair[0], Value: pair[1]}
+	}
+	return adapters, r.source.samples(index)
+}
+
+// Subset returns the content of a record with the series at indices, which are in order, and the record's symbols
+// and fields of its own: what decoding only those series needs.
+func (r *RW2Record) Subset(indices []int) []byte {
+	out := make([]byte, 0, len(r.source.content)/max(1, len(r.source.series)/max(1, len(indices))))
+	rest, series := r.source.content, 0
+	for len(rest) > 0 {
+		field, _, _, next, _ := protoField(rest)
+		raw := rest[:len(rest)-len(next)]
+		rest = next
+		if field == 5 {
+			if len(indices) > 0 && indices[0] == series {
+				out = append(out, raw...)
+				indices = indices[1:]
+			}
+			series++
+			continue
+		}
+		out = append(out, raw...)
+	}
+	return out
+}
 
 // AppendRW2 is AppendFloats for the series of a record. Series are identified by their index in the record; leftover
 // has the ones it didn't handle, which the caller decodes and appends another way, those with more than floats among
-// them.
+// them. Series with nothing to append are neither.
 func (e *Engine) AppendRW2(record *RW2Record, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	source := record.source
 	fast := make([]int, 0, len(source.series))
 	for index := range source.series {
-		if series := &source.series[index]; series.other || series.samplesTo == series.samplesAt {
+		switch series := &source.series[index]; {
+		case series.other:
 			leftover = append(leftover, index)
-		} else {
+		case series.samplesTo > series.samplesAt:
 			fast = append(fast, index)
 		}
 	}

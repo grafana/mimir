@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
@@ -149,6 +150,7 @@ func BenchmarkIngestRecord(b *testing.B) {
 	const series, batch = 200_000, 2000
 	for _, path := range []string{"decoded", "direct"} {
 		b.Run(path, func(b *testing.B) {
+			withoutRefLeaksInstrumentation(b)
 			engine := rw2Engine(b, series)
 			var records [][][]byte
 			for step := range 4 {
@@ -181,4 +183,13 @@ func BenchmarkIngestRecord(b *testing.B) {
 			b.ReportMetric(float64(b.N*batch)/b.Elapsed().Seconds(), "series/s")
 		})
 	}
+}
+
+// withoutRefLeaksInstrumentation decodes as production does: tests otherwise copy every buffer they decode into its own
+// mapping, to find references to it that outlive it.
+func withoutRefLeaksInstrumentation(b *testing.B) {
+	mimirpb.CustomCodecConfig{}.RegisterGlobally(nil)
+	b.Cleanup(func() {
+		mimirpb.CustomCodecConfig{InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{Percentage: 100}}.RegisterGlobally(prometheus.NewRegistry())
+	})
 }
