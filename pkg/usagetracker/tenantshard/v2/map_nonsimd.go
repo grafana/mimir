@@ -15,6 +15,10 @@ const (
 
 	loBits uint64 = 0x0101010101010101
 	hiBits uint64 = 0x8080808080808080
+
+	// spillmarkInLastSlot is a group with a spillmark in the last slot and empty slots everywhere else:
+	// what clearSlots writes into the slots it removes.
+	spillmarkInLastSlot uint64 = spillmark << (8 * last)
 )
 
 type bitset uint64
@@ -45,6 +49,52 @@ func (m *index) matchOccupied() bitset {
 	return m.matchEmptyOrSpillmark() ^ bitset(hiBits)
 }
 
+// expiredSlots returns a word with the high bit set in each byte of the data group x whose value expired, that is
+// for which watermark.GreaterOrEqualThan(value) holds. w is the watermark in every byte: loBits * watermark.
+// Empty and spillmark bytes may be reported too, so the caller must remove freeSlots from the result.
+//
+// It computes GreaterOrEqualThan for the 8 slots at once, with the same steps as clock.Minutes: each byte of
+// the uint64 is one slot, and the arithmetic never lets a byte carry or borrow into the next one.
+// Go computes aheadOf in int64 and the bytes wrap at 256 instead, but aheadOf is always in [-135, 255],
+// and wrapping only moves [-135, -1] to [121, 255], which is not below 60 either. So the result is the
+// same as GreaterOrEqualThan for every watermark and every value.
+func expiredSlots(x, w uint64) uint64 {
+	v := ^x // The clock.Minutes of every slot, see xorData.
+
+	// d := watermark - v. Setting the high bit of each byte of w and clearing it in v means that no byte
+	// borrows from the next one. The xor then restores the high bits. Note that ^v is x.
+	d := ((w | hiBits) - (v &^ hiBits)) ^ ((w ^ x) & hiBits)
+	// d < 0, that is watermark < v: the borrow out of the high bit of each byte.
+	negative := ((^w & v) | (^(w ^ v) & d)) & hiBits
+	// aheadOf := d + (d>>63)&120. 120 fits in the low 7 bits, so adding it to the low 7 bits of each
+	// byte never carries into the next byte, and the xor adds the high bits back.
+	aheadOf := ((d &^ hiBits) + (negative>>7)*120) ^ (d & hiBits)
+
+	// aheadOf < 60: adding 128-60 to the low 7 bits sets the high bit when they are 60 or more,
+	// and a byte that already has its high bit set is 128 or more.
+	return ^(((aheadOf &^ hiBits) + loBits*(128-60)) | aheadOf) & hiBits
+}
+
+// freeSlots returns a word with the high bit set in each byte of the data group x that holds no value,
+// that is an empty slot or a spillmark. See matchEmptyOrSpillmark for why this is exact.
+// The data and the index always agree on which slots these are.
+func freeSlots(x uint64) uint64 {
+	return uint64(findZeroBytes(x &^ loBits))
+}
+
+// clearSlots removes the slots of the group that have the high bit set in remove, and returns how many it removed.
+// x is the data group as it was loaded. Removed slots become empty in both idx and d, except for the last one,
+// which becomes a spillmark: it keeps the signal that the group may have spilled into the next one.
+// Keys are not touched: nobody reads the key of a slot whose index and data are empty or a spillmark,
+// and keys are groups of uint64 that fill a whole cache line.
+func clearSlots(idx *index, d *data, x, remove uint64) int {
+	mask := (remove >> 7) * 0xff // 0xff in every byte to remove.
+	*groupWord(d) = x&^mask | spillmarkInLastSlot&mask
+	i := groupWord(idx)
+	*i = *i&^mask | spillmarkInLastSlot&mask
+	return bits.OnesCount64(remove)
+}
+
 // nextMatch clears and returns the index corresponding to the next set bit in
 // the given bitset. It is assumed that the given bitset is nonzero.
 func nextMatch(b *bitset) uint32 {
@@ -61,5 +111,12 @@ func findZeroBytes(x uint64) bitset {
 }
 
 func castUint64(m *index) uint64 {
-	return *(*uint64)((unsafe.Pointer)(m))
+	return *groupWord(m)
+}
+
+// groupWord returns the 8 bytes of an index or data group as one uint64, so that the whole group is read
+// or written at once. This is the only use of unsafe in this file: a group is exactly 8 bytes, and the
+// bit tricks above assume the little-endian byte order of amd64 and arm64.
+func groupWord[T index | data](g *T) *uint64 {
+	return (*uint64)(unsafe.Pointer(g)) // #nosec G103 -- nosemgrep: use-of-unsafe-block
 }

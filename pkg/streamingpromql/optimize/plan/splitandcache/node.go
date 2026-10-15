@@ -223,7 +223,7 @@ func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenera
 		m.cache = caching.NewAdaptor(baseCache)
 		// The CacheKeyGenerator takes a non-hashable and hashable prefix.
 		// The type/version prefix is not included in the hashed key, but the generated cache prefix (tenant ids) will be folded into the hashed key.
-		m.cacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("MQEQR", cacheVersion), cachePrefixGenerator)
+		m.cacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("MQEQR", cacheVersion), cachePrefixGenerator, false)
 	}
 
 	return m

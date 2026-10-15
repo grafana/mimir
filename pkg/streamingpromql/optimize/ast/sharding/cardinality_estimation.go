@@ -644,6 +644,13 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 		return cacheKey{}, err
 	}
 
+	if cfg.UseCryptographicHash {
+		// If we're using a cryptographic hash, we don't store the plain text key, as the likelihood of a hash collision is very low.
+		// This has the benefit of vastly reducing the memory consumption of cache keys, and reducing the volume of data stored in the cache,
+		// as the plain text key can be quite large given it contains the original expression.
+		plain = nil
+	}
+
 	return cacheKey{
 		plain:      plain,
 		hashed:     hashed,

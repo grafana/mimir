@@ -126,6 +126,7 @@ type CardinalityEstimationConfig struct {
 	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
 	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
 	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
+	UseCryptographicHash      bool          `yaml:"use_cryptographic_hash" category:"experimental"`
 }
 
 type CardinalityEstimationMetrics struct {
@@ -173,7 +174,7 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", true, "Enable subset selector elimination when evaluating queries.")
-	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
+	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", true, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnablePropagateMatchers, "querier.mimir-query-engine.enable-propagate-matchers", false, "Enable propagating label matchers across binary expressions.")
@@ -205,11 +206,19 @@ func (cfg *CardinalityEstimationConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TTL, "querier.mimir-query-engine.cardinality-estimation.ttl", 7*24*time.Hour, "The time-to-live of each cached cardinality estimate."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.Int64Var(&cfg.MaxBucketsReadPerSelector, "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector", 168, "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced)."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.Float64Var(&cfg.EstimateUpdateThreshold, "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold", 0.1, "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate)."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.BoolVar(&cfg.UseCryptographicHash, "querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash", false, "If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry."+onlyAppliesIfSplittingAndCachingInsideMQE)
 }
 
 func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator) {
 	cfg.Backend = caching.NewAdaptor(baseCache)
-	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", 1), cachePrefixGenerator)
+
+	version := uint(1)
+
+	if cfg.UseCryptographicHash {
+		version = 2
+	}
+
+	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", version), cachePrefixGenerator, cfg.UseCryptographicHash)
 }
 
 func (cfg *CardinalityEstimationConfig) Validate() error {

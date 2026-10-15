@@ -32,7 +32,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.azure.max-idle-connections-per-host int
@@ -70,7 +70,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
@@ -116,7 +116,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
@@ -280,7 +280,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2, jira. (default {})
   -alertmanager.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration
@@ -418,7 +418,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.azure.max-idle-connections-per-host int
@@ -718,7 +718,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
@@ -762,7 +762,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
@@ -960,7 +960,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.azure.max-idle-connections-per-host int
@@ -998,7 +998,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
@@ -1042,7 +1042,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
@@ -2263,6 +2263,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout for leaving memberlist cluster. (default 20s)
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -memberlist.local-state-cache-enabled
+    	[experimental] Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.
   -memberlist.max-concurrent-writes int
     	Maximum number of concurrent writes to other nodes. (default 5)
   -memberlist.max-join-backoff duration
@@ -2529,6 +2531,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168)
   -querier.mimir-query-engine.cardinality-estimation.ttl duration
     	[experimental] The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168h0m0s)
+  -querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash
+    	[experimental] If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
@@ -2540,7 +2544,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-propagate-matchers
     	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
+    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-remove-statically-empty-expressions
@@ -2996,7 +3000,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
+    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled. (default true)
   -query-frontend.wait-for-querier-ring-on-startup
     	[experimental] If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries. (default true)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -3158,7 +3162,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.azure.max-idle-connections-per-host int
@@ -3238,7 +3242,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
@@ -3284,7 +3288,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
