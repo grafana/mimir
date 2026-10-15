@@ -54,8 +54,11 @@ type producedSecond struct {
 	at     time.Time
 }
 
-func newFeed(w *world, dataDir string) (*feed, error) {
+func newFeed(w *world, dataDir string, port int) (*feed, error) {
 	opts := []kfake.Opt{kfake.NumBrokers(1), kfake.SeedTopics(1, topic)}
+	if port > 0 {
+		opts = append(opts, kfake.Ports(port))
+	}
 	if dataDir != "" {
 		opts = append(opts, kfake.DataDir(dataDir))
 	}

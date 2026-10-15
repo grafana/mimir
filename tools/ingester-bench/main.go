@@ -15,7 +15,9 @@
 package main
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -48,6 +50,10 @@ type config struct {
 	extraA, extraB    flagext.StringSliceCSV
 	kafkaDir          string
 	cpuProfileSeconds int
+	external          string
+	kafkaPort         int
+	dirA, dirB        string
+	hold              time.Duration
 	keep              bool
 }
 
@@ -77,7 +83,16 @@ func main() {
 	flag.StringVar(&cfg.kafkaDir, "kafka-dir", "", "Directory the in-process Kafka keeps its log in, instead of memory.")
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of the window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
+	flag.StringVar(&cfg.external, "external", "", "Directory shared with the containers that run the ingesters, with -exec: the bench writes their command lines to it once the backfill is done, and stops them through their PID files, which needs a shared process namespace.")
+	flag.IntVar(&cfg.kafkaPort, "kafka-port", 0, "Port of the in-process Kafka (default a free one).")
+	flag.StringVar(&cfg.dirA, "dir-a", "", "Data directory of ingester A (default in -out, or /data with -external).")
+	flag.StringVar(&cfg.dirB, "dir-b", "", "Data directory of ingester B (default in -out, or /data with -external).")
+	flag.DurationVar(&cfg.hold, "hold", 0, "Time to wait after the report before exiting, to copy the run's files.")
+	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	flag.Parse()
+	if *execSpecPath != "" {
+		log.Fatal(execMain(*execSpecPath))
+	}
 	log.SetFlags(log.Ltime)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -105,6 +120,13 @@ func run(ctx context.Context, cfg config) error {
 	if cfg.tenants > 0 {
 		profile.Series.Tenants = cfg.tenants
 	}
+	if cfg.external != "" {
+		// The containers' image has the binaries, and each its volume.
+		cfg.binaryA, cfg.binaryB = cmp.Or(cfg.binaryA, "/bin/mimir"), cmp.Or(cfg.binaryB, cfg.binaryA, "/bin/mimir")
+		cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, "/data"), cmp.Or(cfg.dirB, "/data")
+		cfg.keep = true
+	}
+	cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, filepath.Join(cfg.out, "a")), cmp.Or(cfg.dirB, filepath.Join(cfg.out, "b"))
 	if cfg.binaryA == "" {
 		cfg.binaryA = filepath.Join(cfg.out, "mimir")
 		log.Printf("building %s", cfg.binaryA)
@@ -119,7 +141,7 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	w := newWorld(profile.Series, cfg.series, cfg.seed)
-	f, err := newFeed(w, cfg.kafkaDir)
+	f, err := newFeed(w, cfg.kafkaDir, cfg.kafkaPort)
 	if err != nil {
 		return err
 	}
@@ -155,10 +177,10 @@ func run(ctx context.Context, cfg config) error {
 	var ingesters [2]*ingesterProcess
 	names := [2]string{"A " + cfg.engineA, "B " + cfg.engineB}
 	for i, c := range []ingesterConfig{
-		{name: names[0], binary: cfg.binaryA, engine: cfg.engineA, dir: filepath.Join(cfg.out, "a"), httpPort: 18180, grpcPort: 19195, extraArgs: cfg.extraA},
-		{name: names[1], binary: cfg.binaryB, engine: cfg.engineB, dir: filepath.Join(cfg.out, "b"), httpPort: 18280, grpcPort: 19295, extraArgs: cfg.extraB},
+		{name: names[0], binary: cfg.binaryA, engine: cfg.engineA, dir: cfg.dirA, httpPort: 18180, grpcPort: 19195, extraArgs: cfg.extraA},
+		{name: names[1], binary: cfg.binaryB, engine: cfg.engineB, dir: cfg.dirB, httpPort: 18280, grpcPort: 19295, extraArgs: cfg.extraB},
 	} {
-		c.kafka, c.retention, c.oooWindow = f.address(), cfg.retention, cfg.oooWindow
+		c.kafka, c.retention, c.oooWindow, c.external = f.address(), cfg.retention, cfg.oooWindow, cfg.external
 		ingesters[i], err = startIngester(ctx, c)
 		if err != nil {
 			return err
@@ -265,7 +287,16 @@ func run(ctx context.Context, cfg config) error {
 	if err := writeJSON(path, report); err != nil {
 		return err
 	}
+	if cfg.external != "" {
+		// The pod's logs keep it after the pod is gone.
+		data, _ := json.Marshal(report)
+		fmt.Printf("REPORT %s\n", data)
+	}
 	log.Printf("report and profiles in %s", cfg.out)
+	if cfg.hold > 0 {
+		log.Printf("holding for %s", cfg.hold)
+		sleep(ctx, cfg.hold)
+	}
 	return nil
 }
 

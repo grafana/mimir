@@ -1,0 +1,62 @@
+# Runs the bench as one pod of three containers, each with exclusive CPUs on a node whose kubelet has the static CPU
+# manager policy: their requests are their limits, in whole CPUs. The driver runs the generator, the in-process Kafka
+# and the reads; each ingester container waits for the command line the driver writes once the backfill is done, and
+# runs it as its own process. Replace the image, and the profile ConfigMap if any; read the report from the driver's
+# logs, or copy /out while it holds.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingester-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # The driver stops the ingesters through their PIDs.
+      shareProcessNamespace: true
+      containers:
+        - name: driver
+          image: IMAGE
+          args:
+            - -external=/shared
+            - -out=/out
+            - -kafka-port=9092
+            - -kafka-dir=/out/kafka
+            - -series=1000000
+            - -tenants=17
+            - -backfill=3h
+            - -warmup=5m
+            - -duration=15m
+            - -hold=1h
+            # - -profile=/profile/profile.json
+          resources:
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { cpu: "4", memory: 24Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: out, mountPath: /out }
+            # - { name: profile, mountPath: /profile }
+        - name: ingester-a
+          image: IMAGE
+          args: [-exec=/shared/a.json]
+          resources:
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { cpu: "4", memory: 24Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: data-a, mountPath: /data }
+        - name: ingester-b
+          image: IMAGE
+          args: [-exec=/shared/b.json]
+          resources:
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { cpu: "4", memory: 24Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: data-b, mountPath: /data }
+      volumes:
+        - { name: shared, emptyDir: {} }
+        - { name: out, emptyDir: {} }
+        - { name: data-a, emptyDir: {} }
+        - { name: data-b, emptyDir: {} }
+        # - { name: profile, configMap: { name: ingester-bench-profile } }

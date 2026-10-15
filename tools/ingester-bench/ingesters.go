@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,9 +29,11 @@ import (
 
 // ingesterProcess is an ingester of its own process, consuming the feed's partition.
 type ingesterProcess struct {
-	name     string
-	engine   string
+	name   string
+	engine string
+	// The ingester's process when the bench started it, or the file of its PID when another container runs it.
 	cmd      *exec.Cmd
+	pidFile  string
 	httpPort int
 	grpcPort int
 	dir      string
@@ -44,11 +47,16 @@ type ingesterConfig struct {
 	kafka                     string
 	extraArgs                 []string
 	oooWindow, retention      time.Duration
+	// Directory shared with containers that run the ingesters: the bench writes their command lines to it instead of
+	// starting them.
+	external string
 }
 
 func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, error) {
-	if err := os.MkdirAll(cfg.dir, 0o755); err != nil {
-		return nil, err
+	if cfg.external == "" {
+		if err := os.MkdirAll(cfg.dir, 0o755); err != nil {
+			return nil, err
+		}
 	}
 	args := []string{
 		"-target=ingester",
@@ -103,22 +111,32 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		args = slicesDelete(args, "-blocks-storage.tsdb.memory-snapshot-on-shutdown=false")
 	}
 	args = append(args, cfg.extraArgs...)
-	// Through a watcher of the bench's own binary, which stops the ingester when the bench is gone, however it ended.
-	self, err := os.Executable()
-	if err != nil {
-		return nil, err
+	p := &ingesterProcess{name: cfg.name, engine: cfg.engine, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
+	if cfg.external != "" {
+		id := strings.ToLower(cfg.name[:1])
+		p.pidFile = filepath.Join(cfg.external, id+".pid")
+		if err := writeSpec(filepath.Join(cfg.external, id+".json"), execSpec{Binary: cfg.binary, Dir: cfg.dir, Args: args}); err != nil {
+			return nil, err
+		}
+	} else {
+		// Through a watcher of the bench's own binary, which stops the ingester when the bench is gone, however it ended.
+		self, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		cmd := exec.CommandContext(ctx, self, append([]string{cfg.binary}, args...)...)
+		cmd.Env = append(os.Environ(), watchEnv+"="+strconv.Itoa(os.Getpid()))
+		logFile, err := os.Create(filepath.Join(cfg.dir, "ingester.log"))
+		if err != nil {
+			return nil, err
+		}
+		cmd.Stdout, cmd.Stderr = logFile, logFile
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		p.cmd = cmd
 	}
-	cmd := exec.CommandContext(ctx, self, append([]string{cfg.binary}, args...)...)
-	cmd.Env = append(os.Environ(), watchEnv+"="+strconv.Itoa(os.Getpid()))
-	logFile, err := os.Create(filepath.Join(cfg.dir, "ingester.log"))
-	if err != nil {
-		return nil, err
-	}
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	p := &ingesterProcess{name: cfg.name, engine: cfg.engine, cmd: cmd, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
+	var err error
 	p.conn, err = grpc.NewClient("127.0.0.1:"+strconv.Itoa(cfg.grpcPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100<<20)),
@@ -126,7 +144,7 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		grpc.WithStreamInterceptor(querierapi.ReadConsistencyClientStreamInterceptor),
 	)
 	if err != nil {
-		_ = cmd.Process.Kill()
+		p.stop()
 		return nil, err
 	}
 	p.client = client.NewIngesterClient(p.conn)
@@ -146,7 +164,7 @@ func slicesDelete(args []string, arg string) []string {
 // waitReady waits for the ingester to say it is ready, which it does once it caught up with the partition.
 func (p *ingesterProcess) waitReady(ctx context.Context, progress func()) error {
 	for {
-		if p.cmd.ProcessState != nil {
+		if p.cmd != nil && p.cmd.ProcessState != nil {
 			return fmt.Errorf("%s exited: %s", p.name, p.cmd.ProcessState)
 		}
 		resp, err := http.Get(p.url("/ready"))
@@ -251,7 +269,23 @@ func (p *ingesterProcess) stop() {
 	if p.conn != nil {
 		_ = p.conn.Close()
 	}
-	if p.cmd.Process != nil {
+	if p.pidFile != "" {
+		// The pod shares its process namespace: the ingester's container ends with it.
+		data, err := os.ReadFile(p.pidFile)
+		if err != nil {
+			return
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			return
+		}
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+		for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline) && syscall.Kill(pid, 0) == nil; {
+			time.Sleep(time.Second)
+		}
+		return
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(os.Interrupt)
 		done := make(chan struct{})
 		go func() { _ = p.cmd.Wait(); close(done) }()
@@ -265,6 +299,9 @@ func (p *ingesterProcess) stop() {
 
 // logTail returns the end of the ingester's log, for errors.
 func (p *ingesterProcess) logTail() string {
+	if p.pidFile != "" {
+		return "(the ingester's log is its container's)"
+	}
 	data, err := os.ReadFile(filepath.Join(p.dir, "ingester.log"))
 	if err != nil {
 		return ""
@@ -315,4 +352,48 @@ func watchMain() bool {
 			}
 		}
 	}
+}
+
+// execSpec is the command line of an ingester another container runs.
+type execSpec struct {
+	Binary string   `json:"binary"`
+	Dir    string   `json:"dir"`
+	Args   []string `json:"args"`
+}
+
+func writeSpec(path string, spec execSpec) error {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	// Written whole, then renamed: the container waiting for it never reads half of it.
+	if err := os.WriteFile(path+".tmp", data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
+}
+
+// execMain waits for the spec at path, written once the bench's backfill is done, then runs its command in place of
+// itself, so that the ingester is its container's process, with its CPUs and memory limit. The PID file next to the
+// spec lets the bench stop it.
+func execMain(path string) error {
+	var data []byte
+	for {
+		var err error
+		if data, err = os.ReadFile(path); err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	var spec execSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(strings.TrimSuffix(path, ".json")+".pid", []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		return err
+	}
+	return syscall.Exec(spec.Binary, append([]string{spec.Binary}, spec.Args...), os.Environ())
 }
