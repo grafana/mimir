@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -33,6 +35,9 @@ const (
 
 	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
 	legacySnapshotNumShards = tenantshard.DefaultNumShards
+
+	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
+	snapshotSeriesSize = 8 + 1
 )
 
 // snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
@@ -67,18 +72,35 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
-		m.Lock()
-		length, series := m.Items()
-		m.Unlock()
-		// Once we have the series iterator we don't need to hold the mutex anymore.
-		tenant.RUnlock()
-		snapshot.PutUvarint64(uint64(length))
-		for s, ts := range series {
-			snapshot.PutBE64(s)
+
+		// The series count goes before the series, but it is only known once they have all been read,
+		// so leave room for it and fill it in at the end. See putPaddedUvarint.
+		countAt := len(snapshot.B)
+		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+		seriesAt := len(snapshot.B)
+		snapshot.B = slices.Grow(snapshot.B, int(m.Stats().Resident)*snapshotSeriesSize)
+
+		count := 0
+		m.Iterate(func(ref uint64, ts clock.Minutes) {
+			snapshot.PutBE64(ref)
 			snapshot.PutByte(byte(ts))
-		}
+			count++
+		})
+		tenant.RUnlock()
+		putPaddedUvarint(snapshot.B[countAt:seriesAt], uint64(count))
 	}
 	return snapshot.Get()
+}
+
+// putPaddedUvarint encodes v as a uvarint that fills b, which must be binary.MaxVarintLen64 bytes long: the
+// bytes after the minimal encoding are continuation bytes that carry no bits, and the last one is 0.
+// Uvarint decoders read bytes until one has no continuation bit, so they decode it like the minimal encoding.
+func putPaddedUvarint(b []byte, v uint64) {
+	for i := range len(b) - 1 {
+		b[i] = byte(v) | 0x80
+		v >>= 7
+	}
+	b[len(b)-1] = byte(v)
 }
 
 // loadSnapshots loads the snapshots from the given shards concurrently with GOMAXPROCS workers.

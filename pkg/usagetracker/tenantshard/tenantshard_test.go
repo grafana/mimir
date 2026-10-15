@@ -28,14 +28,11 @@ func forEachImplementation(t *testing.T, test func(t *testing.T, newMap Factory)
 	}
 }
 
-// itemsMap collects Items() into a map.
+// itemsMap collects the series of m into a map.
 func itemsMap(t *testing.T, m Map) map[uint64]clock.Minutes {
 	t.Helper()
 	got := map[uint64]clock.Minutes{}
-	_, items := m.Items()
-	for key, value := range items {
-		got[key] = value
-	}
+	m.Iterate(func(key uint64, value clock.Minutes) { got[key] = value })
 	return got
 }
 
@@ -127,15 +124,7 @@ func TestMap(t *testing.T) {
 			require.True(t, rejected)
 		}
 
-		{
-			gotValues := map[uint64]clock.Minutes{}
-			length, items := m.Items()
-			require.Equal(t, len(storedValues), length)
-			for key, value := range items {
-				gotValues[key] = value
-			}
-			require.Equal(t, storedValues, gotValues)
-		}
+		require.Equal(t, storedValues, itemsMap(t, m))
 
 		{
 			// Cleanup first wave of series
