@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -117,14 +118,57 @@ type RangeQuerySplittingAndCachingConfig struct {
 }
 
 type CardinalityEstimationConfig struct {
-	Backend           caching.Backend            `yaml:"-"`
-	CacheKeyGenerator *caching.CacheKeyGenerator `yaml:"-"`
+	Backend           caching.Backend               `yaml:"-"`
+	CacheKeyGenerator *caching.CacheKeyGenerator    `yaml:"-"`
+	Metrics           *CardinalityEstimationMetrics `yaml:"-"`
 
 	BucketSize                time.Duration `yaml:"bucket_size" category:"experimental"`
 	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
 	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
 	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
 	UseCryptographicHash      bool          `yaml:"use_cryptographic_hash" category:"experimental"`
+}
+
+type CardinalityEstimationMetrics struct {
+	ReadCacheKeysPerQuery       prometheus.Observer
+	ReadCacheKeysPerQueryBytes  prometheus.Observer
+	ReadCacheKeySize            prometheus.Observer
+	SeenCacheKeysPerQuery       prometheus.Observer
+	SeenCacheKeysPerQueryBytes  prometheus.Observer
+	SeenCacheKeySize            prometheus.Observer
+	WriteCacheKeysPerQuery      prometheus.Observer
+	WriteCacheKeysPerQueryBytes prometheus.Observer
+	WriteCacheKeySize           prometheus.Observer
+}
+
+func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
+	cacheKeysPerQuery := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query",
+		Help:                        "Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	cacheKeysPerQueryBytes := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes",
+		Help:                        "Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	cacheKeySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes",
+		Help:                        "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+
+	return &CardinalityEstimationMetrics{
+		ReadCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("read"),
+		ReadCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("read"),
+		ReadCacheKeySize:            cacheKeySize.WithLabelValues("read"),
+		SeenCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("seen"),
+		SeenCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("seen"),
+		SeenCacheKeySize:            cacheKeySize.WithLabelValues("seen"),
+		WriteCacheKeysPerQuery:      cacheKeysPerQuery.WithLabelValues("write"),
+		WriteCacheKeysPerQueryBytes: cacheKeysPerQueryBytes.WithLabelValues("write"),
+		WriteCacheKeySize:           cacheKeySize.WithLabelValues("write"),
+	}
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {

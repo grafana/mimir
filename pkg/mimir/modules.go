@@ -1256,6 +1256,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
 	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.
