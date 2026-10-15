@@ -689,9 +689,30 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
+		wantSpan, wantCtx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
+		wantSpanContext := trace.SpanContextFromContext(wantCtx)
+
+		// When we're consuming at the end of the partition, a fetchWant fills a few records at a time as they get
+		// produced, which can take minutes. Keeping all of its attempts (and the consumption of their records) in the
+		// fetchWant trace would make that trace grow without bound. So once an attempt has fetched every record
+		// available in the partition and the fetchWant is still incomplete, we end the fetchWant span and start each
+		// remaining attempt in a new trace, linked to the fetchWant span.
+		reachedPartitionEnd := false
+		finishWantSpan := func() {
+			if !reachedPartitionEnd {
+				wantSpan.Finish()
+			}
+		}
+		checkPartitionEnd := func(hwm int64) {
+			if reachedPartitionEnd || hwm < 0 || w.startOffset < hwm || w.startOffset >= w.endOffset {
+				return
+			}
+			wantSpan.SetTag("reached_partition_end_offset", w.startOffset)
+			wantSpan.Finish()
+			reachedPartitionEnd = true
+		}
 
 		// This current buffered fetchResult that has not been sent to the result channel yet.
 		// This is empty at the beginning, then we merge records as soon as we receive them
@@ -699,8 +720,21 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 		var bufferedResult fetchResult
 
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
+			attemptParentCtx := wantCtx
+			if reachedPartitionEnd {
+				// Keep the context values (e.g. the logger), but don't use the fetchWant span as parent.
+				attemptParentCtx = trace.ContextWithSpanContext(wantCtx, trace.SpanContext{})
+			}
+			attemptSpan, ctx := spanlogger.New(attemptParentCtx, logger, tracer, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
+			if reachedPartitionEnd {
+				trace.SpanFromContext(ctx).AddLink(trace.Link{SpanContext: wantSpanContext})
+				attemptSpan.SetTag("start_offset", w.startOffset)
+				attemptSpan.SetTag("end_offset", w.endOffset)
+			}
+
+			// The high watermark returned by this attempt, if it succeeded.
+			attemptHWM := int64(-1)
 
 			// Run a single Fetch request.
 			if res := r.fetchSingle(ctx, w); res.Err != nil {
@@ -716,7 +750,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 					select {
 					case <-r.done:
-						wantSpan.Finish()
+						finishWantSpan()
 						attemptSpan.Finish()
 						close(w.result)
 						return
@@ -734,6 +768,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				// Update the high watermark.
 				if hwm := res.HighWatermark; hwm >= 0 {
 					casHWM(highWatermark, hwm)
+					attemptHWM = hwm
 				}
 
 				// Merge the last fetch result if the previous buffered result (if any).
@@ -745,10 +780,11 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				// If we have no buffered records to try to send to the result channel then we retry with another
 				// Fetch attempt. However, before doing it, we check if we've been told to stop (if so, we should honor it).
 				attemptSpan.Finish()
+				checkPartitionEnd(attemptHWM)
 
 				select {
 				case <-r.done:
-					wantSpan.Finish()
+					finishWantSpan()
 					close(w.result)
 					return
 				default:
@@ -760,6 +796,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			// Next attempt will be from the last record onwards.
 			w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
 			w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records)) // This takes into account the previous fetch too. This should give us a better average than using just the records from the last attempt.
+			checkPartitionEnd(attemptHWM)
 
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
@@ -767,7 +804,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 			select {
 			case <-r.done:
-				wantSpan.Finish()
+				finishWantSpan()
 				attemptSpan.Finish()
 				close(w.result)
 				return
@@ -780,7 +817,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 					bufferedResult.startWaitingForConsumption()
 					select {
 					case <-r.done:
-						wantSpan.Finish()
+						finishWantSpan()
 						attemptSpan.Finish()
 						close(w.result)
 						return
@@ -792,7 +829,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			}
 			attemptSpan.Finish()
 		}
-		wantSpan.Finish()
+		finishWantSpan()
 		close(w.result)
 	}
 }
