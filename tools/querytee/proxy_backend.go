@@ -179,6 +179,7 @@ func tenantSet(tenantIDs []string) map[string]struct{} {
 }
 
 // ShouldHandleTenants reports whether this backend should handle a request for the given tenant IDs.
+// Include and exclude tenants are mutually exclusive (enforced by config validation).
 //
 // When include tenants are configured, the request is handled only if it has at least one tenant and
 // all of its tenants are included, so a request that mixes included and non-included tenants is
@@ -198,6 +199,7 @@ func (b *ProxyBackend) ShouldHandleTenants(tenantIDs []string) bool {
 				return false
 			}
 		}
+		return true
 	}
 	if len(b.excludeTenants) == 0 || len(tenantIDs) == 0 {
 		return true

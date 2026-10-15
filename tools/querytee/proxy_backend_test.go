@@ -261,18 +261,6 @@ func Test_ProxyBackend_ShouldHandleTenants(t *testing.T) {
 			tenantIDs:      []string{"23", "12345"},
 			expected:       false,
 		},
-		"included and excluded tenant": {
-			includeTenants: []string{"23", "432"},
-			excludeTenants: []string{"23"},
-			tenantIDs:      []string{"23"},
-			expected:       false,
-		},
-		"included and not excluded tenant": {
-			includeTenants: []string{"23", "432"},
-			excludeTenants: []string{"23"},
-			tenantIDs:      []string{"432"},
-			expected:       true,
-		},
 	}
 
 	for testName, testData := range tests {

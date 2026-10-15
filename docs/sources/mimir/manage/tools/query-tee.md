@@ -107,7 +107,7 @@ The following configuration options are available for each backend:
 - `request_proportion`: Proportion of requests to send to this backend. Set between 0.0 -1.0. This value overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
 - `min_data_queried_age`: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s", which means to serve all queries.
 - `exclude_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests must not be sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic.
-- `include_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests are the only ones sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic.
+- `include_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests are the only ones sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic. It cannot be combined with `exclude_tenants`.
 
 #### Backend configuration examples
 
@@ -212,7 +212,7 @@ The ability to exclude or include certain users in the query-tee is useful when 
 - A request that targets multiple tenants is skipped for a backend only when all of its tenants are excluded. A request mixing excluded and non-excluded tenants is still forwarded.
 - A backend with `include_tenants: ["1", "2"]` only receives requests whose tenant is `1` or `2`.
 - A request that targets multiple tenants is sent to a backend with `include_tenants` only when all of its tenants are included.
-- If a backend sets both, a request must pass both: all of its tenants must be included, and not all of them can be excluded.
+- A backend can set either `exclude_tenants` or `include_tenants`, but not both.
 - Requests without an `X-Scope-OrgID` header are sent to all backends, except backends with `include_tenants`.
 - The preferred backend always receives all traffic, so `exclude_tenants` and `include_tenants` cannot be set on it.
 

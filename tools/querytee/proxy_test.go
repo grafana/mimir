@@ -1333,6 +1333,14 @@ func TestBackendConfig_TenantsValidation(t *testing.T) {
             `,
 			expectedError: "backend backend2: include_tenants cannot be set on the preferred backend",
 		},
+		"exclude_tenants and include_tenants on the same backend is rejected": {
+			configContent: `
+              backend1:
+                exclude_tenants: ["23"]
+                include_tenants: ["432"]
+            `,
+			expectedError: "backend backend1: exclude_tenants and include_tenants cannot both be set",
+		},
 	}
 
 	for testName, tc := range tests {
