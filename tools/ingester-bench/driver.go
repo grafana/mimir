@@ -26,6 +26,8 @@ type driver struct {
 	timeout    time.Duration
 	retryDelay time.Duration
 	retries    int
+	// The share of reads whose responses are compared.
+	compareFraction float64
 	// Offsets of reads are this old, so that both ingesters already consumed them and reads don't wait.
 	offsetAge time.Duration
 
@@ -52,7 +54,7 @@ type apiStats struct {
 func newDriver(gen *queryGen, f *feed, ingesters [2]*ingesterProcess, concurrency int, retryDelay time.Duration) *driver {
 	return &driver{
 		gen: gen, feed: f, ingesters: ingesters, slots: make(chan struct{}, concurrency), timeout: time.Minute,
-		retryDelay: retryDelay, retries: 2, offsetAge: 2 * time.Second, stats: map[string]*apiStats{},
+		retryDelay: retryDelay, retries: 2, offsetAge: 2 * time.Second, stats: map[string]*apiStats{}, compareFraction: 1,
 	}
 }
 
@@ -149,6 +151,9 @@ func (d *driver) run(ctx context.Context, rates map[string]float64, seed uint64)
 // compare reads the request from both ingesters. A retry only keeps the differences that were there before, and
 // differ the same way.
 func (d *driver) compare(ctx context.Context, req *request, before map[uint64]int, attempt int) {
+	// Every read is sent and timed; only some are compared, whose normalizing takes the bench more CPU than the reads
+	// take the ingesters.
+	comparing := attempt > 0 || rand.Float64() < d.compareFraction
 	offset := d.feed.offsetProducedBefore(d.offsetAge)
 	var results [2][]uint64
 	var errs [2]error
@@ -161,17 +166,28 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 			readCtx, cancel := context.WithTimeout(readContext(context.Background(), req.tenant, offset), d.timeout)
 			defer cancel()
 			start := time.Now()
-			results[i], errs[i] = read(readCtx, ing.client, req, nil)
+			var responses []any
+			responses, errs[i] = fetch(readCtx, ing.client, req)
 			latencies[i] = time.Since(start)
 			if latencies[i] > slowRead {
 				d.logSlow(ing.name, latencies[i], errs[i], req)
+			}
+			if errs[i] == nil && comparing {
+				results[i], errs[i] = normalize(req, responses, nil)
 			}
 		}()
 	}
 	wg.Wait()
 	measuring := d.measuring.Load()
 	if attempt == 0 && d.recorder != nil {
-		d.recorder.read(req.api, latencies, errs)
+		// A response too large to compare was still read.
+		readErrs := errs
+		for i := range readErrs {
+			if errors.Is(readErrs[i], errTooLarge) {
+				readErrs[i] = nil
+			}
+		}
+		d.recorder.read(req.api, latencies, readErrs)
 	}
 	d.mu.Lock()
 	s := d.statsOf(req.api)
@@ -190,6 +206,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 		}
 	}
 	d.mu.Unlock()
+	if !comparing && errs[0] == nil && errs[1] == nil {
+		return
+	}
 	if errs[0] != nil || errs[1] != nil {
 		if errors.Is(errs[0], errTooLarge) || errors.Is(errs[1], errTooLarge) {
 			d.mu.Lock()

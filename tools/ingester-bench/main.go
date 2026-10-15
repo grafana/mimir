@@ -44,6 +44,7 @@ type config struct {
 	retention         time.Duration
 	oooWindow         time.Duration
 	queryScale        float64
+	compareFraction   float64
 	concurrency       int
 	out               string
 	binaryA, binaryB  string
@@ -73,6 +74,7 @@ func main() {
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", time.Hour, "Out-of-order window of the tenants.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
+	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")
 	flag.IntVar(&cfg.concurrency, "concurrency", 256, "Reads in flight at most; reads beyond are dropped and counted.")
 	flag.StringVar(&cfg.out, "out", "", "Directory of the run's data, profiles and report (default a new temporary one).")
 	flag.StringVar(&cfg.binaryA, "binary-a", "", "Mimir binary of ingester A (default built from the working tree).")
@@ -249,6 +251,7 @@ func run(ctx context.Context, cfg config) error {
 	defer slowLog.Close()
 	d.slowLog = slowLog
 	d.recorder = rec
+	d.compareFraction = cfg.compareFraction
 	readCtx, stopReads := context.WithCancel(ctx)
 	defer stopReads()
 	go d.run(readCtx, rates, cfg.seed)
@@ -371,7 +374,7 @@ func runConfig(cfg config, profile Profile, rates map[string]float64) map[string
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
 		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale),
-		"concurrency": fmt.Sprint(cfg.concurrency), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
+		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
 		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
 		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),

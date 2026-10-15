@@ -42,10 +42,77 @@ func readContext(ctx context.Context, tenant string, offset int64) context.Conte
 	return ctx
 }
 
-// read sends the request to the ingester and returns its response as the sorted hashes of its items, comparable
-// with another's: the items of the largest responses, by many reads at once, would not fit in memory. The items
-// whose hashes explain has are kept as text in it, to show what differs.
-func read(ctx context.Context, c client.IngesterClient, req *request, explain map[uint64]string) ([]uint64, error) {
+// fetch sends the request to the ingester and returns its response messages, all received: the read's latency is the
+// fetch's, without what the bench does with them after.
+func fetch(ctx context.Context, c client.IngesterClient, req *request) ([]any, error) {
+	var out []any
+	drain := func(recv func() (any, error)) error {
+		for {
+			resp, err := recv()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, resp)
+		}
+	}
+	var err error
+	switch {
+	case req.query != nil:
+		var stream client.Ingester_QueryStreamClient
+		if stream, err = c.QueryStream(ctx, req.query); err == nil {
+			err = drain(func() (any, error) { return stream.Recv() })
+		}
+	case req.activeSeries != nil:
+		var stream client.Ingester_ActiveSeriesClient
+		if stream, err = c.ActiveSeries(ctx, req.activeSeries); err == nil {
+			err = drain(func() (any, error) { return stream.Recv() })
+		}
+	case req.namesAndValues != nil:
+		var stream client.Ingester_LabelNamesAndValuesClient
+		if stream, err = c.LabelNamesAndValues(ctx, req.namesAndValues); err == nil {
+			err = drain(func() (any, error) { return stream.Recv() })
+		}
+	case req.cardinality != nil:
+		var stream client.Ingester_LabelValuesCardinalityClient
+		if stream, err = c.LabelValuesCardinality(ctx, req.cardinality); err == nil {
+			err = drain(func() (any, error) { return stream.Recv() })
+		}
+	case req.labelValues != nil:
+		var resp *client.LabelValuesResponse
+		if resp, err = c.LabelValues(ctx, req.labelValues); err == nil {
+			out = append(out, resp)
+		}
+	case req.labelNames != nil:
+		var resp *client.LabelNamesResponse
+		if resp, err = c.LabelNames(ctx, req.labelNames); err == nil {
+			out = append(out, resp)
+		}
+	case req.metricsFor != nil:
+		var resp *client.MetricsForLabelMatchersResponse
+		if resp, err = c.MetricsForLabelMatchers(ctx, req.metricsFor); err == nil {
+			out = append(out, resp)
+		}
+	case req.exemplars != nil:
+		var resp *client.ExemplarQueryResponse
+		if resp, err = c.QueryExemplars(ctx, req.exemplars); err == nil {
+			out = append(out, resp)
+		}
+	case req.userStats != nil:
+		var resp *client.UserStatsResponse
+		if resp, err = c.UserStats(ctx, req.userStats); err == nil {
+			out = append(out, resp)
+		}
+	}
+	return out, err
+}
+
+// normalize returns the response's items as their sorted hashes, comparable with another's: the items of the largest
+// responses, by many reads at once, would not fit in memory as text. The items whose hashes explain has are kept as
+// text in it, to show what differs.
+func normalize(req *request, responses []any, explain map[uint64]string) ([]uint64, error) {
 	var items []uint64
 	add := func(parts ...string) error {
 		if len(items) >= maxItems {
@@ -64,121 +131,78 @@ func read(ctx context.Context, c client.IngesterClient, req *request, explain ma
 		}
 		return nil
 	}
-	switch {
-	case req.query != nil:
-		if err := readQueryStream(ctx, c, req.query, add); err != nil {
-			return nil, err
-		}
-	case req.activeSeries != nil:
-		stream, err := c.ActiveSeries(ctx, req.activeSeries)
-		if err != nil {
-			return nil, err
-		}
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
+	var keys []string
+	for _, response := range responses {
+		var err error
+		switch r := response.(type) {
+		case *client.QueryStreamResponse:
+			for _, s := range r.StreamingSeries {
+				keys = append(keys, labelsKey(s.Labels))
 			}
-			if err != nil {
-				return nil, err
+			for _, s := range r.StreamingSeriesChunks {
+				if s.SeriesIndex >= uint64(len(keys)) {
+					return nil, fmt.Errorf("series index %d of %d", s.SeriesIndex, len(keys))
+				}
+				key := keys[s.SeriesIndex]
+				for _, wire := range s.Chunks {
+					// Series without chunks in the range read as nothing, as a querier sees them.
+					if err = chunkSamples(wire, req.query.StartTimestampMs, req.query.EndTimestampMs, func(sample string) error { return add(key, sample) }); err != nil {
+						return nil, err
+					}
+				}
 			}
-			for _, m := range resp.Metric {
-				if err := add(labelsKey(m.Labels)); err != nil {
+		case *client.ActiveSeriesResponse:
+			for _, m := range r.Metric {
+				if err = add(labelsKey(m.Labels)); err != nil {
 					return nil, err
 				}
 			}
-		}
-	case req.namesAndValues != nil:
-		stream, err := c.LabelNamesAndValues(ctx, req.namesAndValues)
-		if err != nil {
-			return nil, err
-		}
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			for _, item := range resp.Items {
+		case *client.LabelNamesAndValuesResponse:
+			for _, item := range r.Items {
 				for _, v := range item.Values {
-					if err := add(item.LabelName, v); err != nil {
+					if err = add(item.LabelName, v); err != nil {
 						return nil, err
 					}
 				}
 			}
-		}
-	case req.cardinality != nil:
-		stream, err := c.LabelValuesCardinality(ctx, req.cardinality)
-		if err != nil {
-			return nil, err
-		}
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			for _, item := range resp.Items {
+		case *client.LabelValuesCardinalityResponse:
+			for _, item := range r.Items {
 				for v, count := range item.LabelValueSeries {
-					if err := add(item.LabelName, v, strconv.FormatUint(count, 10)); err != nil {
+					if err = add(item.LabelName, v, strconv.FormatUint(count, 10)); err != nil {
 						return nil, err
 					}
 				}
 			}
-		}
-	case req.labelValues != nil:
-		resp, err := c.LabelValues(ctx, req.labelValues)
-		if err != nil {
-			return nil, err
-		}
-		for _, v := range resp.LabelValues {
-			if err := add(v); err != nil {
-				return nil, err
-			}
-		}
-	case req.labelNames != nil:
-		resp, err := c.LabelNames(ctx, req.labelNames)
-		if err != nil {
-			return nil, err
-		}
-		for _, v := range resp.LabelNames {
-			if err := add(v); err != nil {
-				return nil, err
-			}
-		}
-	case req.metricsFor != nil:
-		resp, err := c.MetricsForLabelMatchers(ctx, req.metricsFor)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range resp.Metric {
-			if err := add(labelsKey(m.Labels)); err != nil {
-				return nil, err
-			}
-		}
-	case req.exemplars != nil:
-		resp, err := c.QueryExemplars(ctx, req.exemplars)
-		if err != nil {
-			return nil, err
-		}
-		for _, ts := range resp.Timeseries {
-			for _, e := range ts.Exemplars {
-				if err := add(labelsKey(ts.Labels), labelsKey(e.Labels), strconv.FormatInt(e.TimestampMs, 10), strconv.FormatUint(math.Float64bits(e.Value), 16)); err != nil {
+		case *client.LabelValuesResponse:
+			for _, v := range r.LabelValues {
+				if err = add(v); err != nil {
 					return nil, err
 				}
 			}
-		}
-	case req.userStats != nil:
-		resp, err := c.UserStats(ctx, req.userStats)
-		if err != nil {
-			return nil, err
-		}
-		if err := add(strconv.FormatUint(resp.NumSeries, 10)); err != nil {
-			return nil, err
+		case *client.LabelNamesResponse:
+			for _, v := range r.LabelNames {
+				if err = add(v); err != nil {
+					return nil, err
+				}
+			}
+		case *client.MetricsForLabelMatchersResponse:
+			for _, m := range r.Metric {
+				if err = add(labelsKey(m.Labels)); err != nil {
+					return nil, err
+				}
+			}
+		case *client.ExemplarQueryResponse:
+			for _, ts := range r.Timeseries {
+				for _, e := range ts.Exemplars {
+					if err = add(labelsKey(ts.Labels), labelsKey(e.Labels), strconv.FormatInt(e.TimestampMs, 10), strconv.FormatUint(math.Float64bits(e.Value), 16)); err != nil {
+						return nil, err
+					}
+				}
+			}
+		case *client.UserStatsResponse:
+			if err = add(strconv.FormatUint(r.NumSeries, 10)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	slices.Sort(items)
@@ -186,36 +210,13 @@ func read(ctx context.Context, c client.IngesterClient, req *request, explain ma
 	return slices.Compact(items), nil
 }
 
-func readQueryStream(ctx context.Context, c client.IngesterClient, req *client.QueryRequest, add func(...string) error) error {
-	stream, err := c.QueryStream(ctx, req)
+// read fetches the request and normalizes its response.
+func read(ctx context.Context, c client.IngesterClient, req *request, explain map[uint64]string) ([]uint64, error) {
+	responses, err := fetch(ctx, c, req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var keys []string
-	for {
-		resp, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		for _, s := range resp.StreamingSeries {
-			keys = append(keys, labelsKey(s.Labels))
-		}
-		for _, s := range resp.StreamingSeriesChunks {
-			if s.SeriesIndex >= uint64(len(keys)) {
-				return fmt.Errorf("series index %d of %d", s.SeriesIndex, len(keys))
-			}
-			key := keys[s.SeriesIndex]
-			for _, wire := range s.Chunks {
-				if err := chunkSamples(wire, req.StartTimestampMs, req.EndTimestampMs, func(sample string) error { return add(key, sample) }); err != nil {
-					return err
-				}
-			}
-		}
-		// Series without chunks in the range read as nothing, as a querier sees them.
-	}
+	return normalize(req, responses, explain)
 }
 
 // chunkSamples calls f with each sample of the chunk in [start, end], as its timestamp and exact value.
