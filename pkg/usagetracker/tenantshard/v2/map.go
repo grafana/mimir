@@ -6,7 +6,6 @@
 package v2
 
 import (
-	"iter"
 	"math"
 	"sync"
 
@@ -428,47 +427,85 @@ func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
 
-var (
-	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
-	dataPool = &sync.Pool{New: func() any { return new([]data) }}
-)
+// maxIterateRestarts is how many times Iterate starts over after a rehash before it gives up on releasing
+// the lock between chunks and reads the whole map in one lock hold.
+const maxIterateRestarts = 3
 
-func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
-	pooled := pool.Get().(*[]T)
-	// A slice that make allocated has cap == len, so a stable-size map hands back a buffer that is
-	// exactly as large as it needs: that one must be reused too, or the pool never hits.
-	if cap(*pooled) >= len(input) {
-		*pooled = (*pooled)[:len(input)]
-	} else {
-		*pooled = make([]T, len(input))
-	}
-	copy(*pooled, input)
-	return pooled
+// item is one series that Iterate collects while it holds the lock, to yield it once it has released it.
+type item struct {
+	key   uint64
+	value xorData
 }
 
-func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
-	keysClone := pooledClone(m.keys, keysPool)
-	dataClone := pooledClone(m.data, dataPool)
-	count := m.Count()
-
-	return count, func(yield func(uint64, clock.Minutes) bool) {
-		if count == 0 {
+// Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
+// lock: Iterate takes it for at most groupsPerLock groups at a time, and calls yield with the lock released,
+// so that Put, Load and Cleanup wait for one chunk at most, no matter how big the map is.
+//
+// A series put or removed while Iterate runs may or may not be yielded. If the map is rehashed while Iterate
+// runs, every series moves to a different slot, so what was yielded so far may miss or repeat series: Iterate
+// calls reset and starts over. After maxIterateRestarts restarts it reads the whole map in one lock hold
+// instead, and yield is then called with the lock held.
+func (m *Map) Iterate(groupsPerLock int, reset func(), yield func(key uint64, value clock.Minutes)) {
+	if groupsPerLock <= 0 {
+		panic("groupsPerLock must be positive")
+	}
+	// The scratch holds one chunk, so don't size it for more groups than the map has.
+	groupsPerLock = min(groupsPerLock, m.Stats().Length)
+	scratch := make([]item, 0, groupsPerLock*groupSize)
+	for range maxIterateRestarts {
+		if m.iterateChunked(groupsPerLock, scratch, yield) {
 			return
 		}
+		reset()
+	}
 
-		for i, g := range *dataClone {
-			for j, entry := range g {
-				if entry == empty || entry == spillmark {
-					// There's nothing here.
-					continue
-				}
-				if !yield((*keysClone)[i][j], entry.clockMinutes()) {
-					return // stop iteration
-				}
+	m.Lock()
+	defer m.Unlock()
+	for g := range m.data {
+		occupied := m.occupiedSlots(g)
+		for occupied != 0 {
+			s := nextMatch(&occupied)
+			yield(m.keys[g][s], m.data[g][s].clockMinutes())
+		}
+	}
+}
+
+// iterateChunked yields the map in chunks of groupsPerLock groups, releasing the lock between them.
+// It returns false if the map was rehashed before it got to the end, and stops right there.
+func (m *Map) iterateChunked(groupsPerLock int, scratch []item, yield func(uint64, clock.Minutes)) bool {
+	m.Lock()
+	rehashes, groups := m.rehashes, len(m.data)
+	for b := 0; ; {
+		if b > 0 {
+			m.Lock()
+			if m.rehashes != rehashes {
+				m.Unlock()
+				return false
 			}
 		}
+		end := min(b+groupsPerLock, groups)
+		scratch = scratch[:0]
+		for g := b; g < end; g++ {
+			occupied := m.occupiedSlots(g)
+			for occupied != 0 {
+				s := nextMatch(&occupied)
+				scratch = append(scratch, item{key: m.keys[g][s], value: m.data[g][s]})
+			}
+		}
+		m.Unlock()
 
-		keysPool.Put(keysClone)
-		dataPool.Put(dataClone)
+		for _, it := range scratch {
+			yield(it.key, it.value.clockMinutes())
+		}
+		if end >= groups {
+			return true
+		}
+		b = end
 	}
+}
+
+// occupiedSlots returns the slots of group g that hold a series, as a bitset like the index matchers return.
+// It reads the data group, because the caller is about to read the values of those slots anyway.
+func (m *Map) occupiedSlots(g int) bitset {
+	return bitset(^freeSlots(*groupWord(&m.data[g])) & hiBits)
 }

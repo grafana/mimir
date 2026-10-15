@@ -5,9 +5,12 @@ package usagetracker
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -38,6 +41,36 @@ func TestSnapshotEncodingVersion(t *testing.T) {
 	for _, numShards := range []int{1, 2, 4, 32, tenantshard.MaxNumShards} {
 		require.Equalf(t, byte(snapshotEncodingVersionV2), snapshotEncodingVersion(numShards), "numShards=%d", numShards)
 	}
+}
+
+func TestPutPaddedUvarint(t *testing.T) {
+	for _, v := range []uint64{0, 1, 127, 128, 300, 16383, 16384, 1 << 20, 1<<32 - 1, 1 << 32, 1<<56 - 1, 1 << 56, 1<<63 - 1, 1 << 63, math.MaxUint64} {
+		t.Run(strconv.FormatUint(v, 10), func(t *testing.T) {
+			// Pad the value on both sides, to check that the decoders consume exactly the padded encoding.
+			const before, after = 0xAA, 0xBB
+			buf := []byte{before}
+			buf = append(buf, make([]byte, binary.MaxVarintLen64)...)
+			buf = append(buf, after)
+			putPaddedUvarint(buf[1:1+binary.MaxVarintLen64], v)
+
+			got, n := binary.Uvarint(buf[1:])
+			require.Equal(t, v, got)
+			require.Equal(t, binary.MaxVarintLen64, n)
+
+			dec := encoding.Decbuf{B: buf}
+			require.Equal(t, byte(before), dec.Byte())
+			require.Equal(t, v, dec.Uvarint64())
+			require.NoError(t, dec.Err())
+			require.Equal(t, byte(after), dec.Byte())
+			require.NoError(t, dec.Err())
+			require.Empty(t, dec.B)
+		})
+	}
+
+	t.Run("wrong buffer size panics", func(t *testing.T) {
+		require.Panics(t, func() { putPaddedUvarint(make([]byte, binary.MaxVarintLen64-1), 1) })
+		require.Panics(t, func() { putPaddedUvarint(make([]byte, binary.MaxVarintLen64+1), 1) })
+	})
 }
 
 func TestTrackerStore_Snapshot_PublishedFormat(t *testing.T) {

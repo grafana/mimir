@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -32,6 +34,14 @@ const (
 
 	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
 	legacySnapshotNumShards = tenantshard.DefaultNumShards
+
+	// snapshotGroupsPerLock is how many groups of a tenant shard map a snapshot reads per lock hold.
+	// 16K groups are 1 MB of keys and 128 KB of data, a fraction of a millisecond, and a shard of 30M series
+	// is read in about 500 holds. Series tracking takes the lock in between.
+	snapshotGroupsPerLock = 16 << 10
+
+	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
+	snapshotSeriesSize = 8 + 1
 )
 
 // snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
@@ -66,18 +76,50 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
-		m.Lock()
-		length, series := m.Items()
-		m.Unlock()
-		// Once we have the series iterator we don't need to hold the mutex anymore.
-		tenant.RUnlock()
-		snapshot.PutUvarint64(uint64(length))
-		for s, ts := range series {
-			snapshot.PutBE64(s)
+
+		// The series count goes before the series, but it is only known once they have all been read,
+		// so leave room for it and fill it in at the end. See putPaddedUvarint.
+		countAt := len(snapshot.B)
+		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+		seriesAt := len(snapshot.B)
+		snapshot.B = slices.Grow(snapshot.B, int(m.Stats().Resident)*snapshotSeriesSize)
+
+		// Iterate takes the shard lock itself, a chunk at a time, so series tracking is not blocked for
+		// the whole shard. It calls yield with the lock released.
+		count := 0
+		m.Iterate(snapshotGroupsPerLock, func() {
+			// The shard was rehashed while we were reading it, so start its series over.
+			snapshot.B = snapshot.B[:seriesAt]
+			count = 0
+		}, func(ref uint64, ts clock.Minutes) {
+			snapshot.PutBE64(ref)
 			snapshot.PutByte(byte(ts))
-		}
+			count++
+		})
+		tenant.RUnlock()
+		putPaddedUvarint(snapshot.B[countAt:seriesAt], uint64(count))
 	}
 	return snapshot.Get()
+}
+
+// putPaddedUvarint encodes v as a uvarint that fills b, which must be binary.MaxVarintLen64 bytes long: the
+// bytes after the minimal encoding are continuation bytes that carry no bits, and the last one is 0.
+// It lets the snapshot write a count ahead of what it counts, when the count is still unknown, and keep the
+// snapshot format: a uvarint decoder reads bytes until one has no continuation bit, so it accepts this just
+// like the minimal encoding. binary.Uvarint, and the unrolled copy of it that encoding.Decbuf uses, only
+// reject a tenth byte that would overflow the uint64, and ours is 0.
+func putPaddedUvarint(b []byte, v uint64) {
+	if len(b) != binary.MaxVarintLen64 {
+		panic(fmt.Sprintf("putPaddedUvarint needs a %d-byte buffer, got %d bytes", binary.MaxVarintLen64, len(b)))
+	}
+	n := binary.PutUvarint(b, v)
+	if n == len(b) {
+		return // Nothing to pad.
+	}
+	for i := n - 1; i < len(b)-1; i++ {
+		b[i] |= 0x80
+	}
+	b[len(b)-1] = 0
 }
 
 // loadSnapshots loads the snapshots from the given shards concurrently with GOMAXPROCS workers.

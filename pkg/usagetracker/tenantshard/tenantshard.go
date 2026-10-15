@@ -10,7 +10,6 @@ package tenantshard
 
 import (
 	"fmt"
-	"iter"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -40,7 +39,8 @@ const (
 )
 
 // Map stores the last time each series of one tenant shard was seen.
-// Implementations are not safe for concurrent use: callers hold the Map's lock around every call.
+// Implementations are not safe for concurrent use: callers hold the Map's lock around every call,
+// except Iterate, which takes the lock itself.
 type Map interface {
 	sync.Locker
 
@@ -63,8 +63,11 @@ type Map interface {
 	// EnsureCapacity makes sure that the map can store n elements without growing.
 	EnsureCapacity(n uint32)
 
-	// Items returns the number of series in the map and an iterator over them.
-	Items() (length int, iterator iter.Seq2[uint64, clock.Minutes])
+	// Iterate calls yield for every series in the map. The caller must NOT hold the lock: Iterate takes it
+	// for at most groupsPerLock groups at a time, and calls yield with the lock released. A series put or
+	// removed while Iterate runs may or may not be yielded. If the map is rehashed while Iterate runs, the
+	// series yielded so far may be incomplete or repeated: Iterate calls reset and starts over.
+	Iterate(groupsPerLock int, reset func(), yield func(key uint64, value clock.Minutes))
 
 	// Stats returns a snapshot of the map's internal counters.
 	Stats() Stats
