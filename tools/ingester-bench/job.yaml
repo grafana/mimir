@@ -24,6 +24,9 @@ spec:
           image: IMAGE
           args:
             - -external=/shared
+            # A is the Prometheus TSDB of the Mimir release the image has, B the seriesstore engine of the tree's build.
+            - -binary-a=/bin/mimir-release
+            - -binary-b=/bin/mimir
             - -out=/out
             - -kafka-port=9092
             - -kafka-dir=/out/kafka

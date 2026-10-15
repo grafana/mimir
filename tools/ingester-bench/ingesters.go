@@ -83,7 +83,6 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-blocks-storage.filesystem.dir=" + filepath.Join(cfg.dir, "bucket"),
 		"-blocks-storage.tsdb.dir=" + filepath.Join(cfg.dir, "tsdb"),
 		"-blocks-storage.tsdb.retention-period=" + cfg.retention.String(),
-		"-blocks-storage.tsdb.engine=" + cfg.engine,
 		// Neither ships: the seriesstore engine has no blocks to, and the bench measures ingestion and reads.
 		"-blocks-storage.tsdb.ship-interval=0",
 		"-blocks-storage.tsdb.flush-blocks-on-shutdown=false",
@@ -109,6 +108,9 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 	}
 	if cfg.engine == "prometheus" {
 		args = slicesDelete(args, "-blocks-storage.tsdb.memory-snapshot-on-shutdown=false")
+	} else {
+		// Only for other engines: the Prometheus TSDB is the default, and released binaries have no such flag.
+		args = append(args, "-blocks-storage.tsdb.engine="+cfg.engine)
 	}
 	args = append(args, cfg.extraArgs...)
 	p := &ingesterProcess{name: cfg.name, engine: cfg.engine, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
