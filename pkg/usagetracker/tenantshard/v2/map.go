@@ -435,8 +435,6 @@ var (
 
 func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 	pooled := pool.Get().(*[]T)
-	// A slice that make allocated has cap == len, so a stable-size map hands back a buffer that is
-	// exactly as large as it needs: that one must be reused too, or the pool never hits.
 	if cap(*pooled) >= len(input) {
 		*pooled = (*pooled)[:len(input)]
 	} else {
