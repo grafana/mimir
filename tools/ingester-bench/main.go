@@ -68,7 +68,7 @@ func main() {
 	flag.IntVar(&cfg.series, "series", 300_000, "Series of the ingester, over all tenants.")
 	flag.IntVar(&cfg.tenants, "tenants", 0, "Tenants of the ingester (default the profile's): with fewer series than the profile's ingesters, fewer tenants keep the tenants' sizes as they are there.")
 	flag.Uint64Var(&cfg.seed, "seed", 1, "Seed of the synthetic data and reads.")
-	flag.DurationVar(&cfg.backfill, "backfill", 2*time.Hour, "History written before the ingesters start, which they replay.")
+	flag.DurationVar(&cfg.backfill, "backfill", 4*time.Hour, "History written before the ingesters start, which they replay. The head and the active series are as they are after hours of ingestion by then; the retention's worth, such as 13h, adds the cold data only the oldest reads read.")
 	flag.DurationVar(&cfg.warmup, "warmup", 5*time.Minute, "Time of live feed and reads before the measurement window.")
 	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -299,6 +300,10 @@ func watchIngesters(ctx context.Context, ingesters [2]*ingesterProcess, out stri
 				_ = ing.profile("heap", filepath.Join(out, fmt.Sprintf("heap-%c-%03d.pb.gz", 'a'+i, n/4)), 0)
 			}
 		}
+		// The bench's own, which holds the in-process Kafka's log.
+		var self runtime.MemStats
+		runtime.ReadMemStats(&self)
+		parts = append(parts, fmt.Sprintf("bench heap %.2f GiB", float64(self.HeapInuse)/(1<<30)))
 		log.Print(strings.Join(parts, "; "))
 	}
 }

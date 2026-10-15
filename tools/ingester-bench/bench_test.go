@@ -103,3 +103,16 @@ func TestLabelsKeyIgnoresOrder(t *testing.T) {
 	b := []mimirpb.LabelAdapter{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}}
 	require.Equal(t, labelsKey(a), labelsKey(b))
 }
+
+// BenchmarkFeedBackfill writes ten minutes of 100000 series to the in-process Kafka, as a run's backfill does.
+func BenchmarkFeedBackfill(b *testing.B) {
+	w := newWorld(defaultProfile().Series, 100_000, 1)
+	for range b.N {
+		f, err := newFeed(w, "", 0)
+		require.NoError(b, err)
+		start := int64(1_700_000_000_000)
+		require.NoError(b, f.produceSeconds(b.Context(), start, start+10*60_000))
+		b.ReportMetric(float64(f.samples.Load())/b.Elapsed().Seconds()*float64(b.N), "samples/s")
+		f.close()
+	}
+}

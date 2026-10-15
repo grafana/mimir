@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -40,6 +41,11 @@ type feed struct {
 	samples    atomic.Int64
 	// Seconds produced so far: everything with a timestamp before it, but the late samples, is in Kafka.
 	through atomic.Int64
+
+	// Records produced and not yet acknowledged, and the first error of one.
+	pending sync.WaitGroup
+	errMu   sync.Mutex
+	err     error
 
 	late lateQueue
 	// Fraction of samples written late, as a threshold of a slot's hash.
@@ -99,15 +105,17 @@ func (f *feed) close() {
 
 // produceSeconds produces the samples of the seconds [from, to), as fast as Kafka takes them.
 func (f *feed) produceSeconds(ctx context.Context, from, to int64) error {
+	// The client keeps the partition's records in order, so a second needn't wait for the previous one's: waiting for
+	// each second's acknowledgements was most of the backfill's time.
 	for s := from; s < to; s += 1000 {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := f.produceSecond(ctx, s); err != nil {
+		if err := f.produceSecond(ctx, s, false); err != nil {
 			return err
 		}
 	}
-	return nil
+	return f.acknowledged(to - 1000)
 }
 
 // live produces each second once it passed, until ctx is done.
@@ -123,7 +131,7 @@ func (f *feed) live(ctx context.Context, from int64) error {
 		}
 		now := time.Now().UnixMilli()
 		for next+1000 <= now {
-			if err := f.produceSecond(ctx, next); err != nil {
+			if err := f.produceSecond(ctx, next, true); err != nil {
 				return err
 			}
 			next += 1000
@@ -131,28 +139,23 @@ func (f *feed) live(ctx context.Context, from int64) error {
 	}
 }
 
-func (f *feed) produceSecond(ctx context.Context, s int64) error {
+// produceSecond produces the second's samples, and with wait, waits for all produced so far to be acknowledged, to
+// know the offset the second ends at.
+func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 	w := f.world
-	var wg sync.WaitGroup
-	var errMu sync.Mutex
-	var produceErr error
 	produce := func(tenant string, series []mimirpb.PreallocTimeseries) {
 		req := &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API}
 		records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords(topic, 0, tenant, req, maxRecordBytes)
 		if err != nil {
-			errMu.Lock()
-			produceErr = err
-			errMu.Unlock()
+			f.fail(err)
 			return
 		}
 		for _, record := range records {
-			wg.Add(1)
+			f.pending.Add(1)
 			f.client.Produce(ctx, record, func(r *kgo.Record, err error) {
-				defer wg.Done()
+				defer f.pending.Done()
 				if err != nil {
-					errMu.Lock()
-					produceErr = err
-					errMu.Unlock()
+					f.fail(err)
 					return
 				}
 				for {
@@ -164,34 +167,59 @@ func (f *feed) produceSecond(ctx context.Context, s int64) error {
 			})
 		}
 	}
-	count := 0
-	for _, t := range w.tenants {
-		var batch []mimirpb.PreallocTimeseries
-		add := func(ts *mimirpb.TimeSeries) {
-			count += len(ts.Samples) + len(ts.Histograms)
-			batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
-			if len(batch) >= requestSeries {
-				produce(t.id, batch)
-				batch = nil
+	// Tenants are independent: each tenant's series are generated and produced in order by one goroutine, and the
+	// second ends once all are, so no sample comes after a later one of its series.
+	var count atomic.Int64
+	tenants := make(chan *tenantModel)
+	var workers sync.WaitGroup
+	for range max(1, runtime.GOMAXPROCS(0)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for t := range tenants {
+				var batch []mimirpb.PreallocTimeseries
+				samples := 0
+				add := func(ts *mimirpb.TimeSeries) {
+					samples += len(ts.Samples) + len(ts.Histograms)
+					batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
+					if len(batch) >= requestSeries {
+						produce(t.id, batch)
+						batch = nil
+					}
+				}
+				for _, m := range t.metrics {
+					m.slotsAt(s, func(slot int, at int64) {
+						f.scrape(m, slot, at, add)
+					})
+				}
+				for _, ts := range f.late.due(t.id, s+1000) {
+					add(ts)
+				}
+				if len(batch) > 0 {
+					produce(t.id, batch)
+				}
+				count.Add(int64(samples))
 			}
-		}
-		for _, m := range t.metrics {
-			m.slotsAt(s, func(slot int, at int64) {
-				f.scrape(m, slot, at, add)
-			})
-		}
-		for _, ts := range f.late.due(t.id, s+1000) {
-			add(ts)
-		}
-		if len(batch) > 0 {
-			produce(t.id, batch)
-		}
+		}()
 	}
-	wg.Wait()
-	if produceErr != nil {
-		return produceErr
+	for _, t := range w.tenants {
+		tenants <- t
 	}
-	f.samples.Add(int64(count))
+	close(tenants)
+	workers.Wait()
+	f.samples.Add(count.Load())
+	if !wait {
+		return f.failure()
+	}
+	return f.acknowledged(s)
+}
+
+// acknowledged waits for every record produced so far, and records that they end second s.
+func (f *feed) acknowledged(s int64) error {
+	f.pending.Wait()
+	if err := f.failure(); err != nil {
+		return err
+	}
 	f.through.Store(s + 1000)
 	f.producedMu.Lock()
 	f.produced = append(f.produced, producedSecond{second: s, offset: f.lastOffset.Load(), at: time.Now()})
@@ -200,6 +228,20 @@ func (f *feed) produceSecond(ctx context.Context, s int64) error {
 	}
 	f.producedMu.Unlock()
 	return nil
+}
+
+func (f *feed) fail(err error) {
+	f.errMu.Lock()
+	defer f.errMu.Unlock()
+	if f.err == nil {
+		f.err = err
+	}
+}
+
+func (f *feed) failure() error {
+	f.errMu.Lock()
+	defer f.errMu.Unlock()
+	return f.err
 }
 
 // offsetProducedBefore is the last offset produced at least d ago, or -1.

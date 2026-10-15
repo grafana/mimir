@@ -27,17 +27,19 @@ spec:
             - -out=/out
             - -kafka-port=9092
             - -kafka-dir=/out/kafka
-            - -series=1000000
-            - -tenants=17
-            - -backfill=3h
+            # About 2M series in memory, with the ones churned out the head still has.
+            - -series=1650000
+            - -backfill=4h
             - -warmup=5m
             - -duration=15m
             - -hold=1h
+            # Comparing every read at production rates takes the driver more CPU than reading takes the ingesters.
+            - -compare-fraction=0.1
             # - -profile=/profile/profile.json
           # The in-process Kafka holds the backfill, and reads of the largest queries hold their responses.
           resources:
-            requests: { cpu: "4", memory: 48Gi }
-            limits: { cpu: "4", memory: 48Gi }
+            requests: { cpu: "8", memory: 32Gi }
+            limits: { cpu: "8", memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: out, mountPath: /out }
@@ -46,8 +48,8 @@ spec:
           image: IMAGE
           args: [-exec=/shared/a.json]
           resources:
-            requests: { cpu: "4", memory: 24Gi }
-            limits: { cpu: "4", memory: 24Gi }
+            requests: { cpu: "4", memory: 32Gi }
+            limits: { cpu: "4", memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-a, mountPath: /data }
@@ -55,8 +57,8 @@ spec:
           image: IMAGE
           args: [-exec=/shared/b.json]
           resources:
-            requests: { cpu: "4", memory: 24Gi }
-            limits: { cpu: "4", memory: 24Gi }
+            requests: { cpu: "4", memory: 32Gi }
+            limits: { cpu: "4", memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-b, mountPath: /data }
