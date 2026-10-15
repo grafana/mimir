@@ -444,7 +444,7 @@ func requireCardinalityEstimationLookupOutcome(t *testing.T, reg *prometheus.Reg
 	t.Helper()
 
 	const metricName = "cortex_mimir_query_engine_cardinality_estimation_lookups_total"
-	expected := fmt.Sprintf("# HELP %[1]s Total number of attempts to estimate cardinality from the cardinality cache, by outcome.\n# TYPE %[1]s counter\n", metricName)
+	expected := fmt.Sprintf("# HELP %[1]s Total number of query requests where an attempt was made to estimate cardinality from the cardinality cache, by outcome.\n# TYPE %[1]s counter\n", metricName)
 	for _, outcome := range []string{"hit", "partial_miss", "total_miss"} {
 		value := 0
 		if outcome == expectedOutcome {
