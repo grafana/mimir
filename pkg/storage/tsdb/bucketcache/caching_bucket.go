@@ -86,21 +86,13 @@ func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
 }
 
 func skipCacheLookup(ctx context.Context) bool {
-	val := ctx.Value(skipCacheLookupContextKey)
-	if val == nil {
-		return false
-	}
-
-	return val.(bool)
+	val, _ := ctx.Value(skipCacheLookupContextKey).(bool)
+	return val
 }
 
 func skipCacheStore(ctx context.Context) bool {
-	val := ctx.Value(skipCacheStoreContextKey)
-	if val == nil {
-		return false
-	}
-
-	return val.(bool)
+	val, _ := ctx.Value(skipCacheStoreContextKey).(bool)
+	return val
 }
 
 func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
