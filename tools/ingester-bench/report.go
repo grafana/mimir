@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -261,4 +263,36 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// watchIngesters logs the ingesters' memory every 30s and saves their heap profiles every two minutes, until ctx is
+// done, and says when one stops answering.
+func watchIngesters(ctx context.Context, ingesters [2]*ingesterProcess, out string) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	down := [2]bool{}
+	for n := 0; ; n++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		var parts []string
+		for i, ing := range ingesters {
+			m, err := ing.metrics()
+			if err != nil {
+				if !down[i] {
+					log.Printf("%s stopped answering: %v", ing.name, err)
+					down[i] = true
+				}
+				parts = append(parts, ing.name+" down")
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("%s heap %.2f GiB rss %.2f GiB goroutines %.0f", ing.name, m["go_memstats_heap_inuse_bytes"]/(1<<30), m["process_resident_memory_bytes"]/(1<<30), m["go_goroutines"]))
+			if n%4 == 3 {
+				_ = ing.profile("heap", filepath.Join(out, fmt.Sprintf("heap-%c-%03d.pb.gz", 'a'+i, n/4)), 0)
+			}
+		}
+		log.Print(strings.Join(parts, "; "))
+	}
 }

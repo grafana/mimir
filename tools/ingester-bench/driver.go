@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"math/rand/v2"
 	"sort"
 	"strings"
@@ -28,10 +30,13 @@ type driver struct {
 	offsetAge time.Duration
 
 	measuring atomic.Bool
-	mu        sync.Mutex
-	stats     map[string]*apiStats
-	examples  []string
-	pending   sync.WaitGroup
+	// Reads slower than slowRead, written as they end.
+	slowLog  io.Writer
+	slowMu   sync.Mutex
+	mu       sync.Mutex
+	stats    map[string]*apiStats
+	examples []string
+	pending  sync.WaitGroup
 }
 
 type apiStats struct {
@@ -47,6 +52,19 @@ func newDriver(gen *queryGen, f *feed, ingesters [2]*ingesterProcess, concurrenc
 		gen: gen, feed: f, ingesters: ingesters, slots: make(chan struct{}, concurrency), timeout: time.Minute,
 		retryDelay: retryDelay, retries: 2, offsetAge: 2 * time.Second, stats: map[string]*apiStats{},
 	}
+}
+
+// slowRead is how long a read takes before the bench logs it, with its request, to find what an ingester struggles with.
+const slowRead = 5 * time.Second
+
+func (d *driver) logSlow(ingester string, took time.Duration, err error, req *request) {
+	d.slowMu.Lock()
+	defer d.slowMu.Unlock()
+	line := fmt.Sprintf("%s slow read on %s: %s err=%v %s\n", time.Now().UTC().Format(time.TimeOnly), ingester, took.Round(time.Millisecond), err, req)
+	if d.slowLog != nil {
+		_, _ = io.WriteString(d.slowLog, line)
+	}
+	log.Print(strings.TrimSpace(line[:min(len(line), 2000)]))
 }
 
 func (d *driver) statsOf(api string) *apiStats {
@@ -135,6 +153,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 			start := time.Now()
 			results[i], errs[i] = read(readCtx, ing.client, req, nil)
 			latencies[i] = time.Since(start)
+			if latencies[i] > slowRead {
+				d.logSlow(ing.name, latencies[i], errs[i], req)
+			}
 		}()
 	}
 	wg.Wait()

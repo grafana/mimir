@@ -225,9 +225,18 @@ func run(ctx context.Context, cfg config) error {
 	log.Printf("reads: %s", strings.Join(rateList, ", "))
 	retryDelay := time.Duration(max(profile.Series.LateMaxSeconds, 60))*time.Second + 30*time.Second
 	d := newDriver(gen, f, ingesters, cfg.concurrency, retryDelay)
+	slowLog, err := os.Create(filepath.Join(cfg.out, "slow.log"))
+	if err != nil {
+		return err
+	}
+	defer slowLog.Close()
+	d.slowLog = slowLog
 	readCtx, stopReads := context.WithCancel(ctx)
 	defer stopReads()
 	go d.run(readCtx, rates, cfg.seed)
+	// From the first read: the ingesters' memory, and their heap every two minutes, to see what grows even if one
+	// runs out of memory before the window.
+	go watchIngesters(readCtx, ingesters, cfg.out)
 
 	log.Printf("warming up for %s", cfg.warmup)
 	if !sleep(ctx, cfg.warmup) {
