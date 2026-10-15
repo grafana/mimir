@@ -88,10 +88,17 @@ func main() {
 	flag.StringVar(&cfg.dirA, "dir-a", "", "Data directory of ingester A (default in -out, or /data with -external).")
 	flag.StringVar(&cfg.dirB, "dir-b", "", "Data directory of ingester B (default in -out, or /data with -external).")
 	flag.DurationVar(&cfg.hold, "hold", 0, "Time to wait after the report before exiting, to copy the run's files.")
+	renderPath := flag.String("render", "", "Write the report.html of a report.json, such as one copied from a pod, next to it, instead of running a bench.")
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	flag.Parse()
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
+	}
+	if *renderPath != "" {
+		if err := renderReport(*renderPath); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	log.SetFlags(log.Ltime)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -150,6 +157,7 @@ func run(ctx context.Context, cfg config) error {
 	dataStart := now - cfg.backfill.Milliseconds()
 	log.Printf("%d series in %d tenants at %s; backfilling %s", w.totalSeries(), len(w.tenants), f.address(), cfg.backfill)
 	backfillStart := time.Now()
+	rec := newRecorder(5*time.Second, 10*time.Second)
 	if err := f.produceSeconds(ctx, dataStart, now); err != nil {
 		return err
 	}
@@ -162,6 +170,7 @@ func run(ctx context.Context, cfg config) error {
 		caughtUp = target
 	}
 	log.Printf("backfilled %d samples in %s, %s", f.samples.Load(), time.Since(backfillStart).Round(time.Second), f)
+	rec.phase("backfill", backfillStart, time.Now())
 
 	feedCtx, stopFeed := context.WithCancel(ctx)
 	defer stopFeed()
@@ -192,6 +201,12 @@ func run(ctx context.Context, cfg config) error {
 			}
 		}(ingesters[i])
 	}
+	// From the ingesters' start, so that the replay shows too.
+	recordCtx, stopRecording := context.WithCancel(ctx)
+	defer stopRecording()
+	var recordWG sync.WaitGroup
+	recordWG.Add(1)
+	go func() { defer recordWG.Done(); rec.sample(recordCtx, ingesters, f, 5*time.Second) }()
 	var replay [2]float64
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
@@ -202,6 +217,7 @@ func run(ctx context.Context, cfg config) error {
 			start := time.Now()
 			errs[i] = ing.waitReady(ctx, nil)
 			replay[i] = time.Since(start).Seconds()
+			rec.phase("replay "+ing.name[:1], start, time.Now())
 			if errs[i] != nil {
 				errs[i] = fmt.Errorf("%s: %w\n%s", ing.name, errs[i], ing.logTail())
 				return
@@ -231,6 +247,7 @@ func run(ctx context.Context, cfg config) error {
 	}
 	defer slowLog.Close()
 	d.slowLog = slowLog
+	d.recorder = rec
 	readCtx, stopReads := context.WithCancel(ctx)
 	defer stopReads()
 	go d.run(readCtx, rates, cfg.seed)
@@ -239,9 +256,12 @@ func run(ctx context.Context, cfg config) error {
 	go watchIngesters(readCtx, ingesters, cfg.out)
 
 	log.Printf("warming up for %s", cfg.warmup)
+	warmupStart := time.Now()
 	if !sleep(ctx, cfg.warmup) {
 		return ctx.Err()
 	}
+	rec.phase("warmup", warmupStart, time.Now())
+	windowStart := time.Now()
 	d.resetLatencies()
 	d.measuring.Store(true)
 	s := newSampler(ingesters, f)
@@ -270,6 +290,7 @@ func run(ctx context.Context, cfg config) error {
 	stopSampling()
 	samplerWG.Wait()
 	d.measuring.Store(false)
+	rec.phase("window", windowStart, time.Now())
 	for i, ing := range ingesters {
 		for _, kind := range []string{"heap", "allocs"} {
 			if err := ing.profile(kind, filepath.Join(cfg.out, fmt.Sprintf("%s-%c.pb.gz", kind, 'a'+i)), 0); err != nil {
@@ -280,13 +301,19 @@ func run(ctx context.Context, cfg config) error {
 	profileWG.Wait()
 	stopReads()
 	log.Printf("waiting for the retries of the reads that differed")
+	retriesStart := time.Now()
 	d.pending.Wait()
+	rec.phase("retries", retriesStart, time.Now())
+	stopRecording()
+	recordWG.Wait()
+	timeline, phases := rec.finish()
 	stopFeed()
 	feedWG.Wait()
 
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
+		Config: runConfig(cfg, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
 	}
 	for i := range ingesters {
 		report.Resources[i] = s.resources(i)
@@ -296,9 +323,14 @@ func run(ctx context.Context, cfg config) error {
 	if err := writeJSON(path, report); err != nil {
 		return err
 	}
+	if err := writeHTML(filepath.Join(cfg.out, "report.html"), report); err != nil {
+		return err
+	}
 	if cfg.external != "" {
-		// The pod's logs keep it after the pod is gone.
-		data, _ := json.Marshal(report)
+		// The pod's logs keep the summary after the pod is gone; the timeline is in report.json.
+		summary := report
+		summary.Timeline, summary.SlowReads = Timeline{}, nil
+		data, _ := json.Marshal(summary)
 		fmt.Printf("REPORT %s\n", data)
 	}
 	log.Printf("report and profiles in %s", cfg.out)
@@ -326,4 +358,39 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	case <-time.After(d):
 		return true
 	}
+}
+
+// runConfig is what the report says the run was.
+func runConfig(cfg config, profile Profile, rates map[string]float64) map[string]string {
+	out := map[string]string{
+		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
+		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
+		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale),
+		"concurrency": fmt.Sprint(cfg.concurrency), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
+		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
+		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
+		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
+		"external": fmt.Sprint(cfg.external != ""),
+	}
+	for rpc, rate := range rates {
+		out["rate_"+rpc] = fmt.Sprintf("%.3f/s", rate)
+	}
+	return out
+}
+
+func renderReport(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var report Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		return err
+	}
+	out := filepath.Join(filepath.Dir(path), "report.html")
+	if err := writeHTML(out, report); err != nil {
+		return err
+	}
+	log.Printf("wrote %s", out)
+	return nil
 }

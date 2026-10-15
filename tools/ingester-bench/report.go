@@ -93,6 +93,12 @@ type Report struct {
 	Resources   [2]Resources         `json:"resources"`
 	APIs        map[string]APIReport `json:"apis"`
 	Mismatches  []string             `json:"mismatch_examples,omitempty"`
+	// What the run was, when each of its phases was, and what it recorded over time.
+	Config    map[string]string `json:"config"`
+	Started   int64             `json:"started"`
+	Phases    []Phase           `json:"phases"`
+	Timeline  Timeline          `json:"timeline"`
+	SlowReads []SlowRead        `json:"slow_reads,omitempty"`
 }
 
 type Resources struct {

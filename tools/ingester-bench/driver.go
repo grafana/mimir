@@ -33,6 +33,8 @@ type driver struct {
 	// Reads slower than slowRead, written as they end.
 	slowLog  io.Writer
 	slowMu   sync.Mutex
+	slowest  []SlowRead
+	recorder *recorder
 	mu       sync.Mutex
 	stats    map[string]*apiStats
 	examples []string
@@ -64,6 +66,14 @@ func (d *driver) logSlow(ingester string, took time.Duration, err error, req *re
 	if d.slowLog != nil {
 		_, _ = io.WriteString(d.slowLog, line)
 	}
+	// The slowest reads, for the report.
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+	d.slowest = append(d.slowest, SlowRead{At: time.Now().Unix(), Ingester: ingester, Ms: float64(took.Microseconds()) / 1000, Error: errText, Request: req.String()})
+	sort.Slice(d.slowest, func(a, b int) bool { return d.slowest[a].Ms > d.slowest[b].Ms })
+	d.slowest = d.slowest[:min(len(d.slowest), 200)]
 	log.Print(strings.TrimSpace(line[:min(len(line), 2000)]))
 }
 
@@ -160,6 +170,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 	}
 	wg.Wait()
 	measuring := d.measuring.Load()
+	if attempt == 0 && d.recorder != nil {
+		d.recorder.read(req.api, latencies, errs)
+	}
 	d.mu.Lock()
 	s := d.statsOf(req.api)
 	if attempt == 0 {
@@ -203,6 +216,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 		s.match++
 	case len(diff) == 0:
 		s.matchAfterRetry++
+		if d.recorder != nil {
+			d.recorder.outcome(req.api, false)
+		}
 	case attempt < d.retries:
 		d.mu.Unlock()
 		// Late samples and the active series' updates settle within the delay; what still differs after is a bug.
@@ -219,6 +235,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 		return
 	default:
 		s.mismatch++
+		if d.recorder != nil {
+			d.recorder.outcome(req.api, true)
+		}
 		if len(d.examples) < 50 {
 			d.mu.Unlock()
 			example := d.describeMismatch(req, diff)
@@ -264,4 +283,19 @@ func (d *driver) resetLatencies() {
 	for _, s := range d.stats {
 		s.latencies = [2][]time.Duration{}
 	}
+}
+
+// SlowRead is a read that took over slowRead on an ingester.
+type SlowRead struct {
+	At       int64   `json:"t"`
+	Ingester string  `json:"ingester"`
+	Ms       float64 `json:"ms"`
+	Error    string  `json:"error,omitempty"`
+	Request  string  `json:"request"`
+}
+
+func (d *driver) slowReads() []SlowRead {
+	d.slowMu.Lock()
+	defer d.slowMu.Unlock()
+	return append([]SlowRead(nil), d.slowest...)
 }
