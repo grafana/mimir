@@ -380,5 +380,5 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
 
-// Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
-replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+// Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181 and https://github.com/thanos-io/objstore/pull/290.
+replace github.com/thanos-io/objstore => github.com/andyasp/objstore v0.0.0-20261012170134-ef33a60683c2

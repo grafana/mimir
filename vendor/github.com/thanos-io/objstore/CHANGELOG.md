@@ -16,6 +16,7 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#181](https://github.com/thanos-io/objstore/pull/181) GCS: Fix issue where Exists returns an error when the object does not exist with GCS client v1.51+
 
 ### Fixed
+- [#290](https://github.com/thanos-io/objstore/pull/290) S3: Fix bug that caused SignatureV2 configuration to not apply.
 - [#153](https://github.com/thanos-io/objstore/pull/153) Metrics: Fix `objstore_bucket_operation_duration_seconds_*` for `get` and `get_range` operations.
 - [#141](https://github.com/thanos-io/objstore/pull/142) S3: Fix missing encryption configuration for `Bucket.Exists()` and `Bucket.Attributes()` calls.
 - [#117](https://github.com/thanos-io/objstore/pull/117) Metrics: Fix `objstore_bucket_operation_failures_total` incorrectly incremented if context is cancelled while reading object contents.
