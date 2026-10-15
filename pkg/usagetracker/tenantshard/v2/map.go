@@ -441,7 +441,8 @@ var iterateChunkPool = sync.Pool{New: func() any { return new(iterateChunk) }}
 
 // Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
 // lock: Iterate takes it for a few groups at a time, and calls yield with the lock released.
-// A series put or removed while Iterate runs may or may not be yielded.
+// A series put or removed while Iterate runs may or may not be yielded. A series removed after its group was
+// copied and put again into a group not yet copied is yielded twice, once with each value.
 func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
 	m.iterate(iterateGroupsPerLock, yield)
 }
