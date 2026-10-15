@@ -163,7 +163,8 @@ func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *pl
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	// Only collect per-node stats if we've been asked for them (an ID of 0 means "disabled").
+	// Only collect per-node stats if we've been asked to explain the cost of the query,
+	// otherwise pass a node ID of 0 which disables collecting per-node stats.
 	var planningNodeId int64
 	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
 		planningNodeId = t.GetNodeId()
