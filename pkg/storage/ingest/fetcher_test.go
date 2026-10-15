@@ -26,6 +26,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -1056,6 +1059,141 @@ func TestConcurrentFetchers(t *testing.T) {
 			require.True(t, hasRangeError, "out of range error should be present among fetch errors")
 		})
 	})
+}
+
+// The tests in TestConcurrentFetchers_Tracing replace the package tracer, so they must not run in parallel.
+func TestConcurrentFetchers_Tracing(t *testing.T) {
+	const (
+		topicName   = "test-topic"
+		partitionID = 1
+		concurrency = 1
+		// With the initial estimate of 10KB per record, each fetchWant covers 3 records.
+		maxInflightBytes = 3 * initialBytesPerRecord
+	)
+
+	t.Run("fetchWant fully available in the partition: every attempt stays in the fetchWant trace", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			recorder := setupFetcherTestTracer(t)
+			ctx := t.Context()
+
+			var vnet kfake.VirtualNetwork
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, testkafka.WithVirtualNetwork(&vnet))
+			client := newKafkaProduceClient(t, clusterAddr, withWriteVirtualNetwork(&vnet))
+
+			for i := range 6 {
+				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+			}
+
+			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true, OnRangeErrorResumeFromStart)
+			fetches := longPollFetches(fetchers, 6, 2*time.Second)
+			require.Equal(t, 6, fetches.NumRecords())
+			fetchers.Stop()
+
+			wantSpans := endedSpansByName(recorder, "concurrentFetcher.fetch")
+			require.NotEmpty(t, wantSpans)
+			for _, s := range wantSpans {
+				if spanIntAttribute(s, "start_offset") >= 6 {
+					// The fetchWant past the produced records reaches the end of the partition straight away.
+					continue
+				}
+				_, reached := spanAttribute(s, "reached_partition_end_offset")
+				assert.False(t, reached, "fetchWant starting at offset %d shouldn't reach the end of the partition", spanIntAttribute(s, "start_offset"))
+			}
+
+			for _, s := range endedSpansByName(recorder, "concurrentFetcher.fetch.attempt") {
+				if !s.Parent().IsValid() {
+					assert.NotEmpty(t, s.Links(), "a root attempt span must be linked to its fetchWant span")
+				}
+			}
+		})
+	})
+
+	t.Run("consuming at the end of the partition: attempts after reaching the end start their own trace", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			recorder := setupFetcherTestTracer(t)
+			ctx := t.Context()
+
+			var vnet kfake.VirtualNetwork
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, testkafka.WithVirtualNetwork(&vnet))
+			client := newKafkaProduceClient(t, clusterAddr, withWriteVirtualNetwork(&vnet))
+
+			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true, OnRangeErrorResumeFromStart)
+
+			// Produce the records of the first fetchWant one at a time, consuming each before producing the next one.
+			for i := range 3 {
+				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+				fetches := longPollFetches(fetchers, 1, 2*time.Second)
+				require.Equal(t, 1, fetches.NumRecords())
+			}
+			fetchers.Stop()
+
+			// The first fetchWant [0, 3) reached the end of the partition after fetching the first record.
+			var firstWant sdktrace.ReadOnlySpan
+			for _, s := range endedSpansByName(recorder, "concurrentFetcher.fetch") {
+				if spanIntAttribute(s, "start_offset") == 0 {
+					firstWant = s
+				}
+			}
+			require.NotNil(t, firstWant)
+			reachedAt, reached := spanAttribute(firstWant, "reached_partition_end_offset")
+			require.True(t, reached)
+			assert.Equal(t, int64(1), reachedAt.AsInt64())
+
+			// The attempts that fetched the remaining records of the fetchWant are roots of their own traces,
+			// linked to the fetchWant span.
+			var rootAttemptsLinkedToFirstWant int
+			for _, s := range endedSpansByName(recorder, "concurrentFetcher.fetch.attempt") {
+				for _, l := range s.Links() {
+					if l.SpanContext.SpanID() != firstWant.SpanContext().SpanID() {
+						continue
+					}
+					assert.False(t, s.Parent().IsValid(), "an attempt linked to the fetchWant span must be a root span")
+					assert.NotEqual(t, firstWant.SpanContext().TraceID(), s.SpanContext().TraceID())
+					rootAttemptsLinkedToFirstWant++
+				}
+			}
+			assert.GreaterOrEqual(t, rootAttemptsLinkedToFirstWant, 2, "expected the attempts fetching records 1 and 2 to be linked to the fetchWant span")
+		})
+	})
+}
+
+// setupFetcherTestTracer points the package tracer at a span recorder for the duration of the test.
+// The package tracer comes from the global TracerProvider, which binds to the first provider ever set
+// in the process, so setting a new global provider (as setupTestTracerProvider does) doesn't reach it.
+func setupFetcherTestTracer(t *testing.T) *tracetest.SpanRecorder {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	prev := tracer
+	tracer = tp.Tracer("pkg/storage/ingest")
+	t.Cleanup(func() {
+		tracer = prev
+		_ = tp.Shutdown(context.Background())
+	})
+	return recorder
+}
+
+func endedSpansByName(recorder *tracetest.SpanRecorder, name string) []sdktrace.ReadOnlySpan {
+	var spans []sdktrace.ReadOnlySpan
+	for _, s := range recorder.Ended() {
+		if s.Name() == name {
+			spans = append(spans, s)
+		}
+	}
+	return spans
+}
+
+func spanAttribute(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
+	for _, kv := range s.Attributes() {
+		if string(kv.Key) == key {
+			return kv.Value, true
+		}
+	}
+	return attribute.Value{}, false
+}
+
+func spanIntAttribute(s sdktrace.ReadOnlySpan, key string) int64 {
+	v, _ := spanAttribute(s, key)
+	return v.AsInt64()
 }
 
 func TestConcurrentFetchers_fetchSingle(t *testing.T) {
