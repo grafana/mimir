@@ -1292,6 +1292,8 @@ github.com/puzpuzpuz/xsync/v3
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
+# github.com/rogpeppe/go-internal v1.15.0
+## explicit; go 1.25
 # github.com/rs/cors v1.11.0
 ## explicit; go 1.13
 github.com/rs/cors
@@ -1533,8 +1535,8 @@ go.opentelemetry.io/collector/processor/internal
 # go.opentelemetry.io/collector/semconv v0.128.0
 ## explicit; go 1.23.0
 go.opentelemetry.io/collector/semconv/v1.6.1
-# go.opentelemetry.io/contrib/bridges/otelzap v0.11.0
-## explicit; go 1.23.0
+# go.opentelemetry.io/contrib/bridges/otelzap v0.20.0
+## explicit; go 1.25.0
 go.opentelemetry.io/contrib/bridges/otelzap
 # go.opentelemetry.io/contrib/bridges/prometheus v0.61.0
 ## explicit; go 1.23.0
@@ -1679,8 +1681,6 @@ go.opentelemetry.io/otel/log/embedded
 go.opentelemetry.io/otel/log/global
 go.opentelemetry.io/otel/log/internal/global
 go.opentelemetry.io/otel/log/noop
-# go.opentelemetry.io/otel/log/logtest v0.0.0-20250528051624-65b8067f18f1
-## explicit; go 1.23.0
 # go.opentelemetry.io/otel/metric v1.45.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/metric
@@ -1741,7 +1741,7 @@ go.uber.org/goleak/internal/stack
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
-# go.uber.org/zap v1.27.0
+# go.uber.org/zap v1.28.0
 ## explicit; go 1.19
 go.uber.org/zap
 go.uber.org/zap/buffer
