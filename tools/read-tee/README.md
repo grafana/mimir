@@ -12,7 +12,12 @@ Read-tee is a reverse proxy that sits in front of a cell's query-frontend and am
   - Factor 1.0: passthrough — only the original query is sent.
   - Factor N: original + copies with matchers suffixed `_amp1` … `_amp{N-1}` (N total queries). Integer factors only; a fractional part is truncated.
 - **Per-Query Rewriting**: each query is parsed and rewritten individually, so any query shape/filter set is handled automatically (see below).
-- **Amplified Routes**: `/api/v1/query`, `/api/v1/query_range`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/{name}/values` (and their `/prometheus`-prefixed forms). Any other path is passed through unamplified.
+- **Amplified Routes**: every Mimir read endpoint that reaches ingesters or store-gateways (and their `/prometheus`-prefixed forms). Any other path is passed through unamplified.
+  - `/api/v1/query`, `/api/v1/query_range`, `/api/v1/query_exemplars`: the `query` parameter is rewritten.
+  - `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/{name}/values`, `/api/v1/search/{metric_names,label_names,label_values}`: each `match[]` parameter is rewritten.
+  - `/api/v1/cardinality/{label_names,label_values,active_series,active_native_histogram_metrics}`: the `selector` parameter is rewritten.
+  - `/api/v1/read`: the matchers of each query in the snappy-compressed protobuf body are rewritten.
+  - `/api/v1/metadata`: has no selector, and metric names are never suffixed, so copies are identical requests.
 - **Fire-and-Forget**: amplified copies are dispatched asynchronously, bounded by `-backend.async-max-in-flight`; excess copies are dropped and counted.
 
 ## Example Usage
@@ -68,6 +73,7 @@ count(up{namespace="mimir", pod=~"ingester.*"})
 Two things to know:
 
 - **Queries with no non-`__name__` matcher** (bare `up`, or `{__name__="up"}`) have nothing to suffix, so their copies equal the original and hit the base series — effectively not amplified.
+- **Requests without a selector** (`/api/v1/labels` or `/api/v1/label/{name}/values` without `match[]`, cardinality label endpoints without `selector`, metadata) are copied unchanged, so they read the base series plus every write replica. read-tee doesn't add a selector to scope them: `{__amp__=""}` alone isn't a valid selector, and any selector would turn a cheap index-only label lookup into a much more expensive postings lookup.
 - If a query fails to parse/rewrite, that copy is skipped and counted (`cortex_readtee_rewrite_errors_total`); the original is always still served.
 
 ### Matching all replicas (`amp.*`-mode)

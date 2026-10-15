@@ -101,44 +101,56 @@ func initTracing() io.Closer {
 	return trace
 }
 
-// mimirReadRoutes returns the amplifiable read routes. The rewritten copies suffix the query /
-// match[] params so they hit the _amp{k} series write-tee created.
+// mimirReadRoutes returns the amplifiable read routes: every Mimir read endpoint that reaches
+// ingesters or store-gateways. The rewritten copies suffix the query / match[] / selector params (or
+// the remote read matchers) so they hit the _amp{k} series write-tee created.
 //
 // The gateway forwards the full request path, which in our setup carries a /prometheus prefix.
 // To be robust we register BOTH the bare and /prometheus-prefixed forms; everything else falls
 // through to the catch-all passthrough (preferred backend only).
 func mimirReadRoutes() []readtee.Route {
-	methods := []string{"GET", "POST"}
-
 	type spec struct {
-		path      string
-		routeName string
-		instant   bool
+		path       string
+		routeName  string
+		methods    []string
+		instant    bool
+		remoteRead bool
 	}
+	getPost := []string{"GET", "POST"}
 	specs := []spec{
-		{"/api/v1/query", "api_v1_query", true},
-		{"/api/v1/query_range", "api_v1_query_range", false},
-		{"/api/v1/series", "api_v1_series", false},
-		{"/api/v1/labels", "api_v1_labels", false},
-		{"/api/v1/label/{name}/values", "api_v1_label_values", false},
+		{path: "/api/v1/query", routeName: "api_v1_query", methods: getPost, instant: true},
+		{path: "/api/v1/query_range", routeName: "api_v1_query_range", methods: getPost},
+		{path: "/api/v1/query_exemplars", routeName: "api_v1_query_exemplars", methods: getPost},
+		{path: "/api/v1/series", routeName: "api_v1_series", methods: getPost},
+		{path: "/api/v1/labels", routeName: "api_v1_labels", methods: getPost},
+		{path: "/api/v1/label/{name}/values", routeName: "api_v1_label_values", methods: getPost},
+		// Metadata has no selector: metric names aren't suffixed, so copies are identical requests.
+		{path: "/api/v1/metadata", routeName: "api_v1_metadata", methods: getPost},
+		{path: "/api/v1/cardinality/label_names", routeName: "api_v1_cardinality_label_names", methods: getPost},
+		{path: "/api/v1/cardinality/label_values", routeName: "api_v1_cardinality_label_values", methods: getPost},
+		{path: "/api/v1/cardinality/active_series", routeName: "api_v1_cardinality_active_series", methods: getPost},
+		{path: "/api/v1/cardinality/active_native_histogram_metrics", routeName: "api_v1_cardinality_active_native_histogram_metrics", methods: getPost},
+		{path: "/api/v1/search/metric_names", routeName: "api_v1_search_metric_names", methods: getPost},
+		{path: "/api/v1/search/label_names", routeName: "api_v1_search_label_names", methods: getPost},
+		{path: "/api/v1/search/label_values", routeName: "api_v1_search_label_values", methods: getPost},
+		{path: "/api/v1/read", routeName: "api_v1_read", methods: []string{"POST"}, remoteRead: true},
 	}
 
 	var routes []readtee.Route
 	for _, s := range specs {
+		route := readtee.Route{
+			Path:       s.path,
+			RouteName:  s.routeName,
+			Methods:    s.methods,
+			Instant:    s.instant,
+			RemoteRead: s.remoteRead,
+		}
 		// Bare form.
-		routes = append(routes, readtee.Route{
-			Path:      s.path,
-			RouteName: s.routeName,
-			Methods:   methods,
-			Instant:   s.instant,
-		})
+		routes = append(routes, route)
 		// /prometheus-prefixed form (the path the gateway forwards in our setup).
-		routes = append(routes, readtee.Route{
-			Path:      "/prometheus" + s.path,
-			RouteName: "prometheus_" + s.routeName,
-			Methods:   methods,
-			Instant:   s.instant,
-		})
+		route.Path = "/prometheus" + s.path
+		route.RouteName = "prometheus_" + s.routeName
+		routes = append(routes, route)
 	}
 	return routes
 }

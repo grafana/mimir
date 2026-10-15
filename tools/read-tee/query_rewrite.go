@@ -6,9 +6,13 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	prom_remote "github.com/prometheus/prometheus/storage/remote"
 
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -202,4 +206,35 @@ func appendAmpReplicaLabelMatcher(ms []*labels.Matcher, replica int, opts rewrit
 		return ms
 	}
 	return append(ms, nm)
+}
+
+// rewriteRemoteReadBody decodes a snappy-compressed remote read request, rewrites the matchers of
+// each of its queries for the given replica, and returns the re-encoded body.
+func rewriteRemoteReadBody(body []byte, replica int, opts rewriteOptions) ([]byte, error) {
+	data, err := snappy.Decode(nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.ReadRequest
+	if err := proto.Unmarshal(data, &req); err != nil {
+		return nil, err
+	}
+
+	for _, q := range req.Queries {
+		ms, err := prom_remote.FromLabelMatchers(q.Matchers)
+		if err != nil {
+			return nil, err
+		}
+		q.Matchers, err = prom_remote.ToLabelMatchers(rewriteMatchers(ms, replica, opts))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	data, err = proto.Marshal(&req)
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, data), nil
 }

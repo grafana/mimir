@@ -144,6 +144,9 @@ type Route struct {
 	// Instant marks an instant-query route (/api/v1/query). Strong read consistency is only injected
 	// on these, to mirror the ruler (which runs instant queries).
 	Instant bool
+	// RemoteRead marks the remote read route, whose matchers are in the snappy-compressed protobuf
+	// request body rather than in params.
+	RemoteRead bool
 }
 
 type Proxy struct {

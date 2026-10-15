@@ -28,8 +28,10 @@ const (
 
 	// queryParam is the amplifiable parameter for instant/range queries.
 	queryParam = "query"
-	// matchParam is the amplifiable parameter for series/labels/label-values endpoints.
+	// matchParam is the amplifiable parameter for series/labels/label-values/search endpoints.
 	matchParam = "match[]"
+	// selectorParam is the amplifiable parameter for the cardinality endpoints.
+	selectorParam = "selector"
 
 	formContentType = "application/x-www-form-urlencoded"
 )
@@ -199,22 +201,42 @@ type amplifiedRequestSource struct {
 	hasURLParams  bool
 	formValues    url.Values
 	hasFormParams bool
+
+	// remoteReadBody is the original snappy-compressed remote read request, set for remote read
+	// routes. Its queries' matchers are rewritten for each copy.
+	remoteReadBody []byte
+}
+
+// hasAmplifiableParams returns true if the request has anything a copy rewrites.
+func (s amplifiedRequestSource) hasAmplifiableParams() bool {
+	return s.hasURLParams || s.hasFormParams || s.remoteReadBody != nil
+}
+
+// hasAmplifiableParam returns true if values set any of the params read-tee rewrites.
+func hasAmplifiableParam(values url.Values) bool {
+	return values.Has(queryParam) || values.Has(matchParam) || values.Has(selectorParam)
 }
 
 // newAmplifiedRequestSource parses the amplifiable params from the URL query (GET) and from the form
-// body (POST form). Each location is rewritten independently and only where the params appear.
-func newAmplifiedRequestSource(orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) amplifiedRequestSource {
+// body (POST form), or the remote read request from the body. Each location is rewritten
+// independently and only where the params appear.
+func newAmplifiedRequestSource(orig *http.Request, origBody []byte, route Route, logger *spanlogger.SpanLogger) amplifiedRequestSource {
 	urlValues := orig.URL.Query()
 	src := amplifiedRequestSource{
 		orig:         orig,
 		urlValues:    urlValues,
-		hasURLParams: urlValues.Has(queryParam) || urlValues.Has(matchParam),
+		hasURLParams: hasAmplifiableParam(urlValues),
+	}
+
+	if route.RemoteRead {
+		src.remoteReadBody = origBody
+		return src
 	}
 
 	if isFormContentType(orig.Header.Get("Content-Type")) {
 		if parsed, err := url.ParseQuery(string(origBody)); err == nil {
 			src.formValues = parsed
-			src.hasFormParams = parsed.Has(queryParam) || parsed.Has(matchParam)
+			src.hasFormParams = hasAmplifiableParam(parsed)
 		} else {
 			level.Warn(logger).Log("msg", "Unable to parse POST form body for rewriting; sending request with unmodified body", "err", err)
 		}
@@ -232,8 +254,8 @@ func (p *ProxyEndpoint) prepareOriginalRequest(ctx context.Context, orig *http.R
 		return orig, origBody
 	}
 
-	src := newAmplifiedRequestSource(orig, origBody, logger)
-	if !src.hasURLParams && !src.hasFormParams {
+	src := newAmplifiedRequestSource(orig, origBody, p.route, logger)
+	if !src.hasAmplifiableParams() {
 		return orig, origBody
 	}
 
@@ -243,7 +265,7 @@ func (p *ProxyEndpoint) prepareOriginalRequest(ctx context.Context, orig *http.R
 		level.Warn(logger).Log("msg", "Failed to scope original query to base series; sending it unmodified", "route", p.route.RouteName, "err", err)
 		return orig, origBody
 	}
-	if !src.hasFormParams {
+	if a.body == nil {
 		a.body = origBody
 	}
 	return a.req, a.body
@@ -265,7 +287,7 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 		return nil
 	}
 
-	src := newAmplifiedRequestSource(orig, origBody, logger)
+	src := newAmplifiedRequestSource(orig, origBody, p.route, logger)
 
 	result := make([]amplifiedRequest, 0, n-1)
 	for k := 1; k <= n-1; k++ {
@@ -328,12 +350,23 @@ func (p *ProxyEndpoint) buildCopy(ctx context.Context, src amplifiedRequestSourc
 	return a, true
 }
 
-// rewriteRequest clones the original request and rewrites its query/match[] params (URL and POST
-// form body) for the given replica using opts. The returned body is nil unless the form was rewritten.
+// rewriteRequest clones the original request and rewrites its query/match[]/selector params (URL and
+// POST form body), or its remote read body, for the given replica using opts. The returned body is nil
+// unless the body was rewritten.
 func (p *ProxyEndpoint) rewriteRequest(ctx context.Context, src amplifiedRequestSource, replica int, opts rewriteOptions) (amplifiedRequest, error) {
 	clone := src.orig.Clone(ctx)
 	// RequestURI is only valid on server-received requests; must be cleared before reuse.
 	clone.RequestURI = ""
+
+	// Remote read requests carry their matchers in the protobuf body.
+	if src.remoteReadBody != nil {
+		cloneBody, err := rewriteRemoteReadBody(src.remoteReadBody, replica, opts)
+		if err != nil {
+			return amplifiedRequest{}, err
+		}
+		setRequestBody(clone, cloneBody)
+		return amplifiedRequest{req: clone, body: cloneBody}, nil
+	}
 
 	// Rewrite URL query params in place (if present).
 	if src.hasURLParams {
@@ -352,13 +385,17 @@ func (p *ProxyEndpoint) rewriteRequest(ctx context.Context, src amplifiedRequest
 			return amplifiedRequest{}, err
 		}
 		cloneBody = []byte(rewritten.Encode())
-		clone.Body = io.NopCloser(bytes.NewReader(cloneBody))
-		clone.ContentLength = int64(len(cloneBody))
-		clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
+		setRequestBody(clone, cloneBody)
 		clone.Header.Set("Content-Type", formContentType)
 	}
 
 	return amplifiedRequest{req: clone, body: cloneBody}, nil
+}
+
+func setRequestBody(req *http.Request, body []byte) {
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
 }
 
 func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger) (amplifiedRequest, bool) {
@@ -367,8 +404,8 @@ func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger
 	return amplifiedRequest{}, false
 }
 
-// rewriteParams returns a copy of values with the "query" and "match[]" parameters rewritten for
-// the given replica. All other parameters are copied unchanged. Returns an error if any value
+// rewriteParams returns a copy of values with the "query", "match[]" and "selector" parameters
+// rewritten for the given replica. All other parameters are copied unchanged. Returns an error if any value
 // fails to rewrite (invalid PromQL), so the caller can skip that copy.
 //
 // Replica 0 is the base series (used by write-amplification-factor wrapping): the params are
@@ -390,7 +427,7 @@ func rewriteParams(values url.Values, replica int, opts rewriteOptions) (url.Val
 				rewritten[i] = rw
 			}
 			out[key] = rewritten
-		case matchParam:
+		case matchParam, selectorParam:
 			rewritten := make([]string, len(vs))
 			for i, v := range vs {
 				rw, err := rewriteSelector(v, replica, opts)
