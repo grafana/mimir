@@ -107,6 +107,9 @@ type Engine struct {
 	selectors selectorCache
 	// How long past 1.5 block ranges the head has to span to be compacted.
 	compactionJitterMs int64
+	// The end of the last block range the out-of-order head was compacted with, guarded by compactionLock: the jitter
+	// only delays the head's compactions, not the out-of-order head's.
+	oooCompactedRange int64
 	// Whether Open restored the head as it was at the last Close, or started without any data.
 	restored bool
 	closed   atomic.Bool
@@ -139,6 +142,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	if opts.JitterCompaction {
 		e.compactionJitterMs = rand.Int64N(chunkRangeMs / 4)
 	}
+	e.oooCompactedRange = math.MinInt64
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)
 	e.windowMax.Store(math.MinInt64)
@@ -451,16 +455,21 @@ func (e *Engine) commitTimes(minTime, maxTime int64) {
 	e.windowMax.Store(t.maxTime)
 }
 
-// compactable is Prometheus's head compaction check.
+// compactable is Prometheus's head compaction check, with the head's jitter.
 func (e *Engine) compactable() bool {
+	return e.compactableAfter(e.compactionJitterMs)
+}
+
+// compactableAfter is Prometheus's head compaction check, jitterMs later.
+func (e *Engine) compactableAfter(jitterMs int64) bool {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
 		return false
 	}
 	if e.opts.TimelyCompaction {
-		return satAdd(rangeForTimestamp(minTime), e.compactionJitterMs) < appendableMinValidTime(maxTime, minValid)
+		return satAdd(rangeForTimestamp(minTime), jitterMs) < appendableMinValidTime(maxTime, minValid)
 	}
-	return maxTime-minTime > chunkRangeMs/2*3+e.compactionJitterMs
+	return maxTime-minTime > chunkRangeMs/2*3+jitterMs
 }
 
 // rangeForTimestamp is Prometheus's: the end of the block range of t.
@@ -474,14 +483,22 @@ func rangeForTimestamp(t int64) int64 {
 func (e *Engine) Compact(context.Context) error {
 	e.compactionLock.Lock()
 	defer e.compactionLock.Unlock()
-	compacted := false
+	// Prometheus compacts the out-of-order head with the head's oldest range, when that is due: compacted, the
+	// out-of-order samples are read after the in-order ones of the same timestamps instead of before. The head's jitter
+	// would make that a different time than the Go ingesters', so the out-of-order head is compacted when the range is
+	// due without it, once for each range.
+	dueRange := int64(math.MinInt64)
+	if e.compactableAfter(0) {
+		dueRange = rangeForTimestamp(e.MinTime())
+	}
 	for e.compactable() {
 		minTime := e.MinTime()
 		e.truncateMemory(minTime, rangeForTimestamp(minTime))
-		compacted = true
+		dueRange = max(dueRange, rangeForTimestamp(minTime))
 	}
-	if compacted {
+	if dueRange > e.oooCompactedRange {
 		e.compactOOOHead()
+		e.oooCompactedRange = dueRange
 	}
 	if e.opts.IdleEvictionMs > 0 {
 		if err := e.evictIdleLocked(); err != nil {

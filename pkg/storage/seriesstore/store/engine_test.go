@@ -1039,6 +1039,64 @@ func TestEngineConflictingDuplicates(t *testing.T) {
 	}
 }
 
+// The head's compaction jitter delays when the engine compacts its head, not its out-of-order head, which Prometheus
+// compacts when the head's oldest range is due: an out-of-order sample of a timestamp that is in order too is read as
+// Prometheus reads it, whether it came in before that, or after it and before the jittered compaction of the head.
+func TestEngineCompactsTheOutOfOrderHeadWhenPrometheusDoes(t *testing.T) {
+	opts := differentialOptions{oooWindowMs: 4 * 60 * 60_000}
+	prometheus, engine := openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, t.TempDir(), opts, nil)
+	engine.compactionJitterMs = 20 * 60_000
+	heads := [2]headUnderTest{prometheus, engine}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			_ = head.Close()
+		}
+	})
+	lset := promlabels.FromStrings("__name__", "x")
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "x")
+	appendAll := func(samples ...[2]int64) {
+		for _, head := range heads {
+			app := head.Appender(context.Background())
+			for _, sample := range samples {
+				_, err := app.Append(0, lset, sample[0], float64(sample[1]))
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+		}
+	}
+	inOrder := func(from, to int64) {
+		var samples [][2]int64
+		for ts := from; ts <= to; ts += 60_000 {
+			samples = append(samples, [2]int64{ts, 1})
+		}
+		appendAll(samples...)
+	}
+	read := func(head headUnderTest, ts int64) int64 {
+		series := querySamples(t, head, ts, ts, nil, matcher)
+		require.Len(t, series, 1)
+		return int64(math.Float64frombits(series[0].samples[0].f))
+	}
+	const hour = 60 * 60_000
+	before, after := int64(2*hour+30*60_000), int64(2*hour+40*60_000)
+	// Past 1.5 block ranges, but not past them and the jitter.
+	inOrder(0, 3*hour+60_000)
+	appendAll([2]int64{before, 2})
+	for _, head := range heads {
+		require.NoError(t, head.Compact(context.Background()))
+	}
+	appendAll([2]int64{after, 3})
+	// Past the jitter too: only the engine compacts its head.
+	inOrder(3*hour+2*60_000, 3*hour+25*60_000)
+	for _, head := range heads {
+		require.NoError(t, head.Compact(context.Background()))
+	}
+	for _, ts := range []int64{before, after} {
+		require.Equal(t, read(prometheus, ts), read(engine, ts), "sample at %d", ts)
+	}
+	require.Equal(t, int64(1), read(prometheus, before))
+	require.Equal(t, int64(3), read(prometheus, after))
+}
+
 // A histogram repeated at the head's last timestamp is a no-op when it's the same and a
 // duplicate otherwise, for float histograms as for integer ones.
 func TestEngineRepeatedHistogramsAtTheLastTimestamp(t *testing.T) {
