@@ -3,6 +3,8 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
+// CI check, do not merge.
+
 package main
 
 import (
