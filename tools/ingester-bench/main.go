@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -335,8 +336,12 @@ func run(ctx context.Context, cfg config) error {
 	}
 	log.Printf("report and profiles in %s", cfg.out)
 	if cfg.hold > 0 {
-		log.Printf("holding for %s", cfg.hold)
+		// The image has no tar for kubectl cp: the run's files are served instead, for a port-forward.
+		server := &http.Server{Addr: ":8090", Handler: http.FileServer(http.Dir(cfg.out)), ReadHeaderTimeout: 10 * time.Second}
+		go func() { _ = server.ListenAndServe() }()
+		log.Printf("holding for %s, serving %s on :8090", cfg.hold, cfg.out)
 		sleep(ctx, cfg.hold)
+		_ = server.Close()
 	}
 	return nil
 }

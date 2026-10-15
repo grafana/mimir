@@ -2,7 +2,8 @@
 # manager policy: their requests are their limits, in whole CPUs. The driver runs the generator, the in-process Kafka
 # and the reads; each ingester container waits for the command line the driver writes once the backfill is done, and
 # runs it as its own process. Replace the image, and the profile ConfigMap if any; read the report from the driver's
-# logs, or copy /out while it holds.
+# logs, or, while it holds, from its port 8090: kubectl port-forward <pod> 8090, then report.html, report.json and the
+# profiles at http://localhost:8090/.
 apiVersion: batch/v1
 kind: Job
 metadata:
