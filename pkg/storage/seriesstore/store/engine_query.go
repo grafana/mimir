@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -324,10 +325,82 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			}
 		}
 	})
-	names := labels.TakeSnapshot()
-	slices.SortFunc(selected, func(x, y rawSeries) int { return compareLabels(names, x.stored, y.stored) })
+	sortByLabels(selected)
 	return selected, buffers, nil
 }
+
+// sortByLabels sorts series in Prometheus's label order. A query's series are mostly one metric's, sharing most of
+// their labels, which comparing them decoded on every comparison: each is decoded once instead, into a key of its
+// names and values that compares as bytes in the same order, "name\x00value\x00" for each label. A label with a zero
+// byte would compare otherwise, so then the series are compared as they are. The keys' memory is kept between sorts.
+func sortByLabels(selected []rawSeries) {
+	if len(selected) < 2 {
+		return
+	}
+	names := labels.TakeSnapshot()
+	compare := func(x, y rawSeries) int { return compareLabels(names, x.stored, y.stored) }
+	if len(selected) < 32 {
+		slices.SortFunc(selected, compare)
+		return
+	}
+	size := 0
+	for index := range selected {
+		it := selected[index].stored.Iter()
+		for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
+			if strings.IndexByte(name, 0) >= 0 || strings.IndexByte(value, 0) >= 0 {
+				slices.SortFunc(selected, compare)
+				return
+			}
+			size += len(name) + len(value) + 2
+		}
+	}
+	scratch, _ := sortScratch.Get().(*labelSortScratch)
+	if scratch == nil {
+		scratch = &labelSortScratch{}
+	}
+	defer func() {
+		// Large sorts' memory isn't kept for the small ones.
+		if cap(scratch.buffer) <= 64<<20 {
+			clear(scratch.keys)
+			scratch.buffer, scratch.keys = scratch.buffer[:0], scratch.keys[:0]
+			sortScratch.Put(scratch)
+		}
+	}()
+	if cap(scratch.buffer) < size {
+		scratch.buffer = make([]byte, 0, size)
+	}
+	buffer := scratch.buffer
+	keys := slices.Grow(scratch.keys, len(selected))[:len(selected)]
+	scratch.keys = keys
+	for index := range selected {
+		start := len(buffer)
+		it := selected[index].stored.Iter()
+		for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
+			buffer = append(buffer, name...)
+			buffer = append(buffer, 0)
+			buffer = append(buffer, value...)
+			buffer = append(buffer, 0)
+		}
+		// The buffer holds every key, so it is never reallocated under the keys taken from it.
+		keys[index] = keyedSeries{key: unsafe.String(unsafe.SliceData(buffer[start:]), len(buffer)-start), series: selected[index]}
+	}
+	slices.SortFunc(keys, func(x, y keyedSeries) int { return strings.Compare(x.key, y.key) })
+	for index := range keys {
+		selected[index] = keys[index].series
+	}
+}
+
+type keyedSeries struct {
+	key    string
+	series rawSeries
+}
+
+type labelSortScratch struct {
+	buffer []byte
+	keys   []keyedSeries
+}
+
+var sortScratch sync.Pool
 
 // The buffers a query copies its chunks' data into are kept between queries, in two sizes: allocating them was a tenth
 // of what an ingester allocated, and the memory clearing and garbage collection that goes with it.

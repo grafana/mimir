@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -445,5 +446,66 @@ func BenchmarkCompareLabelsOfOneMetric(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		copy(work, series)
 		slices.SortFunc(work, func(x, y labels.Labels) int { return compareLabels(names, x, y) })
+	}
+}
+
+// sortByLabels orders series as comparing their labels does, with labels that are prefixes of others', shared values
+// and zero bytes.
+func TestSortByLabelsOrdersAsCompareLabels(t *testing.T) {
+	random := rand.New(rand.NewPCG(1, 2))
+	values := []string{"", "a", "ab", "b", "a\x00", "a\x00b", "z", "\xff"}
+	names := []string{"__name__", "a", "ab", "b", "job", "pod"}
+	for _, zeros := range []bool{false, true} {
+		var selected []rawSeries
+		for range 500 {
+			var pairs [][2]string
+			for _, name := range names {
+				if random.IntN(3) == 0 {
+					continue
+				}
+				value := values[random.IntN(len(values))]
+				if !zeros {
+					value = strings.ReplaceAll(value, "\x00", "")
+				}
+				pairs = append(pairs, [2]string{name, value})
+			}
+			selected = append(selected, rawSeries{stored: labels.FromSorted(pairs)})
+		}
+		expected := slices.Clone(selected)
+		snapshot := labels.TakeSnapshot()
+		slices.SortStableFunc(expected, func(x, y rawSeries) int { return compareLabels(snapshot, x.stored, y.stored) })
+		sortByLabels(selected)
+		for index := range selected {
+			require.Zero(t, compareLabels(snapshot, expected[index].stored, selected[index].stored), "zeros=%v at %d", zeros, index)
+		}
+	}
+}
+
+func BenchmarkSortByLabels(b *testing.B) {
+	random := rand.New(rand.NewPCG(1, 2))
+	var selected []rawSeries
+	for n := range 20000 {
+		pairs := [][2]string{{"__name__", "metric"}}
+		for l := range 10 {
+			pairs = append(pairs, [2]string{fmt.Sprintf("label_%02d", l), fmt.Sprintf("value-%d-%d", l, n%(10<<l))})
+		}
+		pairs = append(pairs, [2]string{"pod", fmt.Sprintf("pod-%05d", n)})
+		selected = append(selected, rawSeries{stored: labels.FromSorted(pairs)})
+	}
+	random.Shuffle(len(selected), func(i, j int) { selected[i], selected[j] = selected[j], selected[i] })
+	shuffled := slices.Clone(selected)
+	for _, mode := range []string{"compare", "keys"} {
+		b.Run(mode, func(b *testing.B) {
+			snapshot := labels.TakeSnapshot()
+			b.ReportAllocs()
+			for range b.N {
+				copy(selected, shuffled)
+				if mode == "keys" {
+					sortByLabels(selected)
+				} else {
+					slices.SortFunc(selected, func(x, y rawSeries) int { return compareLabels(snapshot, x.stored, y.stored) })
+				}
+			}
+		})
 	}
 }
