@@ -123,10 +123,20 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 
 // StreamedSeries is a selected series as a query response sends it.
 type StreamedSeries struct {
-	// The labels, which point into the store's own, and share arrays with the other series'.
-	Labels []mimirpb.LabelAdapter
+	labels labels.Labels
 	// The chunks, in the encoding the store keeps them in. Their data stays valid until the querier is closed.
 	Chunks []chunks.Chunk
+}
+
+// AppendLabels appends the series' labels to dst as the ingester sends them, pointing into the store's own: the
+// ingester builds them a batch of series at a time, where adapters for all the series of a large response, many
+// responses at once, were gigabytes.
+func (s *StreamedSeries) AppendLabels(dst []mimirpb.LabelAdapter) []mimirpb.LabelAdapter {
+	it := s.labels.Iter()
+	for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
+		dst = append(dst, mimirpb.LabelAdapter{Name: name, Value: value})
+	}
+	return dst
 }
 
 // SelectStreamed is Select for a response that streams the series: it returns them in label order with their labels as
@@ -147,11 +157,9 @@ func (q *engineChunkQuerier) SelectStreamed(hints *storage.SelectHints, matchers
 	q.mu.Lock()
 	q.buffers = append(q.buffers, buffers...)
 	q.mu.Unlock()
-	var slab adapterSlab
 	out := make([]StreamedSeries, len(selected))
 	for index := range selected {
-		slab.remaining = len(selected) - index
-		out[index] = StreamedSeries{Labels: slab.adapters(selected[index].stored), Chunks: selected[index].chunks}
+		out[index] = StreamedSeries{labels: selected[index].stored, Chunks: selected[index].chunks}
 	}
 	return out, nil
 }

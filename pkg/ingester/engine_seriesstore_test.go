@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -426,6 +427,82 @@ func BenchmarkIngester_QueryStreamOneSeries(b *testing.B) {
 			for range b.N {
 				require.NoError(b, ingester.QueryStream(req, stream))
 			}
+		})
+	}
+}
+
+// heldMemoryStream measures, when the first chunks of a response are sent, how much more live heap there is than
+// before the request: what a QueryStream request holds while it streams, which many of them at once multiply.
+type heldMemoryStream struct {
+	marshalingStream
+	baseline uint64
+	held     uint64
+	measured bool
+}
+
+func (s *heldMemoryStream) Send(response *client.QueryStreamResponse) error {
+	if !s.measured && len(response.StreamingSeriesChunks) > 0 {
+		s.measured = true
+		runtime.GC()
+		var stats runtime.MemStats
+		runtime.ReadMemStats(&stats)
+		s.held = stats.HeapAlloc - min(stats.HeapAlloc, s.baseline)
+	}
+	return s.marshalingStream.Send(response)
+}
+
+// BenchmarkIngester_QueryStreamHeldMemory is a request for 20000 series of 12 labels and two hours of samples each, on
+// each engine, and reports the live heap it holds while its chunks stream.
+func BenchmarkIngester_QueryStreamHeldMemory(b *testing.B) {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		b.Run(engine, func(b *testing.B) {
+			cfg := defaultIngesterTestConfig(b)
+			cfg.BlocksStorageConfig.TSDB.Engine = engine
+			limitsCfg := defaultLimitsTestConfig()
+			limitsCfg.MaxGlobalSeriesPerMetric = 0
+			limitsCfg.MaxGlobalSeriesPerUser = 0
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+			now := time.Now().Truncate(time.Minute).UnixMilli()
+			const series, minutes = 20000, 120
+			for minute := range minutes {
+				var batch []mimirpb.PreallocTimeseries
+				for n := range series {
+					ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric"}}}
+					for l := range 10 {
+						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: fmt.Sprintf("label_%02d", l), Value: fmt.Sprintf("value-%d-%d", l, n%(10<<l))})
+					}
+					ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: "pod", Value: fmt.Sprintf("pod-%05d", n)})
+					ts.Samples = []mimirpb.Sample{{TimestampMs: now - int64(minutes-minute)*60_000, Value: float64(minute * n)}}
+					batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
+					if len(batch) == 2000 {
+						_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: batch, Source: mimirpb.API})
+						require.NoError(b, err)
+						batch = nil
+					}
+				}
+			}
+			req := &client.QueryRequest{
+				StartTimestampMs:         now - int64(minutes)*60_000,
+				EndTimestampMs:           now,
+				Matchers:                 []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric"}},
+				StreamingChunksBatchSize: 128,
+			}
+			var held uint64
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				runtime.GC()
+				var stats runtime.MemStats
+				runtime.ReadMemStats(&stats)
+				stream := &heldMemoryStream{marshalingStream: marshalingStream{ctx: ctx}, baseline: stats.HeapAlloc}
+				require.NoError(b, ingester.QueryStream(req, stream))
+				held = max(held, stream.held)
+			}
+			b.ReportMetric(float64(held), "held-B")
 		})
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	schunks "github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
@@ -48,13 +49,17 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 	stats.Series = len(selected)
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, min(batching.SeriesBatchSize, len(selected)+1))
+	// The labels of a batch, reused once it is sent, which encodes it.
+	var adapters []mimirpb.LabelAdapter
 	for index := range selected {
-		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{Labels: selected[index].Labels, ChunkCount: int64(len(selected[index].Chunks))})
+		start := len(adapters)
+		adapters = selected[index].AppendLabels(adapters)
+		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{Labels: adapters[start:len(adapters):len(adapters)], ChunkCount: int64(len(selected[index].Chunks))})
 		if len(seriesInBatch) >= batching.SeriesBatchSize {
 			if err := send(&client.QueryStreamResponse{StreamingSeries: seriesInBatch}); err != nil {
 				return stats, err
 			}
-			seriesInBatch = seriesInBatch[:0]
+			seriesInBatch, adapters = seriesInBatch[:0], adapters[:0]
 		}
 	}
 	// Send any remaining series, and signal that there are no more.
