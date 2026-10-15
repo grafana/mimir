@@ -67,9 +67,10 @@ func InfluxHandler(
 			}
 		}
 
-		tenantID, err := tenant.TenantID(ctx)
+		tenantID, _, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			level.Warn(logger).Log("msg", "unable to obtain tenantID", "err", err)
+			http.Error(w, validUTF8Message(err.Error()), http.StatusUnauthorized)
 			return
 		}
 
