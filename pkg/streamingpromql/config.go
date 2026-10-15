@@ -139,6 +139,10 @@ type CardinalityEstimationMetrics struct {
 	WriteCacheKeysPerQuery      prometheus.Observer
 	WriteCacheKeysPerQueryBytes prometheus.Observer
 	WriteCacheKeySize           prometheus.Observer
+
+	LookupsHit         prometheus.Counter
+	LookupsTotalMiss   prometheus.Counter
+	LookupsPartialMiss prometheus.Counter
 }
 
 func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
@@ -157,6 +161,10 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 		Help:                        "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"operation"})
+	lookups := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_mimir_query_engine_cardinality_estimation_lookups_total",
+		Help: "Total number of attempts to estimate cardinality from the cardinality cache, by outcome.",
+	}, []string{"outcome"})
 
 	return &CardinalityEstimationMetrics{
 		ReadCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("read"),
@@ -168,6 +176,10 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 		WriteCacheKeysPerQuery:      cacheKeysPerQuery.WithLabelValues("write"),
 		WriteCacheKeysPerQueryBytes: cacheKeysPerQueryBytes.WithLabelValues("write"),
 		WriteCacheKeySize:           cacheKeySize.WithLabelValues("write"),
+
+		LookupsHit:         lookups.WithLabelValues("hit"),
+		LookupsTotalMiss:   lookups.WithLabelValues("total_miss"),
+		LookupsPartialMiss: lookups.WithLabelValues("partial_miss"),
 	}
 }
 
