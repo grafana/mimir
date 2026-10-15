@@ -84,6 +84,11 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 		seriesAt := len(snapshot.B)
 		snapshot.B = slices.Grow(snapshot.B, int(m.Stats().Resident)*snapshotSeriesSize)
 
+		// Iterate reads the shard a chunk at a time, so a series that Cleanup removed and trackSeries put
+		// again meanwhile can appear twice, first with its expired timestamp. loadSnapshot skips expired
+		// series and Put deduplicates, so this only matters when the loading shard is empty, Load is used,
+		// and the load happens in the same minute as that cleanup: then the series is counted twice until
+		// the next cleanup removes the expired copy.
 		count := 0
 		m.Iterate(func(ref uint64, ts clock.Minutes) {
 			snapshot.PutBE64(ref)
