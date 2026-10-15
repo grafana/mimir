@@ -10,6 +10,10 @@ metadata:
 spec:
   backoffLimit: 0
   template:
+    metadata:
+      annotations:
+        # A run is an hour's worth of state: nodes being consolidated must not evict it.
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       restartPolicy: Never
       # The driver stops the ingesters through their PIDs.
