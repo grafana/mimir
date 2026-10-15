@@ -435,7 +435,7 @@ var (
 
 func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 	pooled := pool.Get().(*[]T)
-	if cap(*pooled) > len(input) {
+	if cap(*pooled) >= len(input) {
 		*pooled = (*pooled)[:len(input)]
 	} else {
 		*pooled = make([]T, len(input))
