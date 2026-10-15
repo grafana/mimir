@@ -186,6 +186,9 @@
 
 ### Query-tee
 
+* [FEATURE] Add per-backend `include_tenants` option to the `-backend.config-file` configuration. Only requests whose `X-Scope-OrgID` tenants are all included are sent to that backend, while the preferred backend always receives all traffic.
+* [ENHANCEMENT] Proxy the `/api/v1/format_query`, `/api/v1/cardinality/*`, and `/api/v1/search/*` endpoints to all backends.
+
 ## 3.1.4
 
 ### Grafana Mimir
