@@ -3,12 +3,16 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"os"
 	"sort"
+	"strings"
 )
 
 // Profile describes the series an ingester holds and the reads it serves, as distributions only. The built-in one has
@@ -172,6 +176,16 @@ func loadProfile(path string) (Profile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return p, err
+	}
+	if strings.HasSuffix(path, ".gz") {
+		// Profiles with many query shapes, compressed to fit a ConfigMap.
+		r, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return p, err
+		}
+		if data, err = io.ReadAll(r); err != nil {
+			return p, err
+		}
 	}
 	// Fields the file has replace the defaults'.
 	if err := json.Unmarshal(data, &p); err != nil {
