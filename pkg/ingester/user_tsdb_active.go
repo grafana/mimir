@@ -66,10 +66,11 @@ func (u *userTSDB) trackerActive() bool {
 	return u.nativeActive == nil || !u.cfg.ActiveSeriesMetrics.Enabled
 }
 
-// activeCutoff is when a series has to have been ingested to be active at now, or at the time of the last update of the
-// active series if later, which is what the tracker's purge does: series it dropped stay dropped until their next samples.
+// activeCutoff is when a series has to have been ingested to be active, as of the last update of the active series,
+// or of now before the first: the tracker only drops the series that went idle when an update purges it, so until the
+// next one it still has those that went idle since.
 func (u *userTSDB) activeCutoff(now time.Time) time.Time {
-	if asOf := u.activeAsOf.Load(); asOf > now.UnixNano() {
+	if asOf := u.activeAsOf.Load(); asOf != 0 {
 		now = time.Unix(0, asOf)
 	}
 	return now.Add(-u.cfg.ActiveSeriesMetrics.IdleTimeout)
@@ -78,7 +79,10 @@ func (u *userTSDB) activeCutoff(now time.Time) time.Time {
 // activeSeriesCounts returns the active series at now, after the tracker purged the ones that aren't any more.
 func (u *userTSDB) activeSeriesCounts(now time.Time) activeCounts {
 	if !u.trackerActive() {
-		u.activeAsOf.Store(now.UnixNano())
+		// A purge as of an earlier time than the last doesn't bring back the series the last dropped.
+		for asOf := u.activeAsOf.Load(); now.UnixNano() > asOf && !u.activeAsOf.CompareAndSwap(asOf, now.UnixNano()); {
+			asOf = u.activeAsOf.Load()
+		}
 		return u.nativeActive.ActiveSeries(u.activeCutoff(now))
 	}
 	idx := mustIndex(u.Head())
