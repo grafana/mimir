@@ -55,7 +55,8 @@ func TestChunksCaching(t *testing.T) {
 		offset                 int64
 		length                 int64
 		maxGetRangeRequests    int
-		cacheLookupDisabled    bool
+		skipCacheLookup        bool
+		skipCacheStore         bool
 		expectedLength         int64
 		expectedFetchedBytes   int64
 		expectedCachedBytes    int64
@@ -259,7 +260,7 @@ func TestChunksCaching(t *testing.T) {
 			name:                  "should skip cache look but store the subranges to cache when cache lookup is disabled",
 			offset:                0,
 			length:                length,
-			cacheLookupDisabled:   true,
+			skipCacheLookup:       true,
 			expectedLength:        length,
 			expectedFetchedBytes:  length,
 			expectedCachedBytes:   0,
@@ -275,12 +276,40 @@ func TestChunksCaching(t *testing.T) {
 			name:                  "should have cached subranges in the previous call even if cache lookup was disabled",
 			offset:                0,
 			length:                length,
-			cacheLookupDisabled:   false,
+			skipCacheLookup:       false,
 			expectedLength:        length,
 			expectedFetchedBytes:  0,
 			expectedCachedBytes:   length,
 			expectedCacheRequests: 1,
 			expectedCacheHits:     1,
+		},
+
+		{
+			name:                  "should skip cache lookup and not store the subranges to cache when cache lookup and store are disabled",
+			offset:                0,
+			length:                length,
+			skipCacheLookup:       true,
+			skipCacheStore:        true,
+			expectedLength:        length,
+			expectedFetchedBytes:  0, // The request goes directly to the bucket, so no bytes are tracked.
+			expectedCachedBytes:   0,
+			expectedCacheRequests: 0, // No cache lookup.
+			expectedCacheHits:     0,
+			init: func() {
+				// Cleanup the cache.
+				cache.Flush()
+			},
+		},
+
+		{
+			name:                  "should not have cached subranges in the previous call if cache lookup and store were disabled",
+			offset:                0,
+			length:                length,
+			expectedLength:        length,
+			expectedFetchedBytes:  length,
+			expectedCachedBytes:   0,
+			expectedCacheRequests: 1,
+			expectedCacheHits:     0,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -296,8 +325,11 @@ func TestChunksCaching(t *testing.T) {
 			assert.NoError(t, err)
 
 			ctx := context.Background()
-			if tc.cacheLookupDisabled {
-				ctx = WithCacheLookupEnabled(ctx, false)
+			if tc.skipCacheLookup {
+				ctx = WithSkipCacheLookup(ctx)
+			}
+			if tc.skipCacheStore {
+				ctx = WithSkipCacheStore(ctx)
 			}
 
 			verifyGetRange(ctx, t, cachingBucket, name, tc.offset, tc.length, tc.expectedLength)
@@ -441,8 +473,25 @@ func TestCachedIter(t *testing.T) {
 
 		// Calling Iter() with cache lookup disabled should return the new object and also update the cached list.
 		allFiles = append(allFiles, "/file-6")
-		verifyIter(WithCacheLookupEnabled(ctx, false), t, cb, allFiles, false, false, cfgName)
+		verifyIter(WithSkipCacheLookup(ctx), t, cb, allFiles, false, false, cfgName)
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
+	})
+
+	t.Run("Iter() should skip the cache lookup and not cache the result on cache lookup and store disabled", func(t *testing.T) {
+		// Pre-condition: populate the cache.
+		cache.Flush()
+		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
+
+		// Pre-condition: add a new object and make sure it's NOT returned by the Iter()
+		// (because result is picked up from the cache).
+		assert.NoError(t, inmem.Upload(context.Background(), "/file-7", strings.NewReader("mundo")))
+		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
+
+		// Calling Iter() with cache lookup and store disabled should return the new object but not update the cached list.
+		cachedFiles := slices.Clone(allFiles)
+		allFiles = append(allFiles, "/file-7")
+		verifyIter(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, allFiles, false, false, cfgName)
+		verifyIter(ctx, t, cb, cachedFiles, true, true, cfgName)
 	})
 
 	t.Run("Iter() should not cache objects list on error while iterating the bucket", func(t *testing.T) {
@@ -542,8 +591,26 @@ func TestExists(t *testing.T) {
 		cache.Advance(2 * invalidationLockTTL)
 
 		// Calling Exists() with cache lookup disabled should lookup the object storage and also update the cached value.
-		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
+		verifyExists(WithSkipCacheLookup(ctx), t, cb, filename, true, false, false, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+	})
+
+	t.Run("Exists() should skip the cache lookup and not cache the result on cache lookup and store disabled", func(t *testing.T) {
+		const filename = "/object-3"
+
+		// Pre-condition: the object should not exist.
+		verifyExists(ctx, t, cb, filename, false, true, false, cfgName)
+
+		// Pre-condition: upload the file then ensure the value is picked up from the cache if cache lookup is enabled.
+		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
+		// Calling Exists() with cache lookup and store disabled should lookup the object storage but not update the cached value.
+		verifyExists(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, true, false, false, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
 	})
 }
 
@@ -568,11 +635,13 @@ func TestExistsCachingDisabled(t *testing.T) {
 
 		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
 		verifyExists(ctx, t, cb, filename, true, false, false, cfgName)
-		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
+		verifyExists(WithSkipCacheLookup(ctx), t, cb, filename, true, false, false, cfgName)
+		verifyExists(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, true, false, false, cfgName)
 
 		assert.NoError(t, inmem.Delete(context.Background(), filename))
 		verifyExists(ctx, t, cb, filename, false, false, false, cfgName)
-		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, false, false, false, cfgName)
+		verifyExists(WithSkipCacheLookup(ctx), t, cb, filename, false, false, false, cfgName)
+		verifyExists(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, false, false, false, cfgName)
 	})
 }
 
@@ -659,7 +728,7 @@ func TestGet(t *testing.T) {
 		cache.Advance(2 * invalidationLockTTL)
 
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
-		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, data, false, false, cfgName)
+		verifyGet(WithSkipCacheLookup(ctx), t, cb, filename, data, false, false, cfgName)
 
 		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
@@ -675,10 +744,53 @@ func TestGet(t *testing.T) {
 		cache.Advance(2 * invalidationLockTTL)
 
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
-		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, nil, false, false, cfgName)
+		verifyGet(WithSkipCacheLookup(ctx), t, cb, filename, nil, false, false, cfgName)
 
 		verifyGet(ctx, t, cb, filename, nil, true, true, cfgName)
 		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+	})
+
+	t.Run("Get() should skip the cache lookup and not store the content and existence to the cache if cache lookup and store are disabled", func(t *testing.T) {
+		const filename = "/object-4"
+
+		// Pre-condition: issue a Get() request when the object does not exist, and ensure non-existence has been cached.
+		verifyGet(ctx, t, cb, filename, nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+
+		// Upload the object.
+		data := []byte("content-4")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
+		// Calling Get() with cache lookup and store disabled should lookup the object storage but not update the cached value.
+		verifyGet(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, data, false, false, cfgName)
+
+		verifyGet(ctx, t, cb, filename, nil, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+
+		// Pre-condition: store the content and existence to the cache.
+		cache.Advance(2 * invalidationLockTTL)
+		verifyGet(WithSkipCacheLookup(ctx), t, cb, filename, data, false, false, cfgName)
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Delete the object.
+		require.NoError(t, inmem.Delete(ctx, filename))
+
+		// Pre-condition: the content and existence is looked up from the cache by default.
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
+		// Calling Get() with cache lookup and store disabled should lookup the object storage but not update the cached value.
+		verifyGet(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, nil, false, false, cfgName)
+
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
 	})
 }
 
@@ -830,8 +942,33 @@ func TestAttributes(t *testing.T) {
 		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(secondData)))
 
 		// A call to Attributes() with cache lookup disabled should go to the object storage, but cache the updated value.
-		verifyObjectAttrs(WithCacheLookupEnabled(ctx, false), t, cb, filename, len(secondData), false, false, cfgName)
+		verifyObjectAttrs(WithSkipCacheLookup(ctx), t, cb, filename, len(secondData), false, false, cfgName)
 		verifyObjectAttrs(ctx, t, cb, filename, len(secondData), true, true, cfgName)
+	})
+
+	t.Run("Attributes() should skip the cache lookup and not store the value to the cache if cache lookup and store are disabled", func(t *testing.T) {
+		const filename = "/object-4"
+
+		// Pre-condition: the object should exist.
+		firstData := []byte("hello world")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(firstData)))
+		verifyExists(ctx, t, cb, filename, true, false, false, cfgName)
+
+		// A call to Attributes() should cache the object attributes.
+		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, true, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
+		// Modify the object.
+		secondData := append(firstData, []byte("with additional data")...)
+		require.NotEqual(t, len(firstData), len(secondData))
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(secondData)))
+
+		// A call to Attributes() with cache lookup and store disabled should go to the object storage, but not cache the updated value.
+		verifyObjectAttrs(WithSkipCacheStore(WithSkipCacheLookup(ctx)), t, cb, filename, len(secondData), false, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, true, cfgName)
 	})
 }
 
