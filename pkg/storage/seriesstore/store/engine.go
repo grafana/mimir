@@ -578,7 +578,7 @@ func (e *Engine) CompactOOOHead(context.Context) error {
 // head's min time and min valid time move to mint, then its garbage collection runs.
 func (e *Engine) truncateMemory(blockMin, mint int64) {
 	if minTime := e.MinTime(); minTime != math.MaxInt64 && minTime < mint {
-		e.writeBlock(blockMin, mint, false, func(_ int, series *Series) bool {
+		e.writeBlock(blockMin, mint, false, false, func(_ int, series *Series) bool {
 			return inOrderIn(series, blockMin, mint-1, minTime)
 		})
 	}
@@ -664,7 +664,7 @@ func (e *Engine) compactOOOHead() {
 	// Like Prometheus's, one block per block range of the out-of-order head's data.
 	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
 		blockMax := blockMin + chunkRangeMs
-		e.writeBlock(blockMin, blockMax, true, func(shard int, series *Series) bool {
+		e.writeBlock(blockMin, blockMax, true, false, func(shard int, series *Series) bool {
 			return e.oooIn(shard, series, blockMin, blockMax-1)
 		})
 	}
@@ -938,7 +938,7 @@ func (e *Engine) CompactSelectedSeries(refs []storage.SeriesRef) error {
 	}
 	e.compactionLock.Lock()
 	defer e.compactionLock.Unlock()
-	return e.compactSelectedLocked(refs)
+	return e.compactSelectedLocked(refs, false)
 }
 
 // evictIdleLocked takes the series whose newest sample is older than the idle time behind the head's out of it, with the
@@ -965,10 +965,12 @@ func (e *Engine) evictIdleLocked() error {
 		}
 		shard.RUnlock()
 	}
-	return e.compactSelectedLocked(refs)
+	return e.compactSelectedLocked(refs, true)
 }
 
-func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef) error {
+// compactSelectedLocked moves the series refs out of the head; idle says the engine evicts them on its own, where
+// Prometheus's head would keep them.
+func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -1001,7 +1003,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef) error {
 	}
 	for blockMin := rangeStart(minTime); blockMin <= maxt; blockMin += chunkRangeMs {
 		blockMax := blockMin + chunkRangeMs
-		e.writeBlock(blockMin, blockMax, false, func(_ int, series *Series) bool {
+		e.writeBlock(blockMin, blockMax, false, idle, func(_ int, series *Series) bool {
 			_, ok := selected[series.ref]
 			return ok && inOrderIn(series, blockMin, blockMax-1, minTime)
 		})

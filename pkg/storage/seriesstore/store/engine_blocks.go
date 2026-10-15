@@ -25,11 +25,31 @@ type emulatedBlock struct {
 	minTime, maxTime int64
 	// Written by an out-of-order compaction, from the out-of-order head's chunks.
 	outOfOrder bool
+	// Written by the engine's own eviction of idle series, which Prometheus's head keeps until a head compaction leaves
+	// them without samples: its head-only lookups still see them.
+	idleEvicted bool
 	// Its series' label hashes, sorted: a block holds label sets, whichever series ref wrote them.
 	series []uint64
 	// When it was written: Mimir's ingesters without shipping delete a block once it was written
 	// longer than the retention period ago, whatever its samples' times.
 	createdMs int64
+}
+
+// The kinds of blocks, in the engine state: an image that doesn't know idle evicted blocks reads them as in-order ones.
+const (
+	blockInOrder     byte = 0
+	blockOutOfOrder  byte = 1
+	blockIdleEvicted byte = 2
+)
+
+func (b *emulatedBlock) kind() byte {
+	switch {
+	case b.outOfOrder:
+		return blockOutOfOrder
+	case b.idleEvicted:
+		return blockIdleEvicted
+	}
+	return blockInOrder
 }
 
 // overlaps is Prometheus's Block.OverlapsClosedInterval.
@@ -86,7 +106,7 @@ func searchHash(sorted []uint64, hash uint64) bool {
 
 // writeBlock records the block over [minTime, maxTime) of the head series holds picks, unless it
 // picks none: Prometheus writes no empty block, and reports whether it did. No shard lock is held.
-func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder bool, holds func(shard int, series *Series) bool) bool {
+func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool, holds func(shard int, series *Series) bool) bool {
 	var hashes []uint64
 	for index, shard := range e.store.shards {
 		shard.RLock()
@@ -103,7 +123,7 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder bool, holds func(
 		return false
 	}
 	slices.Sort(hashes)
-	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, series: slices.Compact(hashes), createdMs: nowMs()}
+	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, idleEvicted: idleEvicted, series: slices.Compact(hashes), createdMs: nowMs()}
 	home, t := e.home()
 	home.Lock()
 	defer home.Unlock()
@@ -112,7 +132,7 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder bool, holds func(
 	// slice, whose elements change in a copy of it.
 	for index := len(t.blocks) - 1; index >= 0; index-- {
 		existing := &t.blocks[index]
-		if existing.minTime == minTime && existing.maxTime == maxTime && existing.outOfOrder == outOfOrder {
+		if existing.minTime == minTime && existing.maxTime == maxTime && existing.outOfOrder == outOfOrder && existing.idleEvicted == idleEvicted {
 			merged := block
 			merged.series = mergeSortedHashes(existing.series, block.series)
 			blocks := slices.Clone(t.blocks)
@@ -218,11 +238,7 @@ func (e *Engine) writeState() error {
 	for _, block := range t.blocks {
 		buf = binary.AppendVarint(buf, block.minTime)
 		buf = binary.AppendVarint(buf, block.maxTime)
-		if block.outOfOrder {
-			buf = append(buf, 1)
-		} else {
-			buf = append(buf, 0)
-		}
+		buf = append(buf, block.kind())
 		buf = binary.AppendUvarint(buf, uint64(len(block.series)))
 		for _, hash := range block.series {
 			buf = binary.LittleEndian.AppendUint64(buf, hash)
@@ -308,7 +324,7 @@ func (e *Engine) restoreState(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		block.outOfOrder = kind == 1
+		block.outOfOrder, block.idleEvicted = kind == blockOutOfOrder, kind == blockIdleEvicted
 		series, err := binary.ReadUvarint(r)
 		if err != nil {
 			return err
