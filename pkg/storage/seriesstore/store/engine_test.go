@@ -1382,3 +1382,84 @@ func TestEngineHeadGCLocksShardsAgainstTheQueryOrder(t *testing.T) {
 	require.NoError(t, e.Compact(context.Background()))
 	require.Equal(t, []int{3, 2, 1, 0}, order)
 }
+
+// A query's chunks point into the chunk files, without copies: the files a compaction removes while a querier still
+// has their chunks stay mapped until it is closed.
+func TestEngineQuerierKeepsTheChunkFilesItReadMapped(t *testing.T) {
+	// Files of a few chunks each, so that the oldest hours' are their own.
+	defer func(size int) { chunks.FileSize = size }(chunks.FileSize)
+	chunks.FileSize = 1 << 10
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1, TimelyCompaction: true, RetentionMs: time.Hour.Milliseconds()})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	random := rand.New(rand.NewPCG(1, 2))
+	for ts := int64(0); ts <= 5*time.Hour.Milliseconds(); ts += 15 * time.Second.Milliseconds() {
+		app := e.Appender(context.Background())
+		for n := range 20 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "n", strconv.Itoa(n)), ts, random.Float64())
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	selected, err := q.(*engineChunkQuerier).SelectStreamed(nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "n", "0"))
+	require.NoError(t, err)
+	require.Len(t, selected, 1)
+	decode := func() []int64 {
+		var times []int64
+		for _, c := range selected[0].Chunks {
+			samples, err := chunks.Decode(c.Encoding, c.Data)
+			require.NoError(t, err)
+			for _, s := range samples {
+				times = append(times, s.T)
+			}
+		}
+		return times
+	}
+	before := decode()
+	require.Equal(t, int64(0), before[0])
+	inFiles := 0
+	for _, c := range selected[0].Chunks {
+		if e.store.shards[0].disk.Holds(c.Data) {
+			inFiles++
+		}
+	}
+	require.Greater(t, inFiles, 0, "the completed chunks are the files', not copies")
+
+	// The head compactions move the series' chunks to blocks, then retention prunes the oldest two hours and removes
+	// their files, which the querier still reads.
+	require.NoError(t, e.Compact(context.Background()))
+	e.compactionLock.Lock()
+	require.NoError(t, e.prune(2*time.Hour.Milliseconds()))
+	e.compactionLock.Unlock()
+	e.store.reads.mu.Lock()
+	deferred := len(e.store.reads.queue)
+	e.store.reads.mu.Unlock()
+	require.Greater(t, deferred, 0, "the removed files wait for the querier")
+	require.Equal(t, before, decode())
+
+	require.NoError(t, q.Close())
+	e.store.reads.mu.Lock()
+	defer e.store.reads.mu.Unlock()
+	require.Empty(t, e.store.reads.queue)
+	require.Empty(t, e.store.reads.active)
+}
+
+func TestReadGuardReleasesOnceTheQueriesBeforeAreDone(t *testing.T) {
+	var g readGuard
+	released := 0
+	first := g.enter()
+	g.release(func() { released++ })
+	second := g.enter()
+	g.release(func() { released++ })
+	require.Zero(t, released)
+	// The second query entered after the first release: it doesn't hold it, but holds the second.
+	g.leave(first)
+	require.Equal(t, 1, released)
+	g.leave(second)
+	require.Equal(t, 2, released)
+	// Without queries, a release runs right away.
+	g.release(func() { released++ })
+	require.Equal(t, 3, released)
+}

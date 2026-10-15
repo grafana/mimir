@@ -196,6 +196,8 @@ type costAttributionState struct {
 type Store struct {
 	// Set by the engine, which keeps only head series in memory: see headView.memoryIsHead.
 	memoryIsHead bool
+	// Keeps the chunk files queries read from mapped until they are done, when guardChunkFiles set it up.
+	reads readGuard
 	// Bumped when a series is evicted from the head, which invalidates what the label lookups
 	// cached about the series in it.
 	evictEpoch     atomic.Uint64

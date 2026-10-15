@@ -67,7 +67,7 @@ func storeMatchers(matchers []*promlabels.Matcher) []LabelMatcher {
 // TSDB's. Out-of-order samples are always merged into the chunks they overlap, so the ordered and
 // unordered queriers are the same.
 func (e *Engine) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return &engineChunkQuerier{e: e, mint: mint, maxt: maxt}, nil
+	return &engineChunkQuerier{e: e, mint: mint, maxt: maxt, epoch: e.store.reads.enter()}, nil
 }
 
 func (e *Engine) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -80,15 +80,23 @@ type engineChunkQuerier struct {
 	// The data buffers of the chunks it selected, given back when it is closed.
 	mu      sync.Mutex
 	buffers [][]byte
+	// The epoch of the store's read guard it reads in: the chunk files it returns chunks of stay mapped until it is
+	// closed.
+	epoch  uint64
+	closed bool
 }
 
-// Close gives back the buffers of the chunks the querier selected, which callers are done with.
+// Close gives back the buffers of the chunks the querier selected, which callers are done with, and lets the chunk
+// files it read from go.
 func (q *engineChunkQuerier) Close() error {
 	q.mu.Lock()
-	buffers := q.buffers
-	q.buffers = nil
+	buffers, closed := q.buffers, q.closed
+	q.buffers, q.closed = nil, true
 	q.mu.Unlock()
 	giveQueryBuffers(buffers)
+	if !closed {
+		q.e.store.reads.leave(q.epoch)
+	}
 	return nil
 }
 
@@ -205,11 +213,18 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		buffers          [][]byte
 		candidatesBuffer []chunks.Candidate
 	)
-	// The chunks' data is copied out while the shard is locked, into one buffer per shard.
-	copyOut := func(raw []chunks.Chunk) []chunks.Chunk {
+	// The chunks' data in memory is copied out while the shard is locked, into one buffer per shard: the chunk files'
+	// stay mapped until the querier is closed, so only the open chunks, which appends change, and the out-of-order
+	// ones merged for the query are.
+	copyOut := func(raw []chunks.Chunk, disk *chunks.DiskMapper) []chunks.Chunk {
 		size := 0
 		for index := range raw {
-			size += len(raw[index].Data)
+			if !disk.Holds(raw[index].Data) {
+				size += len(raw[index].Data)
+			}
+		}
+		if size == 0 {
+			return slices.Clone(raw)
 		}
 		if cap(data)-len(data) < size {
 			// Doubling from small, so a query of a few series doesn't pay for a large buffer.
@@ -218,9 +233,12 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		}
 		out := make([]chunks.Chunk, len(raw))
 		for index := range raw {
+			out[index] = raw[index]
+			if disk.Holds(raw[index].Data) {
+				continue
+			}
 			offset := len(data)
 			data = append(data, raw[index].Data...)
-			out[index] = raw[index]
 			out[index].Data = data[offset:len(data):len(data)]
 		}
 		return out
@@ -295,14 +313,14 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 				}
 			}
 			if len(scratch) > 0 {
-				selected = append(selected, rawSeries{entry.labels, copyOut(scratch)})
+				selected = append(selected, rawSeries{entry.labels, copyOut(scratch, disk)})
 			}
 			return true
 		})
 		for stored, candidate := range coldSeries {
 			scratch = queryRawChunks(nil, nil, candidate.chunks, disk, start, end, scratch[:0], &candidatesBuffer)
 			if len(scratch) > 0 {
-				selected = append(selected, rawSeries{stored, copyOut(scratch)})
+				selected = append(selected, rawSeries{stored, copyOut(scratch, disk)})
 			}
 		}
 	})

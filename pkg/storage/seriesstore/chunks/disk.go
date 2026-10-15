@@ -11,12 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
-// FileSize is the size of every chunk file, which is mapped whole.
-const FileSize = 128 * 1024 * 1024
+// FileSize is the size of every chunk file, which is mapped whole. Tests that need many files make it smaller.
+var FileSize = 128 * 1024 * 1024
 
 // FileState is the written length and newest chunk time of one chunk file, as a head snapshot
 // records it.
@@ -44,6 +45,8 @@ type DiskMapper struct {
 	files        []*chunkFile
 	first        uint32
 	nextSequence uint32
+	// What runs the unmaps of the files TruncateBefore removes, when they wait for their readers.
+	deferUnmap func(unmap func())
 }
 
 // OpenDiskMapper removes any previous files in directory. Without a directory, chunks use
@@ -71,7 +74,7 @@ func ReopenDiskMapper(directory string, files []FileState, nextSequence uint32) 
 			_ = m.Close()
 			return nil, err
 		}
-		if state.Written > FileSize {
+		if state.Written > uint64(FileSize) {
 			_ = unix.Munmap(data)
 			_ = m.Close()
 			return nil, fmt.Errorf("chunk file %s does not match the head snapshot", path)
@@ -159,8 +162,32 @@ func (m *DiskMapper) Read(ref Ref, length uint32) []byte {
 	return file.data[offset : offset+int(length) : offset+int(length)]
 }
 
+// DeferUnmaps makes the files TruncateBefore removes stay mapped until release runs what it is given: the slices Read
+// returned for them stay valid for the readers that have them, which then don't copy them.
+func (m *DiskMapper) DeferUnmaps(release func(unmap func())) {
+	m.deferUnmap = release
+}
+
+// Holds reports whether data is in one of the mapper's files, as what Read returns is.
+func (m *DiskMapper) Holds(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	at := uintptr(unsafe.Pointer(unsafe.SliceData(data)))
+	for _, file := range m.files {
+		if file == nil || len(file.data) == 0 {
+			continue
+		}
+		base := uintptr(unsafe.Pointer(unsafe.SliceData(file.data)))
+		if at >= base && at < base+uintptr(len(file.data)) {
+			return true
+		}
+	}
+	return false
+}
+
 // TruncateBefore deletes files whose chunks all end before cutoff; callers must drop references
-// to them first.
+// to them first, unless DeferUnmaps keeps them mapped for them.
 func (m *DiskMapper) TruncateBefore(cutoff int64) error {
 	var errs []error
 	for index := 0; index < len(m.files)-1; index++ {
@@ -169,7 +196,13 @@ func (m *DiskMapper) TruncateBefore(cutoff int64) error {
 			continue
 		}
 		m.files[index] = nil
-		errs = append(errs, unix.Munmap(file.data))
+		if m.deferUnmap != nil {
+			// Removing the file is fine: the mapping keeps it until it is unmapped.
+			data := file.data
+			m.deferUnmap(func() { _ = unix.Munmap(data) })
+		} else {
+			errs = append(errs, unix.Munmap(file.data))
+		}
 		if m.directory != "" {
 			path := filepath.Join(m.directory, fileName(m.first+uint32(index)))
 			if err := os.Remove(path); err != nil {
@@ -245,7 +278,7 @@ func mapFile(path string, create bool) ([]byte, error) {
 	}
 	defer file.Close()
 	if create {
-		if err := file.Truncate(FileSize); err != nil {
+		if err := file.Truncate(int64(FileSize)); err != nil {
 			return nil, fmt.Errorf("size chunk file %s: %w", path, err)
 		}
 	} else {
@@ -253,7 +286,7 @@ func mapFile(path string, create bool) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if info.Size() != FileSize {
+		if info.Size() != int64(FileSize) {
 			return nil, fmt.Errorf("chunk file %s does not match the head snapshot", path)
 		}
 	}

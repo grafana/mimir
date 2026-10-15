@@ -451,8 +451,9 @@ func (s *heldMemoryStream) Send(response *client.QueryStreamResponse) error {
 	return s.marshalingStream.Send(response)
 }
 
-// BenchmarkIngester_QueryStreamHeldMemory is a request for 20000 series of 12 labels and two hours of samples each, on
-// each engine, and reports the live heap it holds while its chunks stream.
+// BenchmarkIngester_QueryStreamHeldMemory is a request for 20000 series of 12 labels and six hours of samples each, so
+// that most of their chunks are completed ones, on each engine, and reports the live heap it holds while its chunks
+// stream.
 func BenchmarkIngester_QueryStreamHeldMemory(b *testing.B) {
 	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		b.Run(engine, func(b *testing.B) {
@@ -467,7 +468,7 @@ func BenchmarkIngester_QueryStreamHeldMemory(b *testing.B) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 			now := time.Now().Truncate(time.Minute).UnixMilli()
-			const series, minutes = 20000, 120
+			const series, minutes = 20000, 360
 			for minute := range minutes {
 				var batch []mimirpb.PreallocTimeseries
 				for n := range series {

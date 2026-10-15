@@ -174,6 +174,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		if restored != nil && len(restored.Store.shards) <= maxShards {
 			e.store = restored.Store
 			e.store.memoryIsHead = true
+			e.store.guardChunkFiles()
 			e.oooWatermarks = make([]uint64, len(e.store.shards))
 			e.restored = true
 			e.createHome()
@@ -202,6 +203,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	}
 	e.store = s
 	s.memoryIsHead = true
+	s.guardChunkFiles()
 	e.oooWatermarks = make([]uint64, len(s.shards))
 	e.createHome()
 	return e, nil
