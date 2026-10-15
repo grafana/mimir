@@ -674,3 +674,52 @@ func TestProxyMismatchRetries(t *testing.T) {
 		})
 	}
 }
+
+func TestProxyQueryStreamMismatchRetries(t *testing.T) {
+	cfg := testConfig()
+	cfg.MismatchRetries = 2
+	cfg.MismatchRetryDelay = time.Millisecond
+	cfg.LogMismatchedSamples = true
+	// The backend's samples on each of its calls, the last ones again after.
+	backend := func(calls ...[]int64) *testIngester {
+		call := atomic.NewInt32(0)
+		return &testIngester{query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+			times := calls[min(int(call.Inc())-1, len(calls)-1)]
+			values := make([]float64, len(times))
+			for _, f := range streamFrames(t, floatChunk(t, times, values)) {
+				var msg client.QueryStreamResponse
+				if err := msg.Unmarshal(f); err != nil {
+					return err
+				}
+				if err := stream.Send(&msg); err != nil {
+					return err
+				}
+			}
+			return nil
+		}}
+	}
+	for name, tc := range map[string]struct {
+		shadow *testIngester
+		result string
+	}{
+		// A sample written late, which the shadow hadn't consumed yet.
+		"consumed by the retry": {backend([]int64{100}, []int64{100, 150}), "match_after_retry"},
+		"missing every time":    {backend([]int64{100}), "mismatch"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			logs := &logBuffer{}
+			p, cli := testProxyWithLogger(t, backend([]int64{100, 150}), tc.shadow, cfg, log.NewLogfmtLogger(logs))
+			s, err := cli.QueryStream(t.Context(), &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 200})
+			require.NoError(t, err)
+			for err == nil {
+				_, err = s.Recv()
+			}
+			require.ErrorIs(t, err, io.EOF)
+			awaitOutcome(t, p, "QueryStream", tc.result)
+			if tc.result == "mismatch" {
+				require.Contains(t, logs.String(), "retries=2 persistent_missing_from_shadow=1 persistent_extra_in_shadow=0 persistent_different_values=0")
+				require.Contains(t, logs.String(), "difference=")
+			}
+		})
+	}
+}

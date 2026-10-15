@@ -312,7 +312,7 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 		select {
 		case p.retrySlots <- struct{}{}:
 			// Retries wait for minutes, so they don't hold the comparison slot.
-			go p.retryMismatch(fullMethod, method, req, md, mismatch)
+			go p.retryMismatch(fullMethod, method, req, md, mismatch, start, primary.frames, shadow.frames)
 			return
 		default:
 		}
@@ -375,9 +375,10 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 	}
 }
 
-// retryMismatch asks both backends again, up to -mismatch-retries times, for the items that differed, and counts a
-// mismatch only if some of the same items differ in the same way every time.
-func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.MD, mismatch *mismatchError) {
+// retryMismatch asks both backends again, up to -mismatch-retries times, for the items or samples that differed, and
+// counts a mismatch only if some of the same differ in the same way every time. Samples are compared as of the first
+// request, so the retries don't see the ones written since.
+func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.MD, mismatch *mismatchError, start time.Time, primaryFrames, shadowFrames []frame) {
 	defer func() { <-p.retrySlots }()
 	differing := mismatch.items
 	retries := 0
@@ -398,18 +399,13 @@ func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.
 			// What the items are now isn't known, so the first comparison stands.
 			break
 		}
-		a, err := responseItems(method, primary.frames)
+		now, err := differences(method, req, primary.frames, shadow.frames, p.cfg, start)
 		if err != nil {
 			break
 		}
-		b, err := responseItems(method, shadow.frames)
-		if err != nil {
-			break
-		}
-		now := itemDifference(a, b)
 		for item, count := range differing {
-			// The same item, missing from the same backend.
-			if (count > 0) != (now[item] > 0) || now[item] == 0 {
+			// The same item or sample, missing from the same backend, or with values that still differ.
+			if again := now[item]; again == 0 || (count > 0) != (again > 0) || (count == 2) != (again == 2) {
 				delete(differing, item)
 			}
 		}
@@ -419,14 +415,34 @@ func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.
 		return
 	}
 	p.comparisons.WithLabelValues(method, "mismatch").Inc()
-	missing := 0
+	var missing, extra, different int
 	for _, count := range differing {
-		if count > 0 {
+		switch {
+		case count == 2:
+			different++
+		case count > 0:
 			missing++
+		default:
+			extra++
 		}
 	}
-	fields := append([]any{"msg", "ingester query comparison failed", "method", method, "result", "mismatch"}, mismatch.fields...)
-	fields = append(fields, "retries", retries, "persistent_missing_from_shadow", missing, "persistent_extra_in_shadow", len(differing)-missing)
+	fields := []any{"msg", "ingester query comparison failed", "method", method, "result", "mismatch"}
+	if p.cfg.LogMismatchedQueries && method == "QueryStream" {
+		fields = append(fields, "tenant_id", strings.Join(md.Get("x-scope-orgid"), "|"))
+	}
+	fields = append(fields, mismatch.fields...)
+	fields = append(fields, "retries", retries, "persistent_missing_from_shadow", missing, "persistent_extra_in_shadow", extra, "persistent_different_values", different)
+	if method == "QueryStream" && (p.cfg.LogMismatchedQueries || p.cfg.LogMismatchedSamples) && p.diagnosticLogs.Allow() {
+		budget := diagnosticLogBytes
+		var query client.QueryRequest
+		if p.cfg.LogMismatchedQueries && query.Unmarshal(req) == nil {
+			fields = appendDiagnosticJSON(fields, "query", &query, &budget)
+		}
+		// The difference of the first comparison, which the retries still saw.
+		if p.cfg.LogMismatchedSamples && mismatch.difference != nil {
+			fields = appendDiagnosticJSON(fields, "difference", differenceDiagnostic(mismatch.difference, primaryFrames, shadowFrames), &budget)
+		}
+	}
 	level.Warn(p.logger).Log(fields...)
 }
 
