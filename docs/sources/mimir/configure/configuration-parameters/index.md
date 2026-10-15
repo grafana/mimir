@@ -4598,6 +4598,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.label-value-length-over-limit-strategy
 [label_value_length_over_limit_strategy: <string> | default = "error"]
 
+# (experimental) Label names for which the distinct label value bytes tracked by
+# -ingester.max-global-label-value-bytes-per-label-name have exceeded the limit.
+# Series carrying a value for one of these label names are rejected.
+# CLI flag: -validation.blocked-label-names-for-label-value-bytes
+[blocked_label_names_for_label_value_bytes: <string> | default = ""]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -4675,6 +4681,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # before replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
+
+# (experimental) The maximum total size, in bytes, of the distinct values of a
+# single label name held in memory per tenant, across the cluster before
+# replication. Only values longer than 128 bytes are counted, and each distinct
+# value is counted once. 0 to disable.
+# CLI flag: -ingester.max-global-label-value-bytes-per-label-name
+[max_global_label_value_bytes_per_label_name: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
