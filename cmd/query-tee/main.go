@@ -122,5 +122,13 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		{Path: "/prometheus/config/v1/rules", RouteName: "prometheus_config_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/read", RouteName: "api_v1_read", Methods: []string{"POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/format_query", RouteName: "api_v1_format_query", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/cardinality/label_names", RouteName: "api_v1_cardinality_label_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/cardinality/label_values", RouteName: "api_v1_cardinality_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/cardinality/active_series", RouteName: "api_v1_cardinality_active_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/cardinality/active_native_histogram_metrics", RouteName: "api_v1_cardinality_active_native_histogram_metrics", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/search/metric_names", RouteName: "api_v1_search_metric_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/search/label_names", RouteName: "api_v1_search_label_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/search/label_values", RouteName: "api_v1_search_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 	}
 }

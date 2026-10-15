@@ -61,6 +61,9 @@ type ProxyBackend struct {
 	// Set of tenant IDs whose requests must not be sent to this backend.
 	excludeTenants map[string]struct{}
 
+	// Set of tenant IDs whose requests are the only ones sent to this backend. Nil means all tenants.
+	includeTenants map[string]struct{}
+
 	// Cluster validation label to set in outgoing requests.
 	clusterLabel string
 }
@@ -98,13 +101,8 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		}
 	}
 
-	var excludeTenants map[string]struct{}
-	if len(cfg.ExcludeTenants) > 0 {
-		excludeTenants = make(map[string]struct{}, len(cfg.ExcludeTenants))
-		for _, tenantID := range cfg.ExcludeTenants {
-			excludeTenants[tenantID] = struct{}{}
-		}
-	}
+	excludeTenants := tenantSet(cfg.ExcludeTenants)
+	includeTenants := tenantSet(cfg.IncludeTenants)
 
 	return &ProxyBackend{
 		name:              name,
@@ -115,6 +113,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		requestProportion: requestProportion,
 		minDataQueriedAge: minDataQueriedAge,
 		excludeTenants:    excludeTenants,
+		includeTenants:    includeTenants,
 		clusterLabel:      clusterLabel,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -167,10 +166,39 @@ func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	return minQueryTime.Before(cutOffTs)
 }
 
+// tenantSet returns the given tenant IDs as a set, or nil if there are none.
+func tenantSet(tenantIDs []string) map[string]struct{} {
+	if len(tenantIDs) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		set[tenantID] = struct{}{}
+	}
+	return set
+}
+
 // ShouldHandleTenants reports whether this backend should handle a request for the given tenant IDs.
-// The request is skipped only when all of its tenants are excluded, so a request that mixes excluded
-// and non-excluded tenants is still forwarded. Requests without any tenant are always handled.
+//
+// When include tenants are configured, the request is handled only if it has at least one tenant and
+// all of its tenants are included, so a request that mixes included and non-included tenants is
+// skipped.
+//
+// When exclude tenants are configured, the request is skipped only when all of its tenants are
+// excluded, so a request that mixes excluded and non-excluded tenants is still forwarded.
+//
+// Requests without any tenant are handled unless include tenants are configured.
 func (b *ProxyBackend) ShouldHandleTenants(tenantIDs []string) bool {
+	if b.includeTenants != nil {
+		if len(tenantIDs) == 0 {
+			return false
+		}
+		for _, tenantID := range tenantIDs {
+			if _, included := b.includeTenants[tenantID]; !included {
+				return false
+			}
+		}
+	}
 	if len(b.excludeTenants) == 0 || len(tenantIDs) == 0 {
 		return true
 	}

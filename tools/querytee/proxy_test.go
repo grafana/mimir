@@ -1166,6 +1166,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 		name           string
 		preferred      bool
 		excludeTenants []string
+		includeTenants []string
 	}
 
 	testCases := map[string]struct {
@@ -1222,6 +1223,31 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 			orgID:            "23|12345",
 			expectedBackends: []string{"preferred", "excluding"},
 		},
+		"included tenant is sent to the including backend": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+				{name: "other", includeTenants: []string{"42"}},
+			},
+			orgID:            "23",
+			expectedBackends: []string{"preferred", "including"},
+		},
+		"no tenant header is not sent to an including backend": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+			},
+			orgID:            "",
+			expectedBackends: []string{"preferred"},
+		},
+		"multi-tenant request with some tenants not included is skipped": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+			},
+			orgID:            "23|12345",
+			expectedBackends: []string{"preferred"},
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -1238,7 +1264,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 					backendCfg.preferred,
 					false,
 					"",
-					BackendConfig{ExcludeTenants: backendCfg.excludeTenants},
+					BackendConfig{ExcludeTenants: backendCfg.excludeTenants, IncludeTenants: backendCfg.includeTenants},
 				)
 				backends = append(backends, backend)
 			}
@@ -1276,7 +1302,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 	}
 }
 
-func TestBackendConfig_ExcludeTenantsValidation(t *testing.T) {
+func TestBackendConfig_TenantsValidation(t *testing.T) {
 	tests := map[string]struct {
 		configContent string
 		expectedError string
@@ -1293,6 +1319,19 @@ func TestBackendConfig_ExcludeTenantsValidation(t *testing.T) {
                 exclude_tenants: ["23"]
             `,
 			expectedError: "backend backend2: exclude_tenants cannot be set on the preferred backend",
+		},
+		"include_tenants on a secondary backend is allowed": {
+			configContent: `
+              backend1:
+                include_tenants: ["23", "432"]
+            `,
+		},
+		"include_tenants on the preferred backend is rejected": {
+			configContent: `
+              backend2:
+                include_tenants: ["23"]
+            `,
+			expectedError: "backend backend2: include_tenants cannot be set on the preferred backend",
 		},
 	}
 
