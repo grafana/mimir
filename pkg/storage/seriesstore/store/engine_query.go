@@ -5,8 +5,10 @@ package store
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -727,6 +729,43 @@ func (ix *engineIndex) forEachWith(name string, visit func(entry *seriesEntry, v
 	}
 }
 
+// forEachIdleEvicted calls visit with the cold series matching compiled that the engine evicted for being idle and that
+// Prometheus's head still holds, as it only collects a series once a head compaction leaves it without samples since the
+// head's min valid time: a shard at a time, with the shard read-locked, as what visit gets is in the shard's blocks.
+func (ix *engineIndex) forEachIdleEvicted(compiled []compiledMatcher, visit func(series *coldSeries)) {
+	home, t := ix.e.home()
+	if t == nil {
+		return
+	}
+	home.RLock()
+	blocks, headMin := t.blocks, t.headMin
+	home.RUnlock()
+	var idle []emulatedBlock
+	for _, block := range blocks {
+		if block.idleEvicted && block.maxTime > headMin {
+			idle = append(idle, block)
+		}
+	}
+	if len(idle) == 0 {
+		return
+	}
+	for _, shard := range ix.e.store.shards {
+		shard.RLock()
+		if _, ok := shard.tenants[ix.e.tenantID]; ok {
+			shard.cold.matchingIndexed(ix.e.tenantID, compiled, headMin, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
+				hash := series.block.labelsHash(table, index)
+				for i := range idle {
+					if idle[i].holds(hash) {
+						visit(series)
+						return
+					}
+				}
+			})
+		}
+		shard.RUnlock()
+	}
+}
+
 func postingsOf(refs []storage.SeriesRef) index.Postings {
 	slices.Sort(refs)
 	return index.NewListPostings(slices.Compact(refs))
@@ -750,13 +789,13 @@ func (ix *engineIndex) SortedLabelValues(ctx context.Context, name string, hints
 // LabelValues returns the values of name of the head's series matching matchers, sorted.
 func (ix *engineIndex) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*promlabels.Matcher) ([]string, error) {
 	set := map[string]struct{}{}
+	compiled, err := compilePromMatchers(nil, matchers)
+	if err != nil {
+		return nil, err
+	}
 	if len(matchers) == 0 {
 		ix.forEachWith(name, func(_ *seriesEntry, value string) { set[value] = struct{}{} })
 	} else {
-		compiled, err := compilePromMatchers(nil, matchers)
-		if err != nil {
-			return nil, err
-		}
 		id, known := labels.Lookup(name)
 		ix.forEachMatching(compiled, func(entry *seriesEntry) {
 			if !known {
@@ -767,6 +806,14 @@ func (ix *engineIndex) LabelValues(_ context.Context, name string, hints *storag
 			}
 		})
 	}
+	ix.forEachIdleEvicted(compiled, func(series *coldSeries) {
+		if value, ok := series.lookup(name); ok {
+			if _, seen := set[value]; !seen {
+				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
+				set[strings.Clone(value)] = struct{}{}
+			}
+		}
+	})
 	values := sortedKeys(set)
 	if hints != nil {
 		values = limited(values, hints.Limit)
@@ -780,15 +827,19 @@ func (ix *engineIndex) LabelNames(_ context.Context, matchers ...*promlabels.Mat
 	add := func(entry *seriesEntry) {
 		entry.labels.Range(func(name, _ string) { set[name] = struct{}{} })
 	}
+	compiled, err := compilePromMatchers(nil, matchers)
+	if err != nil {
+		return nil, err
+	}
 	if len(matchers) == 0 {
 		ix.forEach(add)
 	} else {
-		compiled, err := compilePromMatchers(nil, matchers)
-		if err != nil {
-			return nil, err
-		}
 		ix.forEachMatching(compiled, add)
 	}
+	// The blocks' names are interned, so they don't reference the mapping.
+	ix.forEachIdleEvicted(compiled, func(series *coldSeries) {
+		series.rangeNameIDs(func(id uint64) { set[series.block.names[id]] = struct{}{} })
+	})
 	return sortedKeys(set), nil
 }
 
