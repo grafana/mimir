@@ -1499,6 +1499,27 @@ partition_ring:
   # CLI flag: -ingester.partition-ring.delete-inactive-partition-after
   [delete_inactive_partition_after: <duration> | default = 13h]
 
+  # (experimental) When the ingester creates its partition, create it with
+  # tokens that are derived from the partition ID instead of storing the tokens
+  # in the partition ring. Only ingesters, which create partitions, read this
+  # flag. Before you enable it, ensure that
+  # -ingester.partition-ring.max-derived-token-partitions is applied to all
+  # partition ring readers and ingesters, with a value higher than the highest
+  # partition ID.
+  # CLI flag: -ingester.partition-ring.create-partitions-with-derived-tokens
+  [create_partitions_with_derived_tokens: <boolean> | default = false]
+
+  # (experimental) Partitions with an ID lower than this value can use derived
+  # tokens. Set it on all partition ring readers and ingesters. Components that
+  # read the partition ring pre-generate the tokens for these partitions and
+  # keep them in a table. Partition IDs at or above this value are rejected:
+  # ingesters fail to create such a partition, and other components that read
+  # the ring fail until the partition is removed. Set it above the highest
+  # partition ID you expect to use. These components generate the tokens at
+  # startup, so a higher value means a longer startup time.
+  # CLI flag: -ingester.partition-ring.max-derived-token-partitions
+  [max_derived_token_partitions: <int> | default = 0]
+
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
 # CLI flag: -ingester.metadata-retain-period

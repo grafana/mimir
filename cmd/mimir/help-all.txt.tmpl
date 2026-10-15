@@ -1961,6 +1961,8 @@ Usage of ./cmd/mimir/mimir:
     	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
   -ingester.partition-ring.consul.watch-rate-limit float
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.partition-ring.create-partitions-with-derived-tokens
+    	[experimental] When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.
   -ingester.partition-ring.delete-inactive-partition-after duration
     	How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. (default 13h0m0s)
   -ingester.partition-ring.etcd.dial-timeout duration
@@ -1989,6 +1991,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.max-derived-token-partitions int
+    	[experimental] Partitions with an ID lower than this value can use derived tokens. Set it on all partition ring readers and ingesters. Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.
   -ingester.partition-ring.min-partition-owners-count int
     	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
   -ingester.partition-ring.min-partition-owners-duration duration
