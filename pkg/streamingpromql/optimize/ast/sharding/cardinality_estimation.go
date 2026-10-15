@@ -216,8 +216,8 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 
 		generatedKeys += len(cacheKeys)
 		for _, k := range cacheKeys {
-			generatedKeyBytes += len(k.plain)
-			e.cfg.Metrics.ReadCacheKeySize.Observe(float64(len(k.plain)))
+			generatedKeyBytes += k.size()
+			e.cfg.Metrics.ReadCacheKeySize.Observe(float64(k.size()))
 			if _, ok := keysToLookUp[k.hashed]; ok {
 				continue
 			}
@@ -402,8 +402,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 					cardinalityByShardingFactor: make(map[uint64][]uint64),
 				}
 				seenGroups[gk] = group
-				uniqueKeyBytes += len(k.plain)
-				p.cfg.Metrics.SeenCacheKeySize.Observe(float64(len(k.plain)))
+				uniqueKeyBytes += k.size()
+				p.cfg.Metrics.SeenCacheKeySize.Observe(float64(k.size()))
 			}
 
 			if shard == "" {
@@ -497,8 +497,8 @@ func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.C
 		}
 
 		entries[group.cacheKey.hashed] = data
-		writtenKeyBytes += len(group.cacheKey.plain)
-		p.cfg.Metrics.WriteCacheKeySize.Observe(float64(len(group.cacheKey.plain)))
+		writtenKeyBytes += group.cacheKey.size()
+		p.cfg.Metrics.WriteCacheKeySize.Observe(float64(group.cacheKey.size()))
 	}
 
 	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(len(entries)))
@@ -664,4 +664,9 @@ type cacheKey struct {
 	hashed     string
 	bucketMinT int64
 	bucketMaxT int64
+}
+
+// size returns the number of bytes held by the plain and hashed keys. plain is nil when a cryptographic hash is used.
+func (k cacheKey) size() int {
+	return len(k.plain) + len(k.hashed)
 }

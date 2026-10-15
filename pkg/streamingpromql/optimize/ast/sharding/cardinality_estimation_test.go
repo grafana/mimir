@@ -819,20 +819,21 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	lookbackDelta := 5 * time.Minute
 	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
 
-	setup := func() (streamingpromql.CardinalityEstimationConfig, *prometheus.Registry) {
-		_, cfg := setupCardinalityEstimationTest()
+	setup := func(useCryptographicHash bool) (streamingpromql.CardinalityEstimationConfig, *prometheus.Registry) {
+		cfg := createCardinalityEstimationTestOptions(useCryptographicHash)
+		cfg.Backend = caching.NewInMemoryCache()
 		reg := prometheus.NewPedanticRegistry()
 		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		return cfg, reg
 	}
 
-	// generatedKeys function returns the count of cache keys produced and the sum of their plain text lengths
+	// generatedKeys function returns the count of cache keys produced and the sum of their sizes
 	generatedKeys := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig, expression, selector string, minT, maxT int64, limitBucketCount bool) (int, int) {
 		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, selector, minT, maxT, limitBucketCount, newNoOpSpanLogger(t))
 		require.NoError(t, err)
 		keyBytes := 0
 		for _, k := range keys {
-			keyBytes += len(k.plain)
+			keyBytes += k.size()
 		}
 		return len(keys), keyBytes
 	}
@@ -882,7 +883,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	}
 
 	t.Run("read path counts the keys generated for every selector", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		const expression = "foo + bar"
 		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -898,7 +899,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	})
 
 	t.Run("read path counts only the sampled keys when the range exceeds the bucket limit", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		const expression = "foo + bar"
 		timeRange := types.NewRangeQueryTimeRange(start, start.Add(60*24*time.Hour), time.Hour)
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -913,7 +914,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	})
 
 	t.Run("read path records nothing for an expression without selectors", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		estimate(t, cfg, "vector(1)", types.NewInstantQueryTimeRange(start))
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{}, observation{})), metricNames...))
@@ -941,7 +942,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	}
 
 	t.Run("write path counts each unique key once across reported shards", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		const expression = "foo"
 		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -956,7 +957,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 	})
 
 	t.Run("write path counts only the keys written to the cache", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		const expression = "foo"
 		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -966,7 +967,7 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 		require.GreaterOrEqual(t, len(keys), 3, "12h spans at least 3 buckets of 4h")
 		bucketKeyBytes := 0
 		for _, k := range keys {
-			bucketKeyBytes += len(k.plain)
+			bucketKeyBytes += k.size()
 		}
 
 		// The existing estimate for the first bucket equals the seen cardinality, so the first bucket is not written.
@@ -979,12 +980,35 @@ func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
 		}})
 
 		seen := observation{count: 1, keys: len(keys), keyBytes: bucketKeyBytes}
-		written := observation{count: 1, keys: len(keys) - 1, keyBytes: bucketKeyBytes - len(skipped.plain)}
+		written := observation{count: 1, keys: len(keys) - 1, keyBytes: bucketKeyBytes - skipped.size()}
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, seen, written)), metricNames...))
 	})
 
+	t.Run("hashed key bytes are counted when the plain key is not stored", func(t *testing.T) {
+		cfg, reg := setup(true)
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, `__name__="foo"`, minT, maxT, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(keys), 3, "12h spans at least 3 buckets of 4h")
+		bucketKeyBytes := 0
+		for _, k := range keys {
+			require.Nil(t, k.plain, "the plain key is not stored when a cryptographic hash is used")
+			bucketKeyBytes += len(k.hashed)
+		}
+		require.Positive(t, bucketKeyBytes)
+
+		estimate(t, cfg, expression, timeRange)
+		postProcess(t, cfg, expression, minT, maxT, nil)
+
+		all := observation{count: 1, keys: len(keys), keyBytes: bucketKeyBytes}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(all, all, all)), metricNames...))
+	})
+
 	t.Run("write path records nothing when there are no reported cardinalities", func(t *testing.T) {
-		cfg, reg := setup()
+		cfg, reg := setup(false)
 		_, ctx := stats.ContextWithEmptyStats(user.InjectOrgID(context.Background(), userID))
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, "foo"))
