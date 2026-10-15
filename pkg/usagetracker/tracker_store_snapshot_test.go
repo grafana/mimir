@@ -444,3 +444,56 @@ func requireSeriesInTheirShards(t *testing.T, store *trackerStore) map[string]ma
 	}
 	return all
 }
+
+// lockCountingMap counts how many times the shard lock is taken.
+type lockCountingMap struct {
+	tenantshard.Map
+	locks int
+}
+
+func (m *lockCountingMap) Lock() {
+	m.locks++
+	m.Map.Lock()
+}
+
+func TestLoadSnapshotSeries(t *testing.T) {
+	const shard, numShards = 1, 4
+	refs := func(n int) []refTimestamp {
+		refs := make([]refTimestamp, 0, n)
+		for i := 0; i < n; i++ {
+			refs = append(refs, refTimestamp{Ref: uint64(shard + i*numShards), Timestamp: clock.ToMinutes(snapshotTestNow)})
+		}
+		return refs
+	}
+	newTenant := func(t *testing.T) (*trackerStore, *trackedTenant, *lockCountingMap) {
+		store := newSnapshotTestStore(t, numShards, log.NewNopLogger())
+		tenant := store.getOrCreateTenant(snapshotTestUser)
+		tenant.RUnlock()
+		m := &lockCountingMap{Map: tenant.shards[shard]}
+		tenant.shards[shard] = m
+		return store, tenant, m
+	}
+
+	t.Run("empty shard is loaded in one lock hold", func(t *testing.T) {
+		store, tenant, m := newTenant(t)
+		n := 2*loadSnapshotBatchSize + 1
+		loadSnapshotSeries(tenant, shard, refs(n), store.shardMask(), n)
+		require.Equal(t, 1, m.locks)
+		require.Equal(t, n, m.Count())
+		require.Equal(t, uint64(n), tenant.series.Load())
+	})
+
+	t.Run("shard with series is loaded a batch per lock hold", func(t *testing.T) {
+		store, tenant, m := newTenant(t)
+		trackSnapshotTestSeries(t, store, shard, numShards)
+		tracked := m.Count()
+		m.locks = 0
+
+		n := 2*loadSnapshotBatchSize + 1
+		loadSnapshotSeries(tenant, shard, refs(n), store.shardMask(), n)
+		require.Equal(t, 1+3, m.locks, "one hold to check the shard, then one per batch")
+		require.Equal(t, n, m.Count(), "the tracked series are in the snapshot too, so they are not counted twice")
+		require.Equal(t, uint64(n), tenant.series.Load())
+		require.Greater(t, tracked, 0)
+	})
+}

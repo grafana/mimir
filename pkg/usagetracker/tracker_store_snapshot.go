@@ -38,6 +38,10 @@ const (
 
 	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
 	snapshotSeriesSize = 8 + 1
+
+	// loadSnapshotBatchSize is how many series of a snapshot are put into a shard that already has
+	// series per lock hold: about a millisecond of random access.
+	loadSnapshotBatchSize = 16 << 10
 )
 
 // snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
@@ -262,18 +266,14 @@ type refTimestamp struct {
 
 // loadSnapshotSeries loads the refs that belong to shard, the ones with ref&shardMask == shard,
 // into that shard of tenant. capacity is how many of the refs are expected to belong to it.
-// It checks if the shard is empty and uses Load() for an empty shard (faster)
-// or Put() for a non-empty one (handles concurrent loads and deduplication).
+// An empty shard is filled with Load(), which doesn't check for duplicates, in one lock hold.
+// A shard that already has series gets them with Put(), which handles duplicates, a batch per lock
+// hold, so that series tracking is not blocked for the whole shard.
 func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp, shardMask uint64, capacity int) {
 	m := tenant.shards[shard]
 	m.Lock()
-	defer m.Unlock()
 	// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
 	m.EnsureCapacity(uint32(capacity))
-
-	// Check if the shard is empty. If it is, we can use the faster Load() method
-	// which doesn't check for duplicates. Otherwise, use Put() which handles
-	// concurrent loads and deduplication.
 	if m.Count() == 0 {
 		loaded := 0
 		for _, ref := range refs {
@@ -283,11 +283,20 @@ func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp,
 			}
 		}
 		tenant.series.Add(uint64(loaded))
-	} else {
-		for _, ref := range refs {
+		m.Unlock()
+		return
+	}
+	m.Unlock()
+
+	for len(refs) > 0 {
+		batch := refs[:min(loadSnapshotBatchSize, len(refs))]
+		refs = refs[len(batch):]
+		m.Lock()
+		for _, ref := range batch {
 			if ref.Ref&shardMask == uint64(shard) {
 				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
 			}
 		}
+		m.Unlock()
 	}
 }
