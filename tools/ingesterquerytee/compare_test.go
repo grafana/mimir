@@ -82,7 +82,15 @@ func TestQueryComparison(t *testing.T) {
 		require.ErrorIs(t, compareResponses("QueryStream", req, primary, primary, cfg, time.Now()), errResponseLimit)
 	})
 	t.Run("truncated stream", func(t *testing.T) {
-		require.EqualError(t, compareResponses("QueryStream", req, primary, primary[:1], cfg, time.Now()), "incomplete query stream")
+		// The chunk count is only an estimate: missing chunks are missing samples.
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, primary[:1], cfg, time.Now()), errMismatch)
+		require.EqualError(t, compareResponses("QueryStream", req, primary, primary[1:], cfg, time.Now()), "invalid series index or missing end marker")
+	})
+	t.Run("fewer chunks than counted", func(t *testing.T) {
+		// The Prometheus TSDB counts a series' chunks before it merges the overlapping ones.
+		merged := streamFrames(t, floatChunk(t, []int64{100, 150, 200}, []float64{1, 2, 3}))
+		counted := []frame{wire(t, &client.QueryStreamResponse{StreamingSeries: []client.QueryStreamSeries{{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test"}}, ChunkCount: 2}}, IsEndOfSeriesStream: true}), merged[1]}
+		require.NoError(t, compareResponses("QueryStream", req, counted, merged, cfg, time.Now()))
 	})
 	t.Run("corrupt chunk", func(t *testing.T) {
 		bad := streamFrames(t, client.Chunk{Encoding: 4, Data: []byte{1}})
@@ -269,6 +277,7 @@ func TestQueryComparisonEmptyStream(t *testing.T) {
 	for _, streams := range [][2][]frame{{nil, data}, {data, nil}} {
 		require.ErrorIs(t, compareResponses("QueryStream", req, streams[0], streams[1], testConfig(), time.Now()), errMismatch)
 	}
-	// A partial stream still requires its end marker and every advertised chunk.
-	require.EqualError(t, compareResponses("QueryStream", req, data, data[:1], testConfig(), time.Now()), "incomplete query stream")
+	// A partial stream still requires its end marker.
+	require.EqualError(t, compareResponses("QueryStream", req, data, data[1:], testConfig(), time.Now()), "invalid series index or missing end marker")
+	require.EqualError(t, compareResponses("QueryStream", req, data, []frame{wire(t, &client.QueryStreamResponse{StreamingSeries: []client.QueryStreamSeries{{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test"}}}}})}, testConfig(), time.Now()), "incomplete query stream")
 }

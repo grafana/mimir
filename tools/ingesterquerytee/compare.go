@@ -76,9 +76,26 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 	}
 	backend = "comparison"
 	if !slices.Equal(a, b) {
-		return &mismatchError{fields: []any{"primary_items", len(a), "shadow_items", len(b)}}
+		return &mismatchError{fields: []any{"primary_items", len(a), "shadow_items", len(b)}, items: itemDifference(a, b)}
 	}
 	return nil
+}
+
+// itemDifference returns the items of a or b that the other doesn't have, as many times as they are missing.
+func itemDifference(a, b []string) map[string]int {
+	counts := map[string]int{}
+	for _, item := range a {
+		counts[item]++
+	}
+	for _, item := range b {
+		counts[item]--
+	}
+	for item, count := range counts {
+		if count == 0 {
+			delete(counts, item)
+		}
+	}
+	return counts
 }
 
 type comparisonError struct {
@@ -104,6 +121,8 @@ func equalSample(a, b normalizedSample) bool {
 type mismatchError struct {
 	fields     []any
 	difference *sampleDifference
+	// The differing items of a comparison of items, by how many more the primary has.
+	items map[string]int
 }
 
 func (*mismatchError) Error() string { return errMismatch.Error() }
@@ -197,7 +216,6 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 		return out, nil
 	}
 	var keys []string
-	var expected, received []int64
 	ended := false
 	count := 0
 	end := req.EndTimestampMs
@@ -227,8 +245,6 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 				return nil, errors.New("duplicate series")
 			}
 			keys = append(keys, key)
-			expected = append(expected, series.ChunkCount)
-			received = append(received, 0)
 			out[key] = map[sampleKey]normalizedSample{}
 		}
 		if msg.IsEndOfSeriesStream {
@@ -241,7 +257,6 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 			if !ended || series.SeriesIndex >= uint64(len(keys)) {
 				return nil, errors.New("invalid series index or missing end marker")
 			}
-			received[series.SeriesIndex] += int64(len(series.Chunks))
 			for _, wire := range series.Chunks {
 				// Mimir's wire encoding numbers 4..9 correspond to Prometheus encodings 1..6.
 				if wire.Encoding < 4 || wire.Encoding > 9 {
@@ -295,7 +310,9 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 			}
 		}
 	}
-	if !ended || !slices.Equal(expected, received) {
+	// A series' chunk count is only an estimate: the Prometheus TSDB counts the chunks before it merges overlapping ones,
+	// such as out-of-order chunks, so it sends fewer.
+	if !ended {
 		return nil, errors.New("incomplete query stream")
 	}
 	for key, samples := range out {

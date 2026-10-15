@@ -640,3 +640,37 @@ func TestProxyDetailedDiagnosticRateLimit(t *testing.T) {
 	require.Equal(t, 1, strings.Count(logs.String(), "difference="))
 	require.Equal(t, float64(2), testutil.ToFloat64(p.comparisons.WithLabelValues("QueryStream", "mismatch")))
 }
+
+func TestProxyMismatchRetries(t *testing.T) {
+	cfg := testConfig()
+	cfg.MismatchRetries = 2
+	cfg.MismatchRetryDelay = time.Millisecond
+	// The shadow's label names on each of its calls, the last one again after.
+	shadowNames := func(names ...[]string) *testIngester {
+		calls := atomic.NewInt32(0)
+		return &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+			call := min(int(calls.Inc())-1, len(names)-1)
+			return &client.LabelNamesResponse{LabelNames: names[call]}, nil
+		}}
+	}
+	for name, tc := range map[string]struct {
+		shadow *testIngester
+		result string
+	}{
+		"agrees on a retry":                  {shadowNames([]string{"b"}, []string{"a"}), "match_after_retry"},
+		"differs by other items each time":   {shadowNames([]string{"b"}, []string{"a", "c"}, []string{"a", "d"}), "match_after_retry"},
+		"the same items differ on every try": {shadowNames([]string{"b"}, []string{"a", "b"}, []string{"b"}), "mismatch"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			logs := &logBuffer{}
+			p, cli := testProxyWithLogger(t, &testIngester{}, tc.shadow, cfg, log.NewLogfmtLogger(logs))
+			_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+			require.NoError(t, err)
+			awaitOutcome(t, p, "LabelNames", tc.result)
+			require.Zero(t, testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", map[string]string{"mismatch": "match_after_retry", "match_after_retry": "mismatch"}[tc.result])))
+			if tc.result == "mismatch" {
+				require.Contains(t, logs.String(), "retries=2 persistent_missing_from_shadow=0 persistent_extra_in_shadow=1")
+			}
+		})
+	}
+}
