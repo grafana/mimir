@@ -23,12 +23,15 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -721,6 +724,10 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+	if _, _, err := tenant.ParseWithMetadata(req.UserID); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid tenant ID %q", req.UserID)
+	}
+
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {
@@ -793,6 +800,15 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+	// Validate the whole batch before tracking any series.
+	for _, partition := range req.Partitions {
+		for _, user := range partition.Users {
+			if _, _, err := tenant.ParseWithMetadata(user.UserID); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid tenant ID %q", user.UserID)
+			}
+		}
+	}
+
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
 	now := time.Now()
 
