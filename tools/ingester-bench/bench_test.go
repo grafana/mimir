@@ -79,8 +79,8 @@ func TestSeriesLabelsAreSortedAndUnique(t *testing.T) {
 }
 
 func TestDifference(t *testing.T) {
-	require.Equal(t, map[string]int{"a": 1, "d": -1}, difference([]string{"a", "b", "c"}, []string{"b", "c", "d"}))
-	require.Empty(t, difference([]string{"a"}, []string{"a"}))
+	require.Equal(t, map[uint64]int{1: 1, 4: -1}, difference([]uint64{1, 2, 3}, []uint64{2, 3, 4}))
+	require.Empty(t, difference([]uint64{1}, []uint64{1}))
 }
 
 func TestInstantiatedValuesMatchTheirKind(t *testing.T) {

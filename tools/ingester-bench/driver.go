@@ -120,9 +120,9 @@ func (d *driver) run(ctx context.Context, rates map[string]float64, seed uint64)
 
 // compare reads the request from both ingesters. A retry only keeps the differences that were there before, and
 // differ the same way.
-func (d *driver) compare(ctx context.Context, req *request, before map[string]int, attempt int) {
+func (d *driver) compare(ctx context.Context, req *request, before map[uint64]int, attempt int) {
 	offset := d.feed.offsetProducedBefore(d.offsetAge)
-	var results [2][]string
+	var results [2][]uint64
 	var errs [2]error
 	var latencies [2]time.Duration
 	var wg sync.WaitGroup
@@ -133,7 +133,7 @@ func (d *driver) compare(ctx context.Context, req *request, before map[string]in
 			readCtx, cancel := context.WithTimeout(readContext(context.Background(), req.tenant, offset), d.timeout)
 			defer cancel()
 			start := time.Now()
-			results[i], errs[i] = read(readCtx, ing.client, req)
+			results[i], errs[i] = read(readCtx, ing.client, req, nil)
 			latencies[i] = time.Since(start)
 		}()
 	}
@@ -199,16 +199,33 @@ func (d *driver) compare(ctx context.Context, req *request, before map[string]in
 	default:
 		s.mismatch++
 		if len(d.examples) < 50 {
-			d.examples = append(d.examples, describeMismatch(req, diff))
+			d.mu.Unlock()
+			example := d.describeMismatch(req, diff)
+			d.mu.Lock()
+			d.examples = append(d.examples, example)
 		}
 	}
 	d.mu.Unlock()
 }
 
-func describeMismatch(req *request, diff map[string]int) string {
+// describeMismatch reads the request once more for what the differing hashes are.
+func (d *driver) describeMismatch(req *request, diff map[uint64]int) string {
+	var explain [2]map[uint64]string
+	for i, ing := range d.ingesters {
+		explain[i] = map[uint64]string{}
+		for h := range diff {
+			explain[i][h] = ""
+		}
+		ctx, cancel := context.WithTimeout(readContext(context.Background(), req.tenant, -1), d.timeout)
+		_, _ = read(ctx, ing.client, req, explain[i])
+		cancel()
+	}
 	var a, b []string
-	for item, sign := range diff {
-		item = strings.ReplaceAll(item, "\x00", " ")
+	for h, sign := range diff {
+		item := explain[0][h] + explain[1][h]
+		if item == "" {
+			item = fmt.Sprintf("(gone since: %x)", h)
+		}
 		if sign > 0 {
 			a = append(a, item)
 		} else {

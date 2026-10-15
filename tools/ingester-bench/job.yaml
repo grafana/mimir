@@ -29,9 +29,10 @@ spec:
             - -duration=15m
             - -hold=1h
             # - -profile=/profile/profile.json
+          # The in-process Kafka holds the backfill, and reads of the largest queries hold their responses.
           resources:
-            requests: { cpu: "4", memory: 24Gi }
-            limits: { cpu: "4", memory: 24Gi }
+            requests: { cpu: "4", memory: 48Gi }
+            limits: { cpu: "4", memory: 48Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: out, mountPath: /out }

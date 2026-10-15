@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"math"
 	"slices"
@@ -27,8 +28,8 @@ import (
 
 var errTooLarge = errors.New("response too large to compare")
 
-// maxItems bounds what a response is normalized to, so that the bench doesn't hold the largest responses twice.
-const maxItems = 2_000_000
+// maxItems bounds what a response is normalized to: each is 8 bytes, the hash of the item.
+const maxItems = 20_000_000
 
 // readContext is the tenant's context for a read that each ingester answers once it consumed the offset.
 func readContext(ctx context.Context, tenant string, offset int64) context.Context {
@@ -41,14 +42,26 @@ func readContext(ctx context.Context, tenant string, offset int64) context.Conte
 	return ctx
 }
 
-// read sends the request to the ingester and returns its response as sorted items, comparable with another's.
-func read(ctx context.Context, c client.IngesterClient, req *request) ([]string, error) {
-	var items []string
+// read sends the request to the ingester and returns its response as the sorted hashes of its items, comparable
+// with another's: the items of the largest responses, by many reads at once, would not fit in memory. The items
+// whose hashes explain has are kept as text in it, to show what differs.
+func read(ctx context.Context, c client.IngesterClient, req *request, explain map[uint64]string) ([]uint64, error) {
+	var items []uint64
 	add := func(parts ...string) error {
 		if len(items) >= maxItems {
 			return errTooLarge
 		}
-		items = append(items, strings.Join(parts, "\x00"))
+		var h maphash.Hash
+		h.SetSeed(seedHash)
+		for _, part := range parts {
+			h.WriteString(part)
+			h.WriteByte(0)
+		}
+		sum := h.Sum64()
+		items = append(items, sum)
+		if _, ok := explain[sum]; ok {
+			explain[sum] = strings.Join(parts, " ")
+		}
 		return nil
 	}
 	switch {
@@ -168,7 +181,7 @@ func read(ctx context.Context, c client.IngesterClient, req *request) ([]string,
 			return nil, err
 		}
 	}
-	sort.Strings(items)
+	slices.Sort(items)
 	// A series' sample in two chunks, such as a compacted block's and the head's, is one sample to a querier.
 	return slices.Compact(items), nil
 }
@@ -265,8 +278,8 @@ func labelsKey(labels []mimirpb.LabelAdapter) string {
 
 // difference returns the items one response has that the other doesn't, as 1 when only a's has them and -1 when
 // only b's does.
-func difference(a, b []string) map[string]int {
-	out := map[string]int{}
+func difference(a, b []uint64) map[uint64]int {
+	out := map[uint64]int{}
 	i, j := 0, 0
 	for i < len(a) || j < len(b) {
 		switch {
@@ -290,6 +303,6 @@ type outcome struct {
 	latency  [2]time.Duration
 	errs     [2]error
 	items    int
-	diff     map[string]int
+	diff     map[uint64]int
 	tooLarge bool
 }
