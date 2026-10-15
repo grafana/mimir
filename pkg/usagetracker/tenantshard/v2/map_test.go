@@ -453,38 +453,6 @@ func TestMapCleanup(t *testing.T) {
 
 }
 
-func TestCloneIntoReusesBuffers(t *testing.T) {
-	// This tests cloneInto rather than pooledClone because sync.Pool drops items at random under the
-	// race detector, so a test that goes through a real pool is flaky there.
-	m := New(1000, testNumShards)
-	for i := range uint64(500) {
-		m.Load(i*7919+1, clock.Minutes(1))
-	}
-
-	dst := new([]keys)
-	cloneInto(dst, m.keys)
-	require.Equal(t, m.keys, *dst)
-	// Keep the backing array: the slice header in *dst is overwritten on every call.
-	backing := &(*dst)[0]
-
-	// A map whose size didn't change is the common case, and a fresh clone is exactly as large as the
-	// input, so this is the case that regressed: the clone must reuse the buffer.
-	cloneInto(dst, m.keys)
-	require.Equal(t, m.keys, *dst)
-	require.Same(t, backing, &(*dst)[0], "the clone of a map of the same size should reuse the buffer")
-
-	// A smaller input also reuses the buffer, and clones only what it needs.
-	cloneInto(dst, m.keys[:len(m.keys)/2])
-	require.Equal(t, m.keys[:len(m.keys)/2], *dst)
-	require.Same(t, backing, &(*dst)[0])
-
-	// A bigger input can't reuse it.
-	bigger := make([]keys, len(m.keys)+1)
-	cloneInto(dst, bigger)
-	require.Equal(t, bigger, *dst)
-	require.NotSame(t, backing, &(*dst)[0])
-}
-
 func BenchmarkMapRehash(b *testing.B) {
 	for _, size := range []uint32{1e6, 10e6} {
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {

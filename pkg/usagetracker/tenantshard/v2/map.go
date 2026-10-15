@@ -435,20 +435,15 @@ var (
 
 func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 	pooled := pool.Get().(*[]T)
-	cloneInto(pooled, input)
-	return pooled
-}
-
-// cloneInto copies input into *dst, reusing the backing array of *dst when it is large enough.
-func cloneInto[T any](dst *[]T, input []T) {
 	// A slice that make allocated has cap == len, so a stable-size map hands back a buffer that is
 	// exactly as large as it needs: that one must be reused too, or the pool never hits.
-	if cap(*dst) >= len(input) {
-		*dst = (*dst)[:len(input)]
+	if cap(*pooled) >= len(input) {
+		*pooled = (*pooled)[:len(input)]
 	} else {
-		*dst = make([]T, len(input))
+		*pooled = make([]T, len(input))
 	}
-	copy(*dst, input)
+	copy(*pooled, input)
+	return pooled
 }
 
 func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
