@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [BUGFIX] Upgrade Go to 1.26.9 to address [CVE-2026-56857](https://pkg.go.dev/vuln/GO-2026-6604), [CVE-2026-56866](https://pkg.go.dev/vuln/GO-2026-6605), [CVE-2026-78659](https://pkg.go.dev/vuln/GO-2026-6603), [CVE-2026-78660](https://pkg.go.dev/vuln/GO-2026-6610), [CVE-2026-78663](https://pkg.go.dev/vuln/GO-2026-6612), [CVE-2026-78667](https://pkg.go.dev/vuln/GO-2026-6609), [CVE-2026-78669](https://pkg.go.dev/vuln/GO-2026-6611), [CVE-2026-94439](https://pkg.go.dev/vuln/GO-2026-6613), [CVE-2026-94440](https://pkg.go.dev/vuln/GO-2026-6608), [CVE-2026-94448](https://pkg.go.dev/vuln/GO-2026-6599), [CVE-2026-97030](https://pkg.go.dev/vuln/GO-2026-6600), [CVE-2026-97031](https://pkg.go.dev/vuln/GO-2026-6607), and [CVE-2026-97032](https://pkg.go.dev/vuln/GO-2026-6617). #16861
+
 ## 3.1.7
 
 * [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16791
