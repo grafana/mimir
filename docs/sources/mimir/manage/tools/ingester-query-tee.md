@@ -97,9 +97,10 @@ Both backends must enforce the same tenant limits and retain the same queryable 
 Other comparisons ignore ordering for unordered label, series, exemplar, metadata, and cardinality responses.
 Search comparisons preserve result ordering and scores, while ignoring batch boundaries.
 
-Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates.
-Set `-mismatch-retries` to ask both backends again, after `-mismatch-retry-delay` (default `70s`) each time, when items of a comparison other than `QueryStream` differ.
-The comparison is a mismatch only if some of the same items are missing from the same backend on every retry; otherwise it counts as `match_after_retry`.
+Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates, or samples written late that one ingester consumed before the other.
+Set `-mismatch-retries` to ask both backends again, after `-mismatch-retry-delay` (default `70s`) each time, when a comparison's items or samples differ.
+The comparison is a mismatch only if some of the same items or samples are missing from the same backend, or still have different values, on every retry; otherwise it counts as `match_after_retry`.
+`QueryStream` retries compare samples up to the original request's recent-sample cutoff, so samples written since don't count.
 Retries run outside `-max-concurrent-comparisons`, with as many concurrent retries; mismatches arriving when all retry slots are busy are counted without retrying.
 The default `0` disables retries.
 Push, user statistics, health, and other RPCs are forwarded only to the primary.

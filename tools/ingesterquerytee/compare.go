@@ -60,7 +60,9 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		}
 		backend = "comparison"
 		if !equalSamples(a, b) {
-			return describeSampleMismatch(a, b)
+			mismatch := describeSampleMismatch(a, b)
+			mismatch.items = sampleDifferences(a, b)
+			return mismatch
 		}
 		return nil
 	}
@@ -121,14 +123,68 @@ func equalSample(a, b normalizedSample) bool {
 type mismatchError struct {
 	fields     []any
 	difference *sampleDifference
-	// The differing items of a comparison of items, by how many more the primary has.
+	// The differing items of a comparison of items, by how many more the primary has, or sampleDifferences.
 	items map[string]int
 }
 
 func (*mismatchError) Error() string { return errMismatch.Error() }
 func (*mismatchError) Unwrap() error { return errMismatch }
 
-func describeSampleMismatch(a, b samplesBySeries) error {
+// sampleDifferences returns the samples of a or b that the other doesn't have, keyed by series and timestamps, as 1 when
+// the shadow misses them, -1 when only the shadow has them, and 2 when their values differ.
+func sampleDifferences(a, b samplesBySeries) map[string]int {
+	differences := map[string]int{}
+	key := func(labels string, sample sampleKey) string {
+		return labels + string(binary.LittleEndian.AppendUint64(binary.LittleEndian.AppendUint64(nil, uint64(sample.timestamp)), uint64(sample.startTimestamp)))
+	}
+	for labels, samples := range a {
+		for k, sample := range samples {
+			if other, exists := b[labels][k]; !exists {
+				differences[key(labels, k)] = 1
+			} else if !equalSample(sample, other) {
+				differences[key(labels, k)] = 2
+			}
+		}
+	}
+	for labels, samples := range b {
+		for k := range samples {
+			if _, exists := a[labels][k]; !exists {
+				differences[key(labels, k)] = -1
+			}
+		}
+	}
+	return differences
+}
+
+// differences returns the items or samples of the responses that differ, as itemDifference or sampleDifferences.
+func differences(method string, req frame, primary, shadow []frame, cfg Config, start time.Time) (map[string]int, error) {
+	if method != "QueryStream" {
+		a, err := responseItems(method, primary)
+		if err != nil {
+			return nil, err
+		}
+		b, err := responseItems(method, shadow)
+		if err != nil {
+			return nil, err
+		}
+		return itemDifference(a, b), nil
+	}
+	var query client.QueryRequest
+	if err := query.Unmarshal(req); err != nil {
+		return nil, err
+	}
+	a, err := querySamples(primary, &query, cfg, start)
+	if err != nil {
+		return nil, err
+	}
+	b, err := querySamples(shadow, &query, cfg, start)
+	if err != nil {
+		return nil, err
+	}
+	return sampleDifferences(a, b), nil
+}
+
+func describeSampleMismatch(a, b samplesBySeries) *mismatchError {
 	var primaryLabels, shadowLabels, primarySamples, shadowSamples int
 	var missingSeries, extraSeries, missingSamples, extraSamples, differentValues int
 	labelCount := func(key string) int {
