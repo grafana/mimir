@@ -2263,6 +2263,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout for leaving memberlist cluster. (default 20s)
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -memberlist.local-state-cache-enabled
+    	[experimental] Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.
   -memberlist.max-concurrent-writes int
     	Maximum number of concurrent writes to other nodes. (default 5)
   -memberlist.max-join-backoff duration
