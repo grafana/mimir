@@ -17811,6 +17811,17 @@
           "fieldFlag": "ruler.rule-evaluation-write-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "rule_file_caching_enabled",
+          "required": false,
+          "desc": "Cache the YAML encoding and the parsed result of each rule file on disk, to avoid re-encoding and re-parsing unchanged rule files on every rule sync. Internal performance optimization, no effect on rule evaluation behavior.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.rule-file-caching-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
