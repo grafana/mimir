@@ -2240,6 +2240,13 @@ mimir_query_engine:
     # CLI flag: -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold
     [estimate_update_threshold: <float> | default = 0.1]
 
+    # (experimental) If true, use a cryptographic hash function to generate hash
+    # keys, and don't store the unhashed version of the cache key in each entry.
+    # Only applies if running splitting and caching inside MQE is enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash
+    [use_cryptographic_hash: <boolean> | default = false]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

@@ -3071,6 +3071,17 @@
                   "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold",
                   "fieldType": "float",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "use_cryptographic_hash",
+                  "required": false,
+                  "desc": "If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

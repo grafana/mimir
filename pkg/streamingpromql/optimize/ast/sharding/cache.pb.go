@@ -29,8 +29,8 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 // SelectorCardinalityStatistics is the value stored in the cardinality cache for a single selector
 // and time range when splitting and caching run inside the Mimir query engine.
 type SelectorCardinalityStatistics struct {
-	// Key is the unhashed form of this entry's key. It is stored unhashed so that
-	// hash collisions on the cache key can be detected.
+	// Key is the unhashed form of this entry's key. It is stored unhashed when using a non-cryptographic
+	// hash function so that hash collisions on the cache key can be detected.
 	Key []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	// Cardinality is the number of series selected.
 	Cardinality uint64 `protobuf:"varint,2,opt,name=cardinality,proto3" json:"cardinality,omitempty"`

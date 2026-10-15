@@ -489,7 +489,7 @@ func TestSelectorCardinalityCacheKeys(t *testing.T) {
 
 func TestSelectorCardinalityCacheKey_DifferentOriginalExpressions(t *testing.T) {
 	ctx := context.Background()
-	_, cfg := setupCardinalityEstimationTest()
+	cfg := createCardinalityEstimationTestOptions(false)
 	keyForFoo, err := selectorCardinalityCacheKey(ctx, cfg, "foo", "foo", 0, 1000, 2000)
 	require.NoError(t, err)
 
@@ -497,6 +497,16 @@ func TestSelectorCardinalityCacheKey_DifferentOriginalExpressions(t *testing.T) 
 	require.NoError(t, err)
 
 	require.NotEqual(t, keyForFoo, keyForFooBar, "identical selectors with different expressions should result in different keys")
+}
+
+func TestSelectorCardinalityCacheKey_CryptographicHashingEnabled(t *testing.T) {
+	ctx := context.Background()
+	cfg := createCardinalityEstimationTestOptions(true)
+
+	key, err := selectorCardinalityCacheKey(ctx, cfg, "foo", "foo", 0, 1000, 2000)
+	require.NoError(t, err)
+	require.Nil(t, key.plain, "plaintext key should not be populated when cryptographic hashing is enabled")
+	require.NotEqual(t, "", key.hashed, "hashed key should be populated when cryptographic hashing is enabled")
 }
 
 func TestRequestHintsCardinalityEstimator(t *testing.T) {
@@ -566,6 +576,22 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 
 	t.Run("stores a single selector's cardinality", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 1, c.SetCount)
+
+		result := estimateFoo(t, cfg)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
+	})
+
+	t.Run("stores a single selector's cardinality with cryptographic hashing enabled", func(t *testing.T) {
+		cfg := createCardinalityEstimationTestOptions(true)
+		c := caching.NewInMemoryCache()
+		cfg.Backend = c
+
 		ctx, qs := newCtxWithStats()
 		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
 
@@ -786,13 +812,20 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 }
 
 func setupCardinalityEstimationTest() (*caching.InMemoryCache, streamingpromql.CardinalityEstimationConfig) {
-	cfg := streamingpromql.CardinalityEstimationConfig{}
-	flagext.DefaultValues(&cfg)
+	cfg := createCardinalityEstimationTestOptions(false)
 	backend := caching.NewInMemoryCache()
 	cfg.Backend = backend
-	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.StaticPrefixGenerator("non-hashable-prefix:"), caching.StaticPrefixGenerator("hashable-prefix:"))
 
 	return backend, cfg
+}
+
+func createCardinalityEstimationTestOptions(useCryptographicHash bool) streamingpromql.CardinalityEstimationConfig {
+	cfg := streamingpromql.CardinalityEstimationConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.UseCryptographicHash = useCryptographicHash
+	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.StaticPrefixGenerator("non-hashable-prefix:"), caching.StaticPrefixGenerator("hashable-prefix:"), useCryptographicHash)
+
+	return cfg
 }
 
 func writeSelectorCardinalityEntry(t *testing.T, ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, key cacheKey, cardinality uint64, matchers []stats.LabelMatcher) stats.SelectorCardinality {
