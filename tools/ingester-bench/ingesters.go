@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package main
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+)
+
+// ingesterProcess is an ingester of its own process, consuming the feed's partition.
+type ingesterProcess struct {
+	name     string
+	engine   string
+	cmd      *exec.Cmd
+	httpPort int
+	grpcPort int
+	dir      string
+	conn     *grpc.ClientConn
+	client   client.IngesterClient
+}
+
+type ingesterConfig struct {
+	name, binary, engine, dir string
+	httpPort, grpcPort        int
+	kafka                     string
+	extraArgs                 []string
+	oooWindow, retention      time.Duration
+}
+
+func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, error) {
+	if err := os.MkdirAll(cfg.dir, 0o755); err != nil {
+		return nil, err
+	}
+	args := []string{
+		"-target=ingester",
+		"-server.http-listen-port=" + strconv.Itoa(cfg.httpPort),
+		"-server.grpc-listen-port=" + strconv.Itoa(cfg.grpcPort),
+		"-server.grpc-max-recv-msg-size-bytes=104857600",
+		"-server.grpc-max-send-msg-size-bytes=104857600",
+		"-server.grpc-max-concurrent-streams=1000",
+		// The partition is the instance's: both ingesters own partition 0, each in rings of their own.
+		"-ingester.ring.instance-id=ingester-zone-a-0",
+		"-ingester.ring.instance-addr=127.0.0.1",
+		"-ingester.ring.store=inmemory",
+		"-ingester.partition-ring.store=inmemory",
+		"-ingester.ring.replication-factor=1",
+		"-ingester.ring.heartbeat-period=5s",
+		"-ingest-storage.enabled=true",
+		"-ingest-storage.kafka.address=" + cfg.kafka,
+		"-ingest-storage.kafka.topic=" + topic,
+		"-ingest-storage.kafka.consume-from-position-at-startup=start",
+		"-ingest-storage.kafka.auto-create-topic-enabled=false",
+		"-ingest-storage.kafka.consumer-group-offset-commit-file-enforced=true",
+		"-ingester.push-grpc-method-enabled=false",
+		"-blocks-storage.backend=filesystem",
+		"-blocks-storage.filesystem.dir=" + filepath.Join(cfg.dir, "bucket"),
+		"-blocks-storage.tsdb.dir=" + filepath.Join(cfg.dir, "tsdb"),
+		"-blocks-storage.tsdb.retention-period=" + cfg.retention.String(),
+		"-blocks-storage.tsdb.engine=" + cfg.engine,
+		// Neither ships: the seriesstore engine has no blocks to, and the bench measures ingestion and reads.
+		"-blocks-storage.tsdb.ship-interval=0",
+		"-blocks-storage.tsdb.flush-blocks-on-shutdown=false",
+		"-blocks-storage.tsdb.memory-snapshot-on-shutdown=false",
+		"-ingester.out-of-order-time-window=" + cfg.oooWindow.String(),
+		"-ingester.max-global-series-per-user=0",
+		"-ingester.max-global-series-per-metric=0",
+		"-ingester.max-global-exemplars-per-user=100000",
+		"-ingester.native-histograms-ingestion-enabled=true",
+		"-validation.max-label-names-per-series=100",
+		"-validation.max-length-label-value=4096",
+		"-querier.max-fetched-series-per-query=0",
+		"-querier.max-fetched-chunks-per-query=0",
+		"-ingester.instance-limits.max-series=0",
+		"-ingester.instance-limits.max-tenants=0",
+		"-ingester.instance-limits.max-inflight-push-requests=0",
+		"-ingester.instance-limits.max-ingestion-rate=0",
+		"-ingester.read-path-cpu-utilization-limit=0",
+		"-ingester.read-path-memory-utilization-limit=0",
+		"-memberlist.join=",
+		"-usage-stats.enabled=false",
+		"-log.level=warn",
+	}
+	if cfg.engine == "prometheus" {
+		args = slicesDelete(args, "-blocks-storage.tsdb.memory-snapshot-on-shutdown=false")
+	}
+	args = append(args, cfg.extraArgs...)
+	// Through a watcher of the bench's own binary, which stops the ingester when the bench is gone, however it ended.
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, self, append([]string{cfg.binary}, args...)...)
+	cmd.Env = append(os.Environ(), watchEnv+"="+strconv.Itoa(os.Getpid()))
+	logFile, err := os.Create(filepath.Join(cfg.dir, "ingester.log"))
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	p := &ingesterProcess{name: cfg.name, engine: cfg.engine, cmd: cmd, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
+	p.conn, err = grpc.NewClient("127.0.0.1:"+strconv.Itoa(cfg.grpcPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100<<20)),
+		grpc.WithUnaryInterceptor(querierapi.ReadConsistencyClientUnaryInterceptor),
+		grpc.WithStreamInterceptor(querierapi.ReadConsistencyClientStreamInterceptor),
+	)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		return nil, err
+	}
+	p.client = client.NewIngesterClient(p.conn)
+	return p, nil
+}
+
+func slicesDelete(args []string, arg string) []string {
+	out := args[:0]
+	for _, a := range args {
+		if a != arg {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// waitReady waits for the ingester to say it is ready, which it does once it caught up with the partition.
+func (p *ingesterProcess) waitReady(ctx context.Context, progress func()) error {
+	for {
+		if p.cmd.ProcessState != nil {
+			return fmt.Errorf("%s exited: %s", p.name, p.cmd.ProcessState)
+		}
+		resp, err := http.Get(p.url("/ready"))
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		if progress != nil {
+			progress()
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (p *ingesterProcess) url(path string) string {
+	return "http://127.0.0.1:" + strconv.Itoa(p.httpPort) + path
+}
+
+// metrics scrapes the ingester's metrics, summing the samples of each metric name.
+func (p *ingesterProcess) metrics() (map[string]float64, error) {
+	resp, err := http.Get(p.url("/metrics"))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	families, err := parser.TextToMetricFamilies(bufio.NewReader(resp.Body))
+	if err != nil && len(families) == 0 {
+		return nil, err
+	}
+	out := map[string]float64{}
+	for name, family := range families {
+		for _, m := range family.Metric {
+			var v float64
+			switch {
+			case m.Counter != nil:
+				v = m.Counter.GetValue()
+			case m.Gauge != nil:
+				v = m.Gauge.GetValue()
+			case m.Untyped != nil:
+				v = m.Untyped.GetValue()
+			case m.Summary != nil:
+				out[name+"_count"] += float64(m.Summary.GetSampleCount())
+				continue
+			default:
+				continue
+			}
+			key := name
+			for _, l := range m.Label {
+				// The few labels the report needs.
+				if l.GetName() == "cpu_class" || (name == "cortex_ingest_storage_reader_last_consumed_offset" && l.GetName() == "partition") {
+					key += "{" + l.GetName() + "=" + l.GetValue() + "}"
+				}
+			}
+			out[key] += v
+		}
+	}
+	return out, nil
+}
+
+// lastConsumedOffset is the partition's offset the ingester consumed up to.
+func (p *ingesterProcess) lastConsumedOffset() int64 {
+	m, err := p.metrics()
+	if err != nil {
+		return -1
+	}
+	if v, ok := m["cortex_ingest_storage_reader_last_consumed_offset{partition=0}"]; ok {
+		return int64(v)
+	}
+	return -1
+}
+
+// profile saves a pprof profile of the ingester.
+func (p *ingesterProcess) profile(kind, path string, seconds int) error {
+	url := p.url("/debug/pprof/" + kind)
+	if seconds > 0 {
+		url += "?seconds=" + strconv.Itoa(seconds)
+	}
+	httpClient := http.Client{Timeout: time.Duration(seconds+60) * time.Second}
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
+func (p *ingesterProcess) stop() {
+	if p.conn != nil {
+		_ = p.conn.Close()
+	}
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Signal(os.Interrupt)
+		done := make(chan struct{})
+		go func() { _ = p.cmd.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Minute):
+			_ = p.cmd.Process.Kill()
+		}
+	}
+}
+
+// logTail returns the end of the ingester's log, for errors.
+func (p *ingesterProcess) logTail() string {
+	data, err := os.ReadFile(filepath.Join(p.dir, "ingester.log"))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	return strings.Join(lines[max(0, len(lines)-20):], "\n")
+}
+
+const watchEnv = "INGESTER_BENCH_WATCH_PARENT"
+
+// watchMain runs the command of its arguments, and stops it when the process of the environment's PID is gone or
+// when it is itself told to stop. It returns false when the bench isn't running as a watcher.
+func watchMain() bool {
+	parent, err := strconv.Atoi(os.Getenv(watchEnv))
+	if err != nil || len(os.Args) < 2 {
+		return false
+	}
+	cmd := exec.Command(os.Args[1], os.Args[2:]...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	ticker := time.NewTicker(time.Second)
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		case sig := <-signals:
+			_ = cmd.Process.Signal(sig)
+		case <-ticker.C:
+			// The bench's process is gone, or it is another's now that the bench's parent adopted its PID.
+			if syscall.Kill(parent, 0) != nil || os.Getppid() != parent {
+				_ = cmd.Process.Signal(os.Interrupt)
+				select {
+				case <-done:
+				case <-time.After(time.Minute):
+					_ = cmd.Process.Kill()
+				}
+				os.Exit(1)
+			}
+		}
+	}
+}
