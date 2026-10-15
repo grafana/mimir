@@ -107,7 +107,7 @@ var testNoNativeActive bool
 // openTenantEngine opens the tenant's TSDB in dir with the engine the ingester is configured with.
 func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), i.cfg.BlocksStorageConfig.TSDB.SeriesstoreDropWrittenColdPages)
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)))
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

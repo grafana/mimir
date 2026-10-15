@@ -89,9 +89,8 @@ func coldBlockPath(directory string, id uint64) string {
 	return filepath.Join(directory, fmt.Sprintf("cold-%016x", id))
 }
 
-// buildColdBlock writes series to a new block in directory, or keeps it in memory without one. dropPages drops the
-// written block from the page cache.
-func buildColdBlock(directory string, id uint64, series []frozenSeries, dropPages bool) (*coldBlock, error) {
+// buildColdBlock writes series to a new block in directory, or keeps it in memory without one.
+func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
 			return series[a].tenant < series[b].tenant
@@ -248,14 +247,14 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries, dropPage
 		}
 		path := coldBlockPath(directory, id)
 		temporary := path + ".tmp"
-		if err := writeSynced(temporary, out, dropPages); err != nil {
+		if err := writeSynced(temporary, out); err != nil {
 			return nil, fmt.Errorf("create cold block %s: %w", temporary, err)
 		}
 		if err := os.Rename(temporary, path); err != nil {
 			return nil, err
 		}
-		// Not checksummed: out was, and reading the file back would touch every page of it a second time, which makes
-		// the kernel count all of them as the container's active working set.
+		// Not checksummed: out was, and reading the file back would read every page of it a second time, which also
+		// makes the kernel count them as the container's active working set.
 		block, err = openColdBlock(path, id, false)
 	}
 	if err != nil {
@@ -267,7 +266,7 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries, dropPage
 	return block, nil
 }
 
-func writeSynced(path string, data []byte, dropPages bool) error {
+func writeSynced(path string, data []byte) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -279,10 +278,6 @@ func writeSynced(path string, data []byte, dropPages bool) error {
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
 		return err
-	}
-	if dropPages {
-		// Best effort: the pages are synced, so they can only be dropped, never lost.
-		_ = dropPageCache(file)
 	}
 	return file.Close()
 }
@@ -851,17 +846,8 @@ func (s *coldSeries) hasData(start, end int64) bool {
 // blocks.
 type coldState struct {
 	directory string
-	// Whether the blocks written here are dropped from the page cache, EngineOptions.DropWrittenColdPages.
-	dropWrittenPages bool
-	blocks           []*coldBlock
-	nextID           uint64
-}
-
-// dropWrittenColdPages sets whether the blocks the store's shards write are dropped from the page cache.
-func (s *Store) dropWrittenColdPages(drop bool) {
-	for _, shard := range s.shards {
-		shard.cold.dropWrittenPages = drop
-	}
+	blocks    []*coldBlock
+	nextID    uint64
 }
 
 func newColdState(directory string) (*coldState, error) {
@@ -954,7 +940,7 @@ func (c *coldState) mergeSmallBlocks() {
 // merge replaces the blocks from to before with one that has their series.
 func (c *coldState) merge(from, to int) error {
 	id := c.nextID
-	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to], c.dropWrittenPages)
+	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to])
 	if err != nil {
 		return err
 	}
@@ -965,7 +951,7 @@ func (c *coldState) merge(from, to int) error {
 
 // buildMergedBlock writes the block with the series of blocks, which only reads them: a series in more than one gets
 // the chunks of all of them, the later blocks' after. The block is nil without any series.
-func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, dropPages bool) (*coldBlock, error) {
+func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBlock, error) {
 	type key struct {
 		tenant string
 		labels labels.Labels
@@ -1001,7 +987,7 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, dropPage
 			}
 		}
 	}
-	return buildColdBlock(directory, id, frozen, dropPages)
+	return buildColdBlock(directory, id, frozen)
 }
 
 // replace puts block, or nothing when it is nil, in the place of the blocks from to before, which it removes.

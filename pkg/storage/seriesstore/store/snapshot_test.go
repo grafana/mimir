@@ -343,10 +343,9 @@ func TestColdBlocksFindSeriesByPostingsAndSurviveReopening(t *testing.T) {
 			frozen("a", [][2]string{{"__name__", "down"}, {"job", "api"}}, [2]int64{50, 60}),
 		}
 	}
-	inMemory, err := buildColdBlock("", 1, fixture(), false)
+	inMemory, err := buildColdBlock("", 1, fixture())
 	require.NoError(t, err)
-	// Dropped from the page cache, which the reads after don't notice.
-	written, err := buildColdBlock(directory, 2, fixture(), true)
+	written, err := buildColdBlock(directory, 2, fixture())
 	require.NoError(t, err)
 	reopened, err := openColdBlock(coldBlockPath(directory, 2), 2, true)
 	require.NoError(t, err)

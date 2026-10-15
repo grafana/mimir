@@ -324,7 +324,7 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 // the block has all their data; they stay in memory if the block can't be written.
 func freezeOutOfHead(state *shardState) {
 	if pending := prepareFreeze(state, nil); pending != nil {
-		installFreeze(state, pending, pending.build(state.cold.directory, state.cold.dropWrittenPages), nil)
+		installFreeze(state, pending, pending.build(state.cold.directory), nil)
 	}
 }
 
@@ -421,11 +421,11 @@ func prepareFreeze(state *shardState, scope *freezeScope) *pendingFreeze {
 
 // build writes the block, which needs no shard lock: it only reads the series' copies and the
 // chunk files' immutable chunks. A nil block is one with no series to keep.
-func (p *pendingFreeze) build(directory string, dropPages bool) *coldBlock {
+func (p *pendingFreeze) build(directory string) *coldBlock {
 	if len(p.frozen) == 0 {
 		return nil
 	}
-	block, err := buildColdBlock(directory, p.id, p.frozen, dropPages)
+	block, err := buildColdBlock(directory, p.id, p.frozen)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "phase=cold_block_error id=%d error=%v\n", p.id, err)
 		p.keys = nil

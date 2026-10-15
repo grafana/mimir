@@ -194,7 +194,6 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) er
 type TSDBConfig struct {
 	Dir                                 string        `yaml:"dir"`
 	Engine                              string        `yaml:"engine" category:"experimental"`
-	SeriesstoreDropWrittenColdPages     bool          `yaml:"seriesstore_drop_written_cold_pages" category:"experimental" doc:"hidden"`
 	BlockRanges                         DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
 	Retention                           time.Duration `yaml:"retention_period"`
 	ShipInterval                        time.Duration `yaml:"ship_interval" category:"advanced"`
@@ -304,7 +303,6 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.Dir, "blocks-storage.tsdb.dir", "./tsdb/", "Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts.")
 	f.StringVar(&cfg.Engine, "blocks-storage.tsdb.engine", EnginePrometheus, fmt.Sprintf("Storage engine of the ingesters' per-tenant TSDBs. Supported values: %s, %s. %s keeps series in the seriesstore layout and requires ingest storage without block shipping; it has no WAL, so after an unclean shutdown the ingester replays Kafka from the retention period.", EnginePrometheus, EngineSeriesstore, EngineSeriesstore))
-	f.BoolVar(&cfg.SeriesstoreDropWrittenColdPages, "blocks-storage.tsdb.seriesstore-drop-written-cold-pages", false, "With the seriesstore engine, drop each cold block from the page cache once it is written, so that what merges and queries read again of it doesn't count as working set. The first reads of its pages then come from disk.")
 	f.Var(&cfg.BlockRanges, "blocks-storage.tsdb.block-ranges-period", "TSDB blocks range period.")
 	f.DurationVar(&cfg.Retention, "blocks-storage.tsdb.retention-period", 13*time.Hour, "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.")
 	f.DurationVar(&cfg.ShipInterval, "blocks-storage.tsdb.ship-interval", 1*time.Minute, "How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled.")
