@@ -106,6 +106,7 @@
 * [BUGFIX] Usage-tracker: Fix startup waiting for the whole snapshot loading timeout (half of `-usage-tracker.idle-timeout`) before becoming ready when retention deleted all records from the snapshots metadata topic. #16786
 * [BUGFIX] Query-frontend: Return HTTP 422 instead of HTTP 500 when a query exceeds `-querier.max-estimated-memory-consumption-per-query`. The limit error was returned unclassified, so it fell through to the generic HTTP 500 handling. #16716
 * [BUGFIX] Usage-tracker: Reuse the buffers that snapshotting clones each tenant shard into. They were never reused, so every snapshot allocated the clone under the shard lock and blocked series tracking for the duration. #16882
+* [BUGFIX] Distributor: Fix the OTLP request size limit error, which labeled the size of a compressed request as uncompressed when the compressed request was already larger than `-distributor.max-otlp-request-size`. #16877
 
 ### Mixin
 
