@@ -168,6 +168,11 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
+    // Active query tracker stores currently executing queries in a file that
+    // survives pod restarts. Useful for debugging crashes. This configuration
+    // setting is temporary to help with migration in Grafana Cloud.
+    active_query_tracker_enabled: true,
+
     // Common configuration parameters
     commonConfig:: if !$._config.trace_request_headers then {} else {
       'server.trace-request-headers': true,

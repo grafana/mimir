@@ -13,6 +13,7 @@
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
+    $.mimirActivityTrackerArgs +
     {
       target: 'query-frontend',
 
@@ -86,6 +87,7 @@
   newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
