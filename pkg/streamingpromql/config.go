@@ -163,7 +163,7 @@ func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEsti
 	}, []string{"operation"})
 	lookups := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_mimir_query_engine_cardinality_estimation_lookups_total",
-		Help: "Total number of attempts to estimate cardinality from the cardinality cache, by outcome.",
+		Help: "Total number of query requests where an attempt was made to estimate cardinality from the cardinality cache, by outcome.",
 	}, []string{"outcome"})
 
 	return &CardinalityEstimationMetrics{
