@@ -83,6 +83,7 @@ The tee compares these ingester read RPCs:
 
 `QueryStream` comparisons decode chunks, identify series by their labels, and compare sample timestamps, start timestamps, and values within the requested time range.
 Series order, batch sizes, chunk boundaries, and identical overlapping samples do not affect equality.
+A series' advertised chunk count is not compared, because the Prometheus TSDB counts chunks before it merges overlapping ones, such as out-of-order chunks.
 Integer and float native histograms are compared in their float representation with compacted bucket spans.
 Gauge identity and conflicting known counter reset hints are compared; unknown reset hints can match either counter hint because they depend on chunk boundaries.
 Float comparisons use exact bit patterns, including stale NaNs, infinities, and signed zero.
@@ -95,6 +96,12 @@ Both backends must enforce the same tenant limits and retain the same queryable 
 
 Other comparisons ignore ordering for unordered label, series, exemplar, metadata, and cardinality responses.
 Search comparisons preserve result ordering and scores, while ignoring batch boundaries.
+
+Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates.
+Set `-mismatch-retries` to ask both backends again, after `-mismatch-retry-delay` (default `70s`) each time, when items of a comparison other than `QueryStream` differ.
+The comparison is a mismatch only if some of the same items are missing from the same backend on every retry; otherwise it counts as `match_after_retry`.
+Retries run outside `-max-concurrent-comparisons`, with as many concurrent retries; mismatches arriving when all retry slots are busy are counted without retrying.
+The default `0` disables retries.
 Push, user statistics, health, and other RPCs are forwarded only to the primary.
 The proxy supports unary and server-streaming requests, matching the ingester API; client-streaming and bidirectional RPCs are unsupported.
 

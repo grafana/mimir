@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -83,6 +84,7 @@ type Proxy struct {
 	ctx            context.Context
 	logger         log.Logger
 	slots          chan struct{}
+	retrySlots     chan struct{}
 	comparisons    *prometheus.CounterVec
 	mirrored       *prometheus.CounterVec
 	duration       *prometheus.HistogramVec
@@ -94,12 +96,12 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1)}
+	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1)}
 	if hostname, err := os.Hostname(); err == nil {
 		p.hostname = hostname
 	}
 	p.comparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
+		Name: "ingester_query_tee_comparisons_total", Help: "Read comparisons by RPC and outcome: match, match_after_retry, mismatch, skipped, unavailable, primary_error, shadow_error, comparison_error, or limit.",
 	}, []string{"method", "result"})
 	p.mirrored = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC and outcome: success, unavailable, or shadow_error.",
@@ -305,6 +307,16 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 			result = "comparison_error"
 		}
 	}
+	var mismatch *mismatchError
+	if result == "mismatch" && errors.As(comparisonErr, &mismatch) && len(mismatch.items) > 0 && p.cfg.MismatchRetries > 0 {
+		select {
+		case p.retrySlots <- struct{}{}:
+			// Retries wait for minutes, so they don't hold the comparison slot.
+			go p.retryMismatch(fullMethod, method, req, md, mismatch)
+			return
+		default:
+		}
+	}
 	p.comparisons.WithLabelValues(method, result).Inc()
 	if result == "mismatch" || result == "comparison_error" || result == "shadow_error" {
 		fields := []any{"msg", "ingester query comparison failed", "method", method, "result", result}
@@ -316,8 +328,7 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 			}
 			fields = append(fields, "tenant_id", tenantID)
 		}
-		var mismatch *mismatchError
-		if errors.As(comparisonErr, &mismatch) {
+		if mismatch != nil || errors.As(comparisonErr, &mismatch) {
 			fields = append(fields, mismatch.fields...)
 		}
 		var decodeError *comparisonError
@@ -361,6 +372,84 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 			}
 		}
 		level.Warn(p.logger).Log(fields...)
+	}
+}
+
+// retryMismatch asks both backends again, up to -mismatch-retries times, for the items that differed, and counts a
+// mismatch only if some of the same items differ in the same way every time.
+func (p *Proxy) retryMismatch(fullMethod, method string, req frame, md metadata.MD, mismatch *mismatchError) {
+	defer func() { <-p.retrySlots }()
+	differing := mismatch.items
+	retries := 0
+	for retries < p.cfg.MismatchRetries && len(differing) > 0 {
+		select {
+		case <-time.After(p.cfg.MismatchRetryDelay):
+		case <-p.ctx.Done():
+			return
+		}
+		retries++
+		var primary, shadow response
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); primary = p.fetch(p.primary, fullMethod, req, md) }()
+		go func() { defer wg.Done(); shadow = p.fetch(p.shadow, fullMethod, req, md) }()
+		wg.Wait()
+		if primary.err != nil || shadow.err != nil || primary.limited || shadow.limited {
+			// What the items are now isn't known, so the first comparison stands.
+			break
+		}
+		a, err := responseItems(method, primary.frames)
+		if err != nil {
+			break
+		}
+		b, err := responseItems(method, shadow.frames)
+		if err != nil {
+			break
+		}
+		now := itemDifference(a, b)
+		for item, count := range differing {
+			// The same item, missing from the same backend.
+			if (count > 0) != (now[item] > 0) || now[item] == 0 {
+				delete(differing, item)
+			}
+		}
+	}
+	if len(differing) == 0 {
+		p.comparisons.WithLabelValues(method, "match_after_retry").Inc()
+		return
+	}
+	p.comparisons.WithLabelValues(method, "mismatch").Inc()
+	missing := 0
+	for _, count := range differing {
+		if count > 0 {
+			missing++
+		}
+	}
+	fields := append([]any{"msg", "ingester query comparison failed", "method", method, "result", "mismatch"}, mismatch.fields...)
+	fields = append(fields, "retries", retries, "persistent_missing_from_shadow", missing, "persistent_extra_in_shadow", len(differing)-missing)
+	level.Warn(p.logger).Log(fields...)
+}
+
+// fetch sends the request to a backend again and keeps its response, within the shadow timeout.
+func (p *Proxy) fetch(conn grpc.ClientConnInterface, fullMethod string, req frame, md metadata.MD) response {
+	ctx, cancel := context.WithTimeout(p.ctx, p.cfg.ShadowTimeout)
+	defer cancel()
+	ctx = metadata.NewOutgoingContext(ctx, md)
+	var r response
+	stream, err := openStream(ctx, conn, fullMethod, &req)
+	if err != nil {
+		r.err = err
+		return r
+	}
+	for {
+		var f frame
+		if err := stream.RecvMsg(&f); err != nil {
+			if !errors.Is(err, io.EOF) {
+				r.err = err
+			}
+			return r
+		}
+		r.add(f, p.cfg.MaxResponseBytes)
 	}
 }
 
