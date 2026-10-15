@@ -13,8 +13,8 @@ option (gogoproto.unmarshaler_all) = true;
 // SelectorCardinalityStatistics is the value stored in the cardinality cache for a single selector
 // and time range when splitting and caching run inside the Mimir query engine.
 message SelectorCardinalityStatistics {
-  // Key is the unhashed form of this entry's key. It is stored unhashed so that
-  // hash collisions on the cache key can be detected.
+  // Key is the unhashed form of this entry's key. It is stored unhashed when using a non-cryptographic
+  // hash function so that hash collisions on the cache key can be detected.
   bytes key = 1;
 
   // Cardinality is the number of series selected.

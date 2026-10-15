@@ -972,6 +972,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
 
 	opts := t.createQueryFrontendPromQLEngineOptions()
+	middlewareCfg.RVSSubquerySplittingEnabled = opts.RangeVectorSplitting.EnableSubquerySplitting
 
 	// When sharding and splitting/caching run inside MQE with cardinality-based sharding, store the
 	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
@@ -1211,7 +1212,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
 	// be sharded independently.
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, opts.RangeVectorSplitting.EnableSubquerySplitting, util_log.Logger))
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
@@ -1261,6 +1262,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
 	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.
@@ -1494,7 +1496,6 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 

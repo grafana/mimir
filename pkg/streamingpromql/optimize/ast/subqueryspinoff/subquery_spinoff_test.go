@@ -98,6 +98,7 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 				cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
 				cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
 				cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
+				cortex_frontend_subquery_spinoff_skipped_total{reason="range-vector-splitting"} 0
 				cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
 				`,
 				successCount,
@@ -175,7 +176,7 @@ func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool) (*streamingp
 	require.NoError(t, err)
 
 	if enableSpinOff {
-		planner.RegisterASTOptimizationPass(NewOptimizationPass(spinOffEnabledLimits{}, opts.CommonOpts.NoStepSubqueryIntervalFn, frontendspinoff.Options{}, reg, log.NewNopLogger()))
+		planner.RegisterASTOptimizationPass(NewOptimizationPass(spinOffEnabledLimits{}, opts.CommonOpts.NoStepSubqueryIntervalFn, frontendspinoff.Options{}, reg, opts.RangeVectorSplitting.EnableSubquerySplitting, log.NewNopLogger()))
 	}
 
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
