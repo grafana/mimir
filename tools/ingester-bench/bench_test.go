@@ -3,7 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -115,4 +118,22 @@ func BenchmarkFeedBackfill(b *testing.B) {
 		b.ReportMetric(float64(f.samples.Load())/b.Elapsed().Seconds()*float64(b.N), "samples/s")
 		f.close()
 	}
+}
+
+func TestResultsIndexHasEveryRun(t *testing.T) {
+	results := t.TempDir()
+	for i, cpu := range []float64{2, 1} {
+		report := Report{Started: int64(1_700_000_000 + i*3600), Series: 1000, Tenants: 2, Config: map[string]string{"bench_revision": fmt.Sprintf("rev%d", i), "backfill": "1h"},
+			Resources: [2]Resources{{CPUCores: 4}, {CPUCores: cpu}}, APIs: map[string]APIReport{}}
+		_, err := saveResult(results, report, "")
+		require.NoError(t, err)
+	}
+	index, err := os.ReadFile(filepath.Join(results, "index.html"))
+	require.NoError(t, err)
+	require.Contains(t, string(index), `"bench_revision":"rev0"`)
+	require.Contains(t, string(index), `"bench_revision":"rev1"`)
+	require.NotContains(t, string(index), "__RUNS_DATA__")
+	entries, err := os.ReadDir(results)
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
 }

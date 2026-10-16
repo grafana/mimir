@@ -12,6 +12,13 @@
 //
 // By default A is the Prometheus TSDB and B the seriesstore engine, of a binary built from the working tree.
 // -binary-a and -binary-b compare two builds, -engine-a and -engine-b two engines.
+//
+// The run's directory has report.json, report.html and CPU and heap profiles. -results keeps them in a directory of
+// past runs, with an index.html of them all, B against A over runs; -add-result adds a report.json from elsewhere.
+// run-in-kubernetes.sh builds the image, runs job.yaml in a cluster with CPUs of their own for each ingester, and adds
+// the report to a results directory:
+//
+//	IMAGE_REPO=... KUBE_CONTEXT=... NAMESPACE=... RESULTS=~/ingester-bench-results tools/ingester-bench/run-in-kubernetes.sh
 package main
 
 import (
@@ -56,6 +63,7 @@ type config struct {
 	kafkaPort         int
 	dirA, dirB        string
 	hold              time.Duration
+	results           string
 	keep              bool
 }
 
@@ -91,11 +99,25 @@ func main() {
 	flag.StringVar(&cfg.dirA, "dir-a", "", "Data directory of ingester A (default in -out, or /data with -external).")
 	flag.StringVar(&cfg.dirB, "dir-b", "", "Data directory of ingester B (default in -out, or /data with -external).")
 	flag.DurationVar(&cfg.hold, "hold", 0, "Time to wait after the report before exiting, to copy the run's files.")
+	resultsDir := flag.String("results", "", "Directory of past runs: the run's report is saved in it, and its index.html of all runs written again.")
+	addPath := flag.String("add-result", "", "Add the report.json, such as one copied from a pod, to -results and write its index.html again, instead of running a bench.")
 	renderPath := flag.String("render", "", "Write the report.html of a report.json, such as one copied from a pod, next to it, instead of running a bench.")
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	flag.Parse()
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
+	}
+	cfg.results = *resultsDir
+	if *addPath != "" {
+		if cfg.results == "" {
+			log.Fatal("-add-result needs -results")
+		}
+		dir, err := addResult(cfg.results, *addPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("added %s, index in %s", dir, filepath.Join(cfg.results, "index.html"))
+		return
 	}
 	if *renderPath != "" {
 		if err := renderReport(*renderPath); err != nil {
@@ -140,7 +162,8 @@ func run(ctx context.Context, cfg config) error {
 	if cfg.binaryA == "" {
 		cfg.binaryA = filepath.Join(cfg.out, "mimir")
 		log.Printf("building %s", cfg.binaryA)
-		build := exec.CommandContext(ctx, "go", "build", "-o", cfg.binaryA, "./cmd/mimir")
+		// Stamped with the tree's commit, which the report says it compared.
+		build := exec.CommandContext(ctx, "go", "build", "-o", cfg.binaryA, "-ldflags", "-X github.com/prometheus/common/version.Revision="+benchRevision(), "./cmd/mimir")
 		build.Stdout, build.Stderr = os.Stdout, os.Stderr
 		if err := build.Run(); err != nil {
 			return fmt.Errorf("build mimir: %w", err)
@@ -338,6 +361,13 @@ func run(ctx context.Context, cfg config) error {
 		fmt.Printf("REPORT %s\n", data)
 	}
 	log.Printf("report and profiles in %s", cfg.out)
+	if cfg.results != "" {
+		dir, err := saveResult(cfg.results, report, cfg.out)
+		if err != nil {
+			return err
+		}
+		log.Printf("saved in %s, index in %s", dir, filepath.Join(cfg.results, "index.html"))
+	}
 	if cfg.hold > 0 {
 		// The image has no tar for kubectl cp: the run's files are served instead, for a port-forward.
 		server := &http.Server{Addr: ":8090", Handler: http.FileServer(http.Dir(cfg.out)), ReadHeaderTimeout: 10 * time.Second}
@@ -378,7 +408,8 @@ func runConfig(cfg config, profile Profile, rates map[string]float64) map[string
 		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
 		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
-		"external": fmt.Sprint(cfg.external != ""),
+		"external":  fmt.Sprint(cfg.external != ""),
+		"version_a": binaryVersion(cfg.binaryA), "version_b": binaryVersion(cfg.binaryB), "bench_revision": benchRevision(),
 	}
 	for rpc, rate := range rates {
 		out["rate_"+rpc] = fmt.Sprintf("%.3f/s", rate)
