@@ -104,6 +104,8 @@ type seriesExtra struct {
 	outOfOrder []oooSample
 	// The native histogram buckets the cost attribution tracker counted the series with, plus one: zero is none.
 	countedBuckets int32
+	// How many of the out-of-order samples are histograms, which a query merges as they are when none is.
+	oooHistograms int32
 }
 
 func (s *Series) histogram() *chunks.HistogramAppender {
@@ -170,7 +172,18 @@ func (s *Series) setOutOfOrder(samples []oooSample) {
 		s.extra = &seriesExtra{}
 	}
 	s.extra.outOfOrder = samples
+	s.extra.oooHistograms = 0
+	for index := range samples {
+		if samples[index].H != nil {
+			s.extra.oooHistograms++
+		}
+	}
 	s.dropEmptyExtra()
+}
+
+// oooFloatsOnly reports whether the out-of-order samples are all floats.
+func (s *Series) oooFloatsOnly() bool {
+	return s.extra == nil || s.extra.oooHistograms == 0
 }
 
 // bitTrackers is how many custom trackers a series keeps its matches of in its slot as bits. The slot's last bit says

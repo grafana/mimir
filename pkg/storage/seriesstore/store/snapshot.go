@@ -1056,6 +1056,8 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 				}
 				sample.H = h
 			}
+			// Counted once the samples are read.
+			series.setOutOfOrder(series.ooo())
 			if version < 4 {
 				inferPreV4Flags(&series)
 			}

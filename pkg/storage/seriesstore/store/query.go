@@ -391,7 +391,7 @@ func queryRawChunks(series *Series, stored, coldChunks []ChunkMeta, disk *chunks
 		}
 		// The open out-of-order chunk shares one position, like Prometheus's OOO head chunk.
 		ooo++
-		if samples := series.ooo(); len(samples) > 0 && floatsOnly(samples) {
+		if samples := series.ooo(); len(samples) > 0 && series.oooFloatsOnly() {
 			// Encoded only if it overlaps no other chunk: merged with one, it is read as it is.
 			if first, last := samples[0].T, samples[len(samples)-1].T; overlaps(first, last) {
 				candidates = append(candidates, chunks.Candidate{Chunk: chunks.Chunk{MinTime: first, MaxTime: last, Encoding: int32(xorEncoding)}, OutOfOrder: true, Index: ooo, Floats: samples})
@@ -1247,13 +1247,4 @@ func cmpStrings(a, b string) int {
 		return 1
 	}
 	return 0
-}
-
-func floatsOnly(samples []chunks.Sample) bool {
-	for index := range samples {
-		if samples[index].H != nil {
-			return false
-		}
-	}
-	return true
 }
