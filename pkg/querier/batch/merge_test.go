@@ -28,15 +28,15 @@ func TestMergeIter(t *testing.T) {
 			chunk4 := mkChunk(t, model.TimeFromUnix(75), 100, enc)
 			chunk5 := mkChunk(t, model.TimeFromUnix(100), 100, enc)
 
-			iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5}, IteratorOptions{})
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5}, IteratorOptions{})
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 
 			// Re-use iterator.
-			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5}, IteratorOptions{})
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5}, IteratorOptions{})
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
@@ -57,11 +57,11 @@ func TestMergeHarder(t *testing.T) {
 				chunks = append(chunks, mkChunk(t, from, samples, enc))
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
-			iter := newMergeIterator(nil, chunks)
-			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
+			iter := newMergeIterator(nil, chunks, IteratorOptions{})
+			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels(), IteratorOptions{}), enc, setNotCounterResetHintsAsUnknown)
 
-			iter = newMergeIterator(nil, chunks)
-			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
+			iter = newMergeIterator(nil, chunks, IteratorOptions{})
+			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels(), IteratorOptions{}), enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
 }
@@ -271,7 +271,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
+					iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks, IteratorOptions{})
 					for i, s := range tc.expectedSamples {
 						valType := iter.Next()
 						require.NotEqual(t, chunkenc.ValNone, valType, "expectedSamples has extra samples")
@@ -378,7 +378,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), encoded, model.Time(samples[0]), model.Time(samples[len(samples)-1])))
 	}
 
-	c3It := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
+	c3It := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks, IteratorOptions{})
 
 	c3It.Seek(15)
 	// These Next() calls are necessary to reproduce the bug.
