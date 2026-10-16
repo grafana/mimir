@@ -236,6 +236,36 @@ func (l Labels) ValueOf(id uint32) string {
 	return ""
 }
 
+// Lookup is ValueOf, and whether the series has the label.
+func (l Labels) Lookup(id uint32) (string, bool) {
+	// Walks by index rather than through takeVarintString: this runs for every candidate series of
+	// every query, and almost every name id and value length fits in one varint byte.
+	s := string(l)
+	for i := 0; i < len(s); {
+		var name uint64
+		if c := s[i]; c < 0x80 {
+			name, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			name = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		var size uint64
+		if c := s[i]; c < 0x80 {
+			size, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			size = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		if uint32(name) == id {
+			return s[i : i+int(size)], true
+		}
+		i += int(size)
+	}
+	return "", false
+}
+
 // HeapSize returns the heap bytes of the buffer, with the string header that references it.
 func (l Labels) HeapSize() int {
 	return 16 + len(l)

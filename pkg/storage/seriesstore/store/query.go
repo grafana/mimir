@@ -879,16 +879,7 @@ func forEachLabelID(stored labels.Labels, visit func(id uint32)) {
 
 // labelValue returns the value of the label with name id, and whether the labels have it.
 func labelValue(stored labels.Labels, id uint32) (string, bool) {
-	rest := string(stored)
-	for len(rest) > 0 {
-		name := uint32(takeUvarintString(&rest))
-		size := takeUvarintString(&rest)
-		if name == id {
-			return rest[:size], true
-		}
-		rest = rest[size:]
-	}
-	return "", false
+	return stored.Lookup(id)
 }
 
 func sortedKeys(set map[string]struct{}) []string {
