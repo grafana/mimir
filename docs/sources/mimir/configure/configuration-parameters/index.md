@@ -2141,6 +2141,16 @@ cardinality_estimate:
   # CLI flag: -querier.cardinality-estimate.max-metric-names
   [max_metric_names: <int> | default = 10000000]
 
+  # (experimental) A window that ended at least this long ago and that compacted
+  # blocks cover is counted from those blocks alone, without the ingesters, so a
+  # count for a past day can use the index-headers before
+  # -querier.query-store-after has passed. Data written into that range after it
+  # was compacted, such as late out-of-order samples, is not counted until it is
+  # compacted too. 0 disables it, and windows inside
+  # -querier.query-ingesters-within always ask the ingesters.
+  # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
+  [trust_compacted_blocks_after: <duration> | default = 1h]
+
 
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
