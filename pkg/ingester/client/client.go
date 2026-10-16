@@ -19,6 +19,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/zstd"
 	"github.com/grafana/mimir/pkg/util/grpcstats"
 )
 
@@ -82,7 +83,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
+	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name, zstd.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix, f)
 }
 
