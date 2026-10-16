@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -112,5 +113,75 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		resp, err := i.SeriesCounts(user.InjectOrgID(context.Background(), "other"), &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: hour})
 		require.NoError(t, err)
 		assert.Empty(t, resp.Groups)
+	})
+}
+
+func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
+	const minute = int64(time.Minute / time.Millisecond)
+	const hour = 60 * minute
+
+	a1 := labels.FromStrings(model.MetricNameLabel, "a", "pod", "1")
+	a2 := labels.FromStrings(model.MetricNameLabel, "a", "pod", "2")
+	b1 := labels.FromStrings(model.MetricNameLabel, "b", "pod", "1")
+
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), userID)
+	push := func(lset labels.Labels, ts int64) {
+		_, err := i.Push(ctx, mockWriteRequest(t, lset, 1, ts))
+		require.NoError(t, err)
+	}
+
+	// a{pod=1} and b{pod=1} go into a local block; a{pod=1} keeps writing
+	// into the new head with a{pod=2}.
+	push(a1, 10*minute)
+	push(b1, 10*minute)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
+	require.Len(t, i.getTSDB(userID).Blocks(), 1)
+	push(a1, 3*hour)
+	push(a2, 3*hour)
+
+	countsOf := func(resp *client.SeriesCountsResponse) map[string][]int64 {
+		out := map[string][]int64{}
+		for _, g := range resp.Groups {
+			out[g.Value] = g.Counts
+		}
+		return out
+	}
+
+	t.Run("a series in the block and the head counts once", func(t *testing.T) {
+		resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
+		assert.Equal(t, int64(4), resp.SeriesWalked, "two series in the block, two in the head")
+		assert.Equal(t, int64(3), resp.SeriesCounted)
+		assert.Equal(t, 10*minute, resp.MinTimeMs)
+	})
+
+	t.Run("buckets take each series' chunks from every source", func(t *testing.T) {
+		resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, StepMs: 2 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"a": {1, 2}, "b": {1, 0}}, countsOf(resp))
+	})
+
+	t.Run("a window after the block reads only the head", func(t *testing.T) {
+		resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"a": {2}}, countsOf(resp))
+		assert.Equal(t, int64(2), resp.SeriesWalked)
+	})
+
+	t.Run("hashes are unique across block and head", func(t *testing.T) {
+		resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true})
+		require.NoError(t, err)
+		require.Len(t, resp.Groups, 2)
+		assert.ElementsMatch(t, []uint64{labels.StableHash(a1), labels.StableHash(a2)}, resp.Groups[0].Hashes)
+	})
+
+	t.Run("max_index_bytes prices the series of every source", func(t *testing.T) {
+		_, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 3 * 512})
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.ResourceExhausted, st.Code())
+		assert.Contains(t, st.Message(), "walk 4 series in 2 head and local blocks")
 	})
 }
