@@ -47,8 +47,15 @@ type estimateResponse struct {
 	// ingesters' heads, whatever the window, since head postings have no
 	// time axis.
 	HeadWhole bool `json:"head_whole,omitempty"`
+	// HeadFallback says why the head walk was refused when the head was
+	// counted as one bucket instead.
+	HeadFallback string `json:"head_fallback,omitempty"`
+	// HeadMinTime is the newest ingester head's start when it is after the
+	// window's start; the counts are then a lower bound.
+	HeadMinTime int64 `json:"head_min_time,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
-	// store-gateway; MissingBlocks lists them.
+	// store-gateway, which MissingBlocks lists, or when the window starts
+	// before the ingesters' heads, which HeadMinTime says.
 	LowerBound    bool     `json:"lower_bound"`
 	MissingBlocks []string `json:"missing_blocks,omitempty"`
 	Retries       int      `json:"retries,omitempty"`
@@ -140,7 +147,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		out := estimateResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,

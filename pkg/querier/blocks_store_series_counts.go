@@ -50,8 +50,15 @@ type CardinalityEstimateResult struct {
 	// HeadWhole is set when the counts are every series in the ingesters'
 	// heads, since head postings can't be filtered by time.
 	HeadWhole bool
-	Snapped   bool
-	Counts    map[string][]int64
+	// HeadFallback, when set, is why the head walk was refused and the head
+	// was counted as one bucket from its postings instead.
+	HeadFallback string
+	// HeadMinTime, when set, is the start of the newest ingester head, after
+	// the window's start: the ingesters' compacted blocks before it are not
+	// read, so the counts are a lower bound.
+	HeadMinTime int64
+	Snapped     bool
+	Counts      map[string][]int64
 	// Dedup is set when the blocks may share series, so the counts come
 	// from a union of label-set hashes rather than a sum.
 	Dedup  bool
