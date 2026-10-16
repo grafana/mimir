@@ -58,15 +58,18 @@ func TestBlocksStoreQueryable_MetricNameCounts(t *testing.T) {
 		assert.Equal(t, 2, res.StoreGateways)
 	})
 
-	t.Run("fails if a block is not counted", func(t *testing.T) {
+	t.Run("a block no store-gateway counts makes the counts a lower bound", func(t *testing.T) {
 		oneCounted := map[BlocksStoreClient][][]ulid.ULID{
 			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
 			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
 				return &storegatewaypb.MetricNameCountsResponse{}, nil
 			}}: {{b2}},
 		}
-		_, err := newQueryable(shards, oneCounted).MetricNameCounts(context.Background(), "user-1", minT, maxT)
-		require.ErrorContains(t, err, "was not counted")
+		res, err := newQueryable(shards, oneCounted).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]int64{"up": 3}, res.Counts)
+		assert.Equal(t, []ulid.ULID{b1}, res.Blocks)
+		assert.Equal(t, []ulid.ULID{b2}, res.MissingBlocks)
 	})
 
 	t.Run("forwards the metric-names limit and reports a refusal as 422", func(t *testing.T) {

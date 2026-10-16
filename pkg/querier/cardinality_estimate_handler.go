@@ -34,12 +34,23 @@ type estimateGroup struct {
 }
 
 type estimateResponse struct {
-	MinTime              int64           `json:"min_time"`
-	MaxTime              int64           `json:"max_time"`
-	Snapped              bool            `json:"snapped,omitempty"`
-	StepMS               int64           `json:"step_ms,omitempty"`
-	GroupBy              string          `json:"group_by"`
-	Read                 string          `json:"read"`
+	MinTime int64  `json:"min_time"`
+	MaxTime int64  `json:"max_time"`
+	Snapped bool   `json:"snapped,omitempty"`
+	StepMS  int64  `json:"step_ms,omitempty"`
+	GroupBy string `json:"group_by"`
+	Read    string `json:"read"`
+	// Source says where the counts come from: "blocks" for the
+	// store-gateways. The ingesters are not consulted yet.
+	Source string `json:"source"`
+	// LowerBound is set when some blocks were not counted by any
+	// store-gateway; MissingBlocks lists them.
+	LowerBound    bool     `json:"lower_bound"`
+	MissingBlocks []string `json:"missing_blocks,omitempty"`
+	Retries       int      `json:"retries,omitempty"`
+	// HasMore is set when limit cut the table. Groups dropped by min_count
+	// don't set it, since the caller asked for them to be left out.
+	HasMore              bool            `json:"has_more"`
 	Dedup                bool            `json:"dedup"`
 	Blocks               int             `json:"blocks"`
 	StoreGateways        int             `json:"store_gateways"`
@@ -124,6 +135,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimate
 		}
 		out := estimateResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
+			Source: sourceBlocks, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
@@ -156,6 +168,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimate
 		})
 		if limit > 0 && limit < len(out.Counts) {
 			out.Counts = out.Counts[:limit]
+			out.HasMore = true
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := writeEstimateResponse(w, &out); err != nil {
@@ -245,6 +258,10 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req Cardina
 	}
 	return check
 }
+
+// Sources a cardinality estimate can count from, as reported in the
+// response's source field.
+const sourceBlocks = "blocks"
 
 // estimateRequestOptions are the route's parameters that shape the response
 // rather than the count.
