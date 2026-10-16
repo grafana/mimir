@@ -61,6 +61,8 @@ type queryGen struct {
 	profile QueriesProfile
 	// Shapes by the ingester RPC they turn into.
 	shapes map[string][]QueryShape
+	// The profile's query classes of each RPC.
+	classes map[string][]QueryClass
 	// Each tenant's metrics by series, smallest first, and tenants weighted by how much they query.
 	bySize        map[*tenantModel][]*metricModel
 	tenantWeights []float64
@@ -94,6 +96,12 @@ func newQueryGen(w *world, p QueriesProfile, retention int64, dataStart, now fun
 			}
 		}
 	}
+	g.classes = map[string][]QueryClass{}
+	for _, c := range p.Classes {
+		for _, rpc := range c.RPCs {
+			g.classes[rpc] = append(g.classes[rpc], c)
+		}
+	}
 	for _, t := range w.tenants {
 		metrics := append([]*metricModel(nil), t.metrics...)
 		sort.Slice(metrics, func(a, b int) bool { return metrics[a].seriesCount() < metrics[b].seriesCount() })
@@ -121,26 +129,45 @@ func (g *queryGen) rates(scale float64) map[string]float64 {
 	return out
 }
 
-// shape returns a shape for the RPC: one of the profile's, or one drawn from its distributions.
+// shape returns a shape for the RPC: one of the profile's, or one drawn from its distributions or its classes.
 func (g *queryGen) shape(r *rand.Rand, rpc string) QueryShape {
 	if shapes := g.shapes[rpc]; len(shapes) > 0 {
 		return shapes[r.IntN(len(shapes))]
 	}
-	d := g.profile.Distributions
-	if d == nil {
-		d = defaultProfile().Queries.Distributions
+	if d := g.profile.Distributions; d != nil {
+		return drawShape(r, rpc, d, nil)
 	}
-	s := QueryShape{API: "query", Fetched: int(d.Fetched.Sample(r)), SinceMaxMs: int64(d.SinceMax.Sample(r))}
-	if rpc == "QueryStream" && r.Float64() < d.RangeShare {
-		s.API, s.RangeMs, s.StepMs = "query_range", int64(d.Range.Sample(r)), int64(d.Step.Sample(r))
+	classes := g.classes[rpc]
+	if len(classes) == 0 {
+		return drawShape(r, rpc, &ShapeProfile{NameMatcher: map[string]float64{"=": 1}}, nil)
+	}
+	weights := make([]float64, len(classes))
+	for i, c := range classes {
+		weights[i] = c.Weight
+	}
+	c := classes[weightedIndex(r, weights)]
+	return drawShape(r, rpc, &c.ShapeProfile, c.Matchers)
+}
+
+// drawShape draws a shape from d, with the matchers besides the name's drawn from matchers when there are some.
+func drawShape(r *rand.Rand, rpc string, d *ShapeProfile, matchers []ClassMatcher) QueryShape {
+	s := QueryShape{API: "query", Fetched: max(1, int(d.Fetched.Sample(r))), SinceMaxMs: int64(d.SinceMax.Sample(r))}
+	if r.Float64() < d.RangeShare {
+		s.RangeMs = int64(d.Range.Sample(r))
+		if rpc == "QueryStream" {
+			s.API, s.StepMs = "query_range", int64(d.Step.Sample(r))
+		}
 	}
 	if r.Float64() < d.ShardedShare {
 		s.Sharded = d.Shards
 	}
+	alternation := func() Value {
+		return Value{Kind: "alternation", Size: max(2, int(math.Round(d.AlternationSize.Sample(r))))}
+	}
 	selectors := max(1, int(math.Round(d.SelectorsPerQuery.Sample(r))))
 	for range selectors {
 		sel := Selector{}
-		if r.Float64() < 0.5 {
+		if len(d.SelectorRange) > 0 && (matchers != nil || r.Float64() < 0.5) {
 			sel.RangeMs = int64(d.SelectorRange.Sample(r))
 		}
 		switch pick(r, d.NameMatcher) {
@@ -149,11 +176,31 @@ func (g *queryGen) shape(r *rand.Rand, rpc string) QueryShape {
 		case "=~":
 			sel.Matchers = append(sel.Matchers, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "alternation", Size: 2}})
 		}
+		if matchers != nil {
+			for _, m := range matchers {
+				if r.Float64() >= m.Share {
+					continue
+				}
+				count := 1
+				if len(m.Count) > 0 {
+					count = max(1, int(math.Round(m.Count.Sample(r))))
+				}
+				for range count {
+					v := Value{Kind: m.Kind}
+					if v.Kind == "alternation" {
+						v = alternation()
+					}
+					sel.Matchers = append(sel.Matchers, Matcher{Label: "l" + strconv.Itoa(int(m.LabelRank.Sample(r))), Type: m.Type, Value: v})
+				}
+			}
+			s.Selectors = append(s.Selectors, sel)
+			continue
+		}
 		for range max(0, int(math.Round(d.MatchersPerSel.Sample(r)))-len(sel.Matchers)) {
 			kind := strings.SplitN(pick(r, d.OtherMatchers), " ", 2)
 			v := Value{Kind: kind[1]}
 			if v.Kind == "alternation" {
-				v.Size = max(2, int(math.Round(d.AlternationSize.Sample(r))))
+				v = alternation()
 			}
 			sel.Matchers = append(sel.Matchers, Matcher{Label: "l" + strconv.Itoa(int(d.LabelRank.Sample(r))), Type: kind[0], Value: v})
 		}

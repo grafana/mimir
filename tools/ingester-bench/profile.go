@@ -15,9 +15,9 @@ import (
 	"strings"
 )
 
-// Profile describes the series an ingester holds and the reads it serves, as distributions only. The built-in one has
-// generic, rounded numbers; -profile loads another, such as one measured from a running cluster and anonymized, with
-// the same fields.
+// Profile describes the series an ingester holds and the reads it serves, as distributions only. The built-in one is
+// made up: round numbers for the series, and the reads as classes of the queries that dashboards, rules and the label and
+// cardinality pages of a Grafana send. -profile loads another with the same fields.
 type Profile struct {
 	Series  SeriesProfile  `json:"series"`
 	Queries QueriesProfile `json:"queries"`
@@ -56,9 +56,33 @@ type SeriesProfile struct {
 type QueriesProfile struct {
 	// Requests per second to the ingester, per million of its series, by ingester RPC.
 	RatePerMillionSeries map[string]float64 `json:"rate_per_million_series"`
-	// Query shapes: either a list of them, sampled uniformly, or the distributions they are drawn from.
+	// Query shapes: a list of them, sampled uniformly; or distributions they are drawn from; or classes of queries, each
+	// with distributions of its own, drawn by weight among the classes of the RPC. The first a profile has is used.
 	Shapes        []QueryShape  `json:"shapes,omitempty"`
 	Distributions *ShapeProfile `json:"distributions,omitempty"`
+	Classes       []QueryClass  `json:"classes,omitempty"`
+}
+
+// QueryClass is a kind of query, such as an alerting rule's or a dashboard panel's: what it reads correlates, as a
+// panel's query of many series has a range, regexes of a dashboard's variables and exclusions, where a rule's is
+// instant, of few series, by equalities.
+type QueryClass struct {
+	Name   string   `json:"name"`
+	Weight float64  `json:"weight"`
+	RPCs   []string `json:"rpcs"`
+	ShapeProfile
+	// The matchers besides the metric name's, each in a share of the selectors: OtherMatchers and MatchersPerSel are
+	// used instead when there are none.
+	Matchers []ClassMatcher `json:"matchers,omitempty"`
+}
+
+type ClassMatcher struct {
+	Type  string  `json:"type"`
+	Kind  string  `json:"kind"`
+	Share float64 `json:"share"`
+	// How many of them a selector that has one has, 1 when not set.
+	Count     Percentiles `json:"count,omitempty"`
+	LabelRank Percentiles `json:"label_rank,omitempty"`
 }
 
 // QueryShape is one anonymized read: how far back it goes and how much it selects, and its selectors' matchers, whose
@@ -194,7 +218,7 @@ func loadProfile(path string) (Profile, error) {
 	return p, nil
 }
 
-// defaultProfile has rounded numbers in the range of a large multi-tenant cluster's ingesters.
+// defaultProfile is a made-up multi-tenant ingester.
 func defaultProfile() Profile {
 	return Profile{
 		Series: SeriesProfile{
@@ -231,26 +255,203 @@ func defaultProfile() Profile {
 				"LabelValuesCardinality":  0.005,
 				"UserStats":               0.005,
 			},
-			Distributions: &ShapeProfile{
-				RangeShare:        0.3,
-				Range:             Percentiles{"0": 60_000, "0.5": 600_000, "0.9": 21_600_000, "0.99": 172_800_000},
-				Step:              Percentiles{"0": 15_000, "0.5": 60_000, "0.9": 120_000, "0.99": 3_600_000},
-				SinceMax:          Percentiles{"0": 0, "0.5": 1, "0.9": 250_000, "0.99": 40_000_000},
-				SelectorRange:     Percentiles{"0": 60_000, "0.5": 240_000, "0.9": 3_600_000, "0.99": 86_400_000},
-				ShardedShare:      0.01,
-				Shards:            16,
-				Fetched:           Percentiles{"0": 1, "0.5": 20, "0.9": 500, "0.99": 20_000, "0.999": 100_000},
-				SelectorsPerQuery: Percentiles{"0": 1, "0.5": 1, "0.9": 2, "0.99": 5},
-				MatchersPerSel:    Percentiles{"0": 1, "0.5": 3, "0.9": 15, "0.99": 22},
-				NameMatcher:       map[string]float64{"=": 0.97, "=~": 0.02, "none": 0.01},
-				OtherMatchers: map[string]float64{
-					"!= literal": 0.5, "= literal": 0.27, "!= empty": 0.08, "=~ alternation": 0.04, "= empty": 0.02,
-					"=~ literal": 0.02, "!~ regex": 0.016, "=~ regex": 0.014, "=~ prefix": 0.014, "=~ any": 0.006,
-					"!~ alternation": 0.004, "=~ contains": 0.003, "=~ suffix": 0.002,
-				},
-				AlternationSize: Percentiles{"0": 2, "0.5": 2, "0.9": 3, "0.99": 13, "1": 50},
-				LabelRank:       Percentiles{"0": 0, "0.5": 6, "0.9": 50, "0.99": 230},
+			Classes: defaultClasses(),
+		},
+	}
+}
+
+// Ranges and times, in milliseconds.
+const (
+	minute = 60_000
+	hour   = 60 * minute
+	day    = 24 * hour
+)
+
+// defaultClasses are the reads of the made-up ingester: mostly rules and dashboards over the last minutes and hours.
+func defaultClasses() []QueryClass {
+	instant := Percentiles{"0": 0, "1": 0}
+	now := Percentiles{"0": 0, "0.9": 0, "0.97": minute, "1": 10 * minute}
+	rateRange := Percentiles{"0": minute, "0.5": 5 * minute, "0.9": 10 * minute, "1": hour}
+	common := Percentiles{"0": 0, "0.5": 2, "0.9": 8, "1": 20}
+	one := map[string]float64{"=": 1}
+	return []QueryClass{
+		{
+			// sum(rate(requests_total{job="api", status!="2xx"}[5m])) > 10: instant, of a few series, mostly equalities.
+			Name: "alerting rule", Weight: 0.38, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				Range: instant, SinceMax: instant, SelectorRange: rateRange, NameMatcher: one,
+				Fetched:           Percentiles{"0": 1, "0.5": 8, "0.9": 120, "0.99": 2_000, "1": 10_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.6": 1, "0.95": 2, "1": 4},
 			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.9, Count: Percentiles{"0": 1, "0.7": 1, "1": 3}, LabelRank: common},
+				{Type: "!=", Kind: "literal", Share: 0.3, LabelRank: common},
+				{Type: "=~", Kind: "alternation", Share: 0.15, LabelRank: common},
+				{Type: "!=", Kind: "empty", Share: 0.1, LabelRank: common},
+			},
+		},
+		{
+			// sum by (cluster, namespace) (rate(cpu_seconds_total[5m])): instant, of a whole metric.
+			Name: "recording rule", Weight: 0.14, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				Range: instant, SinceMax: instant, SelectorRange: rateRange, NameMatcher: one,
+				Fetched:           Percentiles{"0": 20, "0.5": 400, "0.9": 8_000, "0.99": 60_000, "1": 150_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.8": 1, "1": 3},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.4, LabelRank: Percentiles{"0": 0, "1": 3}},
+				{Type: "!=", Kind: "empty", Share: 0.1, LabelRank: common},
+			},
+		},
+		{
+			// rate(requests_total{cluster="$cluster", namespace="$namespace", job=~"$job"}[$__rate_interval]) over the
+			// dashboard's hours, with variables set to a few values or to all of them.
+			Name: "dashboard panel", Weight: 0.25, RPCs: []string{"QueryStream", "QueryExemplars"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, SelectorRange: rateRange, NameMatcher: one,
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.8": 6 * hour, "0.95": day, "1": 7 * day},
+				Step:              Percentiles{"0": 15_000, "0.5": 30_000, "0.9": 2 * minute, "1": 10 * minute},
+				Fetched:           Percentiles{"0": 1, "0.5": 40, "0.9": 1_000, "0.99": 15_000, "1": 60_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.6": 1, "0.9": 3, "1": 6},
+				AlternationSize:   Percentiles{"0": 2, "0.5": 3, "0.9": 12, "1": 60},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.95, Count: Percentiles{"0": 1, "0.5": 2, "1": 3}, LabelRank: Percentiles{"0": 0, "0.5": 1, "1": 10}},
+				{Type: "=~", Kind: "alternation", Share: 0.35, LabelRank: common},
+				{Type: "=~", Kind: "any", Share: 0.15, LabelRank: common},
+				{Type: "!=", Kind: "literal", Share: 0.25, LabelRank: common},
+				{Type: "!=", Kind: "empty", Share: 0.15, LabelRank: common},
+			},
+		},
+		{
+			// Container metrics without the pause containers and the cgroups of no container:
+			// container_memory_working_set_bytes{namespace="x", container!="", container!="POD", image!=""}.
+			Name: "dashboard panel with exclusions", Weight: 0.07, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 0.7, SinceMax: now, SelectorRange: rateRange, NameMatcher: one,
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 12 * hour, "1": 7 * day},
+				Step:              Percentiles{"0": 15_000, "0.5": 30_000, "0.9": 2 * minute, "1": 10 * minute},
+				Fetched:           Percentiles{"0": 5, "0.5": 300, "0.9": 5_000, "0.99": 30_000, "1": 80_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.6": 1, "0.9": 2, "1": 4},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.9, LabelRank: Percentiles{"0": 0, "1": 4}},
+				{Type: "!=", Kind: "literal", Share: 1, Count: Percentiles{"0": 2, "0.5": 6, "0.9": 15, "1": 22}, LabelRank: Percentiles{"0": 0, "0.5": 4, "1": 40}},
+				{Type: "!=", Kind: "empty", Share: 0.6, Count: Percentiles{"0": 1, "0.7": 1, "1": 3}, LabelRank: common},
+			},
+		},
+		{
+			// Someone looking around: {__name__=~"http_.*", pod=~"api-.*"} over a day or two.
+			Name: "explore", Weight: 0.06, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 0.6, SinceMax: now, SelectorRange: rateRange,
+				NameMatcher:       map[string]float64{"=": 0.8, "=~": 0.15, "none": 0.05},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": day, "1": 14 * day},
+				Step:              Percentiles{"0": 15_000, "0.5": minute, "0.9": 5 * minute, "1": hour},
+				Fetched:           Percentiles{"0": 1, "0.5": 100, "0.9": 5_000, "0.99": 50_000, "1": 100_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.8": 1, "1": 2},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.6, LabelRank: common},
+				{Type: "=~", Kind: "prefix", Share: 0.3, LabelRank: Percentiles{"0": 0, "0.5": 5, "1": 60}},
+				{Type: "=~", Kind: "contains", Share: 0.15, LabelRank: Percentiles{"0": 0, "0.5": 5, "1": 60}},
+				{Type: "=~", Kind: "regex", Share: 0.15, LabelRank: common},
+				{Type: "!~", Kind: "regex", Share: 0.1, LabelRank: common},
+			},
+		},
+		{
+			// Last week or last month, of which the ingesters have the most recent hours.
+			Name: "long range", Weight: 0.04, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SelectorRange: rateRange, NameMatcher: one,
+				SinceMax:          Percentiles{"0": 0, "0.5": 0, "0.7": hour, "1": 7 * day},
+				Range:             Percentiles{"0": day, "0.5": 7 * day, "1": 30 * day},
+				Step:              Percentiles{"0": 5 * minute, "0.5": hour, "1": 6 * hour},
+				Fetched:           Percentiles{"0": 1, "0.5": 50, "0.9": 2_000, "1": 20_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.8": 1, "1": 3},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.9, Count: Percentiles{"0": 1, "1": 3}, LabelRank: common},
+				{Type: "=~", Kind: "alternation", Share: 0.2, LabelRank: common},
+			},
+		},
+		{
+			// An aggregation over a large metric, which the query-frontend shards.
+			Name: "sharded aggregation", Weight: 0.02, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 0.7, SinceMax: now, SelectorRange: rateRange, NameMatcher: one, ShardedShare: 1, Shards: 16,
+				Range:             Percentiles{"0": hour, "0.5": 3 * hour, "1": day},
+				Step:              Percentiles{"0": 15_000, "0.5": minute, "1": 5 * minute},
+				Fetched:           Percentiles{"0": 5_000, "0.5": 40_000, "1": 300_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.6, LabelRank: Percentiles{"0": 0, "1": 3}},
+				{Type: "=~", Kind: "alternation", Share: 0.3, LabelRank: common},
+			},
+		},
+		{
+			// A query of one or a few pods or instances, by a label of many values.
+			Name: "by instance", Weight: 0.04, RPCs: []string{"QueryStream"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 0.6, SinceMax: now, SelectorRange: rateRange, NameMatcher: one,
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "1": day},
+				Step:              Percentiles{"0": 15_000, "0.5": 30_000, "1": 5 * minute},
+				Fetched:           Percentiles{"0": 1, "0.5": 3, "0.9": 30, "1": 300},
+				SelectorsPerQuery: Percentiles{"0": 1, "0.7": 1, "1": 3},
+				AlternationSize:   Percentiles{"0": 2, "0.5": 4, "1": 30},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.7, Count: Percentiles{"0": 1, "1": 2}, LabelRank: Percentiles{"0": 0, "1": 3}},
+				{Type: "=", Kind: "literal", Share: 0.6, LabelRank: Percentiles{"0": 3, "0.5": 15, "1": 100}},
+				{Type: "=~", Kind: "alternation", Share: 0.4, LabelRank: Percentiles{"0": 3, "0.5": 15, "1": 100}},
+				{Type: "=~", Kind: "prefix", Share: 0.1, LabelRank: Percentiles{"0": 3, "0.5": 15, "1": 100}},
+			},
+		},
+		{
+			// The active series of a metric, or of a namespace, in the cardinality pages.
+			Name: "active series", Weight: 1, RPCs: []string{"ActiveSeries"},
+			ShapeProfile: ShapeProfile{
+				SinceMax: instant, NameMatcher: map[string]float64{"=": 0.6, "none": 0.4},
+				Fetched:           Percentiles{"0": 1, "0.5": 200, "0.9": 20_000, "1": 300_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.6, LabelRank: Percentiles{"0": 0, "1": 5}}},
+		},
+		{
+			// A dashboard's variable, label_values(up{cluster="$cluster"}, namespace), over its range.
+			Name: "dashboard variable", Weight: 1, RPCs: []string{"LabelValues", "LabelNames"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"=": 0.7, "none": 0.3},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": 7 * day},
+				Fetched:           Percentiles{"0": 1, "0.5": 100, "0.9": 5_000, "1": 50_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.7, Count: Percentiles{"0": 1, "1": 2}, LabelRank: Percentiles{"0": 0, "1": 5}},
+				{Type: "=~", Kind: "alternation", Share: 0.2, LabelRank: common},
+			},
+		},
+		{
+			// The series of a metric, or of metrics by a prefix, as a metrics browser lists them.
+			Name: "series browser", Weight: 1, RPCs: []string{"MetricsForLabelMatchers"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"=": 0.8, "=~": 0.2},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "1": day},
+				Fetched:           Percentiles{"0": 1, "0.5": 50, "0.9": 2_000, "1": 50_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.5, LabelRank: common}},
+		},
+		{
+			// The cardinality pages' label names and values of a metric or a tenant.
+			Name: "cardinality", Weight: 1, RPCs: []string{"LabelNamesAndValues", "LabelValuesCardinality"},
+			ShapeProfile: ShapeProfile{
+				SinceMax: instant, NameMatcher: map[string]float64{"=": 0.8, "none": 0.2},
+				Fetched:           Percentiles{"0": 10, "0.5": 2_000, "0.9": 50_000, "1": 500_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.3, LabelRank: Percentiles{"0": 0, "1": 3}}},
 		},
 	}
 }

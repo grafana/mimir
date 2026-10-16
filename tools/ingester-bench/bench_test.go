@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -136,4 +137,53 @@ func TestResultsIndexHasEveryRun(t *testing.T) {
 	entries, err := os.ReadDir(results)
 	require.NoError(t, err)
 	require.Len(t, entries, 3)
+}
+
+func TestDefaultQueryClassesReadEveryRPCInTheirWays(t *testing.T) {
+	p := defaultProfile()
+	w := newWorld(p.Series, 20_000, 1)
+	now := int64(1_700_000_000_000)
+	g := newQueryGen(w, p.Queries, 13*3_600_000, func() int64 { return now - 13*3_600_000 }, func() int64 { return now })
+	r := rand.New(rand.NewPCG(1, 2))
+	for rpc := range p.Queries.RatePerMillionSeries {
+		requests := 0
+		for range 1000 {
+			if g.next(r, rpc) != nil {
+				requests++
+			}
+		}
+		require.Greater(t, requests, 900, rpc)
+	}
+	var ranged, sharded, exclusions, regexes, instant int
+	for range 5000 {
+		req := g.next(r, "QueryStream")
+		if req == nil {
+			continue
+		}
+		q := req.query
+		if q.EndTimestampMs-q.StartTimestampMs > 3_600_000 {
+			ranged++
+		}
+		if q.EndTimestampMs-q.StartTimestampMs < 20*60_000 {
+			instant++
+		}
+		notEqual := 0
+		for _, m := range q.Matchers {
+			switch {
+			case m.Name == "__query_shard__":
+				sharded++
+			case m.Type == client.NOT_EQUAL:
+				notEqual++
+			case m.Type == client.REGEX_MATCH || m.Type == client.REGEX_NO_MATCH:
+				regexes++
+			}
+		}
+		if notEqual >= 5 {
+			exclusions++
+		}
+	}
+	for name, count := range map[string]int{"ranged": ranged, "sharded": sharded, "exclusions": exclusions, "regexes": regexes, "instant": instant} {
+		require.Greater(t, count, 25, name)
+	}
+	require.Greater(t, instant, ranged, "rules' instant queries are most")
 }
