@@ -57,26 +57,28 @@ k apply -f "$metadata.yaml"
 uid="$(k get job "$NAME" -o jsonpath='{.metadata.uid}')"
 
 echo "waiting for the run's report"
+# By the report being served, which the driver does once the run is done: the driver's log rotates during a run, so the
+# line that says it is may no longer be in it.
+out="$(mktemp -d)"
+forward=
+trap 'kill $forward 2>/dev/null || true' EXIT
 while true; do
   pod="$(k get pods -l controller-uid="$uid" -o name | head -1)"
-  if [[ -n "$pod" ]] && k logs "$pod" -c driver 2>/dev/null | grep -q "holding for"; then break; fi
   if [[ -n "$pod" ]] && k get "$pod" -o jsonpath='{.status.containerStatuses[*].state.terminated.reason}' | grep -q .; then
     k logs "$pod" -c driver --tail=50 || true
     echo "a container of the run ended early" >&2
     exit 1
   fi
+  if [[ -n "$pod" ]] && [[ "$(k get "$pod" -o jsonpath='{.status.phase}')" == Running ]]; then
+    if [[ -z "$forward" ]] || ! kill -0 "$forward" 2>/dev/null; then
+      k port-forward "$pod" 28090:8090 >/dev/null 2>&1 &
+      forward=$!
+      sleep 3
+    fi
+    if curl -sf -o "$out/report.json" "http://localhost:28090/report.json"; then break; fi
+  fi
   sleep 30
 done
-
-out="$(mktemp -d)"
-k port-forward "$pod" 28090:8090 >/dev/null 2>&1 &
-forward=$!
-trap 'kill $forward 2>/dev/null || true' EXIT
-for _ in $(seq 60); do
-  if curl -sf -o "$out/report.json" "http://localhost:28090/report.json"; then break; fi
-  sleep 1
-done
-[[ -s "$out/report.json" ]] || { echo "couldn't download the run's report from $pod" >&2; exit 1; }
 # The profiles and slow reads, which a run may not have.
 for file in report.html slow.log cpu-a.pb.gz cpu-b.pb.gz heap-a.pb.gz heap-b.pb.gz allocs-a.pb.gz allocs-b.pb.gz; do
   curl -sf -o "$out/$file" "http://localhost:28090/$file" || true
