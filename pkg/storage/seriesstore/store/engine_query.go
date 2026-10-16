@@ -816,12 +816,12 @@ type engineIndex struct {
 	// label APIs ask for each value of each label in turn: each was a pass over the label's series, with every shard
 	// locked. A reader lasts a request, so they are as of its first lookup of the label.
 	// The workers of a request's lookups of each value share the cache, read-locked once it is built.
-	mu      sync.RWMutex
-	asked   map[string]int
+	mu    sync.RWMutex
+	asked map[string]int
 	// The labels of mostly distinct values, whose postings aren't cached: a value's are a series or two, which the
 	// store's postings find, and caching them was a map of every series of the label.
 	uncached map[string]bool
-	byValue map[string]map[string][]storage.SeriesRef
+	byValue  map[string]map[string][]storage.SeriesRef
 	// The series of each metric name asked for: a metric's are its name group's, which are listed without reading the
 	// labels of the others, and the label APIs ask for a metric's with each value of another label.
 	byMetric map[string][]storage.SeriesRef
