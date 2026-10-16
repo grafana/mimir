@@ -41,7 +41,7 @@ type estimateResponse struct {
 	GroupBy string `json:"group_by"`
 	Read    string `json:"read"`
 	// Source says where the counts come from: "blocks" for the
-	// store-gateways, "head" for the ingesters.
+	// store-gateways, "head" for the ingesters, "blocks+head" for both.
 	Source string `json:"source"`
 	// HeadWhole is set when the counts are every series held in the
 	// ingesters' heads, whatever the window, since head postings have no
@@ -53,6 +53,9 @@ type estimateResponse struct {
 	// HeadMinTime is the time from which every ingester still holds data,
 	// when it is after the window's start; the counts are then a lower bound.
 	HeadMinTime int64 `json:"head_min_time,omitempty"`
+	// CoverageGap is set when part of the window is held by no block and
+	// by no ingester; the counts are then a lower bound.
+	CoverageGap bool `json:"coverage_gap,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
 	// store-gateway, which MissingBlocks lists, or when the window starts
 	// before what the ingesters hold, which HeadMinTime says.
@@ -147,7 +150,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		out := estimateResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,

@@ -152,9 +152,54 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	})
 
-	t.Run("a window held partly by blocks and partly by the ingesters is refused", func(t *testing.T) {
-		_, err := newEstimator(day, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
-		require.ErrorContains(t, err, "needs deduplication")
+	t.Run("a window held partly by blocks and partly by the ingesters unions both sources' hashes", func(t *testing.T) {
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		var gotBlocks *storegatewaypb.SeriesCountsRequest
+		gw := gatewayAnswering("1.1.1.1", &gotBlocks, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+		}}}}}
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "new", Hashes: []uint64{9}}}, MinTimeMs: 76 * hour},
+		}}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return now }
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
+		require.NoError(t, err)
+		assert.Equal(t, sourceBoth, res.Source)
+		assert.True(t, res.Dedup)
+		assert.Equal(t, map[string][]int64{"up": {3}, "new": {1}}, res.Counts, "series 2 is in a block and an ingester")
+		assert.False(t, res.LowerBound, "the block ends where the ingesters' data starts")
+		require.NotNil(t, gotBlocks)
+		assert.True(t, gotBlocks.Hashes)
+		assert.Equal(t, int64(500), gotBlocks.MaxIndexBytes, "max_index_bytes is split between the two sources")
+		assert.True(t, ing.gotSeriesCounts.Hashes)
+		assert.Equal(t, int64(500), ing.gotSeriesCounts.MaxIndexBytes)
+	})
+
+	t.Run("a gap between the blocks and the ingesters is a lower bound", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 90 * hour},
+		}}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+		}}}}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return now }
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts)
+		assert.True(t, res.LowerBound)
+		assert.True(t, res.CoverageGap, "nothing holds [76h, 90h)")
+	})
+
+	t.Run("per-bucket counts across blocks and ingesters are refused", func(t *testing.T) {
+		_, err := newEstimator(day, &ingestersMock{}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, Step: 24 * hour})
+		require.ErrorContains(t, err, "per-bucket counts over a window held partly by blocks")
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	})
 
@@ -165,9 +210,12 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, sourceBlocks, res.Source)
 	})
 
-	t.Run("without ingesters a partly covered window is refused", func(t *testing.T) {
-		_, err := newEstimator(day, nil).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
-		require.ErrorContains(t, err, "cover only part of the window")
+	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {
+		res, err := newEstimator(day, nil).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceBlocks, res.Source)
+		assert.True(t, res.LowerBound)
+		assert.True(t, res.CoverageGap)
 	})
 }
 
