@@ -1,0 +1,106 @@
+name: Trigger disabling failing upstream PromQL test cases
+
+# Lets the MQE team have the bot disable the upstream PromQL test cases that still fail on a
+# mimir-prometheus vendoring PR after the automatic re-sync, by commenting
+# "/disable-failing-upstream-promql-tests" on the PR. This only checks who asked and adds the
+# run-disable-failing-upstream-promql-tests label as the vendoring bot. sync-upstream-promql-tests.yml then
+# runs the disabling tool without write access, and commit-synced-upstream-promql-tests.yml commits the
+# result. Nothing from the PR or the comment is run here.
+
+# Runs from main with the app token: there is no checkout, nothing from the PR or the comment is run,
+# and the commenter is checked against a fixed list.
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    # Most comments don't match, so filter in the condition to not start a runner for them.
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/disable-failing-upstream-promql-tests') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # create-github-app-token gets the app credentials from Vault via OIDC.
+      id-token: write
+      # For reacting to and replying to the comment (as github-actions[bot], via the default token).
+      pull-requests: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+      TRIGGER_LABEL: run-disable-failing-upstream-promql-tests
+      # Who may ask for disabling. Keep in sync with MQE_USERS in commit-synced-upstream-promql-tests.yml.
+      ALLOWED_USERS: charleskorn 56quarters lamida zenador tcp13equals2
+    steps:
+      - name: Check the comment and the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY: ${{ github.event.comment.body }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+
+          # Reply rather than fail silently, so a typo or a missing permission is noticed.
+          refuse() {
+            echo "::error::$1"
+            gh api -X POST "repos/$GH_REPO/issues/comments/$COMMENT_ID/reactions" -f content=-1 >/dev/null || true
+            gh pr comment "$PR" --body "$1"
+            exit 1
+          }
+
+          body=$(printf '%s' "$BODY" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          if [ "$body" != "/disable-failing-upstream-promql-tests" ]; then
+            refuse "Not run: the comment must be exactly \`/disable-failing-upstream-promql-tests\`."
+          fi
+
+          read -ra allowed <<<"$ALLOWED_USERS"
+          is_allowed=false
+          for user in "${allowed[@]}"; do
+            if [ "$user" = "$COMMENTER" ]; then is_allowed=true; fi
+          done
+          if [ "$is_allowed" != true ]; then
+            refuse "Not run: only $(printf '@%s ' "${allowed[@]}")can ask for failing upstream PromQL test cases to be disabled."
+          fi
+
+          # The same checks as the commit workflow does, so this only ever acts on a real vendoring PR.
+          pr=$(gh api "repos/$GH_REPO/pulls/$PR")
+          if ! jq -e --arg repo "$GH_REPO" '
+              .state == "open" and .user.login == "mimir-vendoring[bot]" and .base.ref == "main"
+              and .head.repo.full_name == $repo
+              and (.head.ref | test("^bot/main/update-mimir-prometheus-[0-9a-f]{12}-[0-9]{12}$"))
+              and any(.labels[]; .name == "vendored-mimir-prometheus-update")' <<<"$pr" >/dev/null; then
+            refuse "Not run: this only works on open mimir-prometheus vendoring PRs for main opened by mimir-vendoring[bot]."
+          fi
+
+      # Labels added with GITHUB_TOKEN don't start other workflows, so this uses the mimir-vendoring app.
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: mimir-vendoring
+          permission_set: main
+
+      - name: Add the trigger label
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # If the label is already there (e.g. added by hand), adding it again doesn't start the sync
+          # workflow, and the commit workflow would see it wasn't added by the bot. Remove it first.
+          gh api -X DELETE "repos/$GH_REPO/issues/$PR/labels/$TRIGGER_LABEL" >/dev/null 2>&1 || true
+          gh api -X POST "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=$TRIGGER_LABEL" >/dev/null
+
+      - name: Acknowledge the comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/$GH_REPO/issues/comments/$COMMENT_ID/reactions" -f content=eyes >/dev/null
