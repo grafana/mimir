@@ -113,9 +113,10 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 // bucket from its postings instead (headWholeCounts) and the response says
 // so; with a step the refusal stands.
 //
-// The ingesters' compacted blocks are not read, so a window that starts
-// before the newest head's start may miss series that only had samples
-// there; the counts are then flagged as a lower bound.
+// The ingesters count their heads and their compacted local blocks. A
+// window that starts before what an ingester still holds may miss series
+// that only had samples there; the counts are then flagged as a lower
+// bound, with the time from which every ingester holds data.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	matchers, err := client.ToLabelMatchers(req.Matchers)
 	if err != nil {
@@ -153,9 +154,10 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
-		// An ingester with no data for the tenant reports an empty head.
-		if resp.HeadMaxTimeMs > 0 {
-			headMinT = max(headMinT, resp.HeadMinTimeMs)
+		// An ingester with nothing in the window reports 0. The others
+		// hold data back to min_time_ms, from their local blocks or head.
+		if resp.MinTimeMs > 0 {
+			headMinT = max(headMinT, resp.MinTimeMs)
 		}
 	}
 	if err := m.finish(&res); err != nil {
