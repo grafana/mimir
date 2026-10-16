@@ -55,6 +55,12 @@ func newEstimateMerger(ctx context.Context, dedup bool, maxHeld int64) *estimate
 	}
 }
 
+// chargeEstimateGroup charges one new group, named value, to tracker, which
+// may be nil, for the paths that build their table without a merger.
+func chargeEstimateGroup(tracker *limiter.MemoryConsumptionTracker, value string) error {
+	return (&estimateMerger{tracker: tracker}).charge(uint64(estimateGroupBytes + len(value) + 8))
+}
+
 // charge adds b bytes to the request's memory consumption, refusing the
 // request once the tenant's limit is passed.
 func (m *estimateMerger) charge(b uint64) error {
