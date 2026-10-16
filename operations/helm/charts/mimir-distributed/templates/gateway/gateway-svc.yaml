@@ -25,6 +25,13 @@ spec:
   {{- if .Values.gateway.service.trafficDistribution }}
   trafficDistribution: {{ .Values.gateway.service.trafficDistribution }}
   {{- end }}
+  {{- with .Values.gateway.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.gateway.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ .Values.gateway.service.port }}
       protocol: TCP
