@@ -131,18 +131,45 @@ func indexBytes(stats *safeQueryStats) int64 {
 }
 
 // checkPlan rejects the request before any series entry is read when the
-// postings already read plus the matching series at the planner's p99 series
-// size would pass max_index_bytes.
-func (c *seriesCounts) checkPlan(read int64, series int, postings int64) error {
+// postings already read, plus the matching series priced at their blocks'
+// estimated entry size (seriesEntryEstimate), plus the group-by postings
+// still to read, would pass max_index_bytes.
+func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
 	}
-	estimate := read + int64(series)*tsdb.EstimatedSeriesP99Size + postings
+	estimate := read + seriesBytes + postings
 	if estimate <= c.maxIndexBytes {
 		return nil
 	}
+	avg := int64(0)
+	if series > 0 {
+		avg = seriesBytes / int64(series)
+	}
 	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings read, then %d series at an estimated %d bytes each and %d bytes of group-by postings), more than max_index_bytes %d",
-		estimate, read, series, tsdb.EstimatedSeriesP99Size, postings, c.maxIndexBytes)
+		estimate, read, series, avg, postings, c.maxIndexBytes)
+}
+
+// minSeriesEntryEstimate is the smallest per-series size seriesEntryEstimate
+// returns: a series entry holds at least its label references and one
+// chunk reference.
+const minSeriesEntryEstimate = 32
+
+// seriesEntryEstimate is the size to price one of the block's series
+// entries at: the index file's size divided by its series, from the block's
+// meta.json, which overstates an entry by the postings and symbols but is
+// usually far below the planner's p99. Without both figures it is the p99,
+// tsdb.EstimatedSeriesP99Size, and it is never above it.
+func seriesEntryEstimate(m *block.Meta) int64 {
+	if m.Stats.NumSeries == 0 {
+		return tsdb.EstimatedSeriesP99Size
+	}
+	for _, f := range m.Thanos.Files {
+		if f.RelPath == block.IndexFilename && f.SizeBytes > 0 {
+			return max(minSeriesEntryEstimate, min(tsdb.EstimatedSeriesP99Size, f.SizeBytes/int64(m.Stats.NumSeries)))
+		}
+	}
+	return tsdb.EstimatedSeriesP99Size
 }
 
 // seriesEntryPlanningBytes is the series entry size used to choose between
@@ -367,6 +394,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	}
 	var (
 		series        int
+		seriesBytes   int64
 		groupPostings int64
 	)
 	for _, o := range blocks {
@@ -375,8 +403,9 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			continue
 		}
 		series += len(o.postings)
+		seriesBytes += int64(len(o.postings)) * seriesEntryEstimate(o.b.meta)
 	}
-	if err := c.checkPlan(indexBytes(stats), series, groupPostings); err != nil {
+	if err := c.checkPlan(indexBytes(stats), series, seriesBytes, groupPostings); err != nil {
 		return nil, err
 	}
 	resp := &storegatewaypb.SeriesCountsResponse{}
