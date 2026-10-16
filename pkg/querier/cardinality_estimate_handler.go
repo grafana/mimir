@@ -74,6 +74,7 @@ type estimateResponse struct {
 	PostingsFetchedBytes int64           `json:"postings_fetched_bytes"`
 	SeriesFetchedBytes   int64           `json:"series_fetched_bytes"`
 	IndexBytes           int64           `json:"index_bytes"`
+	BlocksFromPostings   int64           `json:"blocks_from_postings,omitempty"`
 	EstimatedGroups      int             `json:"estimated_groups"`
 	HashBytes            int64           `json:"hash_bytes"`
 	SketchBytes          int64           `json:"sketch_bytes"`
@@ -153,7 +154,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
-			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
+			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, BlocksFromPostings: res.BlocksFromPostings,
 			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
 			Counts:    make([]estimateGroup, 0, len(res.Counts)),
