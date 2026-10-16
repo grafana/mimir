@@ -21,6 +21,9 @@ type headLabels struct {
 	mu       sync.Mutex
 	removals uint64
 	epoch    uint64
+	// The postings' ids the values were taken by: a dictionary keeps its values when series are removed, which only
+	// select none, and starts over when the postings are rebuilt, which numbers the series anew.
+	dictionaryEpoch uint64
 	// How many of the shard's series, by their ref, were checked for being evicted, and how many were.
 	upto    int
 	evicted int
@@ -128,10 +131,15 @@ func (b *seriesByName) labelDictionary(id uint32) ([]string, bool) {
 	h := &b.headLabels
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.removals != b.removals {
-		h.removals, h.upto, h.evicted, h.values = b.removals, 0, 0, nil
+	if h.dictionaryEpoch != b.idEpoch {
+		h.dictionaryEpoch, h.values = b.idEpoch, nil
 	}
 	vs := h.valueSet(b, id)
+	if vs != nil && len(vs.set) > 2*b.seriesWith(id, true)+1024 {
+		// Mostly the values of removed series, of a label of many: started over from the series there are.
+		delete(h.values, id)
+		vs = h.valueSet(b, id)
+	}
 	if vs == nil {
 		return nil, false
 	}

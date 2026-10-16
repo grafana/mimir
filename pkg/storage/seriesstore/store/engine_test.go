@@ -1648,3 +1648,42 @@ func BenchmarkEngineIndexPostingsOfEachValue(b *testing.B) {
 		}
 	}
 }
+
+func TestEngineRegexSelectsTheSeriesThereAreAfterRemovals(t *testing.T) {
+	const hourMs = int64(3_600_000)
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 3000 {
+		// Half of the series only have samples that the prune removes.
+		ts := int64(3 * hourMs)
+		if n%2 == 0 {
+			ts = 1000
+		}
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("pod-%d", n)), ts, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	selectPods := func() []string {
+		q, err := e.Querier(0, 4*hourMs)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), true, &storage.SelectHints{Start: 0, End: 4 * hourMs, Func: "series"},
+			promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "pod", "pod-1.*"))
+		var pods []string
+		for set.Next() {
+			pods = append(pods, set.At().Labels().Get("pod"))
+		}
+		require.NoError(t, set.Err())
+		return pods
+	}
+	// The first lookup fills the label's dictionary with every value.
+	require.NotEmpty(t, selectPods())
+	require.NoError(t, e.prune(2*hourMs))
+	for _, pod := range selectPods() {
+		n, err := strconv.Atoi(strings.TrimPrefix(pod, "pod-"))
+		require.NoError(t, err)
+		require.Equal(t, 1, n%2, "%s was removed", pod)
+	}
+}
