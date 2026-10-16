@@ -8,6 +8,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -482,6 +483,20 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	matchers, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return err
+	}
+
+	if native, ok := idx.(labelValuesCountIndex); ok && (req.GetCountMethod() == client.IN_MEMORY || req.GetCountMethod() == client.ACTIVE && !db.trackerActive()) {
+		// An engine that keeps the active series in its series counts the values of the matchers' series in one pass, where
+		// the postings of each value were intersected with the matchers'.
+		cutoffMs := int64(math.MinInt64)
+		if req.GetCountMethod() == client.ACTIVE {
+			cutoffMs = db.activeCutoff(time.Now()).UnixMilli()
+		}
+		counts, err := native.LabelValuesCounts(srv.Context(), req.GetLabelNames(), matchers, cutoffMs)
+		if err != nil {
+			return err
+		}
+		return sendLabelValuesCounts(req.GetLabelNames(), counts, labelValuesCardinalityTargetSizeBytes, srv)
 	}
 
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
