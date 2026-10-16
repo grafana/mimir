@@ -36,6 +36,10 @@ service Ingester {
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {}
 
+  // SeriesCounts counts the head's series that match the matchers and have a chunk in the window, grouped by one
+  // label, from the series' chunk metas without reading samples. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (SeriesCountsResponse) {}
+
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
   // SearchLabelNames streams label names matching the search filter.
@@ -64,6 +68,45 @@ message LabelValues {
 enum CountMethod {
   IN_MEMORY = 0;
   ACTIVE = 1;
+}
+
+message SeriesCountsRequest {
+  // Series to count. Empty means every series.
+  repeated LabelMatcher matchers = 1;
+  // Window in milliseconds, [start_timestamp_ms, end_timestamp_ms). A series counts if one of its chunks overlaps it.
+  int64 start_timestamp_ms = 2;
+  int64 end_timestamp_ms = 3;
+  // If set, the window is cut into buckets of this width and each group gets one count per bucket.
+  int64 step_ms = 4;
+  // Label to group by. Empty means __name__.
+  string group_by = 5;
+  // If set, each group carries its series' label-set hashes instead of a count. Not allowed with step_ms.
+  bool hashes = 6;
+  // With hashes, a group with more series than this carries a HyperLogLog sketch instead. 0 means always hashes.
+  int64 sketch_above = 7;
+  // Fail with ResourceExhausted rather than walk the series when the matching series, priced at an estimated
+  // series entry size, come to more than this many bytes. 0 means no limit.
+  int64 max_index_bytes = 8;
+}
+
+message SeriesCountGroup {
+  string value = 1;
+  // One count per bucket, or a single count when there is no step.
+  repeated int64 counts = 2;
+  repeated uint64 hashes = 3;
+  // A marshalled axiomhq/hyperloglog sketch of the group's label-set hashes, set instead of hashes above sketch_above.
+  bytes sketch = 4;
+}
+
+message SeriesCountsResponse {
+  repeated SeriesCountGroup groups = 1;
+  // Series walked: the series the matchers selected, counted or not.
+  int64 series_walked = 2;
+  int64 series_counted = 3;
+  // The head's time range when the count was taken. Samples before head_min_time_ms are in the ingester's
+  // compacted blocks, which this count does not read.
+  int64 head_min_time_ms = 4;
+  int64 head_max_time_ms = 5;
 }
 
 message LabelValuesCardinalityRequest {
