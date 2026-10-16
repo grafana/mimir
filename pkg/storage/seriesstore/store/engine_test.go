@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdbchunks "github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1462,4 +1463,78 @@ func TestReadGuardReleasesOnceTheQueriesBeforeAreDone(t *testing.T) {
 	// Without queries, a release runs right away.
 	g.release(func() { released++ })
 	require.Equal(t, 3, released)
+}
+
+// An index reader answers each value of a label from the postings of all of them once asked for a second, as it
+// answers it on its own.
+func TestEngineIndexPostingsOfEachValueAsOnTheirOwn(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 2000 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprintf("pod-%d", n)), 1000, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	postings := func(ix tsdb.IndexReader, name, value string) []storage.SeriesRef {
+		p, err := ix.Postings(context.Background(), name, value)
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return refs
+	}
+	for _, name := range []string{"__name__", "job", "pod", "absent"} {
+		var values []string
+		switch name {
+		case "__name__":
+			for n := range 8 {
+				values = append(values, fmt.Sprintf("metric_%d", n))
+			}
+		case "job":
+			for n := range 14 {
+				values = append(values, fmt.Sprintf("job-%d", n))
+			}
+		default:
+			values = []string{"pod-1", "pod-1999", "pod-2000", "x"}
+		}
+		cached, err := e.Index()
+		require.NoError(t, err)
+		for _, value := range values {
+			fresh, err := e.Index()
+			require.NoError(t, err)
+			require.Equal(t, postings(fresh, name, value), postings(cached, name, value), "%s=%s", name, value)
+		}
+	}
+}
+
+// BenchmarkEngineIndexPostingsOfEachValue is what the ingester's label APIs do with active series: the postings of each
+// value of each label of a tenant, from one index reader.
+func BenchmarkEngineIndexPostingsOfEachValue(b *testing.B) {
+	e, err := OpenEngine(b.TempDir(), "user", EngineOptions{Shards: 16})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = e.Close() })
+	for first := 0; first < 100_000; first += 10_000 {
+		app := e.Appender(context.Background())
+		for n := first; n < first+10_000; n++ {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%50), "job", fmt.Sprintf("job-%d", n%20), "namespace", fmt.Sprintf("ns-%d", n%200), "pod", fmt.Sprintf("pod-%d", n%5000)), 1000, 1)
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	values := map[string]int{"__name__": 50, "job": 20, "namespace": 200, "pod": 5000}
+	prefix := map[string]string{"__name__": "metric_", "job": "job-", "namespace": "ns-", "pod": "pod-"}
+	b.ReportAllocs()
+	for range b.N {
+		ix, err := e.Index()
+		require.NoError(b, err)
+		for name, count := range values {
+			for n := range count {
+				p, err := ix.Postings(context.Background(), name, prefix[name]+strconv.Itoa(n))
+				require.NoError(b, err)
+				for p.Next() {
+				}
+			}
+		}
+	}
 }

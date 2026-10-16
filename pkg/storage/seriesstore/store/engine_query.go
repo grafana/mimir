@@ -775,6 +775,12 @@ func (e *Engine) MustIndex() tsdb.IndexReader {
 // engineIndex reads the head's series: postings list series references in increasing order.
 type engineIndex struct {
 	e *Engine
+	// The postings of every value of a label, built once a reader asks for a second of its values, as the ingester's
+	// label APIs ask for each value of each label in turn: each was a pass over the label's series, with every shard
+	// locked. A reader lasts a request, so they are as of its first lookup of the label.
+	mu      sync.Mutex
+	asked   map[string]int
+	byValue map[string]map[string][]storage.SeriesRef
 }
 
 func (ix *engineIndex) Close() error { return nil }
@@ -968,6 +974,12 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 		ix.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
 		return postingsOf(refs), nil
 	}
+	if len(values) == 1 {
+		if refs, ok := ix.cachedPostings(name, values[0]); ok {
+			// Sorted and unique already, and shared with the reader's other lookups of the value.
+			return index.NewListPostings(refs), nil
+		}
+	}
 	wanted := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		wanted[value] = struct{}{}
@@ -1017,6 +1029,35 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 		shard.RUnlock()
 	}
 	return postingsOf(refs), nil
+}
+
+// cachedPostings returns the series with the label's value from the postings of all its values, once the reader asked
+// for another of its values.
+func (ix *engineIndex) cachedPostings(name, value string) ([]storage.SeriesRef, bool) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	values, ok := ix.byValue[name]
+	if !ok {
+		if ix.asked == nil {
+			ix.asked = map[string]int{}
+		}
+		if ix.asked[name]++; ix.asked[name] < 2 {
+			return nil, false
+		}
+		values = map[string][]storage.SeriesRef{}
+		// The values point into the series' labels, which are their own allocations: they stay valid for the reader.
+		ix.forEachWith(name, func(entry *seriesEntry, v string) {
+			values[v] = append(values[v], storage.SeriesRef(entry.series.ref))
+		})
+		for _, list := range values {
+			slices.Sort(list)
+		}
+		if ix.byValue == nil {
+			ix.byValue = map[string]map[string][]storage.SeriesRef{}
+		}
+		ix.byValue[name] = values
+	}
+	return values[value], true
 }
 
 func (ix *engineIndex) PostingsForLabelMatching(_ context.Context, name string, match func(value string) bool) index.Postings {
