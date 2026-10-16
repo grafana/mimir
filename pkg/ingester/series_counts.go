@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -28,9 +29,10 @@ import (
 // and priced at mimir_tsdb.EstimatedSeriesP99Size per series, so a request
 // over max_index_bytes is refused before any series is walked.
 //
-// Only the in-order head is counted: out-of-order samples and the
-// ingester's compacted blocks are not, which the response's head time range
-// lets the caller account for. Experimental.
+// The in-order head and the ingester's compacted local blocks that overlap
+// the window are counted; a series in several of them counts once.
+// Out-of-order samples still in the out-of-order head are not counted. The
+// response's min_time_ms is the oldest time the ingester holds. Experimental.
 func (i *Ingester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	resp, err := i.seriesCounts(ctx, req)
 	if err == nil {
@@ -80,78 +82,113 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	head := db.Head()
 	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime()}
 
-	// The range head keeps only the chunks inside the window when a series
-	// is read; the window end is exclusive and the range head's is not.
-	rh := tsdb.NewRangeHead(head, req.StartTimestampMs, req.EndTimestampMs-1)
-	idx, err := rh.Index()
+	sources, err := countSources(db, req.StartTimestampMs, req.EndTimestampMs)
 	if err != nil {
 		return nil, err
 	}
-	defer idx.Close()
-	chunkr, err := rh.Chunks()
-	if err != nil {
-		return nil, err
+	defer func() {
+		for _, src := range sources {
+			src.close()
+		}
+	}()
+	if len(sources) == 0 {
+		return resp, nil
 	}
-	defer chunkr.Close()
+	resp.MinTimeMs = sources[0].minT
+	for _, src := range sources {
+		resp.MinTimeMs = min(resp.MinTimeMs, src.minT)
+	}
 
-	var postings index.Postings
-	if len(matchers) == 0 {
-		name, value := index.AllPostingsKey()
-		postings, err = idx.Postings(ctx, name, value)
-	} else {
-		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
-	}
-	if err != nil {
-		return nil, err
-	}
-	refs, err := index.ExpandPostings(postings)
-	if err != nil {
-		return nil, err
+	// Resolve every source's postings first, so max_index_bytes is checked
+	// against the whole request before any series is walked.
+	total := 0
+	for _, src := range sources {
+		var postings index.Postings
+		if len(matchers) == 0 {
+			name, value := index.AllPostingsKey()
+			postings, err = src.idx.Postings(ctx, name, value)
+		} else {
+			postings, err = tsdb.PostingsForMatchers(ctx, src.idx, matchers...)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if src.refs, err = index.ExpandPostings(postings); err != nil {
+			return nil, err
+		}
+		total += len(src.refs)
 	}
 	if req.MaxIndexBytes > 0 {
-		if priced := int64(len(refs)) * mimir_tsdb.EstimatedSeriesP99Size; priced > req.MaxIndexBytes {
-			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d head series, about %d bytes at %d bytes each, more than max_index_bytes %d", len(refs), priced, mimir_tsdb.EstimatedSeriesP99Size, req.MaxIndexBytes))
+		if priced := int64(total) * mimir_tsdb.EstimatedSeriesP99Size; priced > req.MaxIndexBytes {
+			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", total, len(sources), priced, mimir_tsdb.EstimatedSeriesP99Size, req.MaxIndexBytes))
 		}
 	}
 
+	// One source is counted as it is walked. Several hold the same series
+	// over different times, so each series' chunk ranges are gathered
+	// across them first, by label-set hash, and the series is counted once.
+	type gathered struct {
+		value  string
+		ranges []cardinality.ChunkRange
+	}
 	var (
+		byHash  map[uint64]*gathered
 		builder labels.ScratchBuilder
 		metas   []chunks.Meta
 		ranges  []cardinality.ChunkRange
 	)
-	for n, ref := range refs {
-		if n%1024 == 0 {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-		}
-		if err := idx.Series(ref, &builder, &metas); err != nil {
-			if err == storage.ErrNotFound {
-				// Removed by a head compaction since the postings were read.
-				continue
-			}
-			return nil, err
-		}
-		resp.SeriesWalked++
-		ranges = ranges[:0]
-		for _, m := range metas {
-			maxT := m.MaxTime
-			if maxT == math.MaxInt64 {
-				// The open head chunk has no end yet: its metas say
-				// MaxInt64. Read its last sample when the end matters,
-				// which is when the chunk starts before the window or the
-				// count is per bucket.
-				if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
-					if maxT, err = lastSampleTime(chunkr, m); err != nil {
-						return nil, err
-					}
-				} else {
-					maxT = req.EndTimestampMs - 1
+	if len(sources) > 1 {
+		byHash = map[uint64]*gathered{}
+	}
+	for _, src := range sources {
+		for n, ref := range src.refs {
+			if n%1024 == 0 {
+				if err := ctx.Err(); err != nil {
+					return nil, err
 				}
 			}
-			ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
+			if err := src.idx.Series(ref, &builder, &metas); err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					// Removed by a head compaction since the postings were read.
+					continue
+				}
+				return nil, err
+			}
+			resp.SeriesWalked++
+			ranges = ranges[:0]
+			for _, m := range metas {
+				maxT := m.MaxTime
+				if maxT == math.MaxInt64 {
+					// The open head chunk has no end yet: its metas say
+					// MaxInt64. Read its last sample when the end matters,
+					// which is when the chunk starts before the window or
+					// the count is per bucket.
+					if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
+						if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
+							return nil, err
+						}
+					} else {
+						maxT = req.EndTimestampMs - 1
+					}
+				}
+				ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
+			}
+			if byHash == nil {
+				counter.Add(builder.Labels(), ranges)
+				continue
+			}
+			lset := builder.Labels()
+			h := labels.StableHash(lset)
+			g := byHash[h]
+			if g == nil {
+				g = &gathered{value: lset.Get(counter.GroupBy())}
+				byHash[h] = g
+			}
+			g.ranges = append(g.ranges, ranges...)
 		}
-		counter.Add(builder.Labels(), ranges)
+	}
+	for h, g := range byHash {
+		counter.AddGroup(g.value, h, g.ranges)
 	}
 
 	groups, err := counter.Groups()
@@ -184,4 +221,55 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 		last = it.AtT()
 	}
 	return last, it.Err()
+}
+
+// countSource is one place an ingester holds a tenant's series: its head or
+// one of its compacted local blocks.
+type countSource struct {
+	minT   int64
+	idx    tsdb.IndexReader
+	chunkr tsdb.ChunkReader // head only, to find the open chunk's end
+	refs   []storage.SeriesRef
+	close  func()
+}
+
+// countSources opens the index of every local block and of the head that
+// overlaps [minT, maxT), oldest first. The head's index keeps only the
+// chunks inside the window; a block's index returns all of a series'
+// chunks, which the counter filters.
+func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error) {
+	defer func() {
+		if err != nil {
+			for _, src := range out {
+				src.close()
+			}
+			out = nil
+		}
+	}()
+	for _, b := range db.Blocks() {
+		if b.MaxTime() <= minT || b.MinTime() >= maxT {
+			continue
+		}
+		idx, err := b.Index()
+		if err != nil {
+			return out, err
+		}
+		out = append(out, &countSource{minT: b.MinTime(), idx: idx, close: func() { _ = idx.Close() }})
+	}
+	head := db.Head()
+	if head.NumSeries() > 0 && head.MaxTime() >= minT && head.MinTime() < maxT {
+		// The window end is exclusive and the range head's is not.
+		rh := tsdb.NewRangeHead(head, minT, maxT-1)
+		idx, err := rh.Index()
+		if err != nil {
+			return out, err
+		}
+		chunkr, err := rh.Chunks()
+		if err != nil {
+			_ = idx.Close()
+			return out, err
+		}
+		out = append(out, &countSource{minT: head.MinTime(), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }})
+	}
+	return out, nil
 }
