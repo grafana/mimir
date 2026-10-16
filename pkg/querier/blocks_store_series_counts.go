@@ -8,13 +8,11 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/axiomhq/hyperloglog"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -53,6 +51,9 @@ type CardinalityEstimateResult struct {
 	// HeadFallback, when set, is why the head walk was refused and the head
 	// was counted as one bucket from its postings instead.
 	HeadFallback string
+	// CoverageGap is set when neither the blocks nor the ingesters hold part
+	// of the window, so the counts are a lower bound.
+	CoverageGap bool
 	// HeadMinTime, when set, is the time from which every ingester still
 	// holds data, after the window's start, so the counts are a lower bound.
 	HeadMinTime int64
@@ -98,7 +99,25 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 // seriesCounts answers req from the blocks in parts (all is the same blocks
 // flattened).
 func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks) (CardinalityEstimateResult, error) {
-	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: !inOneRangeWithoutSharedSeries(all)}
+	dedup := !inOneRangeWithoutSharedSeries(all)
+	m := newEstimateMerger(dedup, q.estimateCfg.MaxDedupSeries)
+	res, err := q.seriesCountsInto(ctx, tenantID, req, parts, all, dedup, m)
+	if err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+	if err := m.finish(&res); err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+	return res, nil
+}
+
+// seriesCountsInto sends req to the store-gateways for the blocks in parts
+// and adds every group they return to m: label-set hashes and sketches when
+// dedup is set, counts otherwise. The result carries everything but the
+// counts, which m.finish writes, so a caller can add another source's
+// groups to m first.
+func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks, dedup bool, m *estimateMerger) (CardinalityEstimateResult, error) {
+	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: dedup}
 	if res.Dedup && req.Step > 0 {
 		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts need a window inside one block range whose blocks share no series")
 	}
@@ -128,62 +147,13 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 		shardMatchers[i] = append(append([]*storepb.LabelMatcher{}, pbMatchers...), &pm[0])
 	}
 
-	var (
-		mtx      sync.Mutex
-		hashes   = map[string]map[uint64]struct{}{}
-		held     int64 // hashes held across every group, bounded by the config
-		sketches = map[string]*hyperloglog.Sketch{}
-	)
+	var mtx sync.Mutex
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
 		defer mtx.Unlock()
 		for _, g := range resp.Groups {
-			if res.Dedup && len(g.Sketch) > 0 {
-				sk, err := hyperloglog.NewSketch(storegateway.SeriesCountsSketchPrecision, false)
-				if err != nil {
-					return err
-				}
-				if err := sk.UnmarshalBinary(g.Sketch); err != nil {
-					return fmt.Errorf("store-gateway %s returned a bad sketch for %q: %w", addr, g.Value, err)
-				}
-				if into := sketches[g.Value]; into != nil {
-					if err := into.Merge(sk); err != nil {
-						return err
-					}
-				} else {
-					sketches[g.Value] = sk
-				}
-				res.SketchBytes += int64(len(g.Sketch))
-				continue
-			}
-			if res.Dedup {
-				res.HashBytes += 8 * int64(len(g.Hashes))
-				set := hashes[g.Value]
-				if set == nil {
-					set = map[uint64]struct{}{}
-					hashes[g.Value] = set
-				}
-				for _, h := range g.Hashes {
-					if _, dup := set[h]; !dup {
-						set[h] = struct{}{}
-						held++
-					}
-				}
-				if limit := q.estimateCfg.MaxDedupSeries; limit > 0 && held > limit {
-					return refusedEstimate("deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", limit)
-				}
-				continue
-			}
-			sum := res.Counts[g.Value]
-			if sum == nil {
-				sum = make([]int64, len(g.Counts))
-				res.Counts[g.Value] = sum
-			}
-			if len(sum) != len(g.Counts) {
-				return fmt.Errorf("store-gateway %s returned %d buckets for %q, expected %d", addr, len(g.Counts), g.Value, len(sum))
-			}
-			for i, n := range g.Counts {
-				sum[i] += n
+			if err := m.add("store-gateway "+addr, g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+				return err
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
@@ -228,24 +198,6 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 		return CardinalityEstimateResult{}, err
 	}
 
-	// A group that any store-gateway sent as a sketch is estimated: the other
-	// store-gateways' hashes for it go into the same sketch.
-	for v, set := range hashes {
-		if sk := sketches[v]; sk != nil {
-			for h := range set {
-				sk.InsertHash(h)
-			}
-			continue
-		}
-		res.Counts[v] = []int64{int64(len(set))}
-	}
-	for v, sk := range sketches {
-		if res.Estimated == nil {
-			res.Estimated = map[string]bool{}
-		}
-		res.Estimated[v] = true
-		res.Counts[v] = []int64{int64(sk.Estimate())}
-	}
 	return res, nil
 }
 
