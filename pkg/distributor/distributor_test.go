@@ -5202,6 +5202,47 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 	}
 }
 
+// BenchmarkLabelValuesCardinalityConcurrentMap measures merging label values cardinality responses from
+// many replication sets, as with ingest storage, where each partition is its own replication set.
+// Label values either repeat across partitions (like "job") or are distinct to each partition (like "pod").
+func BenchmarkLabelValuesCardinalityConcurrentMap(b *testing.B) {
+	for _, replicationSets := range []int{350, 3500} {
+		for _, valuesPerSet := range []int{10, 100} {
+			for _, distinct := range []bool{false, true} {
+				b.Run(fmt.Sprintf("replication_sets=%d/values_per_set=%d/distinct=%t", replicationSets, valuesPerSet, distinct), func(b *testing.B) {
+					messages := make([]*client.LabelValuesCardinalityResponse, replicationSets)
+					for set := range messages {
+						counts := make(map[string]uint64, valuesPerSet)
+						for v := 0; v < valuesPerSet; v++ {
+							if distinct {
+								counts[fmt.Sprintf("value-%d-%d", set, v)] = 1
+							} else {
+								counts[fmt.Sprintf("value-%d", v)] = 1
+							}
+						}
+						messages[set] = &client.LabelValuesCardinalityResponse{
+							Items: []*client.LabelValueSeriesCount{{LabelName: "pod", LabelValueSeries: counts}},
+						}
+					}
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						cm := newLabelValuesCardinalityConcurrentMap(replicationSets)
+						for set, message := range messages {
+							cm.processMessage(set, "zone-a", message)
+						}
+						resp := cm.toResponse(maxFromZones[uint64])
+						if len(resp.Items) != 1 {
+							b.Fatalf("expected 1 label name, got %d", len(resp.Items))
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 	const numIngesters = 3
 

@@ -3061,10 +3061,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		replicationSets[0].MaxErrors = 0
 	}
 
-	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
-		numReplicationSets:  len(replicationSets),
-		labelValuesCounters: make(map[string]map[string]countByReplicationSetAndZone, len(labelNames)),
-	}
+	cardinalityConcurrentMap := newLabelValuesCardinalityConcurrentMap(len(replicationSets))
 
 	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers, countMethod)
 	if err != nil {
@@ -3159,6 +3156,13 @@ type labelValuesCardinalityConcurrentMap struct {
 	// The map is: map[label_name]map[label_value]countByReplicationSetAndZone
 	labelValuesCountersMx sync.Mutex
 	labelValuesCounters   map[string]map[string]countByReplicationSetAndZone
+}
+
+func newLabelValuesCardinalityConcurrentMap(numReplicationSets int) *labelValuesCardinalityConcurrentMap {
+	return &labelValuesCardinalityConcurrentMap{
+		numReplicationSets:  numReplicationSets,
+		labelValuesCounters: make(map[string]map[string]countByReplicationSetAndZone),
+	}
 }
 
 // processMessages reads and processes all LabelValuesCardinalityResponse messages received from an ingester
