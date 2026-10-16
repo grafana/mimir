@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"iter"
 	"math/rand/v2"
 	"sync"
@@ -32,7 +33,8 @@ type Pusher interface {
 
 // RecordPusher is a Pusher that may ingest records as they are, without the reader decoding them first.
 type RecordPusher interface {
-	// AcceptsRecords reports whether records go to PushRecord: all of them then do, one at a time and in order.
+	// AcceptsRecords reports whether records go to PushRecord: all of them then do, a tenant's one at a time and in
+	// order, different tenants' concurrently.
 	AcceptsRecords() bool
 	// PushRecord ingests the content of a record of the version for the tenant of the context. The content is valid
 	// only during the call. An error that wraps ErrMalformedRecord is of a record that couldn't be read, which is
@@ -200,9 +202,65 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	return nil
 }
 
-// consumeRecords pushes each record as it is, in order: what a RecordPusher does with a record replaces decoding it and
-// spreading its series over goroutines.
+// consumeRecords pushes each record as it is: what a RecordPusher does with a record replaces decoding it and spreading
+// its series over goroutines. A tenant's records are pushed in order, on one of -ingest-storage.kafka.ingestion-
+// concurrency-max goroutines by the tenant: a replay pushed them one at a time on one, while the decoded path used all.
+// The records stay valid until the batch is done, which waits for all of them.
 func (c PusherConsumer) consumeRecords(ctx context.Context, records iter.Seq[*kgo.Record], pusher RecordPusher) error {
+	workers := c.kafkaConfig.IngestionConcurrencyMax
+	if workers <= 1 {
+		return c.consumeRecordsOf(ctx, records, pusher)
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	queues := make([]chan *kgo.Record, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for index := range queues {
+		queues[index] = make(chan *kgo.Record, 64)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[index] = c.consumeRecordsOf(ctx, func(yield func(*kgo.Record) bool) {
+				for rec := range queues[index] {
+					if !yield(rec) {
+						// The queue is drained, so the dispatch never blocks on a worker that stopped.
+						for range queues[index] {
+						}
+						return
+					}
+				}
+			}, pusher)
+			if errs[index] != nil {
+				cancel(errs[index])
+			}
+		}()
+	}
+	for rec := range records {
+		if ctx.Err() != nil {
+			break
+		}
+		queues[tenantWorker(rec.Key, workers)] <- rec
+	}
+	for _, queue := range queues {
+		close(queue)
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	return context.Cause(ctx)
+}
+
+// tenantWorker is the worker of a tenant's records, by a hash of its id.
+func tenantWorker(tenantID []byte, workers int) int {
+	h := fnv.New32a()
+	_, _ = h.Write(tenantID)
+	return int(h.Sum32() % uint32(workers))
+}
+
+// consumeRecordsOf pushes the records in order, stopping at the first server error.
+func (c PusherConsumer) consumeRecordsOf(ctx context.Context, records iter.Seq[*kgo.Record], pusher RecordPusher) error {
 	metrics := c.metrics.storagePusherMetrics
 	errorHandler := newPushErrorHandler(metrics, util_log.NewSampler(c.kafkaConfig.FallbackClientErrorSampleRate), c.logger)
 	for rec := range records {
