@@ -78,7 +78,8 @@ const (
 	AggregationGroup
 	BufferedQuerierResponses
 	CachedResponses
-	memoryConsumptionSourceCount = CachedResponses + 1
+	CardinalityEstimateGroups
+	memoryConsumptionSourceCount = CardinalityEstimateGroups + 1
 )
 
 const (
@@ -137,6 +138,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "buffered querier responses"
 	case CachedResponses:
 		return "cached responses"
+	case CardinalityEstimateGroups:
+		return "cardinality estimate groups"
 	default:
 		return unknownMemorySource
 	}
