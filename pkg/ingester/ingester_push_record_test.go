@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -343,5 +345,68 @@ func TestIngester_AcceptsRecordsOnlyForAnEngineThatReadsThem(t *testing.T) {
 		cfg.BlocksStorageConfig.TSDB.Engine = c.engine
 		cfg.IngestStorageConfig.Enabled = c.ingestStorage
 		require.Equal(t, c.accepts, (&Ingester{cfg: cfg}).AcceptsRecords(), "%+v", c)
+	}
+}
+
+// Out-of-order histograms stay in the engine as they were appended until the out-of-order head is compacted: what they
+// keep of the record they came from must be copied, since the record's buffer is another record's once released.
+func TestIngester_PushRecordOutOfOrderHistogramsOutliveTheirRecords(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.NativeHistogramsIngestionEnabled = true
+	limitsCfg.OutOfOrderTimeWindow = model.Duration(time.Hour)
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, t.TempDir(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+	ctx := user.InjectOrgID(context.Background(), userID)
+	now := time.Now().Truncate(time.Second).UnixMilli()
+	serializer := ingest.RecordSerializerFromVersion(2)
+	push := func(ts int64, base int, metric string) {
+		req := &mimirpb.WriteRequest{Source: mimirpb.API, Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", metric)),
+			Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, streamTestHistogram(base))},
+		}}}}
+		records, _, err := serializer.ToRecords("ingest", 0, userID, req, 64<<20)
+		require.NoError(t, err)
+		require.NoError(t, ingester.PushRecord(ctx, records[0].Value, 2))
+	}
+	// In order, then out of order between them.
+	for step := range 5 {
+		push(now-60_000+int64(step)*10_000, step, "histogram_metric")
+	}
+	for step := range 4 {
+		push(now-55_000+int64(step)*10_000, 10+step, "histogram_metric")
+	}
+	// Other records, which the released buffers' memory may be for.
+	for step := range 50 {
+		push(now-60_000+int64(step)*1000, 100+step, fmt.Sprintf("other_%d", step))
+	}
+
+	db := ingester.getTSDB(userID)
+	q, err := db.ChunkQuerier(now-120_000, now)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.(streamingChunkQuerier).ChunkQuerier.Select(ctx, true, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "histogram_metric"))
+	require.True(t, set.Next())
+	got := map[int64]*histogram.Histogram{}
+	chunks := set.At().Iterator(nil)
+	for chunks.Next() {
+		it := chunks.At().Chunk.Iterator(nil)
+		for it.Next() == chunkenc.ValHistogram {
+			ts, h := it.AtHistogram(nil)
+			got[ts] = h
+		}
+	}
+	require.NoError(t, set.Err())
+	require.Len(t, got, 9)
+	for step := range 5 {
+		require.Equal(t, streamTestHistogram(step).PositiveBuckets, got[now-60_000+int64(step)*10_000].PositiveBuckets, "in order %d", step)
+	}
+	for step := range 4 {
+		ts := now - 55_000 + int64(step)*10_000
+		require.Equal(t, streamTestHistogram(10+step).PositiveBuckets, got[ts].PositiveBuckets, "out of order %d", step)
+		require.Equal(t, streamTestHistogram(10+step).PositiveSpans, got[ts].PositiveSpans, "out of order %d", step)
 	}
 }
