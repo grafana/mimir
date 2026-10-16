@@ -24,7 +24,7 @@ Usage of tenant-injector:
   -local-address string
     	Local address to listen on (host:port or :port). (default ":8080")
   -remote-address string
-    	URL of target to forward requests to to (eg. http://domain.com:80).
+    	URL of target to forward requests to (eg. http://domain.com:80).
   -tenant-id string
     	Tenant ID to inject to proxied requests.
 ```
