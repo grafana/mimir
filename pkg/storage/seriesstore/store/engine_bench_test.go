@@ -150,6 +150,39 @@ func BenchmarkEngineSelect(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineSeries selects series without their samples, like the series API.
+func BenchmarkEngineSeries(b *testing.B) {
+	heads := benchHeads(b, 1, benchEngines...)
+	for _, query := range []struct {
+		name     string
+		matchers []*promlabels.Matcher
+	}{
+		{"one metric", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")}},
+		{"every metric", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "metric_.*")}},
+	} {
+		for _, name := range benchEngines {
+			b.Run(query.name+"/"+name, func(b *testing.B) {
+				head := heads[name]
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					q, err := head.Querier(0, benchInterval)
+					if err != nil {
+						b.Fatal(err)
+					}
+					set := q.Select(context.Background(), true, &storage.SelectHints{Start: 0, End: benchInterval, Func: "series"}, query.matchers...)
+					for set.Next() {
+						_ = set.At().Labels()
+					}
+					if err := set.Err(); err != nil {
+						b.Fatal(err)
+					}
+					_ = q.Close()
+				}
+			})
+		}
+	}
+}
+
 // BenchmarkEngineLabelValues looks up a label's values under a matcher, like the label values API.
 func BenchmarkEngineLabelValues(b *testing.B) {
 	heads := benchHeads(b, 1, benchEngines...)

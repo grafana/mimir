@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -614,24 +613,41 @@ func (q *engineQuerier) Select(_ context.Context, _ bool, hints *storage.SelectH
 	if hints != nil {
 		start, end = max(start, hints.Start), min(end, hints.End)
 	}
-	selected, err := q.e.store.SelectLabels(q.e.tenantID, start, end, storeMatchers(matchers))
+	compiled, err := compilePromMatchers(nil, matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	series := make([]storage.Series, 0, len(selected))
-	var builder promlabels.ScratchBuilder
-	for _, pairs := range selected {
-		builder.Reset()
-		for _, pair := range pairs {
-			builder.Add(pair[0], pair[1])
-		}
-		series = append(series, labelsOnlySeries{builder.Labels()})
+	selected := q.e.selectLabels(start, end, compiled)
+	defer giveSelection(selected)
+	if hints != nil && hints.Limit > 0 && len(selected) > hints.Limit {
+		selected = selected[:hints.Limit]
 	}
-	sort.Slice(series, func(x, y int) bool { return promlabels.Compare(series[x].Labels(), series[y].Labels()) < 0 })
-	if hints != nil && hints.Limit > 0 && len(series) > hints.Limit {
-		series = series[:hints.Limit]
+	series := make([]labelsOnlySeries, len(selected))
+	var builder promlabels.ScratchBuilder
+	for index := range selected {
+		series[index] = labelsOnlySeries{toPromLabels(selected[index].stored, &builder)}
 	}
 	return &sliceSeriesSet{series: series, index: -1}
+}
+
+// selectLabels returns the series matching compiled with samples in [start, end], sorted by labels, without their
+// chunks. A series both in memory and in a cold block is in them once: sorted, its copies are next to each other.
+func (e *Engine) selectLabels(start, end int64, compiled []compiledMatcher) []rawSeries {
+	selected := takeSelection()
+	memoryIsHead := e.store.memoryIsHead
+	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, cold *coldState) {
+		t.series.matching(compiled, func(entry *seriesEntry) bool {
+			if memoryIsHead && entry.series.hasChunkIn(start, end) || !memoryIsHead && entry.series.hasDataIn(start, end) {
+				selected = append(selected, rawSeries{stored: entry.labels})
+			}
+			return true
+		})
+		cold.matching(e.tenantID, compiled, start, end, func(series *coldSeries) {
+			selected = append(selected, rawSeries{stored: series.labels()})
+		})
+	})
+	sortByLabels(selected)
+	return slices.CompactFunc(selected, func(x, y rawSeries) bool { return x.stored == y.stored })
 }
 
 func (q *engineQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*promlabels.Matcher) storage.SearchResultSet {
@@ -657,8 +673,29 @@ func (s labelsOnlySeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return chunkenc.NewNopIterator()
 }
 
+// The slices lookups of series select into are kept between them: growing one was most of what a lookup allocated.
+var selections sync.Pool
+
+func takeSelection() []rawSeries {
+	if selected, ok := selections.Get().(*[]rawSeries); ok {
+		return (*selected)[:0]
+	}
+	return nil
+}
+
+// giveSelection keeps selected for another lookup, unless it is large.
+func giveSelection(selected []rawSeries) {
+	if cap(selected) > 1<<16 {
+		return
+	}
+	clear(selected[:cap(selected)])
+	selected = selected[:0]
+	selections.Put(&selected)
+}
+
+// sliceSeriesSet holds the series themselves, as boxing each into a storage.Series was an allocation for every one.
 type sliceSeriesSet struct {
-	series []storage.Series
+	series []labelsOnlySeries
 	index  int
 }
 
@@ -666,7 +703,7 @@ func (s *sliceSeriesSet) Next() bool {
 	s.index++
 	return s.index < len(s.series)
 }
-func (s *sliceSeriesSet) At() storage.Series                { return s.series[s.index] }
+func (s *sliceSeriesSet) At() storage.Series                { return &s.series[s.index] }
 func (s *sliceSeriesSet) Err() error                        { return nil }
 func (s *sliceSeriesSet) Warnings() annotations.Annotations { return nil }
 
