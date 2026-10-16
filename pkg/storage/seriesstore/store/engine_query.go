@@ -383,10 +383,79 @@ func sortByLabels(selected []rawSeries) {
 		// The buffer holds every key, so it is never reallocated under the keys taken from it.
 		keys[index] = keyedSeries{key: unsafe.String(unsafe.SliceData(buffer[start:]), len(buffer)-start), series: selected[index]}
 	}
-	slices.SortFunc(keys, func(x, y keyedSeries) int { return strings.Compare(x.key, y.key) })
+	sortKeys(keys, 0)
 	for index := range keys {
 		selected[index] = keys[index].series
 	}
+}
+
+// sortKeys sorts keys that share their first depth bytes, by the bytes from there: a three-way radix quicksort, which
+// reads the long prefixes a query's keys share, the metric's name and its labels' names, once for each partition rather
+// than once for each comparison.
+func sortKeys(keys []keyedSeries, depth int) {
+	for len(keys) > 1 {
+		if len(keys) < 16 {
+			slices.SortFunc(keys, func(x, y keyedSeries) int { return strings.Compare(x.key[depth:], y.key[depth:]) })
+			return
+		}
+		pivot := keyByte(keys[len(keys)/2].key, depth)
+		// keys[:lt] are below the pivot byte, keys[lt:gt] equal to it and keys[gt:] above.
+		lt, gt := 0, len(keys)
+		for i := 0; i < gt; {
+			switch c := keyByte(keys[i].key, depth); {
+			case c < pivot:
+				keys[lt], keys[i] = keys[i], keys[lt]
+				lt++
+				i++
+			case c > pivot:
+				gt--
+				keys[gt], keys[i] = keys[i], keys[gt]
+			default:
+				i++
+			}
+		}
+		sortKeys(keys[:lt], depth)
+		sortKeys(keys[gt:], depth)
+		if pivot < 0 {
+			// The keys that ended are equal.
+			return
+		}
+		all := lt == 0 && gt == len(keys)
+		keys, depth = keys[lt:gt], depth+1
+		if all {
+			// All of them share the byte: they share as much as they share with the first, found in one pass.
+			depth = commonPrefix(keys, depth)
+		}
+	}
+}
+
+// commonPrefix returns how many bytes the keys, which share their first depth, share.
+func commonPrefix(keys []keyedSeries, depth int) int {
+	first := keys[0].key
+	common := len(first)
+	for _, k := range keys[1:] {
+		key := k.key
+		n := min(common, len(key))
+		i := depth
+		for i+8 <= n && first[i:i+8] == key[i:i+8] {
+			i += 8
+		}
+		for i < n && first[i] == key[i] {
+			i++
+		}
+		if common = i; common == depth {
+			return depth
+		}
+	}
+	return common
+}
+
+// keyByte is the key's byte at depth, or -1 past its end, which sorts before every byte.
+func keyByte(key string, depth int) int {
+	if depth < len(key) {
+		return int(key[depth])
+	}
+	return -1
 }
 
 type keyedSeries struct {

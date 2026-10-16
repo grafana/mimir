@@ -481,6 +481,28 @@ func TestSortByLabelsOrdersAsCompareLabels(t *testing.T) {
 	}
 }
 
+func TestSortKeysOrdersAsStrings(t *testing.T) {
+	random := rand.New(rand.NewPCG(3, 4))
+	for _, size := range []int{0, 1, 2, 15, 16, 17, 100, 5000} {
+		keys := make([]keyedSeries, size)
+		for i := range keys {
+			// Keys of a few letters with long shared prefixes, some prefixes of others, some equal.
+			prefix := "__name__\x00metric\x00label\x00"
+			key := prefix[:random.IntN(len(prefix)+1)]
+			for range random.IntN(6) {
+				key += string(rune('a' + random.IntN(3)))
+			}
+			keys[i] = keyedSeries{key: key, series: rawSeries{stored: labels.Labels(strconv.Itoa(i))}}
+		}
+		expected := slices.Clone(keys)
+		slices.SortStableFunc(expected, func(x, y keyedSeries) int { return strings.Compare(x.key, y.key) })
+		sortKeys(keys, 0)
+		for i := range keys {
+			require.Equal(t, expected[i].key, keys[i].key, "%d keys, at %d", size, i)
+		}
+	}
+}
+
 func BenchmarkSortByLabels(b *testing.B) {
 	random := rand.New(rand.NewPCG(1, 2))
 	var selected []rawSeries
