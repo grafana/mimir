@@ -100,7 +100,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 				{Name: "sampleLabel2", Value: "sampleValue2"},
 			},
 			Samples: []Sample{
-				{Value: 1, TimestampMs: 2},
+				{Value: 1, TimestampMs: 2, StartTimestamp: 1},
 				{Value: 3, TimestampMs: 4},
 			},
 			Histograms: []Histogram{
@@ -119,6 +119,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					ResetHint:      Histogram_UNKNOWN,
 					Timestamp:      4*time.Minute.Milliseconds() - 1,
 					CustomValues:   []float64{3, 4},
+					StartTimestamp: time.Minute.Milliseconds(),
 				},
 			},
 			Exemplars: []Exemplar{{
@@ -303,7 +304,7 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 				{Name: "label1", Value: "value1"},
 			},
 			Samples: []Sample{
-				{Value: 1, TimestampMs: 2},
+				{Value: 1, TimestampMs: 2, StartTimestamp: 1},
 			},
 			Exemplars: []Exemplar{
 				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: "e1", Value: "v1"}}},
@@ -324,6 +325,7 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 					ResetHint:      Histogram_YES,
 					Timestamp:      100,
 					CustomValues:   []float64{5.0, 6.0},
+					StartTimestamp: 50,
 				},
 			},
 			CreatedTimestamp:          1234567890,
