@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,9 @@ import (
 type table struct {
 	ids   map[string]uint32
 	names []string
+	// Each name's position among the names in order, made when first needed.
+	ranksOnce sync.Once
+	ranks     []uint32
 }
 
 var (
@@ -83,6 +87,23 @@ type Snapshot struct {
 
 func TakeSnapshot() Snapshot {
 	return Snapshot{t: current.Load()}
+}
+
+// Ranks returns each name id's position among the table's names in order: comparing two names' ranks compares them.
+func (s Snapshot) Ranks() []uint32 {
+	t := s.t
+	t.ranksOnce.Do(func() {
+		ids := make([]uint32, len(t.names))
+		for id := range ids {
+			ids[id] = uint32(id)
+		}
+		slices.SortFunc(ids, func(a, b uint32) int { return strings.Compare(t.names[a], t.names[b]) })
+		t.ranks = make([]uint32, len(t.names))
+		for rank, id := range ids {
+			t.ranks[id] = uint32(rank)
+		}
+	})
+	return t.ranks
 }
 
 func (s Snapshot) Name(id uint32) string {
@@ -234,6 +255,33 @@ func (l Labels) ValueOf(id uint32) string {
 		i += int(size)
 	}
 	return ""
+}
+
+// RangeIDs calls visit with the name id and value of each label, in order.
+func (l Labels) RangeIDs(visit func(id uint32, value string) bool) {
+	s := string(l)
+	for i := 0; i < len(s); {
+		var name uint64
+		if c := s[i]; c < 0x80 {
+			name, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			name = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		var size uint64
+		if c := s[i]; c < 0x80 {
+			size, i = uint64(c), i+1
+		} else {
+			rest := s[i:]
+			size = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		if !visit(uint32(name), s[i:i+int(size)]) {
+			return
+		}
+		i += int(size)
+	}
 }
 
 // Lookup is ValueOf, and whether the series has the label.

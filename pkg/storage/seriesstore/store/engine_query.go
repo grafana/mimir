@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"slices"
@@ -342,17 +343,14 @@ func sortByLabels(selected []rawSeries) {
 		slices.SortFunc(selected, compare)
 		return
 	}
+	// A key is each label's name rank, 4 bytes in order, and value then a zero byte: shorter than the names, and with
+	// no name to look up. A value with a zero byte would compare otherwise, so then the series are compared as they are.
 	size := 0
 	for index := range selected {
-		it := selected[index].stored.Iter()
-		for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
-			if strings.IndexByte(name, 0) >= 0 || strings.IndexByte(value, 0) >= 0 {
-				slices.SortFunc(selected, compare)
-				return
-			}
-			size += len(name) + len(value) + 2
-		}
+		size += len(selected[index].stored)
 	}
+	// At most 3 more bytes a label than its encoding's 2, which every label has at least.
+	size += size * 3 / 2
 	scratch, _ := sortScratch.Get().(*labelSortScratch)
 	if scratch == nil {
 		scratch = &labelSortScratch{}
@@ -371,14 +369,23 @@ func sortByLabels(selected []rawSeries) {
 	buffer := scratch.buffer
 	keys := slices.Grow(scratch.keys, len(selected))[:len(selected)]
 	scratch.keys = keys
+	ranks := names.Ranks()
+	zero := false
 	for index := range selected {
 		start := len(buffer)
-		it := selected[index].stored.Iter()
-		for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
-			buffer = append(buffer, name...)
-			buffer = append(buffer, 0)
+		selected[index].stored.RangeIDs(func(id uint32, value string) bool {
+			if strings.IndexByte(value, 0) >= 0 {
+				zero = true
+				return false
+			}
+			buffer = binary.BigEndian.AppendUint32(buffer, ranks[id])
 			buffer = append(buffer, value...)
 			buffer = append(buffer, 0)
+			return true
+		})
+		if zero {
+			slices.SortFunc(selected, compare)
+			return
 		}
 		// The buffer holds every key, so it is never reallocated under the keys taken from it.
 		keys[index] = keyedSeries{key: unsafe.String(unsafe.SliceData(buffer[start:]), len(buffer)-start), series: selected[index]}
