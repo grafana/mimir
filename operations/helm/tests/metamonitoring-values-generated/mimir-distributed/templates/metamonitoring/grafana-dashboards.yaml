@@ -13383,7 +13383,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                      "description": "### Estimated per-query memory consumption\nThe estimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
                       "id": 20,
                       "options": {
                          "calculate": true,
@@ -15087,7 +15087,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                      "description": "### Estimated per-query memory consumption\nThe estimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
                       "id": 38,
                       "options": {
                          "calculate": true,
@@ -41945,7 +41945,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Distributor discarded exemplars rate\nThe rate of each exmplars' discarding reason.\n\n",
+                      "description": "### Distributor discarded exemplars rate\nThe rate of each exemplars' discarding reason.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {

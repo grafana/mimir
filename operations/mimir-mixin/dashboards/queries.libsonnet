@@ -36,7 +36,7 @@ local filename = 'mimir-queries.json';
     $.panelDescription(
       'Estimated per-query memory consumption',
       |||
-        The esimated memory consumption of all queries evaluated by %ss. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
+        The estimated memory consumption of all queries evaluated by %ss. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
       ||| % display_name
     ),
 

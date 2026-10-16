@@ -16,7 +16,7 @@ groups:
                 The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrequesterrors
           expr: |
-            # The following 5xx errors considered as non-error:
+            # The following 5xx errors are considered as non-error:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
@@ -34,7 +34,7 @@ groups:
                 The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrequesterrors
           expr: |
-            # The following 5xx errors considered as non-error:
+            # The following 5xx errors are considered as non-error:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
@@ -929,7 +929,7 @@ groups:
         - alert: MimirAlertmanagerReplicationFailing
           annotations:
             message: |
-                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicate partial state to its replicas.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerreplicationfailing
           expr: |
             rate(cortex_alertmanager_state_replication_failed_total[4m]) > 0
@@ -939,7 +939,7 @@ groups:
         - alert: MimirAlertmanagerPersistStateFailing
           annotations:
             message: |
-                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snapshots to remote storage.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerpersiststatefailing
           expr: |
             rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
