@@ -43,10 +43,15 @@ type CardinalityEstimateRequest struct {
 
 // CardinalityEstimateResult holds one count per bucket for each group.
 type CardinalityEstimateResult struct {
-	// Read is readIndexHeader or readFullIndex.
-	Read    string
-	Snapped bool
-	Counts  map[string][]int64
+	// Read is readIndexHeader, readFullIndex or readHeadPostings.
+	Read string
+	// Source is sourceBlocks or sourceHead.
+	Source string
+	// HeadWhole is set when the counts are every series in the ingesters'
+	// heads, since head postings can't be filtered by time.
+	HeadWhole bool
+	Snapped   bool
+	Counts    map[string][]int64
 	// Dedup is set when the blocks may share series, so the counts come
 	// from a union of label-set hashes rather than a sum.
 	Dedup  bool
