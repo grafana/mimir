@@ -6739,6 +6739,436 @@ tsdb:
     # offset of the configured consumer group.
     # CLI flag: -blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval
     [consumer_group_poll_interval: <duration> | default = 5m]
+
+    kafka:
+      # (experimental) The Kafka backend implementation. Supported values:
+      # kafka, warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.backend
+      [backend: <string> | default = "kafka"]
+
+      # The Kafka seed broker address, or a comma-separated list of seed broker
+      # addresses.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.address
+      [address: <string> | default = ""]
+
+      # The Kafka topic name.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.topic
+      [topic: <string> | default = ""]
+
+      # The Kafka client ID.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.client-id
+      [client_id: <string> | default = ""]
+
+      # The rack identifier for this Kafka client. Corresponds to the Kafka
+      # client.rack setting. Only supported when
+      # blocks-storage.tsdb.offset-catalogue.kafka.backend=kafka.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.client-rack
+      [client_rack: <string> | default = ""]
+
+      # The maximum time allowed to establish the TCP connection to a Kafka
+      # broker, including the TLS handshake when TLS is enabled. It does not
+      # include the subsequent SASL authentication handshake.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.dial-timeout
+      [dial_timeout: <duration> | default = 2s]
+
+      # How long to wait for an incoming write request to be successfully
+      # committed to the Kafka backend.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.write-timeout
+      [write_timeout: <duration> | default = 10s]
+
+      # (experimental) Additional time added on top of the write timeout,
+      # accounting for a write request sitting in the client buffer and
+      # travelling over the network before the Kafka backend starts processing
+      # it. Lower values fail slow writes faster, at the cost of less tolerance
+      # to network and buffer latency.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.write-timeout-overhead
+      [write_timeout_overhead: <duration> | default = 2s]
+
+      # (experimental) Mark an agent as slow when its window-average latency
+      # exceeds this multiple of the cluster baseline. Only applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-slow-multiplier
+      [warpstream_health_check_slow_multiplier: <float> | default = 2]
+
+      # (experimental) Suppress slow-based hedging when more than this fraction
+      # of agents are slow (cluster-wide issue). Only applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-max-slow-fraction
+      [warpstream_health_check_max_slow_fraction: <float> | default = 0.3]
+
+      # (experimental) Mark an agent as faulty when its observed error rate
+      # exceeds this fraction. Only applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-faulty-threshold
+      [warpstream_health_check_faulty_threshold: <float> | default = 0.2]
+
+      # (experimental) Suppress faulty-based hedging and demotion when more than
+      # this fraction of agents are faulty (cluster-wide issue). Only applies
+      # when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-max-faulty-fraction
+      [warpstream_health_check_max_faulty_fraction: <float> | default = 0.3]
+
+      # (experimental) Floor on the dynamically-computed hedge delay. Only
+      # applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-hedge-min-delay
+      [warpstream_hedge_min_delay: <duration> | default = 500ms]
+
+      # (experimental) Cap on how many per-partition candidates the hedge fanout
+      # considers when picking a fallback (excluding the primary and any agent
+      # already tried). Only applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-hedge-max-agents
+      [warpstream_hedge_max_agents: <int> | default = 3]
+
+      # (experimental) Minimum wall-clock gap between probes to a demoted agent.
+      # Only applies when
+      # -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.warpstream-demoter-probe-interval
+      [warpstream_demoter_probe_interval: <duration> | default = 1s]
+
+      # The SASL mechanism used to authenticate to Kafka. Supported values:
+      # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For
+      # backwards-compatibility, PLAIN with no username nor password disables
+      # SASL.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-mechanism
+      [sasl_mechanism: <string> | default = "PLAIN"]
+
+      # The username used to authenticate to Kafka using SASL. To enable SASL,
+      # configure both the username and password.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-username
+      [sasl_username: <string> | default = ""]
+
+      # The password used to authenticate to Kafka using SASL. To enable SASL,
+      # configure both the username and password.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-password
+      [sasl_password: <string> | default = ""]
+
+      # The OAuth token to use to authenticate to Kafka. Consider
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path
+      # instead.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-token
+      [sasl_oauthbearer_token: <string> | default = ""]
+
+      # Optional authorization ID to use when authenticating to Kafka using SASL
+      # OAUTHBEARER.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-zid
+      [sasl_oauthbearer_zid: <string> | default = ""]
+
+      # Optional additional OAuth extensions to include when authenticating to
+      # Kafka using SASL OAUTHBEARER as a JSON object.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-extensions
+      [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
+
+      # Path to a file containing an OAuth token to authenticate to Kafka.
+      # Mutually exclusive with
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path.
+      # The file is read anew on every reauthentication, so it can be updated
+      # with fresh tokens. The file must be in JSON format, adhering to this
+      # JSON schema: {"type": "object", "required": ["token"], "properties":
+      # {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions":
+      # {"type": "object", "additionalProperties": {"type": "string"}}}
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path
+      [sasl_oauthbearer_file_path: <string> | default = ""]
+
+      # Path to a Unix domain socket to fetch an OAuth token from via HTTP.
+      # Mutually exclusive with
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path.
+      # On every authentication or reauthentication, an HTTP GET / request is
+      # made to the socket and the response body is read as JSON. The JSON
+      # schema is the same as for
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path
+      [sasl_oauthbearer_http_socket_path: <string> | default = ""]
+
+      # Timeout for requesting the token from the HTTP socket. Effective when
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path
+      # is set.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-timeout
+      [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
+      # The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM.
+      # Consider
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path
+      # instead.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-access-key
+      [sasl_msk_iam_access_key: <string> | default = ""]
+
+      # The AWS secret access key to authenticate to Kafka using SASL
+      # AWS_MSK_IAM. Consider
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path
+      # instead.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-secret-key
+      [sasl_msk_iam_secret_key: <string> | default = ""]
+
+      # Optional AWS session token to authenticate to Kafka using SASL
+      # AWS_MSK_IAM.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-session-token
+      [sasl_msk_iam_session_token: <string> | default = ""]
+
+      # Optional user agent to use when authenticating to Kafka using SASL
+      # AWS_MSK_IAM.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-user-agent
+      [sasl_msk_iam_user_agent: <string> | default = ""]
+
+      # Path to a file containing AWS credentials to authenticate to Kafka using
+      # SASL AWS_MSK_IAM. Mutually exclusive with
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path.
+      # The file is read anew on every reauthentication, so it can be updated
+      # with fresh credentials. The file must be in JSON format, adhering to
+      # this JSON schema: {"type": "object", "required": ["AccessKey",
+      # "SecretKey"], "properties": {"AccessKey": {"type": "string"},
+      # "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"},
+      # "UserAgent": {"type": "string"}}}
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path
+      [sasl_msk_iam_file_path: <string> | default = ""]
+
+      # Path to a Unix domain socket to fetch AWS credentials from via HTTP.
+      # Mutually exclusive with
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path. On
+      # every authentication or reauthentication, an HTTP GET / request is made
+      # to the socket and the response body is read as JSON. The JSON schema is
+      # the same as for
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path
+      [sasl_msk_iam_http_socket_path: <string> | default = ""]
+
+      # Timeout for requesting AWS credentials from the HTTP socket. Effective
+      # when
+      # blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path
+      # is set.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-timeout
+      [sasl_msk_iam_http_socket_timeout: <duration> | default = 10s]
+
+      # Enable TLS for the Kafka client connection.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-enabled
+      [tls_enabled: <boolean> | default = false]
+
+      # (advanced) Path to the client certificate, which will be used for
+      # authenticating with the server. Also requires the key path to be
+      # configured.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-cert-path
+      [tls_cert_path: <string> | default = ""]
+
+      # (advanced) Path to the key for the client certificate. Also requires the
+      # client certificate to be configured.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-key-path
+      [tls_key_path: <string> | default = ""]
+
+      # (advanced) Path to the CA certificates to validate server certificate
+      # against. If not set, the host's root CA certificates are used.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-ca-path
+      [tls_ca_path: <string> | default = ""]
+
+      # (advanced) Override the expected name on the server certificate.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-server-name
+      [tls_server_name: <string> | default = ""]
+
+      # (advanced) Skip validating server certificate.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-insecure-skip-verify
+      [tls_insecure_skip_verify: <boolean> | default = false]
+
+      # (advanced) Override the default cipher suite list (separated by commas).
+      # Allowed values:
+      #
+      # Secure Ciphers:
+      # - TLS_AES_128_GCM_SHA256
+      # - TLS_AES_256_GCM_SHA384
+      # - TLS_CHACHA20_POLY1305_SHA256
+      # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+      # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+      # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+      # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+      # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      #
+      # Insecure Ciphers:
+      # - TLS_RSA_WITH_RC4_128_SHA
+      # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+      # - TLS_RSA_WITH_AES_128_CBC_SHA
+      # - TLS_RSA_WITH_AES_256_CBC_SHA
+      # - TLS_RSA_WITH_AES_128_CBC_SHA256
+      # - TLS_RSA_WITH_AES_128_GCM_SHA256
+      # - TLS_RSA_WITH_AES_256_GCM_SHA384
+      # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+      # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+      # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+      # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+      # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-cipher-suites
+      [tls_cipher_suites: <string> | default = ""]
+
+      # (advanced) Override the default minimum TLS version. Allowed values:
+      # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.tls-min-version
+      [tls_min_version: <string> | default = ""]
+
+      # The consumer group used by the consumer to track the last consumed
+      # offset. The consumer group must be different for each ingester. If the
+      # configured consumer group contains the '<partition>' placeholder, it is
+      # replaced with the actual partition ID owned by the ingester. When empty
+      # (recommended), Mimir uses the ingester instance ID to guarantee
+      # uniqueness.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.consumer-group
+      [consumer_group: <string> | default = ""]
+
+      # How frequently a consumer should commit the consumed offset to Kafka.
+      # The last committed offset is used at startup to continue the consumption
+      # from where it was left.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.consumer-group-offset-commit-interval
+      [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+      # (experimental) When true, the file-based offset stored in the TSDB
+      # directory is enforced at startup, taking precedence over Kafka consumer
+      # group offset. When false, offsets are still written to the file (in the
+      # TSDB directory) but the Kafka consumer group offset is used at startup.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.consumer-group-offset-commit-file-enforced
+      [consumer_group_offset_commit_file_enforced: <boolean> | default = false]
+
+      # How frequently to poll the last produced offset, used to enforce strong
+      # read consistency.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.last-produced-offset-poll-interval
+      [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+      # How long to retry a failed request to get the last produced offset.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.last-produced-offset-retry-timeout
+      [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+      # From which position to start consuming the partition at startup.
+      # Supported options: last-offset, start, end, timestamp.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.consume-from-position-at-startup
+      [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+      # Milliseconds timestamp after which the consumption of the partition
+      # starts at startup. Only applies when consume-from-position-at-startup is
+      # timestamp
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.consume-from-timestamp-at-startup
+      [consume_from_timestamp_at_startup: <int> | default = 0]
+
+      # The best-effort maximum lag a consumer tries to achieve at startup. Set
+      # both
+      # -blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup
+      # and
+      # -blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup
+      # to 0 to disable waiting for maximum consumer lag being honored at
+      # startup.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup
+      [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+      # The guaranteed maximum lag before a consumer is considered to have
+      # caught up reading from a partition at startup, becomes ACTIVE in the
+      # hash ring and passes the readiness check. Set both
+      # -blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup
+      # and
+      # -blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup
+      # to 0 to disable waiting for maximum consumer lag being honored at
+      # startup.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup
+      [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+      # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+      # creating the topic fails and the topic doesn't already exist, Mimir
+      # fails to start.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.auto-create-topic-enabled
+      [auto_create_topic_enabled: <boolean> | default = true]
+
+      # When auto-creation of Kafka topic is enabled and this value is positive,
+      # Mimir creates the topic with this number of partitions. When the value
+      # is -1 the Kafka broker uses the default number of partitions
+      # (num.partitions configuration).
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.auto-create-topic-default-partitions
+      [auto_create_topic_default_partitions: <int> | default = -1]
+
+      # The maximum size of a Kafka record data that should be generated by the
+      # producer. An incoming write request larger than this size is split into
+      # multiple Kafka records. We strongly recommend to not change this setting
+      # unless for testing purposes.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.producer-max-record-size-bytes
+      [producer_max_record_size_bytes: <int> | default = 15983616]
+
+      # The maximum size of (uncompressed) buffered and unacknowledged produced
+      # records sent to Kafka. The produce request fails once this limit is
+      # reached. This limit is per Kafka client. 0 to disable the limit.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.producer-max-buffered-bytes
+      [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+      # The compression codec used by the Kafka producer when writing records to
+      # the Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When
+      # unset, the franz-go default (snappy with no-compression fallback) is
+      # used. Set to "none" to disable compression entirely; this is required
+      # when targeting Azure Event Hub via its Kafka-compatible endpoint, which
+      # does not support compressed produce requests.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.producer-compression
+      [producer_compression: <string> | default = ""]
+
+      # The maximum allowed for a read requests processed by an ingester to wait
+      # until strong read consistency is enforced. 0 to disable the timeout.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.wait-strong-read-consistency-timeout
+      [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+      # The record version that this producer sends.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.producer-record-version
+      [producer_record_version: <int> | default = 2]
+
+      # The maximum amount of time a Kafka broker waits for some records before
+      # a Fetch response is returned.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.fetch-max-wait
+      [fetch_max_wait: <duration> | default = 5s]
+
+      # The maximum number of concurrent fetch requests that the ingester makes
+      # when reading data from Kafka during startup. Concurrent fetch requests
+      # are issued only when there is sufficient backlog of records to consume.
+      # Set to 0 to disable.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.fetch-concurrency-max
+      [fetch_concurrency_max: <int> | default = 12]
+
+      # When enabled, the fetch request MaxBytes field is computed using the
+      # compressed size of previous records. When disabled, MaxBytes is computed
+      # using uncompressed bytes. Different Kafka implementations interpret
+      # MaxBytes differently.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.use-compressed-bytes-as-fetch-max-bytes
+      [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+      # The maximum number of buffered records ready to be processed. This limit
+      # applies to the sum of all inflight requests. Set to 0 to disable the
+      # limit.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.max-buffered-bytes
+      [max_buffered_bytes: <int> | default = 1000000000]
+
+      # The maximum number of concurrent ingestion streams to the TSDB head.
+      # Every tenant has their own set of streams. 0 to disable.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-max
+      [ingestion_concurrency_max: <int> | default = 8]
+
+      # The number of timeseries to batch together before ingesting to the TSDB
+      # head. Only use this setting when
+      # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-batch-size
+      [ingestion_concurrency_batch_size: <int> | default = 150]
+
+      # The number of batches to prepare and queue to ingest to the TSDB head.
+      # Only use this setting when
+      # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-queue-capacity
+      [ingestion_concurrency_queue_capacity: <int> | default = 3]
+
+      # The expected number of times to ingest timeseries to the TSDB head after
+      # batching. With fewer flushes, the overhead of splitting up the work is
+      # higher than the benefit of parallelization. Only use this setting when
+      # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-target-flushes-per-shard
+      [ingestion_concurrency_target_flushes_per_shard: <int> | default = 40]
+
+      # The estimated number of bytes a sample has at time of ingestion. This
+      # value is used to estimate the timeseries without decompressing them.
+      # Only use this setting when
+      # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+      # CLI flag: -blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-estimated-bytes-per-sample
+      [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 200]
 ```
 
 ### compactor

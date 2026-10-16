@@ -856,6 +856,8 @@ func TestConfigValidation(t *testing.T) {
 				cfg.Compartments.Write.NumCompartments = 2
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Address = flagext.StringSliceCSV{"kafka-mirror-wc-<write-compartment-id>:9092"}
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Topic = cfg.IngestStorage.KafkaConfig.Topic
 				return cfg
 			},
 			expectAnyError: false,
@@ -868,6 +870,8 @@ func TestConfigValidation(t *testing.T) {
 				cfg.Distributor.WriteCompartmentID = 0
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Address = flagext.StringSliceCSV{"kafka-mirror:9092"}
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Topic = cfg.IngestStorage.KafkaConfig.Topic
 				return cfg
 			},
 			expectAnyError: false,
@@ -877,6 +881,30 @@ func TestConfigValidation(t *testing.T) {
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Address = flagext.StringSliceCSV{"kafka-mirror-wc-<write-compartment-id>:9092"}
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Topic = cfg.IngestStorage.KafkaConfig.Topic
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the offset catalogue is enabled without a kafka config",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the offset catalogue kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.ConsumerGroup = "block-builder"
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Address = flagext.StringSliceCSV{"kafka-mirror:9092"}
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Topic = cfg.IngestStorage.KafkaConfig.Topic
 				return cfg
 			},
 			expectAnyError: true,

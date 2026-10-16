@@ -19,15 +19,20 @@ import (
 )
 
 // committedOffsetsWatcher periodically fetches the committed offsets of the configured consumer
-// group — the one the block-builder consumes with — for the ingester's partition, from every
-// Kafka cluster the ingester consumes from. The latest observed offsets gate the deletion of
-// compacted blocks: a block is deleted only once the consumer group consumed the records the
-// block's data came from (see userTSDB.blocksToDelete).
+// group — the one the block-builder consumes with — for the ingester's partition, from every Kafka
+// cluster the group commits to. The latest observed offsets gate the deletion of compacted blocks:
+// a block is deleted only once the consumer group consumed the records the block's data came from
+// (see userTSDB.blocksToDelete).
 type committedOffsetsWatcher struct {
-	client   *ingest.CommittedOffsetsClient
-	interval time.Duration
-	logger   log.Logger
-	metrics  *committedOffsetsMetrics
+	// kafkaCfgs holds one Kafka config per cluster the consumer group commits to, indexed by
+	// Kafka cluster ID (see committedOffsetsKafkaConfigs).
+	kafkaCfgs []ingest.KafkaConfig
+
+	consumerGroup string
+	partitionID   int32
+	interval      time.Duration
+	logger        log.Logger
+	metrics       *committedOffsetsMetrics
 
 	// committed holds the latest observed offsets, indexed by Kafka cluster ID. It is nil
 	// until the consumer group committed to at least one cluster.
@@ -47,12 +52,14 @@ func newCommittedOffsetsMetrics(reg prometheus.Registerer) *committedOffsetsMetr
 	}
 }
 
-func newCommittedOffsetsWatcher(client *ingest.CommittedOffsetsClient, interval time.Duration, logger log.Logger, reg prometheus.Registerer) *committedOffsetsWatcher {
+func newCommittedOffsetsWatcher(kafkaCfgs []ingest.KafkaConfig, consumerGroup string, partitionID int32, interval time.Duration, logger log.Logger, reg prometheus.Registerer) *committedOffsetsWatcher {
 	return &committedOffsetsWatcher{
-		client:   client,
-		interval: interval,
-		logger:   logger,
-		metrics:  newCommittedOffsetsMetrics(reg),
+		kafkaCfgs:     kafkaCfgs,
+		consumerGroup: consumerGroup,
+		partitionID:   partitionID,
+		interval:      interval,
+		logger:        logger,
+		metrics:       newCommittedOffsetsMetrics(reg),
 	}
 }
 
@@ -71,7 +78,7 @@ func (w *committedOffsetsWatcher) Committed() (kmeta.PartitionOffsets, bool) {
 // the whole ingester. A failed fetch keeps the previously cached snapshot, which only delays
 // block deletion, never enables it early.
 func (w *committedOffsetsWatcher) poll(ctx context.Context) error {
-	offsets, anyCommitted, err := w.client.FetchCommitted(ctx)
+	offsets, anyCommitted, err := ingest.FetchCommittedOffsets(ctx, w.kafkaCfgs, w.consumerGroup, w.partitionID, w.logger)
 	if err != nil {
 		level.Warn(w.logger).Log("msg", "failed to fetch committed offsets, keeping the previously observed ones", "err", err)
 		return nil
@@ -90,7 +97,7 @@ func (w *committedOffsetsWatcher) poll(ctx context.Context) error {
 	}
 
 	if w.committed.Load() == nil {
-		level.Info(w.logger).Log("msg", "observed the first committed offsets of the consumer group", "partition", w.client.PartitionID(), "offsets", offsets)
+		level.Info(w.logger).Log("msg", "observed the first committed offsets of the consumer group", "partition", w.partitionID, "offsets", offsets)
 	} else {
 		level.Debug(w.logger).Log("msg", "observed committed offsets", "offsets", offsets)
 	}
@@ -99,10 +106,8 @@ func (w *committedOffsetsWatcher) poll(ctx context.Context) error {
 }
 
 // service returns the service that polls the committed offsets. Starting the service fetches the
-// offsets once; stopping it closes the watcher's Kafka clients.
+// offsets once. The poll opens and closes its own Kafka clients, so stopping the service has
+// nothing to release.
 func (w *committedOffsetsWatcher) service() *services.BasicService {
-	return services.NewTimerService(w.interval, w.poll, w.poll, func(_ error) error {
-		w.client.Close()
-		return nil
-	}).WithName("ingester-committed-offsets")
+	return services.NewTimerService(w.interval, w.poll, w.poll, nil).WithName("ingester-committed-offsets")
 }

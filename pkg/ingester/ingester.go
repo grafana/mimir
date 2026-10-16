@@ -267,6 +267,18 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 		return errors.New("ingester read compartment ID must be 0 when compartments are disabled")
 	}
 
+	if cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled && compartmentsCfg.Enabled && compartmentsCfg.Write.NumCompartments > 1 {
+		// The offset catalogue fetches the committed offsets of one mirror cluster per consumption
+		// cluster (see committedOffsetsKafkaConfigs). An address without the placeholder resolves to the
+		// same cluster for every compartment, so the committed offsets would not line up with the
+		// per-cluster watermarks they gate.
+		for _, addr := range cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Kafka.Address {
+			if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled with more than one write compartment, every -blocks-storage.tsdb.offset-catalogue.kafka.address must contain the %q placeholder", compartments.WriteCompartmentIDPlaceholder)
+			}
+		}
+	}
+
 	// Tokenless mode requires gRPC push to be disabled.
 	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
@@ -496,6 +508,23 @@ func consumptionKafkaConfigs(cfg Config) []ingest.KafkaConfig {
 	return ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 }
 
+// committedOffsetsKafkaConfigs returns one KafkaConfig per Kafka cluster the offset catalogue's
+// consumer group commits to, indexed by cluster ID (the write compartment ID) — the same indexing
+// as consumptionKafkaConfigs, so that mirror cluster N lines up with the ingester's consumption
+// cluster N. The clusters are set explicitly — typically one Kafka cluster mirroring each cluster
+// the ingester consumes from — so their config does not default to the ingester's consumption
+// clusters; the read-compartment placeholder in the topic resolves to this ingester's read
+// compartment.
+func committedOffsetsKafkaConfigs(cfg Config) []ingest.KafkaConfig {
+	kafkaCfg := cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Kafka
+	kafkaCfg.Topic = compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+
+	if !cfg.Compartments.Enabled {
+		return []ingest.KafkaConfig{kafkaCfg}
+	}
+	return ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, kafkaCfg.Topic)
+}
+
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	// Resolve the partition ID up front when ingest storage is enabled, so we can wrap the
@@ -719,17 +748,15 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 		// The consumer group is the one the block-builder consumes with: its committed offsets gate
 		// the deletion of the ingester's compacted blocks. The Config.Validate check that requires
-		// the group to be set is not enough here, because tests build Configs without validation.
+		// the group and its Kafka config to be set is not enough here, because tests build Configs
+		// without validation.
 		if consumerGroup := cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup; consumerGroup != "" {
-			componentLogger := log.With(logger, "component", "committed-offsets")
-			client, err := ingest.NewCommittedOffsetsClient(consumptionKafkaConfigs(cfg), consumerGroup, i.ingestPartitionID, componentLogger)
-			if err != nil {
-				return nil, errors.Wrap(err, "creating committed offsets client")
-			}
 			i.committedOffsets = newCommittedOffsetsWatcher(
-				client,
+				committedOffsetsKafkaConfigs(cfg),
+				consumerGroup,
+				i.ingestPartitionID,
 				cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval,
-				componentLogger,
+				log.With(logger, "component", "committed-offsets"),
 				registerer,
 			)
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
@@ -286,6 +287,12 @@ type TSDBConfig struct {
 
 		ConsumerGroup             string        `yaml:"consumer_group" category:"experimental"`
 		ConsumerGroupPollInterval time.Duration `yaml:"consumer_group_poll_interval" category:"experimental"`
+
+		// Kafka is the Kafka config of the clusters the consumer group commits to. The consumer group is
+		// the one the block-builder consumes with, and its clusters are set explicitly — typically a Kafka
+		// cluster mirroring each cluster the ingester consumes from. One cluster per config index (the
+		// write compartment ID), so that mirror cluster N lines up with the ingester's consumption cluster N.
+		Kafka ingest.KafkaConfig `yaml:"kafka" category:"experimental"`
 	} `yaml:"offset_catalogue" category:"experimental"`
 }
 
@@ -344,6 +351,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.OffsetCatalogue.SyncConcurrency, "blocks-storage.tsdb.offset-catalogue.sync-concurrency", 10, "Maximum number of tenants concurrently syncing offset catalogue to disk.")
 	f.StringVar(&cfg.OffsetCatalogue.ConsumerGroup, "blocks-storage.tsdb.offset-catalogue.consumer-group", "", "The Kafka consumer group whose committed offset is compared against block watermarks to determine when ingester blocks can be deleted.")
 	f.DurationVar(&cfg.OffsetCatalogue.ConsumerGroupPollInterval, "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval", 5*time.Minute, "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.")
+	cfg.OffsetCatalogue.Kafka.RegisterFlagsWithPrefix("blocks-storage.tsdb.offset-catalogue.kafka.", f)
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
@@ -405,6 +413,11 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		// gate the deletion of compacted blocks on, and the catalogue would only stamp watermarks.
 		if cfg.OffsetCatalogue.ConsumerGroup == "" {
 			return errors.New("-blocks-storage.tsdb.offset-catalogue.consumer-group must be set when -blocks-storage.tsdb.offset-catalogue.enabled is set")
+		}
+		// The clusters the consumer group commits to are set explicitly; the ingester does not default
+		// them to its own consumption clusters.
+		if err := cfg.OffsetCatalogue.Kafka.Validate(); err != nil {
+			return errors.Wrap(err, "invalid -blocks-storage.tsdb.offset-catalogue.kafka config")
 		}
 		if cfg.OffsetCatalogue.ConsumerGroupPollInterval <= 0 {
 			return fmt.Errorf("offset catalogue poll interval for consumer group %s must be non-negative", cfg.OffsetCatalogue.ConsumerGroup)

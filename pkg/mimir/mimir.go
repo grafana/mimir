@@ -330,6 +330,17 @@ func (c *Config) Validate(log log.Logger) error {
 				}
 			}
 		}
+		// The ingester fetches the committed offsets of the offset catalogue's consumer group from one
+		// Kafka cluster per consumption cluster (see ingester.committedOffsetsKafkaConfigs): an address
+		// without the placeholder resolves to the same cluster for every write compartment, so the
+		// committed offsets would not line up with the per-cluster watermarks they gate.
+		if c.isIngesterEnabled() && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled && c.Compartments.Write.NumCompartments > 1 {
+			for _, addr := range c.BlocksStorage.TSDB.OffsetCatalogue.Kafka.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -blocks-storage.tsdb.offset-catalogue.kafka.address must contain the %q placeholder for the ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
 		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
 		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
 		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and

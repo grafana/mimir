@@ -1223,6 +1223,12 @@ func createTestIngesterWithIngestStorage(
 	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = flagext.StringSliceCSV{kafkaAddr}
 
+	// The offset catalogue's Kafka config is set explicitly in production (via jsonnet), pointing at
+	// the clusters the block-builder consumes from. Mirror the ingest-storage cluster here.
+	if ingesterCfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		ingesterCfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Kafka = ingesterCfg.IngestStorageConfig.KafkaConfig
+	}
+
 	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
 		// The ingest storage requires the ingester ID to have a well known format.
 		ingesterCfg.IngesterRing.InstanceID = "ingester-zone-a-0"

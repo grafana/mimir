@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestCommittedOffsetsClient_FetchCommitted(t *testing.T) {
+func TestFetchCommittedOffsets(t *testing.T) {
 	const (
 		numPartitions = 2
 		topicName     = "test"
@@ -38,23 +38,19 @@ func TestCommittedOffsetsClient_FetchCommitted(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	newClient := func(t *testing.T, addrs ...string) *CommittedOffsetsClient {
-		t.Helper()
-		configs := make([]KafkaConfig, len(addrs))
+	// configs returns one config per given Kafka cluster address, indexed by cluster ID.
+	configs := func(addrs ...string) []KafkaConfig {
+		out := make([]KafkaConfig, len(addrs))
 		for i, addr := range addrs {
-			configs[i] = createTestKafkaConfig(addr, topicName)
+			out[i] = createTestKafkaConfig(addr, topicName)
 		}
-		client, err := NewCommittedOffsetsClient(configs, consumerGroup, partitionID, log.NewNopLogger())
-		require.NoError(t, err)
-		t.Cleanup(client.Close)
-		return client
+		return out
 	}
 
 	t.Run("returns no committed offsets until the group commits to any cluster", func(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		client := newClient(t, clusterAddr)
 
-		offsets, anyCommitted, err := client.FetchCommitted(t.Context())
+		offsets, anyCommitted, err := FetchCommittedOffsets(t.Context(), configs(clusterAddr), consumerGroup, partitionID, log.NewNopLogger())
 		require.NoError(t, err)
 		require.False(t, anyCommitted)
 		require.Equal(t, kmeta.NewMultiClusterPartitionOffsets([]int64{-1}), offsets)
@@ -68,9 +64,7 @@ func TestCommittedOffsetsClient_FetchCommitted(t *testing.T) {
 		commitOffset(t, clusterAddr0, consumerGroup, 1)
 		commitOffset(t, clusterAddr1, consumerGroup, 5)
 
-		client := newClient(t, clusterAddr0, clusterAddr1)
-
-		offsets, anyCommitted, err := client.FetchCommitted(t.Context())
+		offsets, anyCommitted, err := FetchCommittedOffsets(t.Context(), configs(clusterAddr0, clusterAddr1), consumerGroup, partitionID, log.NewNopLogger())
 		require.NoError(t, err)
 		require.True(t, anyCommitted)
 		require.Equal(t, kmeta.NewMultiClusterPartitionOffsets([]int64{1, 5}), offsets)
@@ -81,9 +75,7 @@ func TestCommittedOffsetsClient_FetchCommitted(t *testing.T) {
 		_, clusterAddr1 := testkafka.CreateCluster(t, numPartitions, topicName)
 		commitOffset(t, clusterAddr0, consumerGroup, 1)
 
-		client := newClient(t, clusterAddr0, clusterAddr1)
-
-		offsets, anyCommitted, err := client.FetchCommitted(t.Context())
+		offsets, anyCommitted, err := FetchCommittedOffsets(t.Context(), configs(clusterAddr0, clusterAddr1), consumerGroup, partitionID, log.NewNopLogger())
 		require.NoError(t, err)
 		require.True(t, anyCommitted)
 		require.Equal(t, kmeta.NewMultiClusterPartitionOffsets([]int64{1, -1}), offsets)
@@ -92,12 +84,7 @@ func TestCommittedOffsetsClient_FetchCommitted(t *testing.T) {
 	t.Run("returns -1 for a partition the group did not commit to", func(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
-		configs := []KafkaConfig{createTestKafkaConfig(clusterAddr, topicName)}
-		client, err := NewCommittedOffsetsClient(configs, consumerGroup, 99, log.NewNopLogger())
-		require.NoError(t, err)
-		t.Cleanup(client.Close)
-
-		offsets, anyCommitted, err := client.FetchCommitted(t.Context())
+		offsets, anyCommitted, err := FetchCommittedOffsets(t.Context(), configs(clusterAddr), consumerGroup, 99, log.NewNopLogger())
 		require.NoError(t, err)
 		require.False(t, anyCommitted)
 		require.Equal(t, kmeta.NewMultiClusterPartitionOffsets([]int64{-1}), offsets)

@@ -13353,6 +13353,673 @@
                   "fieldFlag": "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval",
                   "fieldType": "duration",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "block",
+                  "name": "kafka",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "backend",
+                      "required": false,
+                      "desc": "The Kafka backend implementation. Supported values: kafka, warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "kafka",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.backend",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "address",
+                      "required": false,
+                      "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.address",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "topic",
+                      "required": false,
+                      "desc": "The Kafka topic name.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.topic",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "client_id",
+                      "required": false,
+                      "desc": "The Kafka client ID.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.client-id",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "client_rack",
+                      "required": false,
+                      "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when blocks-storage.tsdb.offset-catalogue.kafka.backend=kafka.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.client-rack",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.dial-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "write_timeout",
+                      "required": false,
+                      "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.write-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "write_timeout_overhead",
+                      "required": false,
+                      "desc": "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.write-timeout-overhead",
+                      "fieldType": "duration",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_health_check_slow_multiplier",
+                      "required": false,
+                      "desc": "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-slow-multiplier",
+                      "fieldType": "float",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_health_check_max_slow_fraction",
+                      "required": false,
+                      "desc": "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0.3,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-max-slow-fraction",
+                      "fieldType": "float",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_health_check_faulty_threshold",
+                      "required": false,
+                      "desc": "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0.2,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-faulty-threshold",
+                      "fieldType": "float",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_health_check_max_faulty_fraction",
+                      "required": false,
+                      "desc": "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0.3,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-health-check-max-faulty-fraction",
+                      "fieldType": "float",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_hedge_min_delay",
+                      "required": false,
+                      "desc": "Floor on the dynamically-computed hedge delay. Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 500000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-hedge-min-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_hedge_max_agents",
+                      "required": false,
+                      "desc": "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 3,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-hedge-max-agents",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "warpstream_demoter_probe_interval",
+                      "required": false,
+                      "desc": "Minimum wall-clock gap between probes to a demoted agent. Only applies when -blocks-storage.tsdb.offset-catalogue.kafka.backend=warpstream.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.warpstream-demoter-probe-interval",
+                      "fieldType": "duration",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_mechanism",
+                      "required": false,
+                      "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For backwards-compatibility, PLAIN with no username nor password disables SASL.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "PLAIN",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-mechanism",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_username",
+                      "required": false,
+                      "desc": "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_password",
+                      "required": false,
+                      "desc": "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-password",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_token",
+                      "required": false,
+                      "desc": "The OAuth token to use to authenticate to Kafka. Consider blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path instead.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-token",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_zid",
+                      "required": false,
+                      "desc": "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-zid",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_extensions",
+                      "required": false,
+                      "desc": "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": {},
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-extensions",
+                      "fieldType": "map of string to string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_file_path",
+                      "required": false,
+                      "desc": "Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_http_socket_path",
+                      "required": false,
+                      "desc": "Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-file-path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_oauthbearer_http_socket_timeout",
+                      "required": false,
+                      "desc": "Timeout for requesting the token from the HTTP socket. Effective when blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-path is set.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-oauthbearer-http-socket-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_access_key",
+                      "required": false,
+                      "desc": "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path instead.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-access-key",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_secret_key",
+                      "required": false,
+                      "desc": "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path instead.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-secret-key",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_session_token",
+                      "required": false,
+                      "desc": "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-session-token",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_user_agent",
+                      "required": false,
+                      "desc": "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-user-agent",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_file_path",
+                      "required": false,
+                      "desc": "Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"AccessKey\", \"SecretKey\"], \"properties\": {\"AccessKey\": {\"type\": \"string\"}, \"SecretKey\": {\"type\": \"string\"}, \"SessionToken\": {\"type\": \"string\"}, \"UserAgent\": {\"type\": \"string\"}}}",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_http_socket_path",
+                      "required": false,
+                      "desc": "Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-file-path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "sasl_msk_iam_http_socket_timeout",
+                      "required": false,
+                      "desc": "Timeout for requesting AWS credentials from the HTTP socket. Effective when blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-path is set.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.sasl-msk-iam-http-socket-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS for the Kafka client connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-enabled",
+                      "fieldType": "boolean"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consumer_group",
+                      "required": false,
+                      "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.consumer-group",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consumer_group_offset_commit_interval",
+                      "required": false,
+                      "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.consumer-group-offset-commit-interval",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consumer_group_offset_commit_file_enforced",
+                      "required": false,
+                      "desc": "When true, the file-based offset stored in the TSDB directory is enforced at startup, taking precedence over Kafka consumer group offset. When false, offsets are still written to the file (in the TSDB directory) but the Kafka consumer group offset is used at startup.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.consumer-group-offset-commit-file-enforced",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "last_produced_offset_poll_interval",
+                      "required": false,
+                      "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.last-produced-offset-poll-interval",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "last_produced_offset_retry_timeout",
+                      "required": false,
+                      "desc": "How long to retry a failed request to get the last produced offset.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.last-produced-offset-retry-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consume_from_position_at_startup",
+                      "required": false,
+                      "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "last-offset",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.consume-from-position-at-startup",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consume_from_timestamp_at_startup",
+                      "required": false,
+                      "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.consume-from-timestamp-at-startup",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "target_consumer_lag_at_startup",
+                      "required": false,
+                      "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup and -blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_consumer_lag_at_startup",
+                      "required": false,
+                      "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -blocks-storage.tsdb.offset-catalogue.kafka.target-consumer-lag-at-startup and -blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 15000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.max-consumer-lag-at-startup",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "auto_create_topic_enabled",
+                      "required": false,
+                      "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.auto-create-topic-enabled",
+                      "fieldType": "boolean"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "auto_create_topic_default_partitions",
+                      "required": false,
+                      "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.auto-create-topic-default-partitions",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "producer_max_record_size_bytes",
+                      "required": false,
+                      "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 15983616,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.producer-max-record-size-bytes",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "producer_max_buffered_bytes",
+                      "required": false,
+                      "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1073741824,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.producer-max-buffered-bytes",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "producer_compression",
+                      "required": false,
+                      "desc": "The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to \"none\" to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.producer-compression",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "wait_strong_read_consistency_timeout",
+                      "required": false,
+                      "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.wait-strong-read-consistency-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "producer_record_version",
+                      "required": false,
+                      "desc": "The record version that this producer sends.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.producer-record-version",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "fetch_max_wait",
+                      "required": false,
+                      "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 5000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.fetch-max-wait",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "fetch_concurrency_max",
+                      "required": false,
+                      "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 12,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.fetch-concurrency-max",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "use_compressed_bytes_as_fetch_max_bytes",
+                      "required": false,
+                      "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.use-compressed-bytes-as-fetch-max-bytes",
+                      "fieldType": "boolean"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_buffered_bytes",
+                      "required": false,
+                      "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.max-buffered-bytes",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "ingestion_concurrency_max",
+                      "required": false,
+                      "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 8,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-max",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "ingestion_concurrency_batch_size",
+                      "required": false,
+                      "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 150,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-batch-size",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "ingestion_concurrency_queue_capacity",
+                      "required": false,
+                      "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 3,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-queue-capacity",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "ingestion_concurrency_target_flushes_per_shard",
+                      "required": false,
+                      "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 40,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-target-flushes-per-shard",
+                      "fieldType": "int"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "ingestion_concurrency_estimated_bytes_per_sample",
+                      "required": false,
+                      "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 200,
+                      "fieldFlag": "blocks-storage.tsdb.offset-catalogue.kafka.ingestion-concurrency-estimated-bytes-per-sample",
+                      "fieldType": "int"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
