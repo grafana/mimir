@@ -62,7 +62,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
-		}}}}}
+		}}}}, queryStoreAfter: 12 * time.Hour}
 		var e *CardinalityEstimator
 		if ing == nil {
 			e = NewCardinalityEstimator(q, nil, nil)
@@ -104,6 +104,19 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, "__name__", ing.gotSeriesCounts.GroupBy)
 		assert.Equal(t, int64(1000), ing.gotSeriesCounts.MaxIndexBytes)
 		assert.Equal(t, []*client.LabelMatcher{{Type: client.EQUAL, Name: "job", Value: "a"}}, ing.gotSeriesCounts.Matchers)
+	})
+
+	t.Run("a block that claims the recent range is not trusted over the ingesters", func(t *testing.T) {
+		// A block being built for the current range can have its metadata
+		// cover the whole range before all of its data is in.
+		building := bucketindex.Blocks{{ID: b1, MinTime: 98 * hour, MaxTime: 102 * hour}}
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{7}}}, MinTimeMs: 98 * hour},
+		}}}
+		res, err := newEstimator(building, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts)
 	})
 
 	t.Run("hashes from replicas in one zone are unioned", func(t *testing.T) {
@@ -159,7 +172,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		gw := gatewayAnswering("1.1.1.1", &gotBlocks, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
-		}}}}}
+		}}}}, queryStoreAfter: 12 * time.Hour}
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "new", Hashes: []uint64{9}}}, MinTimeMs: 76 * hour},
 		}}}
@@ -187,7 +200,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
-		}}}}}
+		}}}}, queryStoreAfter: 12 * time.Hour}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
