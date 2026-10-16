@@ -23,7 +23,7 @@ revision="$(git rev-parse --short=10 HEAD)$(git diff --quiet || echo -dirty)"
 k() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
 
 echo "building $IMAGE_REPO:$revision"
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/mimir" -ldflags "-X github.com/prometheus/common/version.Revision=$revision" ./cmd/mimir
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/mimir" -ldflags "-X github.com/grafana/mimir/pkg/util/version.Revision=$revision" ./cmd/mimir
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/ingester-bench" ./tools/ingester-bench
 metadata="$(mktemp)"
 docker buildx build -o type=registry --metadata-file "$metadata" --platform linux/amd64 -t "$IMAGE_REPO:$revision" "$dir"
@@ -70,8 +70,13 @@ out="$(mktemp -d)"
 k port-forward "$pod" 28090:8090 >/dev/null 2>&1 &
 forward=$!
 trap 'kill $forward 2>/dev/null || true' EXIT
-sleep 3
-for file in report.json report.html slow.log cpu-a.pb.gz cpu-b.pb.gz heap-a.pb.gz heap-b.pb.gz allocs-a.pb.gz allocs-b.pb.gz; do
+for _ in $(seq 60); do
+  if curl -sf -o "$out/report.json" "http://localhost:28090/report.json"; then break; fi
+  sleep 1
+done
+[[ -s "$out/report.json" ]] || { echo "couldn't download the run's report from $pod" >&2; exit 1; }
+# The profiles and slow reads, which a run may not have.
+for file in report.html slow.log cpu-a.pb.gz cpu-b.pb.gz heap-a.pb.gz heap-b.pb.gz allocs-a.pb.gz allocs-b.pb.gz; do
   curl -sf -o "$out/$file" "http://localhost:28090/$file" || true
 done
 go run ./tools/ingester-bench -results="$RESULTS" -add-result="$out/report.json"

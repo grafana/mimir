@@ -295,7 +295,7 @@ func defaultClasses() []QueryClass {
 			Name: "recording rule", Weight: 0.14, RPCs: []string{"QueryStream"},
 			ShapeProfile: ShapeProfile{
 				Range: instant, SinceMax: instant, SelectorRange: rateRange, NameMatcher: one,
-				Fetched:           Percentiles{"0": 20, "0.5": 400, "0.9": 8_000, "0.99": 60_000, "1": 150_000},
+				Fetched:           Percentiles{"0": 5, "0.5": 100, "0.9": 2_000, "0.99": 20_000, "1": 60_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "0.8": 1, "1": 3},
 			},
 			Matchers: []ClassMatcher{
@@ -311,7 +311,7 @@ func defaultClasses() []QueryClass {
 				RangeShare: 1, SinceMax: now, SelectorRange: rateRange, NameMatcher: one,
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.8": 6 * hour, "0.95": day, "1": 7 * day},
 				Step:              Percentiles{"0": 15_000, "0.5": 30_000, "0.9": 2 * minute, "1": 10 * minute},
-				Fetched:           Percentiles{"0": 1, "0.5": 40, "0.9": 1_000, "0.99": 15_000, "1": 60_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 20, "0.9": 300, "0.99": 5_000, "1": 30_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "0.6": 1, "0.9": 3, "1": 6},
 				AlternationSize:   Percentiles{"0": 2, "0.5": 3, "0.9": 12, "1": 60},
 			},
@@ -331,7 +331,7 @@ func defaultClasses() []QueryClass {
 				RangeShare: 0.7, SinceMax: now, SelectorRange: rateRange, NameMatcher: one,
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 12 * hour, "1": 7 * day},
 				Step:              Percentiles{"0": 15_000, "0.5": 30_000, "0.9": 2 * minute, "1": 10 * minute},
-				Fetched:           Percentiles{"0": 5, "0.5": 300, "0.9": 5_000, "0.99": 30_000, "1": 80_000},
+				Fetched:           Percentiles{"0": 5, "0.5": 100, "0.9": 1_500, "0.99": 15_000, "1": 40_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "0.6": 1, "0.9": 2, "1": 4},
 			},
 			Matchers: []ClassMatcher{
@@ -348,7 +348,7 @@ func defaultClasses() []QueryClass {
 				NameMatcher:       map[string]float64{"=": 0.8, "=~": 0.15, "none": 0.05},
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": day, "1": 14 * day},
 				Step:              Percentiles{"0": 15_000, "0.5": minute, "0.9": 5 * minute, "1": hour},
-				Fetched:           Percentiles{"0": 1, "0.5": 100, "0.9": 5_000, "0.99": 50_000, "1": 100_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 30, "0.9": 1_000, "0.99": 20_000, "1": 60_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "0.8": 1, "1": 2},
 			},
 			Matchers: []ClassMatcher{
@@ -377,12 +377,12 @@ func defaultClasses() []QueryClass {
 		},
 		{
 			// An aggregation over a large metric, which the query-frontend shards.
-			Name: "sharded aggregation", Weight: 0.02, RPCs: []string{"QueryStream"},
+			Name: "sharded aggregation", Weight: 0.01, RPCs: []string{"QueryStream"},
 			ShapeProfile: ShapeProfile{
 				RangeShare: 0.7, SinceMax: now, SelectorRange: rateRange, NameMatcher: one, ShardedShare: 1, Shards: 16,
 				Range:             Percentiles{"0": hour, "0.5": 3 * hour, "1": day},
 				Step:              Percentiles{"0": 15_000, "0.5": minute, "1": 5 * minute},
-				Fetched:           Percentiles{"0": 5_000, "0.5": 40_000, "1": 300_000},
+				Fetched:           Percentiles{"0": 5_000, "0.5": 20_000, "1": 150_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{
@@ -413,7 +413,7 @@ func defaultClasses() []QueryClass {
 			Name: "active series", Weight: 1, RPCs: []string{"ActiveSeries"},
 			ShapeProfile: ShapeProfile{
 				SinceMax: instant, NameMatcher: map[string]float64{"=": 0.6, "none": 0.4},
-				Fetched:           Percentiles{"0": 1, "0.5": 200, "0.9": 20_000, "1": 300_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 20, "0.9": 1_000, "0.99": 20_000, "1": 100_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.6, LabelRank: Percentiles{"0": 0, "1": 5}}},
@@ -424,7 +424,7 @@ func defaultClasses() []QueryClass {
 			ShapeProfile: ShapeProfile{
 				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"=": 0.7, "none": 0.3},
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": 7 * day},
-				Fetched:           Percentiles{"0": 1, "0.5": 100, "0.9": 5_000, "1": 50_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 20, "0.9": 1_000, "1": 20_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{
@@ -438,7 +438,7 @@ func defaultClasses() []QueryClass {
 			ShapeProfile: ShapeProfile{
 				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"=": 0.8, "=~": 0.2},
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "1": day},
-				Fetched:           Percentiles{"0": 1, "0.5": 50, "0.9": 2_000, "1": 50_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 10, "0.9": 500, "1": 20_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.5, LabelRank: common}},
@@ -448,7 +448,7 @@ func defaultClasses() []QueryClass {
 			Name: "cardinality", Weight: 1, RPCs: []string{"LabelNamesAndValues", "LabelValuesCardinality"},
 			ShapeProfile: ShapeProfile{
 				SinceMax: instant, NameMatcher: map[string]float64{"=": 0.8, "none": 0.2},
-				Fetched:           Percentiles{"0": 10, "0.5": 2_000, "0.9": 50_000, "1": 500_000},
+				Fetched:           Percentiles{"0": 1, "0.5": 50, "0.9": 5_000, "1": 100_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.3, LabelRank: Percentiles{"0": 0, "1": 3}}},

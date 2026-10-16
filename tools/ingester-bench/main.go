@@ -172,7 +172,7 @@ func run(parent context.Context, cfg config) (err error) {
 		cfg.binaryA = filepath.Join(cfg.out, "mimir")
 		log.Printf("building %s", cfg.binaryA)
 		// Stamped with the tree's commit, which the report says it compared.
-		build := exec.CommandContext(ctx, "go", "build", "-o", cfg.binaryA, "-ldflags", "-X github.com/prometheus/common/version.Revision="+benchRevision(), "./cmd/mimir")
+		build := exec.CommandContext(ctx, "go", "build", "-o", cfg.binaryA, "-ldflags", "-X github.com/grafana/mimir/pkg/util/version.Revision="+benchRevision(), "./cmd/mimir")
 		build.Stdout, build.Stderr = os.Stdout, os.Stderr
 		if err := build.Run(); err != nil {
 			return fmt.Errorf("build mimir: %w", err)
