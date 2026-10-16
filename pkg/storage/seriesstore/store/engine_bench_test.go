@@ -330,3 +330,56 @@ func BenchmarkEngineHeapPerRealisticSeries(b *testing.B) {
 		require.NoError(b, engine.Close())
 	}
 }
+
+// BenchmarkEngineSelectOutOfOrder selects chunks of series whose head has late samples, which the query merges with the
+// in-order chunk they overlap.
+func BenchmarkEngineSelectOutOfOrder(b *testing.B) {
+	heads := map[string]headUnderTest{}
+	for _, name := range benchEngines {
+		opts := differentialOptions{oooWindowMs: 3_600_000}
+		if name == "prometheus" {
+			heads[name] = openPrometheus(b, b.TempDir(), opts, nil)
+		} else {
+			heads[name] = openEngine(b, b.TempDir(), opts, nil)
+		}
+		head := heads[name]
+		b.Cleanup(func() { _ = head.Close() })
+		const series, samples = 2000, 240
+		for sample := range samples {
+			app := head.Appender(context.Background())
+			for n := range series {
+				_, err := app.Append(0, benchLabels(n), int64(sample)*benchInterval, float64(sample))
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+		}
+		// A few late samples of each series, between the ones it has.
+		app := head.Appender(context.Background())
+		for n := range series {
+			for late := range 3 {
+				_, err := app.Append(0, benchLabels(n), int64(samples-10-late*3)*benchInterval+benchInterval/2, 1)
+				require.NoError(b, err)
+			}
+		}
+		require.NoError(b, app.Commit())
+	}
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
+	for _, name := range benchEngines {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				q, err := heads[name].ChunkQuerier(0, 240*benchInterval)
+				require.NoError(b, err)
+				set := q.Select(context.Background(), true, nil, matcher)
+				for set.Next() {
+					it := set.At().Iterator(nil)
+					for it.Next() {
+						_ = it.At().Chunk.Bytes()
+					}
+				}
+				require.NoError(b, set.Err())
+				_ = q.Close()
+			}
+		})
+	}
+}

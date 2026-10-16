@@ -40,6 +40,10 @@ type Candidate struct {
 	Chunk      Chunk
 	OutOfOrder bool
 	Index      int
+	// Floats, when set, are the chunk's samples, in order, which it isn't encoded from unless it overlaps no other
+	// chunk: a query's out-of-order head mostly overlaps the head's in-order chunk, and was encoded to be decoded right
+	// away to merge them. Chunk has their min and max times only.
+	Floats []Sample
 }
 
 func chunkencEncoding(encoding int32) (chunkenc.Encoding, error) {
@@ -160,14 +164,22 @@ func MergeOverlapping(candidates []Candidate) ([]Chunk, error) {
 	})
 	var (
 		output   []Chunk
-		group    []Chunk
+		group    []Candidate
 		groupMax int64
 	)
 	flush := func() error {
 		switch len(group) {
 		case 0:
 		case 1:
-			output = append(output, group[0])
+			if group[0].Floats == nil {
+				output = append(output, group[0].Chunk)
+				break
+			}
+			encoded, err := EncodeOutOfOrder(group[0].Floats)
+			if err != nil {
+				return err
+			}
+			output = append(output, encoded...)
 		default:
 			merged, err := mergeGroup(group)
 			if err != nil {
@@ -189,7 +201,7 @@ func MergeOverlapping(candidates []Candidate) ([]Chunk, error) {
 		} else {
 			groupMax = max(groupMax, candidate.Chunk.MaxTime)
 		}
-		group = append(group, candidate.Chunk)
+		group = append(group, candidate)
 	}
 	if err := flush(); err != nil {
 		return nil, err
@@ -200,9 +212,18 @@ func MergeOverlapping(candidates []Candidate) ([]Chunk, error) {
 // mergeGroup merges overlapping chunks through Prometheus's chain iterator and re-encodes them like
 // populateChunksFromIterable: a new chunk on a value type change, when the current one is full,
 // and where Prometheus's histogram appender starts one.
-func mergeGroup(group []Chunk) ([]Chunk, error) {
+func mergeGroup(group []Candidate) ([]Chunk, error) {
 	iterators := make([]chunkenc.Iterator, len(group))
-	for index, chunk := range group {
+	groupBytes := 0
+	for index, candidate := range group {
+		if candidate.Floats != nil {
+			iterators[index] = &floatsIterator{samples: candidate.Floats, index: -1}
+			// About what a float sample takes encoded.
+			groupBytes += 2 * len(candidate.Floats)
+			continue
+		}
+		chunk := candidate.Chunk
+		groupBytes += len(chunk.Data)
 		encoding, err := chunkencEncoding(chunk.Encoding)
 		if err != nil {
 			return nil, err
@@ -214,10 +235,6 @@ func mergeGroup(group []Chunk) ([]Chunk, error) {
 		iterators[index] = decoded.Iterator(nil)
 	}
 	chain := storage.ChainSampleIteratorFromIterators(nil, iterators)
-	groupBytes := 0
-	for _, chunk := range group {
-		groupBytes += len(chunk.Data)
-	}
 
 	var (
 		output        []Chunk
@@ -324,3 +341,46 @@ func intModel(h *mimirpb.Histogram) *histogram.Histogram {
 func floatModel(h *mimirpb.Histogram) *histogram.FloatHistogram {
 	return mimirpb.FromFloatHistogramProtoToFloatHistogram(h).Copy()
 }
+
+// floatsIterator iterates float samples in order, as a chunk of them would.
+type floatsIterator struct {
+	samples []Sample
+	index   int
+}
+
+func (it *floatsIterator) Next() chunkenc.ValueType {
+	if it.index+1 >= len(it.samples) {
+		it.index = len(it.samples)
+		return chunkenc.ValNone
+	}
+	it.index++
+	return chunkenc.ValFloat
+}
+
+func (it *floatsIterator) Seek(t int64) chunkenc.ValueType {
+	if it.index < 0 {
+		it.index = 0
+	}
+	for ; it.index < len(it.samples); it.index++ {
+		if it.samples[it.index].T >= t {
+			return chunkenc.ValFloat
+		}
+	}
+	return chunkenc.ValNone
+}
+
+func (it *floatsIterator) At() (int64, float64) {
+	return it.samples[it.index].T, it.samples[it.index].F
+}
+
+func (it *floatsIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	panic("a float sample has no histogram")
+}
+
+func (it *floatsIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	panic("a float sample has no histogram")
+}
+
+func (it *floatsIterator) AtT() int64  { return it.samples[it.index].T }
+func (it *floatsIterator) AtST() int64 { return 0 }
+func (it *floatsIterator) Err() error  { return nil }
