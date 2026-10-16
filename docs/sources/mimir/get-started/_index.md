@@ -52,6 +52,11 @@ In a terminal, run one of the following commands:
   chmod +x mimir
   ```
 
+{{< admonition type="note" >}}
+Published release binaries and Docker images require an x86-64-v3 CPU on `amd64`, or ARMv8.1 or newer on `arm64`.
+For details and how to build for older CPUs, refer to [Grafana Mimir hardware requirements](../set-up/hardware-requirements/#cpu-microarchitecture).
+{{< /admonition >}}
+
 ## Start Grafana Mimir
 
 To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file named `demo.yaml`:

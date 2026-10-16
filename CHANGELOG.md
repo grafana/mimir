@@ -150,6 +150,7 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Document CPU microarchitecture requirements for release binaries and Docker images. #16846
 * [ENHANCEMENT] Add documentation for deploying Mimir with Juju. #16485
 * [ENHANCEMENT] Document architecture for the block-builder and block-builder-scheduler components. #16454
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
