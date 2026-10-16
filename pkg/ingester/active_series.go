@@ -146,6 +146,12 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
 }
 
+// activeLabelValueIndex is an index of an engine that keeps the active series in its series, which tells whether a series
+// with the label's value was ingested since cutoffMs.
+type activeLabelValueIndex interface {
+	IsLabelValueActive(ctx context.Context, name, value string, cutoffMs int64) (bool, error)
+}
+
 // nativeMatchersIndex is an index that has its own selection by matchers, better than assembling one from its postings.
 type nativeMatchersIndex interface {
 	PostingsForMatchersNative(ctx context.Context, matchers ...*labels.Matcher) (index.Postings, error)

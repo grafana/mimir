@@ -432,6 +432,15 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 			return true, nil
 		}
 	case client.ACTIVE:
+		if native, ok := index.(activeLabelValueIndex); ok && !db.trackerActive() {
+			// An engine that keeps the active series in its series finds one of the value's that is, without the value's
+			// postings.
+			cutoffMs := db.activeCutoff(time.Now()).UnixMilli()
+			valueFilter = func(name, value string) (bool, error) {
+				return native.IsLabelValueActive(stream.Context(), name, value, cutoffMs)
+			}
+			break
+		}
 		valueFilter = func(name, value string) (bool, error) {
 			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeRefs(time.Now()), name, value)
 		}
