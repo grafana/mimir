@@ -65,7 +65,8 @@ spec:
           configMap:
             name: test-oss-values-mimir-runtime
         - name: storage
-          emptyDir: {}
+          emptyDir:
+            {}
         - name: active-queries
           emptyDir: {}
       containers:
