@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -504,6 +505,60 @@ func BenchmarkIngester_QueryStreamHeldMemory(b *testing.B) {
 				held = max(held, stream.held)
 			}
 			b.ReportMetric(float64(held), "held-B")
+		})
+	}
+}
+
+// BenchmarkIngester_EngineLabelValuesCardinality counts the series of each value of labels, like the cardinality API.
+func BenchmarkIngester_EngineLabelValuesCardinality(b *testing.B) {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		b.Run(engine, func(b *testing.B) {
+			cfg := defaultIngesterTestConfig(b)
+			cfg.BlocksStorageConfig.TSDB.Engine = engine
+			limitsCfg := defaultLimitsTestConfig()
+			limitsCfg.MaxGlobalSeriesPerMetric = 0
+			limitsCfg.MaxGlobalSeriesPerUser = 0
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+			now := time.Now().UnixMilli()
+			var batch []mimirpb.PreallocTimeseries
+			for n := range 100_000 {
+				ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{
+					{Name: "__name__", Value: fmt.Sprintf("metric_%d", n%5)},
+					{Name: "mod_10", Value: strconv.Itoa(n % 10)},
+					{Name: "mod_77", Value: strconv.Itoa(n % 77)},
+					{Name: "pod", Value: fmt.Sprintf("pod-%06d", n)},
+				}, Samples: []mimirpb.Sample{{TimestampMs: now, Value: 1}}}
+				batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
+				if len(batch) == 5000 {
+					_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: batch, Source: mimirpb.API})
+					require.NoError(b, err)
+					batch = nil
+				}
+			}
+			for _, bc := range []struct {
+				name       string
+				labelNames []string
+				matchers   []*client.LabelMatcher
+			}{
+				{"metric matcher, mod_77", []string{"mod_77"}, []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}}},
+				{"no matchers, name and mod_10", []string{"__name__", "mod_10"}, nil},
+				{"metric and mod_10 matchers, mod_77", []string{"mod_77"}, []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}, {Type: client.NOT_EQUAL, Name: "mod_10", Value: "3"}}},
+			} {
+				for _, method := range []client.CountMethod{client.IN_MEMORY, client.ACTIVE} {
+					b.Run(bc.name+"/"+method.String(), func(b *testing.B) {
+						b.ReportAllocs()
+						for range b.N {
+							req := &client.LabelValuesCardinalityRequest{LabelNames: bc.labelNames, Matchers: bc.matchers, CountMethod: method}
+							require.NoError(b, ingester.LabelValuesCardinality(req, &mockLabelValuesCardinalityServer{context: ctx}))
+						}
+					})
+				}
+			}
 		})
 	}
 }

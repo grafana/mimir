@@ -815,9 +815,13 @@ type engineIndex struct {
 	// The postings of every value of a label, built once a reader asks for a second of its values, as the ingester's
 	// label APIs ask for each value of each label in turn: each was a pass over the label's series, with every shard
 	// locked. A reader lasts a request, so they are as of its first lookup of the label.
-	mu      sync.Mutex
+	// The workers of a request's lookups of each value share the cache, read-locked once it is built.
+	mu      sync.RWMutex
 	asked   map[string]int
 	byValue map[string]map[string][]storage.SeriesRef
+	// The series of each metric name asked for: a metric's are its name group's, which are listed without reading the
+	// labels of the others, and the label APIs ask for a metric's with each value of another label.
+	byMetric map[string][]storage.SeriesRef
 }
 
 func (ix *engineIndex) Close() error { return nil }
@@ -848,24 +852,39 @@ func (ix *engineIndex) forEachMatching(compiled []compiledMatcher, visit func(en
 }
 
 // forEachWith calls visit with every head series that has the label name.
+// A label most series have is looked for in every series: its postings list them in no order, and sorting them to visit
+// each once cost more than reading the labels of the few without it.
 func (ix *engineIndex) forEachWith(name string, visit func(entry *seriesEntry, value string)) {
-	if name == metricNameLabel {
-		ix.forEach(func(entry *seriesEntry) { visit(entry, entry.labels.ValueOf(metricNameID)) })
-		return
-	}
 	id, known := labels.Lookup(name)
-	if !known {
+	if name != metricNameLabel && !known {
 		return
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
 		if t, ok := shard.tenants[ix.e.tenantID]; ok {
-			t.series.visitRefs(t.series.refsWith(id, known), func(entry *seriesEntry) bool {
-				if value, ok := labelValue(entry.labels, id); ok {
-					visit(entry, value)
+			switch {
+			case name == metricNameLabel:
+				// A name group's series all have its name.
+				for groupID := range t.series.groups {
+					value, entries := t.series.groupNames[groupID], t.series.groups[groupID].entries
+					for index := range entries {
+						visit(&entries[index], value)
+					}
 				}
-				return true
-			})
+			case 2*t.series.seriesWith(id, known) >= t.series.len:
+				t.series.forEach(func(entry *seriesEntry) {
+					if value, ok := labelValue(entry.labels, id); ok {
+						visit(entry, value)
+					}
+				})
+			default:
+				t.series.visitRefs(t.series.refsWith(id, known), func(entry *seriesEntry) bool {
+					if value, ok := labelValue(entry.labels, id); ok {
+						visit(entry, value)
+					}
+					return true
+				})
+			}
 		}
 		shard.RUnlock()
 	}
@@ -909,8 +928,46 @@ func (ix *engineIndex) forEachIdleEvicted(compiled []compiledMatcher, visit func
 }
 
 func postingsOf(refs []storage.SeriesRef) index.Postings {
-	slices.Sort(refs)
+	sortSeriesRefs(refs)
 	return index.NewListPostings(slices.Compact(refs))
+}
+
+// sortSeriesRefs sorts refs, a byte of them at a time from the lowest for many of them, skipping the bytes they all have
+// the same: refs are a tenant's count of series with the shard below, in a few bytes, which postings list in no order.
+func sortSeriesRefs(refs []storage.SeriesRef) {
+	if len(refs) < 256 {
+		slices.Sort(refs)
+		return
+	}
+	var differ storage.SeriesRef
+	for _, ref := range refs[1:] {
+		differ |= ref ^ refs[0]
+	}
+	scratch := make([]storage.SeriesRef, len(refs))
+	from, to := refs, scratch
+	for shift := uint(0); shift < 64; shift += 8 {
+		if (differ>>shift)&0xff == 0 {
+			continue
+		}
+		var offsets [256]int
+		for _, ref := range from {
+			offsets[(ref>>shift)&0xff]++
+		}
+		position := 0
+		for digit, count := range offsets {
+			offsets[digit] = position
+			position += count
+		}
+		for _, ref := range from {
+			digit := (ref >> shift) & 0xff
+			to[offsets[digit]] = ref
+			offsets[digit]++
+		}
+		from, to = to, from
+	}
+	if &from[0] != &refs[0] {
+		copy(refs, from)
+	}
 }
 
 func (ix *engineIndex) Symbols() index.StringIter {
@@ -1011,6 +1068,10 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 		ix.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
 		return postingsOf(refs), nil
 	}
+	if name == metricNameLabel && len(values) == 1 {
+		// Sorted and unique already, and shared with the reader's other lookups of the metric.
+		return index.NewListPostings(ix.metricPostings(values[0])), nil
+	}
 	if len(values) == 1 {
 		if refs, ok := ix.cachedPostings(name, values[0]); ok {
 			// Sorted and unique already, and shared with the reader's other lookups of the value.
@@ -1068,12 +1129,47 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 	return postingsOf(refs), nil
 }
 
+// metricPostings returns the series of the metric name, sorted.
+func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
+	ix.mu.RLock()
+	refs, ok := ix.byMetric[name]
+	ix.mu.RUnlock()
+	if ok {
+		return refs
+	}
+	for _, shard := range ix.e.store.shards {
+		shard.RLock()
+		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+			if groupID, ok := t.series.names[name]; ok {
+				for _, entry := range t.series.groups[groupID].entries {
+					refs = append(refs, storage.SeriesRef(entry.series.ref))
+				}
+			}
+		}
+		shard.RUnlock()
+	}
+	sortSeriesRefs(refs)
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if ix.byMetric == nil {
+		ix.byMetric = map[string][]storage.SeriesRef{}
+	}
+	ix.byMetric[name] = refs
+	return refs
+}
+
 // cachedPostings returns the series with the label's value from the postings of all its values, once the reader asked
 // for another of its values.
 func (ix *engineIndex) cachedPostings(name, value string) ([]storage.SeriesRef, bool) {
+	ix.mu.RLock()
+	values, ok := ix.byValue[name]
+	ix.mu.RUnlock()
+	if ok {
+		return values[value], true
+	}
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
-	values, ok := ix.byValue[name]
+	values, ok = ix.byValue[name]
 	if !ok {
 		if ix.asked == nil {
 			ix.asked = map[string]int{}
@@ -1087,7 +1183,7 @@ func (ix *engineIndex) cachedPostings(name, value string) ([]storage.SeriesRef, 
 			values[v] = append(values[v], storage.SeriesRef(entry.series.ref))
 		})
 		for _, list := range values {
-			slices.Sort(list)
+			sortSeriesRefs(list)
 		}
 		if ix.byValue == nil {
 			ix.byValue = map[string]map[string][]storage.SeriesRef{}
