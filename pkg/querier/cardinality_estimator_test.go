@@ -130,15 +130,32 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 	})
 
-	t.Run("a window starting before what the ingesters hold is a lower bound", func(t *testing.T) {
+	t.Run("a tenant with no data before the window's start is not a lower bound", func(t *testing.T) {
+		// The ingesters keep the last 13h, so nothing missing from them after
+		// 87h was ever written.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
 			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
 			{}, // an ingester without the tenant
 		}}}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
+		assert.False(t, res.LowerBound)
+		assert.Zero(t, res.HeadMinTime)
+	})
+
+	t.Run("a window starting before what the ingesters keep is a lower bound", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
+		}}}
+		e := newEstimator(nil, ing)
+		// The ingesters are asked only for the last 10h, less than
+		// query-store-after, so this head-only window starts before them.
+		e.limits = ingestersWithinLimit(10 * time.Hour)
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceHead, res.Source)
 		assert.True(t, res.LowerBound)
-		assert.Equal(t, 99*hour, res.HeadMinTime)
+		assert.Equal(t, 90*hour, res.HeadMinTime)
 	})
 
 	t.Run("a head walk over max_index_bytes falls back to the whole head's postings", func(t *testing.T) {
@@ -252,3 +269,4 @@ func TestBlocksCover(t *testing.T) {
 		})
 	}
 }
+
