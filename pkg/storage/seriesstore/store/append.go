@@ -382,7 +382,7 @@ func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules
 	case !ok || kind == appendDuplicate:
 		return appended{noop: true}, 0, true, nil
 	case kind == appendOutOfOrder:
-		copied := *h
+		copied := detachedHistogram(h)
 		result, err := insertOutOfOrder(series, disk, oooSample{T: h.Timestamp, H: &copied})
 		return result, 0, true, err
 	}
@@ -527,4 +527,31 @@ func writeChunk(series *Series, disk *chunks.DiskMapper, encoding int32, data []
 	}
 	series.pushChunk(ChunkMeta{Ref: ref, MinTime: minTime, MaxTime: maxTime, Len: uint32(len(data)), Encoding: uint8(encoding), OutOfOrder: outOfOrder})
 	return nil
+}
+
+// detachedHistogram is a copy of h that shares no memory with it: an out-of-order histogram stays in the series as it
+// is until the out-of-order head is compacted, where the one appended points into the request or the Kafka record it
+// was decoded from, whose buffer the next request reuses, possibly another tenant's.
+func detachedHistogram(h *mimirpb.Histogram) mimirpb.Histogram {
+	copied := *h
+	switch count := h.Count.(type) {
+	case *mimirpb.Histogram_CountInt:
+		copied.Count = &mimirpb.Histogram_CountInt{CountInt: count.CountInt}
+	case *mimirpb.Histogram_CountFloat:
+		copied.Count = &mimirpb.Histogram_CountFloat{CountFloat: count.CountFloat}
+	}
+	switch zero := h.ZeroCount.(type) {
+	case *mimirpb.Histogram_ZeroCountInt:
+		copied.ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: zero.ZeroCountInt}
+	case *mimirpb.Histogram_ZeroCountFloat:
+		copied.ZeroCount = &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: zero.ZeroCountFloat}
+	}
+	copied.NegativeSpans = slices.Clone(h.NegativeSpans)
+	copied.NegativeDeltas = slices.Clone(h.NegativeDeltas)
+	copied.NegativeCounts = slices.Clone(h.NegativeCounts)
+	copied.PositiveSpans = slices.Clone(h.PositiveSpans)
+	copied.PositiveDeltas = slices.Clone(h.PositiveDeltas)
+	copied.PositiveCounts = slices.Clone(h.PositiveCounts)
+	copied.CustomValues = slices.Clone(h.CustomValues)
+	return copied
 }

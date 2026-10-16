@@ -722,7 +722,8 @@ func (a *engineAppender) commitSample(series *Series, state *shardState, sample 
 			proto = mimirpb.FromFloatHistogramToHistogramProto(sample.t, sample.fh)
 		}
 		if isOOO {
-			result, err := insertOutOfOrder(series, state.disk, oooSample{T: sample.t, H: &proto})
+			detached := detachedHistogram(&proto)
+			result, err := insertOutOfOrder(series, state.disk, oooSample{T: sample.t, H: &detached})
 			return false, err == nil && !result.noop, err
 		}
 		// An exact duplicate of the last histogram is accepted without storing it again.

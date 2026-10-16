@@ -1687,3 +1687,38 @@ func TestEngineRegexSelectsTheSeriesThereAreAfterRemovals(t *testing.T) {
 		require.Equal(t, 1, n%2, "%s was removed", pod)
 	}
 }
+
+func TestEngineOutOfOrderHistogramSharesNoMemoryWithWhatWasAppended(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 3_600_000}, nil)
+	lset := promlabels.FromStrings("__name__", "metric", "job", "a")
+	histogramAt := func() *histogram.Histogram {
+		return &histogram.Histogram{Count: 5, Sum: 10, Schema: 0, PositiveSpans: []histogram.Span{{Offset: 0, Length: 3}}, PositiveBuckets: []int64{1, 1, 0}}
+	}
+	app := e.Appender(context.Background())
+	_, err := app.AppendHistogram(0, lset, 600_000, histogramAt(), nil)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	// Older than the head's newest sample: out of order.
+	late := histogramAt()
+	app = e.Appender(context.Background())
+	_, err = app.AppendHistogram(0, lset, 300_000, late, nil)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	// What a reused request buffer does to what was decoded from it.
+	late.PositiveBuckets[0], late.PositiveBuckets[1] = 99, 99
+	late.PositiveSpans[0].Length = 1
+
+	q, err := e.ChunkQuerier(0, 3_600_000)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "a"))
+	require.True(t, set.Next())
+	chunksIt := set.At().Iterator(nil)
+	require.True(t, chunksIt.Next())
+	it := chunksIt.At().Chunk.Iterator(nil)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h := it.AtHistogram(nil)
+	require.Equal(t, int64(300_000), ts)
+	require.Equal(t, []int64{1, 1, 0}, h.PositiveBuckets)
+	require.Equal(t, []histogram.Span{{Offset: 0, Length: 3}}, h.PositiveSpans)
+}
