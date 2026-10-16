@@ -129,6 +129,14 @@ type APIReport struct {
 	FirstErrors     [2]string  `json:"first_errors,omitempty"`
 	ItemsPerRead    float64    `json:"items_per_read"`
 	LatencyMs       [2]Latency `json:"latency_ms"`
+	// The slowest reads of the window on each ingester, with how long the other took, to find which reads are slow.
+	Slowest [2][]TimedRead `json:"slowest,omitempty"`
+}
+
+// TimedRead is a read of the window, with how long each ingester took, in milliseconds.
+type TimedRead struct {
+	Ms      [2]float64 `json:"ms"`
+	Request string     `json:"request"`
 }
 
 type Latency struct {
@@ -196,6 +204,9 @@ func (d *driver) apiReports() map[string]APIReport {
 		}
 		for i := range 2 {
 			r.LatencyMs[i] = latency(s.latencies[i])
+			for _, read := range s.slowest[i] {
+				r.Slowest[i] = append(r.Slowest[i], TimedRead{Ms: [2]float64{float64(read.took[0].Microseconds()) / 1000, float64(read.took[1].Microseconds()) / 1000}, Request: read.request})
+			}
 		}
 		out[api] = r
 	}
@@ -257,6 +268,16 @@ func (r Report) print(w io.Writer) {
 			if e != "" {
 				fmt.Fprintf(w, "first %s error of %c: %s\n", api, 'A'+i, e)
 			}
+		}
+	}
+	for _, api := range apis {
+		x := r.APIs[api]
+		if len(x.Slowest[1]) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\nslowest %s reads of B (A/B ms):\n", api)
+		for _, read := range x.Slowest[1][:min(3, len(x.Slowest[1]))] {
+			fmt.Fprintf(w, "  %.1f/%.1f %s\n", read.Ms[0], read.Ms[1], read.Request[:min(len(read.Request), 400)])
 		}
 	}
 	if len(r.Mismatches) > 0 {

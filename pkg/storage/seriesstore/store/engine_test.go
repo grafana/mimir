@@ -1541,6 +1541,18 @@ func TestEngineIndexLabelValuesOfASelectorAsOnTheirOwn(t *testing.T) {
 			got, err := cached.LabelValues(context.Background(), name, nil, matchers...)
 			require.NoError(t, err)
 			require.Equal(t, expected, got, "%s of %v", name, matchers)
+			// The label APIs ask for each value's series next, which the reader may have kept.
+			for _, value := range got {
+				expectedPostings, err := fresh.Postings(context.Background(), name, value)
+				require.NoError(t, err)
+				expectedRefs, err := index.ExpandPostings(expectedPostings)
+				require.NoError(t, err)
+				gotPostings, err := cached.Postings(context.Background(), name, value)
+				require.NoError(t, err)
+				gotRefs, err := index.ExpandPostings(gotPostings)
+				require.NoError(t, err)
+				require.Equal(t, expectedRefs, gotRefs, "%s=%s", name, value)
+			}
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -49,6 +50,27 @@ type apiStats struct {
 	firstErrors                                                         [2]string
 	latencies                                                           [2][]time.Duration
 	items                                                               int64
+	// The slowest reads of the window on each ingester, slowest first.
+	slowest [2][]timedRead
+}
+
+type timedRead struct {
+	took    [2]time.Duration
+	request string
+}
+
+// slowestKept is how many of each API's slowest reads on each ingester the report has.
+const slowestKept = 10
+
+// keepSlowest keeps the read among the slowest on ingester i.
+func (s *apiStats) keepSlowest(i int, took [2]time.Duration, req *request) {
+	kept := s.slowest[i]
+	if len(kept) == slowestKept && kept[len(kept)-1].took[i] >= took[i] {
+		return
+	}
+	position := sort.Search(len(kept), func(j int) bool { return kept[j].took[i] < took[i] })
+	kept = slices.Insert(kept, position, timedRead{took: took, request: req.String()})
+	s.slowest[i] = kept[:min(len(kept), slowestKept)]
 }
 
 func newDriver(gen *queryGen, f *feed, ingesters [2]*ingesterProcess, concurrency int, retryDelay time.Duration) *driver {
@@ -202,6 +224,7 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 			}
 			if measuring && errs[i] == nil {
 				s.latencies[i] = append(s.latencies[i], latencies[i])
+				s.keepSlowest(i, latencies, req)
 			}
 		}
 	}
@@ -301,6 +324,7 @@ func (d *driver) resetLatencies() {
 	defer d.mu.Unlock()
 	for _, s := range d.stats {
 		s.latencies = [2][]time.Duration{}
+		s.slowest = [2][]timedRead{}
 	}
 }
 
