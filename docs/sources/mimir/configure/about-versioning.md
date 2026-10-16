@@ -236,7 +236,7 @@ The following features are currently experimental:
   - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
-  - Cardinality estimate HTTP endpoint `/api/v1/cardinality/estimate`, counting series from the store-gateways' index without reading chunks (`-querier.cardinality-estimate.enabled`, `-querier.cardinality-estimate.compare-enabled`, `-querier.cardinality-estimate.max-dedup-series`, `-querier.cardinality-estimate.max-metric-names`).
+  - Cardinality estimate HTTP endpoint `/api/v1/cardinality/estimate`, counting series from the store-gateways' index without reading chunks (`-querier.cardinality-estimate.enabled`, `-querier.cardinality-estimate.compare-enabled`, `-querier.cardinality-estimate.max-dedup-series`, `-querier.cardinality-estimate.max-metric-names`, `-querier.cardinality-estimate.trust-compacted-blocks-after`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
