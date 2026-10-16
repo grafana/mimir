@@ -103,6 +103,16 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 // however many of its chunks touch that bucket. It reports whether the
 // series was counted.
 func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
+	var hash uint64
+	if c.opts.Hashes {
+		hash = labels.StableHash(lset)
+	}
+	return c.AddGroup(lset.Get(c.opts.GroupBy), hash, chunks)
+}
+
+// AddGroup is Add for a caller that already has the series' value of the
+// group-by label and, when counting hashes, its labels.StableHash.
+func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange) bool {
 	inWindow := false
 	for _, r := range chunks {
 		if r.MaxTime >= c.opts.MinT && r.MinTime < c.opts.MaxT {
@@ -114,20 +124,19 @@ func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 		return false
 	}
 	c.counted++
-	v := lset.Get(c.opts.GroupBy)
 	if c.opts.Hashes {
-		set := c.sets[v]
+		set := c.sets[value]
 		if set == nil {
 			set = map[uint64]struct{}{}
-			c.sets[v] = set
+			c.sets[value] = set
 		}
-		set[labels.StableHash(lset)] = struct{}{}
+		set[hash] = struct{}{}
 		return true
 	}
-	counts := c.counts[v]
+	counts := c.counts[value]
 	if counts == nil {
 		counts = make([]int64, c.buckets)
-		c.counts[v] = counts
+		c.counts[value] = counts
 	}
 	if c.opts.Step == 0 {
 		counts[0]++
@@ -151,6 +160,9 @@ func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 	}
 	return true
 }
+
+// GroupBy is the label the counter groups by.
+func (c *SeriesCounter) GroupBy() string { return c.opts.GroupBy }
 
 // Counted is the number of series counted so far.
 func (c *SeriesCounter) Counted() int64 { return c.counted }
