@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,6 +29,7 @@ import (
 const (
 	sourceBlocks = "blocks"
 	sourceHead   = "head"
+	sourceBoth   = "blocks+head"
 )
 
 // Reads on the ingesters: readHeadPostings counts head postings with no
@@ -51,11 +53,11 @@ type estimateLimits interface {
 	QueryIngestersWithin(userID string) time.Duration
 }
 
-// CardinalityEstimator answers a cardinality estimate from the source that
-// holds the window: the store-gateways when blocks cover the whole window,
-// the ingesters when no block reaches into it and the window is recent
-// enough for the ingesters to hold it. A window that needs both is refused
-// for now, since counting it needs deduplication between the two.
+// CardinalityEstimator answers a cardinality estimate from the sources that
+// hold the window: the store-gateways alone when blocks cover the whole
+// window or it ends before the ingesters' range, the ingesters alone when no
+// block reaches into it, and both, deduplicated by label-set hash, when the
+// blocks reach it but don't cover it.
 type CardinalityEstimator struct {
 	blocks    *BlocksStoreQueryable
 	ingesters estimateIngesters
@@ -73,7 +75,7 @@ func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIng
 // Estimate answers req for tenantID. With Snap, a window inside one block
 // range is widened to it and req is updated.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	_, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
+	parts, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -83,28 +85,101 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		return res, err
 	}
 
-	if e.ingesters == nil {
-		if len(blocks) > 0 {
-			return CardinalityEstimateResult{}, badEstimateRequest("blocks cover only part of the window [%d, %d), and the ingesters are not consulted", req.MinT, req.MaxT)
+	// ingestersMinT is where the ingesters' data starts for queries;
+	// without ingesters nothing is after it.
+	ingestersMinT := int64(math.MaxInt64)
+	if e.ingesters != nil {
+		ingestersMinT = 0
+		if within := e.limits.QueryIngestersWithin(tenantID); within > 0 {
+			ingestersMinT = util.TimeToMillis(e.now().Add(-within))
 		}
-		return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}}, nil
-	}
-
-	now := e.now()
-	within := e.limits.QueryIngestersWithin(tenantID)
-	headMinT := int64(0)
-	if within > 0 {
-		headMinT = util.TimeToMillis(now.Add(-within))
 	}
 	switch {
-	case len(blocks) == 0 && req.MinT >= headMinT:
+	case req.MaxT <= ingestersMinT:
+		// Only blocks can hold the window, and they don't cover it all.
+		if len(blocks) == 0 {
+			return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}}, nil
+		}
+		res, err := e.blocks.CardinalityEstimate(ctx, tenantID, req)
+		if err != nil {
+			return CardinalityEstimateResult{}, err
+		}
+		res.Source, res.LowerBound, res.CoverageGap = sourceBlocks, true, true
+		return res, nil
+	case len(blocks) == 0:
 		return e.headCounts(ctx, req)
-	case len(blocks) == 0 && req.MaxT <= headMinT:
-		// Older than the ingesters hold, and no block: nothing was written.
-		return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}}, nil
 	default:
-		return CardinalityEstimateResult{}, badEstimateRequest("the window [%d, %d) is held partly by blocks and partly by the ingesters (blocks reach it, the ingesters hold data after %d); counting across both needs deduplication, which is not supported yet", req.MinT, req.MaxT, headMinT)
+		return e.blocksAndHeadCounts(ctx, tenantID, req, parts, blocks)
 	}
+}
+
+// blocksAndHeadCounts answers a window that the blocks reach but don't
+// cover, and that the ingesters hold part of. Both sources send label-set
+// hashes, with sketches above sketch_above, over the whole window, and the
+// querier unions them, so a series in a block and in an ingester counts
+// once. max_index_bytes is split evenly between the two sources. Per-bucket
+// counts are refused, since hashes don't carry buckets. When the blocks and
+// what the ingesters hold leave part of the window uncovered, the counts are
+// a lower bound.
+func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, parts []estimatePart, blocks bucketindex.Blocks) (CardinalityEstimateResult, error) {
+	if req.Step > 0 {
+		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts over a window held partly by blocks and partly by the ingesters are not supported yet")
+	}
+	half := req.MaxIndexBytes
+	if half > 0 {
+		half = max(1, half/2)
+	}
+	blocksReq := *req
+	blocksReq.MaxIndexBytes = half
+
+	m := newEstimateMerger(true, e.blocks.estimateCfg.MaxDedupSeries)
+	res, err := e.blocks.seriesCountsInto(ctx, tenantID, blocksReq, parts, blocks, true, m)
+	if err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+
+	matchers, err := client.ToLabelMatchers(req.Matchers)
+	if err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
+		Matchers:         matchers,
+		StartTimestampMs: req.MinT,
+		EndTimestampMs:   req.MaxT,
+		GroupBy:          req.GroupBy,
+		Hashes:           true,
+		SketchAbove:      req.SketchAbove,
+		MaxIndexBytes:    half,
+	})
+	if err != nil {
+		return CardinalityEstimateResult{}, classifyIngesterError(err)
+	}
+	ingestersMinT := int64(0)
+	for _, resp := range sr.Responses {
+		for _, g := range resp.Groups {
+			if err := m.add("ingester", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+				return CardinalityEstimateResult{}, err
+			}
+		}
+		res.SeriesCounted += resp.SeriesCounted
+		if resp.MinTimeMs > 0 {
+			ingestersMinT = max(ingestersMinT, resp.MinTimeMs)
+		}
+	}
+	if err := m.finish(&res); err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+
+	res.Source, res.Read, res.Dedup = sourceBoth, readFullIndex+"+"+readHeadChunkMetas, true
+	covered := blocks
+	if ingestersMinT > 0 {
+		covered = append(slices.Clone(blocks), &bucketindex.Block{MinTime: ingestersMinT, MaxTime: req.MaxT})
+	}
+	if !blocksCover(covered, req.MinT, req.MaxT) {
+		res.LowerBound, res.CoverageGap = true, true
+		res.HeadMinTime = ingestersMinT
+	}
+	return res, nil
 }
 
 // headCounts counts series per value of req.GroupBy in the ingesters'
