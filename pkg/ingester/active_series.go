@@ -141,6 +141,12 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
 }
 
+// activeLabelValueIndex is an index of an engine that keeps the active series in its series, which tells whether a series
+// with the label's value was ingested since cutoffMs.
+type activeLabelValueIndex interface {
+	IsLabelValueActive(ctx context.Context, name, value string, cutoffMs int64) (bool, error)
+}
+
 // Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.
 func matchAllSeries(matchers []*labels.Matcher) bool {
 	if len(matchers) != 1 {
