@@ -1557,6 +1557,69 @@ func TestEngineIndexLabelValuesOfASelectorAsOnTheirOwn(t *testing.T) {
 	}
 }
 
+func TestEngineIndexPostingsOfValuesWhoseHashesCollide(t *testing.T) {
+	// Two values of the same 32-bit posting key.
+	seen := map[uint32]string{}
+	var a, b string
+	for n := 0; a == ""; n++ {
+		value := fmt.Sprintf("v-%d", n)
+		if other, ok := seen[postingKey(value)]; ok {
+			a, b = other, value
+		}
+		seen[postingKey(value)] = value
+	}
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 2})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	refs := map[string][]storage.SeriesRef{}
+	// Enough series of each value for a reader to cache the label's postings.
+	for n := range 120 {
+		value := []string{a, b, "same"}[n%3]
+		if n == 0 {
+			value = "alone"
+		}
+		ref, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "x", value, "n", strconv.Itoa(n)), 1000, 1)
+		require.NoError(t, err)
+		refs[value] = append(refs[value], ref)
+	}
+	require.NoError(t, app.Commit())
+	for _, list := range refs {
+		slices.Sort(list)
+	}
+	postings := func(ix tsdb.IndexReader, value string) []storage.SeriesRef {
+		p, err := ix.Postings(context.Background(), "x", value)
+		require.NoError(t, err)
+		got, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return got
+	}
+	check := func() {
+		cached, err := e.Index()
+		require.NoError(t, err)
+		for range 2 {
+			for value, expected := range refs {
+				fresh, err := e.Index()
+				require.NoError(t, err)
+				require.Equal(t, expected, postings(fresh, value), value)
+				require.Equal(t, expected, postings(cached, value), value)
+			}
+		}
+	}
+	check()
+	for index := range e.store.shards {
+		shard := e.store.shards[index]
+		shard.Lock()
+		if tenant, ok := e.tenantLocked(index); ok {
+			snapshot := tenant.series.snapshotForPostings()
+			require.True(t, tenant.series.installPostings(buildPostings(snapshot), snapshot))
+		}
+		shard.Unlock()
+	}
+	// The rebuilt postings know of the collision too.
+	check()
+}
+
 func BenchmarkEngineIndexPostingsOfEachValue(b *testing.B) {
 	e, err := OpenEngine(b.TempDir(), "user", EngineOptions{Shards: 16})
 	require.NoError(b, err)

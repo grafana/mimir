@@ -830,9 +830,6 @@ type engineIndex struct {
 	// was a pass over the selector's series for each name.
 	selectorAsked  map[string]int
 	selectorValues map[string]map[string]map[string]struct{}
-	// The postings of the values of mostly distinct labels the reader returned for a selector, which the label APIs ask
-	// for next, one value at a time: each lookup locked every shard, and waited for the appends in each.
-	prefetched map[string]map[string][]storage.SeriesRef
 }
 
 func (ix *engineIndex) Close() error { return nil }
@@ -1004,7 +1001,6 @@ func (ix *engineIndex) LabelValues(_ context.Context, name string, hints *storag
 	}
 	if values, ok := ix.selectorLabelValues(compiled, matchers); ok {
 		out := sortedKeys(values[name])
-		ix.prefetchPostings(name, out)
 		if hints != nil {
 			out = limited(out, hints.Limit)
 		}
@@ -1087,14 +1083,6 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 		var refs []storage.SeriesRef
 		ix.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
 		return postingsOf(refs), nil
-	}
-	if len(values) == 1 {
-		ix.mu.RLock()
-		refs, ok := ix.prefetched[name][values[0]]
-		ix.mu.RUnlock()
-		if ok {
-			return index.NewListPostings(refs), nil
-		}
 	}
 	if name == metricNameLabel && len(values) == 1 {
 		// Sorted and unique already, and shared with the reader's other lookups of the metric.
@@ -1279,71 +1267,6 @@ func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	}
 	ix.byMetric[name] = refs
 	return refs
-}
-
-// prefetchPostings keeps the postings of the values of a mostly distinct label, a shard at a time.
-func (ix *engineIndex) prefetchPostings(name string, values []string) {
-	if name == metricNameLabel || len(values) < 2 {
-		return
-	}
-	ix.mu.RLock()
-	_, done := ix.prefetched[name]
-	ix.mu.RUnlock()
-	if done {
-		return
-	}
-	if series, distinct := ix.labelCardinality(name); series >= minCachedSeriesPerValue*distinct {
-		return
-	}
-	id, known := labels.Lookup(name)
-	if !known {
-		return
-	}
-	byValue := make(map[string][]storage.SeriesRef, len(values))
-	var (
-		value string
-		one   [1]seriesRef
-	)
-	// A posting holds a value's hash: collisions are checked against the labels.
-	visit := func(entry *seriesEntry) bool {
-		if v, ok := labelValue(entry.labels, id); ok && v == value {
-			byValue[value] = append(byValue[value], storage.SeriesRef(entry.series.ref))
-		}
-		return true
-	}
-	for index, shard := range ix.e.store.shards {
-		shard.RLock()
-		if t, ok := ix.e.tenantLocked(index); ok && int(id) < len(t.series.postings) {
-			postings := t.series.postings[id]
-			for _, value = range values {
-				posting, ok := postings[postingKey(value)]
-				if !ok {
-					continue
-				}
-				if single, many := t.series.posting(posting); many == nil {
-					one[0] = t.series.refs[single]
-					t.series.visitRefs(one[:], visit)
-				} else {
-					for _, seriesID := range many {
-						one[0] = t.series.refs[seriesID]
-						t.series.visitRefs(one[:], visit)
-					}
-				}
-			}
-		}
-		shard.RUnlock()
-	}
-	for _, value := range values {
-		refs := byValue[value]
-		sortSeriesRefs(refs)
-		byValue[value] = slices.Compact(refs)
-	}
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	if ix.prefetched == nil {
-		ix.prefetched = map[string]map[string][]storage.SeriesRef{}
-	}
-	ix.prefetched[name] = byValue
 }
 
 // postingsOfValue is Postings of one value from the store's postings, which lists in each shard the series of the
