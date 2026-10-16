@@ -54,8 +54,9 @@ type estimateLimits interface {
 
 // CardinalityEstimator answers a cardinality estimate from the sources a
 // query over the same window would read: the store-gateways alone when the
-// window ends before query-ingesters-within, the ingesters alone when it
-// starts after query-store-after, and both, deduplicated by label-set hash,
+// window ends before query-ingesters-within, or when compacted blocks cover
+// a window that ended long enough ago; the ingesters alone when it starts
+// after query-store-after; and both, deduplicated by label-set hash,
 // otherwise.
 type CardinalityEstimator struct {
 	blocks    *BlocksStoreQueryable
@@ -97,6 +98,10 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		storeMaxT = min(req.MaxT, util.TimeToMillis(now.Add(-qsa)))
 	}
 
+	if needIngesters && e.compactedBlocksHold(ctx, tenantID, req, now) {
+		needIngesters = false
+	}
+
 	switch {
 	case !needIngesters:
 		return e.blocksOnly(ctx, tenantID, req)
@@ -105,6 +110,29 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	default:
 		return e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
+}
+
+// compactedBlocksHold reports whether compacted blocks can answer req alone:
+// the window ended at least -querier.cardinality-estimate.trust-compacted-blocks-after
+// ago, and blocks that the compactor wrote, not the ingesters or the
+// block-builder, cover it. The compactor merges a range only once newer
+// blocks exist, so its output for a range in the past holds what was
+// written into that range by then.
+func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, now time.Time) bool {
+	trust := e.blocks.estimateCfg.TrustCompactedBlocksAfter
+	if trust <= 0 || req.MaxT > util.TimeToMillis(now.Add(-trust)) {
+		return false
+	}
+	_, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
+	if err != nil || len(blocks) == 0 {
+		return false
+	}
+	for _, b := range blocks {
+		if b.CompactionLevel < 2 {
+			return false
+		}
+	}
+	return req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
 }
 
 // blocksOnly answers a window that ends before the ingesters' range from the
