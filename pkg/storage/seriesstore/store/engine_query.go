@@ -1345,6 +1345,55 @@ func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	return refs
 }
 
+// LabelValuesCounts returns how many head series matching matchers have each value of each of the labels, counting only
+// the ones ingested since cutoffMs, math.MinInt64 for all of them: what the cardinality API counts with the postings of
+// each value and the matchers', from one pass over the matchers' series.
+func (ix *engineIndex) LabelValuesCounts(ctx context.Context, names []string, matchers []*promlabels.Matcher, cutoffMs int64) (map[string]map[string]uint64, error) {
+	compiled, err := compilePromMatchers(nil, matchers)
+	if err != nil {
+		return nil, err
+	}
+	type counted struct {
+		id     uint32
+		counts map[string]uint64
+	}
+	out := make(map[string]map[string]uint64, len(names))
+	var wanted []counted
+	for _, name := range names {
+		counts := map[string]uint64{}
+		out[name] = counts
+		if id, known := labels.Lookup(name); known {
+			wanted = append(wanted, counted{id: id, counts: counts})
+		}
+	}
+	if len(wanted) == 0 {
+		return out, nil
+	}
+	visited := 0
+	ix.forEachMatching(compiled, func(entry *seriesEntry) {
+		if visited++; visited%checkContextEvery == 0 && ctx.Err() != nil {
+			return
+		}
+		if cutoffMs != math.MinInt64 && !entry.series.isActive(cutoffMs) {
+			return
+		}
+		for _, w := range wanted {
+			if value, ok := labelValue(entry.labels, w.id); ok {
+				// The values point into the series' labels, which are their own allocations: they stay valid for the
+				// reader.
+				w.counts[value]++
+			}
+		}
+	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// checkContextEvery is how many series a pass visits between checks of its context.
+const checkContextEvery = 1 << 14
+
 // IsLabelValueActive reports whether a head series with the label's value was ingested since cutoffMs, as the ingester's
 // active series check of the value's postings does, stopping at the first.
 func (ix *engineIndex) IsLabelValueActive(_ context.Context, name, value string, cutoffMs int64) (bool, error) {
