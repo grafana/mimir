@@ -41,8 +41,12 @@ type estimateResponse struct {
 	GroupBy string `json:"group_by"`
 	Read    string `json:"read"`
 	// Source says where the counts come from: "blocks" for the
-	// store-gateways. The ingesters are not consulted yet.
+	// store-gateways, "head" for the ingesters.
 	Source string `json:"source"`
+	// HeadWhole is set when the counts are every series held in the
+	// ingesters' heads, whatever the window, since head postings have no
+	// time axis.
+	HeadWhole bool `json:"head_whole,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
 	// store-gateway; MissingBlocks lists them.
 	LowerBound    bool     `json:"lower_bound"`
@@ -80,8 +84,8 @@ type estimateCheck struct {
 }
 
 // CardinalityEstimateHandler serves series counts from the store-gateways
-// without loading chunks (see BlocksStoreQueryable.CardinalityEstimate). It
-// takes start, end, an optional match[] selector, group_by (default
+// or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
+// It takes start, end, an optional match[] selector, group_by (default
 // __name__), step for per-bucket counts, max_index_bytes to cap the index
 // bytes the request reads (over it the request fails with 422 and nothing is
 // counted), sketch_above to send an HLL sketch instead of hashes for a group
@@ -99,7 +103,8 @@ type estimateCheck struct {
 // request's enforced selector is added to the matchers; a policy with more
 // than one selector is refused, as the other cardinality endpoints do.
 // Experimental.
-func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+	q := e.blocks
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
@@ -124,7 +129,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimate
 		}
 
 		start := time.Now()
-		res, err := q.CardinalityEstimate(r.Context(), tenantID, &req)
+		res, err := e.Estimate(r.Context(), tenantID, &req)
 		if err != nil {
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
@@ -135,7 +140,7 @@ func CardinalityEstimateHandler(q *BlocksStoreQueryable, cfg CardinalityEstimate
 		}
 		out := estimateResponse{
 			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
-			Source: sourceBlocks, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
+			Source: res.Source, HeadWhole: res.HeadWhole, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes,
@@ -259,10 +264,6 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req Cardina
 	return check
 }
 
-// Sources a cardinality estimate can count from, as reported in the
-// response's source field.
-const sourceBlocks = "blocks"
-
 // estimateRequestOptions are the route's parameters that shape the response
 // rather than the count.
 type estimateRequestOptions struct {
@@ -337,8 +338,8 @@ const defaultSketchAbove = 10_000
 
 // WithCardinalityEstimateRoute serves CardinalityEstimateHandler on
 // prefix/api/v1/cardinality/estimate and passes every other request to next.
-func WithCardinalityEstimateRoute(next http.Handler, prefix string, q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
-	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), CardinalityEstimateHandler(q, cfg, labelAccessControlEnabled)
+func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), CardinalityEstimateHandler(e, cfg, labelAccessControlEnabled)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == route && (r.Method == http.MethodGet || r.Method == http.MethodPost) {
 			h.ServeHTTP(w, r)

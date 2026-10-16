@@ -28,7 +28,7 @@ import (
 // estimateRequest serves one request against q and returns the recorder.
 func estimateRequest(t *testing.T, q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, lbac bool, ctx context.Context, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := CardinalityEstimateHandler(q, cfg, lbac)
+	h := CardinalityEstimateHandler(NewCardinalityEstimator(q, nil, nil), cfg, lbac)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 	r = r.WithContext(user.InjectOrgID(ctx, "user-1"))
 	rec := httptest.NewRecorder()

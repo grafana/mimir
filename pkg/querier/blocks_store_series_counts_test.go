@@ -265,7 +265,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
 		}}): {{b1}},
 	}
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", seriesCountsQueryable(0, dayMs, blocks, clients), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(seriesCountsQueryable(0, dayMs, blocks, clients), nil, nil), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
