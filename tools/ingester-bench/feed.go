@@ -60,8 +60,12 @@ type producedSecond struct {
 	at     time.Time
 }
 
+const producerBatchMaxBytes = 16 << 20
+
 func newFeed(w *world, dataDir string, port int) (*feed, error) {
-	opts := []kfake.Opt{kfake.NumBrokers(1), kfake.SeedTopics(1, topic)}
+	opts := []kfake.Opt{kfake.NumBrokers(1), kfake.SeedTopics(1, topic),
+		// As large as the client's batches, which the feed's seconds of many tenants fill: the default 1 MiB refused them.
+		kfake.BrokerConfigs(map[string]string{"message.max.bytes": strconv.Itoa(producerBatchMaxBytes)})}
 	if port > 0 {
 		opts = append(opts, kfake.Ports(port))
 	}
@@ -75,7 +79,7 @@ func newFeed(w *world, dataDir string, port int) (*feed, error) {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(cluster.ListenAddrs()...),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-		kgo.ProducerBatchMaxBytes(16<<20),
+		kgo.ProducerBatchMaxBytes(producerBatchMaxBytes),
 		kgo.MaxBufferedRecords(100_000),
 		kgo.ProducerLinger(5*time.Millisecond),
 	)

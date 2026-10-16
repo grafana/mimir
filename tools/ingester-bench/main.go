@@ -25,6 +25,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -133,7 +134,15 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, cfg config) error {
+func run(parent context.Context, cfg config) (err error) {
+	// A run without its feed would measure idle ingesters: the feed failing ends it, with the feed's error.
+	ctx, failRun := context.WithCancelCause(parent)
+	defer func() {
+		if cause := context.Cause(ctx); err != nil && parent.Err() == nil && cause != nil && !errors.Is(cause, context.Canceled) {
+			err = cause
+		}
+		failRun(nil)
+	}()
 	if cfg.out == "" {
 		dir, err := os.MkdirTemp("", "ingester-bench-")
 		if err != nil {
@@ -205,7 +214,7 @@ func run(ctx context.Context, cfg config) error {
 	go func() {
 		defer feedWG.Done()
 		if err := f.live(feedCtx, caughtUp); err != nil && feedCtx.Err() == nil {
-			log.Printf("feed: %v", err)
+			failRun(fmt.Errorf("feed: %w", err))
 		}
 	}()
 
