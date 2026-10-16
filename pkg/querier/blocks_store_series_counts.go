@@ -11,7 +11,6 @@ import (
 	"github.com/axiomhq/hyperloglog"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -50,8 +49,15 @@ type CardinalityEstimateResult struct {
 	Counts  map[string][]int64
 	// Dedup is set when the blocks may share series, so the counts come
 	// from a union of label-set hashes rather than a sum.
-	Dedup                bool
-	Blocks               []ulid.ULID
+	Dedup  bool
+	Blocks []ulid.ULID
+	// LowerBound is set when some blocks were not counted by any
+	// store-gateway after every retry; MissingBlocks lists them. The counts
+	// then leave out those blocks' series.
+	LowerBound    bool
+	MissingBlocks []ulid.ULID
+	// Retries is the number of attempts after the first.
+	Retries              int
 	StoreGateways        int
 	SeriesCounted        int64
 	PostingsFetchedBytes int64
@@ -113,11 +119,9 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 
 	var (
 		mtx      sync.Mutex
-		gateways = map[string]bool{}
 		hashes   = map[string]map[uint64]struct{}{}
 		held     int64 // hashes held across every group, bounded by the config
 		sketches = map[string]*hyperloglog.Sketch{}
-		counted  = map[ulid.ULID]bool{}
 	)
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
@@ -171,13 +175,6 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 				sum[i] += n
 			}
 		}
-		for _, id := range resp.BlockIds {
-			parsed, err := ulid.Parse(id)
-			if err != nil {
-				return fmt.Errorf("store-gateway %s returned block ID %q: %w", addr, id, err)
-			}
-			counted[parsed] = true
-		}
 		res.SeriesCounted += resp.SeriesCounted
 		res.PostingsFetchedBytes += resp.PostingsFetchedBytes
 		res.SeriesFetchedBytes += resp.SeriesFetchedBytes
@@ -185,72 +182,41 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 		return nil
 	}
 
-	// Find every call first, so max_index_bytes can be split across them.
-	type call struct {
-		p        estimatePart
-		client   BlocksStoreClient
-		ids      []ulid.ULID
-		matchers []*storepb.LabelMatcher
-	}
-	var calls []call
-	for _, p := range parts {
-		if len(p.blocks) == 0 {
-			continue
-		}
-		clients, err := p.c.stores.GetClientsFor(tenantID, p.blocks, nil)
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, shards, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+		resp, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
+			BlockIds:      convertULIDsToString(c.ids),
+			Matchers:      shardMatchers[c.shard],
+			MinTime:       req.MinT,
+			MaxTime:       req.MaxT,
+			StepMs:        req.Step,
+			GroupBy:       req.GroupBy,
+			Hashes:        res.Dedup,
+			MaxIndexBytes: perCall,
+			SketchAbove:   req.SketchAbove,
+		})
 		if err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-		for client, partitions := range clients {
-			gateways[client.RemoteAddress()] = true
-			for _, ids := range partitions {
-				for _, m := range shardMatchers {
-					calls = append(calls, call{p, client, ids, m})
-				}
+			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
+			if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.MaxIndexBytes > 0 {
+				return estimateCallResult{}, refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
 			}
+			return estimateCallResult{}, err
 		}
+		counted, err := parseBlockIDs(c.client.RemoteAddress(), resp.BlockIds)
+		if err != nil {
+			return estimateCallResult{}, err
+		}
+		if err := merge(c.client.RemoteAddress(), resp); err != nil {
+			return estimateCallResult{}, err
+		}
+		return estimateCallResult{counted: counted, indexBytes: resp.IndexBytes}, nil
+	})
+	if err != nil {
+		return CardinalityEstimateResult{}, err
 	}
-	perCall := splitIndexBytes(req.MaxIndexBytes, len(calls))
-
-	for _, p := range parts {
-		g, gCtx := errgroup.WithContext(grpcContextWithBucketStoreRequestMeta(ctx, tenantID, p.indexMeta))
-		for _, cl := range calls {
-			if cl.p.c != p.c {
-				continue
-			}
-			g.Go(func() error {
-				resp, err := cl.client.SeriesCounts(gCtx, &storegatewaypb.SeriesCountsRequest{
-					BlockIds:      convertULIDsToString(cl.ids),
-					Matchers:      cl.matchers,
-					MinTime:       req.MinT,
-					MaxTime:       req.MaxT,
-					StepMs:        req.Step,
-					GroupBy:       req.GroupBy,
-					Hashes:        res.Dedup,
-					MaxIndexBytes: perCall,
-					SketchAbove:   req.SketchAbove,
-				})
-				if err != nil {
-					err = classifyStoreGatewayError(cl.client.RemoteAddress(), err)
-					if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.MaxIndexBytes > 0 {
-						return refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, len(calls), err)
-					}
-					return err
-				}
-				return merge(cl.client.RemoteAddress(), resp)
-			})
-		}
-		if err := g.Wait(); err != nil {
-			return CardinalityEstimateResult{}, err
-		}
+	if err := res.setCoverage(all, cov); err != nil {
+		return CardinalityEstimateResult{}, err
 	}
 
-	for _, b := range all {
-		if !counted[b.ID] {
-			return CardinalityEstimateResult{}, fmt.Errorf("block %s was not counted by the store-gateway it was sent to", b.ID)
-		}
-		res.Blocks = append(res.Blocks, b.ID)
-	}
 	// A group that any store-gateway sent as a sketch is estimated: the other
 	// store-gateways' hashes for it go into the same sketch.
 	for v, set := range hashes {
@@ -269,8 +235,43 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 		res.Estimated[v] = true
 		res.Counts[v] = []int64{int64(sk.Estimate())}
 	}
-	res.StoreGateways = len(gateways)
 	return res, nil
+}
+
+// setCoverage records which of the blocks in all were counted. A missing
+// block makes the counts a lower bound; when no block was counted at all
+// there is nothing to bound, and the request fails.
+func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov estimateCoverage) error {
+	missing := make(map[ulid.ULID]bool, len(cov.Missing))
+	for _, id := range cov.Missing {
+		missing[id] = true
+	}
+	if len(all) > 0 && len(missing) == len(all) {
+		return errNothingCounted(len(all), cov)
+	}
+	for _, b := range all {
+		if !missing[b.ID] {
+			r.Blocks = append(r.Blocks, b.ID)
+		}
+	}
+	r.MissingBlocks = cov.Missing
+	r.LowerBound = len(cov.Missing) > 0
+	r.StoreGateways = cov.StoreGateways
+	r.Retries = cov.Retries
+	return nil
+}
+
+// parseBlockIDs parses the block IDs a store-gateway reported as counted.
+func parseBlockIDs(addr string, ids []string) ([]ulid.ULID, error) {
+	out := make([]ulid.ULID, 0, len(ids))
+	for _, id := range ids {
+		parsed, err := ulid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("store-gateway %s returned block ID %q: %w", addr, id, err)
+		}
+		out = append(out, parsed)
+	}
+	return out, nil
 }
 
 // splitIndexBytes gives each of n calls an equal share of limit, at least one
@@ -329,7 +330,10 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
-		res := CardinalityEstimateResult{Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways}
+		res := CardinalityEstimateResult{
+			Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
+			LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+		}
 		for name, n := range mc.Counts {
 			res.Counts[name] = []int64{n}
 		}
