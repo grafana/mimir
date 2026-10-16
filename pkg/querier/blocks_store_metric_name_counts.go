@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // MetricNameCountsResult is every metric name's series count over one block
@@ -121,6 +122,7 @@ func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID st
 func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID string, parts []estimatePart) (MetricNameCountsResult, error) {
 	res := MetricNameCountsResult{Counts: map[string]int64{}}
 	var mtx sync.Mutex
+	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, 0, func(ctx context.Context, c estimateCall, _ int64, _ int) (estimateCallResult, error) {
 		addr := c.client.RemoteAddress()
 		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames}
@@ -148,12 +150,17 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 			return estimateCallResult{}, err
 		}
 		mtx.Lock()
+		defer mtx.Unlock()
 		for _, batch := range batches {
 			for _, nc := range batch {
+				if _, ok := res.Counts[nc.Name]; !ok {
+					if err := chargeEstimateGroup(tracker, nc.Name); err != nil {
+						return estimateCallResult{}, err
+					}
+				}
 				res.Counts[nc.Name] += nc.Count
 			}
 		}
-		mtx.Unlock()
 		return estimateCallResult{counted: counted}, nil
 	})
 	if err != nil {
