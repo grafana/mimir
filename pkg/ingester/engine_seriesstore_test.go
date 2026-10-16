@@ -509,36 +509,70 @@ func BenchmarkIngester_QueryStreamHeldMemory(b *testing.B) {
 	}
 }
 
+// benchLabelAPIIngester starts an ingester of the engine with 100k series of 5 metrics, by labels of 10, 77, 500 values
+// and one of every series.
+func benchLabelAPIIngester(b *testing.B, engine string) (*Ingester, context.Context) {
+	cfg := defaultIngesterTestConfig(b)
+	cfg.BlocksStorageConfig.TSDB.Engine = engine
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.MaxGlobalSeriesPerMetric = 0
+	limitsCfg.MaxGlobalSeriesPerUser = 0
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+	require.NoError(b, err)
+	startAndWaitHealthy(b, ingester, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	now := time.Now().UnixMilli()
+	var batch []mimirpb.PreallocTimeseries
+	for n := range 100_000 {
+		ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", n%5)},
+			{Name: "mod_10", Value: strconv.Itoa(n % 10)},
+			{Name: "mod_500", Value: strconv.Itoa(n % 500)},
+			{Name: "mod_77", Value: strconv.Itoa(n % 77)},
+			{Name: "pod", Value: fmt.Sprintf("pod-%06d", n)},
+		}, Samples: []mimirpb.Sample{{TimestampMs: now, Value: 1}}}
+		batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
+		if len(batch) == 5000 {
+			_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: batch, Source: mimirpb.API})
+			require.NoError(b, err)
+			batch = nil
+		}
+	}
+	return ingester, ctx
+}
+
+// BenchmarkIngester_EngineLabelNamesAndValues lists the label names and values of series, like the cardinality API.
+func BenchmarkIngester_EngineLabelNamesAndValues(b *testing.B) {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		b.Run(engine, func(b *testing.B) {
+			ingester, ctx := benchLabelAPIIngester(b, engine)
+			for _, bc := range []struct {
+				name     string
+				matchers []*client.LabelMatcher
+			}{
+				{"metric matcher", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}}},
+				{"metric and mod_10 matchers", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}, {Type: client.EQUAL, Name: "mod_10", Value: "6"}}},
+			} {
+				for _, method := range []client.CountMethod{client.IN_MEMORY, client.ACTIVE} {
+					b.Run(bc.name+"/"+method.String(), func(b *testing.B) {
+						b.ReportAllocs()
+						for range b.N {
+							req := &client.LabelNamesAndValuesRequest{Matchers: bc.matchers, CountMethod: method}
+							require.NoError(b, ingester.LabelNamesAndValues(req, &mockLabelNamesAndValuesServer{context: ctx}))
+						}
+					})
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkIngester_EngineLabelValuesCardinality counts the series of each value of labels, like the cardinality API.
 func BenchmarkIngester_EngineLabelValuesCardinality(b *testing.B) {
 	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		b.Run(engine, func(b *testing.B) {
-			cfg := defaultIngesterTestConfig(b)
-			cfg.BlocksStorageConfig.TSDB.Engine = engine
-			limitsCfg := defaultLimitsTestConfig()
-			limitsCfg.MaxGlobalSeriesPerMetric = 0
-			limitsCfg.MaxGlobalSeriesPerUser = 0
-			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
-			require.NoError(b, err)
-			startAndWaitHealthy(b, ingester, r)
-
-			ctx := user.InjectOrgID(context.Background(), userID)
-			now := time.Now().UnixMilli()
-			var batch []mimirpb.PreallocTimeseries
-			for n := range 100_000 {
-				ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{
-					{Name: "__name__", Value: fmt.Sprintf("metric_%d", n%5)},
-					{Name: "mod_10", Value: strconv.Itoa(n % 10)},
-					{Name: "mod_77", Value: strconv.Itoa(n % 77)},
-					{Name: "pod", Value: fmt.Sprintf("pod-%06d", n)},
-				}, Samples: []mimirpb.Sample{{TimestampMs: now, Value: 1}}}
-				batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
-				if len(batch) == 5000 {
-					_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: batch, Source: mimirpb.API})
-					require.NoError(b, err)
-					batch = nil
-				}
-			}
+			ingester, ctx := benchLabelAPIIngester(b, engine)
 			for _, bc := range []struct {
 				name       string
 				labelNames []string
