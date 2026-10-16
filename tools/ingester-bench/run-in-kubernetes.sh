@@ -53,10 +53,12 @@ print(s)
 PY
 k delete job "$NAME" --ignore-not-found --wait=true
 k apply -f "$metadata.yaml"
+# By the job's uid, as the pods of the job it replaced may still be terminating.
+uid="$(k get job "$NAME" -o jsonpath='{.metadata.uid}')"
 
 echo "waiting for the run's report"
 while true; do
-  pod="$(k get pods -l job-name="$NAME" -o name | head -1)"
+  pod="$(k get pods -l controller-uid="$uid" -o name | head -1)"
   if [[ -n "$pod" ]] && k logs "$pod" -c driver 2>/dev/null | grep -q "holding for"; then break; fi
   if [[ -n "$pod" ]] && k get "$pod" -o jsonpath='{.status.containerStatuses[*].state.terminated.reason}' | grep -q .; then
     k logs "$pod" -c driver --tail=50 || true
