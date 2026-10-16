@@ -76,6 +76,9 @@ type CardinalityEstimateResult struct {
 	SeriesFetchedBytes   int64
 	// IndexBytes is measured the way the Series call measures it.
 	IndexBytes int64
+	// BlocksFromPostings is how many blocks were counted from the group-by
+	// label's postings without reading series entries.
+	BlocksFromPostings int64
 	// Estimated holds the groups counted from an HLL sketch, not exactly.
 	Estimated map[string]bool
 	// HashBytes and SketchBytes are the dedup payload the store-gateways sent.
@@ -160,6 +163,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		res.PostingsFetchedBytes += resp.PostingsFetchedBytes
 		res.SeriesFetchedBytes += resp.SeriesFetchedBytes
 		res.IndexBytes += resp.IndexBytes
+		res.BlocksFromPostings += resp.BlocksFromPostings
 		return nil
 	}
 
