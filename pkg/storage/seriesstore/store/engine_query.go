@@ -818,10 +818,18 @@ type engineIndex struct {
 	// The workers of a request's lookups of each value share the cache, read-locked once it is built.
 	mu      sync.RWMutex
 	asked   map[string]int
+	// The labels of mostly distinct values, whose postings aren't cached: a value's are a series or two, which the
+	// store's postings find, and caching them was a map of every series of the label.
+	uncached map[string]bool
 	byValue map[string]map[string][]storage.SeriesRef
 	// The series of each metric name asked for: a metric's are its name group's, which are listed without reading the
 	// labels of the others, and the label APIs ask for a metric's with each value of another label.
 	byMetric map[string][]storage.SeriesRef
+	// The values of every label of the series matching a selector, built once the reader is asked for the names or values
+	// of its series a second time: the label names and values API asks for the names and then for the values of each, which
+	// was a pass over the selector's series for each name.
+	selectorAsked  map[string]int
+	selectorValues map[string]map[string]map[string]struct{}
 }
 
 func (ix *engineIndex) Close() error { return nil }
@@ -987,11 +995,18 @@ func (ix *engineIndex) SortedLabelValues(ctx context.Context, name string, hints
 
 // LabelValues returns the values of name of the head's series matching matchers, sorted.
 func (ix *engineIndex) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*promlabels.Matcher) ([]string, error) {
-	set := map[string]struct{}{}
 	compiled, err := compilePromMatchers(nil, matchers)
 	if err != nil {
 		return nil, err
 	}
+	if values, ok := ix.selectorLabelValues(compiled, matchers); ok {
+		out := sortedKeys(values[name])
+		if hints != nil {
+			out = limited(out, hints.Limit)
+		}
+		return out, nil
+	}
+	set := map[string]struct{}{}
 	if len(matchers) == 0 {
 		ix.forEachWith(name, func(_ *seriesEntry, value string) { set[value] = struct{}{} })
 	} else {
@@ -1022,6 +1037,7 @@ func (ix *engineIndex) LabelValues(_ context.Context, name string, hints *storag
 
 // LabelNames returns the label names of the head's series matching matchers, sorted.
 func (ix *engineIndex) LabelNames(_ context.Context, matchers ...*promlabels.Matcher) ([]string, error) {
+	ix.askedForSelector(matchers)
 	set := map[string]struct{}{}
 	add := func(entry *seriesEntry) {
 		entry.labels.Range(func(name, _ string) { set[name] = struct{}{} })
@@ -1078,6 +1094,9 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 			return index.NewListPostings(refs), nil
 		}
 	}
+	if len(values) == 1 && name != metricNameLabel {
+		return ix.postingsOfValue(name, values[0]), nil
+	}
 	wanted := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		wanted[value] = struct{}{}
@@ -1129,6 +1148,98 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 	return postingsOf(refs), nil
 }
 
+// promSelectorKey identifies matchers among the selectors a reader is asked about.
+func promSelectorKey(matchers []*promlabels.Matcher) string {
+	var key strings.Builder
+	for _, m := range matchers {
+		key.WriteString(m.Name)
+		key.WriteByte(0xff)
+		key.WriteByte(byte(m.Type))
+		key.WriteString(m.Value)
+		key.WriteByte(0xff)
+	}
+	return key.String()
+}
+
+// askedForSelector counts a lookup of the names or values of the selector's series, and returns its key.
+func (ix *engineIndex) askedForSelector(matchers []*promlabels.Matcher) (string, int) {
+	if len(matchers) == 0 {
+		return "", 0
+	}
+	key := promSelectorKey(matchers)
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if ix.selectorAsked == nil {
+		ix.selectorAsked = map[string]int{}
+	}
+	ix.selectorAsked[key]++
+	return key, ix.selectorAsked[key]
+}
+
+// selectorLabelValues returns the values of each label of the series matching the selector, once the reader was asked
+// about them before: one pass over the series answers the reader's lookups of every name.
+func (ix *engineIndex) selectorLabelValues(compiled []compiledMatcher, matchers []*promlabels.Matcher) (map[string]map[string]struct{}, bool) {
+	if len(matchers) == 0 {
+		return nil, false
+	}
+	key := promSelectorKey(matchers)
+	ix.mu.RLock()
+	values, ok := ix.selectorValues[key]
+	ix.mu.RUnlock()
+	if ok {
+		return values, true
+	}
+	if _, asked := ix.askedForSelector(matchers); asked < 2 {
+		return nil, false
+	}
+	values = map[string]map[string]struct{}{}
+	add := func(name, value string) {
+		set, ok := values[name]
+		if !ok {
+			set = map[string]struct{}{}
+			values[name] = set
+		}
+		set[value] = struct{}{}
+	}
+	// The values point into the series' labels, which are their own allocations: they stay valid for the reader.
+	ix.forEachMatching(compiled, func(entry *seriesEntry) { entry.labels.Range(add) })
+	// A cold series' labels are decoded into an allocation of their own, out of the block's mapping.
+	ix.forEachIdleEvicted(compiled, func(series *coldSeries) { series.labels().Range(add) })
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if ix.selectorValues == nil {
+		ix.selectorValues = map[string]map[string]map[string]struct{}{}
+	}
+	ix.selectorValues[key] = values
+	return values, true
+}
+
+// minCachedSeriesPerValue is how many series a label's values have on average for a reader to cache their postings.
+const minCachedSeriesPerValue = 4
+
+// labelCardinality returns how many head series have the label, and about how many distinct values: the store's
+// postings are by a hash of the value, which collide rarely.
+func (ix *engineIndex) labelCardinality(name string) (series, distinct int) {
+	if name == metricNameLabel {
+		return math.MaxInt32, 1
+	}
+	id, known := labels.Lookup(name)
+	if !known {
+		return 0, 0
+	}
+	for _, shard := range ix.e.store.shards {
+		shard.RLock()
+		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+			series += t.series.seriesWith(id, known)
+			if int(id) < len(t.series.postings) {
+				distinct += len(t.series.postings[id])
+			}
+		}
+		shard.RUnlock()
+	}
+	return series, distinct
+}
+
 // metricPostings returns the series of the metric name, sorted.
 func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	ix.mu.RLock()
@@ -1158,6 +1269,46 @@ func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	return refs
 }
 
+// postingsOfValue is Postings of one value from the store's postings, which lists in each shard the series of the
+// value's hash.
+func (ix *engineIndex) postingsOfValue(name, value string) index.Postings {
+	id, known := labels.Lookup(name)
+	if !known {
+		return index.EmptyPostings()
+	}
+	key := postingKey(value)
+	var refs []storage.SeriesRef
+	// A posting holds a value's hash: collisions are checked against the labels.
+	visit := func(entry *seriesEntry) bool {
+		if v, ok := labelValue(entry.labels, id); ok && v == value {
+			refs = append(refs, storage.SeriesRef(entry.series.ref))
+		}
+		return true
+	}
+	var one [1]seriesRef
+	for index, shard := range ix.e.store.shards {
+		shard.RLock()
+		if t, ok := ix.e.tenantLocked(index); ok && int(id) < len(t.series.postings) {
+			if posting, ok := t.series.postings[id][key]; ok {
+				if single, many := t.series.posting(posting); many == nil {
+					one[0] = t.series.refs[single]
+					t.series.visitRefs(one[:], visit)
+				} else {
+					for _, seriesID := range many {
+						one[0] = t.series.refs[seriesID]
+						t.series.visitRefs(one[:], visit)
+					}
+				}
+			}
+		}
+		shard.RUnlock()
+	}
+	if len(refs) == 0 {
+		return index.EmptyPostings()
+	}
+	return postingsOf(refs)
+}
+
 // cachedPostings returns the series with the label's value from the postings of all its values, once the reader asked
 // for another of its values.
 func (ix *engineIndex) cachedPostings(name, value string) ([]storage.SeriesRef, bool) {
@@ -1171,10 +1322,20 @@ func (ix *engineIndex) cachedPostings(name, value string) ([]storage.SeriesRef, 
 	defer ix.mu.Unlock()
 	values, ok = ix.byValue[name]
 	if !ok {
+		if ix.uncached[name] {
+			return nil, false
+		}
 		if ix.asked == nil {
 			ix.asked = map[string]int{}
 		}
 		if ix.asked[name]++; ix.asked[name] < 2 {
+			return nil, false
+		}
+		if series, distinct := ix.labelCardinality(name); series < minCachedSeriesPerValue*distinct {
+			if ix.uncached == nil {
+				ix.uncached = map[string]bool{}
+			}
+			ix.uncached[name] = true
 			return nil, false
 		}
 		values = map[string][]storage.SeriesRef{}

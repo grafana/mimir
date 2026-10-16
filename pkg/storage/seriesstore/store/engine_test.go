@@ -1510,6 +1510,41 @@ func TestEngineIndexPostingsOfEachValueAsOnTheirOwn(t *testing.T) {
 
 // BenchmarkEngineIndexPostingsOfEachValue is what the ingester's label APIs do with active series: the postings of each
 // value of each label of a tenant, from one index reader.
+func TestEngineIndexLabelValuesOfASelectorAsOnTheirOwn(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 2000 {
+		lset := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprintf("pod-%d", n))
+		if n%5 == 0 {
+			lset = promlabels.NewBuilder(lset).Set("sparse", fmt.Sprintf("s-%d", n%3)).Labels()
+		}
+		_, err := app.Append(0, lset, 1000, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	for _, matchers := range [][]*promlabels.Matcher{
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-3")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_2"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-(1|2)")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "absent")},
+	} {
+		cached, err := e.Index()
+		require.NoError(t, err)
+		names, err := cached.LabelNames(context.Background(), matchers...)
+		require.NoError(t, err)
+		for _, name := range append(names, "sparse", "absent") {
+			fresh, err := e.Index()
+			require.NoError(t, err)
+			expected, err := fresh.LabelValues(context.Background(), name, nil, matchers...)
+			require.NoError(t, err)
+			got, err := cached.LabelValues(context.Background(), name, nil, matchers...)
+			require.NoError(t, err)
+			require.Equal(t, expected, got, "%s of %v", name, matchers)
+		}
+	}
+}
+
 func BenchmarkEngineIndexPostingsOfEachValue(b *testing.B) {
 	e, err := OpenEngine(b.TempDir(), "user", EngineOptions{Shards: 16})
 	require.NoError(b, err)

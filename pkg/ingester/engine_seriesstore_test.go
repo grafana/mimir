@@ -552,6 +552,7 @@ func BenchmarkIngester_EngineLabelNamesAndValues(b *testing.B) {
 				matchers []*client.LabelMatcher
 			}{
 				{"metric matcher", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}}},
+				{"mod_10 matcher", []*client.LabelMatcher{{Type: client.EQUAL, Name: "mod_10", Value: "1"}}},
 				{"metric and mod_10 matchers", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}, {Type: client.EQUAL, Name: "mod_10", Value: "6"}}},
 			} {
 				for _, method := range []client.CountMethod{client.IN_MEMORY, client.ACTIVE} {

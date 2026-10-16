@@ -34,6 +34,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,6 +53,7 @@ type config struct {
 	retention         time.Duration
 	oooWindow         time.Duration
 	queryScale        float64
+	readScales        string
 	compareFraction   float64
 	concurrency       int
 	out               string
@@ -83,6 +85,7 @@ func main() {
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", time.Hour, "Out-of-order window of the tenants.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
+	flag.StringVar(&cfg.readScales, "read-scales", "", "Factors of some reads' rates on top of -query-scale, such as LabelNamesAndValues=50,QueryStream=0: a short run of a small ingester sends a few of the rare reads otherwise.")
 	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")
 	flag.IntVar(&cfg.concurrency, "concurrency", 256, "Reads in flight at most; reads beyond are dropped and counted.")
 	flag.StringVar(&cfg.out, "out", "", "Directory of the run's data, profiles and report (default a new temporary one).")
@@ -269,6 +272,17 @@ func run(parent context.Context, cfg config) (err error) {
 
 	gen := newQueryGen(w, profile.Queries, cfg.retention.Milliseconds(), func() int64 { return dataStart }, func() int64 { return time.Now().UnixMilli() })
 	rates := gen.rates(cfg.queryScale)
+	for _, item := range strings.Split(cfg.readScales, ",") {
+		if item == "" {
+			continue
+		}
+		rpc, factor, ok := strings.Cut(item, "=")
+		f, err := strconv.ParseFloat(factor, 64)
+		if _, known := rates[rpc]; !ok || err != nil || !known {
+			return fmt.Errorf("-read-scales: %q is not a read and its factor", item)
+		}
+		rates[rpc] *= f
+	}
 	var rateList []string
 	for rpc, rate := range rates {
 		rateList = append(rateList, fmt.Sprintf("%s %.2f/s", rpc, rate))
@@ -412,7 +426,7 @@ func runConfig(cfg config, profile Profile, rates map[string]float64) map[string
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
-		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale),
+		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_scales": cfg.readScales,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
 		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
 		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
