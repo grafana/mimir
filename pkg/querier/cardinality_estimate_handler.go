@@ -50,12 +50,12 @@ type estimateResponse struct {
 	// HeadFallback says why the head walk was refused when the head was
 	// counted as one bucket instead.
 	HeadFallback string `json:"head_fallback,omitempty"`
-	// HeadMinTime is the newest ingester head's start when it is after the
-	// window's start; the counts are then a lower bound.
+	// HeadMinTime is the time from which every ingester still holds data,
+	// when it is after the window's start; the counts are then a lower bound.
 	HeadMinTime int64 `json:"head_min_time,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
 	// store-gateway, which MissingBlocks lists, or when the window starts
-	// before the ingesters' heads, which HeadMinTime says.
+	// before what the ingesters hold, which HeadMinTime says.
 	LowerBound    bool     `json:"lower_bound"`
 	MissingBlocks []string `json:"missing_blocks,omitempty"`
 	Retries       int      `json:"retries,omitempty"`
