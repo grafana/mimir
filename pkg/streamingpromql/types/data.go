@@ -24,8 +24,15 @@ type SeriesMetadata struct {
 	DropName bool
 }
 
-// AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
+// AppendSeriesMetadata appends otherSeriesMetadata to base and accounts for the memory of the
+// appended labels.
+//
+// This assumes that base already has enough capacity for the appended items. Callers that can't
+// be sure of that should grow the slice via SeriesMetadataSlicePool.AppendToSlice instead.
 func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
+	if len(base)+len(otherSeriesMetadata) > cap(base) {
+		panic(fmt.Sprintf("AppendSeriesMetadata would grow base beyond its capacity (len %d + %d > cap %d); use AppendToSlice to grow a pooled slice (this is a bug)", len(base), len(otherSeriesMetadata), cap(base)))
+	}
 	for _, metadata := range otherSeriesMetadata {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		if err != nil {
