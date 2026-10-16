@@ -14,8 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -26,6 +29,15 @@ type ingestersMock struct {
 	gotMatchers   []*labels.Matcher
 	gotMethod     cardinality.CountMethod
 	resp          *client.LabelValuesCardinalityResponse
+
+	gotSeriesCounts *client.SeriesCountsRequest
+	seriesCounts    distributor.SeriesCountsResult
+	seriesCountsErr error
+}
+
+func (m *ingestersMock) SeriesCounts(_ context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+	m.gotSeriesCounts = req
+	return m.seriesCounts, m.seriesCountsErr
 }
 
 func (m *ingestersMock) LabelValuesCardinality(_ context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
@@ -74,32 +86,69 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Nil(t, ing.gotLabelNames, "the ingesters are not asked")
 	})
 
-	t.Run("a recent window with no block is counted from the heads", func(t *testing.T) {
-		ing := &ingestersMock{resp: headResp}
+	t.Run("a recent window with no block is counted from the heads' chunk metas", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesCounted: 2, HeadMinTimeMs: 98 * hour, HeadMaxTimeMs: 100 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{0, 1}}, {Value: "errors_total", Counts: []int64{1, 1}}}, SeriesCounted: 2, HeadMinTimeMs: 97 * hour, HeadMaxTimeMs: 100 * hour},
+		}}}
 		job := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "a")}
-		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 99 * hour, MaxT: 100 * hour})
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__", MaxIndexBytes: 1000})
 		require.NoError(t, err)
 		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, readHeadChunkMetas, res.Read)
+		assert.False(t, res.HeadWhole)
+		assert.False(t, res.LowerBound, "every head starts by the window start")
+		assert.Equal(t, map[string][]int64{"up": {1, 3}, "errors_total": {1, 1}}, res.Counts)
+		require.NotNil(t, ing.gotSeriesCounts)
+		assert.Equal(t, hour, ing.gotSeriesCounts.StepMs)
+		assert.Equal(t, "__name__", ing.gotSeriesCounts.GroupBy)
+		assert.Equal(t, int64(1000), ing.gotSeriesCounts.MaxIndexBytes)
+		assert.Equal(t, []*client.LabelMatcher{{Type: client.EQUAL, Name: "job", Value: "a"}}, ing.gotSeriesCounts.Matchers)
+	})
+
+	t.Run("hashes from replicas in one zone are unioned", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}},
+		}}}
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.True(t, res.Dedup)
+		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
+	})
+
+	t.Run("a window starting before the newest head is a lower bound", func(t *testing.T) {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, HeadMinTimeMs: 99 * hour, HeadMaxTimeMs: 100 * hour},
+			{HeadMinTimeMs: 0, HeadMaxTimeMs: 0}, // an ingester without the tenant
+		}}}
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, 99*hour, res.HeadMinTime)
+	})
+
+	t.Run("a head walk over max_index_bytes falls back to the whole head's postings", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
+		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
+		require.NoError(t, err)
 		assert.Equal(t, readHeadPostings, res.Read)
 		assert.True(t, res.HeadWhole)
+		assert.Contains(t, res.HeadFallback, "max_index_bytes 1000")
 		assert.Equal(t, map[string][]int64{"up": {4}, "errors_total": {2}}, res.Counts)
-		assert.Equal(t, int64(6), res.SeriesCounted)
-		assert.Equal(t, []model.LabelName{"__name__"}, ing.gotLabelNames)
-		assert.Equal(t, job, ing.gotMatchers)
 		assert.Equal(t, cardinality.InMemoryMethod, ing.gotMethod)
 	})
 
-	t.Run("group_by is sent as the label name", func(t *testing.T) {
-		ing := &ingestersMock{resp: &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{{LabelName: "pod", LabelValueSeries: map[string]uint64{"p1": 1}}}}}
-		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, GroupBy: "pod"})
-		require.NoError(t, err)
-		assert.Equal(t, []model.LabelName{"pod"}, ing.gotLabelNames)
-		assert.Equal(t, map[string][]int64{"p1": {1}}, res.Counts)
+	t.Run("with a step the refusal stands", func(t *testing.T) {
+		ing := &ingestersMock{seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: hour, MaxIndexBytes: 1000})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	})
 
-	t.Run("per-bucket counts on the heads are refused", func(t *testing.T) {
-		_, err := newEstimator(nil, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: hour})
-		require.ErrorContains(t, err, "per-bucket counts on the ingesters")
+	t.Run("an invalid request on the ingesters is 400", func(t *testing.T) {
+		ing := &ingestersMock{seriesCountsErr: status.Error(codes.InvalidArgument, "step 7 doesn't divide the window")}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: 7})
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	})
 
