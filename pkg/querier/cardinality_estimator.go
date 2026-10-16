@@ -4,13 +4,20 @@ package querier
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
@@ -23,14 +30,19 @@ const (
 	sourceHead   = "head"
 )
 
-// readHeadPostings is the read for counts taken from the ingesters' head
-// postings, with no time filter.
-const readHeadPostings = "head_postings"
+// Reads on the ingesters: readHeadPostings counts head postings with no
+// time filter, readHeadChunkMetas walks the matching head series' chunk
+// metas so only series with a chunk in the window count.
+const (
+	readHeadPostings   = "head_postings"
+	readHeadChunkMetas = "head_chunk_metas"
+)
 
 // estimateIngesters is the part of the distributor the cardinality
 // estimate uses to count series in the ingesters.
 type estimateIngesters interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
+	SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
 }
 
 // estimateLimits are the per-tenant limits that decide which sources a
@@ -96,16 +108,75 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 }
 
 // headCounts counts series per value of req.GroupBy in the ingesters'
-// heads. The head's postings have no time axis, so the count covers every
-// series an ingester holds in memory, including series whose samples are
-// all outside the window but are not yet removed by a head compaction; the
-// result says so with HeadWhole. Under ingest storage the distributor takes
-// one zone's answer per partition and adds up the partitions, which share
-// no series; with classic replication it takes the largest zone's sum.
+// heads over the window, from the series' chunk metas. When that walk is
+// over max_index_bytes and no step is asked for, the head is counted as one
+// bucket from its postings instead (headWholeCounts) and the response says
+// so; with a step the refusal stands.
+//
+// The ingesters' compacted blocks are not read, so a window that starts
+// before the newest head's start may miss series that only had samples
+// there; the counts are then flagged as a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	if req.Step > 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts on the ingesters are not supported yet")
+	matchers, err := client.ToLabelMatchers(req.Matchers)
+	if err != nil {
+		return CardinalityEstimateResult{}, err
 	}
+	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
+		Matchers:         matchers,
+		StartTimestampMs: req.MinT,
+		EndTimestampMs:   req.MaxT,
+		StepMs:           req.Step,
+		GroupBy:          req.GroupBy,
+		SketchAbove:      req.SketchAbove,
+		MaxIndexBytes:    req.MaxIndexBytes,
+	})
+	if err != nil {
+		err = classifyIngesterError(err)
+		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.Step == 0 {
+			res, werr := e.headWholeCounts(ctx, req)
+			if werr != nil {
+				return CardinalityEstimateResult{}, werr
+			}
+			res.HeadFallback = err.Error()
+			return res, nil
+		}
+		return CardinalityEstimateResult{}, err
+	}
+
+	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
+	m := newEstimateMerger(sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
+	var headMinT int64
+	for _, resp := range sr.Responses {
+		for _, g := range resp.Groups {
+			if err := m.add("ingester", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+				return CardinalityEstimateResult{}, err
+			}
+		}
+		res.SeriesCounted += resp.SeriesCounted
+		// An ingester with no data for the tenant reports an empty head.
+		if resp.HeadMaxTimeMs > 0 {
+			headMinT = max(headMinT, resp.HeadMinTimeMs)
+		}
+	}
+	if err := m.finish(&res); err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+	if headMinT > req.MinT {
+		res.LowerBound = true
+		res.HeadMinTime = headMinT
+	}
+	return res, nil
+}
+
+// headWholeCounts counts series per value of req.GroupBy in the ingesters'
+// heads from their postings. Head postings have no time axis, so the count
+// covers every series an ingester holds in memory, including series whose
+// samples are all outside the window but are not yet removed by a head
+// compaction; the result says so with HeadWhole. Under ingest storage the
+// distributor takes one zone's answer per partition and adds up the
+// partitions, which share no series; with classic replication it takes the
+// largest zone's sum.
+func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	groupBy := req.GroupBy
 	if groupBy == "" {
 		groupBy = labels.MetricName
@@ -128,6 +199,30 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		return CardinalityEstimateResult{}, refusedEstimate("the ingesters hold more than %d metric names (the -querier.cardinality-estimate.max-metric-names limit)", limit)
 	}
 	return res, nil
+}
+
+// classifyIngesterError turns an ingester's gRPC status, as the
+// distributor passes it on, into an estimate error.
+func classifyIngesterError(err error) error {
+	if strings.Contains(err.Error(), "need ingest storage or zone-aware replication") {
+		return badEstimateRequest("ingesters: %v", err)
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		st, ok := status.FromError(e)
+		if !ok {
+			continue
+		}
+		switch st.Code() {
+		case codes.InvalidArgument:
+			return badEstimateRequest("ingesters: %s", st.Message())
+		case codes.ResourceExhausted:
+			if strings.Contains(st.Message(), "max_index_bytes") {
+				return refusedEstimate("ingesters: %s", st.Message())
+			}
+		}
+		break
+	}
+	return fmt.Errorf("ingesters: %w", err)
 }
 
 // blocksCover reports whether the union of the blocks' ranges holds all of
