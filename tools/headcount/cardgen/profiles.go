@@ -85,6 +85,23 @@ var profiles = map[string]Profile{
 			SpikeMetric:   0, SpikeDay: 2, SpikeStartHour: 14, SpikeHours: 6, SpikeBaseValues: 10, SpikePeakValues: 30_000,
 		},
 	},
+	// live is a small population for replaying into a running Mimir
+	// through remote write: about 20k concurrent series with churn every
+	// 15 minutes and 5-minute gaps, so that series turnover is visible in
+	// the ingester head within a run of a few tens of minutes. Partitions
+	// is unused by the replay writer and matches small.
+	"live": {
+		Partitions: 2,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(2 * 24 * time.Hour),
+			MetricNames: 2_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			ChurnFraction: 0.2, ChurnPeriod: 15 * time.Minute,
+			GapFraction: 0.05, GapDuration: 5 * time.Minute,
+			StaleFraction: 0.05,
+			SpikeMetric:   -1,
+		},
+	},
 	"large": {
 		Partitions: 4,
 		Population: model.Config{
