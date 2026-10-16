@@ -403,3 +403,155 @@ func BenchmarkRuntimeConfigLoader_Load(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkRuntimeConfigLoader_LoadFromMap simulates the runtime config manager
+// reloading a file where only a few tenants change between reloads, which is the
+// common case when the file is regenerated periodically.
+func BenchmarkRuntimeConfigLoader_LoadFromMap(b *testing.B) {
+	for _, tenants := range []int{1000, 5000, 20000} {
+		for _, changedTenants := range []int{1, 100} {
+			b.Run(fmt.Sprintf("tenants=%d/changed=%d", tenants, changedTenants), func(b *testing.B) {
+				// Alternate between two files differing by changedTenants, so every reload sees a change.
+				files := make([][]byte, 2)
+				for v := range files {
+					overrides := make(map[string]map[string]any, tenants)
+					for i := 0; i < tenants; i++ {
+						rate := 1000 + i
+						if i < changedTenants {
+							rate += v
+						}
+						overrides[fmt.Sprintf("tenant-%d", i)] = map[string]any{
+							"ingestion_rate":                    rate,
+							"ingestion_burst_size":              10 * rate,
+							"max_global_series_per_user":        150000 + i,
+							"compactor_blocks_retention_period": "30d",
+							"max_label_names_per_series":        40,
+						}
+					}
+					var err error
+					files[v], err = yaml.Marshal(map[string]any{"overrides": overrides})
+					require.NoError(b, err)
+				}
+				loader := &runtimeConfigLoader{}
+				// Measure steady-state reloads rather than the initial load.
+				for _, f := range files {
+					m := map[string]any{}
+					require.NoError(b, yaml.Unmarshal(f, &m))
+					_, err := loader.loadFromMap(m)
+					require.NoError(b, err)
+				}
+
+				b.ReportAllocs()
+				i := 0
+				for b.Loop() {
+					// Parse inside the loop, like the runtime config manager does on every reload.
+					m := map[string]any{}
+					if err := yaml.Unmarshal(files[i%2], &m); err != nil {
+						b.Fatal(err)
+					}
+					if _, err := loader.loadFromMap(m); err != nil {
+						b.Fatal(err)
+					}
+					i++
+				}
+			})
+		}
+	}
+}
+
+func TestRuntimeConfigLoader_LoadFromMapReusesUnchangedTenants(t *testing.T) {
+	parse := func(t *testing.T, s string) map[string]any {
+		m := map[string]any{}
+		require.NoError(t, yaml.Unmarshal([]byte(s), &m))
+		return m
+	}
+
+	loader := &runtimeConfigLoader{}
+	first, err := loader.loadFromMap(parse(t, `
+overrides:
+  unchanged:
+    ingestion_rate: 100
+    active_series_custom_trackers:
+      foo: '{foo="bar"}'
+  changed:
+    ingestion_rate: 200
+  removed:
+    ingestion_rate: 300
+`))
+	require.NoError(t, err)
+
+	secondFile := `
+overrides:
+  unchanged:
+    ingestion_rate: 100
+    active_series_custom_trackers:
+      foo: '{foo="bar"}'
+  changed:
+    ingestion_rate: 201
+  added:
+    ingestion_rate: 400
+`
+	second, err := loader.loadFromMap(parse(t, secondFile))
+	require.NoError(t, err)
+
+	firstLimits := first.(*runtimeConfigValues).TenantLimits
+	secondLimits := second.(*runtimeConfigValues).TenantLimits
+	require.Same(t, firstLimits["unchanged"], secondLimits["unchanged"])
+	require.NotSame(t, firstLimits["changed"], secondLimits["changed"])
+	require.Equal(t, 201.0, secondLimits["changed"].IngestionRate)
+	require.Equal(t, 400.0, secondLimits["added"].IngestionRate)
+	require.NotContains(t, secondLimits, "removed")
+
+	// The incremental result must match loading the same file from scratch.
+	fresh, err := (&runtimeConfigLoader{}).loadFromMap(parse(t, secondFile))
+	require.NoError(t, err)
+	require.Equal(t, string(mustMarshalYAML(t, fresh)), string(mustMarshalYAML(t, second)))
+}
+
+func TestRuntimeConfigLoader_LoadFromMapDoesNotCacheFailedLoads(t *testing.T) {
+	parse := func(t *testing.T, s string) map[string]any {
+		m := map[string]any{}
+		require.NoError(t, yaml.Unmarshal([]byte(s), &m))
+		return m
+	}
+	validationErr := errors.New("ingestion rate too high")
+	loader := &runtimeConfigLoader{validate: func(l *validation.Limits) error {
+		if l.IngestionRate > 1000 {
+			return validationErr
+		}
+		return nil
+	}}
+
+	_, err := loader.loadFromMap(parse(t, "overrides:\n  a:\n    ingestion_rate: 100\n"))
+	require.NoError(t, err)
+
+	invalid := "overrides:\n  a:\n    ingestion_rate: 100\n  b:\n    ingestion_rate: 2000\n"
+	_, err = loader.loadFromMap(parse(t, invalid))
+	require.ErrorIs(t, err, validationErr)
+
+	// A tenant that failed validation must be validated again on the next reload.
+	_, err = loader.loadFromMap(parse(t, invalid))
+	require.ErrorIs(t, err, validationErr)
+}
+
+func TestRawConfigEqual(t *testing.T) {
+	for name, tc := range map[string]struct {
+		a, b  any
+		equal bool
+	}{
+		"equal nested":         {map[string]any{"a": []any{1, "x", nil}, "b": map[string]any{"c": 1.5}}, map[string]any{"a": []any{1, "x", nil}, "b": map[string]any{"c": 1.5}}, true},
+		"different scalar":     {map[string]any{"a": 1}, map[string]any{"a": 2}, false},
+		"different types":      {map[string]any{"a": 1}, map[string]any{"a": "1"}, false},
+		"missing key":          {map[string]any{"a": 1}, map[string]any{"b": 1}, false},
+		"different length":     {[]any{1}, []any{1, 2}, false},
+		"map vs nil":           {map[string]any{}, nil, false},
+		"nil vs map":           {nil, map[string]any{}, false},
+		"empty maps":           {map[string]any{}, map[string]any{}, true},
+		"non-basic types":      {map[string]any{"t": int32(1)}, map[string]any{"t": int32(1)}, true},
+		"non-basic types diff": {map[string]any{"t": int32(1)}, map[string]any{"t": int32(2)}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.equal, rawConfigEqual(tc.a, tc.b))
+		})
+	}
+}
