@@ -88,8 +88,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("a recent window with no block is counted from the heads' chunk metas", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesCounted: 2, HeadMinTimeMs: 98 * hour, HeadMaxTimeMs: 100 * hour},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{0, 1}}, {Value: "errors_total", Counts: []int64{1, 1}}}, SeriesCounted: 2, HeadMinTimeMs: 97 * hour, HeadMaxTimeMs: 100 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesCounted: 2, MinTimeMs: 98 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{0, 1}}, {Value: "errors_total", Counts: []int64{1, 1}}}, SeriesCounted: 2, MinTimeMs: 97 * hour},
 		}}}
 		job := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "a")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__", MaxIndexBytes: 1000})
@@ -117,10 +117,10 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 	})
 
-	t.Run("a window starting before the newest head is a lower bound", func(t *testing.T) {
+	t.Run("a window starting before what the ingesters hold is a lower bound", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, HeadMinTimeMs: 99 * hour, HeadMaxTimeMs: 100 * hour},
-			{HeadMinTimeMs: 0, HeadMaxTimeMs: 0}, // an ingester without the tenant
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
+			{}, // an ingester without the tenant
 		}}}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
