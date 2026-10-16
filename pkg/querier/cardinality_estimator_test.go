@@ -49,6 +49,16 @@ type ingestersWithinLimit time.Duration
 
 func (l ingestersWithinLimit) QueryIngestersWithin(string) time.Duration { return time.Duration(l) }
 
+func (ingestersWithinLimit) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return 0 }
+
+// memoryLimit is ingestersWithinLimit with a memory limit per query.
+type memoryLimit struct {
+	ingestersWithinLimit
+	bytes uint64
+}
+
+func (l memoryLimit) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return l.bytes }
+
 func TestCardinalityEstimator_Routing(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
 	now := time.UnixMilli(100 * hour)
@@ -325,4 +335,41 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, sourceBoth, res.Source)
 	})
+}
+
+func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	hashes := make([]uint64, 100)
+	for i := range hashes {
+		hashes[i] = uint64(i + 1)
+	}
+	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
+	}}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder}}, queryStoreAfter: 12 * time.Hour}
+
+	for name, tc := range map[string]struct {
+		limit   uint64
+		refused bool
+	}{
+		"under the limit": {limit: 1 << 20},
+		"over the limit":  {limit: 1000, refused: true},
+		"no limit":        {limit: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
+			e.now = func() time.Time { return now }
+			res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+			if tc.refused {
+				require.ErrorContains(t, err, "the groups and hashes this estimate holds in the querier")
+				assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"up": {100}}, res.Counts)
+		})
+	}
 }
