@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Sources a cardinality estimate can count from, as reported in the
@@ -50,6 +51,7 @@ type estimateIngesters interface {
 // window reaches.
 type estimateLimits interface {
 	QueryIngestersWithin(userID string) time.Duration
+	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
 
 // CardinalityEstimator answers a cardinality estimate from the sources a
@@ -75,6 +77,14 @@ func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIng
 // Estimate answers req for tenantID. With Snap, a window inside one block
 // range is widened to it and req is updated.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+	// The groups and hashes held in the querier count against the tenant's
+	// memory limit for a query.
+	if e.limits != nil {
+		if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
+			rejected := e.blocks.metrics.estimateMemoryRejectedOrDiscard()
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID), rejected, "cardinality estimate"))
+		}
+	}
 	// Pick the sources the way a query does: the ingesters for anything
 	// after query-ingesters-within, the store-gateways only for data older
 	// than query-store-after. Block metadata alone can't say the blocks are
@@ -177,7 +187,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	blocksReq.MaxIndexBytes = half
 	blocksReq.MaxT = storeMaxT
 
-	m := newEstimateMerger(true, e.blocks.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, true, e.blocks.estimateCfg.MaxDedupSeries)
 	parts, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, blocksReq.MinT, blocksReq.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -275,7 +285,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	}
 
 	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
-	m := newEstimateMerger(sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
 	var headMinT int64
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
