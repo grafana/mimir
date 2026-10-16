@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
@@ -379,6 +380,44 @@ func BenchmarkEngineSelectOutOfOrder(b *testing.B) {
 				}
 				require.NoError(b, set.Err())
 				_ = q.Close()
+			}
+		})
+	}
+}
+
+// BenchmarkEngineExemplars selects a metric's exemplars from a tenant whose series have some, like the exemplars API.
+func BenchmarkEngineExemplars(b *testing.B) {
+	for _, name := range benchEngines {
+		b.Run(name, func(b *testing.B) {
+			opts := differentialOptions{maxExemplars: 100_000}
+			var head headUnderTest
+			if name == "prometheus" {
+				head = openPrometheus(b, b.TempDir(), opts, nil)
+			} else {
+				head = openEngine(b, b.TempDir(), opts, nil)
+			}
+			b.Cleanup(func() { _ = head.Close() })
+			for sample := range 20 {
+				app := head.Appender(context.Background())
+				for n := range benchSeries {
+					ref, err := app.Append(0, benchLabels(n), int64(sample)*benchInterval, float64(sample))
+					require.NoError(b, err)
+					if n%5 == 0 {
+						_, err = app.AppendExemplar(ref, benchLabels(n), exemplar.Exemplar{Labels: promlabels.FromStrings("trace_id", fmt.Sprintf("%x", n*31+sample)), Value: 1, Ts: int64(sample) * benchInterval, HasTs: true})
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
+			}
+			matcher := []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_5")}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				q, err := head.ExemplarQuerier(context.Background())
+				require.NoError(b, err)
+				results, err := q.Select(0, 20*benchInterval, matcher)
+				require.NoError(b, err)
+				require.NotEmpty(b, results)
 			}
 		})
 	}

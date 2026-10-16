@@ -6,6 +6,7 @@
 package exemplars
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -257,11 +258,15 @@ func (t *TenantExemplars[L]) Select(start, end int64, matches func(*L) bool) []S
 		if !matches(&series.labels) {
 			continue
 		}
-		var exemplars []Exemplar
-		for _, s := range series.exemplars {
-			if s.exemplar.TimestampMs >= start && s.exemplar.TimestampMs <= end {
-				exemplars = append(exemplars, s.exemplar)
-			}
+		// Sorted by timestamp: the ones in range are one run, copied at their size.
+		from, _ := slices.BinarySearchFunc(series.exemplars, start, func(s stored, ts int64) int { return cmp.Compare(s.exemplar.TimestampMs, ts) })
+		to, found := slices.BinarySearchFunc(series.exemplars, end, func(s stored, ts int64) int { return cmp.Compare(s.exemplar.TimestampMs, ts) })
+		for found && to < len(series.exemplars) && series.exemplars[to].exemplar.TimestampMs <= end {
+			to++
+		}
+		exemplars := make([]Exemplar, 0, to-from)
+		for _, s := range series.exemplars[from:to] {
+			exemplars = append(exemplars, s.exemplar)
 		}
 		if len(exemplars) > 0 {
 			out = append(out, Selected[L]{Labels: series.labels, Exemplars: exemplars})

@@ -792,13 +792,13 @@ type engineExemplarQuerier struct{ e *Engine }
 
 // Select returns the exemplars in [start, end] of the series matching any of the matcher sets.
 func (q engineExemplarQuerier) Select(start, end int64, matcherSets ...[]*promlabels.Matcher) ([]exemplar.QueryResult, error) {
-	compiled := make([][]compiledMatcher, 0, len(matcherSets))
+	compiled := make([][]idMatcher, 0, len(matcherSets))
 	for _, set := range matcherSets {
 		c, err := compilePromMatchers(nil, set)
 		if err != nil {
 			return nil, err
 		}
-		compiled = append(compiled, c)
+		compiled = append(compiled, byNameIDs(c))
 	}
 	q.e.store.exemplarsLock.Lock()
 	tenantExemplars, ok := q.e.store.exemplars[q.e.tenantID]
@@ -806,7 +806,7 @@ func (q engineExemplarQuerier) Select(start, end int64, matcherSets ...[]*promla
 	if ok {
 		selected = tenantExemplars.Select(start, end, func(stored *labels.Labels) bool {
 			for _, set := range compiled {
-				if matches(*stored, set) {
+				if matchesByID(*stored, set) {
 					return true
 				}
 			}
@@ -814,11 +814,10 @@ func (q engineExemplarQuerier) Select(start, end int64, matcherSets ...[]*promla
 		})
 	}
 	q.e.store.exemplarsLock.Unlock()
-	slices.SortFunc(selected, func(a, b exemplars.Selected[labels.Labels]) int { return labels.Compare(a.Labels, b.Labels) })
 	results := make([]exemplar.QueryResult, 0, len(selected))
 	var builder promlabels.ScratchBuilder
 	for _, series := range selected {
-		result := exemplar.QueryResult{SeriesLabels: toPromLabels(series.Labels, &builder)}
+		result := exemplar.QueryResult{SeriesLabels: toPromLabels(series.Labels, &builder), Exemplars: make([]exemplar.Exemplar, 0, len(series.Exemplars))}
 		for _, stored := range series.Exemplars {
 			builder.Reset()
 			for _, label := range stored.Labels {
@@ -828,6 +827,8 @@ func (q engineExemplarQuerier) Select(start, end int64, matcherSets ...[]*promla
 		}
 		results = append(results, result)
 	}
+	// By the series' labels as Prometheus's: they compare as strings, where the store's compared decoded.
+	slices.SortFunc(results, func(a, b exemplar.QueryResult) int { return promlabels.Compare(a.SeriesLabels, b.SeriesLabels) })
 	return results, nil
 }
 
@@ -1394,6 +1395,52 @@ func (ix *engineIndex) LabelValuesCounts(ctx context.Context, names []string, ma
 // checkContextEvery is how many series a pass visits between checks of its context.
 const checkContextEvery = 1 << 14
 
+// ActiveSeriesMatching calls visit with the labels of each head series matching matchers that was ingested since
+// cutoffMs, as the active series API lists them from the matchers' postings and the active series, and with its native
+// histogram bucket count: with nativeHistograms, only the series whose last samples were native histograms. The labels
+// point into the series' own, which are their own allocations; visit isn't called with a shard locked.
+func (ix *engineIndex) ActiveSeriesMatching(ctx context.Context, matchers []*promlabels.Matcher, cutoffMs int64, nativeHistograms bool, visit func(lbls []mimirpb.LabelAdapter, buckets int) error) error {
+	compiled, err := compilePromMatchers(nil, matchers)
+	if err != nil {
+		return err
+	}
+	type active struct {
+		labels  labels.Labels
+		buckets int
+	}
+	var selected []active
+	ix.forEachMatching(compiled, func(entry *seriesEntry) {
+		series := &entry.series
+		if !series.isActive(cutoffMs) {
+			return
+		}
+		buckets := 0
+		if nativeHistograms {
+			if !series.nativeHistogram {
+				return
+			}
+			buckets = int(series.lastBucketCount)
+		}
+		selected = append(selected, active{entry.labels, buckets})
+	})
+	var adapters []mimirpb.LabelAdapter
+	for index, series := range selected {
+		if index%checkContextEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		start := len(adapters)
+		series.labels.Range(func(name, value string) { adapters = append(adapters, mimirpb.LabelAdapter{Name: name, Value: value}) })
+		// A series' adapters are cut from one array, which the next ones don't move.
+		if err := visit(adapters[start:len(adapters):len(adapters)], series.buckets); err != nil {
+			return err
+		}
+		if cap(adapters)-len(adapters) < 32 {
+			adapters = make([]mimirpb.LabelAdapter, 0, 1024)
+		}
+	}
+	return nil
+}
+
 // IsLabelValueActive reports whether a head series with the label's value was ingested since cutoffMs, as the ingester's
 // active series check of the value's postings does, stopping at the first.
 func (ix *engineIndex) IsLabelValueActive(_ context.Context, name, value string, cutoffMs int64) (bool, error) {
@@ -1674,3 +1721,41 @@ var (
 	_ storage.ExemplarQuerier = engineExemplarQuerier{}
 	_ EngineAppender          = (*engineAppender)(nil)
 )
+
+// idMatcher is a matcher with its label name's id, which the scan of many series' labels reads the value of without
+// looking the name up in each.
+type idMatcher struct {
+	compiledMatcher
+	id    uint32
+	known bool
+}
+
+func byNameIDs(compiled []compiledMatcher) []idMatcher {
+	out := make([]idMatcher, len(compiled))
+	for index := range compiled {
+		out[index].compiledMatcher = compiled[index]
+		out[index].id, out[index].known = labels.Lookup(compiled[index].name)
+	}
+	return out
+}
+
+// matchesByID is matches, with the matchers' label name ids.
+func matchesByID(stored labels.Labels, matchers []idMatcher) bool {
+	for index := range matchers {
+		matcher := &matchers[index]
+		if matcher.kind == kindShard {
+			if labels.StableHash(stored)%matcher.shardCount != matcher.shardIndex {
+				return false
+			}
+			continue
+		}
+		value := ""
+		if matcher.known {
+			value, _ = stored.Lookup(matcher.id)
+		}
+		if !matcher.matchesValue(value) {
+			return false
+		}
+	}
+	return true
+}
