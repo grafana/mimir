@@ -1117,8 +1117,9 @@ ingester:
     topologyKey: null
     # -- When true and zone-aware replication is enabled, automatically set the
     # -ingest-storage.kafka.client-rack flag on each ingester zone to its zone name.
-    # This enables Kafka rack-aware consumption so that ingesters prefer reading
-    # from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    # The rack is ignored while -ingest-storage.kafka.fetch-concurrency-max is greater than 0,
+    # because concurrent fetching always reads from the partition leader. With the default
+    # fetch concurrency this does not reduce cross-AZ read traffic on its own.
     # Set to false if you want to manage client-rack manually via extraArgs.
     autoIngestStorageClientRack: true
     # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
