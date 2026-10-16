@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -32,7 +33,7 @@ import (
 
 // SeriesCountsSketchPrecision is the HLL precision of a group's sketch:
 // 2^11 registers, a standard error of about 2.3%.
-const SeriesCountsSketchPrecision = 11
+const SeriesCountsSketchPrecision = cardinality.SketchPrecision
 
 // countBlockConcurrency is how many blocks one count request reads at once.
 // HEADCOUNT_BLOCK_CONCURRENCY overrides it; 1 reads blocks one after another,
