@@ -222,7 +222,7 @@ type Distributor struct {
 	doBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
-	ingestStorageWriter *ingest.Writer
+	ingestStorageWriter ingestStorageWriter
 
 	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
 	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
@@ -313,8 +313,8 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	// This allows downstream projects to wrap the distributor push function
-	// and access the deserialized write requests before/after they are pushed.
+	// PushWrappers allows downstream projects to wrap the distributor push function.
+	// Decoded data is valid only before calling next; copy any values needed afterwards.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
@@ -344,6 +344,8 @@ type Config struct {
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
+// Decoded request data may be released during next(). Copy any data needed after
+// next() returns, including strings backed by request buffers, before calling it.
 type PushWrapper func(next PushFunc) PushFunc
 
 // WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
@@ -1218,6 +1220,11 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	}
 
 	return nil
+}
+
+type ingestStorageWriter interface {
+	services.Service
+	MultiWriteSyncWithRequestRelease(context.Context, string, string, []ingest.PartitionWriteRequest, func()) error
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -2326,10 +2333,12 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req, req.Size())
-	pushReq.AddCleanup(func() {
+	pushReq.requestCleanup = func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
-	})
+		req.Timeseries = nil
+	}
+	pushReq.AddCleanup(pushReq.releaseWriteRequest)
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)
 	if pushErr == nil {
@@ -2352,6 +2361,7 @@ func (d *Distributor) handlePushError(pushErr error) error {
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
+// Wrappers must finish using decoded data before next(); backend writes may release it.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
@@ -2410,12 +2420,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ingestersSubring = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 	}
 
-	// we must not re-use buffers now until all writes to backends (e.g. ingesters) have completed, which can happen
-	// even after this function returns. For this reason, it's unsafe to cleanup in the defer and we'll do the cleanup
-	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
+	// Completion cleanup must wait for all backends, including ingester requests
+	// that may outlive this call. Ingest storage can release decoded data earlier.
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.releaseWriteRequest, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
@@ -2423,7 +2432,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, releaseRequest, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2494,12 +2503,12 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	if ingestersSubring == nil {
 		if d.cfg.Compartments.Enabled {
-			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, batchOptions.Cleanup)
+			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, releaseRequest, batchOptions.Cleanup)
 		}
 
 		// When compartments are disabled, New() guarantees there is exactly one partition ring.
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, releaseRequest, batchOptions.Cleanup)
 	}
 
 	// Dual-write to ingesters and partitions. Compartments are never enabled here: config validation
@@ -2526,7 +2535,8 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		// The ingester writes still read decoded data, so retain it until both backends finish.
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, nil, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2570,7 +2580,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, releaseRequest, cleanup func()) error {
 	defer cleanup()
 
 	// Group keys by partition.
@@ -2590,7 +2600,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests, releaseRequest)
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
@@ -2602,10 +2612,11 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 // partition ring and Kafka topic) and writes each compartment's partitions in a single ProduceSync
 // call. It is used only when compartments are enabled, where the distributor never also writes to
 // ingesters (config validation forbids combining compartments with distributor-send-to-ingesters).
-func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, releaseRequest, cleanup func()) error {
 	defer cleanup()
 
 	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
+	remainingSerializers := atomic.NewInt64(int64(len(cts)))
 
 	// errgroup.WithContext cancels writeCtx as soon as any compartment returns a hard error, so the
 	// remaining compartments stop waiting on their in-flight ProduceSync instead of blocking until the
@@ -2619,6 +2630,12 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 
 	for _, ct := range cts {
 		g.Go(func() error {
+			releaseCompartment := sync.OnceFunc(func() {
+				if remainingSerializers.Dec() == 0 {
+					releaseRequest()
+				}
+			})
+			defer releaseCompartment()
 			// Group this compartment's keys by partition within its own partition ring.
 			partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
 			if err != nil {
@@ -2636,7 +2653,7 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 			}
 
 			// Write all partitions of this compartment in a single ProduceSync call to its topic.
-			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
+			err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, ct.topic, tenantID, partitionRequests, releaseCompartment)
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
 			if err == nil {
