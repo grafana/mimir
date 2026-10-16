@@ -35,13 +35,19 @@ import (
 )
 
 func TestLabelNamesCardinalityHandler(t *testing.T) {
-	items := []*client.LabelValues{
-		{LabelName: "label-c", Values: []string{"0c"}},
-		{LabelName: "label-b", Values: []string{"0b", "1b"}},
-		{LabelName: "label-a", Values: []string{"0a", "1a"}},
-		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
+	// The distributor sorts and truncates while merging the ingester streams, so it hands back an
+	// already-reduced result; the ordering itself is covered by the distributor's own tests.
+	result := pkg_distributor.LabelNamesCardinalityResult{
+		LabelNamesCount:       4,
+		LabelValuesCountTotal: 8,
+		Items: []pkg_distributor.LabelNameCardinality{
+			{LabelName: "label-z", LabelValuesCount: 3},
+			{LabelName: "label-a", LabelValuesCount: 2},
+			{LabelName: "label-b", LabelValuesCount: 2},
+			{LabelName: "label-c", LabelValuesCount: 1},
+		},
 	}
-	distributor := mockDistributorLabelNamesAndValues(items, nil)
+	distributor := mockDistributorLabelNamesCardinality(result, nil)
 	handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
@@ -62,13 +68,13 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 	require.Equal(t, 8, responseBody.LabelValuesCountTotal)
 	require.Len(t, responseBody.Cardinality, 4)
 	require.Equal(t, responseBody.Cardinality[0], &api.LabelNamesCardinalityItem{LabelName: "label-z", LabelValuesCount: 3},
-		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+		"the distributor's ordering must be preserved through the response")
 	require.Equal(t, responseBody.Cardinality[1], &api.LabelNamesCardinalityItem{LabelName: "label-a", LabelValuesCount: 2},
-		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+		"the distributor's ordering must be preserved through the response")
 	require.Equal(t, responseBody.Cardinality[2], &api.LabelNamesCardinalityItem{LabelName: "label-b", LabelValuesCount: 2},
-		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+		"the distributor's ordering must be preserved through the response")
 	require.Equal(t, responseBody.Cardinality[3], &api.LabelNamesCardinalityItem{LabelName: "label-c", LabelValuesCount: 1},
-		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+		"the distributor's ordering must be preserved through the response")
 }
 
 func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
@@ -106,7 +112,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			distributor := mockDistributorLabelNamesAndValues([]*client.LabelValues{}, nil)
+			distributor := mockDistributorLabelNamesCardinality(pkg_distributor.LabelNamesCardinalityResult{}, nil)
 			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
@@ -122,44 +128,45 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, "unexpected error %v", string(bodyContent))
-			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers, cardinality.InMemoryMethod)
+			distributor.AssertCalled(t, "LabelNamesCardinality", mock.Anything, data.expectedMatchers, cardinality.InMemoryMethod, mock.Anything)
 		})
 	}
 }
 
 func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
+	// The limit is applied by the distributor while it merges the ingester streams, so the handler's
+	// only job is to resolve it from the request and forward it. Truncation itself is covered by
+	// TestDistributor_LabelNamesCardinality_TopN.
 	td := []struct {
-		name                string
-		limit               int
-		expectedValuesCount int
+		name          string
+		limit         int
+		expectedLimit int
 	}{
 		{
-			name:                "expected 10 labels in response if limit param is 10",
-			limit:               10,
-			expectedValuesCount: 10,
+			name:          "expected the limit param to be forwarded",
+			limit:         10,
+			expectedLimit: 10,
 		},
 		{
-			name:                "expected default limit 20 to be applied if limit param is not defined",
-			limit:               -1,
-			expectedValuesCount: 20,
+			name:          "expected default limit 20 to be forwarded if limit param is not defined",
+			limit:         -1,
+			expectedLimit: 20,
 		},
 		{
-			name:                "expected all items in response if limit param is greater than count of items",
-			limit:               40,
-			expectedValuesCount: 30,
+			name:          "expected a limit greater than the number of label names to be forwarded unchanged",
+			limit:         40,
+			expectedLimit: 40,
 		},
 		{
-			name:                "expected empty items list in response if limit param is 0",
-			limit:               0,
-			expectedValuesCount: 0,
+			name:          "expected a limit of 0 to be forwarded",
+			limit:         0,
+			expectedLimit: 0,
 		},
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			labelCountTotal := 30
-			items, valuesCountTotal := generateLabelValues(labelCountTotal)
-			distributor := mockDistributorLabelNamesAndValues(items, nil)
-			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
+			d := mockDistributorLabelNamesCardinality(pkg_distributor.LabelNamesCardinalityResult{}, nil)
+			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, d)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			path := "/ignored-url"
@@ -173,16 +180,8 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-			body := recorder.Result().Body
-			defer body.Close()
-			responseBody := api.LabelNamesCardinalityResponse{}
-			bodyContent, err := io.ReadAll(body)
-			require.NoError(t, err)
-			err = json.Unmarshal(bodyContent, &responseBody)
-			require.NoError(t, err)
-			require.Equal(t, labelCountTotal, responseBody.LabelNamesCount)
-			require.Equal(t, valuesCountTotal, responseBody.LabelValuesCountTotal)
-			require.Len(t, responseBody.Cardinality, data.expectedValuesCount)
+			require.NoError(t, recorder.Result().Body.Close())
+			d.AssertCalled(t, "LabelNamesCardinality", mock.Anything, mock.Anything, mock.Anything, data.expectedLimit)
 		})
 	}
 }
@@ -217,7 +216,7 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			distributor := mockDistributorLabelNamesAndValues([]*client.LabelValues{}, testData.distributorError)
+			distributor := mockDistributorLabelNamesCardinality(pkg_distributor.LabelNamesCardinalityResult{}, testData.distributorError)
 			limits := validation.Limits{}
 			flagext.DefaultValues(&limits)
 			limits.CardinalityAnalysisEnabled = true
@@ -301,7 +300,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			)
 			overrides := validation.NewOverrides(limits, teamALimits)
 
-			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues([]*client.LabelValues{}, nil), overrides)
+			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesCardinality(pkg_distributor.LabelNamesCardinalityResult{}, nil), overrides)
 
 			recorder := httptest.NewRecorder()
 
@@ -1217,24 +1216,10 @@ func createRequest(path string, tenantID string) *http.Request {
 	return request
 }
 
-func generateLabelValues(count int) ([]*client.LabelValues, int) {
-	valuesCount := 0
-	items := make([]*client.LabelValues, count)
-	for i := 0; i < count; i++ {
-		values := make([]string, i+1)
-		for j := 0; j < i+1; j++ {
-			valuesCount++
-			values[i] = fmt.Sprintf("value-%v", j)
-		}
-		items[i] = &client.LabelValues{LabelName: fmt.Sprintf("label-%v", i), Values: values}
-	}
-	return items, valuesCount
-}
-
-func mockDistributorLabelNamesAndValues(items []*client.LabelValues, err error) *mockDistributor {
-	distributor := &mockDistributor{}
-	distributor.On("LabelNamesAndValues", mock.Anything, mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, err)
-	return distributor
+func mockDistributorLabelNamesCardinality(result pkg_distributor.LabelNamesCardinalityResult, err error) *mockDistributor {
+	d := &mockDistributor{}
+	d.On("LabelNamesCardinality", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(result, err)
+	return d
 }
 
 func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod, seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse, err error) *mockDistributor {

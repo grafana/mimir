@@ -473,7 +473,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 
-	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
+	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of the distinct values of any single label name, while the querier merges the cardinality label names responses from the ingesters. Because the responses are merged one label name at a time, this bounds the querier memory a single request can use. If the limit is reached, an error is returned.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
@@ -915,7 +915,7 @@ func (o *Overrides) IngestionRate(limitsKey string) float64 {
 	return o.getOverridesForLimitsKey(limitsKey).IngestionRate
 }
 
-// LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
+// LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of the distinct values held for a single label name.
 func (o *Overrides) LabelNamesAndValuesResultsMaxSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).LabelNamesAndValuesResultsMaxSizeBytes
 }
