@@ -47,6 +47,10 @@ type ingesterConfig struct {
 	kafka                     string
 	extraArgs                 []string
 	oooWindow, retention      time.Duration
+	// The runtime configuration of the tenants' limits, and the read path's limits by utilization, 0 to not limit it.
+	runtimeConfig  string
+	readPathCPU    int
+	readPathMemory int64
 	// Directory shared with containers that run the ingesters: the bench writes their command lines to it instead of
 	// starting them.
 	external string
@@ -88,7 +92,7 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-blocks-storage.tsdb.flush-blocks-on-shutdown=false",
 		"-blocks-storage.tsdb.memory-snapshot-on-shutdown=false",
 		"-ingester.out-of-order-time-window=" + cfg.oooWindow.String(),
-		"-ingester.max-global-series-per-user=0",
+		"-ingester.max-global-series-per-user=150000",
 		"-ingester.max-global-series-per-metric=0",
 		"-ingester.max-global-exemplars-per-user=100000",
 		"-ingester.native-histograms-ingestion-enabled=true",
@@ -100,8 +104,50 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-ingester.instance-limits.max-tenants=0",
 		"-ingester.instance-limits.max-inflight-push-requests=0",
 		"-ingester.instance-limits.max-ingestion-rate=0",
-		"-ingester.read-path-cpu-utilization-limit=0",
-		"-ingester.read-path-memory-utilization-limit=0",
+		"-ingester.read-path-cpu-utilization-limit=" + strconv.Itoa(cfg.readPathCPU),
+		"-ingester.read-path-memory-utilization-limit=" + strconv.FormatInt(cfg.readPathMemory, 10),
+		// As a multi-tenant cell runs them: the TSDB's caches and planning, timely and early head compactions, the
+		// circuit breakers, owned series, the error sampling and the instrumentation of a share of the records for
+		// reference leaks, cost attribution and the tenants' limits and trackers.
+		"-blocks-storage.tsdb.head-postings-for-matchers-cache-force=true",
+		"-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation=true",
+		"-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes=26214400",
+		"-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl=10m",
+		"-blocks-storage.tsdb.block-postings-for-matchers-cache-force=true",
+		"-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes=26214400",
+		"-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl=10m",
+		"-blocks-storage.tsdb.shared-postings-for-matchers-cache=true",
+		"-blocks-storage.tsdb.index-lookup-planning.enabled=true",
+		"-blocks-storage.tsdb.index-lookup-planning.comparison-portion=0.01",
+		"-blocks-storage.tsdb.float-chunk-encoding=xor2",
+		"-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes=1048576",
+		"-blocks-storage.tsdb.head-compaction-interval=15m",
+		"-blocks-storage.tsdb.timely-head-compaction-enabled=true",
+		"-blocks-storage.tsdb.early-head-compaction-min-in-memory-series=2400000",
+		"-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage=15",
+		"-blocks-storage.tsdb.series-hash-cache-max-size-bytes=367001600",
+		"-ingester.active-series-metrics-enabled=true",
+		"-ingester.active-series-metrics-idle-timeout=20m",
+		"-ingester.early-compaction-non-owned-series-enabled=true",
+		"-ingester.track-ingester-owned-series=true",
+		"-ingester.use-ingester-owned-series-for-limits=true",
+		"-ingester.error-sample-rate=10",
+		"-ingester.push-circuit-breaker.enabled=true",
+		"-ingester.push-circuit-breaker.failure-threshold-percentage=20",
+		"-ingester.push-circuit-breaker.initial-delay=60s",
+		"-ingester.push-circuit-breaker.request-timeout=2s",
+		"-ingester.read-circuit-breaker.enabled=true",
+		"-ingester.read-circuit-breaker.failure-threshold-percentage=20",
+		"-ingester.read-circuit-breaker.request-timeout=30s",
+		"-ingester.max-global-metadata-per-metric=10",
+		"-ingester.max-global-metadata-per-user=30000",
+		"-instrument-reference-leaks.percentage=5",
+		"-instrument-reference-leaks.before-reuse-period=2m",
+		"-instrument-reference-leaks.max-inflight-instrumented-bytes=100000000",
+		"-cost-attribution.registry-path=/usage-metrics",
+		"-validation.cost-attribution-trackers=" + baseCostAttributionTrackers(),
+		"-validation.max-active-series-additional-custom-trackers=200",
+		"-runtime-config.file=" + cfg.runtimeConfig,
 		"-memberlist.join=",
 		"-usage-stats.enabled=false",
 		"-log.level=warn",

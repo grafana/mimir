@@ -1,7 +1,8 @@
-# Runs the bench as one pod of three containers, each with exclusive CPUs on a node whose kubelet has the static CPU
-# manager policy: their requests are their limits, in whole CPUs. The driver runs the generator, the in-process Kafka
-# and the reads; each ingester container waits for the command line the driver writes once the backfill is done, and
-# runs it as its own process. Replace the image, and the profile ConfigMap if any; read the report from the driver's
+# Runs the bench as one pod of three containers. The driver runs the generator, the in-process Kafka and the reads, with
+# exclusive CPUs on a node whose kubelet has the static CPU manager policy: its requests are its limits, in whole CPUs.
+# The ingesters run as a multi-tenant cell runs them, with CPU requests and no CPU limit, GOMAXPROCS and the read path's
+# utilization limits from their requests and their memory limit. Each ingester container waits for the command line
+# the driver writes once the backfill is done, and runs it as its own process. Replace the image, and the profile ConfigMap if any; read the report from the driver's
 # logs, or, while it holds, from its port 8090: kubectl port-forward <pod> 8090, then report.html, report.json and the
 # profiles at http://localhost:8090/.
 apiVersion: batch/v1
@@ -39,6 +40,9 @@ spec:
             - -hold=1h
             # Comparing every read at production rates takes the driver more CPU than reading takes the ingesters.
             - -compare-fraction=0.1
+            # A cell's: the CPU requests and as many again, 3 at least and 6 at most, and 3/4 of the memory limit.
+            - -read-path-cpu-limit=8
+            - -read-path-memory-limit=25769803776
             # - -profile=/profile/profile.json
           # The in-process Kafka holds the backfill, and reads of the largest queries hold their responses.
           resources:
@@ -51,18 +55,24 @@ spec:
         - name: ingester-a
           image: IMAGE
           args: [-exec=/shared/a.json]
+          # The read path's CPU limit and one more.
+          env:
+            - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 32Gi }
-            limits: { cpu: "4", memory: 32Gi }
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-a, mountPath: /data }
         - name: ingester-b
           image: IMAGE
           args: [-exec=/shared/b.json]
+          # The read path's CPU limit and one more.
+          env:
+            - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 32Gi }
-            limits: { cpu: "4", memory: 32Gi }
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-b, mountPath: /data }

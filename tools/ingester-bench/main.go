@@ -54,6 +54,8 @@ type config struct {
 	oooWindow         time.Duration
 	queryScale        float64
 	readScales        string
+	readPathCPU       int
+	readPathMemory    int64
 	compareFraction   float64
 	concurrency       int
 	out               string
@@ -83,7 +85,9 @@ func main() {
 	flag.DurationVar(&cfg.warmup, "warmup", 21*time.Minute, "Time of live feed and reads before the measurement window. An ingester counts every series a replay ingested as active for its active series idle timeout, 20 minutes by default, so the counts are only as they'd be after hours of ingestion past it.")
 	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
-	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", time.Hour, "Out-of-order window of the tenants.")
+	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
+	flag.IntVar(&cfg.readPathCPU, "read-path-cpu-limit", 0, "The ingesters' -ingester.read-path-cpu-utilization-limit, in cores, 0 to not limit: a cell sets it to its CPU requests and as many again, 3 at least and 6 at most.")
+	flag.Int64Var(&cfg.readPathMemory, "read-path-memory-limit", 0, "The ingesters' -ingester.read-path-memory-utilization-limit, in bytes, 0 to not limit: a cell sets it to three quarters of their memory limit.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
 	flag.StringVar(&cfg.readScales, "read-scales", "", "Factors of some reads' rates on top of -query-scale, such as LabelNamesAndValues=50,QueryStream=0: a short run of a small ingester sends a few of the rare reads otherwise.")
 	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")
@@ -221,6 +225,15 @@ func run(parent context.Context, cfg config) (err error) {
 		}
 	}()
 
+	// Where the ingesters read it: the containers that run them share the external directory.
+	overridesDir := cfg.out
+	if cfg.external != "" {
+		overridesDir = cfg.external
+	}
+	overridesPath := filepath.Join(overridesDir, "overrides.json")
+	if err := writeOverrides(w, overridesPath); err != nil {
+		return err
+	}
 	var ingesters [2]*ingesterProcess
 	names := [2]string{"A " + cfg.engineA, "B " + cfg.engineB}
 	for i, c := range []ingesterConfig{
@@ -228,6 +241,7 @@ func run(parent context.Context, cfg config) (err error) {
 		{name: names[1], binary: cfg.binaryB, engine: cfg.engineB, dir: cfg.dirB, httpPort: 18280, grpcPort: 19295, extraArgs: cfg.extraB},
 	} {
 		c.kafka, c.retention, c.oooWindow, c.external = f.address(), cfg.retention, cfg.oooWindow, cfg.external
+		c.runtimeConfig, c.readPathCPU, c.readPathMemory = overridesPath, cfg.readPathCPU, cfg.readPathMemory
 		ingesters[i], err = startIngester(ctx, c)
 		if err != nil {
 			return err
@@ -426,7 +440,7 @@ func runConfig(cfg config, profile Profile, rates map[string]float64) map[string
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
-		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_scales": cfg.readScales,
+		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_path_cpu_limit": fmt.Sprint(cfg.readPathCPU), "read_path_memory_limit": fmt.Sprint(cfg.readPathMemory), "read_scales": cfg.readScales,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
 		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
 		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
