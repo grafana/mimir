@@ -1706,7 +1706,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if float_chunk_encoding is empty": {
+		"should fail if float_chunk_encoding is empty": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1714,7 +1714,7 @@ func TestLimits_Validate(t *testing.T) {
 
 				return cfg
 			}(),
-			expectedErr: nil,
+			expectedErr: errInvalidFloatChunkEncoding,
 		},
 		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
@@ -3133,6 +3133,49 @@ func TestOverrides_FloatChunkEncoding(t *testing.T) {
 
 	// A tenant without an override gets the default encoding.
 	assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+}
+
+func TestLimitsLoading_FloatChunkEncoding(t *testing.T) {
+	defaults := getDefaultLimits()
+	defaults.FloatChunkEncoding = "xor2"
+	SetDefaultLimitsForYAMLUnmarshalling(defaults)
+	t.Cleanup(func() { SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits()) })
+
+	for name, unmarshal := range map[string]func([]byte, any) error{
+		"YAML": yaml.Unmarshal,
+		"JSON": json.Unmarshal,
+		"map": func(data []byte, out any) error {
+			var config map[string]any
+			if err := yaml.Unmarshal(data, &config); err != nil {
+				return err
+			}
+			return DecodeLimitsMap(config, out)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				input    string
+				expected string
+			}{
+				{name: "omitted inherits global", input: `{}`, expected: "xor2"},
+				{name: "explicit xor", input: `{"float_chunk_encoding":"xor"}`, expected: "xor"},
+				{name: "explicit xor2", input: `{"float_chunk_encoding":"xor2"}`, expected: "xor2"},
+				{name: "empty is rejected", input: `{"float_chunk_encoding":""}`},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					var limits Limits
+					err := unmarshal([]byte(tc.input), &limits)
+					if tc.expected == "" {
+						require.ErrorIs(t, err, errInvalidFloatChunkEncoding)
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, tc.expected, limits.FloatChunkEncoding)
+				})
+			}
+		})
+	}
 }
 
 func TestFloatChunkEncodingValues(t *testing.T) {
