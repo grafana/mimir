@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -132,16 +133,47 @@ func indexBytes(stats *safeQueryStats) int64 {
 // checkPlan rejects the request before any series entry is read when the
 // postings already read plus the matching series at the planner's p99 series
 // size would pass max_index_bytes.
-func (c *seriesCounts) checkPlan(read int64, series int) error {
+func (c *seriesCounts) checkPlan(read int64, series int, postings int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
 	}
-	estimate := read + int64(series)*tsdb.EstimatedSeriesP99Size
+	estimate := read + int64(series)*tsdb.EstimatedSeriesP99Size + postings
 	if estimate <= c.maxIndexBytes {
 		return nil
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings read, then %d series at an estimated %d bytes each), more than max_index_bytes %d",
-		estimate, read, series, tsdb.EstimatedSeriesP99Size, c.maxIndexBytes)
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings read, then %d series at an estimated %d bytes each and %d bytes of group-by postings), more than max_index_bytes %d",
+		estimate, read, series, tsdb.EstimatedSeriesP99Size, postings, c.maxIndexBytes)
+}
+
+// seriesEntryPlanningBytes is the series entry size used to choose between
+// reading series entries and reading the group-by label's postings for a
+// block inside the window. It is a typical entry, not the p99 the limit
+// prices at: synthetic tenants measured 54 to 155 bytes per series.
+const seriesEntryPlanningBytes = 128
+
+// postingsOnly reports whether a block's counts can come from postings
+// alone: the block sits inside the window, so every matching series counts
+// without its chunk metas, and nothing needs a series' labels, which
+// hashes, query shards and matchers the postings could not apply do.
+func (c *seriesCounts) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
+	return c.step == 0 && !c.hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.minT && m.MaxTime <= c.maxT
+}
+
+// addCounts adds counts per group value and the series without the group-by
+// label, which count under the empty value as add does.
+func (c *seriesCounts) addCounts(counts map[string]int64, without int64) {
+	if without > 0 {
+		counts[""] += without
+	}
+	for v, n := range counts {
+		sum := c.counts[v]
+		if sum == nil {
+			sum = make([]int64, c.buckets)
+			c.counts[v] = sum
+		}
+		sum[0] += n
+		c.counted += int(n)
+	}
 }
 
 // checkRead stops the request once it has read more than max_index_bytes,
@@ -266,6 +298,12 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		indexr   *bucketIndexReader
 		postings []storage.SeriesRef
 		pending  []*labels.Matcher
+		// groupOffsets is set when the block is counted from the group-by
+		// label's postings instead of series entries.
+		groupOffsets []streamindex.PostingListOffset
+		// groupPostingsBytes is what reading those postings costs; 0 when
+		// there are no matchers, since the offsets alone give the counts.
+		groupPostingsBytes int64
 	}
 	var blocks []openBlock
 	// Taking the index reader here keeps the block open until we're done.
@@ -302,17 +340,43 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
 			}
+			if !c.postingsOnly(o.b.meta, shard, o.pending) {
+				return nil
+			}
+			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.groupBy, "", nil)
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.groupBy, err)
+			}
+			var cost int64
+			if len(c.matchers) > 0 {
+				for _, off := range offsets {
+					cost += off.Off.End - off.Off.Start
+				}
+			}
+			if cost < int64(len(o.postings))*seriesEntryPlanningBytes {
+				o.groupOffsets, o.groupPostingsBytes = offsets, cost
+				if o.groupOffsets == nil {
+					o.groupOffsets = []streamindex.PostingListOffset{}
+				}
+			}
 			return nil
 		})
 	}
 	if err := pg.Wait(); err != nil {
 		return nil, err
 	}
-	series := 0
+	var (
+		series        int
+		groupPostings int64
+	)
 	for _, o := range blocks {
+		if o.groupOffsets != nil {
+			groupPostings += o.groupPostingsBytes
+			continue
+		}
 		series += len(o.postings)
 	}
-	if err := c.checkPlan(indexBytes(stats), series); err != nil {
+	if err := c.checkPlan(indexBytes(stats), series, groupPostings); err != nil {
 		return nil, err
 	}
 	resp := &storegatewaypb.SeriesCountsResponse{}
@@ -320,8 +384,17 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	sg, sctx := errgroup.WithContext(ctx)
 	sg.SetLimit(countBlockConcurrency)
 	for _, o := range blocks {
+		if o.groupOffsets != nil {
+			resp.BlocksFromPostings++
+		}
 		sg.Go(func() error {
-			if err := s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, shard, c, &mtx, stats); err != nil {
+			var err error
+			if o.groupOffsets != nil {
+				err = addBlockCountsFromPostings(sctx, o.b, o.indexr, o.postings, o.groupOffsets, len(c.matchers) == 0, c, &mtx, stats)
+			} else {
+				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, shard, c, &mtx, stats)
+			}
+			if err != nil {
 				if _, ok := status.FromError(err); ok {
 					return err
 				}
@@ -371,6 +444,82 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 		}
 	}
 	return it.Err()
+}
+
+// addBlockCountsFromPostings counts one block's matching series per value of
+// the group-by label from postings, without reading series entries. With no
+// matchers every series matches, so each value's count is its postings
+// list's length, read from the offsets alone. Otherwise each value's
+// postings are read and intersected with the matching series. A series
+// carries at most one value of a label, so the matching series not in any
+// value's list are the ones without it.
+func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, offsets []streamindex.PostingListOffset, all bool, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
+	counts := make(map[string]int64, len(offsets))
+	var inGroups int64
+	if all {
+		for _, off := range offsets {
+			size := off.Off.End - off.Off.Start - 4
+			if size < 0 || size%4 != 0 {
+				return status.Errorf(codes.Internal, "block %s: postings range for %s=%q spans %d bytes, which is not a count field plus 4-byte entries",
+					b.meta.ULID, c.groupBy, off.LabelValue, off.Off.End-off.Off.Start)
+			}
+			counts[off.LabelValue] = size / 4
+			inGroups += size / 4
+		}
+	} else if len(offsets) > 0 {
+		keys := make([]labelPostingOffset, len(offsets))
+		for i, off := range offsets {
+			keys[i] = labelPostingOffset{Label: labels.Label{Name: c.groupBy, Value: off.LabelValue}, off: off.Off}
+		}
+		lists, err := indexr.fetchPostings(ctx, keys, stats)
+		if err != nil {
+			return fmt.Errorf("fetch %s postings: %w", c.groupBy, err)
+		}
+		// From index version 2 on, postings hold the series entry offset
+		// divided by 16, and the matching refs are already multiplied back.
+		version, err := indexr.indexHeaderReader.IndexVersion(ctx)
+		if err != nil {
+			return fmt.Errorf("get index version: %w", err)
+		}
+		scale := storage.SeriesRef(1)
+		if version >= 2 {
+			scale = 16
+		}
+		for i, p := range lists {
+			n, err := countIntersection(p, matching, scale)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				counts[offsets[i].LabelValue] = n
+				inGroups += n
+			}
+		}
+	}
+	mtx.Lock()
+	c.addCounts(counts, int64(len(matching))-inGroups)
+	mtx.Unlock()
+	return c.checkRead(indexBytes(stats))
+}
+
+// countIntersection counts the refs of p, multiplied by scale, that are in
+// sorted.
+func countIntersection(p index.Postings, sorted []storage.SeriesRef, scale storage.SeriesRef) (int64, error) {
+	var (
+		n int64
+		i int
+	)
+	for p.Next() && i < len(sorted) {
+		ref := p.At() * scale
+		for i < len(sorted) && sorted[i] < ref {
+			i++
+		}
+		if i < len(sorted) && sorted[i] == ref {
+			n++
+			i++
+		}
+	}
+	return n, p.Err()
 }
 
 // allPostingsForBlock reads a block's all-postings list, one range read, which is
