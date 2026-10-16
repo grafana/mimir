@@ -119,6 +119,8 @@ type blocksStoreQueryableMetrics struct {
 	// compare=true found the estimate agreeing with a count over chunks.
 	estimateDuration *prometheus.HistogramVec
 	estimateCompared *prometheus.CounterVec
+	// estimateMemoryRejected counts estimates refused by the memory limit.
+	estimateMemoryRejected prometheus.Counter
 
 	// compartmentsHit counts the read compartments queried per query. It is nil (and unobserved) when
 	// compartments are disabled.
@@ -169,6 +171,10 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_cardinality_estimate_compared_total",
 			Help: "Cardinality estimates with compare=true, by whether the estimate matched the count over chunks.",
 		}, []string{"result"}),
+		estimateMemoryRejected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_memory_rejections_total",
+			Help: "Cardinality estimates refused because the groups and hashes they held in the querier passed the tenant's max estimated memory consumption per query.",
+		}),
 	}
 
 	// Only register the per-query compartments-hit histogram when compartments are enabled.
@@ -217,6 +223,16 @@ type BlocksStoreQueryable struct {
 	subservicesManager *services.Manager
 	subservicesWatcher *services.FailureWatcher
 	dynamicReplication storegateway.DynamicReplication
+}
+
+// estimateMemoryRejectedOrDiscard is the memory rejection counter, or an
+// unregistered one when m is nil, as in tests that build the queryable by
+// hand.
+func (m *blocksStoreQueryableMetrics) estimateMemoryRejectedOrDiscard() prometheus.Counter {
+	if m == nil || m.estimateMemoryRejected == nil {
+		return prometheus.NewCounter(prometheus.CounterOpts{Name: "discard"})
+	}
+	return m.estimateMemoryRejected
 }
 
 func NewBlocksStoreQueryable(
