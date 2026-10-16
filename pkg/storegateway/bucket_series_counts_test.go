@@ -101,11 +101,35 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 	ctx := t.Context()
 	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
 
-	t.Run("whole block", func(t *testing.T) {
+	t.Run("a block inside the window is counted from postings", func(t *testing.T) {
 		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, countsByGroup(resp))
 		assert.Equal(t, []string{b1.String()}, resp.BlockIds)
+		assert.Equal(t, int64(1), resp.BlocksFromPostings)
+		assert.Zero(t, resp.SeriesFetchedBytes, "no series entry is read")
+
+		byPod, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"p1": {1}, "p2": {1}, "p3": {1}}, countsByGroup(byPod), "each pod's postings intersected with up")
+		assert.Equal(t, int64(1), byPod.BlocksFromPostings)
+		assert.Zero(t, byPod.SeriesFetchedBytes)
+
+		noLabel, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "job"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"": {3}}, countsByGroup(noLabel), "series without the label count under the empty value")
+
+		allPods, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"p1": {2}, "p2": {1}, "p3": {1}}, countsByGroup(allPods), "without matchers the offsets alone give the counts")
+		assert.Zero(t, allPods.SeriesFetchedBytes)
+	})
+
+	t.Run("a window that cuts through the block reads series entries", func(t *testing.T) {
+		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {3}, "errors_total": {1}}, countsByGroup(resp))
+		assert.Zero(t, resp.BlocksFromPostings)
 		assert.Positive(t, resp.SeriesFetchedBytes, "the first read of a block comes from the bucket")
 		// The bucket read is a whole partition, so on a block this small it's
 		// far larger than the series entries actually decoded.
@@ -189,7 +213,8 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 
 	t.Run("max_index_bytes rejects before reading series", func(t *testing.T) {
 		// Four series at the planner's 512-byte estimate are more than 1,000 bytes.
-		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1000})
+		// The window ends before the block does, so the series entries are needed.
+		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxIndexBytes: 1000})
 		require.Error(t, err)
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 		assert.Contains(t, err.Error(), "then 4 series at an estimated 512 bytes each")
@@ -228,13 +253,13 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	c := &seriesCounts{maxIndexBytes: 2000}
-	require.NoError(t, c.checkPlan(900, 2), "900 + 2 x 512 is under the limit")
-	err := c.checkPlan(1000, 2)
+	require.NoError(t, c.checkPlan(900, 2, 0), "900 + 2 x 512 is under the limit")
+	err := c.checkPlan(1000, 2, 0)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
 	unlimited := &seriesCounts{}
-	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20))
+	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
 }
