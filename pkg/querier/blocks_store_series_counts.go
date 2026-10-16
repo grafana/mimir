@@ -103,7 +103,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 // flattened).
 func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks) (CardinalityEstimateResult, error) {
 	dedup := !inOneRangeWithoutSharedSeries(all)
-	m := newEstimateMerger(dedup, q.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, dedup, q.estimateCfg.MaxDedupSeries)
 	res, err := q.seriesCountsInto(ctx, tenantID, req, parts, all, dedup, m)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
