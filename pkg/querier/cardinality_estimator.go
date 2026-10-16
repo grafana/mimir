@@ -328,11 +328,15 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 		return CardinalityEstimateResult{}, err
 	}
 	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadPostings, HeadWhole: true, Counts: map[string][]int64{}}
+	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	for _, item := range resp.GetItems() {
 		if item.LabelName != groupBy {
 			continue
 		}
 		for v, n := range item.LabelValueSeries {
+			if err := chargeEstimateGroup(tracker, v); err != nil {
+				return CardinalityEstimateResult{}, err
+			}
 			res.Counts[v] = []int64{int64(n)}
 			res.SeriesCounted += int64(n)
 		}
