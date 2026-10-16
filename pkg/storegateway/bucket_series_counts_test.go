@@ -212,12 +212,12 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("max_index_bytes rejects before reading series", func(t *testing.T) {
-		// Four series at the planner's 512-byte estimate are more than 1,000 bytes.
+		// Four series at no less than the 32-byte floor are more than 100 bytes.
 		// The window ends before the block does, so the series entries are needed.
-		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxIndexBytes: 1000})
+		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxIndexBytes: 100})
 		require.Error(t, err)
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-		assert.Contains(t, err.Error(), "then 4 series at an estimated 512 bytes each")
+		assert.Contains(t, err.Error(), "then 4 series at an estimated")
 	})
 
 	t.Run("max_index_bytes above the plan is exact", func(t *testing.T) {
@@ -253,13 +253,29 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	c := &seriesCounts{maxIndexBytes: 2000}
-	require.NoError(t, c.checkPlan(900, 2, 0), "900 + 2 x 512 is under the limit")
-	err := c.checkPlan(1000, 2, 0)
+	require.NoError(t, c.checkPlan(900, 2, 2*512, 0), "900 + 2 x 512 is under the limit")
+	err := c.checkPlan(1000, 2, 2*512, 0)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
 	unlimited := &seriesCounts{}
-	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 0))
+	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
+}
+
+func TestSeriesEntryEstimate(t *testing.T) {
+	meta := func(series uint64, indexBytes int64) *block.Meta {
+		m := &block.Meta{}
+		m.Stats.NumSeries = series
+		if indexBytes > 0 {
+			m.Thanos.Files = []block.File{{RelPath: "chunks/000001", SizeBytes: 1 << 30}, {RelPath: block.IndexFilename, SizeBytes: indexBytes}}
+		}
+		return m
+	}
+	assert.Equal(t, int64(150), seriesEntryEstimate(meta(1000, 150_000)), "the index size over the series")
+	assert.Equal(t, int64(512), seriesEntryEstimate(meta(1000, 0)), "no index size: the p99")
+	assert.Equal(t, int64(512), seriesEntryEstimate(meta(0, 150_000)), "no series count: the p99")
+	assert.Equal(t, int64(512), seriesEntryEstimate(meta(10, 1<<20)), "never above the p99")
+	assert.Equal(t, int64(32), seriesEntryEstimate(meta(1000, 1000)), "never below the floor")
 }
