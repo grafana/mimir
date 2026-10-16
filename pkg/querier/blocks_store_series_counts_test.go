@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -154,7 +155,52 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}}): {{b1}},
 		}
 		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
-		require.ErrorContains(t, err, "was not counted")
+		require.ErrorContains(t, err, "none of the 1 blocks for this window was counted")
+	})
+
+	t.Run("retries an unavailable store-gateway's blocks on another one", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.Unavailable, "connection refused")
+		}}
+		up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, IndexBytes: 100})
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}, IndexBytes: 100})
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts, "b1 counted once, by the replica")
+		assert.False(t, res.LowerBound)
+		assert.Equal(t, 1, res.Retries)
+		assert.Equal(t, 3, res.StoreGateways)
+		require.NotNil(t, gotRetry)
+		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds)
+		assert.Equal(t, int64(900), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes")
+	})
+
+	t.Run("a block no replica counts makes the counts a lower bound", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.Unavailable, "connection refused")
+		}}
+		up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
+			errors.New("no store-gateway left"),
+		}}
+		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, []ulid.ULID{b1}, res.MissingBlocks)
+		assert.Equal(t, []ulid.ULID{b2}, res.Blocks)
 	})
 }
 
@@ -234,6 +280,10 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.Equal(t, 3, out.Groups)
 	assert.Equal(t, int64(7), out.Series)
 	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts)
+	assert.Equal(t, sourceBlocks, out.Source)
+	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
+	assert.False(t, out.LowerBound)
+	assert.Empty(t, out.MissingBlocks)
 
 	// Other paths go to next.
 	rec = httptest.NewRecorder()
