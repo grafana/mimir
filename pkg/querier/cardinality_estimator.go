@@ -81,8 +81,16 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	// range before all of its data is in.
 	now := e.now()
 	needIngesters := false
+	// heldFrom is where the ingesters are sure to hold everything written:
+	// they keep at least query-ingesters-within, so a series missing from
+	// them after that was never written.
+	heldFrom := int64(0)
 	if e.ingesters != nil {
-		needIngesters = ShouldQueryIngesters(e.limits.QueryIngestersWithin(tenantID), now, req.MaxT)
+		within := e.limits.QueryIngestersWithin(tenantID)
+		needIngesters = ShouldQueryIngesters(within, now, req.MaxT)
+		if within > 0 {
+			heldFrom = util.TimeToMillis(now.Add(-within))
+		}
 	}
 	storeMaxT := req.MaxT
 	if qsa := e.blocks.queryStoreAfter; qsa > 0 {
@@ -93,9 +101,9 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	case !needIngesters:
 		return e.blocksOnly(ctx, tenantID, req)
 	case storeMaxT <= req.MinT:
-		return e.headCounts(ctx, req)
+		return e.headCounts(ctx, req, heldFrom)
 	default:
-		return e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT)
+		return e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
 }
 
@@ -129,7 +137,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 // counts are refused, since hashes don't carry buckets. When the blocks and
 // what the ingesters hold leave part of the window uncovered, the counts are
 // a lower bound.
-func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, storeMaxT int64) (CardinalityEstimateResult, error) {
+func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, storeMaxT, heldFrom int64) (CardinalityEstimateResult, error) {
 	if req.Step > 0 {
 		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts over a window held partly by blocks and partly by the ingesters are not supported yet")
 	}
@@ -192,12 +200,11 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	for _, b := range blocks {
 		covered = append(covered, &bucketindex.Block{MinTime: b.MinTime, MaxTime: min(b.MaxTime, storeMaxT)})
 	}
-	if ingestersMinT > 0 {
-		covered = append(covered, &bucketindex.Block{MinTime: ingestersMinT, MaxTime: req.MaxT})
-	}
+	from := ingestersCoverFrom(ingestersMinT, heldFrom)
+	covered = append(covered, &bucketindex.Block{MinTime: from, MaxTime: req.MaxT})
 	if !blocksCover(covered, req.MinT, req.MaxT) {
 		res.LowerBound, res.CoverageGap = true, true
-		res.HeadMinTime = ingestersMinT
+		res.HeadMinTime = from
 	}
 	return res, nil
 }
@@ -208,11 +215,11 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 // bucket from its postings instead (headWholeCounts) and the response says
 // so; with a step the refusal stands.
 //
-// The ingesters count their heads and their compacted local blocks. A
-// window that starts before what an ingester still holds may miss series
-// that only had samples there; the counts are then flagged as a lower
-// bound, with the time from which every ingester holds data.
-func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+// The ingesters count their heads and their compacted local blocks. They
+// keep everything written after heldFrom; a window that starts before that
+// and before the oldest data they report may miss series they no longer
+// hold, so the counts are then flagged as a lower bound.
+func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
 	matchers, err := client.ToLabelMatchers(req.Matchers)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -258,9 +265,9 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if err := m.finish(&res); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	if headMinT > req.MinT {
+	if from := ingestersCoverFrom(headMinT, heldFrom); from > req.MinT {
 		res.LowerBound = true
-		res.HeadMinTime = headMinT
+		res.HeadMinTime = from
 	}
 	return res, nil
 }
@@ -320,6 +327,17 @@ func classifyIngesterError(err error) error {
 		break
 	}
 	return fmt.Errorf("ingesters: %w", err)
+}
+
+// ingestersCoverFrom is the start of the time the ingesters answer for:
+// everything after heldFrom, which they are sure to keep, and anything
+// older they reported holding (reported is 0 when they hold nothing in the
+// window).
+func ingestersCoverFrom(reported, heldFrom int64) int64 {
+	if reported > 0 && reported < heldFrom {
+		return reported
+	}
+	return heldFrom
 }
 
 // blocksCover reports whether the union of the blocks' ranges holds all of
