@@ -331,7 +331,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure all source blocks are valid.
-		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, meta.MinTime, meta.MaxTime)
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
 		if err != nil {
 			return fmt.Errorf("gather index issues for block %s: %w", bdir, err)
 		}
@@ -392,6 +392,22 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		compIDs, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 	}
 	if err != nil {
+		// Successful compactions do not need a second pass over chunk data. After a
+		// failure, only verified invalid chunk data can identify an unhealthy block.
+		// File-access failures and canceled validation must retain the original error.
+		if c.skipUnhealthyBlocks {
+			for _, meta := range toCompact {
+				if ctx.Err() != nil {
+					break
+				}
+				bdir := filepath.Join(subDir, meta.ULID.String())
+				_, validationErr := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, meta.MinTime, meta.MaxTime, true)
+				var chunkDataErr block.ChunkDataError
+				if errors.As(validationErr, &chunkDataErr) && ctx.Err() == nil {
+					return false, nil, criticalError(fmt.Errorf("compaction failed and source chunk data is invalid: %w", errors.Join(err, validationErr)), meta.ULID)
+				}
+			}
+		}
 		return false, nil, fmt.Errorf("compact blocks %s: %w", toCompactStr, err)
 	}
 
@@ -452,7 +468,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Verify block is healthy.
-		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime)
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false)
 		if err != nil {
 			return fmt.Errorf("gather health stats for result block %s: %w", bdir, err)
 		}
@@ -589,13 +605,13 @@ func newBlockHealthValidationGate(maxConcurrency int) gate.Gate {
 	return gate.NewBlocking(maxConcurrency)
 }
 
-func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) (block.HealthStats, error) {
+func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64, checkChunkData bool) (block.HealthStats, error) {
 	if err := g.Start(ctx); err != nil {
 		return block.HealthStats{}, err
 	}
 	defer g.Done()
 
-	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
+	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, checkChunkData)
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
