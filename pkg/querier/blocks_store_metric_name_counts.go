@@ -5,12 +5,10 @@ package querier
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 
 	"github.com/oklog/ulid/v2"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -20,8 +18,12 @@ import (
 // MetricNameCountsResult is every metric name's series count over one block
 // range, as counted by the store-gateways.
 type MetricNameCountsResult struct {
-	Counts        map[string]int64
-	Blocks        []ulid.ULID
+	Counts map[string]int64
+	Blocks []ulid.ULID
+	// MissingBlocks are the blocks no store-gateway counted after every
+	// retry, so the counts are a lower bound when it is not empty.
+	MissingBlocks []ulid.ULID
+	Retries       int
 	StoreGateways int
 }
 
@@ -99,8 +101,8 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 // when the blocks share no series. So the window must be exactly one block
 // range, whose blocks are a single block or split-compactor shards with one
 // shard count and distinct shard IDs. Counts across several block ranges
-// need deduplication and are refused. Experimental: there is no retry on
-// another store-gateway and no ingester side yet.
+// need deduplication and are refused. Experimental: there is no ingester
+// side yet.
 func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID string, minT, maxT int64) (MetricNameCountsResult, error) {
 	parts, all, err := q.estimateParts(ctx, tenantID, minT, maxT)
 	if err != nil {
@@ -113,70 +115,69 @@ func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID st
 }
 
 // metricNameCounts fans the index-header count out over parts, which the
-// caller has checked to be one block range of series-disjoint blocks.
+// caller has checked to be one block range of series-disjoint blocks. Each
+// call's stream is collected before it is added, so a call that fails
+// part-way and is retried elsewhere is not counted twice.
 func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID string, parts []estimatePart) (MetricNameCountsResult, error) {
 	res := MetricNameCountsResult{Counts: map[string]int64{}}
-	gateways := map[string]bool{}
-	for _, p := range parts {
-		if len(p.blocks) == 0 {
-			continue
-		}
-		clients, err := p.c.stores.GetClientsFor(tenantID, p.blocks, nil)
+	var mtx sync.Mutex
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, 0, func(ctx context.Context, c estimateCall, _ int64, _ int) (estimateCallResult, error) {
+		addr := c.client.RemoteAddress()
+		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames}
+		stream, err := c.client.MetricNameCounts(ctx, req)
 		if err != nil {
-			return MetricNameCountsResult{}, err
+			return estimateCallResult{}, classifyStoreGatewayError(addr, err)
 		}
-
-		reqCtx := grpcContextWithBucketStoreRequestMeta(ctx, tenantID, p.indexMeta)
 		var (
-			g, gCtx = errgroup.WithContext(reqCtx)
-			mtx     sync.Mutex
-			counted = map[ulid.ULID]bool{}
+			batches [][]*storegatewaypb.MetricNameCount
+			ids     []string
 		)
-		for client, partitions := range clients {
-			gateways[client.RemoteAddress()] = true
-			for _, ids := range partitions {
-				g.Go(func() error {
-					req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(ids), MaxNames: q.estimateCfg.MaxMetricNames}
-					stream, err := client.MetricNameCounts(gCtx, req)
-					if err != nil {
-						return classifyStoreGatewayError(client.RemoteAddress(), err)
-					}
-					for {
-						resp, err := stream.Recv()
-						if errors.Is(err, io.EOF) {
-							return nil
-						}
-						if err != nil {
-							return classifyStoreGatewayError(client.RemoteAddress(), err)
-						}
-						mtx.Lock()
-						for _, nc := range resp.Counts {
-							res.Counts[nc.Name] += nc.Count
-						}
-						for _, id := range resp.BlockIds {
-							parsed, err := ulid.Parse(id)
-							if err != nil {
-								mtx.Unlock()
-								return fmt.Errorf("store-gateway %s returned block ID %q: %w", client.RemoteAddress(), id, err)
-							}
-							counted[parsed] = true
-						}
-						mtx.Unlock()
-					}
-				})
+		for {
+			resp, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return estimateCallResult{}, classifyStoreGatewayError(addr, err)
+			}
+			batches = append(batches, resp.Counts)
+			ids = resp.BlockIds
+		}
+		counted, err := parseBlockIDs(addr, ids)
+		if err != nil {
+			return estimateCallResult{}, err
+		}
+		mtx.Lock()
+		for _, batch := range batches {
+			for _, nc := range batch {
+				res.Counts[nc.Name] += nc.Count
 			}
 		}
-		if err := g.Wait(); err != nil {
-			return MetricNameCountsResult{}, err
-		}
-		for _, b := range p.blocks {
-			if !counted[b.ID] {
-				return MetricNameCountsResult{}, fmt.Errorf("block %s was not counted by the store-gateway it was sent to", b.ID)
-			}
+		mtx.Unlock()
+		return estimateCallResult{counted: counted}, nil
+	})
+	if err != nil {
+		return MetricNameCountsResult{}, err
+	}
+	var all bucketindex.Blocks
+	for _, p := range parts {
+		all = append(all, p.blocks...)
+	}
+	missing := make(map[ulid.ULID]bool, len(cov.Missing))
+	for _, id := range cov.Missing {
+		missing[id] = true
+	}
+	if len(all) > 0 && len(missing) == len(all) {
+		return MetricNameCountsResult{}, errNothingCounted(len(all), cov)
+	}
+	for _, b := range all {
+		if !missing[b.ID] {
 			res.Blocks = append(res.Blocks, b.ID)
 		}
 	}
-	res.StoreGateways = len(gateways)
+	res.MissingBlocks = cov.Missing
+	res.StoreGateways = cov.StoreGateways
+	res.Retries = cov.Retries
 	return res, nil
 }
 
