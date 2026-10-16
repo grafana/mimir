@@ -448,16 +448,16 @@ func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
 }
 
 func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minutes)) {
-	chunk := iterateChunkPool.Get().(*iterateChunk)
-	defer iterateChunkPool.Put(chunk)
+	buf := iterateChunkPool.Get().(*iterateChunk)
+	defer iterateChunkPool.Put(buf)
 	groupsPerLock = min(groupsPerLock, iterateGroupsPerLock)
 
 	m.Lock()
-	rehashes, ks, ds := m.rehashes, m.keys, m.data
+	rehashes, srcKeys, srcData := m.rehashes, m.keys, m.data
 	m.Unlock()
 
 	rehashed := false
-	for b := 0; b < len(ds); b += groupsPerLock {
+	for b := 0; b < len(srcData); b += groupsPerLock {
 		if !rehashed {
 			m.Lock()
 			// A rehash moves the series to new arrays and never writes the old ones again,
@@ -468,17 +468,22 @@ func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minu
 			}
 		}
 		// Copying the chunk holds the lock for a tenth of the time that finding its occupied slots takes.
-		k := chunk.keys[:copy(chunk.keys[:groupsPerLock], ks[b:])]
-		d := chunk.data[:copy(chunk.data[:groupsPerLock], ds[b:])]
+		chunkKeys := copyChunk(buf.keys[:groupsPerLock], srcKeys[b:])
+		chunkData := copyChunk(buf.data[:groupsPerLock], srcData[b:])
 		if !rehashed {
 			m.Unlock()
 		}
-		for g := range d {
-			occupied := occupiedSlots(*groupWord(&d[g]))
+		for g := range chunkData {
+			occupied := occupiedSlots(*groupWord(&chunkData[g]))
 			for occupied != 0 {
 				s := nextMatch(&occupied)
-				yield(k[g][s], d[g][s].clockMinutes())
+				yield(chunkKeys[g][s], chunkData[g][s].clockMinutes())
 			}
 		}
 	}
+}
+
+// copyChunk copies as many elements of src as fit into dst, and returns the part of dst that was written.
+func copyChunk[T any](dst, src []T) []T {
+	return dst[:copy(dst, src)]
 }
