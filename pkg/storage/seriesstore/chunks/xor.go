@@ -107,6 +107,14 @@ func NewXORAppender() XORAppender {
 	}
 }
 
+// NewXORAppenderSized returns an empty chunk's appender with room for about size bytes, for a chunk whose size is known
+// beforehand, as a merge's is from its chunks': growing through the open chunks' small sizes copied it a dozen times.
+func NewXORAppenderSized(size int) XORAppender {
+	a := NewXORAppender()
+	a.out.bytes = make([]byte, 2, max(8, size))
+	return a
+}
+
 func (a *XORAppender) Len() int {
 	return int(a.count)
 }

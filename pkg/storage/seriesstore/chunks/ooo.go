@@ -214,6 +214,10 @@ func mergeGroup(group []Chunk) ([]Chunk, error) {
 		iterators[index] = decoded.Iterator(nil)
 	}
 	chain := storage.ChainSampleIteratorFromIterators(nil, iterators)
+	groupBytes := 0
+	for _, chunk := range group {
+		groupBytes += len(chunk.Data)
+	}
 
 	var (
 		output        []Chunk
@@ -248,7 +252,8 @@ func mergeGroup(group []Chunk) ([]Chunk, error) {
 			finish()
 			cmint = chain.AtT()
 			if valueType == chunkenc.ValFloat {
-				floats = NewXORAppender()
+				// A merged chunk is about as large as what it merges, up to a chunk's most.
+				floats = NewXORAppenderSized(min(groupBytes, chunkenc.MaxBytesPerXORChunk) + 16)
 			} else {
 				var err error
 				if current, err = valueType.NewChunk(false, false); err != nil {
