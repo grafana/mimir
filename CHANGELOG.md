@@ -109,6 +109,7 @@
 * [BUGFIX] Query-frontend: Return HTTP 422 instead of HTTP 500 when a query exceeds `-querier.max-estimated-memory-consumption-per-query`. The limit error was returned unclassified, so it fell through to the generic HTTP 500 handling. #16716
 * [BUGFIX] Usage-tracker: Reuse the buffers that snapshotting clones each tenant shard into. They were never reused, so every snapshot allocated the clone under the shard lock and blocked series tracking for the duration. #16882
 * [BUGFIX] Distributor: Fix the OTLP request size limit error, which labeled the size of a compressed request as uncompressed when the compressed request was already larger than `-distributor.max-otlp-request-size`. #16877
+* [BUGFIX] Ingester: Fix early head compactions during a Kafka replay removing every series from the head and creating them again, which slowed the replay down. While the ingester is starting, series are considered idle relative to the newest sample in the head rather than to the wall clock. #16906
 
 ### Mixin
 

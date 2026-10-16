@@ -1860,3 +1860,17 @@ func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, c
 	}
 	return ingesters
 }
+
+func TestEarlyCompactionMaxTimeWhileReplaying(t *testing.T) {
+	const idle = 20 * time.Minute
+	now := time.Now()
+	wallClock := now.Add(-idle).UnixMilli()
+	replayedTo := now.Add(-5 * time.Hour).UnixMilli()
+	// Running, idle is as of the wall clock, even for a tenant that stopped sending.
+	require.Equal(t, wallClock, earlyCompactionMaxTime(wallClock, false, replayedTo, idle))
+	// Replaying hours behind, the series idle as of the wall clock would be all of them.
+	require.Equal(t, replayedTo-idle.Milliseconds(), earlyCompactionMaxTime(wallClock, true, replayedTo, idle))
+	// Caught up, it's the wall clock again.
+	require.Equal(t, wallClock, earlyCompactionMaxTime(wallClock, true, now.UnixMilli(), idle))
+	require.Equal(t, wallClock, earlyCompactionMaxTime(wallClock, true, math.MinInt64, idle))
+}
