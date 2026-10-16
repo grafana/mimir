@@ -3156,9 +3156,30 @@ type labelValuesCardinalityConcurrentMap struct {
 }
 
 type labelValuesCardinalityReplicationSetCounts struct {
-	mx sync.Mutex
-	// countsByZone is map[zone]map[label_name]map[label_value]series_count.
-	countsByZone map[string]map[string]map[string]uint64
+	mx           sync.Mutex
+	countsByZone map[string]seriesCountByLabelName
+}
+
+// seriesCountByLabelValue is the number of series for each value of a label.
+type seriesCountByLabelValue map[string]uint64
+
+// seriesCountByLabelName is the number of series for each value of each label name.
+type seriesCountByLabelName map[string]seriesCountByLabelValue
+
+// valuesFor returns the counts for labelName's values, creating them with room for sizeHint values if needed.
+func (c seriesCountByLabelName) valuesFor(labelName string, sizeHint int) seriesCountByLabelValue {
+	values := c[labelName]
+	if values == nil {
+		values = make(seriesCountByLabelValue, sizeHint)
+		c[labelName] = values
+	}
+	return values
+}
+
+// get returns the number of series for labelName and labelValue, and whether there's a count for them.
+func (c seriesCountByLabelName) get(labelName, labelValue string) (uint64, bool) {
+	count, ok := c[labelName][labelValue]
+	return count, ok
 }
 
 func newLabelValuesCardinalityConcurrentMap(numReplicationSets int) *labelValuesCardinalityConcurrentMap {
@@ -3190,24 +3211,19 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 	defer set.mx.Unlock()
 
 	if set.countsByZone == nil {
-		set.countsByZone = make(map[string]map[string]map[string]uint64, 1)
+		set.countsByZone = make(map[string]seriesCountByLabelName, 1)
 	}
-	countsByLabelName := set.countsByZone[zone]
-	if countsByLabelName == nil {
-		countsByLabelName = make(map[string]map[string]uint64, len(message.Items))
-		set.countsByZone[zone] = countsByLabelName
+	counts := set.countsByZone[zone]
+	if counts == nil {
+		counts = make(seriesCountByLabelName, len(message.Items))
+		set.countsByZone[zone] = counts
 	}
 
 	for _, item := range message.Items {
-		countsByLabelValue := countsByLabelName[item.LabelName]
-		if countsByLabelValue == nil {
-			countsByLabelValue = make(map[string]uint64, len(item.LabelValueSeries))
-			countsByLabelName[item.LabelName] = countsByLabelValue
-		}
-
+		values := counts.valuesFor(item.LabelName, len(item.LabelValueSeries))
 		for labelValue, seriesCount := range item.LabelValueSeries {
 			// Accumulate the series count.
-			countsByLabelValue[labelValue] += seriesCount
+			values[labelValue] += seriesCount
 		}
 	}
 }
@@ -3215,8 +3231,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 // toResponse adjust builds and returns LabelValuesCardinalityResponse containing the count of series by label name
 // and value.
 func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFunc func(countByZone map[string]uint64) uint64) *ingester_client.LabelValuesCardinalityResponse {
-	// map[label_name]map[label_value]series_count
-	totals := map[string]map[string]uint64{}
+	totals := seriesCountByLabelName{}
 
 	// countByZone is reused for every label value.
 	countByZone := make(map[string]uint64, 3)
@@ -3238,18 +3253,14 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFu
 		}
 
 		for zoneIdx, zone := range zones {
-			for labelName, countsByLabelValue := range set.countsByZone[zone] {
-				totalsByLabelValue := totals[labelName]
-				if totalsByLabelValue == nil {
-					totalsByLabelValue = make(map[string]uint64, len(countsByLabelValue))
-					totals[labelName] = totalsByLabelValue
-				}
+			for labelName, values := range set.countsByZone[zone] {
+				totalsByLabelValue := totals.valuesFor(labelName, len(values))
 
 			labelValues:
-				for labelValue, seriesCount := range countsByLabelValue {
+				for labelValue, seriesCount := range values {
 					// Each label value is approximated once per replication set, from the first zone that returned it.
 					for _, earlierZone := range zones[:zoneIdx] {
-						if _, ok := set.countsByZone[earlierZone][labelName][labelValue]; ok {
+						if _, ok := set.countsByZone[earlierZone].get(labelName, labelValue); ok {
 							continue labelValues
 						}
 					}
@@ -3257,7 +3268,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFu
 					clear(countByZone)
 					countByZone[zone] = seriesCount
 					for _, laterZone := range zones[zoneIdx+1:] {
-						if count, ok := set.countsByZone[laterZone][labelName][labelValue]; ok {
+						if count, ok := set.countsByZone[laterZone].get(labelName, labelValue); ok {
 							countByZone[laterZone] = count
 						}
 					}
