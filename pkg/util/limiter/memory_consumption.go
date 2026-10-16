@@ -79,7 +79,8 @@ const (
 	BufferedQuerierResponses
 	CachedResponses
 	BinaryOperationOutputSeries
-	memoryConsumptionSourceCount = BinaryOperationOutputSeries + 1
+	CardinalityEstimateGroups
+	memoryConsumptionSourceCount = CardinalityEstimateGroups + 1
 )
 
 const (
@@ -140,6 +141,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "cached responses"
 	case BinaryOperationOutputSeries:
 		return "binary operation output series"
+	case CardinalityEstimateGroups:
+		return "cardinality estimate groups"
 	default:
 		return unknownMemorySource
 	}
