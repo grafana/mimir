@@ -169,6 +169,20 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
+      - name: Install promtool for Helm alert regression
+        run: |
+          version=3.15.0
+          archive="prometheus-${version}.linux-amd64.tar.gz"
+          checksum=2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+          # Pinned against the official Prometheus v3.15.0 sha256sums.txt.
+          curl -fsSL --retry 3 "https://github.com/prometheus/prometheus/releases/download/v${version}/${archive}" -o "$archive"
+          printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/promtool"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/promtool" --strip-components=1 "prometheus-${version}.linux-amd64/promtool"
+          rm "$archive"
+          echo "$RUNNER_TEMP/promtool" >> "$GITHUB_PATH"
+      - name: Check Helm gossip-ring alerts
+        run: make BUILD_IN_CONTAINER=false check-helm-gossip-alerts
 
   # Compile integration test binaries once and save the Go build cache, so that the
   # integration test jobs can reuse it. The cache is keyed by go.sum hash: it's rebuilt only

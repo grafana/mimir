@@ -15,6 +15,8 @@ metadata:
     {{- end }}
   namespace: {{ .namespace | default $.Release.Namespace | quote }}
 spec:
-    {{- $.Files.Get "mixins/alerts.yaml" | nindent 2 }}
+    {{- /* The shared mixin keeps its custom-deployment selector; only Helm bundled rules target this release Service. */ -}}
+    {{- $endpointSelector := printf "kube_endpoint_address{endpoint=%q, namespace=%q}" (include "mimir.resourceName" (dict "ctx" $ "component" "gossip-ring")) $.Release.Namespace -}}
+    {{- $.Files.Get "mixins/alerts.yaml" | replace "kube_endpoint_address{endpoint=\"gossip-ring\"}" $endpointSelector | nindent 2 }}
 {{- end }}
 {{- end }}
