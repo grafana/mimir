@@ -270,3 +270,59 @@ func TestBlocksCover(t *testing.T) {
 	}
 }
 
+func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	b1 := ulid.MustNew(1, nil)
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+
+	// Yesterday is [72h, 96h); now is 09:00 the next day, inside both
+	// query-store-after (12h) and query-ingesters-within (13h).
+	estimate := func(level int, now time.Time, trust time.Duration) (CardinalityEstimateResult, *ingestersMock, error) {
+		day := bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: 96 * hour, CompactionLevel: level}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
+		q := &BlocksStoreQueryable{
+			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}},
+			queryStoreAfter: 12 * time.Hour,
+			estimateCfg:     CardinalityEstimateConfig{TrustCompactedBlocksAfter: trust},
+		}
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 92 * hour},
+		}}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return now }
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 72 * hour, MaxT: 96 * hour})
+		return res, ing, err
+	}
+	nineAM := time.UnixMilli(105 * hour)
+
+	t.Run("a compacted day that ended long enough ago is counted from its blocks alone", func(t *testing.T) {
+		res, ing, err := estimate(2, nineAM, time.Hour)
+		require.NoError(t, err)
+		assert.Equal(t, sourceBlocks, res.Source)
+		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
+		assert.Nil(t, ing.gotSeriesCounts, "the ingesters are not asked")
+	})
+
+	t.Run("level-1 blocks are not trusted", func(t *testing.T) {
+		res, ing, err := estimate(1, nineAM, time.Hour)
+		require.NoError(t, err)
+		assert.Equal(t, sourceBoth, res.Source)
+		assert.NotNil(t, ing.gotSeriesCounts)
+	})
+
+	t.Run("a window that ended too recently is not trusted", func(t *testing.T) {
+		res, _, err := estimate(2, time.UnixMilli(96*hour+30*60*1000), time.Hour)
+		require.NoError(t, err)
+		assert.Equal(t, sourceBoth, res.Source)
+	})
+
+	t.Run("0 turns it off", func(t *testing.T) {
+		res, _, err := estimate(2, nineAM, 0)
+		require.NoError(t, err)
+		assert.Equal(t, sourceBoth, res.Source)
+	})
+}
