@@ -17,5 +17,8 @@
     autoscaling_ruler_query_frontend_memory_target_utilization: targetUtilization,
     autoscaling_alertmanager_cpu_target_utilization: targetUtilization,
     autoscaling_alertmanager_memory_target_utilization: targetUtilization,
+
+    autoscaling_ruler_querier_scaleup_percent_cap: 50,
+    autoscaling_ruler_querier_scaledown_percent_cap: 25,
   },
 }
