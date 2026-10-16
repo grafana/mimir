@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
 )
@@ -1721,4 +1722,63 @@ func TestEngineOutOfOrderHistogramSharesNoMemoryWithWhatWasAppended(t *testing.T
 	require.Equal(t, int64(300_000), ts)
 	require.Equal(t, []int64{1, 1, 0}, h.PositiveBuckets)
 	require.Equal(t, []histogram.Span{{Offset: 0, Length: 3}}, h.PositiveSpans)
+}
+
+type engineActiveRefs struct {
+	e        *Engine
+	cutoffMs int64
+}
+
+func (a engineActiveRefs) ContainsRef(ref storage.SeriesRef) bool {
+	active, _, _ := a.e.IsActive(ref, a.cutoffMs)
+	return active
+}
+
+func (a engineActiveRefs) NativeHistogramBuckets(storage.SeriesRef) (int, bool) { return 0, false }
+
+func TestEngineIndexLabelValueActiveAsByItsPostings(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	app := e.Appender(context.Background())
+	var refs []storage.SeriesRef
+	for n := range 300 {
+		ref, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%3), "job", fmt.Sprintf("job-%d", n%7), "pod", fmt.Sprintf("pod-%d", n)), 1000, 1)
+		require.NoError(t, err)
+		refs = append(refs, ref)
+	}
+	require.NoError(t, app.Commit())
+	var ingested []IngestedSeries
+	for _, ref := range refs {
+		ingested = append(ingested, IngestedSeries{Ref: ref, HistogramBuckets: -1})
+	}
+	e.MarkIngested(ingested, 5000, false)
+	// Every series of job-2 and of metric_1, and some pods, inactive.
+	var inactive []storage.SeriesRef
+	for n, ref := range refs {
+		if n%7 == 2 || n%3 == 1 || n%11 == 0 {
+			inactive = append(inactive, ref)
+		}
+	}
+	e.DeactivateSeries(inactive)
+	ix, err := e.Index()
+	require.NoError(t, err)
+	native := ix.(interface {
+		IsLabelValueActive(context.Context, string, string, int64) (bool, error)
+	})
+	check := func(name, value string) {
+		expected, err := activeseries.IsLabelValueActive(context.Background(), ix, engineActiveRefs{e, 4000}, name, value)
+		require.NoError(t, err)
+		got, err := native.IsLabelValueActive(context.Background(), name, value, 4000)
+		require.NoError(t, err)
+		require.Equal(t, expected, got, "%s=%s", name, value)
+	}
+	for n := range 4 {
+		check("__name__", fmt.Sprintf("metric_%d", n))
+	}
+	for n := range 8 {
+		check("job", fmt.Sprintf("job-%d", n))
+	}
+	for n := range 301 {
+		check("pod", fmt.Sprintf("pod-%d", n))
+	}
+	check("absent", "x")
 }

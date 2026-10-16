@@ -1345,6 +1345,72 @@ func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	return refs
 }
 
+// IsLabelValueActive reports whether a head series with the label's value was ingested since cutoffMs, as the ingester's
+// active series check of the value's postings does, stopping at the first.
+func (ix *engineIndex) IsLabelValueActive(_ context.Context, name, value string, cutoffMs int64) (bool, error) {
+	active := false
+	if name == metricNameLabel {
+		for index, shard := range ix.e.store.shards {
+			shard.RLock()
+			if t, ok := ix.e.tenantLocked(index); ok {
+				if groupID, ok := t.series.names[value]; ok {
+					entries := t.series.groups[groupID].entries
+					for i := range entries {
+						if entries[i].series.isActive(cutoffMs) {
+							active = true
+							break
+						}
+					}
+				}
+			}
+			shard.RUnlock()
+			if active {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	id, known := labels.Lookup(name)
+	if !known {
+		return false, nil
+	}
+	key := postingKey(value)
+	var one [1]seriesRef
+	// A posting holds a value's hash: collisions are checked against the labels.
+	visit := func(entry *seriesEntry) bool {
+		if entry.series.isActive(cutoffMs) {
+			if v, ok := labelValue(entry.labels, id); ok && v == value {
+				active = true
+				return false
+			}
+		}
+		return true
+	}
+	for index, shard := range ix.e.store.shards {
+		shard.RLock()
+		if t, ok := ix.e.tenantLocked(index); ok && int(id) < len(t.series.postings) {
+			if posting, ok := t.series.postings[id][key]; ok {
+				if single, many := t.series.posting(posting); many == nil {
+					one[0] = t.series.refs[single]
+					t.series.visitRefs(one[:], visit)
+				} else {
+					for _, seriesID := range many {
+						one[0] = t.series.refs[seriesID]
+						if t.series.visitRefs(one[:], visit); active {
+							break
+						}
+					}
+				}
+			}
+		}
+		shard.RUnlock()
+		if active {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // postingsOfValue is Postings of one value from the store's postings, which lists in each shard the series of the
 // value's hash.
 func (ix *engineIndex) postingsOfValue(name, value string) index.Postings {
