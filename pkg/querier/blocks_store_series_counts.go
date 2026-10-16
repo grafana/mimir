@@ -53,9 +53,8 @@ type CardinalityEstimateResult struct {
 	// HeadFallback, when set, is why the head walk was refused and the head
 	// was counted as one bucket from its postings instead.
 	HeadFallback string
-	// HeadMinTime, when set, is the start of the newest ingester head, after
-	// the window's start: the ingesters' compacted blocks before it are not
-	// read, so the counts are a lower bound.
+	// HeadMinTime, when set, is the time from which every ingester still
+	// holds data, after the window's start, so the counts are a lower bound.
 	HeadMinTime int64
 	Snapped     bool
 	Counts      map[string][]int64
