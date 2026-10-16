@@ -597,3 +597,26 @@ func BenchmarkIngester_EngineLabelValuesCardinality(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkIngester_EngineActiveSeries lists active series of a selector, like the cardinality API.
+func BenchmarkIngester_EngineActiveSeries(b *testing.B) {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
+		b.Run(engine, func(b *testing.B) {
+			ingester, ctx := benchLabelAPIIngester(b, engine)
+			for _, bc := range []struct {
+				name     string
+				matchers []*client.LabelMatcher
+			}{
+				{"metric matcher", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}}},
+				{"metric and mod_77 matchers", []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_1"}, {Type: client.EQUAL, Name: "mod_77", Value: "3"}}},
+			} {
+				b.Run(bc.name, func(b *testing.B) {
+					b.ReportAllocs()
+					for range b.N {
+						require.NoError(b, ingester.ActiveSeries(&client.ActiveSeriesRequest{Matchers: bc.matchers}, &mockActiveSeriesServer{ctx: ctx}))
+					}
+				})
+			}
+		})
+	}
+}

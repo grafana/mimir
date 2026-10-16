@@ -1435,7 +1435,8 @@ func (ix *engineIndex) ActiveSeriesMatching(ctx context.Context, matchers []*pro
 			return err
 		}
 		if cap(adapters)-len(adapters) < 32 {
-			adapters = make([]mimirpb.LabelAdapter, 0, 1024)
+			// Doubling from small, so a few series don't pay for a large array.
+			adapters = make([]mimirpb.LabelAdapter, 0, min(1024, max(64, 2*cap(adapters))))
 		}
 	}
 	return nil
