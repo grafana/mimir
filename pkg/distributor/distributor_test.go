@@ -7773,6 +7773,56 @@ func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.L
 	return &labelValuesCardinalityStream{results: []*client.LabelValuesCardinalityResponse{result}}, nil
 }
 
+// SeriesCounts counts the mock's series per value of the request's group_by
+// label. The mock keeps no chunks, so every series counts in the window.
+func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest, _ ...grpc.CallOption) (*client.SeriesCountsResponse, error) {
+	i.trackCall("SeriesCounts", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return nil, err
+	}
+	groupBy := req.GroupBy
+	if groupBy == "" {
+		groupBy = model.MetricNameLabel
+	}
+	counts := map[string]int64{}
+	hashes := map[string][]uint64{}
+	resp := &client.SeriesCountsResponse{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+		lset := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		v := lset.Get(groupBy)
+		resp.SeriesWalked++
+		resp.SeriesCounted++
+		if req.Hashes {
+			hashes[v] = append(hashes[v], labels.StableHash(lset))
+		} else {
+			counts[v]++
+		}
+	}
+	for v, n := range counts {
+		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Counts: []int64{n}})
+	}
+	for v, h := range hashes {
+		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Hashes: h})
+	}
+	return resp, nil
+}
+
 type labelValuesCardinalityStream struct {
 	grpc.ClientStream
 	i       int
