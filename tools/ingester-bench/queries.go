@@ -167,7 +167,8 @@ func drawShape(r *rand.Rand, rpc string, d *ShapeProfile, matchers []ClassMatche
 	selectors := max(1, int(math.Round(d.SelectorsPerQuery.Sample(r))))
 	for range selectors {
 		sel := Selector{}
-		if len(d.SelectorRange) > 0 && (matchers != nil || r.Float64() < 0.5) {
+		// Half of the selectors are of a range function, the others of the latest samples.
+		if len(d.SelectorRange) > 0 && r.Float64() < 0.5 {
 			sel.RangeMs = int64(d.SelectorRange.Sample(r))
 		}
 		switch pick(r, d.NameMatcher) {
