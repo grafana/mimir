@@ -82,6 +82,11 @@ func freeSlots(x uint64) uint64 {
 	return uint64(findZeroBytes(x &^ loBits))
 }
 
+// occupiedSlots returns the slots of the data group x that hold a value, as a bitset like the index matchers return.
+func occupiedSlots(x uint64) bitset {
+	return bitset(^freeSlots(x) & hiBits)
+}
+
 // clearSlots removes the slots of the group that have the high bit set in remove, and returns how many it removed.
 // x is the data group as it was loaded. Removed slots become empty in both idx and d, except for the last one,
 // which becomes a spillmark: it keeps the signal that the group may have spilled into the next one.
