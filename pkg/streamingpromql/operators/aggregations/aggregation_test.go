@@ -287,6 +287,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	testCases := map[string]struct {
 		createOperator                func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error)
 		instant                       bool
+		longRange                     bool
 		expectedSeries                []labels.Labels
 		allowExpectedSeriesInAnyOrder bool
 	}{
@@ -329,6 +330,11 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			createOperator: createSimpleAggregation(parser.SUM),
 			expectedSeries: expectedSimpleAggregationOutputSeries,
 		},
+		"sum long range": {
+			createOperator: createSimpleAggregation(parser.SUM),
+			longRange:      true,
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
 		"count_values": {
 			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				labelName := operators.NewStringLiteral("value", queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
@@ -353,6 +359,8 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 			if testCase.instant {
 				timeRange = instantQueryTimeRange
+			} else if testCase.longRange {
+				timeRange = sumIntegrationTimeRange(257)
 			}
 
 			inner := &operators.TestOperator{
