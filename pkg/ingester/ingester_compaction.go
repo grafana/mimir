@@ -371,8 +371,12 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		switch {
 		case force:
 			reason = "forced"
+			maxTime := forcedCompactionMaxTime
+			if maxTime != math.MaxInt64 {
+				maxTime = earlyCompactionMaxTime(maxTime, i.State() == services.Starting, h.MaxTime(), i.cfg.ActiveSeriesMetrics.IdleTimeout)
+			}
 			i.metrics.increaseForcedCompactions()
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), maxTime)
 			i.metrics.decreaseForcedCompactions()
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
@@ -425,6 +429,17 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		return nil
 	})
+}
+
+// earlyCompactionMaxTime is up to when an early compaction compacts a head whose newest sample is at headMaxTime, rather
+// than maxTime, the wall clock less the idle timeout. While the ingester replays Kafka, its head is hours behind the wall
+// clock, and the series idle as of the wall clock are all of them: until it caught up, idle is as of the head's newest
+// sample.
+func earlyCompactionMaxTime(maxTime int64, replaying bool, headMaxTime int64, idleTimeout time.Duration) int64 {
+	if !replaying || headMaxTime == math.MinInt64 {
+		return maxTime
+	}
+	return min(maxTime, headMaxTime-idleTimeout.Milliseconds())
 }
 
 // compactBlocksToReduceInMemorySeries compacts the TSDB Head of the eligible tenants to reduce the in-memory series.

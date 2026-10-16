@@ -164,6 +164,7 @@
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
+* [BUGFIX] Ingester: Fix early head compactions during a Kafka replay removing every series from the head and creating them again, which slowed the replay down. While the ingester is starting, series are considered idle relative to the newest sample in the head rather than to the wall clock. #16906
 
 ### Mixin
 
