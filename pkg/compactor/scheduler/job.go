@@ -116,30 +116,65 @@ func (j *baseTrackedJob) Epoch() int64 {
 type CompactionJob struct {
 	blocks  [][]byte
 	isSplit bool
+
+	// Job stats.
+	totalBlockBytes    uint64
+	minTime            int64
+	maxTime            int64
+	maxCompactionLevel int32
+	outOfOrder         bool
+}
+
+func (j *CompactionJob) Duration() time.Duration {
+	if j.maxTime <= j.minTime {
+		return 0
+	}
+	return time.Duration(j.maxTime-j.minTime) * time.Millisecond
 }
 
 type TrackedCompactionJob struct {
 	baseTrackedJob
-	value           *CompactionJob
-	order           uint32
-	totalBlockBytes uint64
+	value *CompactionJob
+	order uint32
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
-		baseTrackedJob:  newBaseTrackedJob(id, creationTime),
-		value:           value,
-		order:           order,
-		totalBlockBytes: totalBlockBytes,
+		baseTrackedJob: newBaseTrackedJob(id, creationTime),
+		value:          value,
+		order:          order,
 	}
 }
 
 func (j *TrackedCompactionJob) CopyBase() TrackedJob {
 	return &TrackedCompactionJob{
-		baseTrackedJob:  j.baseTrackedJob,
-		value:           j.value,
-		order:           j.order,
-		totalBlockBytes: j.totalBlockBytes,
+		baseTrackedJob: j.baseTrackedJob,
+		value:          j.value,
+		order:          j.order,
+	}
+}
+
+func newCompactionJobFromProto(pb *compactorschedulerpb.CompactionJob) *CompactionJob {
+	return &CompactionJob{
+		blocks:             pb.BlockIds,
+		isSplit:            pb.Split,
+		totalBlockBytes:    pb.TotalBlocksBytes,
+		minTime:            pb.MinTime,
+		maxTime:            pb.MaxTime,
+		maxCompactionLevel: pb.MaxCompactionLevel,
+		outOfOrder:         pb.OutOfOrder,
+	}
+}
+
+func (j *TrackedCompactionJob) toProto() *compactorschedulerpb.CompactionJob {
+	return &compactorschedulerpb.CompactionJob{
+		BlockIds:           j.value.blocks,
+		Split:              j.value.isSplit,
+		TotalBlocksBytes:   j.value.totalBlockBytes,
+		MinTime:            j.value.minTime,
+		MaxTime:            j.value.maxTime,
+		MaxCompactionLevel: j.value.maxCompactionLevel,
+		OutOfOrder:         j.value.outOfOrder,
 	}
 }
 
@@ -152,11 +187,7 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			NumLeases:    int32(j.numLeases),
 			Epoch:        j.epoch,
 		},
-		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds:         j.value.blocks,
-			Split:            j.value.isSplit,
-			TotalBlocksBytes: j.totalBlockBytes,
-		},
+		Job:   j.toProto(),
 		Order: j.order,
 	}
 	return stored.Marshal()
@@ -171,11 +202,7 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 		Spec: &compactorschedulerpb.JobSpec{
 			JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			Tenant:  tenant,
-			Job: &compactorschedulerpb.CompactionJob{
-				BlockIds:         j.value.blocks,
-				Split:            j.value.isSplit,
-				TotalBlocksBytes: j.totalBlockBytes,
-			},
+			Job:     j.toProto(),
 		},
 	}
 }
@@ -263,11 +290,7 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			numLeases:    int(stored.Info.NumLeases),
 			epoch:        stored.Info.Epoch,
 		},
-		value: &CompactionJob{
-			blocks:  stored.Job.BlockIds,
-			isSplit: stored.Job.Split,
-		},
-		order:           stored.Order,
-		totalBlockBytes: stored.Job.TotalBlocksBytes,
+		value: newCompactionJobFromProto(stored.Job),
+		order: stored.Order,
 	}, nil
 }

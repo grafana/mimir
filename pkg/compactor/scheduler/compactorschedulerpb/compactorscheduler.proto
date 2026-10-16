@@ -30,7 +30,12 @@ message JobSpec {
 message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
+  // Job stats.
   uint64 total_blocks_bytes = 3;
+  int64 min_time = 4;
+  int64 max_time = 5;
+  int32 max_compaction_level = 6;
+  bool out_of_order = 7;
 }
 
 service CompactorScheduler {
@@ -40,8 +45,16 @@ service CompactorScheduler {
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
 }
 
+enum CompactionUrgency {
+  COMPACTION_URGENCY_ANY = 0;
+  COMPACTION_URGENCY_URGENT = 1;
+  COMPACTION_URGENCY_DEFER = 2;
+}
+
 message LaneRequest {
   JobType job_type = 1;
+  // Only meaningful when job_type is JOB_TYPE_COMPACTION.
+  CompactionUrgency compaction_urgency = 2;
 }
 
 message LeaseJobRequest {
