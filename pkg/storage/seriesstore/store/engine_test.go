@@ -256,8 +256,10 @@ func workloadSeriesSet(count int) []workloadSeries {
 	return series
 }
 
+// testHistogram is a histogram whose buckets start at a varying one, and sometimes have a gap: merging histograms of
+// different layouts recodes them.
 func testHistogram(r *rand.Rand, t int64) *histogram.Histogram {
-	buckets := 1 + r.IntN(4)
+	buckets := 1 + r.IntN(8)
 	deltas := make([]int64, buckets)
 	count := uint64(0)
 	current := int64(0)
@@ -267,11 +269,16 @@ func testHistogram(r *rand.Rand, t int64) *histogram.Histogram {
 		current = next
 		count += uint64(next)
 	}
+	spans := []histogram.Span{{Offset: int32(r.IntN(4)), Length: uint32(buckets)}}
+	if buckets > 2 && r.IntN(4) == 0 {
+		first := uint32(1 + r.IntN(buckets-1))
+		spans = []histogram.Span{{Offset: spans[0].Offset, Length: first}, {Offset: int32(1 + r.IntN(3)), Length: uint32(buckets) - first}}
+	}
 	return &histogram.Histogram{
 		Count:           count,
 		Sum:             float64(t%1000) / 3,
 		Schema:          0,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(buckets)}},
+		PositiveSpans:   spans,
 		PositiveBuckets: deltas,
 	}
 }
