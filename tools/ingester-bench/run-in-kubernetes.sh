@@ -30,7 +30,8 @@ docker buildx build -o type=registry --metadata-file "$metadata" --platform linu
 digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$metadata")"
 
 if [[ -n "${PROFILE:-}" ]]; then
-  k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply -f -
+  # Server side, as a client side apply keeps the whole profile in an annotation, which is too small for it.
+  k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 fi
 # The job of job.yaml, with the image, the profile, a node selector and the extra flags.
 python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "${PROFILE:-}" "${NODE_SELECTOR:-}" "$@" > "$metadata.yaml" <<'PY'
