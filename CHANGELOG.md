@@ -111,6 +111,7 @@
 * [BUGFIX] Query-frontend: Return HTTP 422 instead of HTTP 500 when a query exceeds `-querier.max-estimated-memory-consumption-per-query`. The limit error was returned unclassified, so it fell through to the generic HTTP 500 handling. #16716
 * [BUGFIX] Usage-tracker: Reuse the buffers that snapshotting clones each tenant shard into. They were never reused, so every snapshot allocated the clone under the shard lock and blocked series tracking for the duration. #16882
 * [BUGFIX] Distributor: Fix the OTLP request size limit error, which labeled the size of a compressed request as uncompressed when the compressed request was already larger than `-distributor.max-otlp-request-size`. #16877
+* [BUGFIX] Ruler: Store a rule group listing in the cache synchronously, instead of asynchronously, when the listing was fetched with the cache lookup disabled (e.g. right after a rule group is created or updated through the config API). Previously, a periodic sync reading from the cache could race with the asynchronous write and observe a stale listing that didn't include the just-applied change, reverting the rule group in the ruler's in-memory manager until the next sync picked up the change. #16664
 
 ### Mixin
 
