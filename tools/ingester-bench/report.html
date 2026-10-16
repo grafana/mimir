@@ -122,6 +122,9 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   <h2>Resources in the measurement window</h2>
   <div class="tablewrap"><table id="resources"></table></div>
 
+  <h2>Read latency in the measurement window</h2>
+  <div class="tablewrap"><table id="latency"></table></div>
+
   <h2>Reads in the measurement window</h2>
   <div class="tablewrap"><table id="apis"></table></div>
 
@@ -447,6 +450,12 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   ].map(([label, key, f]) => [label, f(res[0][key]), f(res[1][key]), ratioText(ratio(res[0][key], res[1][key]))]);
   resRows.unshift(['Replay', fmt.seconds(R.replay_seconds[0]), fmt.seconds(R.replay_seconds[1]), ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1]))]);
   table('resources', ['Measure', 'A', 'B', 'B/A'], resRows);
+
+  const apiOrder = apiNames.concat(Object.keys(apis).filter((a) => !apiNames.includes(a))).filter((a) => apis[a]);
+  table('latency', ['Read', 'A', 'B', 'B/A'], apiOrder.flatMap((a) => [['p50', 'P50'], ['p99', 'P99']].map(([label, key]) => {
+    const l = apis[a].latency_ms;
+    return [`${a} ${label}`, fmt.ms(l[0][key]), fmt.ms(l[1][key]), ratioText(ratio(l[0][key], l[1][key]))];
+  })));
 
   table('apis', ['API', 'Sent', 'Compared', 'Mismatch', 'Match after retry', 'Too large', 'Dropped', 'Errors A', 'Errors B',
     'p50 A', 'p50 B', 'p90 A', 'p90 B', 'p99 A', 'p99 B', 'p99.9 A', 'p99.9 B', 'Max A', 'Max B', 'Items per read'],
