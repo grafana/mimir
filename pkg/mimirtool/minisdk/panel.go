@@ -135,9 +135,16 @@ var knownTypes = map[string]struct{}{
 
 // Panel represents panels of different types defined in a Grafana dashboard.
 type Panel struct {
-	Targets   []Target `json:"targets,omitempty"`
-	SubPanels []Panel  `json:"panels"`
-	Type      string   `json:"type"`
+	Targets      []Target         `json:"targets,omitempty"`
+	SubPanels    []Panel          `json:"panels"`
+	Type         string           `json:"type"`
+	LibraryPanel *LibraryPanelRef `json:"libraryPanel,omitempty"`
+}
+
+// LibraryPanelRef references a Grafana library panel.
+type LibraryPanelRef struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
 }
 
 // Target describes an expression with which the Panel fetches data from a data source.
