@@ -237,12 +237,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.True(t, res.CoverageGap, "nothing holds [76h, 90h)")
 	})
 
-	t.Run("per-bucket counts across blocks and ingesters are refused", func(t *testing.T) {
-		_, err := newEstimator(day, &ingestersMock{}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, Step: 24 * hour})
-		require.ErrorContains(t, err, "per-bucket counts over a window held partly by blocks")
-		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
-	})
-
 	t.Run("a window older than the ingesters with no block is empty", func(t *testing.T) {
 		res, err := newEstimator(nil, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 0, MaxT: 24 * hour})
 		require.NoError(t, err)
@@ -372,4 +366,43 @@ func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
 			assert.Equal(t, map[string][]int64{"up": {100}}, res.Counts)
 		})
 	}
+}
+
+func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1 := ulid.MustNew(1, nil)
+	day := bucketindex.Blocks{{ID: b1, MinTime: 52 * hour, MaxTime: 76 * hour}}
+
+	finder := &blocksFinderMock{}
+	// The first bucket is the day's block; the second has no block before
+	// query-store-after (88h) and is held by the ingesters.
+	finder.On("GetBlocks", mock.Anything, "user-1", 52*hour, 76*hour-1).Return(day, &bucketindex.Metadata{}, nil)
+	finder.On("GetBlocks", mock.Anything, "user-1", 76*hour, 88*hour-1).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
+	var got *storegatewaypb.SeriesCountsRequest
+	gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+	}}}}, queryStoreAfter: 12 * time.Hour}
+	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{7, 8}}}, MinTimeMs: 76 * hour},
+	}}}
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e.now = func() time.Time { return now }
+
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: 24 * hour, MaxIndexBytes: 1000})
+	require.NoError(t, err)
+	assert.Equal(t, readPerBucket, res.Read)
+	assert.Equal(t, "blocks,blocks+head", res.Source)
+	assert.Equal(t, map[string][]int64{"up": {3, 2}}, res.Counts)
+	require.NotNil(t, got)
+	assert.False(t, got.Hashes, "the day's bucket is one source, a plain count")
+	assert.Equal(t, int64(500), got.MaxIndexBytes, "the buckets share max_index_bytes")
+	require.NotNil(t, ing.gotSeriesCounts)
+	assert.Equal(t, 76*hour, ing.gotSeriesCounts.StartTimestampMs)
+
+	_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: hour / 2})
+	require.ErrorContains(t, err, "capped at 48")
+	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 }

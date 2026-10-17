@@ -97,7 +97,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	t.Run("refuses buckets across block ranges", func(t *testing.T) {
 		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
 		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
-		require.ErrorContains(t, err, "inside one block range")
+		require.ErrorIs(t, err, errStepNeedsOneSource, "the estimator answers it bucket by bucket instead")
 	})
 
 	t.Run("a sketch from one store-gateway absorbs the other's hashes", func(t *testing.T) {
