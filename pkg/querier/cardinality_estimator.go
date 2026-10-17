@@ -69,13 +69,29 @@ type CardinalityEstimator struct {
 	ingesters estimateIngesters
 	limits    estimateLimits
 	now       func() time.Time
+	// headAlwaysHolds is the recent time every ingester head holds even
+	// right after a head compaction: half the TSDB block range, since the
+	// head is cut once it spans 1.5 block ranges.
+	headAlwaysHolds time.Duration
 }
+
+// defaultHeadAlwaysHolds is headAlwaysHolds for the default 2h block range.
+const defaultHeadAlwaysHolds = time.Hour
 
 // NewCardinalityEstimator returns an estimator over blocks and, when
 // ingesters is not nil, the ingesters. limits may be nil only when
 // ingesters is.
 func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits) *CardinalityEstimator {
-	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now}
+	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
+}
+
+// WithIngesterBlockRange sets the ingesters' TSDB block range, from which
+// the estimator knows how much recent time a head always holds.
+func (e *CardinalityEstimator) WithIngesterBlockRange(blockRange time.Duration) *CardinalityEstimator {
+	if blockRange > 0 {
+		e.headAlwaysHolds = blockRange / 2
+	}
+	return e
 }
 
 // Estimate answers req for tenantID. With Snap, a window inside one block
@@ -339,10 +355,11 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 }
 
 // headCounts counts series per value of req.GroupBy in the ingesters'
-// heads over the window, from the series' chunk metas. When that walk is
-// over max_index_bytes and no step is asked for, the head is counted as one
+// heads and local blocks over the window, from the series' chunk metas.
+// When that walk is over max_index_bytes, no step is asked for and the
+// window is inside the time every head holds, the head is counted as one
 // bucket from its postings instead (headWholeCounts) and the response says
-// so; with a step the refusal stands.
+// so; otherwise the refusal stands.
 //
 // The ingesters count their heads and their compacted local blocks. They
 // keep everything written after heldFrom; a window that starts before that
@@ -364,7 +381,12 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	})
 	if err != nil {
 		err = classifyIngesterError(err)
-		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.Step == 0 {
+		// The whole-head count reads only the head's postings, not the
+		// ingesters' local blocks, so it stands in only for a window the
+		// head is sure to hold; an older window would miss the series
+		// that are only in local blocks.
+		headOnly := req.MinT >= util.TimeToMillis(e.now().Add(-e.headAlwaysHolds))
+		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.Step == 0 && headOnly {
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
 				return CardinalityEstimateResult{}, werr
