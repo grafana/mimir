@@ -179,6 +179,14 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, cardinality.InMemoryMethod, ing.gotMethod)
 	})
 
+	t.Run("a window older than the head always holds is refused, not answered from the head alone", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 97 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
+		require.Error(t, err, "the last 3h reach the ingesters' local blocks, which the head postings don't read")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.Nil(t, ing.gotLabelNames)
+	})
+
 	t.Run("with a step the refusal stands", func(t *testing.T) {
 		ing := &ingestersMock{seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: hour, MaxIndexBytes: 1000})
