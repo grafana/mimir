@@ -107,9 +107,9 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		status  int
 		body    string
 	}{
-		"a window across block ranges with a step is the caller's error": {
+		"too many buckets across block ranges is the caller's error": {
 			blocks: bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}},
-			query:  "start=0&end=172800&step=1d", status: http.StatusBadRequest, body: "inside one block range",
+			query:  "start=0&end=172800&step=30m", status: http.StatusBadRequest, body: "capped at 48",
 		},
 		"a store-gateway refusing on max_index_bytes is 422": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
