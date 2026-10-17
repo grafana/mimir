@@ -122,7 +122,7 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks, dedup bool, m *estimateMerger) (CardinalityEstimateResult, error) {
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: dedup}
 	if res.Dedup && req.Step > 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts need a window inside one block range whose blocks share no series")
+		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window spans more than one block range, or blocks that may share series", errStepNeedsOneSource)
 	}
 	matchers, err := storepb.PromMatchersToMatchers(req.Matchers...)
 	if err != nil {

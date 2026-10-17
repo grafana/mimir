@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
@@ -38,6 +39,9 @@ const (
 const (
 	readHeadPostings   = "head_postings"
 	readHeadChunkMetas = "head_chunk_metas"
+	// readPerBucket says each bucket was answered as its own window, with
+	// the read each one needed.
+	readPerBucket = "per_bucket"
 )
 
 // estimateIngesters is the part of the distributor the cardinality
@@ -112,14 +116,101 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		needIngesters = false
 	}
 
+	var (
+		res CardinalityEstimateResult
+		err error
+	)
 	switch {
 	case !needIngesters:
-		return e.blocksOnly(ctx, tenantID, req)
+		res, err = e.blocksOnly(ctx, tenantID, req)
 	case storeMaxT <= req.MinT:
-		return e.headCounts(ctx, req, heldFrom)
+		res, err = e.headCounts(ctx, req, heldFrom)
 	default:
-		return e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
+		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
+	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
+		return e.perBucket(ctx, tenantID, req)
+	}
+	return res, err
+}
+
+// maxPerBucketEstimates caps the buckets perBucket answers one by one, since
+// each is a full estimate with its own fan-out.
+const maxPerBucketEstimates = 48
+
+// perBucket answers a per-bucket count whose window crosses sources that
+// may share series, by answering each step-wide bucket as its own window.
+// A bucket inside one source, or one block range of series-disjoint blocks,
+// is a plain count with no deduplication; a bucket that crosses the
+// blocks/ingesters cut is deduplicated by hash on its own. The buckets
+// share max_index_bytes evenly and the request's memory limit.
+func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+	if (req.MaxT-req.MinT)%req.Step != 0 {
+		return CardinalityEstimateResult{}, badEstimateRequest("step %d doesn't divide the window [%d, %d)", req.Step, req.MinT, req.MaxT)
+	}
+	n := int((req.MaxT - req.MinT) / req.Step)
+	if n > maxPerBucketEstimates {
+		return CardinalityEstimateResult{}, badEstimateRequest("%w; answering the %d buckets one by one is capped at %d, so use a larger step or a window inside one source", errStepNeedsOneSource, n, maxPerBucketEstimates)
+	}
+	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
+	sources := map[string]bool{}
+	seenBlocks := map[ulid.ULID]bool{}
+	for i := range n {
+		sub := *req
+		sub.MinT = req.MinT + int64(i)*req.Step
+		sub.MaxT = sub.MinT + req.Step
+		sub.Step, sub.Snap = 0, false
+		if req.MaxIndexBytes > 0 {
+			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
+		}
+		res, err := e.Estimate(ctx, tenantID, &sub)
+		if err != nil {
+			return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
+		}
+		for v, c := range res.Counts {
+			counts := out.Counts[v]
+			if counts == nil {
+				counts = make([]int64, n)
+				out.Counts[v] = counts
+			}
+			counts[i] = c[0]
+			if res.Estimated[v] {
+				if out.Estimated == nil {
+					out.Estimated = map[string]bool{}
+				}
+				out.Estimated[v] = true
+			}
+		}
+		sources[res.Source] = true
+		for _, id := range res.Blocks {
+			if !seenBlocks[id] {
+				seenBlocks[id] = true
+				out.Blocks = append(out.Blocks, id)
+			}
+		}
+		out.MissingBlocks = append(out.MissingBlocks, res.MissingBlocks...)
+		out.LowerBound = out.LowerBound || res.LowerBound
+		out.CoverageGap = out.CoverageGap || res.CoverageGap
+		out.Dedup = out.Dedup || res.Dedup
+		out.HeadWhole = out.HeadWhole || res.HeadWhole
+		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
+		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
+		out.Retries += res.Retries
+		out.SeriesCounted += res.SeriesCounted
+		out.PostingsFetchedBytes += res.PostingsFetchedBytes
+		out.SeriesFetchedBytes += res.SeriesFetchedBytes
+		out.IndexBytes += res.IndexBytes
+		out.BlocksFromPostings += res.BlocksFromPostings
+		out.HashBytes += res.HashBytes
+		out.SketchBytes += res.SketchBytes
+	}
+	names := make([]string, 0, len(sources))
+	for s := range sources {
+		names = append(names, s)
+	}
+	slices.Sort(names)
+	out.Source = strings.Join(names, ",")
+	return out, nil
 }
 
 // compactedBlocksHold reports whether compacted blocks can answer req alone:
@@ -177,7 +268,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 // a lower bound.
 func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, storeMaxT, heldFrom int64) (CardinalityEstimateResult, error) {
 	if req.Step > 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("per-bucket counts over a window held partly by blocks and partly by the ingesters are not supported yet")
+		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window is held partly by blocks and partly by the ingesters", errStepNeedsOneSource)
 	}
 	half := req.MaxIndexBytes
 	if half > 0 {
