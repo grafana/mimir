@@ -30,6 +30,11 @@ type estimateError struct {
 func (e estimateError) Error() string { return e.err.Error() }
 func (e estimateError) Unwrap() error { return e.err }
 
+// errStepNeedsOneSource is wrapped by the refusals of a per-bucket count
+// over sources that may share series, which the estimator answers bucket by
+// bucket instead.
+var errStepNeedsOneSource = errors.New("per-bucket counts need each bucket held by sources that share no series")
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {
