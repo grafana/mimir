@@ -2937,7 +2937,7 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		User:                          user,
 		Options:                       []*types.Any{},
 		SourceTenants:                 []string{},
-		EvaluationDelay:               1 * time.Minute,
+		EvaluationDelay:               1 * time.Minute, //nolint:staticcheck // We want to intentionally access a deprecated field
 		QueryOffset:                   1 * time.Minute,
 		AlignEvaluationTimeOnInterval: true,
 	}
