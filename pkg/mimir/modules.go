@@ -752,6 +752,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// wraps this route too, so the policies are in the context when the handler runs.
 	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok && t.Cfg.Querier.CardinalityEstimate.Enabled {
 		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides)
+		if ranges := t.Cfg.BlocksStorage.TSDB.BlockRanges; len(ranges) > 0 {
+			estimator = estimator.WithIngesterBlockRange(ranges[0])
+		}
 		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, estimator, t.Cfg.Querier.CardinalityEstimate, t.Cfg.LabelAccessControlEnabled)
 	}
 
