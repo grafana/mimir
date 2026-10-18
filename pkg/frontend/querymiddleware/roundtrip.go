@@ -324,6 +324,7 @@ func newQueryTripperware(
 		// range and instant queries have more accurate logic for query details.
 		next = NewQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
+		cardinalityEstimate := next
 		activeSeries := next
 		activeNativeHistogramMetrics := next
 		labels := next
@@ -347,6 +348,7 @@ func newQueryTripperware(
 			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageOffsetsReader, limits, log, metrics)
 			instant = newReadConsistencyRoundTripper(instant, ingestStorageOffsetsReader, limits, log, metrics)
 			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
+			cardinalityEstimate = newReadConsistencyRoundTripper(cardinalityEstimate, ingestStorageOffsetsReader, limits, log, metrics)
 			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
@@ -358,6 +360,7 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
+			cardinalityEstimate = newCardinalityEstimateCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinalityEstimate, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
@@ -383,6 +386,8 @@ func newQueryTripperware(
 				return instant.RoundTrip(r)
 			case IsCardinalityQuery(r.URL.Path):
 				return cardinality.RoundTrip(r)
+			case IsCardinalityEstimateQuery(r.URL.Path):
+				return cardinalityEstimate.RoundTrip(r)
 			case IsActiveSeriesQuery(r.URL.Path):
 				return activeSeries.RoundTrip(r)
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
