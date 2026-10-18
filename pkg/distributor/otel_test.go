@@ -1117,7 +1117,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, pushFunc, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1208,7 +1208,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		200000000, nil, nil, false, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, pushFunc, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1915,7 +1915,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, false, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
-				retryConfig, nil, pusher, nil, nil,
+				retryConfig, nil, pusher, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
 			)
 
@@ -1981,7 +1981,7 @@ func TestOTLPHandler_TooFarInPast(t *testing.T) {
 		100000, nil, nil, false, ds[0].limits,
 		nil, nil, RetryConfig{}, nil,
 		ds[0].PushWithMiddlewares,
-		nil, nil, log.NewNopLogger(),
+		nil, log.NewNopLogger(),
 	)
 
 	sendOTLP := func(t *testing.T, series []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) *httptest.ResponseRecorder {
@@ -2301,7 +2301,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			handler := OTLPHandler(
 				100000, nil, nil, tt.allowTranslationHeaders, limits,
 				nil, nil,
-				RetryConfig{}, nil, pusher, nil, nil,
+				RetryConfig{}, nil, pusher, nil,
 				log.NewNopLogger(),
 			)
 
@@ -2378,7 +2378,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 			assert.False(t, request.SkipLabelValidation)
 			pushReq.CleanUp()
 			return nil
-		}, nil, nil, log.NewNopLogger(),
+		}, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	// Metrics with empty data points are now dropped with a warning annotation rather than
@@ -2425,7 +2425,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 			assert.Len(t, request.Timeseries, 1)
 			assert.False(t, request.SkipLabelValidation)
 			return nil
-		}, nil, nil, log.NewNopLogger(),
+		}, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	// Metrics with empty data points are now dropped with a warning annotation rather than
@@ -2456,7 +2456,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 			assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 			assert.False(t, request.SkipLabelValidation)
 			return nil
-		}, nil, nil, log.NewNopLogger(),
+		}, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	// Metrics with empty data points are now dropped with a warning annotation rather than
@@ -2482,7 +2482,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		200, nil, nil, false, nil, nil, nil,
-		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, readBodyPushFunc(t), nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2813,7 +2813,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			handler := OTLPHandler(100000, nil, nil, false, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest()
 				return err
-			}, nil, nil, log.NewNopLogger())
+			}, nil, log.NewNopLogger())
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
 

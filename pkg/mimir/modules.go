@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matcher/compat"
@@ -36,6 +37,7 @@ import (
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/spf13/afero"
+	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -567,7 +569,32 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
 
-	return nil, nil
+	if !t.Cfg.Distributor.OTLPGRPCConfig.Enabled() {
+		return nil, nil
+	}
+
+	authInterceptor := func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		return handler(user.InjectOrgID(ctx, t.Cfg.NoAuthTenant), req)
+	}
+	if t.Cfg.MultitenancyEnabled {
+		authInterceptor = middleware.ServerUserHeaderInterceptor
+	}
+
+	return distributor.NewOTLPGRPCServer(
+		t.Cfg.Distributor.OTLPGRPCConfig,
+		t.Cfg.Distributor.MaxOTLPRequestSize,
+		authInterceptor,
+		t.Distributor,
+		t.Overrides,
+		t.Overrides,
+		t.Cfg.Distributor.OTelResourceAttributePromotionConfig,
+		t.Cfg.Distributor.KeepIdentifyingOTelResourceAttributesConfig,
+		t.Cfg.Distributor.OTLPPushMiddlewares,
+		t.Cfg.Distributor.RetryConfig,
+		t.Distributor.PushWithMiddlewares,
+		t.Distributor.PushMetrics,
+		util_log.Logger,
+	), nil
 }
 
 // initQueryable instantiates the queryable and promQL engine used to service queries to
