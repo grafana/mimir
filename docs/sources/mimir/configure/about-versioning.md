@@ -95,6 +95,9 @@ The following features are currently experimental:
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
   - `-ruler.min-rule-evaluation-interval`
+  - OTLP gRPC receiver for metrics, running on a dedicated listener
+    - `-distributor.otlp-grpc-server.*`
+    - `-distributor.otlp-grpc-retry-info-enabled`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)

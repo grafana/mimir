@@ -1394,6 +1394,148 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "otlp_grpc_server",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "listen_address",
+              "required": false,
+              "desc": "Address the OTLP gRPC receiver listens on. If empty, it listens on all interfaces.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.otlp-grpc-server.listen-address",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "listen_port",
+              "required": false,
+              "desc": "Port the OTLP gRPC receiver listens on. 0 disables the receiver. The standard OTLP gRPC port is 4317.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.otlp-grpc-server.listen-port",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "OTLP gRPC receiver TLS server cert path. If empty, TLS is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.otlp-grpc-server.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "OTLP gRPC receiver TLS server key path. Required when the cert path is set.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.otlp-grpc-server.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "tls_client_ca_path",
+              "required": false,
+              "desc": "OTLP gRPC receiver TLS Client CA path. If set, clients must present a valid certificate (mutual TLS).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.otlp-grpc-server.tls-client-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_connection_idle",
+              "required": false,
+              "desc": "The duration after which an idle connection should be closed. Default: infinity",
+              "fieldValue": null,
+              "fieldDefaultValue": 9223372036854775807,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.max-connection-idle",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_connection_age",
+              "required": false,
+              "desc": "The duration for the maximum amount of time a connection may exist before it will be closed. Default: infinity",
+              "fieldValue": null,
+              "fieldDefaultValue": 9223372036854775807,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.max-connection-age",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_connection_age_grace",
+              "required": false,
+              "desc": "An additive period after max-connection-age after which the connection will be forcibly closed. Default: infinity",
+              "fieldValue": null,
+              "fieldDefaultValue": 9223372036854775807,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.max-connection-age-grace",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "Duration after which a keepalive probe is sent in case of no activity over the connection. Default: 2h",
+              "fieldValue": null,
+              "fieldDefaultValue": 7200000000000,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.time",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the duration after which an idle connection should be closed. Default: 20s",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_min_time_between_pings",
+              "required": false,
+              "desc": "Minimum amount of time a client should wait before sending a keepalive ping. If client sends keepalive ping more often, server will send GOAWAY and close the connection.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.min-time-between-pings",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_ping_without_stream_allowed",
+              "required": false,
+              "desc": "If true, server allows keepalive pings even when there are no active streams(RPCs). If false, and client sends ping when there are no active streams, server will send GOAWAY and close the connection.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "distributor.otlp-grpc-server.keepalive.ping-without-stream-allowed",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "max_recv_msg_size",
           "required": false,
@@ -7746,6 +7888,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-native-delta-ingestion",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otlp_grpc_retry_info_enabled",
+          "required": false,
+          "desc": "Whether the OTLP gRPC receiver includes retry information (google.rpc.RetryInfo) in RESOURCE_EXHAUSTED and UNAVAILABLE errors, based on -distributor.retry-after-header.*. Only has an effect if the OTLP gRPC receiver and -distributor.retry-after-header.enabled are enabled. When disabled, rate limited requests are rejected with RESOURCE_EXHAUSTED and no retry information, which OTLP clients treat as non-retryable: the data is dropped instead of being retried.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otlp-grpc-retry-info-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

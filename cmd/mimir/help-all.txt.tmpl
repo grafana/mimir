@@ -1555,6 +1555,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
   -distributor.otel-translation-strategy value
     	[experimental] Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: "", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
+  -distributor.otlp-grpc-retry-info-enabled
+    	[experimental] Whether the OTLP gRPC receiver includes retry information (google.rpc.RetryInfo) in RESOURCE_EXHAUSTED and UNAVAILABLE errors, based on -distributor.retry-after-header.*. Only has an effect if the OTLP gRPC receiver and -distributor.retry-after-header.enabled are enabled. When disabled, rate limited requests are rejected with RESOURCE_EXHAUSTED and no retry information, which OTLP clients treat as non-retryable: the data is dropped instead of being retried. (default true)
+  -distributor.otlp-grpc-server.keepalive.max-connection-age duration
+    	[experimental] The duration for the maximum amount of time a connection may exist before it will be closed. Default: infinity (default 2562047h47m16.854775807s)
+  -distributor.otlp-grpc-server.keepalive.max-connection-age-grace duration
+    	[experimental] An additive period after max-connection-age after which the connection will be forcibly closed. Default: infinity (default 2562047h47m16.854775807s)
+  -distributor.otlp-grpc-server.keepalive.max-connection-idle duration
+    	[experimental] The duration after which an idle connection should be closed. Default: infinity (default 2562047h47m16.854775807s)
+  -distributor.otlp-grpc-server.keepalive.min-time-between-pings duration
+    	[experimental] Minimum amount of time a client should wait before sending a keepalive ping. If client sends keepalive ping more often, server will send GOAWAY and close the connection. (default 10s)
+  -distributor.otlp-grpc-server.keepalive.ping-without-stream-allowed
+    	[experimental] If true, server allows keepalive pings even when there are no active streams(RPCs). If false, and client sends ping when there are no active streams, server will send GOAWAY and close the connection. (default true)
+  -distributor.otlp-grpc-server.keepalive.time duration
+    	[experimental] Duration after which a keepalive probe is sent in case of no activity over the connection. Default: 2h (default 2h0m0s)
+  -distributor.otlp-grpc-server.keepalive.timeout duration
+    	[experimental] After having pinged for keepalive check, the duration after which an idle connection should be closed. Default: 20s (default 20s)
+  -distributor.otlp-grpc-server.listen-address string
+    	[experimental] Address the OTLP gRPC receiver listens on. If empty, it listens on all interfaces.
+  -distributor.otlp-grpc-server.listen-port int
+    	[experimental] Port the OTLP gRPC receiver listens on. 0 disables the receiver. The standard OTLP gRPC port is 4317.
+  -distributor.otlp-grpc-server.tls-cert-path string
+    	[experimental] OTLP gRPC receiver TLS server cert path. If empty, TLS is disabled.
+  -distributor.otlp-grpc-server.tls-client-ca-path string
+    	[experimental] OTLP gRPC receiver TLS Client CA path. If set, clients must present a valid certificate (mutual TLS).
+  -distributor.otlp-grpc-server.tls-key-path string
+    	[experimental] OTLP gRPC receiver TLS server key path. Required when the cert path is set.
   -distributor.reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -distributor.reactive-limiter.correlation-window uint

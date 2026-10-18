@@ -272,6 +272,9 @@ type Config struct {
 	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
+	// OTLPGRPCConfig configures the dedicated OTLP gRPC receiver.
+	OTLPGRPCConfig OTLPGRPCConfig `yaml:"otlp_grpc_server"`
+
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
 	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental" doc:"hidden"`
@@ -371,6 +374,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
+	cfg.OTLPGRPCConfig.RegisterFlagsWithPrefix("distributor.otlp-grpc-server.", f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
 	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
@@ -390,6 +394,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
+	if err := cfg.OTLPGRPCConfig.Validate(); err != nil {
+		return err
+	}
+
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
@@ -431,6 +439,9 @@ type PushMetrics struct {
 	otlpRequestsWithJobOrInstanceResourceAttribute *prometheus.CounterVec
 	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
 	otlpArrayLengths *prometheus.HistogramVec
+	// Shared by the OTLP HTTP and gRPC receivers.
+	discardedDueToOTLPParseError *prometheus.CounterVec
+	otlpGRPCRequestDuration      *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -479,6 +490,30 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"field"}),
+		discardedDueToOTLPParseError: validation.DiscardedSamplesCounter(reg, otelParseError),
+		otlpGRPCRequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_otlp_grpc_request_duration_seconds",
+			Help:                            "Time taken to process an OTLP gRPC export request, by tenant and gRPC status code.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user", "status_code"}),
+	}
+}
+
+// ObserveOTLPGRPCRequestDuration tracks the time taken to process an OTLP gRPC export request.
+func (m *PushMetrics) ObserveOTLPGRPCRequestDuration(user, statusCode string, d time.Duration) {
+	if m != nil {
+		m.otlpGRPCRequestDuration.WithLabelValues(user, statusCode).Observe(d.Seconds())
+	}
+}
+
+// AddOTLPParseErrorDiscardedSamples tracks samples dropped because they couldn't be parsed from an OTLP request.
+func (m *PushMetrics) AddOTLPParseErrorDiscardedSamples(user string, count int) {
+	if m != nil {
+		// The "group" label is empty as the metrics couldn't be parsed.
+		m.discardedDueToOTLPParseError.WithLabelValues(user, "").Add(float64(count))
 	}
 }
 
@@ -533,6 +568,8 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.otlpRequestsWithJobOrInstanceResourceAttribute.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
+	m.discardedDueToOTLPParseError.DeletePartialMatch(prometheus.Labels{"user": user})
+	m.otlpGRPCRequestDuration.DeletePartialMatch(prometheus.Labels{"user": user})
 }
 
 // New constructs a new Distributor
@@ -2210,7 +2247,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 
 	// If we know the httpgrpcRequestSize, we can check it.
 	if httpgrpcRequestSize > 0 {
-		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
+		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize, decompressionEstMultiplier); err != nil {
 			return ctx, nil, err
 		}
 	}
@@ -2221,14 +2258,16 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, rs, nil
 }
 
-func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize int64) error {
+// checkHttpgrpcRequestSize accounts for the request size and checks it against the inflight bytes limit.
+// estMultiplier estimates the additional memory needed to decompress the request; it must be 0 if the size is already decoded.
+func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize, estMultiplier int64) error {
 	// If httpgrpcRequestSize was already checked, don't check it again.
 	if rs.httpgrpcRequestSize > 0 {
 		return nil
 	}
 	rs.httpgrpcRequestSize = httpgrpcRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
-	return d.checkInflightBytes(inflightBytes + decompressionEstMultiplier*httpgrpcRequestSize)
+	return d.checkInflightBytes(inflightBytes + estMultiplier*httpgrpcRequestSize)
 }
 
 func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {
@@ -2280,7 +2319,15 @@ func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) (retErr error) {
-		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
+		// A decoded size is checked below, without the decompression estimate applied to compressed bodies.
+		startSize := pushReq.contentLength
+		estMultiplier := int64(decompressionEstMultiplier)
+		if pushReq.contentLengthDecoded {
+			startSize = 0
+			estMultiplier = 0
+		}
+
+		ctx, rs, err := d.startPushRequest(ctx, startSize)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
@@ -2290,6 +2337,15 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		pushReq.AddCleanup(func() {
 			d.decreaseInflightPushRequestCounters(rs)
 		})
+
+		// The request may have been started earlier without knowing its size (e.g. by a gRPC tap handle, before the
+		// message was read), in which case startPushRequest didn't check it. Check it now, before the request is
+		// converted into a WriteRequest.
+		if pushReq.contentLength > 0 {
+			if err := d.checkHttpgrpcRequestSize(rs, pushReq.contentLength, estMultiplier); err != nil {
+				return middleware.DoNotLogError{Err: err}
+			}
+		}
 
 		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
