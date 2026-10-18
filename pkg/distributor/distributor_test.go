@@ -9058,6 +9058,8 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		disableDistributorService bool
 		externalCheck             bool  // Start request "externally", from outside of distributor.
 		httpgrpcRequestSize       int64 // only used for external check.
+		contentLength             int64
+		contentLengthDecoded      bool
 
 		reactiveLimiterEnabled       bool
 		reactiveLimiterCanAcquire    bool
@@ -9156,6 +9158,20 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			expectedStartError:             errMaxInflightRequestsBytesReached,
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 			skipDecompress:                 true,
+		},
+
+		// A decoded content length (e.g. gRPC OTLP) is counted as is, without the decompression estimate.
+		"decoded content length is not multiplied by the decompression estimate": {
+			contentLength:        inflightBytesLimit / 4,
+			contentLengthDecoded: true,
+		},
+
+		// Admission of other requests doesn't change: a request started externally without a size isn't checked
+		// against the inflight bytes limit again, unless its content length has been decoded.
+		"request started externally without size, not decoded: content length is not checked": {
+			externalCheck:                  true,
+			contentLength:                  100,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - 200,
 		},
 
 		"too many inflight bytes requests, external with httpgrpc size outside limit": {
@@ -9280,6 +9296,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			if tc.skipDecompress {
 				ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize)
 			}
+			if tc.contentLengthDecoded {
+				ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.contentLength+int64(pushReq.Size()))
+			}
 
 			if tc.externalCheck {
 				var err error
@@ -9298,7 +9317,10 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 				}
 			}
 
-			err := wrappedPush(ctx, NewParsedRequest(pushReq, pushReq.Size()))
+			req := NewParsedRequest(pushReq, pushReq.Size())
+			req.contentLength = tc.contentLength
+			req.contentLengthDecoded = tc.contentLengthDecoded
+			err := wrappedPush(ctx, req)
 			if tc.expectedPushError == nil {
 				require.NoError(t, err)
 			} else {

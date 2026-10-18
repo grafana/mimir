@@ -97,6 +97,8 @@ The following features are currently experimental:
   - `-ruler.min-rule-evaluation-interval`
   - Attach headers identifying the rule being evaluated to the queries sent to the query-frontend.
     - `-ruler.query-frontend.enable-rule-detail-headers`
+  - OTLP gRPC endpoint for metrics, served on the main gRPC server
+    - `-distributor.otlp-grpc-endpoint-enabled`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
