@@ -181,6 +181,10 @@ type CacheKeyGenerator interface {
 	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
 	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
 	LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error)
+
+	// CardinalityEstimate should return a cache key for a cardinality estimate request. The cache key does not need to
+	// contain the tenant ID. It can return ErrUnsupportedRequest, in which case the response is not cached.
+	CardinalityEstimate(r *http.Request) (*GenericQueryCacheKey, error)
 }
 
 type DefaultCacheKeyGenerator struct {
