@@ -187,6 +187,15 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			out.HasMore = true
 		}
 		w.Header().Set("Content-Type", "application/json")
+		// An answer that is not complete, that counts the whole head
+		// whatever the window (head_whole, also when one bucket of a
+		// per-bucket answer did), or that loaded chunks for compare=true,
+		// must not be kept by the query-frontend's cache. A table cut by
+		// limit or min_count is complete for the parameters asked, which
+		// are in the cache key.
+		if out.LowerBound || out.CoverageGap || out.HeadWhole || out.Compare != nil {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		if err := writeEstimateResponse(w, &out); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
