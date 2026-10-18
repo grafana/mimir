@@ -72,7 +72,26 @@ func messageV2Of(v any) protobufproto.Message {
 	}
 }
 
+// selfMarshaler is implemented by messages that encode themselves, such as the OTLP pdata messages.
+// They are neither gogo nor protobuf-go messages, so the codec encodes them directly.
+type selfMarshaler interface {
+	MarshalProto() ([]byte, error)
+}
+
+// selfUnmarshaler is implemented by messages that decode themselves, such as the OTLP pdata messages.
+type selfUnmarshaler interface {
+	UnmarshalProto([]byte) error
+}
+
 func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
+	if m, ok := v.(selfMarshaler); ok {
+		buf, err := m.MarshalProto()
+		if err != nil {
+			return nil, err
+		}
+		return mem.BufferSlice{mem.SliceBuffer(buf)}, nil
+	}
+
 	vv := messageV2Of(v)
 	if vv == nil {
 		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
@@ -139,6 +158,11 @@ var pageSize = syscall.Getpagesize()
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	if u, ok := v.(selfUnmarshaler); ok {
+		// The caller releases data. The message copies what it keeps from the buffer.
+		return u.UnmarshalProto(data.Materialize())
+	}
+
 	holder, isBufferHolder := v.(MessageWithBufferRef)
 
 	var buf mem.Buffer

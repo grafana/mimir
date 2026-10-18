@@ -1569,6 +1569,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
   -distributor.otel-translation-strategy value
     	[experimental] Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: "", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
+  -distributor.otlp-grpc-endpoint-enabled
+    	[experimental] Whether the OTLP metrics service is served on the main gRPC server (the -server.grpc-listen-port port), in addition to the OTLP HTTP endpoint. Clients send the same data to the gRPC port; the request size is limited by -distributor.max-otlp-request-size, and retry information follows -distributor.retry-after-header.*.
   -distributor.reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -distributor.reactive-limiter.correlation-window uint

@@ -302,6 +302,9 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 // RegisterDistributor registers the endpoints associated with the distributor.
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
+	if pushConfig.OTLPGRPCEndpointEnabled {
+		distributor.RegisterOTLPGRPCService(a.server.GRPC, pushConfig, limits, d.PushWithMiddlewares, d.PushMetrics, a.logger)
+	}
 
 	newRequestBuffers := func() *util.RequestBuffers {
 		return util.NewRequestBuffers(d.RequestBufferPool)
@@ -323,7 +326,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
-		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{

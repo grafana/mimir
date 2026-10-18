@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -343,4 +344,27 @@ func TestAddSourceBufferHolder_AfterFreeBuffer(t *testing.T) {
 
 	// The sourceBufferHolders map should remain nil (not initialized)
 	assert.Nil(t, destReq.sourceBufferHolders)
+}
+
+func TestCodecV2_SelfMarshalingMessages(t *testing.T) {
+	// The OTLP pdata messages encode and decode themselves. They aren't gogo or protobuf-go messages, so the codec
+	// must handle them directly instead of panicking.
+	req := pmetricotlp.NewExportRequest()
+	metric := req.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric.SetName("foo")
+	metric.SetEmptyGauge().DataPoints().AppendEmpty().SetDoubleValue(1)
+
+	data, err := globalCodec.Marshal(req)
+	require.NoError(t, err)
+	defer data.Free()
+
+	decoded := pmetricotlp.NewExportRequest()
+	require.NoError(t, globalCodec.Unmarshal(data, &decoded))
+	require.Equal(t, 1, decoded.Metrics().ResourceMetrics().Len())
+	require.Equal(t, "foo", decoded.Metrics().ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Name())
+
+	// Responses are encoded too.
+	respData, err := globalCodec.Marshal(pmetricotlp.NewExportResponse())
+	require.NoError(t, err)
+	respData.Free()
 }

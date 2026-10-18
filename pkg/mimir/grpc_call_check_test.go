@@ -10,9 +10,12 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/distributor"
 )
 
 func TestGrpcInflightMethodLimiter(t *testing.T) {
@@ -167,6 +170,42 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		require.NotPanics(t, func() {
 			l.RPCCallFinished(ctx)
 		})
+	})
+
+	t.Run("distributor OTLP gRPC export", func(t *testing.T) {
+		m := &mockDistributorReceiver{}
+
+		l := newGrpcInflightMethodLimiter(nil, func() pushReceiver { return m })
+
+		// The message size isn't known before the message is read, so the request is started without a size.
+		ctx, err := l.RPCCallStarting(context.Background(), distributor.OTLPGRPCExportMethod, metadata.New(map[string]string{
+			grpcutil.MetadataMessageSize: "123456",
+		}))
+		require.NoError(t, err)
+		require.Equal(t, 1, m.startCalls)
+		require.Equal(t, int64(0), m.lastRequestSize)
+		require.Equal(t, 0, m.finishCalls)
+
+		l.RPCCallFinished(ctx)
+		require.Equal(t, 1, m.finishCalls)
+
+		// Other methods of the metrics service aren't limited.
+		ctx, err = l.RPCCallStarting(context.Background(), "/opentelemetry.proto.collector.metrics.v1.MetricsService/Other", nil)
+		require.NoError(t, err)
+		l.RPCCallFinished(ctx)
+		require.Equal(t, 1, m.startCalls)
+		require.Equal(t, 1, m.finishCalls)
+	})
+
+	t.Run("distributor OTLP gRPC export rejected by inflight limits", func(t *testing.T) {
+		m := &mockDistributorReceiver{returnError: errors.New("too many requests")}
+
+		l := newGrpcInflightMethodLimiter(nil, func() pushReceiver { return m })
+
+		_, err := l.RPCCallStarting(context.Background(), distributor.OTLPGRPCExportMethod, nil)
+		require.Equal(t, codes.Unavailable, status.Code(err))
+		require.Equal(t, 1, m.startCalls)
+		require.Equal(t, 0, m.finishCalls)
 	})
 
 	t.Run("distributor push via httpgrpc", func(t *testing.T) {

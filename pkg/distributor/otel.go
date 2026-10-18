@@ -27,7 +27,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
@@ -45,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -94,11 +92,8 @@ func OTLPHandler(
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
 	pushMetrics *PushMetrics,
-	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
-	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := utillog.WithContext(ctx, logger)
@@ -115,7 +110,7 @@ func OTLPHandler(
 		parser := newOTLPParser(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			otlpConverter, pushMetrics,
 			OTLPPushMiddlewares,
 			&schemeOverride,
 		)
@@ -170,33 +165,13 @@ func OTLPHandler(
 			// Translate from Mimir to OTel domain terminology
 			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
 		}
-		var (
-			httpCode int
-			grpcCode codes.Code
-			errorMsg string
-		)
-		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-			grpcCode = st.Code()
-			errorMsg = st.Message()
-
-			// This code is needed for a correct handling of errors returned by the supplier function.
-			// These errors are usually created by using the httpgrpc package.
-			// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
-			if util.IsHTTPStatusCode(grpcCode) {
-				httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
-			} else {
-				httpCode = http.StatusServiceUnavailable
-			}
-		} else {
-			var isSoft bool
-			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
-			if isSoft {
-				handlePartialOTLPPush(pushErr, w, r, req, logger)
-				return
-			}
-
-			errorMsg = pushErr.Error()
+		pushError := classifyOTLPPushError(pushErr)
+		if pushError.isSoft {
+			handlePartialOTLPPush(pushErr, w, r, req, logger)
+			return
 		}
+		grpcCode, errorMsg := pushError.grpcCode, pushError.msg
+		httpCode := httpRetryableToOTLPRetryable(pushError.httpCode)
 		if httpCode != 202 {
 			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
 			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
@@ -213,26 +188,30 @@ func OTLPHandler(
 }
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
-	var rejectedDataPoints int64
-	var ingPushErr ingesterPushError
-	var asErr activeSeriesLimitedError
-	var vErr validationError
-	if errors.As(pushErr, &ingPushErr) {
-		rejectedDataPoints = ingPushErr.rejectedSamples
-	} else if errors.As(pushErr, &asErr) {
-		rejectedDataPoints = asErr.rejectedSamples
-	} else if errors.As(pushErr, &vErr) {
-		rejectedDataPoints = vErr.rejectedSamples
-	}
-
 	expResp := colmetricpb.ExportMetricsServiceResponse{
 		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
-			RejectedDataPoints: rejectedDataPoints,
+			RejectedDataPoints: rejectedDataPointsFromPushError(pushErr),
 			ErrorMessage:       pushErr.Error(),
 		},
 	}
 	addSuccessHeaders(w, req.artificialDelay)
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+}
+
+// rejectedDataPointsFromPushError extracts the number of rejected samples from a soft push error.
+func rejectedDataPointsFromPushError(pushErr error) int64 {
+	var ingPushErr ingesterPushError
+	var asErr activeSeriesLimitedError
+	var vErr validationError
+	switch {
+	case errors.As(pushErr, &ingPushErr):
+		return ingPushErr.rejectedSamples
+	case errors.As(pushErr, &asErr):
+		return asErr.rejectedSamples
+	case errors.As(pushErr, &vErr):
+		return vErr.rejectedSamples
+	}
+	return 0
 }
 
 // inspectOTLPResourceMetrics observes ResourceMetrics/ScopeMetrics/Metrics
@@ -269,16 +248,13 @@ func newOTLPParser(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
-	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	schemeOverride **model.ValidationScheme,
 ) parserFunc {
-	if resourceAttributePromotionConfig == nil {
-		resourceAttributePromotionConfig = limits
-	}
-	if keepIdentifyingOTelResourceAttributesConfig == nil {
-		keepIdentifyingOTelResourceAttributesConfig = limits
-	}
+	convert := newOTLPConvertFunc(
+		allowTranslationHeaders, limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+		otlpConverter, pushMetrics, OTLPPushMiddlewares, schemeOverride,
+	)
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
@@ -387,6 +363,48 @@ func newOTLPParser(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
+		return convert(ctx, otlpReq, otlpConvertParams{
+			contentType:          contentType,
+			contentLength:        r.ContentLength,
+			uncompressedBodySize: uncompressedBodySize,
+			strategyHeader:       r.Header.Get(otlpTranslationStrategyHeader),
+			suffixesHeader:       r.Header.Get(otlpAddSuffixesHeader),
+		}, req, logger, spanLogger)
+	}
+}
+
+// otlpConvertParams holds the transport-specific details of a decoded OTLP request.
+type otlpConvertParams struct {
+	contentType          string
+	contentLength        int64
+	uncompressedBodySize int
+	// strategyHeader and suffixesHeader are the values of the translation headers, if any were sent.
+	strategyHeader string
+	suffixesHeader string
+}
+
+// otlpConvertFunc converts a decoded OTLP request into a Mimir write request. It is shared by the HTTP and gRPC receivers.
+type otlpConvertFunc func(ctx context.Context, otlpReq pmetricotlp.ExportRequest, params otlpConvertParams, req *mimirpb.PreallocWriteRequest, logger log.Logger, spanLogger *spanlogger.SpanLogger) (int, error)
+
+func newOTLPConvertFunc(
+	allowTranslationHeaders bool,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	otlpConverter *otlpMimirConverter,
+	pushMetrics *PushMetrics,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	schemeOverride **model.ValidationScheme,
+) otlpConvertFunc {
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
+	return func(ctx context.Context, otlpReq pmetricotlp.ExportRequest, params otlpConvertParams, req *mimirpb.PreallocWriteRequest, logger log.Logger, spanLogger *spanlogger.SpanLogger) (int, error) {
+		contentType, uncompressedBodySize := params.contentType, params.uncompressedBodySize
+
 		for _, middleware := range OTLPPushMiddlewares {
 			err := middleware(ctx, &otlpReq)
 			if err != nil {
@@ -410,8 +428,7 @@ func newOTLPParser(
 		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
 		translationHeadersApplied := false
 		if allowTranslationHeaders {
-			strategyHeader := r.Header.Get(otlpTranslationStrategyHeader)
-			suffixesHeader := r.Header.Get(otlpAddSuffixesHeader)
+			strategyHeader, suffixesHeader := params.strategyHeader, params.suffixesHeader
 			if strategyHeader != "" || suffixesHeader != "" {
 				var err error
 				translationStrategy, err = applyTranslationHeaders(strategyHeader, suffixesHeader, limits, limitsKey)
@@ -434,7 +451,7 @@ func newOTLPParser(
 		}
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
+		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), params.contentLength)
 		pushMetrics.IncOTLPContentType(contentType)
 		if inspectOTLPResourceMetrics(pushMetrics, otlpReq) {
 			pushMetrics.IncOTLPRequestWithJobOrInstanceResourceAttribute(tenantID)
@@ -462,7 +479,7 @@ func newOTLPParser(
 			spanLogger,
 		)
 		if metricsDropped > 0 {
-			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
+			pushMetrics.AddOTLPParseErrorDiscardedSamples(tenantID, int(metricsDropped))
 		}
 		if err != nil {
 			convSpan.SetTag("metrics_dropped", metricsDropped)
@@ -580,24 +597,47 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 	}
 }
 
-// toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
+// otlpPushError is a failed push, classified for the OTLP HTTP and gRPC receivers.
+type otlpPushError struct {
+	// grpcCode is the gRPC code of the error.
+	grpcCode codes.Code
+	// httpCode is the HTTP status of the error, before httpRetryableToOTLPRetryable maps it.
+	httpCode int
+	// msg is the error message to report to the client.
+	msg string
+	// isSoft is true if only some of the data points were rejected.
+	isSoft bool
+}
+
+// classifyOTLPPushError classifies a push error the same way for the OTLP HTTP and gRPC receivers. Callers that
+// respond with HTTP map httpCode with httpRetryableToOTLPRetryable.
+func classifyOTLPPushError(pushErr error) otlpPushError {
+	// Errors returned by the supplier function are usually created with the httpgrpc package, and carry an HTTP status
+	// code. However, distributor's write path is complex and has a lot of dependencies, so sometimes they don't.
+	if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
+		httpCode := http.StatusServiceUnavailable
+		if util.IsHTTPStatusCode(st.Code()) {
+			httpCode = int(st.Code())
+		}
+		return otlpPushError{grpcCode: st.Code(), httpCode: httpCode, msg: st.Message()}
+	}
+
 	var distributorErr Error
 	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
-		return codes.Internal, http.StatusServiceUnavailable, false
+		return otlpPushError{grpcCode: codes.Internal, httpCode: http.StatusServiceUnavailable, msg: pushErr.Error()}
 	}
 
-	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
-
-	var httpStatusCode int
+	httpCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
 	var httpStatusErr ErrorWithHTTPStatusCode
 	if errors.As(pushErr, &httpStatusErr) {
-		httpStatusCode = httpStatusErr.HTTPStatusCode()
-	} else {
-		httpStatusCode = errorCauseToHTTPStatusCode(distributorErr.Cause())
+		httpCode = httpStatusErr.HTTPStatusCode()
 	}
-
-	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
+	return otlpPushError{
+		grpcCode: errorCauseToGRPCStatusCode(distributorErr.Cause()),
+		httpCode: httpCode,
+		msg:      pushErr.Error(),
+		isSoft:   distributorErr.IsSoft(),
+	}
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
