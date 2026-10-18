@@ -271,6 +271,9 @@ type Config struct {
 	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
+	// OTLPGRPCConfig configures the dedicated OTLP gRPC receiver.
+	OTLPGRPCConfig OTLPGRPCConfig `yaml:"otlp_grpc_server"`
+
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
 	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental" doc:"hidden"`
@@ -370,6 +373,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
+	cfg.OTLPGRPCConfig.RegisterFlagsWithPrefix("distributor.otlp-grpc-server.", f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
 	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
@@ -389,6 +393,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
+	if err := cfg.OTLPGRPCConfig.Validate(); err != nil {
+		return err
+	}
+
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
@@ -430,6 +438,9 @@ type PushMetrics struct {
 	otlpRequestsWithJobOrInstanceResourceAttribute *prometheus.CounterVec
 	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
 	otlpArrayLengths *prometheus.HistogramVec
+	// Shared by the OTLP HTTP and gRPC receivers.
+	discardedDueToOTLPParseError *prometheus.CounterVec
+	otlpGRPCRequestDuration      *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -478,6 +489,30 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"field"}),
+		discardedDueToOTLPParseError: validation.DiscardedSamplesCounter(reg, otelParseError),
+		otlpGRPCRequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_otlp_grpc_request_duration_seconds",
+			Help:                            "Time taken to process an OTLP gRPC export request, by tenant and gRPC status code.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user", "status_code"}),
+	}
+}
+
+// ObserveOTLPGRPCRequestDuration tracks the time taken to process an OTLP gRPC export request.
+func (m *PushMetrics) ObserveOTLPGRPCRequestDuration(user, statusCode string, d time.Duration) {
+	if m != nil {
+		m.otlpGRPCRequestDuration.WithLabelValues(user, statusCode).Observe(d.Seconds())
+	}
+}
+
+// AddOTLPParseErrorDiscardedSamples tracks samples dropped because they couldn't be parsed from an OTLP request.
+func (m *PushMetrics) AddOTLPParseErrorDiscardedSamples(user string, count int) {
+	if m != nil {
+		// The "group" label is empty as the metrics couldn't be parsed.
+		m.discardedDueToOTLPParseError.WithLabelValues(user, "").Add(float64(count))
 	}
 }
 
@@ -532,6 +567,8 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.otlpRequestsWithJobOrInstanceResourceAttribute.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
+	m.discardedDueToOTLPParseError.DeletePartialMatch(prometheus.Labels{"user": user})
+	m.otlpGRPCRequestDuration.DeletePartialMatch(prometheus.Labels{"user": user})
 }
 
 // New constructs a new Distributor
