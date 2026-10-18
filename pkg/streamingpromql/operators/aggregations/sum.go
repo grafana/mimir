@@ -68,13 +68,17 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 		g.floatPresent = g.floatPresent[:timeRange.StepCount]
 	}
 
-	for _, p := range data.Floats {
+	g.accumulateFloatPoints(data.Floats, timeRange)
+
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateFloatsFallback(points []promql.FPoint, timeRange types.QueryTimeRange) {
+	for _, p := range points {
 		idx := timeRange.PointIndex(p.T)
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
-
-	return nil
 }
 
 func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, mutatingDataAllowed bool) error {
