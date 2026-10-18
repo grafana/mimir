@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/grafana/dskit/user"
@@ -20,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -265,7 +268,8 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
 		}}): {{b1}},
 	}
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(seriesCountsQueryable(0, dayMs, blocks, clients), nil, nil), CardinalityEstimateConfig{}, false)
+	q := seriesCountsQueryable(0, dayMs, blocks, clients)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
@@ -284,11 +288,48 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
 	assert.False(t, out.LowerBound)
 	assert.Empty(t, out.MissingBlocks)
+	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer can be cached")
+
+	// The blocks cover only the first day of a two-day window: the answer is
+	// a lower bound, which the query-frontend must not cache.
+	q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", int64(0), 2*dayMs-1).Return(blocks, &bucketindex.Metadata{}, nil)
+	q.compartments[0].stores.(*blocksStoreSetMock).mockedResponses = append(q.compartments[0].stores.(*blocksStoreSetMock).mockedResponses, clients)
+	r = httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}`, nil)
+	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"lower_bound":true`)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 
 	// Other paths go to next.
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/query", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// The whole-head fallback counts every series the heads hold, whatever the
+// window, so the answer changes as the heads do and must not be cached.
+func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	ing := &ingestersMock{
+		resp: &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
+			{LabelName: "__name__", LabelValueSeries: map[string]uint64{"up": 4}},
+		}},
+		seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000"),
+	}
+	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour))
+	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", e, CardinalityEstimateConfig{}, false)
+
+	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d&max_index_bytes=1000", 99*3600, 100*3600), nil)
+	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"head_whole":true`)
+	assert.Contains(t, rec.Body.String(), `"lower_bound":false`)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 }
 
 func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
