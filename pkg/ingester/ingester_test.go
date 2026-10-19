@@ -4758,6 +4758,51 @@ func BenchmarkIngesterPush(b *testing.B) {
 	}
 }
 
+// BenchmarkIngesterPushExemplars measures pushes where every series has exemplars.
+func BenchmarkIngesterPushExemplars(b *testing.B) {
+	for _, perSeries := range []int{1, 4} {
+		b.Run(fmt.Sprintf("exemplars per series=%d", perSeries), func(b *testing.B) {
+			ctx := user.InjectOrgID(b.Context(), userID)
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = 1_000_000
+			overrides := validation.NewOverrides(limits, nil)
+			ingester, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, defaultIngesterTestConfig(b), overrides, nil, "", "", prometheus.NewRegistry(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+
+			allLabels, _ := benchmarkData(1000)
+			req := &mimirpb.WriteRequest{Source: mimirpb.API}
+			for _, lbls := range allLabels {
+				exemplars := make([]mimirpb.Exemplar, perSeries)
+				for i := range exemplars {
+					exemplars[i] = mimirpb.Exemplar{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: fmt.Sprintf("trace-%d", i)}}, Value: float64(i)}
+				}
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    lbls,
+					Samples:   []mimirpb.Sample{{Value: 1}},
+					Exemplars: exemplars,
+				}})
+			}
+			startTime := util.TimeToMillis(time.Now())
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for iter := 0; iter < b.N; iter++ {
+				// Move samples and exemplars forward, so they're all accepted.
+				ts := startTime + int64(iter*perSeries)
+				for _, series := range req.Timeseries {
+					series.Samples[0].TimestampMs = ts
+					for i := range series.Exemplars {
+						series.Exemplars[i].TimestampMs = ts + int64(i)
+					}
+				}
+				// The no-op cleanup keeps the request, so it can be reused.
+				require.NoError(b, ingester.PushWithCleanup(ctx, req, func() {}))
+			}
+		})
+	}
+}
+
 func verifyErrorString(tb testing.TB, err error, expectedErr string) {
 	if err == nil || !strings.Contains(err.Error(), expectedErr) {
 		tb.Helper()
