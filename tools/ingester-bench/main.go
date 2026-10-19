@@ -56,6 +56,7 @@ type config struct {
 	readScales        string
 	readPathCPU       int
 	readPathMemory    int64
+	leaksPercentage   float64
 	compareFraction   float64
 	concurrency       int
 	out               string
@@ -86,6 +87,7 @@ func main() {
 	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
+	flag.Float64Var(&cfg.leaksPercentage, "instrument-reference-leaks", 5, "The ingesters' -instrument-reference-leaks.percentage, 0 to not instrument: the share of the records whose buffers are protected after their use, as a cell catches reads of them past it.")
 	flag.IntVar(&cfg.readPathCPU, "read-path-cpu-limit", 0, "The ingesters' -ingester.read-path-cpu-utilization-limit, in cores, 0 to not limit: a cell sets it to its CPU requests and as many again, 3 at least and 6 at most.")
 	flag.Int64Var(&cfg.readPathMemory, "read-path-memory-limit", 0, "The ingesters' -ingester.read-path-memory-utilization-limit, in bytes, 0 to not limit: a cell sets it to three quarters of their memory limit.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
@@ -241,7 +243,7 @@ func run(parent context.Context, cfg config) (err error) {
 		{name: names[1], binary: cfg.binaryB, engine: cfg.engineB, dir: cfg.dirB, httpPort: 18280, grpcPort: 19295, extraArgs: cfg.extraB},
 	} {
 		c.kafka, c.retention, c.oooWindow, c.external = f.address(), cfg.retention, cfg.oooWindow, cfg.external
-		c.runtimeConfig, c.readPathCPU, c.readPathMemory = overridesPath, cfg.readPathCPU, cfg.readPathMemory
+		c.runtimeConfig, c.readPathCPU, c.readPathMemory, c.leaksPercentage = overridesPath, cfg.readPathCPU, cfg.readPathMemory, cfg.leaksPercentage
 		ingesters[i], err = startIngester(ctx, c)
 		if err != nil {
 			return err
@@ -440,7 +442,7 @@ func runConfig(cfg config, profile Profile, rates map[string]float64) map[string
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
-		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_path_cpu_limit": fmt.Sprint(cfg.readPathCPU), "read_path_memory_limit": fmt.Sprint(cfg.readPathMemory), "read_scales": cfg.readScales,
+		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_path_cpu_limit": fmt.Sprint(cfg.readPathCPU), "read_path_memory_limit": fmt.Sprint(cfg.readPathMemory), "instrument_reference_leaks": fmt.Sprint(cfg.leaksPercentage), "read_scales": cfg.readScales,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
 		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
 		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),

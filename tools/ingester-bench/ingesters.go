@@ -51,6 +51,8 @@ type ingesterConfig struct {
 	runtimeConfig  string
 	readPathCPU    int
 	readPathMemory int64
+	// The percentage of the records whose buffers are instrumented for reference leaks, 0 to not instrument them.
+	leaksPercentage float64
 	// Directory shared with containers that run the ingesters: the bench writes their command lines to it instead of
 	// starting them.
 	external string
@@ -141,7 +143,7 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-ingester.read-circuit-breaker.request-timeout=30s",
 		"-ingester.max-global-metadata-per-metric=10",
 		"-ingester.max-global-metadata-per-user=30000",
-		"-instrument-reference-leaks.percentage=5",
+		"-instrument-reference-leaks.percentage=" + strconv.FormatFloat(cfg.leaksPercentage, 'g', -1, 64),
 		"-instrument-reference-leaks.before-reuse-period=2m",
 		"-instrument-reference-leaks.max-inflight-instrumented-bytes=100000000",
 		"-cost-attribution.registry-path=/usage-metrics",
