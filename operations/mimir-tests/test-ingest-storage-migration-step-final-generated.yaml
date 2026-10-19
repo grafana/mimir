@@ -409,6 +409,14 @@ rules:
 - apiGroups:
   - rollout-operator.grafana.com
   resources:
+  - replicatemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
   - replicatemplates/scale
   - replicatemplates/status
   verbs:
@@ -1398,10 +1406,17 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -leader-election.enabled=false
+        - -replica-templates.watch-enabled=true
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.40.0
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        image: grafana/rollout-operator:v0.41.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
