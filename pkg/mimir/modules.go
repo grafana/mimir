@@ -409,7 +409,13 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	// The ingester config validation checks that the value fits in an int32.
+	tokenTable, err := ring.NewPartitionTokenTable(int32(t.Cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions), util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating ingester partition token table")
+	}
+
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, tokenTable, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
 	}

@@ -320,6 +320,7 @@
   "ingester.partition-ring.min-partition-owners-count": 1,
   "ingester.partition-ring.min-partition-owners-duration": 10000000000,
   "ingester.partition-ring.delete-inactive-partition-after": 46800000000000,
+  "ingester.partition-ring.max-derived-token-partitions": 0,
   "ingester.metadata-retain-period": 600000000000,
   "ingester.rate-update-period": 15000000000,
   "ingester.active-series-metrics-enabled": true,

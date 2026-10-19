@@ -186,6 +186,23 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
 		},
+		"positive max derived token partitions passes validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = 128
+			},
+		},
+		"negative max derived token partitions fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = -1
+			},
+			expectedError: "-ingester.partition-ring.max-derived-token-partitions must be between 0 and 2147483647, got -1",
+		},
+		"max derived token partitions above math.MaxInt32 fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = math.MaxInt32 + 1
+			},
+			expectedError: "-ingester.partition-ring.max-derived-token-partitions must be between 0 and 2147483647, got 2147483648",
+		},
 	}
 
 	for name, tc := range tests {
