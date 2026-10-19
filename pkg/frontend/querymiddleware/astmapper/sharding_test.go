@@ -610,6 +610,43 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 1,
 		},
 		{
+			in:                       `topk(10, foo)`,
+			out:                      `topk(10, ` + concatShards(t, shardCount, `topk(10, foo{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `bottomk by (bar) (5, rate(foo[1m]))`,
+			out:                      `bottomk by (bar) (5, ` + concatShards(t, shardCount, `bottomk by (bar) (5, rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `topk without (bar) (2 * 5, foo)`,
+			out:                      `topk without (bar) (2 * 5, ` + concatShards(t, shardCount, `topk without (bar) (2 * 5, foo{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `sum(topk(10, foo))`,
+			out:                      `sum(topk(10, ` + concatShards(t, shardCount, `topk(10, foo{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `topk(2, max_over_time(rate(foo[1m])[5m:1m]))`,
+			out:                      `topk(2, ` + concatShards(t, shardCount, `topk(2, max_over_time(rate(foo{__query_shard__="x_of_y"}[1m])[5m:1m]))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			// A subquery containing an aggregation isn't shardable.
+			in:                       `max_over_time(topk(2, foo)[5m:1m])`,
+			out:                      `max_over_time(topk(2, foo)[5m:1m])`,
+			expectedShardableQueries: 0,
+		},
+		{
+			// A non-constant k could differ between shards, so we don't shard.
+			in:                       `topk(scalar(bar), foo)`,
+			out:                      `topk(scalar(bar), foo)`,
+			expectedShardableQueries: 0,
+		},
+		{
 			in: `
 				topk(
 					scalar(count(foo)),

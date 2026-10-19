@@ -20,6 +20,12 @@ var summableAggregates = map[parser.ItemType]struct{}{
 	parser.MAX:   {},
 	parser.COUNT: {},
 	parser.AVG:   {},
+
+	// The top/bottom k series overall are always among the top/bottom k series of
+	// their own shard, so we can run the aggregation on each shard and again on the
+	// merged per-shard results.
+	parser.TOPK:    {},
+	parser.BOTTOMK: {},
 }
 
 // NonParallelFuncs is the list of functions that shouldn't be parallelized.
@@ -67,6 +73,12 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 	case *parser.AggregateExpr:
 		_, ok := summableAggregates[e.Op]
 		if !ok {
+			return false
+		}
+
+		// Each shard must select the same k as the merged result. We only allow a constant k,
+		// so that k never depends on series that would be split across shards.
+		if (e.Op == parser.TOPK || e.Op == parser.BOTTOMK) && !isConstantScalar(e.Param) {
 			return false
 		}
 
