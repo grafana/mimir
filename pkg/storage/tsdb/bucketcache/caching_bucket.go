@@ -268,7 +268,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 && !skipCacheStore(ctx) {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			if isCacheLookupEnabled(ctx) {
+			if !skipCacheLookup(ctx) {
 				cfg.cache.SetAsync(key, data, remainingTTL)
 			} else if setErr := cfg.cache.Set(ctx, key, data, remainingTTL); setErr != nil {
 				// The caller explicitly disabled the cache lookup to get a fresh listing (e.g. because
