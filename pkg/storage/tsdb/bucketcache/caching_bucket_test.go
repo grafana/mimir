@@ -528,7 +528,7 @@ func TestCachedIter_StoresSynchronouslyWhenCacheLookupDisabled(t *testing.T) {
 	ctx := context.Background()
 
 	// Cache lookup disabled: the fresh listing must be stored with the synchronous Set, not SetAsync.
-	require.NoError(t, cb.Iter(WithCacheLookupEnabled(ctx, false), "/", (&iterCollector{}).collect))
+	require.NoError(t, cb.Iter(WithSkipCacheLookup(ctx), "/", (&iterCollector{}).collect))
 	assert.Equal(t, 1, tc.setCalls)
 	assert.Equal(t, 0, tc.setAsyncCalls)
 
