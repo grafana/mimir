@@ -734,7 +734,7 @@ func (i *Ingester) pushSamplesToAppender(
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
