@@ -5,9 +5,12 @@ package usagetracker
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -38,6 +41,32 @@ func TestSnapshotEncodingVersion(t *testing.T) {
 	for _, numShards := range []int{1, 2, 4, 32, tenantshard.MaxNumShards} {
 		require.Equalf(t, byte(snapshotEncodingVersionV2), snapshotEncodingVersion(numShards), "numShards=%d", numShards)
 	}
+}
+
+func TestPutPaddedUvarint(t *testing.T) {
+	for _, v := range []uint64{0, 1, 127, 128, 300, 16383, 16384, 1 << 20, 1<<32 - 1, 1 << 32, 1<<56 - 1, 1 << 56, 1<<63 - 1, 1 << 63, math.MaxUint64} {
+		t.Run(strconv.FormatUint(v, 10), func(t *testing.T) {
+			// Pad the value on both sides, to check that the decoders consume exactly the padded encoding.
+			const before, after = 0xAA, 0xBB
+			buf := []byte{before}
+			buf = append(buf, make([]byte, binary.MaxVarintLen64)...)
+			buf = append(buf, after)
+			putPaddedUvarint(buf[1:1+binary.MaxVarintLen64], v)
+
+			got, n := binary.Uvarint(buf[1:])
+			require.Equal(t, v, got)
+			require.Equal(t, binary.MaxVarintLen64, n)
+
+			dec := encoding.Decbuf{B: buf}
+			require.Equal(t, byte(before), dec.Byte())
+			require.Equal(t, v, dec.Uvarint64())
+			require.NoError(t, dec.Err())
+			require.Equal(t, byte(after), dec.Byte())
+			require.NoError(t, dec.Err())
+			require.Empty(t, dec.B)
+		})
+	}
+
 }
 
 func TestTrackerStore_Snapshot_PublishedFormat(t *testing.T) {
@@ -414,4 +443,57 @@ func requireSeriesInTheirShards(t *testing.T, store *trackerStore) map[string]ma
 		}
 	}
 	return all
+}
+
+// lockCountingMap counts how many times the shard lock is taken.
+type lockCountingMap struct {
+	tenantshard.Map
+	locks int
+}
+
+func (m *lockCountingMap) Lock() {
+	m.locks++
+	m.Map.Lock()
+}
+
+func TestLoadSnapshotSeries(t *testing.T) {
+	const shard, numShards = 1, 4
+	refs := func(n int) []refTimestamp {
+		refs := make([]refTimestamp, 0, n)
+		for i := 0; i < n; i++ {
+			refs = append(refs, refTimestamp{Ref: uint64(shard + i*numShards), Timestamp: clock.ToMinutes(snapshotTestNow)})
+		}
+		return refs
+	}
+	newTenant := func(t *testing.T) (*trackerStore, *trackedTenant, *lockCountingMap) {
+		store := newSnapshotTestStore(t, numShards, log.NewNopLogger())
+		tenant := store.getOrCreateTenant(snapshotTestUser)
+		tenant.RUnlock()
+		m := &lockCountingMap{Map: tenant.shards[shard]}
+		tenant.shards[shard] = m
+		return store, tenant, m
+	}
+
+	t.Run("empty shard is loaded in one lock hold", func(t *testing.T) {
+		store, tenant, m := newTenant(t)
+		n := 2*loadSnapshotBatchSize + 1
+		loadSnapshotSeries(tenant, shard, refs(n), store.shardMask(), n)
+		require.Equal(t, 1, m.locks)
+		require.Equal(t, n, m.Count())
+		require.Equal(t, uint64(n), tenant.series.Load())
+	})
+
+	t.Run("shard with series is loaded a batch per lock hold", func(t *testing.T) {
+		store, tenant, m := newTenant(t)
+		trackSnapshotTestSeries(t, store, shard, numShards)
+		tracked := m.Count()
+		m.locks = 0
+
+		n := 2*loadSnapshotBatchSize + 1
+		loadSnapshotSeries(tenant, shard, refs(n), store.shardMask(), n)
+		require.Equal(t, 1+3, m.locks, "one hold to check the shard, then one per batch")
+		require.Equal(t, n, m.Count(), "the tracked series are in the snapshot too, so they are not counted twice")
+		require.Equal(t, uint64(n), tenant.series.Load())
+		require.Greater(t, tracked, 0)
+	})
 }

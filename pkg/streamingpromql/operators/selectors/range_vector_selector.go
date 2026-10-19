@@ -31,6 +31,7 @@ type RangeVectorSelector struct {
 	histograms        *types.HPointRingBuffer
 	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
 	evaluationStats   *types.OperatorEvaluationStats
+	planningNodeId    int64
 
 	// Maintain metadata about modifications made to the floats buffer to support the smoothed/anchored extended range implementation.
 	// A single instance is allocated (if required) and re-used between all steps and all series.
@@ -39,13 +40,14 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, planningNodeId int64) *RangeVectorSelector {
 	rangeVectorSelector := RangeVectorSelector{
 		Selector:                 selector,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:                 &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
+		planningNodeId:           planningNodeId,
 	}
 
 	if selector.Anchored {
@@ -165,7 +167,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
-	if err := m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets); err != nil {
+	if err := m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets, m.planningNodeId); err != nil {
 		return nil, err
 	}
 

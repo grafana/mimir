@@ -6,7 +6,6 @@
 package v2
 
 import (
-	"iter"
 	"math"
 	"sync"
 
@@ -428,45 +427,63 @@ func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
 
-var (
-	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
-	dataPool = &sync.Pool{New: func() any { return new([]data) }}
-)
+// iterateGroupsPerLock is how many groups Iterate copies per lock hold: 1 MB of keys and 128 KB of data,
+// tens of microseconds.
+const iterateGroupsPerLock = 16 << 10
 
-func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
-	pooled := pool.Get().(*[]T)
-	if cap(*pooled) > len(input) {
-		*pooled = (*pooled)[:len(input)]
-	} else {
-		*pooled = make([]T, len(input))
-	}
-	copy(*pooled, input)
-	return pooled
+// iterateChunk holds the groups that Iterate copies in one lock hold.
+type iterateChunk struct {
+	keys [iterateGroupsPerLock]keys
+	data [iterateGroupsPerLock]data
 }
 
-func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
-	keysClone := pooledClone(m.keys, keysPool)
-	dataClone := pooledClone(m.data, dataPool)
-	count := m.Count()
+var iterateChunkPool = sync.Pool{New: func() any { return new(iterateChunk) }}
 
-	return count, func(yield func(uint64, clock.Minutes) bool) {
-		if count == 0 {
-			return
-		}
+// Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
+// lock: Iterate takes it for a few groups at a time, and calls yield with the lock released.
+// A series put or removed while Iterate runs may or may not be yielded. A series removed after its group was
+// copied and put again into a group not yet copied is yielded twice, once with each value.
+func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
+	m.iterate(iterateGroupsPerLock, yield)
+}
 
-		for i, g := range *dataClone {
-			for j, entry := range g {
-				if entry == empty || entry == spillmark {
-					// There's nothing here.
-					continue
-				}
-				if !yield((*keysClone)[i][j], entry.clockMinutes()) {
-					return // stop iteration
-				}
+func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minutes)) {
+	buf := iterateChunkPool.Get().(*iterateChunk)
+	defer iterateChunkPool.Put(buf)
+	groupsPerLock = min(groupsPerLock, iterateGroupsPerLock)
+
+	m.Lock()
+	rehashes, srcKeys, srcData := m.rehashes, m.keys, m.data
+	m.Unlock()
+
+	rehashed := false
+	for b := 0; b < len(srcData); b += groupsPerLock {
+		if !rehashed {
+			m.Lock()
+			// A rehash moves the series to new arrays and never writes the old ones again,
+			// so once it happens the rest of them can be read without the lock.
+			rehashed = m.rehashes != rehashes
+			if rehashed {
+				m.Unlock()
 			}
 		}
-
-		keysPool.Put(keysClone)
-		dataPool.Put(dataClone)
+		// Copying the chunk holds the lock for a tenth of the time that finding its occupied slots takes.
+		chunkKeys := copyChunk(buf.keys[:groupsPerLock], srcKeys[b:])
+		chunkData := copyChunk(buf.data[:groupsPerLock], srcData[b:])
+		if !rehashed {
+			m.Unlock()
+		}
+		for g := range chunkData {
+			occupied := occupiedSlots(*groupWord(&chunkData[g]))
+			for occupied != 0 {
+				s := nextMatch(&occupied)
+				yield(chunkKeys[g][s], chunkData[g][s].clockMinutes())
+			}
+		}
 	}
+}
+
+// copyChunk copies as many elements of src as fit into dst, and returns the part of dst that was written.
+func copyChunk[T any](dst, src []T) []T {
+	return dst[:copy(dst, src)]
 }
