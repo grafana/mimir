@@ -60,28 +60,27 @@ func (v *OverlappingBlockVerifier) Verify(_ context.Context, blocks []BlockRef, 
 		byShard[shard] = append(byShard[shard], blk)
 	}
 
-	// total number of overlapping regions, and total number of overlapping blocks.
-	regions, overlapping := 0, 0
+	overlapRegions, overlapBlocks := 0, 0
 	for _, shard := range slices.Sorted(maps.Keys(byShard)) {
 		group := byShard[shard]
 		if len(group) < 2 {
 			continue
 		}
-		r, o := v.sweep(report, shard, group)
-		regions += r
-		overlapping += o
+		r, o := v.overlapsForShard(report, shard, group)
+		overlapRegions += r
+		overlapBlocks += o
 	}
 
-	if regions == 0 {
+	if overlapRegions == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d block(s) overlap another block, across %d region(s)", overlapping, regions)
+	return fmt.Errorf("%d block(s) overlap another block, across %d region(s)", overlapBlocks, overlapRegions)
 }
 
-// sweep sorts the blocks of a single shard in place and records a failure for
-// every block that overlaps another. It returns the number of overlapping
-// regions and the number of overlapping blocks.
-func (v *OverlappingBlockVerifier) sweep(report *Report, shard string, sortedBlocks []BlockRef) (regions, overlapping int) {
+// overlapsForShard sorts the blocks of a single shard in place and records a
+// failure for every block that overlaps another. It returns the number of
+// overlapping regions and blocks.
+func (v *OverlappingBlockVerifier) overlapsForShard(report *Report, shard string, sortedBlocks []BlockRef) (overlapRegions, overlapBlocks int) {
 	slices.SortFunc(sortedBlocks, func(a, b BlockRef) int {
 		if c := cmp.Compare(a.Meta.MinTime, b.Meta.MinTime); c != 0 {
 			return c
@@ -102,8 +101,8 @@ func (v *OverlappingBlockVerifier) sweep(report *Report, shard string, sortedBlo
 	flush := func(end int) {
 		if end-runStart > 1 {
 			v.recordRun(report, shard, sortedBlocks[runStart:end])
-			regions++
-			overlapping += end - runStart
+			overlapRegions++
+			overlapBlocks += end - runStart
 		}
 	}
 
@@ -119,7 +118,7 @@ func (v *OverlappingBlockVerifier) sweep(report *Report, shard string, sortedBlo
 		curMax = sortedBlocks[i].Meta.MaxTime
 	}
 	flush(len(sortedBlocks))
-	return regions, overlapping
+	return overlapRegions, overlapBlocks
 }
 
 // recordRun records one failure per block in a run of mutually overlapping
