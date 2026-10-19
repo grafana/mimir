@@ -104,7 +104,9 @@ func main() {
 	printConfig := flag.Bool("print-config", false, "Print the configuration of -config, merged, as JSON, instead of running a bench.")
 	installPath := flag.String("install", "", "Copy the bench's binary to this path, for containers of other images to run, instead of running a bench.")
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
 	}
@@ -235,8 +237,8 @@ func run(parent context.Context, cfg config) (err error) {
 	log.Printf("backfilled %d samples in %s, %s", f.samples.Load(), time.Since(backfillStart).Round(time.Second), f)
 	rec.phase("backfill", backfillStart, time.Now())
 
-	feedCtx, stopFeed := context.WithCancel(ctx)
-	defer stopFeed()
+	feedCtx, stopFeed := context.WithCancelCause(ctx)
+	defer stopFeed(nil)
 	var feedWG sync.WaitGroup
 	feedWG.Add(1)
 	go func() {
@@ -275,8 +277,8 @@ func run(parent context.Context, cfg config) (err error) {
 		}(ingesters[i])
 	}
 	// From the ingesters' start, so that the replay shows too.
-	recordCtx, stopRecording := context.WithCancel(ctx)
-	defer stopRecording()
+	recordCtx, stopRecording := context.WithCancelCause(ctx)
+	defer stopRecording(nil)
 	var recordWG sync.WaitGroup
 	recordWG.Add(1)
 	go func() { defer recordWG.Done(); rec.sample(recordCtx, ingesters, f, 5*time.Second) }()
@@ -333,8 +335,8 @@ func run(parent context.Context, cfg config) (err error) {
 	d.slowLog = slowLog
 	d.recorder = rec
 	d.compareFraction = cfg.compareFraction
-	readCtx, stopReads := context.WithCancel(ctx)
-	defer stopReads()
+	readCtx, stopReads := context.WithCancelCause(ctx)
+	defer stopReads(nil)
 	go d.run(readCtx, ctx, rates, cfg.seed)
 	// From the first read: the ingesters' memory, and their heap every two minutes, to see what grows even if one
 	// runs out of memory before the window.
@@ -350,8 +352,8 @@ func run(parent context.Context, cfg config) (err error) {
 	d.resetLatencies()
 	d.measuring.Store(true)
 	s := newSampler(ingesters, f)
-	sampleCtx, stopSampling := context.WithCancel(ctx)
-	defer stopSampling()
+	sampleCtx, stopSampling := context.WithCancelCause(ctx)
+	defer stopSampling(nil)
 	var samplerWG sync.WaitGroup
 	samplerWG.Add(1)
 	go func() { defer samplerWG.Done(); s.run(sampleCtx, 10*time.Second) }()
@@ -372,7 +374,7 @@ func run(parent context.Context, cfg config) (err error) {
 	if !sleep(ctx, cfg.duration-cfg.duration/2) {
 		return ctx.Err()
 	}
-	stopSampling()
+	stopSampling(nil)
 	samplerWG.Wait()
 	d.measuring.Store(false)
 	rec.phase("window", windowStart, time.Now())
@@ -384,15 +386,15 @@ func run(parent context.Context, cfg config) (err error) {
 		}
 	}
 	profileWG.Wait()
-	stopReads()
+	stopReads(nil)
 	log.Printf("waiting for the retries of the reads that differed")
 	retriesStart := time.Now()
 	d.pending.Wait()
 	rec.phase("retries", retriesStart, time.Now())
-	stopRecording()
+	stopRecording(nil)
 	recordWG.Wait()
 	timeline, phases := rec.finish()
-	stopFeed()
+	stopFeed(nil)
 	feedWG.Wait()
 
 	report := Report{
