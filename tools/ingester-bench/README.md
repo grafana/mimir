@@ -73,16 +73,16 @@ A run takes the backfill, the replay, the warmup and the window: about 1h15m wit
 `-config` takes YAML files, comma separated. Each applies over [`defaults.yaml`](defaults.yaml) and the files before it.
 
 ```yaml
-common:         # Both ingesters.
+common: # Both ingesters.
   args:
     blocks-storage.tsdb.head-compaction-interval: 5m
-a:              # Ingester A, over common.
-  name: release                    # In the report.
-  image: grafana/mimir:3.0.0       # With run-in-kubernetes.sh.
-  binary: /path/to/mimir           # When the bench starts the ingester itself.
+a: # Ingester A, over common.
+  name: release # In the report.
+  image: grafana/mimir:3.0.0 # With run-in-kubernetes.sh.
+  binary: /path/to/mimir # When the bench starts the ingester itself.
   args:
     ingester.error-sample-rate: null
-b:              # Ingester B, likewise.
+b: # Ingester B, likewise.
   name: tree
   args:
     some-new.flag: "true"
@@ -122,24 +122,24 @@ adds a report from elsewhere, and `-render=report.json` writes its `report.html`
 
 ## Other flags
 
-| Flag | Default | What it does |
-| --- | --- | --- |
-| `-series` | 300000 | Series of the ingester, over all tenants. |
-| `-tenants` | the profile's | Tenants of the ingester. |
-| `-seed` | 1 | Seed of the synthetic data and reads. |
-| `-backfill` | 4h | History the ingesters replay. A retention's worth, `13h`, adds the cold blocks only the oldest reads read. |
-| `-warmup` | 21m | Live feed and reads before the window. |
-| `-duration` | 15m | Measurement window. |
-| `-retention` | 13h | TSDB retention, and how far back reads go. |
-| `-out-of-order-window` | 2h | Out-of-order window of the tenants. |
-| `-query-scale` | 1 | Factor of the profile's read rates. |
-| `-read-scales` | | Factors of some reads' rates, such as `LabelNamesAndValues=50,QueryStream=0`, so a short run gets enough of the rare reads. |
-| `-compare-fraction` | 1 | Share of reads whose answers are compared. All reads are sent and timed. Comparing at production rates takes the bench more CPU than reading takes the ingesters. |
-| `-concurrency` | 256 | Reads in flight at most. Reads beyond it are dropped and counted. |
-| `-profile` | built-in | JSON profile of the series and reads. Its fields replace the built-in profile's. |
-| `-keep` | false | Keep the ingesters' data, to look at after a mismatch. |
-| `-kafka-dir` | memory | Directory of the in-process Kafka's log. |
-| `-cpu-profile-seconds` | 60 | Length of the CPU profiles. |
+| Flag                   | Default       | What it does                                                                                                                                                      |
+| ---------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-series`              | 300000        | Series of the ingester, over all tenants.                                                                                                                         |
+| `-tenants`             | the profile's | Tenants of the ingester.                                                                                                                                          |
+| `-seed`                | 1             | Seed of the synthetic data and reads.                                                                                                                             |
+| `-backfill`            | 4h            | History the ingesters replay. A retention's worth, `13h`, adds the cold blocks only the oldest reads read.                                                        |
+| `-warmup`              | 21m           | Live feed and reads before the window.                                                                                                                            |
+| `-duration`            | 15m           | Measurement window.                                                                                                                                               |
+| `-retention`           | 13h           | TSDB retention, and how far back reads go.                                                                                                                        |
+| `-out-of-order-window` | 2h            | Out-of-order window of the tenants.                                                                                                                               |
+| `-query-scale`         | 1             | Factor of the profile's read rates.                                                                                                                               |
+| `-read-scales`         |               | Factors of some reads' rates, such as `LabelNamesAndValues=50,QueryStream=0`, so a short run gets enough of the rare reads.                                       |
+| `-compare-fraction`    | 1             | Share of reads whose answers are compared. All reads are sent and timed. Comparing at production rates takes the bench more CPU than reading takes the ingesters. |
+| `-concurrency`         | 256           | Reads in flight at most. Reads beyond it are dropped and counted.                                                                                                 |
+| `-profile`             | built-in      | JSON profile of the series and reads. Its fields replace the built-in profile's.                                                                                  |
+| `-keep`                | false         | Keep the ingesters' data, to look at after a mismatch.                                                                                                            |
+| `-kafka-dir`           | memory        | Directory of the in-process Kafka's log.                                                                                                                          |
+| `-cpu-profile-seconds` | 60            | Length of the CPU profiles.                                                                                                                                       |
 
 ## Profiles
 
