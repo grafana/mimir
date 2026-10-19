@@ -113,10 +113,7 @@ func newQueryGen(w *world, p QueriesProfile, retention int64, dataStart, now fun
 }
 
 func (m *metricModel) seriesCount() int {
-	if m.kind == kindClassicHistogram {
-		return m.slots * 14
-	}
-	return m.slots
+	return m.slots * m.seriesPerSlot
 }
 
 // rates returns the requests per second of each RPC, for the world's series.
