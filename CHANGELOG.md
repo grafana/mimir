@@ -162,6 +162,7 @@
 
 ### Tools
 
+* [FEATURE] ingester-bench: Add a tool that runs two ingesters, of any Mimir builds or images and settings, side by side on the same synthetic data fed through Kafka. It compares their answers to the same reads and reports their CPU, memory and read latency. #16918
 * [ENHANCEMENT] query-tee: Add per-backend `include_tenants` option to the `-backend.config-file` configuration. Only requests whose `X-Scope-OrgID` tenants are all included are sent to that backend, while the preferred backend always receives all traffic. #16879
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query`, `/api/v1/cardinality/*`, and `/api/v1/search/*` endpoints to all backends. #16879
 
