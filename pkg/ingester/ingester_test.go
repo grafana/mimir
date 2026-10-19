@@ -12511,6 +12511,58 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
 }
 
+// TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
+// store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
+func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.FloatChunkEncoding = "xor2"
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
+	})
+
+	cfg := defaultIngesterTestConfig(t)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(t.Context(), "user1")
+
+	const (
+		metricName       = "testmetric_xor2_created_timestamp"
+		createdTimestamp = int64(500)
+		ts               = int64(1000)
+	)
+	req := mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		nil, nil, mimirpb.API,
+	)
+	req.Timeseries[0].CreatedTimestamp = createdTimestamp
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	chunks := queryXOR2ChunksForMetric(ctx, t, i, metricName)
+	require.Len(t, chunks, 1)
+	require.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+
+	chk, err := chunkenc.FromData(chunkenc.EncXOR2, chunks[0].Data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	expectedSamples := []struct {
+		t int64
+		v float64
+	}{{t: createdTimestamp, v: 0}, {t: ts, v: 42}}
+	for _, expected := range expectedSamples {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		actualT, actualV := it.At()
+		assert.Equal(t, expected.t, actualT)
+		assert.Equal(t, expected.v, actualV)
+		assert.Zero(t, it.AtST(), "sample at %d has a start timestamp", actualT)
+	}
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
+}
+
 // TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
 // in both directions. Both directions already worked; this guards the normalisation in
 // applyTSDBSettings() that clearing the limit depends on.
