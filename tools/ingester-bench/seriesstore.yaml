@@ -1,0 +1,10 @@
+# The comparison of this branch: the Prometheus TSDB of the r416 release, against the seriesstore engine of the tree.
+# Started by the bench rather than run-in-kubernetes.sh, A needs a binary of the release instead of its image.
+a:
+  name: prometheus r416
+  image: grafana/mimir:r416-1df78b2a@sha256:7e42cd97b8dba8abf5ae3a2d808672bdb6da4134802f8efec6a667aefb4b1add
+b:
+  name: seriesstore
+  args:
+    blocks-storage.tsdb.engine: seriesstore
+    blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"

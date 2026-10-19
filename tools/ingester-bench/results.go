@@ -8,12 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -136,17 +134,7 @@ func writeIndex(results string) error {
 func setupOf(run RunSummary) string {
 	c := run.Config
 	return fmt.Sprintf("%d series, %d tenants, %s backfill, profile %s, query scale %s, %s vs %s",
-		run.Series, run.Tenants, c["backfill"], c["profile"], c["query_scale"], c["engine_a"], c["engine_b"])
-}
-
-// binaryVersion is what the binary says its version is.
-func binaryVersion(path string) string {
-	out, err := exec.Command(path, "-version").CombinedOutput()
-	if err != nil {
-		return "unknown"
-	}
-	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
-	return line
+		run.Series, run.Tenants, c["backfill"], c["profile"], c["query_scale"], run.Ingesters[0], run.Ingesters[1])
 }
 
 // benchRevision is the commit the bench was built from, which a binary built from the same tree has too.

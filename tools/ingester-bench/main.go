@@ -10,8 +10,10 @@
 //
 //	go run ./tools/ingester-bench -series=500000 -backfill=2h -warmup=5m -duration=15m
 //
-// By default A is the Prometheus TSDB and B the seriesstore engine, of a binary built from the working tree.
-// -binary-a and -binary-b compare two builds, -engine-a and -engine-b two engines.
+// The ingesters run with the flags of defaults.yaml, as a multi-tenant cell runs them, by default both of a binary
+// built from the working tree. -config files override it, with flags of both and of each, and their binaries or images:
+//
+//	go run ./tools/ingester-bench -config=my-comparison.yaml
 //
 // The run's directory has report.json, report.html and CPU and heap profiles. -results keeps them in a directory of
 // past runs, with an index.html of them all, B against A over runs; -add-result adds a report.json from elsewhere.
@@ -54,15 +56,10 @@ type config struct {
 	oooWindow         time.Duration
 	queryScale        float64
 	readScales        string
-	readPathCPU       int
-	readPathMemory    int64
-	leaksPercentage   float64
 	compareFraction   float64
 	concurrency       int
 	out               string
-	binaryA, binaryB  string
-	engineA, engineB  string
-	extraA, extraB    flagext.StringSliceCSV
+	configPaths       flagext.StringSliceCSV
 	kafkaDir          string
 	cpuProfileSeconds int
 	external          string
@@ -87,20 +84,12 @@ func main() {
 	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
-	flag.Float64Var(&cfg.leaksPercentage, "instrument-reference-leaks", 5, "The ingesters' -instrument-reference-leaks.percentage, 0 to not instrument: the share of the records whose buffers are protected after their use, as a cell catches reads of them past it.")
-	flag.IntVar(&cfg.readPathCPU, "read-path-cpu-limit", 0, "The ingesters' -ingester.read-path-cpu-utilization-limit, in cores, 0 to not limit: a cell sets it to its CPU requests and as many again, 3 at least and 6 at most.")
-	flag.Int64Var(&cfg.readPathMemory, "read-path-memory-limit", 0, "The ingesters' -ingester.read-path-memory-utilization-limit, in bytes, 0 to not limit: a cell sets it to three quarters of their memory limit.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
 	flag.StringVar(&cfg.readScales, "read-scales", "", "Factors of some reads' rates on top of -query-scale, such as LabelNamesAndValues=50,QueryStream=0: a short run of a small ingester sends a few of the rare reads otherwise.")
 	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")
 	flag.IntVar(&cfg.concurrency, "concurrency", 256, "Reads in flight at most; reads beyond are dropped and counted.")
 	flag.StringVar(&cfg.out, "out", "", "Directory of the run's data, profiles and report (default a new temporary one).")
-	flag.StringVar(&cfg.binaryA, "binary-a", "", "Mimir binary of ingester A (default built from the working tree).")
-	flag.StringVar(&cfg.binaryB, "binary-b", "", "Mimir binary of ingester B (default the same as A).")
-	flag.StringVar(&cfg.engineA, "engine-a", "prometheus", "TSDB engine of ingester A.")
-	flag.StringVar(&cfg.engineB, "engine-b", "seriesstore", "TSDB engine of ingester B.")
-	flag.Var(&cfg.extraA, "args-a", "Extra flags of ingester A, comma separated.")
-	flag.Var(&cfg.extraB, "args-b", "Extra flags of ingester B, comma separated.")
+	flag.Var(&cfg.configPaths, "config", "Configuration files of the ingesters, comma separated, each over defaults.yaml and the ones before: flags of both and of each, and their binaries or images.")
 	flag.StringVar(&cfg.kafkaDir, "kafka-dir", "", "Directory the in-process Kafka keeps its log in, instead of memory.")
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of the window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
@@ -112,10 +101,27 @@ func main() {
 	resultsDir := flag.String("results", "", "Directory of past runs: the run's report is saved in it, and its index.html of all runs written again.")
 	addPath := flag.String("add-result", "", "Add the report.json, such as one copied from a pod, to -results and write its index.html again, instead of running a bench.")
 	renderPath := flag.String("render", "", "Write the report.html of a report.json, such as one copied from a pod, next to it, instead of running a bench.")
+	printConfig := flag.Bool("print-config", false, "Print the configuration of -config, merged, as JSON, instead of running a bench.")
+	installPath := flag.String("install", "", "Copy the bench's binary to this path, for containers of other images to run, instead of running a bench.")
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	flag.Parse()
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
+	}
+	if *installPath != "" {
+		if err := install(*installPath); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if *printConfig {
+		c, err := loadConfig(cfg.configPaths)
+		if err != nil {
+			log.Fatal(err)
+		}
+		data, _ := json.MarshalIndent(c, "", "  ")
+		fmt.Println(string(data))
+		return
 	}
 	cfg.results = *resultsDir
 	if *addPath != "" {
@@ -167,28 +173,41 @@ func run(parent context.Context, cfg config) (err error) {
 	if err != nil {
 		return err
 	}
+	benchCfg, err := loadConfig(cfg.configPaths)
+	if err != nil {
+		return err
+	}
+	specs := [2]ingesterSpec{benchCfg.ingester(0), benchCfg.ingester(1)}
 	if cfg.tenants > 0 {
 		profile.Series.Tenants = cfg.tenants
 	}
 	if cfg.external != "" {
-		// The containers' image has the binaries, and each its volume.
-		cfg.binaryA, cfg.binaryB = cmp.Or(cfg.binaryA, "/bin/mimir"), cmp.Or(cfg.binaryB, cfg.binaryA, "/bin/mimir")
+		// Each container's image has its binary, and each container its volume.
+		for i := range specs {
+			specs[i].Binary = cmp.Or(specs[i].Binary, "/bin/mimir")
+		}
 		cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, "/data"), cmp.Or(cfg.dirB, "/data")
 		cfg.keep = true
 	}
 	cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, filepath.Join(cfg.out, "a")), cmp.Or(cfg.dirB, filepath.Join(cfg.out, "b"))
-	if cfg.binaryA == "" {
-		cfg.binaryA = filepath.Join(cfg.out, "mimir")
-		log.Printf("building %s", cfg.binaryA)
-		// Stamped with the tree's commit, which the report says it compared.
-		build := exec.CommandContext(ctx, "go", "build", "-o", cfg.binaryA, "-ldflags", "-X github.com/grafana/mimir/pkg/util/version.Revision="+benchRevision(), "./cmd/mimir")
-		build.Stdout, build.Stderr = os.Stdout, os.Stderr
-		if err := build.Run(); err != nil {
-			return fmt.Errorf("build mimir: %w", err)
+	for i := range specs {
+		if specs[i].Binary != "" {
+			continue
 		}
-	}
-	if cfg.binaryB == "" {
-		cfg.binaryB = cfg.binaryA
+		if specs[i].Image != "" {
+			return fmt.Errorf("ingester %c: an image is for run-in-kubernetes.sh; started by the bench, it needs a binary", 'A'+i)
+		}
+		tree := filepath.Join(cfg.out, "mimir")
+		if i == 0 || specs[0].Binary != tree {
+			log.Printf("building %s", tree)
+			// Stamped with the tree's commit, which the report says it compared.
+			build := exec.CommandContext(ctx, "go", "build", "-o", tree, "-ldflags", "-X github.com/grafana/mimir/pkg/util/version.Revision="+benchRevision(), "./cmd/mimir")
+			build.Stdout, build.Stderr = os.Stdout, os.Stderr
+			if err := build.Run(); err != nil {
+				return fmt.Errorf("build mimir: %w", err)
+			}
+		}
+		specs[i].Binary = tree
 	}
 
 	w := newWorld(profile.Series, cfg.series, cfg.seed)
@@ -237,13 +256,13 @@ func run(parent context.Context, cfg config) (err error) {
 		return err
 	}
 	var ingesters [2]*ingesterProcess
-	names := [2]string{"A " + cfg.engineA, "B " + cfg.engineB}
+	names := [2]string{strings.TrimSpace("A " + specs[0].Name), strings.TrimSpace("B " + specs[1].Name)}
 	for i, c := range []ingesterConfig{
-		{name: names[0], binary: cfg.binaryA, engine: cfg.engineA, dir: cfg.dirA, httpPort: 18180, grpcPort: 19195, extraArgs: cfg.extraA},
-		{name: names[1], binary: cfg.binaryB, engine: cfg.engineB, dir: cfg.dirB, httpPort: 18280, grpcPort: 19295, extraArgs: cfg.extraB},
+		{name: names[0], dir: cfg.dirA, httpPort: 18180, grpcPort: 19195},
+		{name: names[1], dir: cfg.dirB, httpPort: 18280, grpcPort: 19295},
 	} {
-		c.kafka, c.retention, c.oooWindow, c.external = f.address(), cfg.retention, cfg.oooWindow, cfg.external
-		c.runtimeConfig, c.readPathCPU, c.readPathMemory, c.leaksPercentage = overridesPath, cfg.readPathCPU, cfg.readPathMemory, cfg.leaksPercentage
+		c.binary, c.spec = specs[i].Binary, specs[i]
+		c.kafka, c.retention, c.oooWindow, c.external, c.runtimeConfig = f.address(), cfg.retention, cfg.oooWindow, cfg.external, overridesPath
 		ingesters[i], err = startIngester(ctx, c)
 		if err != nil {
 			return err
@@ -379,7 +398,7 @@ func run(parent context.Context, cfg config) (err error) {
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
-		Config: runConfig(cfg, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
+		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
 	}
 	for i := range ingesters {
 		report.Resources[i] = s.resources(i)
@@ -438,17 +457,22 @@ func sleep(ctx context.Context, d time.Duration) bool {
 }
 
 // runConfig is what the report says the run was.
-func runConfig(cfg config, profile Profile, rates map[string]float64) map[string]string {
+func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess, profile Profile, rates map[string]float64) map[string]string {
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),
-		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_path_cpu_limit": fmt.Sprint(cfg.readPathCPU), "read_path_memory_limit": fmt.Sprint(cfg.readPathMemory), "instrument_reference_leaks": fmt.Sprint(cfg.leaksPercentage), "read_scales": cfg.readScales,
-		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction), "engine_a": cfg.engineA, "engine_b": cfg.engineB,
-		"binary_a": filepath.Base(cfg.binaryA), "binary_b": filepath.Base(cfg.binaryB),
-		"args_a": strings.Join(cfg.extraA, " "), "args_b": strings.Join(cfg.extraB, " "),
+		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_scales": cfg.readScales,
+		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction),
+		"config":  strings.Join(cfg.configPaths, ","),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
-		"external":  fmt.Sprint(cfg.external != ""),
-		"version_a": binaryVersion(cfg.binaryA), "version_b": binaryVersion(cfg.binaryB), "bench_revision": benchRevision(),
+		"external":       fmt.Sprint(cfg.external != ""),
+		"bench_revision": benchRevision(),
+	}
+	for i, spec := range specs {
+		id := string(rune('a' + i))
+		out["name_"+id], out["binary_"+id], out["image_"+id] = spec.Name, filepath.Base(spec.Binary), spec.Image
+		out["args_"+id] = strings.Join(spec.withArgs(nil), " ")
+		out["version_"+id] = ingesters[i].version()
 	}
 	for rpc, rate := range rates {
 		out["rate_"+rpc] = fmt.Sprintf("%.3f/s", rate)

@@ -5,10 +5,12 @@
 # results directory and deletes the job:
 #
 #   IMAGE_REPO=registry.example.com/me/ingester-bench KUBE_CONTEXT=my-cluster NAMESPACE=my-namespace \
-#     RESULTS=~/ingester-bench-results tools/ingester-bench/run-in-kubernetes.sh [extra bench flags...]
+#     RESULTS=~/ingester-bench-results CONFIG=my-comparison.yaml tools/ingester-bench/run-in-kubernetes.sh [extra bench flags...]
 #
-# PROFILE, a profile file, is put in a ConfigMap for the run; NODE_SELECTOR (key=value) places it. The cluster's nodes
-# should have the kubelet's static CPU manager policy, so that the containers' CPUs are their own.
+# CONFIG, configuration files of the ingesters, comma separated, go over defaults.yaml and kubernetes.yaml: an
+# ingester's image is the configuration's, or the bench's with the tree's Mimir. PROFILE, a profile file, is put in a
+# ConfigMap for the run; NODE_SELECTOR (key=value) places it. The cluster's nodes should have the kubelet's static CPU
+# manager policy, so that the containers' CPUs are their own.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the image to}"
@@ -22,23 +24,32 @@ dir=tools/ingester-bench
 revision="$(git rev-parse --short=10 HEAD)$(git diff --quiet || echo -dirty)"
 k() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
 
+# The configuration, merged, for the driver: before building, so that a wrong one fails the run right away.
+metadata="$(mktemp)"
+mkdir -p "$metadata.config"
+go run ./tools/ingester-bench -config="$dir/kubernetes.yaml${CONFIG:+,$CONFIG}" -print-config > "$metadata.config/config.json"
+
 echo "building $IMAGE_REPO:$revision"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/mimir" -ldflags "-X github.com/grafana/mimir/pkg/util/version.Revision=$revision" ./cmd/mimir
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/ingester-bench" ./tools/ingester-bench
-metadata="$(mktemp)"
 docker buildx build -o type=registry --metadata-file "$metadata" --platform linux/amd64 -t "$IMAGE_REPO:$revision" "$dir"
 digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$metadata")"
 
+k create configmap "$NAME-config" --from-file="$metadata.config/config.json" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 if [[ -n "${PROFILE:-}" ]]; then
   # Server side, as a client side apply keeps the whole profile in an annotation, which is too small for it.
   k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 fi
-# The job of job.yaml, with the image, the profile, a node selector and the extra flags.
-python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "${PROFILE:-}" "${NODE_SELECTOR:-}" "$@" > "$metadata.yaml" <<'PY'
-import sys
-path, name, namespace, image, profile, selector, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7:]
-s = open(path).read().replace('image: IMAGE', 'image: ' + image)
+# The job of job.yaml, with the images, the configuration, the profile, a node selector and the extra flags.
+python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "$@" > "$metadata.yaml" <<'PY'
+import json, sys
+path, name, namespace, image, config, profile, selector, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8:]
+config = json.load(open(config))
+images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in 'ab'}
+s = open(path).read().replace('image: IMAGE_A', 'image: ' + images['a']).replace('image: IMAGE_B', 'image: ' + images['b'])
+s = s.replace('image: IMAGE', 'image: ' + image)
 s = s.replace('  name: ingester-bench\n', f'  name: {name}\n  namespace: {namespace}\n', 1)
+s = s.replace('configMap: { name: ingester-bench-config }', f'configMap: {{ name: {name}-config }}')
 if profile:
     file = 'profile.json' + profile.split('.json', 1)[1] if '.json' in profile else 'profile.json'
     s = s.replace('            # - -profile=/profile/profile.json\n', f'            - -profile=/profile/{file}\n')

@@ -29,8 +29,7 @@ import (
 
 // ingesterProcess is an ingester of its own process, consuming the feed's partition.
 type ingesterProcess struct {
-	name   string
-	engine string
+	name string
 	// The ingester's process when the bench started it, or the file of its PID when another container runs it.
 	cmd      *exec.Cmd
 	pidFile  string
@@ -42,17 +41,14 @@ type ingesterProcess struct {
 }
 
 type ingesterConfig struct {
-	name, binary, engine, dir string
-	httpPort, grpcPort        int
-	kafka                     string
-	extraArgs                 []string
-	oooWindow, retention      time.Duration
-	// The runtime configuration of the tenants' limits, and the read path's limits by utilization, 0 to not limit it.
-	runtimeConfig  string
-	readPathCPU    int
-	readPathMemory int64
-	// The percentage of the records whose buffers are instrumented for reference leaks, 0 to not instrument them.
-	leaksPercentage float64
+	name, binary, dir    string
+	httpPort, grpcPort   int
+	kafka                string
+	oooWindow, retention time.Duration
+	// The runtime configuration of the tenants' limits.
+	runtimeConfig string
+	// The flags of the bench's configuration, over the ones the bench sets.
+	spec ingesterSpec
 	// Directory shared with containers that run the ingesters: the bench writes their command lines to it instead of
 	// starting them.
 	external string
@@ -89,10 +85,9 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-blocks-storage.filesystem.dir=" + filepath.Join(cfg.dir, "bucket"),
 		"-blocks-storage.tsdb.dir=" + filepath.Join(cfg.dir, "tsdb"),
 		"-blocks-storage.tsdb.retention-period=" + cfg.retention.String(),
-		// Neither ships: the seriesstore engine has no blocks to, and the bench measures ingestion and reads.
+		// Neither ships nor flushes: the bench measures ingestion and reads.
 		"-blocks-storage.tsdb.ship-interval=0",
 		"-blocks-storage.tsdb.flush-blocks-on-shutdown=false",
-		"-blocks-storage.tsdb.memory-snapshot-on-shutdown=false",
 		"-ingester.out-of-order-time-window=" + cfg.oooWindow.String(),
 		"-ingester.max-global-series-per-user=150000",
 		"-ingester.max-global-series-per-metric=0",
@@ -106,62 +101,14 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-ingester.instance-limits.max-tenants=0",
 		"-ingester.instance-limits.max-inflight-push-requests=0",
 		"-ingester.instance-limits.max-ingestion-rate=0",
-		"-ingester.read-path-cpu-utilization-limit=" + strconv.Itoa(cfg.readPathCPU),
-		"-ingester.read-path-memory-utilization-limit=" + strconv.FormatInt(cfg.readPathMemory, 10),
-		// As a multi-tenant cell runs them: the TSDB's caches and planning, timely and early head compactions, the
-		// circuit breakers, owned series, the error sampling and the instrumentation of a share of the records for
-		// reference leaks, cost attribution and the tenants' limits and trackers.
-		"-blocks-storage.tsdb.head-postings-for-matchers-cache-force=true",
-		"-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation=true",
-		"-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes=26214400",
-		"-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl=10m",
-		"-blocks-storage.tsdb.block-postings-for-matchers-cache-force=true",
-		"-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes=26214400",
-		"-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl=10m",
-		"-blocks-storage.tsdb.shared-postings-for-matchers-cache=true",
-		"-blocks-storage.tsdb.index-lookup-planning.enabled=true",
-		"-blocks-storage.tsdb.index-lookup-planning.comparison-portion=0.01",
-		"-blocks-storage.tsdb.float-chunk-encoding=xor2",
-		"-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes=1048576",
-		"-blocks-storage.tsdb.head-compaction-interval=15m",
-		"-blocks-storage.tsdb.timely-head-compaction-enabled=true",
-		"-blocks-storage.tsdb.early-head-compaction-min-in-memory-series=2400000",
-		"-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage=15",
-		"-blocks-storage.tsdb.series-hash-cache-max-size-bytes=367001600",
-		"-ingester.active-series-metrics-enabled=true",
-		"-ingester.active-series-metrics-idle-timeout=20m",
-		"-ingester.early-compaction-non-owned-series-enabled=true",
-		"-ingester.track-ingester-owned-series=true",
-		"-ingester.use-ingester-owned-series-for-limits=true",
-		"-ingester.error-sample-rate=10",
-		"-ingester.push-circuit-breaker.enabled=true",
-		"-ingester.push-circuit-breaker.failure-threshold-percentage=20",
-		"-ingester.push-circuit-breaker.initial-delay=60s",
-		"-ingester.push-circuit-breaker.request-timeout=2s",
-		"-ingester.read-circuit-breaker.enabled=true",
-		"-ingester.read-circuit-breaker.failure-threshold-percentage=20",
-		"-ingester.read-circuit-breaker.request-timeout=30s",
-		"-ingester.max-global-metadata-per-metric=10",
-		"-ingester.max-global-metadata-per-user=30000",
-		"-instrument-reference-leaks.percentage=" + strconv.FormatFloat(cfg.leaksPercentage, 'g', -1, 64),
-		"-instrument-reference-leaks.before-reuse-period=2m",
-		"-instrument-reference-leaks.max-inflight-instrumented-bytes=100000000",
-		"-cost-attribution.registry-path=/usage-metrics",
 		"-validation.cost-attribution-trackers=" + baseCostAttributionTrackers(),
-		"-validation.max-active-series-additional-custom-trackers=200",
 		"-runtime-config.file=" + cfg.runtimeConfig,
 		"-memberlist.join=",
 		"-usage-stats.enabled=false",
 		"-log.level=warn",
 	}
-	if cfg.engine == "prometheus" {
-		args = slicesDelete(args, "-blocks-storage.tsdb.memory-snapshot-on-shutdown=false")
-	} else {
-		// Only for other engines: the Prometheus TSDB is the default, and released binaries have no such flag.
-		args = append(args, "-blocks-storage.tsdb.engine="+cfg.engine)
-	}
-	args = append(args, cfg.extraArgs...)
-	p := &ingesterProcess{name: cfg.name, engine: cfg.engine, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
+	args = cfg.spec.withArgs(args)
+	p := &ingesterProcess{name: cfg.name, httpPort: cfg.httpPort, grpcPort: cfg.grpcPort, dir: cfg.dir}
 	if cfg.external != "" {
 		id := strings.ToLower(cfg.name[:1])
 		p.pidFile = filepath.Join(cfg.external, id+".pid")
@@ -199,16 +146,6 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 	}
 	p.client = client.NewIngesterClient(p.conn)
 	return p, nil
-}
-
-func slicesDelete(args []string, arg string) []string {
-	out := args[:0]
-	for _, a := range args {
-		if a != arg {
-			out = append(out, a)
-		}
-	}
-	return out
 }
 
 // waitReady waits for the ingester to say it is ready, which it does once it caught up with the partition.
@@ -347,6 +284,22 @@ func (p *ingesterProcess) stop() {
 	}
 }
 
+// version is the ingester's build, as it says it is.
+func (p *ingesterProcess) version() string {
+	resp, err := http.Get(p.url("/api/v1/status/buildinfo"))
+	if err != nil {
+		return "unknown"
+	}
+	defer resp.Body.Close()
+	var info struct {
+		Data struct{ Version, Revision, Branch string }
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&info) != nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("Mimir, version %s (branch: %s, revision: %s)", info.Data.Version, info.Data.Branch, info.Data.Revision)
+}
+
 // logTail returns the end of the ingester's log, for errors.
 func (p *ingesterProcess) logTail() string {
 	if p.pidFile != "" {
@@ -421,6 +374,19 @@ func writeSpec(path string, spec execSpec) error {
 		return err
 	}
 	return os.Rename(path+".tmp", path)
+}
+
+// install copies the bench's binary to path, for containers of other images to run it with -exec.
+func install(path string) error {
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o755)
 }
 
 // execMain waits for the spec at path, written once the bench's backfill is done, then runs its command in place of

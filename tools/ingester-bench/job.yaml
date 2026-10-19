@@ -2,9 +2,10 @@
 # exclusive CPUs on a node whose kubelet has the static CPU manager policy: its requests are its limits, in whole CPUs.
 # The ingesters run as a multi-tenant cell runs them, with CPU requests and no CPU limit, GOMAXPROCS and the read path's
 # utilization limits from their requests and their memory limit. Each ingester container waits for the command line
-# the driver writes once the backfill is done, and runs it as its own process. Replace the image, and the profile ConfigMap if any; read the report from the driver's
-# logs, or, while it holds, from its port 8090: kubectl port-forward <pod> 8090, then report.html, report.json and the
-# profiles at http://localhost:8090/.
+# the driver writes once the backfill is done, and runs it as its own process: the bench's binary, which an init
+# container copies, waits for it in the ingester's image. run-in-kubernetes.sh sets the images, the configuration's
+# ConfigMap and the profile's if any; read the report from the driver's logs, or, while it holds, from its port 8090:
+# kubectl port-forward <pod> 8090, then report.html, report.json and the profiles at http://localhost:8090/.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -20,14 +21,18 @@ spec:
       restartPolicy: Never
       # The driver stops the ingesters through their PIDs.
       shareProcessNamespace: true
+      initContainers:
+        - name: install
+          image: IMAGE
+          args: [-install=/shared/ingester-bench]
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
       containers:
         - name: driver
           image: IMAGE
           args:
             - -external=/shared
-            # A is the Prometheus TSDB of the Mimir release the image has, B the seriesstore engine of the tree's build.
-            - -binary-a=/bin/mimir-release
-            - -binary-b=/bin/mimir
+            - -config=/config/config.json
             - -out=/out
             - -kafka-port=9092
             - -kafka-dir=/out/kafka
@@ -40,9 +45,6 @@ spec:
             - -hold=1h
             # Comparing every read at production rates takes the driver more CPU than reading takes the ingesters.
             - -compare-fraction=0.1
-            # A cell's: the CPU requests and as many again, 3 at least and 6 at most, and 3/4 of the memory limit.
-            - -read-path-cpu-limit=8
-            - -read-path-memory-limit=25769803776
             # - -profile=/profile/profile.json
           # The in-process Kafka holds the backfill, and reads of the largest queries hold their responses.
           resources:
@@ -51,9 +53,11 @@ spec:
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: out, mountPath: /out }
+            - { name: config, mountPath: /config }
             # - { name: profile, mountPath: /profile }
         - name: ingester-a
-          image: IMAGE
+          image: IMAGE_A
+          command: [/shared/ingester-bench]
           args: [-exec=/shared/a.json]
           # The read path's CPU limit and one more.
           env:
@@ -65,7 +69,8 @@ spec:
             - { name: shared, mountPath: /shared }
             - { name: data-a, mountPath: /data }
         - name: ingester-b
-          image: IMAGE
+          image: IMAGE_B
+          command: [/shared/ingester-bench]
           args: [-exec=/shared/b.json]
           # The read path's CPU limit and one more.
           env:
@@ -80,6 +85,7 @@ spec:
       # them on the node's disk, shared with its other pods, gets the run evicted.
       volumes:
         - { name: shared, emptyDir: {} }
+        - { name: config, configMap: { name: ingester-bench-config } }
         - { name: out, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 200Gi } } } } } }
         - { name: data-a, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
         - { name: data-b, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
