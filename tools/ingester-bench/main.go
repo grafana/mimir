@@ -335,7 +335,7 @@ func run(parent context.Context, cfg config) (err error) {
 	d.compareFraction = cfg.compareFraction
 	readCtx, stopReads := context.WithCancel(ctx)
 	defer stopReads()
-	go d.run(readCtx, rates, cfg.seed)
+	go d.run(readCtx, ctx, rates, cfg.seed)
 	// From the first read: the ingesters' memory, and their heap every two minutes, to see what grows even if one
 	// runs out of memory before the window.
 	go watchIngesters(readCtx, ingesters, cfg.out)

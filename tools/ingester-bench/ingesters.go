@@ -31,7 +31,9 @@ import (
 type ingesterProcess struct {
 	name string
 	// The ingester's process when the bench started it, or the file of its PID when another container runs it.
-	cmd      *exec.Cmd
+	cmd *exec.Cmd
+	// Closed once the process the bench started exited, with its state in cmd.
+	exited   chan struct{}
 	pidFile  string
 	httpPort int
 	grpcPort int
@@ -131,7 +133,8 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		if err := cmd.Start(); err != nil {
 			return nil, err
 		}
-		p.cmd = cmd
+		p.cmd, p.exited = cmd, make(chan struct{})
+		go func() { _ = cmd.Wait(); close(p.exited) }()
 	}
 	var err error
 	p.conn, err = grpc.NewClient("127.0.0.1:"+strconv.Itoa(cfg.grpcPort),
@@ -148,13 +151,21 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 	return p, nil
 }
 
-// waitReady waits for the ingester to say it is ready, which it does once it caught up with the partition.
+// waitReady waits for the ingester to say it is ready, which it does once it caught up with the partition, or for the
+// process the bench started to exit.
 func (p *ingesterProcess) waitReady(ctx context.Context, progress func()) error {
+	httpClient := http.Client{Timeout: 10 * time.Second}
 	for {
-		if p.cmd != nil && p.cmd.ProcessState != nil {
+		select {
+		case <-p.exited:
 			return fmt.Errorf("%s exited: %s", p.name, p.cmd.ProcessState)
+		default:
 		}
-		resp, err := http.Get(p.url("/ready"))
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url("/ready"), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := httpClient.Do(req)
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -168,6 +179,7 @@ func (p *ingesterProcess) waitReady(ctx context.Context, progress func()) error 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-p.exited:
 		case <-time.After(2 * time.Second):
 		}
 	}
@@ -274,12 +286,11 @@ func (p *ingesterProcess) stop() {
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() { _ = p.cmd.Wait(); close(done) }()
 		select {
-		case <-done:
+		case <-p.exited:
 		case <-time.After(2 * time.Minute):
 			_ = p.cmd.Process.Kill()
+			<-p.exited
 		}
 	}
 }

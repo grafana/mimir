@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"io"
 	"math"
 	"slices"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -118,11 +118,11 @@ func normalize(req *request, responses []any, explain map[uint64]string) ([]uint
 		if len(items) >= maxItems {
 			return errTooLarge
 		}
-		var h maphash.Hash
-		h.SetSeed(seedHash)
+		var h xxhash.Digest
+		h.Reset()
 		for _, part := range parts {
-			h.WriteString(part)
-			h.WriteByte(0)
+			_, _ = h.WriteString(part)
+			_, _ = h.Write([]byte{0})
 		}
 		sum := h.Sum64()
 		items = append(items, sum)

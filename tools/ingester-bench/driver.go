@@ -110,8 +110,9 @@ func (d *driver) statsOf(api string) *apiStats {
 	return s
 }
 
-// run sends each RPC's reads at its rate, as Poisson arrivals, until ctx is done.
-func (d *driver) run(ctx context.Context, rates map[string]float64, seed uint64) {
+// run sends each RPC's reads at its rate, as Poisson arrivals, until ctx is done. Their retries wait on retries
+// instead, so that the differences found last still get theirs once reads stop.
+func (d *driver) run(ctx, retries context.Context, rates map[string]float64, seed uint64) {
 	var wg sync.WaitGroup
 	rpcs := make([]string, 0, len(rates))
 	for rpc := range rates {
@@ -162,7 +163,7 @@ func (d *driver) run(ctx context.Context, rates map[string]float64, seed uint64)
 				go func() {
 					defer d.pending.Done()
 					defer func() { <-d.slots }()
-					d.compare(ctx, req, nil, 0)
+					d.compare(retries, req, nil, 0)
 				}()
 			}
 		}()

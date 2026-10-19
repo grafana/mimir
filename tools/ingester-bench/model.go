@@ -4,12 +4,12 @@ package main
 
 import (
 	"fmt"
-	"hash/maphash"
 	"math"
 	"math/rand/v2" //#nosec G404 -- Synthetic data and reads, reproducible from a seed: no need for a CSPRNG -- nosemgrep: math-random-used
 	"sort"
 	"strconv"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 
@@ -53,7 +53,11 @@ type metricModel struct {
 	labels     []labelDef
 	churnLabel string
 	slots      int
-	intervalMs int64
+	// Series of each slot: a classic histogram's buckets, sum and count, or the one series of the others.
+	seriesPerSlot int
+	intervalMs    int64
+	// The hash of the run's seed, the tenant and the metric, which the hashes of its series start from.
+	base uint64
 	// Per-second rate of counters and scale of gauges.
 	scale float64
 }
@@ -62,8 +66,6 @@ type labelDef struct {
 	name   string
 	values []string
 }
-
-var seedHash = maphash.MakeSeed()
 
 func newWorld(p SeriesProfile, totalSeries int, seed uint64) *world {
 	r := rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
@@ -106,7 +108,8 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 	}
 	for k := range metrics {
 		size := max(1, int(math.Round(weights[k]/sum*float64(series))))
-		m := &metricModel{tenant: t, name: fmt.Sprintf("metric_%d", k)}
+		m := &metricModel{tenant: t, name: fmt.Sprintf("metric_%d", k), seriesPerSlot: 1}
+		m.base = seededHash(w.seed, t.id, m.name)
 		switch x := r.Float64(); {
 		case x < p.NativeHistogramShare:
 			m.kind = kindNativeHistogram
@@ -121,7 +124,8 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 		}
 		m.slots = size
 		if m.kind == kindClassicHistogram {
-			m.slots = max(1, size/(p.ClassicBuckets+2))
+			m.seriesPerSlot = classicHistogramSeries(p)
+			m.slots = max(1, size/m.seriesPerSlot)
 		}
 		seconds, _ := strconv.Atoi(pick(r, intervals))
 		m.intervalMs = int64(max(1, seconds)) * 1000
@@ -163,7 +167,7 @@ func (w *world) pool(r *rand.Rand, t *tenantModel, name string, n int) []string 
 	if len(pool) < n {
 		length := max(1, int(math.Round(w.profile.ValueLength.Sample(r))))
 		for i := len(pool); i < n; i++ {
-			pool = append(pool, valueString(name, i, length))
+			pool = append(pool, valueString(w.seed, name, i, length))
 		}
 		t.pools[name] = pool
 	}
@@ -171,13 +175,13 @@ func (w *world) pool(r *rand.Rand, t *tenantModel, name string, n int) []string 
 }
 
 // valueString is the i-th value of a label, length characters long.
-func valueString(label string, i, length int) string {
+func valueString(seed uint64, label string, i, length int) string {
 	s := strconv.FormatInt(int64(i), 36)
 	if len(s) >= length {
 		return s
 	}
 	pad := make([]byte, length-len(s))
-	h := maphash.String(seedHash, label)
+	h := seededHash(seed, label)
 	for j := range pad {
 		pad[j] = 'a' + byte((h>>(uint(j)%60))%26)
 	}
@@ -207,17 +211,33 @@ func (w *world) totalSeries() int {
 	return n
 }
 
-// hash64 is a deterministic hash of the metric, the slot and a salt, for all that is random about a series.
+// hash64 is a hash of the metric, the slot and a salt, for all that is random about a series: the same seed hashes
+// them the same in every run.
 func (m *metricModel) hash64(slot int, salt uint64) uint64 {
-	var h maphash.Hash
-	h.SetSeed(seedHash)
-	h.WriteString(m.tenant.id)
-	h.WriteString(m.name)
-	var b [16]byte
-	putUint64(b[:8], uint64(slot))
-	putUint64(b[8:], salt)
-	h.Write(b[:])
-	return h.Sum64()
+	var b [24]byte
+	putUint64(b[:8], m.base)
+	putUint64(b[8:16], uint64(slot))
+	putUint64(b[16:], salt)
+	return xxhash.Sum64(b[:])
+}
+
+// seededHash is a hash of the parts after the run's seed: the same seed hashes them the same in every run.
+func seededHash(seed uint64, parts ...string) uint64 {
+	var b [8]byte
+	putUint64(b[:], seed)
+	d := xxhash.New()
+	_, _ = d.Write(b[:])
+	for _, part := range parts {
+		_, _ = d.WriteString(part)
+		_, _ = d.Write([]byte{0})
+	}
+	return d.Sum64()
+}
+
+// classicHistogramSeries is the series of a classic histogram: its buckets, as many as the feed has "le" values, its
+// sum and its count.
+func classicHistogramSeries(p SeriesProfile) int {
+	return max(1, p.ClassicBuckets-1) + 1 + 2
 }
 
 func putUint64(b []byte, v uint64) {
