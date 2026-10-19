@@ -543,6 +543,10 @@ func (i *Ingester) pushSamplesToAppender(
 	idx := i.getTSDB(userID).Head().MustIndex()
 	defer idx.Close()
 
+	appOptions := storage.AppendV2Options{}
+	// Zero samples for created timestamps must never go into the out-of-order head.
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+
 	for _, ts := range timeseries {
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
@@ -611,7 +615,6 @@ func (i *Ingester) pushSamplesToAppender(
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
-		appOptions := storage.AppendV2Options{}
 		for _, s := range ts.Samples {
 			var err error
 
@@ -624,15 +627,31 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
-			startTimestamp := int64(0)
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
-				startTimestamp = ts.CreatedTimestamp
+				if ref != 0 {
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+				}
+				if err == nil {
+					stats.succeededSamplesCount++
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
+					// We also ignore out of order sample as created timestamp is out of order most of the time,
+					// except when written before the first sample.
+					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -641,7 +660,7 @@ func (i *Ingester) pushSamplesToAppender(
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -679,15 +698,32 @@ func (i *Ingester) pushSamplesToAppender(
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
 
-				startTimestamp := int64(0)
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-					startTimestamp = ts.CreatedTimestamp
+					zih, zfh := zeroHistogramFor(ih, fh)
+					if ref != 0 {
+						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+					}
+					if err == nil {
+						stats.succeededSamplesCount++
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
 
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
@@ -696,7 +732,7 @@ func (i *Ingester) pushSamplesToAppender(
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if ref, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
@@ -940,4 +976,23 @@ func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64
 		}
 	}
 	return true
+}
+
+// zeroHistogramFor returns the zero sample to append for a created timestamp. It matches the type and layout of the
+// given histogram so that appending it doesn't cut a new chunk.
+func zeroHistogramFor(h *histogram.Histogram, fh *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
+	if fh != nil {
+		return nil, &histogram.FloatHistogram{
+			CounterResetHint: histogram.CounterReset,
+			Schema:           fh.Schema,
+			ZeroThreshold:    fh.ZeroThreshold,
+			CustomValues:     fh.CustomValues,
+		}
+	}
+	return &histogram.Histogram{
+		CounterResetHint: histogram.CounterReset,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		CustomValues:     h.CustomValues,
+	}, nil
 }
