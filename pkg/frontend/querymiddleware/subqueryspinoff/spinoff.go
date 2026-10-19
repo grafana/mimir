@@ -23,17 +23,20 @@ type Options struct {
 // Map rewrites expr to spin off its subqueries and decides whether doing so is worthwhile, recording the
 // outcome in metrics and (on success) in the query stats found in ctx.
 //
+// When rvsSubquerySplittingEnabled is true, subqueries wrapped in functions supported by range-vectore-splitting are
+// kept intact downstream. Other subqueries in the same query can still be spun off.
+//
 // It returns the rewritten expression and true when the query should be executed with its subqueries spun
 // off.
 //
 // It returns (nil, false) when the caller should fall back to executing the original query through the
 // regular downstream path, which happens when mapping failed, the query had no subqueries to spin off, or
 // spinning off was not deemed worthwhile. The original expression is not modified in this case.
-func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOffWrapper, metrics Metrics, defaultStepFunc func(rangeMillis int64) int64, timeout time.Duration, logger *spanlogger.SpanLogger, opts Options) (parser.Expr, bool) {
+func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOffWrapper, metrics Metrics, defaultStepFunc func(rangeMillis int64) int64, timeout time.Duration, rvsSubquerySplittingEnabled bool, logger *spanlogger.SpanLogger, opts Options) (parser.Expr, bool) {
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
 	mapperCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	mapper := astmapper.NewSubquerySpinOffMapper(wrapper, defaultStepFunc, logger, mapperStats, opts.SpinOffSimpleSubqueries)
+	mapper := astmapper.NewSubquerySpinOffMapper(wrapper, defaultStepFunc, rvsSubquerySplittingEnabled, logger, mapperStats, opts.SpinOffSimpleSubqueries)
 
 	spinOffQuery, err := mapper.Map(mapperCtx, expr)
 	if err != nil {
@@ -47,9 +50,13 @@ func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOf
 	}
 
 	if mapperStats.SpunOffSubqueries() == 0 {
-		// the query has no subqueries, so continue downstream
+		// the query has no subqueries to spin off, so continue downstream
 		logger.DebugLog("msg", "input query resulted in a no operation, falling back to try executing without spinning off subqueries")
-		metrics.SpinOffSkipped.WithLabelValues(SkippedReasonNoSubqueries).Inc()
+		reason := SkippedReasonNoSubqueries
+		if mapperStats.SkippedSubqueriesForRVS() > 0 {
+			reason = SkippedReasonRangeVectorSplitting
+		}
+		metrics.SpinOffSkipped.WithLabelValues(reason).Inc()
 		return nil, false
 	}
 

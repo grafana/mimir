@@ -25,6 +25,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -227,6 +228,10 @@ func getBucketSparseHeaderBytes(
 	}
 	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
+	// If the BucketReader implementation passed here is a (wrapped) CachingBucket,
+	// we do not want to look up or store the sparse header with the cache.
+	ctx = bucketcache.WithSkipCacheLookup(ctx)
+	ctx = bucketcache.WithSkipCacheStore(ctx)
 	reader, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
 	if err != nil {
 		return nil, err
@@ -281,7 +286,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	}
 
 	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := buildInMemorySparseHeaderFromIndexHeader(
-		ctx, indexTOC, filePoolDecbufFactory, sparseSampleFactor, false, l,
+		ctx, sectionSource{indexTOC, filePoolDecbufFactory}, sectionSource{indexTOC, filePoolDecbufFactory}, sparseSampleFactor, false, l,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
@@ -299,10 +304,15 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	return nil
 }
 
+type sectionSource struct {
+	toc           *TOCCompat
+	decbufFactory streamencoding.DecbufFactory
+}
+
 func buildInMemorySparseHeaderFromIndexHeader(
 	ctx context.Context,
-	toc *TOCCompat,
-	decbufFactory streamencoding.DecbufFactory,
+	symbols sectionSource,
+	postingsOffsets sectionSource,
 	sparseSampleFactor int,
 	doChecksum bool,
 	l log.Logger,
@@ -321,13 +331,13 @@ func buildInMemorySparseHeaderFromIndexHeader(
 	level.Info(l).Log("msg", "creating sparse index-header from full index-header")
 
 	allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromSymbolsTable(
-		ctx, decbufFactory, int(toc.Symbols), doChecksum,
+		ctx, symbols.decbufFactory, int(symbols.toc.Symbols), doChecksum,
 	)
 	if err != nil {
 		return -1, nil, nil, err
 	}
 
-	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(ctx, decbufFactory, int(toc.PostingsOffsetTable), toc.PostingsListEnd, sparseSampleFactor, doChecksum)
+	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(ctx, postingsOffsets.decbufFactory, int(postingsOffsets.toc.PostingsOffsetTable), postingsOffsets.toc.PostingsListEnd, sparseSampleFactor, doChecksum)
 	if err != nil {
 		return -1, nil, nil, err
 	}

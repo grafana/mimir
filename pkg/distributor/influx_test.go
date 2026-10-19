@@ -10,9 +10,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	influxio "github.com/influxdata/influxdb/v2/kit/io"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -123,6 +126,34 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 					assert.Nil(t, err)
 					assert.Equal(t, defaultLineProtocolLen, pushReq.UncompressedBodySize())
 					return context.DeadlineExceeded
+				}
+			},
+			maxRequestSizeBytes: 1 << 20,
+		},
+		{
+			name:         "gRPC status error with non-HTTP code",
+			url:          "/write",
+			data:         defaultLineProtocol,
+			expectedCode: http.StatusServiceUnavailable,
+			push: func(t *testing.T) PushFunc {
+				return func(_ context.Context, pushReq *Request) error {
+					_, err := pushReq.WriteRequest()
+					assert.NoError(t, err)
+					return status.Error(codes.Unavailable, "unavailable")
+				}
+			},
+			maxRequestSizeBytes: 1 << 20,
+		},
+		{
+			name:         "httpgrpc error with HTTP code",
+			url:          "/write",
+			data:         defaultLineProtocol,
+			expectedCode: http.StatusTooManyRequests,
+			push: func(t *testing.T) PushFunc {
+				return func(_ context.Context, pushReq *Request) error {
+					_, err := pushReq.WriteRequest()
+					assert.NoError(t, err)
+					return httpgrpc.Error(http.StatusTooManyRequests, "rate limited")
 				}
 			},
 			maxRequestSizeBytes: 1 << 20,

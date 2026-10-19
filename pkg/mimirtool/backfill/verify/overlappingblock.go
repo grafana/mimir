@@ -110,7 +110,7 @@ func (v *OverlappingBlockVerifier) recordRun(report *Report, run []BlockRef) {
 	}
 
 	for _, blk := range run {
-		report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, fmt.Errorf(
+		report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, getShardID(&blk.Meta), fmt.Errorf(
 			"block [minTime=%d, maxTime=%d) overlaps %d other block(s) in region [%d, %d)",
 			blk.Meta.MinTime, blk.Meta.MaxTime, len(run)-1, regionMin, regionMax))
 	}

@@ -485,6 +485,114 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
+func TestTSDBBuilder_CompactAndUpload_verificationFail(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = true
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	errVerificationFailed := fmt.Errorf("verification failed")
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		return errVerificationFailed
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	uploaderCalled := false
+	_, err := builder.CompactAndUpload(ctx, func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
+		uploaderCalled = true
+		return nil
+	})
+	require.ErrorIs(t, err, errVerificationFailed)
+	require.False(t, uploaderCalled, "the uploader must not be called when block verification fails")
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_blockbuilder_tsdb_block_verification_failed_total Total number of blocks that failed verification before upload.
+		# TYPE cortex_blockbuilder_tsdb_block_verification_failed_total counter
+		cortex_blockbuilder_tsdb_block_verification_failed_total{partition="0"} 1
+	`), "cortex_blockbuilder_tsdb_block_verification_failed_total"))
+	require.Equal(t, 1, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration), "verification duration should still be observed on failure")
+}
+
+func TestTSDBBuilder_CompactAndUpload_verificationCanceled(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = true
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	// The index reader wraps the context error, as happens when a sibling tenant fails and the errgroup cancels the job.
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		return fmt.Errorf("get postings offset entry: %w", context.Canceled)
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	uploaderCalled := false
+	_, err := builder.CompactAndUpload(ctx, func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
+		uploaderCalled = true
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, uploaderCalled, "the uploader must not be called when block verification is cancelled")
+
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationFailed), "a cancelled verification must not be counted as a corrupt block")
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration), "a cancelled verification must not observe a partial duration")
+}
+
+func TestTSDBBuilder_CompactAndUpload_verificationDisabled(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = false
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		t.Fatal("verifyBlock must not be called when verification is disabled")
+		return nil
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	shipperDir := t.TempDir()
+	_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+	require.NoError(t, err)
+
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationFailed))
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration))
+}
+
 func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
 	ll := log.NewNopLogger()
 
@@ -781,8 +889,13 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	lastEnd := 2 * processingRange
 	currEnd := 3 * processingRange
 
+	// testSchema is deliberately not the zero value, so that the expectations below pin the
+	// schema of the injected zero samples as well as their timestamps.
+	const testSchema = int32(3)
+
 	simpleTestHistogram := func(ts int64, count uint64) mimirpb.Histogram {
 		return mimirpb.Histogram{
+			Schema:        testSchema,
 			Count:         &mimirpb.Histogram_CountInt{CountInt: count},
 			ZeroThreshold: 1e-128,
 			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: count},
@@ -793,14 +906,36 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		return test.Sample{
 			TS: ts,
 			Hist: &histogram.Histogram{
+				Schema:        testSchema,
 				Count:         count,
 				ZeroThreshold: 1e-128,
 				ZeroCount:     count,
 			},
 		}
 	}
+	// The injected zero sample has to carry the series' own Schema and ZeroThreshold,
+	// otherwise it lands in a chunk of its own and coarsens any query range covering it.
+	expectedZeroHistogram := func(ts int64) test.Sample {
+		return test.Sample{
+			TS: ts,
+			Hist: &histogram.Histogram{
+				Schema:        testSchema,
+				ZeroThreshold: 1e-128,
+			},
+		}
+	}
+	expectedZeroFloatHistogram := func(ts int64) test.Sample {
+		return test.Sample{
+			TS: ts,
+			FloatHist: &histogram.FloatHistogram{
+				Schema:        testSchema,
+				ZeroThreshold: 1e-128,
+			},
+		}
+	}
 	simpleTestFloatHistogram := func(ts int64, count float64) mimirpb.Histogram {
 		return mimirpb.Histogram{
+			Schema:        testSchema,
 			Count:         &mimirpb.Histogram_CountFloat{CountFloat: count},
 			ZeroThreshold: 1e-128,
 			ZeroCount:     &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: count},
@@ -811,6 +946,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		return test.Sample{
 			TS: ts,
 			FloatHist: &histogram.FloatHistogram{
+				Schema:        testSchema,
 				Count:         count,
 				ZeroThreshold: 1e-128,
 				ZeroCount:     count,
@@ -957,20 +1093,20 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			},
 			expectSamples: []test.Sample{
 				expectedHistogram(lastEnd-50000+100, 1),
-				{TS: lastEnd - 50000 + 200, Hist: zeroHistogram},
+				expectedZeroHistogram(lastEnd - 50000 + 200),
 				expectedHistogram(lastEnd-50000+300, 2),
 				expectedHistogram(lastEnd+100, 3),
-				{TS: lastEnd + 200, Hist: zeroHistogram},
+				expectedZeroHistogram(lastEnd + 200),
 				expectedHistogram(lastEnd+300, 4),
 				expectedHistogram(lastEnd+400, 5),
 				expectedHistogram(lastEnd+500, 6),
 				expectedHistogram(lastEnd+600, 7),
-				{TS: lastEnd + 700, Hist: zeroHistogram},
+				expectedZeroHistogram(lastEnd + 700),
 				expectedHistogram(lastEnd+800, 8),
-				{TS: lastEnd + 1000, FloatHist: zeroFloatHistogram},
+				expectedZeroFloatHistogram(lastEnd + 1000),
 				expectedFloatHistogram(lastEnd+1100, 8.5),
 				expectedHistogram(currEnd-200, 9),
-				{TS: currEnd - 100, Hist: zeroHistogram},
+				expectedZeroHistogram(currEnd - 100),
 				expectedHistogram(currEnd+200, 10),
 			},
 		},
@@ -1187,4 +1323,80 @@ func blockFloatChunkEncodings(t *testing.T, db *tsdb.DB) []chunkenc.Encoding {
 	}
 	require.NoError(t, ss.Err())
 	return encs
+}
+
+// TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for
+// custom buckets (NHCB) histograms, whose CustomValues have to survive onto the zero sample as
+// well. TestBuilderCreatedTimestamp only exercises exponential histograms.
+func TestBuilderCreatedTimestampCustomBucketsHistogram(t *testing.T) {
+	const (
+		userID      = "user_nhcb"
+		partitionID = int32(0)
+	)
+
+	limits := map[string]*validation.Limits{
+		userID: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			OutOfOrderTimeWindow:                     model.Duration(time.Hour),
+		},
+	}
+	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, newTSDBBuilderMetrics(registry), mimir_tsdb.NewTSDBMetrics(registry, logger))
+	t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+	var (
+		customValues = []float64{1, 2, 5}
+		sampleTS     = int64(200000)
+		createdTS    = sampleTS - 100
+		metricName   = "test_nhcb"
+	)
+
+	req := mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, metricName)),
+				Histograms: []mimirpb.Histogram{{
+					Schema:         histogram.CustomBucketsSchema,
+					CustomValues:   customValues,
+					Count:          &mimirpb.Histogram_CountInt{CountInt: 3},
+					Sum:            6,
+					PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 3}},
+					PositiveDeltas: []int64{1, 0, 0},
+					Timestamp:      sampleTS,
+				}},
+				CreatedTimestamp: createdTS,
+			},
+		}},
+	}
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(user.InjectOrgID(t.Context(), userID), &req))
+
+	db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+	require.NoError(t, err)
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	ss := q.Select(context.Background(), true, nil,
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
+	require.True(t, ss.Next(), "DB has a series matching %s{}", metricName)
+
+	it := ss.At().Iterator(nil)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	gotTS, zero := it.AtHistogram(nil)
+
+	require.Equal(t, createdTS, gotTS, "first sample should be the injected zero sample")
+	require.Zero(t, zero.Count, "injected sample should have a zero count")
+	require.Equal(t, histogram.CustomBucketsSchema, zero.Schema)
+	require.Equal(t, customValues, zero.CustomValues)
+
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	gotTS, real := it.AtHistogram(nil)
+	require.Equal(t, sampleTS, gotTS)
+	require.Equal(t, histogram.CustomBucketsSchema, real.Schema)
+	require.Equal(t, customValues, real.CustomValues)
+
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
 }

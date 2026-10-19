@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // DuplicateDayVerifier rejects a batch that contains two or more blocks whose
@@ -37,24 +35,6 @@ func NewDuplicateDayVerifier(logger log.Logger) *DuplicateDayVerifier {
 
 // Name returns the stable check name used in log lines and Report entries.
 func (v *DuplicateDayVerifier) Name() string { return "duplicate-day" }
-
-func getShardID(m *block.Meta) string {
-	for l, v := range m.Thanos.Labels {
-		switch l {
-		case block.CompactorShardIDExternalLabel:
-			if v == "" {
-				continue
-			}
-
-			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
-				// Swallow error here, meta errors should be caught by other verifiers
-				return ""
-			}
-			return v
-		}
-	}
-	return ""
-}
 
 // Verify records one failure per block that shares its UTC day with another
 // block, and returns a bounded summary error naming how many blocks and days

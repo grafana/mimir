@@ -136,7 +136,7 @@ func TestToProto(t *testing.T) {
 			input: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)), //nolint:staticcheck // We want to intentionally access a deprecated field
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},
 			},
@@ -172,7 +172,7 @@ func TestToProto(t *testing.T) {
 			input: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)), //nolint:staticcheck // We want to intentionally access a deprecated field
 				QueryOffset:     pointerOf(model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},
@@ -328,7 +328,7 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)), //nolint:staticcheck // We want to intentionally access a deprecated field
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},
 			},
@@ -383,7 +383,7 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
-				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)),
+				EvaluationDelay: pointerOf(model.Duration(5 * time.Second)), //nolint:staticcheck // We want to intentionally access a deprecated field
 				QueryOffset:     pointerOf(model.Duration(2 * time.Second)),
 				Rules:           []rulefmt.Rule{},
 				Labels:          map[string]string{},

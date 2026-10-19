@@ -33,6 +33,7 @@ import (
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -50,6 +51,9 @@ type TSDBBuilder struct {
 	logger             log.Logger
 	tsdbBuilderMetrics tsdbBuilderMetrics
 	tsdbMetrics        *mimir_tsdb.TSDBMetrics
+
+	// verifyBlock verifies the integrity of a block before upload. Overridable in tests.
+	verifyBlock func(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error
 
 	// Number of series in memory across all tenants.
 	seriesCount atomic.Int64
@@ -88,6 +92,7 @@ func NewTSDBBuilder(
 		logger:             logger,
 		tsdbBuilderMetrics: tsdbBuilderMetrics,
 		tsdbMetrics:        tsdbMetrics,
+		verifyBlock:        block.VerifyBlock,
 	}
 }
 
@@ -195,18 +200,20 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		}
 
 		for _, h := range ts.Histograms {
+			var (
+				ih *histogram.Histogram
+				fh *histogram.FloatHistogram
+			)
+
+			if h.IsFloatHistogram() {
+				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
+			} else {
+				ih = mimirpb.FromHistogramProtoToHistogram(&h)
+			}
+
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				var (
-					ih *histogram.Histogram
-					fh *histogram.FloatHistogram
-				)
-				// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
-				// just uses it to decide the type, so don't convert the input, use dummy histograms.
-				if h.IsFloatHistogram() {
-					fh = zeroFloatHistogram
-				} else {
-					ih = zeroHistogram
-				}
+				// AppendHistogramSTZeroSample copies Schema, ZeroThreshold and CustomValues from
+				// the histogram it is given onto the zero sample it injects.
 				if ref != 0 {
 					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 				} else {
@@ -225,16 +232,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 					discardedSamples++
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
-			}
-			var (
-				ih *histogram.Histogram
-				fh *histogram.FloatHistogram
-			)
-
-			if h.IsFloatHistogram() {
-				fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
-			} else {
-				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
 			if ref != 0 {
@@ -270,11 +267,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	return app.Commit()
 }
-
-var (
-	zeroHistogram      = &histogram.Histogram{}
-	zeroFloatHistogram = &histogram.FloatHistogram{}
-)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
@@ -511,12 +503,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
+			partitionStr := strconv.Itoa(int(tenant.partitionID))
 			defer func(t time.Time) {
 				if errors.Is(err, context.Canceled) {
 					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
 					return
 				}
-				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
 					b.tsdbBuilderMetrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
@@ -534,6 +526,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			var localMetas []tsdb.BlockMeta
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
+			}
+
+			if b.cfg.VerifyBlocksBeforeUpload {
+				if err := b.verifyBlocks(ctx, partitionStr, dbDir, localMetas); err != nil {
+					return err
+				}
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
@@ -654,6 +652,33 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 	return nil
 }
 
+// verifyBlocks verifies the integrity of each block in the metas list in the directory, before it is uploaded.
+// On failure, the block's ULID and error are logged and the failure metric is incremented.
+func (b *TSDBBuilder) verifyBlocks(ctx context.Context, partition, dbDir string, metas []tsdb.BlockMeta) (err error) {
+	start := time.Now()
+	defer func() {
+		if errors.Is(err, context.Canceled) {
+			// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
+			return
+		}
+		b.tsdbBuilderMetrics.blockVerificationDuration.WithLabelValues(partition).Observe(time.Since(start).Seconds())
+	}()
+
+	for _, m := range metas {
+		blockDir := filepath.Join(dbDir, m.ULID.String())
+		if err := b.verifyBlock(ctx, b.logger, blockDir, m.MinTime, m.MaxTime, false); err != nil {
+			if errors.Is(err, context.Canceled) {
+				// The job was cancelled (e.g. another tenant failed), the block isn't corrupt.
+				return err
+			}
+			b.tsdbBuilderMetrics.blockVerificationFailed.WithLabelValues(partition).Inc()
+			level.Error(b.logger).Log("msg", "block verification failed", "block", m.ULID.String(), "err", err)
+			return fmt.Errorf("verify block %s: %w", m.ULID.String(), err)
+		}
+	}
+	return nil
+}
+
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
 func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
@@ -664,7 +689,7 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string,
 	return nil
 }
 
-// prepareSparseIndexHeader builds a sparse index-header for a single block.
+// buildSparseIndexHeader builds a sparse index-header for a single block.
 func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, blockID ulid.ULID) (err error) {
 	ll := log.With(b.logger, "id", blockID)
 	start := time.Now()

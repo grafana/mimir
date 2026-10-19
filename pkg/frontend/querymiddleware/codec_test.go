@@ -78,6 +78,17 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetOptions(), actual.GetOptions())
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 	require.Equal(t, expected.GetStats(), actual.GetStats())
+	require.Equal(t, expected.GetExplain(), actual.GetExplain())
+	requireFallibleEqual(t, expected.GetQueryOpts, actual.GetQueryOpts)
+}
+
+func requireFallibleEqual[T any](t *testing.T, expected func() (T, error), actual func() (T, error)) {
+	expectedRes, err := expected()
+	require.NoError(t, err)
+	actualRes, err := actual()
+	require.NoError(t, err)
+
+	require.Equal(t, expectedRes, actualRes)
 }
 
 func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
@@ -106,6 +117,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			),
 		},
 		// Same as above, but with stats=all.
@@ -123,6 +135,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"all",
+				nil,
 			),
 		},
 		// Same as above, but with an explicit lookback delta.
@@ -139,6 +152,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			),
 		},
 		{
@@ -153,6 +167,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			),
 		},
 		{
@@ -166,6 +181,21 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
+			),
+		},
+		{
+			url: "/api/v1/query?explain=cost&lookback_delta=182&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expected: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1536716880*1e3,
+				3*time.Minute+2*time.Second,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				requestoptions.Options{},
+				nil,
+				"",
+				[]string{"cost"},
 			),
 		},
 		{
@@ -247,7 +277,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 		request     MetricsQueryRequest
 		expectedUrl string
 	}{
-		"no lookback_delta set": {
+		"no lookback_delta or explain set": {
 			request: NewPrometheusInstantQueryRequest(
 				"/api/v1/query",
 				nil,
@@ -257,6 +287,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			),
 			expectedUrl: "/api/v1/query?query=up&time=1234567890",
 		},
@@ -270,8 +301,23 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			),
 			expectedUrl: "/api/v1/query?lookback_delta=50&query=up&time=1234567890",
+		},
+		"with lookback_delta and explain set": {
+			request: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1234567890000,
+				time.Duration(50*time.Second),
+				parseQuery(t, "up"),
+				requestoptions.Options{},
+				nil,
+				"",
+				[]string{"cost"},
+			),
+			expectedUrl: "/api/v1/query?explain=cost&lookback_delta=50&query=up&time=1234567890",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -324,6 +370,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -334,6 +381,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 
 	for _, testCase := range []struct {
@@ -453,6 +501,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -463,6 +512,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 
 	for _, testCase := range []struct {
@@ -536,6 +586,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -546,6 +597,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		requestoptions.Options{},
 		nil,
 		"",
+		nil,
 	)
 
 	for _, testCase := range []struct {

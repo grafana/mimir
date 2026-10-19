@@ -228,7 +228,12 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 	}
 
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0, nil)
+		opts = types.NewMimirQueryOpts(false, 0, nil, nil)
+	}
+
+	var explain []types.ExplainValue
+	if m, ok := opts.(*types.MimirQueryOpts); ok {
+		explain = m.Explain()
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -236,7 +241,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, NoopPlanningObserver{})
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, explain, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +284,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		originalExpression:       plan.Parameters.OriginalExpression,
 		topLevelQueryTimeRange:   plan.Parameters.TimeRange,
 		topLevelValueType:        topLevelValueType,
+		enableDelayedNameRemoval: plan.Parameters.EnableDelayedNameRemoval,
 	}, nil
 }
 
