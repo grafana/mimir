@@ -59,7 +59,7 @@ spec:
           env:
             - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 24Gi, ephemeral-storage: 25Gi }
+            requests: { cpu: "4", memory: 24Gi }
             limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
@@ -71,16 +71,16 @@ spec:
           env:
             - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 24Gi, ephemeral-storage: 25Gi }
+            requests: { cpu: "4", memory: 24Gi }
             limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-b, mountPath: /data }
-      # The ingesters write their blocks and WAL to node disk: requests keep the run off a node without room for a
-      # retention's worth of them, which evicts it.
+      # Kafka's log and the ingesters' blocks and WAL are on volumes of their own, as a cell's are: a retention's worth of
+      # them on the node's disk, shared with its other pods, gets the run evicted.
       volumes:
         - { name: shared, emptyDir: {} }
-        - { name: out, emptyDir: {} }
-        - { name: data-a, emptyDir: {} }
-        - { name: data-b, emptyDir: {} }
+        - { name: out, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 200Gi } } } } } }
+        - { name: data-a, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
+        - { name: data-b, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
         # - { name: profile, configMap: { name: ingester-bench-profile } }
