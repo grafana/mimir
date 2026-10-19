@@ -86,7 +86,7 @@ spec:
       volumes:
         - { name: shared, emptyDir: {} }
         - { name: config, configMap: { name: ingester-bench-config } }
-        - { name: out, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 200Gi } } } } } }
-        - { name: data-a, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
-        - { name: data-b, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], storageClassName: fast-dont-retain, resources: { requests: { storage: 100Gi } } } } } }
+        - { name: out, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 200Gi } } } } } }
+        - { name: data-a, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 100Gi } } } } } }
+        - { name: data-b, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 100Gi } } } } } }
         # - { name: profile, configMap: { name: ingester-bench-profile } }

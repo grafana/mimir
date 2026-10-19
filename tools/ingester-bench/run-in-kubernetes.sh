@@ -9,7 +9,8 @@
 #
 # CONFIG, configuration files of the ingesters, comma separated, go over defaults.yaml and kubernetes.yaml: an
 # ingester's image is the configuration's, or the bench's with the tree's Mimir. PROFILE, a profile file, is put in a
-# ConfigMap for the run; NODE_SELECTOR (key=value) places it. The cluster's nodes should have the kubelet's static CPU
+# ConfigMap for the run; NODE_SELECTOR (key=value) places it, and STORAGE_CLASS is the class of its volumes (default the
+# cluster's). The cluster's nodes should have the kubelet's static CPU
 # manager policy, so that the containers' CPUs are their own.
 set -euo pipefail
 
@@ -41,15 +42,17 @@ if [[ -n "${PROFILE:-}" ]]; then
   k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 fi
 # The job of job.yaml, with the images, the configuration, the profile, a node selector and the extra flags.
-python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "$@" > "$metadata.yaml" <<'PY'
+python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "${STORAGE_CLASS:-}" "$@" > "$metadata.yaml" <<'PY'
 import json, sys
-path, name, namespace, image, config, profile, selector, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8:]
+path, name, namespace, image, config, profile, selector, storage, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9:]
 config = json.load(open(config))
 images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in 'ab'}
 s = open(path).read().replace('image: IMAGE_A', 'image: ' + images['a']).replace('image: IMAGE_B', 'image: ' + images['b'])
 s = s.replace('image: IMAGE', 'image: ' + image)
 s = s.replace('  name: ingester-bench\n', f'  name: {name}\n  namespace: {namespace}\n', 1)
 s = s.replace('configMap: { name: ingester-bench-config }', f'configMap: {{ name: {name}-config }}')
+if storage:
+    s = s.replace('accessModes: [ReadWriteOnce], ', f'accessModes: [ReadWriteOnce], storageClassName: {storage}, ')
 if profile:
     file = 'profile.json' + profile.split('.json', 1)[1] if '.json' in profile else 'profile.json'
     s = s.replace('            # - -profile=/profile/profile.json\n', f'            - -profile=/profile/{file}\n')
