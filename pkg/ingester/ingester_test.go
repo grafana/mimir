@@ -546,9 +546,6 @@ func TestIngester_Push(t *testing.T) {
 		nativeHistograms          bool
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
-		// stZeroSamples is the number of zero samples in expectedIngested that TSDB appended from start timestamps.
-		// These are not counted as ingested samples.
-		stZeroSamples int
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -3626,7 +3623,6 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type": {
-			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3687,7 +3683,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
+				cortex_ingester_ingested_samples_total{user="test"} 4
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3878,7 +3874,6 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates": {
-			stZeroSamples:    2,
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -3969,7 +3964,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 8
+				cortex_ingester_ingested_samples_total{user="test"} 10
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -3994,7 +3989,6 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should ingest created timestamp with correct type among other samples and not fail duplicates if out-of-order is disabled": {
-			stZeroSamples:    2,
 			allowOOO:         false,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4085,7 +4079,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 8
+				cortex_ingester_ingested_samples_total{user="test"} 10
 				# HELP cortex_ingester_memory_series The current number of series in memory.
 				# TYPE cortex_ingester_memory_series gauge
 				cortex_ingester_memory_series 1
@@ -4456,7 +4450,6 @@ func TestIngester_Push(t *testing.T) {
 				expectedSamplesCount += len(stream.Values) + len(stream.Histograms)
 				expectedHistogramsCount += len(stream.Histograms)
 			}
-			expectedSamplesCount -= testData.stZeroSamples
 			for _, series := range testData.expectedExemplarsIngested {
 				expectedExemplarsCount += len(series.Exemplars)
 			}
@@ -12516,6 +12509,58 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 	}
 	assert.Equal(t, expectedClientEnc, chunks[0].Encoding)
 	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
+}
+
+// TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
+// store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
+func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.FloatChunkEncoding = "xor2"
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
+	})
+
+	cfg := defaultIngesterTestConfig(t)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(t.Context(), "user1")
+
+	const (
+		metricName       = "testmetric_xor2_created_timestamp"
+		createdTimestamp = int64(500)
+		ts               = int64(1000)
+	)
+	req := mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		nil, nil, mimirpb.API,
+	)
+	req.Timeseries[0].CreatedTimestamp = createdTimestamp
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	chunks := queryXOR2ChunksForMetric(ctx, t, i, metricName)
+	require.Len(t, chunks, 1)
+	require.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+
+	chk, err := chunkenc.FromData(chunkenc.EncXOR2, chunks[0].Data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	expectedSamples := []struct {
+		t int64
+		v float64
+	}{{t: createdTimestamp, v: 0}, {t: ts, v: 42}}
+	for _, expected := range expectedSamples {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		actualT, actualV := it.At()
+		assert.Equal(t, expected.t, actualT)
+		assert.Equal(t, expected.v, actualV)
+		assert.Zero(t, it.AtST(), "sample at %d has a start timestamp", actualT)
+	}
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
 }
 
 // TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
