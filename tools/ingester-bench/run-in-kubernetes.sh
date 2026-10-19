@@ -10,8 +10,8 @@
 # CONFIG, configuration files of the ingesters, comma separated, go over defaults.yaml and kubernetes.yaml: an
 # ingester's image is the configuration's, or the bench's with the tree's Mimir. PROFILE, a profile file, is put in a
 # ConfigMap for the run; NODE_SELECTOR (key=value) places it, and STORAGE_CLASS is the class of its volumes (default the
-# cluster's). The cluster's nodes should have the kubelet's static CPU
-# manager policy, so that the containers' CPUs are their own.
+# cluster's). The cluster's nodes should have the kubelet's static CPU manager policy, so that the containers' CPUs are
+# their own.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the image to}"
