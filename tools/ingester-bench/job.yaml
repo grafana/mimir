@@ -59,7 +59,7 @@ spec:
           env:
             - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 24Gi }
+            requests: { cpu: "4", memory: 24Gi, ephemeral-storage: 25Gi }
             limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
@@ -71,11 +71,13 @@ spec:
           env:
             - { name: GOMAXPROCS, value: "9" }
           resources:
-            requests: { cpu: "4", memory: 24Gi }
+            requests: { cpu: "4", memory: 24Gi, ephemeral-storage: 25Gi }
             limits: { memory: 32Gi }
           volumeMounts:
             - { name: shared, mountPath: /shared }
             - { name: data-b, mountPath: /data }
+      # The ingesters write their blocks and WAL to node disk: requests keep the run off a node without room for a
+      # retention's worth of them, which evicts it.
       volumes:
         - { name: shared, emptyDir: {} }
         - { name: out, emptyDir: {} }
