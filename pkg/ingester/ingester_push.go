@@ -546,6 +546,8 @@ func (i *Ingester) pushSamplesToAppender(
 	appOptions := storage.AppendV2Options{}
 	// Zero samples for created timestamps must never go into the out-of-order head.
 	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+	// Reused across series. TSDB copies the exemplars it's given.
+	var exemplarBuf []exemplar.Exemplar
 
 	for _, ts := range timeseries {
 		// Fast path in case we only have samples and they are all out of bound
@@ -767,8 +769,42 @@ func (i *Ingester) pushSamplesToAppender(
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
+				// Append the exemplars within the accepted time range in one call. TSDB validates each one on
+				// its own, and reports failures by their index in the appended slice.
+				exemplarBuf = exemplarBuf[:0]
+				for _, ex := range ts.Exemplars {
+					if ex.TimestampMs > maxTimestampMs || ex.TimestampMs < minTimestampMs {
+						continue
+					}
+					exemplarBuf = append(exemplarBuf, exemplar.Exemplar{
+						Value:  ex.Value,
+						Ts:     ex.TimestampMs,
+						HasTs:  true,
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					})
+				}
+				var appendErr error
+				var exemplarErrs []error // Indexed like exemplarBuf, only allocated if some exemplars failed.
+				if len(exemplarBuf) > 0 {
+					_, appendErr = app.AppendExemplars(ref, labels.EmptyLabels(), exemplarBuf)
+				}
+				// Only on failure, since errors.As moves partialErr to the heap.
+				if appendErr != nil {
+					var partialErr *storage.AppendPartialError
+					if errors.As(appendErr, &partialErr) {
+						appendErr = nil
+						exemplarErrs = make([]error, len(exemplarBuf))
+						for _, exErr := range partialErr.ExemplarErrors {
+							if exemplarErrs[exErr.Index] == nil {
+								exemplarErrs[exErr.Index] = exErr.Err
+							}
+						}
+					}
+				}
+
+				// Go through the exemplars in request order, so the error reported is that of the first one to fail.
 				outOfOrderExemplars := 0
-				exemplars := make([]exemplar.Exemplar, 1)
+				appendedIdx := 0
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
 						stats.failedExemplarsCount++
@@ -784,21 +820,13 @@ func (i *Ingester) pushSamplesToAppender(
 						continue
 					}
 
-					e := exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					// An error that isn't partial applies to every appended exemplar.
+					err := appendErr
+					if exemplarErrs != nil {
+						err = exemplarErrs[appendedIdx]
 					}
-					exemplars[0] = e
-
-					var err error
-					// TODO(krajorama): this is not taking advantage of passing
-					// all exemplars to the appender at the same time, however
-					// without getting the index of failed exemplars in the
-					// returned partial error, we cannot report errors
-					// correctly. Also this is the minimal change as first step.
-					if _, err = app.AppendExemplars(ref, labels.EmptyLabels(), exemplars); err == nil {
+					appendedIdx++
+					if err == nil {
 						stats.succeededExemplarsCount++
 						continue
 					}
@@ -806,11 +834,6 @@ func (i *Ingester) pushSamplesToAppender(
 					// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
 					// and failed ingested exemplars is equal to the total number of processed ones.
 					stats.failedExemplarsCount++
-
-					var partialErr *storage.AppendPartialError
-					if errors.As(err, &partialErr) && len(partialErr.ExemplarErrors) == 1 {
-						err = partialErr.ExemplarErrors[0]
-					}
 
 					isOOOExemplar := errors.Is(err, storage.ErrOutOfOrderExemplar)
 					if isOOOExemplar {
