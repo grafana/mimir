@@ -89,7 +89,7 @@ var (
 		validation.MaxLabelValueLengthFlag,
 	)
 	blockedLabelValueBytesMsgFormat = globalerror.SeriesBlockedLabelValueBytes.MessageWithPerTenantLimitConfig(
-		"received a series with a value for label '%s', which is blocked because its distinct label values have exceeded the per-label-name byte limit, series: '%.200s'",
+		"received a series with a value for label '%s', which is blocked because the total size of its distinct label values reached the per-label-name label value bytes threshold, series: '%.200s'",
 		validation.BlockedLabelNamesForLabelValueBytesFlag,
 	)
 	droppedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(

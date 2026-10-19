@@ -4592,7 +4592,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [label_value_length_over_limit_strategy: <string> | default = "error"]
 
 # (experimental) Label names for which the distinct label value bytes tracked by
-# -ingester.max-global-label-value-bytes-per-label-name have exceeded the limit.
+# -ingester.label-value-bytes-metric-threshold have exceeded the threshold.
 # Series carrying a value for one of these label names are rejected.
 # CLI flag: -validation.blocked-label-names-for-label-value-bytes
 [blocked_label_names_for_label_value_bytes: <string> | default = ""]
@@ -4675,12 +4675,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
 
-# (experimental) The maximum total size, in bytes, of the distinct values of a
-# single label name held in memory per tenant, across the cluster before
-# replication. Only values longer than 128 bytes are counted, and each distinct
-# value is counted once. 0 to disable.
-# CLI flag: -ingester.max-global-label-value-bytes-per-label-name
-[max_global_label_value_bytes_per_label_name: <int> | default = 0]
+# (experimental) The total size, in bytes, of the distinct values of a single
+# label name held in memory per tenant, across the cluster before replication,
+# at which ingesters start reporting the label name through the
+# cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject
+# series for label names over the threshold: to block a label name, add it to
+# -validation.blocked-label-names-for-label-value-bytes. Only values longer than
+# 128 bytes are counted, and each distinct value is counted once. 0 to disable.
+# CLI flag: -ingester.label-value-bytes-metric-threshold
+[label_value_bytes_metric_threshold: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.

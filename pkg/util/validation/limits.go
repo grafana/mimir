@@ -45,7 +45,7 @@ const (
 	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
-	MaxLabelValueBytesPerLabelNameFlag          = "ingester.max-global-label-value-bytes-per-label-name"
+	LabelValueBytesMetricThresholdFlag          = "ingester.label-value-bytes-metric-threshold"
 	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
@@ -215,7 +215,7 @@ type Limits struct {
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
 	// Label values
-	MaxGlobalLabelValueBytesPerLabelName int `yaml:"max_global_label_value_bytes_per_label_name" json:"max_global_label_value_bytes_per_label_name" category:"experimental"`
+	LabelValueBytesMetricThreshold int `yaml:"label_value_bytes_metric_threshold" json:"label_value_bytes_metric_threshold" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -414,7 +414,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
-	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+MaxLabelValueBytesPerLabelNameFlag+" have exceeded the limit. Series carrying a value for one of these label names are rejected.")
+	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+LabelValueBytesMetricThresholdFlag+" have exceeded the threshold. Series carrying a value for one of these label names are rejected.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -445,7 +445,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalLabelValueBytesPerLabelName, MaxLabelValueBytesPerLabelNameFlag, 0, fmt.Sprintf("The maximum total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication. Only values longer than %d bytes are counted, and each distinct value is counted once. 0 to disable.", index.LabelValueBytesMinLength))
+	f.IntVar(&l.LabelValueBytesMetricThreshold, LabelValueBytesMetricThresholdFlag, 0, fmt.Sprintf("The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -%s. Only values longer than %d bytes are counted, and each distinct value is counted once. 0 to disable.", BlockedLabelNamesForLabelValueBytesFlag, index.LabelValueBytesMinLength))
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -1084,10 +1084,10 @@ func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
 }
 
-// MaxGlobalLabelValueBytesPerLabelName returns the maximum total size in bytes of the distinct
-// values of a single label name, per tenant, across the cluster.
-func (o *Overrides) MaxGlobalLabelValueBytesPerLabelName(userID string) int {
-	return o.getOverridesForUser(userID).MaxGlobalLabelValueBytesPerLabelName
+// LabelValueBytesMetricThreshold returns the total size in bytes of the distinct values of a
+// single label name, per tenant, across the cluster, at which ingesters start reporting the label name.
+func (o *Overrides) LabelValueBytesMetricThreshold(userID string) int {
+	return o.getOverridesForUser(userID).LabelValueBytesMetricThreshold
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.

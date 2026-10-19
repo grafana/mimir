@@ -410,7 +410,7 @@
   "distributor.ingestion-tenant-shard-size": 0,
   "ingester.max-global-series-per-user": 150000,
   "ingester.max-global-series-per-metric": 0,
-  "ingester.max-global-label-value-bytes-per-label-name": 0,
+  "ingester.label-value-bytes-metric-threshold": 0,
   "ingester.max-global-metadata-per-user": 0,
   "ingester.max-global-metadata-per-metric": 0,
   "ingester.max-global-exemplars-per-user": 0,
