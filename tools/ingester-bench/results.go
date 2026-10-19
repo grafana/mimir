@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"sort"
 	"time"
+
+	"github.com/grafana/regexp"
 )
 
 // A results directory holds a directory per run, with its report.json and report.html, and an index.html of them all.

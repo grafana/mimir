@@ -231,18 +231,6 @@ func (p *ingesterProcess) metrics() (map[string]float64, error) {
 	return out, nil
 }
 
-// lastConsumedOffset is the partition's offset the ingester consumed up to.
-func (p *ingesterProcess) lastConsumedOffset() int64 {
-	m, err := p.metrics()
-	if err != nil {
-		return -1
-	}
-	if v, ok := m["cortex_ingest_storage_reader_last_consumed_offset{partition=0}"]; ok {
-		return int64(v)
-	}
-	return -1
-}
-
 // profile saves a pprof profile of the ingester.
 func (p *ingesterProcess) profile(kind, path string, seconds int) error {
 	url := p.url("/debug/pprof/" + kind)

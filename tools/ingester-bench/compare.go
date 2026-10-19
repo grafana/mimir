@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/dskit/user"
@@ -296,14 +295,4 @@ func difference(a, b []uint64) map[uint64]int {
 		}
 	}
 	return out
-}
-
-// outcome is what one read of both ingesters gave.
-type outcome struct {
-	api      string
-	latency  [2]time.Duration
-	errs     [2]error
-	items    int
-	diff     map[uint64]int
-	tooLarge bool
 }

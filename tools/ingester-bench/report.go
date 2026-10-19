@@ -31,11 +31,8 @@ type sampler struct {
 	lag       [2][]float64
 }
 
-// The gauges sampled over the window, and the counters taken at its ends.
-var (
-	sampledGauges  = []string{"go_memstats_heap_inuse_bytes", "process_resident_memory_bytes", "go_memstats_heap_alloc_bytes", "go_goroutines"}
-	windowCounters = []string{"process_cpu_seconds_total", "go_memstats_alloc_bytes_total", "go_memstats_mallocs_total", "go_cpu_classes_gc_total_cpu_seconds_total", "go_gc_duration_seconds_count"}
-)
+// The gauges sampled over the window.
+var sampledGauges = []string{"go_memstats_heap_inuse_bytes", "process_resident_memory_bytes", "go_memstats_heap_alloc_bytes", "go_goroutines"}
 
 func newSampler(ingesters [2]*ingesterProcess, f *feed) *sampler {
 	return &sampler{ingesters: ingesters, feed: f, gauges: [2]map[string][]float64{{}, {}}}

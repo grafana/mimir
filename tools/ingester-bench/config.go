@@ -93,7 +93,7 @@ func (c benchConfig) ingester(i int) ingesterSpec {
 // withArgs is the flags of args with the spec's over them: a value replaces a flag's in place, nil removes it, and
 // flags args doesn't have come after, by name.
 func (s ingesterSpec) withArgs(args []string) []string {
-	out := make([]string, 0, len(args)+len(s.Args))
+	out := make([]string, 0, len(args))
 	set := map[string]bool{}
 	for _, arg := range args {
 		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
