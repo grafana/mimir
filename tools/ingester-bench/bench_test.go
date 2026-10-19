@@ -187,3 +187,29 @@ func TestDefaultQueryClassesReadEveryRPCInTheirWays(t *testing.T) {
 	}
 	require.Greater(t, instant, ranged, "rules' instant queries are most")
 }
+
+func TestWorldIsTheSeedsInEveryProcess(t *testing.T) {
+	w := newWorld(defaultProfile().Series, 1_000, 1)
+	m := w.tenants[0].metrics[0]
+	// Values of seed 1, as every process has them: a hash seeded by the process would change them from run to run.
+	require.Equal(t, uint64(0x1ba92e6129a0293d), m.hash64(0, 0))
+	require.Equal(t, "ecbaaa0", valueString(1, "l2", 0, 7))
+
+	other := newWorld(defaultProfile().Series, 1_000, 2)
+	require.NotEqual(t, m.hash64(0, 0), other.tenants[0].metrics[0].hash64(0, 0))
+}
+
+func TestClassicHistogramSeriesFollowTheProfilesBuckets(t *testing.T) {
+	p := defaultProfile().Series
+	p.ClassicBuckets, p.ClassicHistogramShare, p.NativeHistogramShare = 4, 1, 0
+	w := newWorld(p, 1_000, 1)
+	f, err := newFeed(w, "", 0)
+	require.NoError(t, err)
+	defer f.close()
+
+	for _, m := range w.tenants[0].metrics {
+		require.Equal(t, kindClassicHistogram, m.kind)
+		// Its buckets, its sum and its count.
+		require.Equal(t, m.slots*(len(f.leValues)+2), m.seriesCount())
+	}
+}
