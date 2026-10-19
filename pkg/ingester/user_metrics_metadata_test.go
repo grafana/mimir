@@ -177,17 +177,17 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 			possibleExpectedMetadata: fullMetadata,
 		},
 		"limit=-1": {
-			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: fullMetadata,
 		},
 		"limit=0": {
-			request: &client.MetricsMetadataRequest{Limit: 0, LimitPerMetric: -1, Metric: ""},
+			request: &client.MetricsMetadataRequest{Limit: 0, LimitPerMetric: -1, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{},
 			},
 		},
 		"limit=1": {
-			request: &client.MetricsMetadataRequest{Limit: 1, LimitPerMetric: -1, Metric: ""},
+			request: &client.MetricsMetadataRequest{Limit: 1, LimitPerMetric: -1, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
 					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -200,15 +200,15 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 			},
 		},
 		"limit_per_metric=-1": {
-			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: fullMetadata,
 		},
 		"limit_per_metric=0": {
-			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 0, Metric: ""},
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 0, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: fullMetadata,
 		},
 		"limit_per_metric=1": {
-			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 1, Metric: ""},
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 1, Metric: ""}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
 					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -229,7 +229,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 			},
 		},
 		"metric": {
-			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: "test_metric_2"},
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: "test_metric_2"}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
 					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
@@ -258,7 +258,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 			},
 		},
 		"metric_names takes precedence over metric": {
-			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: "test_metric_1", MetricNames: []string{"test_metric_2"}},
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: "test_metric_1", MetricNames: []string{"test_metric_2"}}, //nolint:staticcheck // We want to intentionally access a deprecated field
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
 					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
