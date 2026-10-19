@@ -5,6 +5,7 @@ package verify
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +16,11 @@ import (
 // DuplicateDayVerifier rejects a batch that contains two or more blocks whose
 // [MinTime, MaxTime) ranges share the same UTC-day key. Such blocks should be
 // pre-compacted before pushing.
+//
+// Collisions are only counted between blocks with the same compactor shard ID
+// (__compactor_shard_id__), because blocks in different shards legitimately
+// cover the same day. Blocks without a shard ID form their own group and are
+// never compared with sharded blocks.
 //
 // DuplicateDayVerifier only checks min-times, so it should also be run
 // alongside the SingleUTCDayVerifier.
@@ -37,8 +43,8 @@ func NewDuplicateDayVerifier(logger log.Logger) *DuplicateDayVerifier {
 func (v *DuplicateDayVerifier) Name() string { return "duplicate-day" }
 
 // Verify records one failure per block that shares its UTC day with another
-// block, and returns a bounded summary error naming how many blocks and days
-// collided.
+// block in the same compactor shard, and returns a bounded summary error naming
+// how many blocks and distinct days collided.
 func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, report *Report) error {
 	if len(blocks) < 2 {
 		return nil
@@ -64,14 +70,16 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 		return nil
 	}
 
-	// // Record days in ascending order, and blocks within a day by ULID, so the
-	// // Report reads the same regardless of input order.
-	// slices.SortFunc(collidingDays, func(a, b time.Time) int {
-	// 	return a.Compare(b)
-	// })
+	// Record shards in ascending order (unsharded first), days in ascending
+	// order, and blocks within a day by ULID, so the Report reads the same
+	// regardless of input order.
 	collided := 0
-	for shard, days := range collidingDays {
+	distinctDays := make(map[time.Time]struct{})
+	for _, shard := range slices.Sorted(maps.Keys(collidingDays)) {
+		days := collidingDays[shard]
+		slices.SortFunc(days, time.Time.Compare)
 		for _, day := range days {
+			distinctDays[day] = struct{}{}
 			blks := dayToBlocks[shard][day]
 			slices.SortFunc(blks, func(a, b BlockRef) int {
 				return strings.Compare(a.Meta.ULID.String(), b.Meta.ULID.String())
@@ -91,5 +99,5 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 		}
 	}
 	return fmt.Errorf("%d block(s) share a UTC day with another block, across %d day(s)",
-		collided, len(collidingDays))
+		collided, len(distinctDays))
 }
