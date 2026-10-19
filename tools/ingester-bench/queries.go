@@ -5,7 +5,7 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand/v2" //#nosec G404 -- Synthetic data and reads, reproducible from a seed: no need for a CSPRNG -- nosemgrep: math-random-used
 	"regexp"
 	"sort"
 	"strconv"
