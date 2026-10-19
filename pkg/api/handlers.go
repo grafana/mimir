@@ -241,7 +241,6 @@ func NewQuerierHandler(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
 		nil, // No remote write support.
-		nil, // No remote write V2 support.
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
@@ -273,7 +272,6 @@ func NewQuerierHandler(
 		otlpEnabled,
 		false,
 		false,
-		true,
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
 		appendMetadata,

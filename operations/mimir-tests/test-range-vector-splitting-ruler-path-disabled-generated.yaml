@@ -763,6 +763,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -829,6 +830,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
@@ -841,6 +844,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -865,6 +870,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
@@ -916,6 +922,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
@@ -928,6 +936,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1019,6 +1029,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1085,6 +1096,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 600
       topologySpreadConstraints:
       - labelSelector:
@@ -1097,6 +1110,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1122,6 +1137,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1182,6 +1198,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
@@ -1194,6 +1212,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1218,6 +1238,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -querier.max-query-parallelism=240
         - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
@@ -1269,6 +1290,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
@@ -1281,6 +1304,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1981,6 +2006,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2056,6 +2082,8 @@ spec:
           name: store-gateway-data
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
@@ -2063,6 +2091,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
   updateStrategy:
     type: RollingUpdate
   volumeClaimTemplates:

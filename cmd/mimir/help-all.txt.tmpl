@@ -280,7 +280,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2, jira. (default {})
   -alertmanager.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration
@@ -1963,6 +1963,8 @@ Usage of ./cmd/mimir/mimir:
     	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
   -ingester.partition-ring.consul.watch-rate-limit float
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.partition-ring.create-partitions-with-derived-tokens
+    	[experimental] When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.
   -ingester.partition-ring.delete-inactive-partition-after duration
     	How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. (default 13h0m0s)
   -ingester.partition-ring.etcd.dial-timeout duration
@@ -1991,6 +1993,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.max-derived-token-partitions int
+    	[experimental] Partitions with an ID lower than this value can use derived tokens. Set it on all partition ring readers and ingesters. Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.
   -ingester.partition-ring.min-partition-owners-count int
     	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
   -ingester.partition-ring.min-partition-owners-duration duration
@@ -2533,6 +2537,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168)
   -querier.mimir-query-engine.cardinality-estimation.ttl duration
     	[experimental] The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168h0m0s)
+  -querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash
+    	[experimental] If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge

@@ -97,6 +97,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		return nil, err
 	}
 	if len(res) == 0 {
+		e.cfg.Metrics.LookupsTotalMiss.Inc()
 		spanLogger.DebugLog("msg", "got no cache hits, returning no estimate")
 		return nil, nil
 	}
@@ -116,6 +117,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	// If there is no information available for a selector, then we return no estimate at all.
 	var overallEstimate uint64
 	sawAllSelectors := true
+	sawAnySelectors := false
 
 	for _, s := range selectors {
 		hitCount := 0
@@ -158,6 +160,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 			continue
 		}
 
+		sawAnySelectors = true
 		spanLogger.DebugLog(
 			"msg", "computed cardinality estimate for selector",
 			"selector", s.selector,
@@ -170,10 +173,16 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	}
 
 	if !sawAllSelectors {
+		if sawAnySelectors {
+			e.cfg.Metrics.LookupsPartialMiss.Inc()
+		} else {
+			e.cfg.Metrics.LookupsTotalMiss.Inc()
+		}
 		spanLogger.DebugLog("msg", "could not get cached cardinality estimates for all selectors, returning no estimate")
 		return nil, nil
 	}
 
+	e.cfg.Metrics.LookupsHit.Inc()
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
 	queryStats.AddEstimatedSeriesCount(overallEstimate)
 
@@ -193,6 +202,7 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 
 	// Only return each unique selector once, so we don't over-count selectors that will be deduplicated by CSE.
 	seenSelectors := make(map[selectorTimeRangeDeduplicationKey]struct{}, len(selectorRanges))
+	generatedKeys, generatedKeyBytes := 0, 0
 
 	for _, sr := range selectorRanges {
 		selector := selectorString(sr.matchers)
@@ -213,13 +223,19 @@ func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx con
 			cacheKeys: cacheKeys,
 		})
 
+		generatedKeys += len(cacheKeys)
 		for _, k := range cacheKeys {
+			generatedKeyBytes += k.size()
+			e.cfg.Metrics.ReadCacheKeySize.Observe(float64(k.size()))
 			if _, ok := keysToLookUp[k.hashed]; ok {
 				continue
 			}
 			keysToLookUp[k.hashed] = struct{}{}
 		}
 	}
+
+	e.cfg.Metrics.ReadCacheKeysPerQuery.Observe(float64(generatedKeys))
+	e.cfg.Metrics.ReadCacheKeysPerQueryBytes.Observe(float64(generatedKeyBytes))
 
 	return selectorsToLookUp, slices.Collect(maps.Keys(keysToLookUp)), nil
 }
@@ -374,6 +390,7 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
 	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
 	seenGroups := make(map[bucketedSelector]*bucketedSelectorCardinality)
+	uniqueKeyBytes := 0
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
@@ -394,6 +411,8 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 					cardinalityByShardingFactor: make(map[uint64][]uint64),
 				}
 				seenGroups[gk] = group
+				uniqueKeyBytes += k.size()
+				p.cfg.Metrics.SeenCacheKeySize.Observe(float64(k.size()))
 			}
 
 			if shard == "" {
@@ -416,6 +435,9 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 		}
 	}
 
+	p.cfg.Metrics.SeenCacheKeysPerQuery.Observe(float64(len(seenGroups)))
+	p.cfg.Metrics.SeenCacheKeysPerQueryBytes.Observe(float64(uniqueKeyBytes))
+
 	return seenGroups, nil
 }
 
@@ -434,6 +456,7 @@ func (p *cardinalityStoringPostProcessor) summariseExistingEstimates(estimatedCa
 func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.Context, seenGroups map[bucketedSelector]*bucketedSelectorCardinality, existingEstimates map[bucketedSelector]uint64, spanLogger *spanlogger.SpanLogger) error {
 	entries := make(map[string][]byte)
 	ignoredUpdates := 0
+	writtenKeyBytes := 0
 
 	for gk, group := range seenGroups {
 		seenCardinality := group.unshardedCardinality
@@ -483,7 +506,12 @@ func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.C
 		}
 
 		entries[group.cacheKey.hashed] = data
+		writtenKeyBytes += group.cacheKey.size()
+		p.cfg.Metrics.WriteCacheKeySize.Observe(float64(group.cacheKey.size()))
 	}
+
+	p.cfg.Metrics.WriteCacheKeysPerQuery.Observe(float64(len(entries)))
+	p.cfg.Metrics.WriteCacheKeysPerQueryBytes.Observe(float64(writtenKeyBytes))
 
 	spanLogger.DebugLog(
 		"msg", "writing updated cardinality estimates (if any)",
@@ -625,6 +653,13 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 		return cacheKey{}, err
 	}
 
+	if cfg.UseCryptographicHash {
+		// If we're using a cryptographic hash, we don't store the plain text key, as the likelihood of a hash collision is very low.
+		// This has the benefit of vastly reducing the memory consumption of cache keys, and reducing the volume of data stored in the cache,
+		// as the plain text key can be quite large given it contains the original expression.
+		plain = nil
+	}
+
 	return cacheKey{
 		plain:      plain,
 		hashed:     hashed,
@@ -638,4 +673,9 @@ type cacheKey struct {
 	hashed     string
 	bucketMinT int64
 	bucketMaxT int64
+}
+
+// size returns the number of bytes held by the plain and hashed keys. plain is nil when a cryptographic hash is used.
+func (k cacheKey) size() int {
+	return len(k.plain) + len(k.hashed)
 }

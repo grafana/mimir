@@ -240,7 +240,7 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments disabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		api.RegisterIngesterPartitionRings(false, watcher, ringKey, kvClient)
@@ -259,7 +259,7 @@ func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
 
 	t.Run("compartments enabled", func(t *testing.T) {
 		api, serverCfg, kvClient := newAPI(t)
-		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, nil, log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		api.RegisterIngesterPartitionRings(true, watcher, ringKey, kvClient)

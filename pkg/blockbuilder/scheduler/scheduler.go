@@ -300,7 +300,11 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 // partition it touched so the caller can advance them once all clusters are recorded.
 func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.ListedOffsets, touched map[int32]struct{}) {
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		// Do not track end-offset=0 to reduce number of series.
+		// Otherwise, this creates a dummy series per-cluster-per-partition, regardless to if the partition is active.
+		if o.Offset != 0 {
+			s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		}
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -441,7 +445,7 @@ type partitionOffsets struct {
 func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fallbackTime time.Time) (map[int32][]*partitionOffsets, error) {
 	offsetsByPartition := make(map[int32][]*partitionOffsets)
 	for clusterID := range s.adminClients {
-		consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, clusterID)
+		consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, clusterID, s.cfg.Kafka.Topic, fallbackTime)
 		if err != nil {
 			return nil, s.compartmentError(clusterID, err)
 		}
@@ -463,7 +467,7 @@ func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fall
 
 // initSingleClusterConsumptionOffsets returns the resumption and end offsets for each partition on the given
 // cluster, falling back to the fallbackTime if there is no planned offset for a partition.
-func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, clusterID int) ([]partitionOffsets, error) {
+func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, clusterID int, topic string, fallbackTime time.Time) ([]partitionOffsets, error) {
 	logger := s.compartmentLogger(clusterID)
 	startOffsets, err := s.adminClients[clusterID].ListStartOffsets(ctx, topic)
 	if err != nil {
@@ -529,8 +533,13 @@ func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.
 			level.Debug(logger).Log("msg", "initSingleClusterConsumptionOffsets", "topic", t, "partition", partition,
 				"start", startOffset.At, "end", end.Offset, "consumeOffset", resumeOffset)
 
-			s.metrics.perClusterMetrics[clusterID].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
-			s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			// No need to emit per-partition start/end-offset=0 when we know that the partition is empty.
+			// Otherwise, this creates a dummy series per-cluster-per-partition, regardless to if the partition is active.
+			// TODO(narqo): this is an optimisation, that may end up being confusing; we may reconsider this decision.
+			if end.Offset != 0 {
+				s.metrics.perClusterMetrics[clusterID].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
+				s.metrics.perClusterMetrics[clusterID].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			}
 
 			offs = append(offs, partitionOffsets{
 				partition: partition,

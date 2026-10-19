@@ -165,14 +165,11 @@ func TestLimitAwareGrowth(t *testing.T) {
 }
 
 func TestMapCleanup(t *testing.T) {
-	// itemsMap is a helper that collects Items() into a map.
+	// itemsMap is a helper that collects the series of m into a map.
 	itemsMap := func(t *testing.T, m *Map) map[uint64]clock.Minutes {
 		t.Helper()
 		got := map[uint64]clock.Minutes{}
-		_, items := m.Items()
-		for key, value := range items {
-			got[key] = value
-		}
+		m.Iterate(func(key uint64, value clock.Minutes) { got[key] = value })
 		return got
 	}
 
@@ -451,6 +448,117 @@ func TestMapCleanup(t *testing.T) {
 		require.Equal(t, groups, m.Stats().Spilled)
 	})
 
+}
+
+func TestMapIterate(t *testing.T) {
+	// newFilled returns a map with n series and what Iterate should yield for it.
+	newFilled := func(n int, value clock.Minutes) (*Map, map[uint64]clock.Minutes) {
+		m := New(uint32(n), testNumShards)
+		want := make(map[uint64]clock.Minutes, n)
+		r := rand.New(rand.NewSource(int64(n)))
+		for len(want) < n {
+			key := r.Uint64()
+			if _, ok := want[key]; ok {
+				continue
+			}
+			m.Load(key, value)
+			want[key] = value
+		}
+		return m, want
+	}
+
+	t.Run("yields every series once with the lock released", func(t *testing.T) {
+		m, want := newFilled(10_000, 7)
+		for _, groupsPerLock := range []int{1, 7, 64, 1 << 20} {
+			t.Run(fmt.Sprintf("groupsPerLock=%d", groupsPerLock), func(t *testing.T) {
+				got := map[uint64]clock.Minutes{}
+				yielded := 0
+				m.iterate(groupsPerLock, func(key uint64, value clock.Minutes) {
+					got[key] = value
+					yielded++
+					if yielded == 1 {
+						require.True(t, m.TryLock(), "yield should be called with the lock released")
+						m.Unlock()
+					}
+				})
+				require.Equal(t, want, got)
+				require.Equal(t, len(want), yielded, "every series should be yielded exactly once")
+			})
+		}
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		m := New(0, testNumShards)
+		m.iterate(1, func(uint64, clock.Minutes) { t.Fatal("unexpected series") })
+	})
+
+	t.Run("keeps reading the old arrays when the map is rehashed", func(t *testing.T) {
+		m, want := newFilled(10_000, 7)
+		got := map[uint64]clock.Minutes{}
+		m.iterate(1, func(key uint64, value clock.Minutes) {
+			_, seen := got[key]
+			require.False(t, seen, "series %d yielded twice", key)
+			got[key] = value
+			if len(got) == 1 {
+				// yield runs with the lock released, so the map can be changed from here.
+				m.EnsureCapacity(uint32(len(m.index)) * maxAvgGroupLoad * 2)
+				m.Load(1, 1)
+			}
+		})
+		require.Equal(t, want, got, "the series loaded after the rehash should not be yielded")
+	})
+
+	t.Run("concurrent puts and cleanups", func(t *testing.T) {
+		// The series in want have a value above the cleanup watermark, so they stay for the whole test.
+		// A writer keeps inserting churn series below the watermark and cleaning them up while Iterate runs.
+		const n, stay, churn, watermark = 20_000, clock.Minutes(50), clock.Minutes(10), clock.Minutes(20)
+		m, want := newFilled(n, stay)
+		// Make room for the churn, so that the map is not rehashed.
+		m.EnsureCapacity(4 * n)
+		series, limit := atomic.NewUint64(n), atomic.NewUint64(100*n)
+
+		stop := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			r := rand.New(rand.NewSource(0))
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				m.Lock()
+				for range 100 {
+					// Churn keys are odd, want keys were drawn at random, so collisions are not a concern for the assertions below.
+					m.Put(r.Uint64()|1, churn, series, limit, true)
+				}
+				if i%10 == 0 {
+					series.Sub(uint64(m.Cleanup(watermark, nil)))
+				}
+				m.Unlock()
+			}
+		}()
+
+		for range 5 {
+			got := map[uint64]clock.Minutes{}
+			m.iterate(8, func(key uint64, value clock.Minutes) {
+				_, seen := got[key]
+				require.False(t, seen, "series %d yielded twice", key)
+				got[key] = value
+			})
+			for key, value := range want {
+				require.Equal(t, value, got[key], "series %d should have been yielded with its value", key)
+			}
+			for key, value := range got {
+				if _, ok := want[key]; !ok {
+					require.Equal(t, churn, value, "unexpected value for churn series %d", key)
+				}
+			}
+		}
+		close(stop)
+		<-done
+	})
 }
 
 func BenchmarkMapRehash(b *testing.B) {

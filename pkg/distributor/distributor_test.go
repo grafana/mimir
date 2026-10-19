@@ -6543,7 +6543,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		// Init the partition rings component used by the write path (1 ring when compartments are
 		// disabled, N when enabled).
 		var err error
-		partitionRings, err = ingest.NewPartitionRingWatchers(compartmentsEnabled, cfg.numCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, nil)
+		partitionRings, err = ingest.NewPartitionRingWatchers(compartmentsEnabled, cfg.numCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, nil, logger, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, partitionRings))
 		t.Cleanup(func() {
@@ -8279,17 +8279,17 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
 				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
 	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
-				"cortex_distributor_requests_in_total",
-				"cortex_distributor_samples_in_total",
-				"cortex_distributor_exemplars_in_total",
-				"cortex_distributor_metadata_in_total",
-				"cortex_distributor_received_requests_total",
-				"cortex_distributor_received_samples_total",
-				"cortex_distributor_received_exemplars_total",
-				"cortex_distributor_received_metadata_total",
-				"cortex_distributor_received_native_histogram_samples_total",
-				"cortex_distributor_received_native_histogram_buckets_total",
-			}
+			"cortex_distributor_requests_in_total",
+			"cortex_distributor_samples_in_total",
+			"cortex_distributor_exemplars_in_total",
+			"cortex_distributor_metadata_in_total",
+			"cortex_distributor_received_requests_total",
+			"cortex_distributor_received_samples_total",
+			"cortex_distributor_received_exemplars_total",
+			"cortex_distributor_received_metadata_total",
+			"cortex_distributor_received_native_histogram_samples_total",
+			"cortex_distributor_received_native_histogram_buckets_total",
+		}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}

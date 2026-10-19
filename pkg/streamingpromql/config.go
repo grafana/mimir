@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -117,13 +118,69 @@ type RangeQuerySplittingAndCachingConfig struct {
 }
 
 type CardinalityEstimationConfig struct {
-	Backend           caching.Backend            `yaml:"-"`
-	CacheKeyGenerator *caching.CacheKeyGenerator `yaml:"-"`
+	Backend           caching.Backend               `yaml:"-"`
+	CacheKeyGenerator *caching.CacheKeyGenerator    `yaml:"-"`
+	Metrics           *CardinalityEstimationMetrics `yaml:"-"`
 
 	BucketSize                time.Duration `yaml:"bucket_size" category:"experimental"`
 	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
 	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
 	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
+	UseCryptographicHash      bool          `yaml:"use_cryptographic_hash" category:"experimental"`
+}
+
+type CardinalityEstimationMetrics struct {
+	ReadCacheKeysPerQuery       prometheus.Observer
+	ReadCacheKeysPerQueryBytes  prometheus.Observer
+	ReadCacheKeySize            prometheus.Observer
+	SeenCacheKeysPerQuery       prometheus.Observer
+	SeenCacheKeysPerQueryBytes  prometheus.Observer
+	SeenCacheKeySize            prometheus.Observer
+	WriteCacheKeysPerQuery      prometheus.Observer
+	WriteCacheKeysPerQueryBytes prometheus.Observer
+	WriteCacheKeySize           prometheus.Observer
+
+	LookupsHit         prometheus.Counter
+	LookupsTotalMiss   prometheus.Counter
+	LookupsPartialMiss prometheus.Counter
+}
+
+func NewCardinalityEstimationMetrics(reg prometheus.Registerer) *CardinalityEstimationMetrics {
+	cacheKeysPerQuery := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query",
+		Help:                        "Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	cacheKeysPerQueryBytes := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes",
+		Help:                        "Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	cacheKeySize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes",
+		Help:                        "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	lookups := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_mimir_query_engine_cardinality_estimation_lookups_total",
+		Help: "Total number of query requests where an attempt was made to estimate cardinality from the cardinality cache, by outcome.",
+	}, []string{"outcome"})
+
+	return &CardinalityEstimationMetrics{
+		ReadCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("read"),
+		ReadCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("read"),
+		ReadCacheKeySize:            cacheKeySize.WithLabelValues("read"),
+		SeenCacheKeysPerQuery:       cacheKeysPerQuery.WithLabelValues("seen"),
+		SeenCacheKeysPerQueryBytes:  cacheKeysPerQueryBytes.WithLabelValues("seen"),
+		SeenCacheKeySize:            cacheKeySize.WithLabelValues("seen"),
+		WriteCacheKeysPerQuery:      cacheKeysPerQuery.WithLabelValues("write"),
+		WriteCacheKeysPerQueryBytes: cacheKeysPerQueryBytes.WithLabelValues("write"),
+		WriteCacheKeySize:           cacheKeySize.WithLabelValues("write"),
+
+		LookupsHit:         lookups.WithLabelValues("hit"),
+		LookupsTotalMiss:   lookups.WithLabelValues("total_miss"),
+		LookupsPartialMiss: lookups.WithLabelValues("partial_miss"),
+	}
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -161,11 +218,19 @@ func (cfg *CardinalityEstimationConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TTL, "querier.mimir-query-engine.cardinality-estimation.ttl", 7*24*time.Hour, "The time-to-live of each cached cardinality estimate."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.Int64Var(&cfg.MaxBucketsReadPerSelector, "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector", 168, "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced)."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.Float64Var(&cfg.EstimateUpdateThreshold, "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold", 0.1, "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate)."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.BoolVar(&cfg.UseCryptographicHash, "querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash", false, "If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry."+onlyAppliesIfSplittingAndCachingInsideMQE)
 }
 
 func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator) {
 	cfg.Backend = caching.NewAdaptor(baseCache)
-	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", 1), cachePrefixGenerator)
+
+	version := uint(1)
+
+	if cfg.UseCryptographicHash {
+		version = 2
+	}
+
+	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", version), cachePrefixGenerator, cfg.UseCryptographicHash)
 }
 
 func (cfg *CardinalityEstimationConfig) Validate() error {
