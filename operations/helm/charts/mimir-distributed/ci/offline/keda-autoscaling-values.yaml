@@ -8,6 +8,13 @@ metaMonitoring:
       # Leave the remote empty to use the default to send it to Mimir directly
       # remote: #
 
+kedaAutoscaling:
+  authentication:
+    enabled: true
+    authModes: "basic"
+    kind: ClusterTriggerAuthentication
+    name: mimir-fleet
+
 distributor:
   kedaAutoscaling:
     enabled: true

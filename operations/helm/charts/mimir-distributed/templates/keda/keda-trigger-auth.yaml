@@ -1,8 +1,8 @@
-{{- if .Values.kedaAutoscaling.authentication.enabled }}
+{{- if and .Values.kedaAutoscaling.authentication.enabled (eq .Values.kedaAutoscaling.authentication.kind "TriggerAuthentication") }}
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
-  name: keda-triggger-auth
+  name: {{ .Values.kedaAutoscaling.authentication.name }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   secretTargetRef:
