@@ -848,6 +848,20 @@ type coldState struct {
 	directory string
 	blocks    []*coldBlock
 	nextID    uint64
+	// What removes the files of the blocks merges and retention drop, when the last head snapshot may still
+	// reference them; nil removes them right away.
+	remove func(path string)
+}
+
+// removeFile removes a dropped block's file, or hands it to remove.
+func (c *coldState) removeFile(path string) {
+	if c.remove != nil {
+		c.remove(path)
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", path, err)
+	}
 }
 
 func newColdState(directory string) (*coldState, error) {
@@ -994,9 +1008,7 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBl
 func (c *coldState) replace(from, to int, block *coldBlock) {
 	for _, old := range c.blocks[from:to] {
 		if old.path != "" {
-			if err := os.Remove(old.path); err != nil {
-				fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", old.path, err)
-			}
+			c.removeFile(old.path)
 		}
 		_ = old.close()
 	}
@@ -1059,9 +1071,7 @@ func (c *coldState) pruneBefore(cutoff int64) {
 			continue
 		}
 		if block.path != "" {
-			if err := os.Remove(block.path); err != nil {
-				fmt.Fprintf(os.Stderr, "phase=cold_block_remove_error path=%s error=%v\n", block.path, err)
-			}
+			c.removeFile(block.path)
 		}
 		// Queries hold the shard lock while they read a block, so nothing reads it now.
 		_ = block.close()

@@ -47,6 +47,8 @@ type DiskMapper struct {
 	nextSequence uint32
 	// What runs the unmaps of the files TruncateBefore removes, when they wait for their readers.
 	deferUnmap func(unmap func())
+	// What removes the files TruncateBefore drops, when a head snapshot written earlier may still reference them.
+	remove func(path string)
 }
 
 // OpenDiskMapper removes any previous files in directory. Without a directory, chunks use
@@ -124,15 +126,26 @@ func (m *DiskMapper) State() ([]FileState, uint32) {
 // Sync writes dirty mapped pages so a head snapshot never references chunk bytes that are not on
 // disk.
 func (m *DiskMapper) Sync() error {
+	return m.Syncer()()
+}
+
+// Syncer is Sync for the files mapped now, which can run without the caller's lock as long as no
+// file is removed or unmapped meanwhile: a paced head snapshot syncs while appends go on.
+func (m *DiskMapper) Syncer() func() error {
+	var mapped [][]byte
 	for _, file := range m.files {
-		if file == nil {
-			continue
-		}
-		if err := unix.Msync(file.data, unix.MS_SYNC); err != nil {
-			return fmt.Errorf("sync chunk file: %w", err)
+		if file != nil {
+			mapped = append(mapped, file.data)
 		}
 	}
-	return nil
+	return func() error {
+		for _, data := range mapped {
+			if err := unix.Msync(data, unix.MS_SYNC); err != nil {
+				return fmt.Errorf("sync chunk file: %w", err)
+			}
+		}
+		return nil
+	}
 }
 
 // Write appends a completed chunk ending at maxTime.
@@ -166,6 +179,12 @@ func (m *DiskMapper) Read(ref Ref, length uint32) []byte {
 // returned for them stay valid for the readers that have them, which then don't copy them.
 func (m *DiskMapper) DeferUnmaps(release func(unmap func())) {
 	m.deferUnmap = release
+}
+
+// DeferRemovals makes TruncateBefore hand the paths of the files it drops to remove instead of removing them: the
+// last head snapshot may reference them, until the next one is written.
+func (m *DiskMapper) DeferRemovals(remove func(path string)) {
+	m.remove = remove
 }
 
 // Holds reports whether data is in one of the mapper's files, as what Read returns is.
@@ -205,7 +224,9 @@ func (m *DiskMapper) TruncateBefore(cutoff int64) error {
 		}
 		if m.directory != "" {
 			path := filepath.Join(m.directory, fileName(m.first+uint32(index)))
-			if err := os.Remove(path); err != nil {
+			if m.remove != nil {
+				m.remove(path)
+			} else if err := os.Remove(path); err != nil {
 				errs = append(errs, fmt.Errorf("remove chunk file %s: %w", path, err))
 			}
 		}

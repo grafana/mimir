@@ -342,6 +342,9 @@ type Ingester struct {
 	statisticsService     services.Service
 	computeWorkerPool     *workerpool.Pool
 
+	// Snapshots the seriesstore engine's heads while ingesting; nil unless it runs.
+	seriesstoreSnapshotService services.Service
+
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
 
@@ -676,6 +679,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0 {
+		i.seriesstoreSnapshotService = services.NewBasicService(nil, i.seriesstoreSnapshotsRunning, nil).WithName("ingester-seriesstore-snapshots")
+		i.subservicesWatcher.WatchService(i.seriesstoreSnapshotService)
+	}
+
 	// Init shipping service, responsible to periodically ship TSDB blocks to long-term storage.
 	if cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shippingService = services.NewBasicService(nil, i.shipBlocksLoop, nil).WithName("ingester-shipping")
@@ -799,7 +807,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	replayServices := []services.Service{i.compactionService, i.metricsUpdaterService, i.metadataPurgerService}
+	// Snapshots during the replay too: an ingester that crashes while replaying then resumes from them.
+	if i.seriesstoreSnapshotService != nil {
+		replayServices = append(replayServices, i.seriesstoreSnapshotService)
+	}
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, replayServices...)
 	if err != nil {
 		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}

@@ -210,6 +210,11 @@ type Store struct {
 	exemplarsLock sync.Mutex
 	exemplars     map[string]*exemplars.TenantExemplars[labels.Labels]
 
+	// The files compactions dropped while the last head snapshot may still reference them, which the next snapshot
+	// removes; only kept once DeferRemovals is called.
+	removalsLock    sync.Mutex
+	pendingRemovals []string
+
 	costAttributionLock        sync.Mutex
 	costAttribution            map[costAttributionKey]*costAttributionState
 	costAttributionLastCleanup int64
@@ -1273,4 +1278,38 @@ func ShardByAllLabels(tenantID string, stored labels.Labels) uint32 {
 func rangesInclude(ranges []uint32, key uint32) bool {
 	index, found := slices.BinarySearch(ranges, key)
 	return found || index%2 == 1
+}
+
+// DeferRemovals keeps the chunk files and cold blocks that compactions drop on disk until the next head snapshot is
+// written: the last one may reference them, and restoring it needs them.
+func (s *Store) DeferRemovals() {
+	for _, shard := range s.shards {
+		shard.disk.DeferRemovals(s.queueRemoval)
+		shard.cold.remove = s.queueRemoval
+	}
+}
+
+func (s *Store) queueRemoval(path string) {
+	s.removalsLock.Lock()
+	s.pendingRemovals = append(s.pendingRemovals, path)
+	s.removalsLock.Unlock()
+}
+
+func (s *Store) pendingRemovalCount() int {
+	s.removalsLock.Lock()
+	defer s.removalsLock.Unlock()
+	return len(s.pendingRemovals)
+}
+
+// removePending removes the first count files queued, which a snapshot written since no longer references.
+func (s *Store) removePending(count int) {
+	s.removalsLock.Lock()
+	paths := slices.Clone(s.pendingRemovals[:count])
+	s.pendingRemovals = slices.Delete(s.pendingRemovals, 0, count)
+	s.removalsLock.Unlock()
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "phase=deferred_remove_error path=%s error=%v\n", path, err)
+		}
+	}
 }

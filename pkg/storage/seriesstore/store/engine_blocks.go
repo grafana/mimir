@@ -217,8 +217,9 @@ const (
 	engineStateMagicV1 = "SSENGINE1"
 )
 
-// writeState saves the out-of-order head's watermarks and bounds and the blocks, for the next Open.
-func (e *Engine) writeState() error {
+// encodeState is the out-of-order head's watermarks and bounds and the blocks, which the head snapshot keeps for the
+// next Open. The compaction lock keeps them as they are.
+func (e *Engine) encodeState() []byte {
 	home, t := e.home()
 	home.RLock()
 	var buf []byte
@@ -246,17 +247,11 @@ func (e *Engine) writeState() error {
 		buf = binary.AppendVarint(buf, block.createdMs)
 	}
 	home.RUnlock()
-	buf = binary.LittleEndian.AppendUint32(buf, crc32.ChecksumIEEE(buf))
-	path := filepath.Join(e.dir, engineStateFileName)
-	temporary := path + ".tmp"
-	if err := os.WriteFile(temporary, buf, 0o644); err != nil {
-		return fmt.Errorf("write engine state: %w", err)
-	}
-	return os.Rename(temporary, path)
+	return binary.LittleEndian.AppendUint32(buf, crc32.ChecksumIEEE(buf))
 }
 
-// takeState reads and removes the state writeState saved: like the store's snapshot, it only
-// describes the head once.
+// takeState reads and removes the state file older engines wrote beside the store's snapshot: like the snapshot, it
+// only describes the head once.
 func takeState(dir string) ([]byte, error) {
 	path := filepath.Join(dir, engineStateFileName)
 	buf, err := os.ReadFile(path)

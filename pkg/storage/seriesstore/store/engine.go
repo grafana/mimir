@@ -56,7 +56,11 @@ type EngineOptions struct {
 	// IdleEvictionMs is how long a series' newest sample is behind the head's before every compaction takes it out of the
 	// head, instead of when the head's min time passes it: series that stopped, such as the ones of a pod that is gone, would
 	// otherwise stay in memory for the hours until then. Zero keeps them until then.
-	IdleEvictionMs          int64
+	IdleEvictionMs int64
+	// Checkpoints are head snapshots written while ingestion goes on, with Checkpoint. The chunk files and cold blocks
+	// that compactions drop then stay on disk until the next snapshot, which the last one needs, and a restored
+	// checkpoint stays in place until then too: a crash restores it again.
+	Checkpoints             bool
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
@@ -65,7 +69,8 @@ type EngineOptions struct {
 // Engine is one tenant's series behind the per-tenant TSDB interface Mimir's ingester uses:
 // Prometheus appenders, head statistics, index readers, queriers and compactions, over the store's
 // name groups, hashed postings, compact labels, chunk files and cold blocks. It has no WAL: Close
-// writes a head snapshot that the next Open restores, and a start without one begins empty.
+// writes a head snapshot that the next Open restores, and a start without one begins empty. Checkpoint writes one
+// while ingestion goes on, which a replay of what came after completes.
 type Engine struct {
 	store    *Store
 	tenantID string
@@ -110,9 +115,11 @@ type Engine struct {
 	// The end of the last block range the out-of-order head was compacted with, guarded by compactionLock: the jitter
 	// only delays the head's compactions, not the out-of-order head's.
 	oooCompactedRange int64
-	// Whether Open restored the head as it was at the last Close, or started without any data.
+	// Whether Open restored the head as it was at the last Close or Checkpoint, or started without any data.
 	restored bool
-	closed   atomic.Bool
+	// The checkpoint Open restored the head from, nil when there was none.
+	checkpoint []byte
+	closed     atomic.Bool
 }
 
 // A nop callback, for engines opened without one.
@@ -167,7 +174,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		}
 	}
 	if storeDir != "" {
-		restored, err := Restore(activeWindowMs, retention, storeDir, 1)
+		restored, err := restore(activeWindowMs, retention, storeDir, 1, opts.Checkpoints)
 		if err != nil {
 			return nil, err
 		}
@@ -175,8 +182,16 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 			e.store = restored.Store
 			e.store.memoryIsHead = true
 			e.store.guardChunkFiles()
+			if opts.Checkpoints {
+				e.store.DeferRemovals()
+			}
 			e.oooWatermarks = make([]uint64, len(e.store.shards))
 			e.restored = true
+			e.checkpoint = restored.Checkpoint
+			// Since the state is in the snapshot, a state file is from an older snapshot.
+			if restored.EngineState != nil {
+				state = restored.EngineState
+			}
 			e.createHome()
 			err := e.adoptRestored()
 			if err == nil && state != nil {
@@ -204,6 +219,9 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e.store = s
 	s.memoryIsHead = true
 	s.guardChunkFiles()
+	if opts.Checkpoints {
+		s.DeferRemovals()
+	}
 	e.oooWatermarks = make([]uint64, len(s.shards))
 	e.createHome()
 	return e, nil
@@ -299,10 +317,16 @@ func refShard(ref uint64) int {
 	return int(ref & (maxShards - 1))
 }
 
-// Restored reports whether Open found the head as the last Close left it, or no data at all. A
+// Restored reports whether Open found the head as the last Close or Checkpoint left it, or no data at all. A
 // false restored head lost what it had: its samples must be ingested again.
 func (e *Engine) Restored() bool {
 	return e.restored
+}
+
+// RestoredCheckpoint is the checkpoint Open restored the head from, nil when it restored a Close's snapshot or
+// nothing: the head lacks what was ingested after it.
+func (e *Engine) RestoredCheckpoint() []byte {
+	return e.checkpoint
 }
 
 // Dir is the engine's directory.
@@ -310,7 +334,8 @@ func (e *Engine) Dir() string {
 	return e.dir
 }
 
-// Close writes the head snapshot the next Open restores, and releases the engine's files.
+// Close writes the head snapshot the next Open restores, and releases the engine's files. A Checkpoint in progress
+// stops at its next batch.
 func (e *Engine) Close() error {
 	if !e.closed.CompareAndSwap(false, true) {
 		return nil
@@ -319,12 +344,48 @@ func (e *Engine) Close() error {
 	defer e.compactionLock.Unlock()
 	var err error
 	if e.dir != "" {
-		err = e.store.WriteSnapshot(nil)
-		if err == nil {
-			err = e.writeState()
-		}
+		err = e.store.writeSnapshot(snapshotPlan{engineState: e.encodeState()})
 	}
 	return errors.Join(err, e.store.Close())
+}
+
+// errEngineClosed stops a Checkpoint of an engine Close was called for.
+var errEngineClosed = errors.New("engine closed")
+
+// Checkpoint writes a head snapshot while ingestion goes on, with checkpoint, which RestoredCheckpoint returns
+// after a restore from it: what to replay from for the head to be whole again. It holds the compaction lock, which
+// keeps series from being removed, and locks a store shard for a batch of series at a time. Between batches, it waits
+// for its work to be at most duty of the time it takes, so it doesn't compete with queries for CPU and disk.
+func (e *Engine) Checkpoint(ctx context.Context, checkpoint []byte, duty float64) error {
+	if e.dir == "" {
+		return nil
+	}
+	if checkpoint == nil {
+		checkpoint = []byte{}
+	}
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	if e.closed.Load() {
+		return errEngineClosed
+	}
+	started := time.Now()
+	return e.store.writeSnapshot(snapshotPlan{checkpoint: checkpoint, engineState: e.encodeState(), pace: func() error {
+		if duty > 0 && duty < 1 {
+			worked := time.Since(started)
+			timer := time.NewTimer(time.Duration(float64(worked) * (1 - duty) / duty))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if e.closed.Load() {
+			return errEngineClosed
+		}
+		started = time.Now()
+		return ctx.Err()
+	}})
 }
 
 // SetOutOfOrderTimeWindow and SetMaxExemplars apply a tenant's changed limits, like the TSDB's

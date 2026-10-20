@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -78,7 +79,7 @@ func idleEvictionMs() int64 {
 // tests.
 var testNoCompactionJitter bool
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -99,6 +100,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		TimelyCompaction:        opts.TimelyCompaction,
 		JitterCompaction:        !testNoCompactionJitter,
 		IdleEvictionMs:          idleEvictionMs(),
+		Checkpoints:             checkpoints,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
 	})
@@ -476,7 +478,7 @@ func ValidateSeriesstoreEngine(tsdbCfg mimir_tsdb.TSDBConfig, ingesterCfg Config
 }
 
 // resetKafkaOffsetsAfterUncleanShutdown removes the file-stored Kafka offsets when a seriesstore
-// tenant wasn't restored from a clean shutdown: its head would miss what was consumed since, so the
+// tenant wasn't restored from a snapshot: its head would miss what was consumed since, so the
 // ingester replays Kafka from the retention period instead of resuming from the stored offset.
 func (i *Ingester) resetKafkaOffsetsAfterUncleanShutdown(unclean []string) error {
 	if len(unclean) == 0 {
@@ -491,15 +493,139 @@ func (i *Ingester) resetKafkaOffsetsAfterUncleanShutdown(unclean []string) error
 			return err
 		}
 	}
-	level.Warn(i.logger).Log("msg", "tenants weren't restored from a clean shutdown, replaying Kafka from the retention period", "tenants", len(unclean), "example_tenant", unclean[0], "removed_offset_files", len(files))
+	level.Warn(i.logger).Log("msg", "tenants weren't restored from a snapshot, replaying Kafka from the retention period", "tenants", len(unclean), "example_tenant", unclean[0], "removed_offset_files", len(files))
 	return nil
 }
 
-// uncleanlyRestored reports whether db is a seriesstore engine that opened without a clean
-// shutdown's snapshot.
+// uncleanlyRestored reports whether db is a seriesstore engine that opened without a snapshot.
 func uncleanlyRestored(db tenantEngine) bool {
 	engine, ok := db.(seriesstoreEngine)
 	return ok && !engine.Restored()
+}
+
+// restoredCheckpoint is the checkpoint db's seriesstore engine restored its head from, nil when it restored a clean
+// shutdown's snapshot or isn't one.
+func restoredCheckpoint(db tenantEngine) []byte {
+	if engine, ok := db.(seriesstoreEngine); ok {
+		return engine.RestoredCheckpoint()
+	}
+	return nil
+}
+
+// seriesstoreSnapshotDuty is the share of a head snapshot's time it works between its batches of series: it takes ten
+// times as long as it could, and leaves the CPU and disk to queries.
+const seriesstoreSnapshotDuty = 0.1
+
+// seriesstoreSnapshotsRunning snapshots the head of every seriesstore tenant each interval, one tenant at a time.
+func (i *Ingester) seriesstoreSnapshotsRunning(ctx context.Context) error {
+	ticker := time.NewTicker(i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			i.snapshotSeriesstoreHeads(ctx)
+		}
+	}
+}
+
+// snapshotSeriesstoreHeads checkpoints each tenant's head with the Kafka offsets committed before it started: the
+// head has every record up to them, and an unclean restart replays from the oldest checkpoint.
+func (i *Ingester) snapshotSeriesstoreHeads(ctx context.Context) {
+	started := time.Now()
+	snapshots, failures := 0, 0
+	for _, userID := range i.getTSDBUsers() {
+		if ctx.Err() != nil {
+			return
+		}
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+		engine, ok := db.db.(seriesstoreEngine)
+		if !ok {
+			continue
+		}
+		checkpoint, err := i.committedKafkaOffsets()
+		if err == nil {
+			err = engine.Checkpoint(ctx, checkpoint, seriesstoreSnapshotDuty)
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				failures++
+				level.Warn(i.logger).Log("msg", "failed to snapshot the head", "user", userID, "err", err)
+			}
+			continue
+		}
+		snapshots++
+	}
+	level.Info(i.logger).Log("msg", "snapshotted the heads", "tenants", snapshots, "failures", failures, "duration", time.Since(started))
+}
+
+// committedKafkaOffsets is the offset in each Kafka offset file, by file name.
+func (i *Ingester) committedKafkaOffsets() ([]byte, error) {
+	files, err := filepath.Glob(filepath.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset*.json"))
+	if err != nil {
+		return nil, err
+	}
+	offsets := map[string]int64{}
+	for _, file := range files {
+		if offset, ok := ingest.ReadOffsetFile(file, i.ingestPartitionID, i.logger); ok {
+			offsets[filepath.Base(file)] = offset
+		}
+	}
+	return json.Marshal(offsets)
+}
+
+// rewindKafkaOffsetsToCheckpoints moves each Kafka offset file back to the oldest offset the checkpoints have for it,
+// which every restored head has the records up to. A file a checkpoint has no offset for may have records no head has,
+// so it is removed, and the ingester replays that Kafka cluster from the retention period.
+func (i *Ingester) rewindKafkaOffsetsToCheckpoints(checkpoints [][]byte) error {
+	if len(checkpoints) == 0 {
+		return nil
+	}
+	files, err := filepath.Glob(filepath.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset*.json"))
+	if err != nil {
+		return err
+	}
+	decoded := make([]map[string]int64, len(checkpoints))
+	for index, checkpoint := range checkpoints {
+		if err := json.Unmarshal(checkpoint, &decoded[index]); err != nil {
+			return fmt.Errorf("decode a seriesstore checkpoint: %w", err)
+		}
+	}
+	for _, file := range files {
+		current, ok := ingest.ReadOffsetFile(file, i.ingestPartitionID, i.logger)
+		if !ok {
+			// The reader replays from the retention period without it already.
+			continue
+		}
+		oldest, covered := current, true
+		for _, offsets := range decoded {
+			offset, ok := offsets[filepath.Base(file)]
+			if !ok {
+				covered = false
+				break
+			}
+			oldest = min(oldest, offset)
+		}
+		if !covered {
+			if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			level.Warn(i.logger).Log("msg", "a seriesstore snapshot has no offset for a Kafka offset file, replaying it from the retention period", "file", file)
+			continue
+		}
+		if oldest == current {
+			continue
+		}
+		if err := ingest.WriteOffsetFile(file, i.ingestPartitionID, oldest, i.logger); err != nil {
+			return err
+		}
+		level.Warn(i.logger).Log("msg", "tenants were restored from snapshots taken while ingesting, replaying Kafka from the oldest", "file", file, "offset", oldest, "committed_offset", current, "snapshots", len(checkpoints))
+	}
+	return nil
 }
 
 // ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been

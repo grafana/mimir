@@ -73,6 +73,78 @@ func TestIngester_SeriesstoreResetsKafkaOffsetsAfterUncleanShutdown(t *testing.T
 	}
 }
 
+// Tenants restored from snapshots taken while ingesting miss what came after them: the ingester replays Kafka from the
+// oldest, or from the retention period for an offset file one of them has no offset for.
+func TestIngester_SeriesstoreRewindsKafkaOffsetsToCheckpoints(t *testing.T) {
+	for name, tc := range map[string]struct {
+		checkpoints []string
+		expected    int64
+	}{
+		"to the oldest checkpoint":          {checkpoints: []string{`{"kafka-offset.json":30}`, `{"kafka-offset.json":20}`}, expected: 20},
+		"without a checkpoint for the file": {checkpoints: []string{`{"kafka-offset.json":30}`, `{}`}, expected: -1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			for index, checkpoint := range tc.checkpoints {
+				tenant := fmt.Sprintf("user-%d", index)
+				engine, err := store.OpenEngine(filepath.Join(dataDir, tenant), tenant, store.EngineOptions{Shards: 2, Checkpoints: true})
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = engine.Close() })
+				app := engine.Appender(context.Background())
+				_, err = app.Append(0, labels.FromStrings(labels.MetricName, "up"), 1000, 1)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				// The engine stays open, like one that crashed.
+				require.NoError(t, engine.Checkpoint(context.Background(), []byte(checkpoint), 0))
+			}
+			offsetFile := filepath.Join(dataDir, "kafka-offset.json")
+			require.NoError(t, os.WriteFile(offsetFile, []byte(`{"version":1,"partition_id":0,"offset":42}`), 0o644))
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, ingester, r)
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+
+			for index := range tc.checkpoints {
+				require.Equal(t, uint64(1), ingester.getTSDB(fmt.Sprintf("user-%d", index)).Head().NumSeries())
+			}
+			offset, ok := ingest.ReadOffsetFile(offsetFile, 0, ingester.logger)
+			if tc.expected < 0 {
+				require.False(t, ok, "the offset file is removed")
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tc.expected, offset)
+		})
+	}
+}
+
+// Each tenant's checkpoint has the offsets committed before it started.
+func TestIngester_SeriesstoreSnapshotsHeadsWithTheCommittedOffsets(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	dataDir := t.TempDir()
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "up"}}}, []mimirpb.Sample{{TimestampMs: 1000, Value: 1}}, nil, nil, mimirpb.API)
+	_, err = ingester.Push(ctx, req)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "kafka-offset.json"), []byte(`{"version":1,"partition_id":0,"offset":42}`), 0o644))
+
+	ingester.snapshotSeriesstoreHeads(context.Background())
+
+	crashed, err := store.OpenEngine(filepath.Join(dataDir, userID), userID, store.EngineOptions{Shards: 2, Checkpoints: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = crashed.Close() })
+	require.JSONEq(t, `{"kafka-offset.json":42}`, string(crashed.RestoredCheckpoint()))
+	require.Equal(t, uint64(1), crashed.NumSeries())
+}
+
 // An ingester stopped while it replays Kafka at startup still closes its seriesstore TSDBs, so
 // the next start restores their heads instead of replaying the retention period.
 func TestIngester_SeriesstoreSnapshotsWhenStoppedWhileStarting(t *testing.T) {

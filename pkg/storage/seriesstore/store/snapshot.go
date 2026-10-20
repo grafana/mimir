@@ -24,7 +24,10 @@ import (
 
 // Head snapshot magics, one per layout version.
 var (
-	snapshotMagic = []byte("MIMIRHS6")
+	snapshotMagic = []byte("MIMIRHS7")
+	// With each shard's chunk files before its series, a series count instead of a stream, the tenants' times before
+	// their series, and without a checkpoint or the engine's state.
+	snapshotV6Magic = []byte("MIMIRHS6")
 	// Without cold blocks.
 	snapshotV5Magic = []byte("MIMIRHS5")
 	// Without the emulated Go head's truncations and non-owned evictions.
@@ -49,7 +52,23 @@ type SnapshotOffset struct {
 type Restored struct {
 	Store   *Store
 	Offsets []SnapshotOffset
+	// Set when the snapshot was written while ingestion went on: what to replay from for the head to be whole again.
+	Checkpoint []byte
+	// The engine's state the snapshot was written with, nil when it was written without one.
+	EngineState []byte
 }
+
+// snapshotPlan is what a head snapshot holds beside the store, and how it is written.
+type snapshotPlan struct {
+	offsets     []SnapshotOffset
+	checkpoint  []byte
+	engineState []byte
+	// Called between batches of series, with no shard locked; an error aborts the snapshot.
+	pace func() error
+}
+
+// snapshotBatch is how many series a snapshot writes with a shard locked: appends to the shard wait for it.
+const snapshotBatch = 1024
 
 type snapshotWriter struct {
 	w       *bufio.Writer
@@ -100,6 +119,17 @@ func (w *snapshotWriter) str(s string) error {
 	return w.bytes([]byte(s))
 }
 
+// optionalBytes tells nil from empty.
+func (w *snapshotWriter) optionalBytes(bytes []byte) error {
+	if bytes == nil {
+		return w.u8(0)
+	}
+	if err := w.u8(1); err != nil {
+		return err
+	}
+	return w.bytes(bytes)
+}
+
 func (w *snapshotWriter) labels(stored labels.Labels) error {
 	if err := w.length(stored.Len()); err != nil {
 		return err
@@ -129,35 +159,31 @@ func (h hashedWriter) Write(bytes []byte) (int, error) {
 // WriteSnapshot persists every series' open chunks and chunk references next to the chunk files,
 // like Prometheus's memory snapshot on shutdown, so the next start skips segment replay.
 func (s *Store) WriteSnapshot(offsets []SnapshotOffset) error {
-	for _, shard := range s.shards {
-		shard.RLock()
-	}
-	defer func() {
-		for _, shard := range s.shards {
-			shard.RUnlock()
-		}
-	}()
+	return s.writeSnapshot(snapshotPlan{offsets: offsets})
+}
+
+// writeSnapshot writes a shard's series a batch at a time, with the shard read-locked for each batch only. Without
+// ingestion, that is the head as it is. With ingestion going on, every series is at least as recent as when the
+// snapshot started, which a replay from then on completes; the caller keeps series from being removed meanwhile, which
+// would move the others in their groups.
+func (s *Store) writeSnapshot(plan snapshotPlan) error {
 	shardDirectory := s.shards[0].disk.Directory()
 	if shardDirectory == "" {
 		return errors.New("head snapshots need a chunk directory")
 	}
 	directory := filepath.Dir(shardDirectory)
-	for _, shard := range s.shards {
-		if err := shard.disk.Sync(); err != nil {
-			return err
-		}
-	}
+	// The files dropped from now on may be in this snapshot.
+	removable := s.pendingRemovalCount()
 	temporary := filepath.Join(directory, snapshotFileName+".tmp")
 	file, err := os.Create(temporary)
 	if err != nil {
 		return fmt.Errorf("create head snapshot %s: %w", temporary, err)
 	}
 	w := &snapshotWriter{w: bufio.NewWriterSize(file, 1<<20), hasher: crc32.NewIEEE()}
-	if _, err := w.w.Write(snapshotMagic); err != nil {
-		_ = file.Close()
-		return err
+	_, err = w.w.Write(snapshotMagic)
+	if err == nil {
+		err = s.writeSnapshotBody(w, plan)
 	}
-	err = s.writeSnapshotBody(w, offsets)
 	if err == nil {
 		s.exemplarsLock.Lock()
 		err = writeExemplars(w, s.exemplars)
@@ -177,12 +203,17 @@ func (s *Store) WriteSnapshot(offsets []SnapshotOffset) error {
 		err = closeErr
 	}
 	if err != nil {
+		_ = os.Remove(temporary)
 		return fmt.Errorf("write head snapshot: %w", err)
 	}
 	if err := os.Rename(temporary, filepath.Join(directory, snapshotFileName)); err != nil {
 		return err
 	}
-	return syncDirectory(directory)
+	if err := syncDirectory(directory); err != nil {
+		return err
+	}
+	s.removePending(removable)
+	return nil
 }
 
 func syncDirectory(directory string) error {
@@ -194,11 +225,11 @@ func syncDirectory(directory string) error {
 	return dir.Sync()
 }
 
-func (s *Store) writeSnapshotBody(w *snapshotWriter, offsets []SnapshotOffset) error {
-	if err := w.length(len(offsets)); err != nil {
+func (s *Store) writeSnapshotBody(w *snapshotWriter, plan snapshotPlan) error {
+	if err := w.length(len(plan.offsets)); err != nil {
 		return err
 	}
-	for _, offset := range offsets {
+	for _, offset := range plan.offsets {
 		value := int64(math.MinInt64)
 		if offset.HasOffset {
 			value = offset.Offset
@@ -210,22 +241,120 @@ func (s *Store) writeSnapshotBody(w *snapshotWriter, offsets []SnapshotOffset) e
 			return err
 		}
 	}
+	if err := errors.Join(w.optionalBytes(plan.checkpoint), w.optionalBytes(plan.engineState)); err != nil {
+		return err
+	}
 	if err := w.length(len(s.shards)); err != nil {
 		return err
 	}
 	for _, shard := range s.shards {
-		if err := writeShard(w, shard); err != nil {
+		if err := writeShard(w, shard, plan.pace); err != nil {
 			return err
 		}
-		// Cold blocks are already on disk; the snapshot names the ones the store keeps.
-		if err := w.u64(shard.cold.nextID); err != nil {
+	}
+	return nil
+}
+
+// writeShard writes the shard's tenants, then its chunk files and cold blocks as of after their series: the chunks
+// the series reference were all written by then.
+func writeShard(w *snapshotWriter, shard *shardState, pace func() error) error {
+	shard.RLock()
+	tenantIDs := make([]string, 0, len(shard.tenants))
+	for tenantID := range shard.tenants {
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+	shard.RUnlock()
+	if err := w.length(len(tenantIDs)); err != nil {
+		return err
+	}
+	for _, tenantID := range tenantIDs {
+		if err := w.str(tenantID); err != nil {
 			return err
 		}
-		if err := w.length(len(shard.cold.blocks)); err != nil {
+		if err := writeTenantSeries(w, shard, tenantID, pace); err != nil {
 			return err
 		}
-		for _, block := range shard.cold.blocks {
-			if err := w.u64(block.id); err != nil {
+		shard.RLock()
+		err := writeTenantState(w, shard.tenants[tenantID])
+		shard.RUnlock()
+		if err != nil {
+			return err
+		}
+	}
+	shard.RLock()
+	sync := shard.disk.Syncer()
+	err := writeShardFiles(w, shard)
+	shard.RUnlock()
+	if err != nil {
+		return err
+	}
+	return sync()
+}
+
+// writeTenantSeries writes the tenant's series in the shard, each after a 1, then a 0. A batch ends at a series, and
+// the next one starts at the position after it: series don't move while none is removed.
+func writeTenantSeries(w *snapshotWriter, shard *shardState, tenantID string, pace func() error) error {
+	group, position := 0, 0
+	for {
+		shard.RLock()
+		groups := shard.tenants[tenantID].series.groups
+		var err error
+		for written := 0; err == nil && written < snapshotBatch && group < len(groups); {
+			entries := groups[group].entries
+			if position >= len(entries) {
+				group, position = group+1, 0
+				continue
+			}
+			if err = w.u8(1); err == nil {
+				err = writeSeries(w, &entries[position])
+			}
+			position++
+			written++
+		}
+		done := group >= len(groups)
+		shard.RUnlock()
+		if err != nil {
+			return err
+		}
+		if done {
+			return w.u8(0)
+		}
+		if pace != nil {
+			if err := pace(); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// writeTenantState writes the tenant's times and metadata, after its series: appends moved them on while those were
+// written.
+func writeTenantState(w *snapshotWriter, t *tenant) error {
+	// A restarted Go head resumes from its WAL with its min time and evictions.
+	if err := errors.Join(w.i64(t.maxTime), w.i64(t.headMin), w.i64(t.truncatedTo), w.i64(t.minTime)); err != nil {
+		return err
+	}
+	total := 0
+	for _, set := range t.metadata {
+		total += len(set)
+	}
+	if err := w.length(total); err != nil {
+		return err
+	}
+	for _, name := range sortedFamilies(t) {
+		set := t.metadata[name]
+		keys := make([]metadataKey, 0, len(set))
+		for key := range set {
+			keys = append(keys, key)
+		}
+		slices.SortFunc(keys, compareMetadataKeys)
+		for _, key := range keys {
+			entry := set[key]
+			encoded, err := entry.metadata.Marshal()
+			if err != nil {
+				return err
+			}
+			if err := errors.Join(w.bytes(encoded), w.i64(entry.seenMs)); err != nil {
 				return err
 			}
 		}
@@ -233,7 +362,9 @@ func (s *Store) writeSnapshotBody(w *snapshotWriter, offsets []SnapshotOffset) e
 	return nil
 }
 
-func writeShard(w *snapshotWriter, shard *shardState) error {
+// writeShardFiles writes the shard's chunk files, then its cold blocks: the next id, and the ids of the blocks the
+// store keeps, which are already on disk.
+func writeShardFiles(w *snapshotWriter, shard *shardState) error {
 	files, nextSequence := shard.disk.State()
 	if err := w.u32(nextSequence); err != nil {
 		return err
@@ -246,52 +377,14 @@ func writeShard(w *snapshotWriter, shard *shardState) error {
 			return err
 		}
 	}
-	if err := w.length(len(shard.tenants)); err != nil {
+	if err := w.u64(shard.cold.nextID); err != nil {
 		return err
 	}
-	for tenantID, t := range shard.tenants {
-		if err := w.str(tenantID); err != nil {
-			return err
-		}
-		// A restarted Go head resumes from its WAL with its min time and evictions.
-		if err := errors.Join(w.i64(t.maxTime), w.i64(t.headMin), w.i64(t.truncatedTo), w.i64(t.minTime)); err != nil {
-			return err
-		}
-		total := 0
-		for _, set := range t.metadata {
-			total += len(set)
-		}
-		if err := w.length(total); err != nil {
-			return err
-		}
-		for _, name := range sortedFamilies(t) {
-			set := t.metadata[name]
-			keys := make([]metadataKey, 0, len(set))
-			for key := range set {
-				keys = append(keys, key)
-			}
-			slices.SortFunc(keys, compareMetadataKeys)
-			for _, key := range keys {
-				entry := set[key]
-				encoded, err := entry.metadata.Marshal()
-				if err != nil {
-					return err
-				}
-				if err := errors.Join(w.bytes(encoded), w.i64(entry.seenMs)); err != nil {
-					return err
-				}
-			}
-		}
-		if err := w.length(t.series.len); err != nil {
-			return err
-		}
-		var err error
-		t.series.forEach(func(entry *seriesEntry) {
-			if err == nil {
-				err = writeSeries(w, entry)
-			}
-		})
-		if err != nil {
+	if err := w.length(len(shard.cold.blocks)); err != nil {
+		return err
+	}
+	for _, block := range shard.cold.blocks {
+		if err := w.u64(block.id); err != nil {
 			return err
 		}
 	}
@@ -487,6 +580,19 @@ func (r *snapshotReader) readBytes() ([]byte, error) {
 	return bytes, nil
 }
 
+func (r *snapshotReader) optionalBytes() ([]byte, error) {
+	present, err := r.u8()
+	if err != nil || present == 0 {
+		return nil, err
+	}
+	read, err := r.readBytes()
+	if err != nil {
+		return nil, err
+	}
+	// Present but empty stays non-nil.
+	return append([]byte{}, read...), nil
+}
+
 func (r *snapshotReader) str() (string, error) {
 	bytes, err := r.readBytes()
 	if err != nil {
@@ -518,6 +624,12 @@ func (r *snapshotReader) labels() (labels.Labels, error) {
 // Restore loads and removes the head snapshot in chunkDir. It returns nil when there is none or it
 // is unusable; the caller then rebuilds from segments, which clears the directory.
 func Restore(activeWindowMs int64, retention Retention, chunkDir string, threads int) (*Restored, error) {
+	return restore(activeWindowMs, retention, chunkDir, threads, false)
+}
+
+// restore is Restore, which leaves a checkpoint in place with keepCheckpoint: it stays valid while the store defers
+// removing the files it references, and a crash before the next snapshot replays from it again.
+func restore(activeWindowMs int64, retention Retention, chunkDir string, threads int, keepCheckpoint bool) (*Restored, error) {
 	path := filepath.Join(chunkDir, snapshotFileName)
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -527,17 +639,24 @@ func Restore(activeWindowMs int64, retention Retention, chunkDir string, threads
 		return nil, err
 	}
 	defer file.Close()
-	// Chunk files change as soon as ingestion resumes, so a snapshot is only valid once. The open
-	// handle keeps it readable.
-	if err := os.Remove(path); err != nil {
-		return nil, fmt.Errorf("remove head snapshot %s: %w", path, err)
+	restored, readErr := readSnapshot(file, activeWindowMs, retention, chunkDir, threads)
+	// A snapshot taken on shutdown is only valid once: the chunk files change as soon as ingestion resumes.
+	if readErr != nil || restored.Checkpoint == nil || !keepCheckpoint {
+		if err := os.Remove(path); err != nil {
+			if restored != nil {
+				_ = restored.Store.Close()
+			}
+			return nil, fmt.Errorf("remove head snapshot %s: %w", path, err)
+		}
+		if err := syncDirectory(chunkDir); err != nil {
+			if restored != nil {
+				_ = restored.Store.Close()
+			}
+			return nil, err
+		}
 	}
-	if err := syncDirectory(chunkDir); err != nil {
-		return nil, err
-	}
-	restored, err := readSnapshot(file, activeWindowMs, retention, chunkDir, threads)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "phase=head_snapshot_invalid error=%v\n", err)
+	if readErr != nil {
+		fmt.Fprintf(os.Stderr, "phase=head_snapshot_invalid error=%v\n", readErr)
 		return nil, nil
 	}
 	return restored, nil
@@ -574,6 +693,8 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 	var version int
 	switch string(magic[:]) {
 	case string(snapshotMagic):
+		version = 7
+	case string(snapshotV6Magic):
 		version = 6
 	case string(snapshotV5Magic):
 		version = 5
@@ -604,6 +725,15 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 		offsets[index] = SnapshotOffset{Offset: offset, HasOffset: offset != math.MinInt64, TimestampMs: timestamp}
 		if !offsets[index].HasOffset {
 			offsets[index].Offset = 0
+		}
+	}
+	var checkpoint, engineState []byte
+	if version >= 7 {
+		if checkpoint, err = r.optionalBytes(); err != nil {
+			return nil, err
+		}
+		if engineState, err = r.optionalBytes(); err != nil {
+			return nil, err
 		}
 	}
 	shardCount, err := r.count(4096)
@@ -668,7 +798,7 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 	}
 	store := fromShards(shards, threads, activeWindowMs, retention)
 	store.exemplars = restoredExemplars
-	return &Restored{Store: store, Offsets: offsets}, nil
+	return &Restored{Store: store, Offsets: offsets, Checkpoint: checkpoint, EngineState: engineState}, nil
 }
 
 // reopenCold opens the cold blocks a snapshot lists and removes anything else, like the chunk
@@ -835,26 +965,10 @@ func inferPreV4Flags(series *Series) {
 }
 
 func readShard(r *snapshotReader, version int) (shardImage, error) {
-	legacy := version == 2
 	var image shardImage
-	var err error
-	if image.nextSequence, err = r.u32(); err != nil {
-		return image, err
-	}
-	fileCount, err := r.count(1_000_000)
-	if err != nil {
-		return image, err
-	}
-	image.files = make([]chunks.FileState, fileCount)
-	for index := range image.files {
-		file := &image.files[index]
-		if file.Sequence, err = r.u32(); err != nil {
-			return image, err
-		}
-		if file.Written, err = r.u64(); err != nil {
-			return image, err
-		}
-		if file.MaxTime, err = r.i64(); err != nil {
+	// Since version 7, the files come after the series that reference them.
+	if version < 7 {
+		if err := readShardFiles(r, &image); err != nil {
 			return image, err
 		}
 	}
@@ -869,220 +983,34 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 			return image, err
 		}
 		t := newTenant()
-		if !legacy {
-			if t.maxTime, err = r.i64(); err != nil {
+		if version < 7 {
+			if err := readTenantState(r, version, t); err != nil {
 				return image, err
 			}
-		}
-		if version >= 5 {
-			if t.headMin, err = r.i64(); err != nil {
-				return image, err
-			}
-			if t.truncatedTo, err = r.i64(); err != nil {
-				return image, err
-			}
-		}
-		if version >= 6 {
-			if t.minTime, err = r.i64(); err != nil {
-				return image, err
-			}
-		}
-		metadataCount, err := r.count(10_000_000)
-		if err != nil {
-			return image, err
-		}
-		for range metadataCount {
-			encoded, err := r.readBytes()
+			seriesCount, err := r.count(100_000_000)
 			if err != nil {
 				return image, err
 			}
-			var metadata mimirpb.MetricMetadata
-			if err := metadata.Unmarshal(encoded); err != nil {
-				return image, err
-			}
-			seen := nowMs()
-			if !legacy {
-				if seen, err = r.i64(); err != nil {
+			for range seriesCount {
+				if err := readSeries(r, version, tenantID, t, &image); err != nil {
 					return image, err
 				}
 			}
-			set, ok := t.metadata[metadata.MetricFamilyName]
-			if !ok {
-				set = map[metadataKey]metadataEntry{}
-				t.metadata[metadata.MetricFamilyName] = set
-			}
-			set[metadataKey{int32(metadata.Type), metadata.Help, metadata.Unit}] = metadataEntry{metadata, seen}
-		}
-		seriesCount, err := r.count(100_000_000)
-		if err != nil {
-			return image, err
-		}
-		for range seriesCount {
-			stored, err := r.labels()
-			if err != nil {
-				return image, err
-			}
-			series := Series{}
-			if series.lastIngestedMs, err = r.i64(); err != nil {
-				return image, err
-			}
-			if series.lastBucketCount, err = r.u32(); err != nil {
-				return image, err
-			}
-			if version >= 4 {
-				flag, err := r.u8()
+		} else {
+			for {
+				more, err := r.u8()
 				if err != nil {
 					return image, err
 				}
-				series.nativeHistogram = flag == 1
-			}
-			if version >= 5 {
-				flag, err := r.u8()
-				if err != nil {
-					return image, err
+				if more == 0 {
+					break
 				}
-				series.headEvicted = flag == 1
-				if series.nonOwnedSinceS, err = r.u32(); err != nil {
+				if err := readSeries(r, version, tenantID, t, &image); err != nil {
 					return image, err
 				}
 			}
-			chunkCount, err := r.count(1_000_000)
-			if err != nil {
+			if err := readTenantState(r, version, t); err != nil {
 				return image, err
-			}
-			metas := make([]ChunkMeta, chunkCount)
-			for index := range metas {
-				meta := &metas[index]
-				if meta.Ref, err = r.u64(); err != nil {
-					return image, err
-				}
-				if meta.MinTime, err = r.i64(); err != nil {
-					return image, err
-				}
-				if meta.MaxTime, err = r.i64(); err != nil {
-					return image, err
-				}
-				if meta.Len, err = r.u32(); err != nil {
-					return image, err
-				}
-				if meta.Encoding, err = r.u8(); err != nil {
-					return image, err
-				}
-				if version >= 4 {
-					flag, err := r.u8()
-					if err != nil {
-						return image, err
-					}
-					meta.OutOfOrder = flag == 1
-				}
-			}
-			series.setChunks(chunkListFromMetas(metas))
-			hasFloat, err := r.u8()
-			if err != nil {
-				return image, err
-			}
-			if hasFloat == 1 {
-				fh := &floatHead{}
-				if fh.minTime, err = r.i64(); err != nil {
-					return image, err
-				}
-				if fh.nextAt, err = r.i64(); err != nil {
-					return image, err
-				}
-				if fh.appender, err = chunks.ReadXORAppenderState(r); err != nil {
-					return image, err
-				}
-				series.floatHead = fh
-			}
-			histogramCount, err := r.count(1_000_000)
-			if err != nil {
-				return image, err
-			}
-			if histogramCount > 0 {
-				samples := make([]mimirpb.Histogram, histogramCount)
-				for index := range samples {
-					encoded, err := r.readBytes()
-					if err != nil {
-						return image, err
-					}
-					if err := samples[index].Unmarshal(encoded); err != nil {
-						return image, err
-					}
-				}
-				head, err := chunks.NewHistogramAppenderFromSamples(samples)
-				if err != nil {
-					return image, err
-				}
-				series.setHistogram(head)
-			}
-			nextAt, err := r.i64()
-			if err != nil {
-				return image, err
-			}
-			series.setHistogramNextAt(nextAt)
-			oooCount, err := r.count(1_000_000)
-			if err != nil {
-				return image, err
-			}
-			if oooCount > 0 {
-				series.setOutOfOrder(make([]oooSample, oooCount))
-			}
-			for index := range series.ooo() {
-				sample := &series.ooo()[index]
-				if sample.T, err = r.i64(); err != nil {
-					return image, err
-				}
-				kind := uint8(0)
-				if version >= 4 {
-					if kind, err = r.u8(); err != nil {
-						return image, err
-					}
-				}
-				if kind == 0 {
-					bits, err := r.u64()
-					if err != nil {
-						return image, err
-					}
-					sample.F = math.Float64frombits(bits)
-					continue
-				}
-				encoded, err := r.readBytes()
-				if err != nil {
-					return image, err
-				}
-				h := &mimirpb.Histogram{}
-				if err := h.Unmarshal(encoded); err != nil {
-					return image, err
-				}
-				sample.H = h
-			}
-			// Counted once the samples are read.
-			series.setOutOfOrder(series.ooo())
-			if version < 4 {
-				inferPreV4Flags(&series)
-			}
-			series.ownedHash = ShardByAllLabels(tenantID, stored)
-			series.shardHash = labels.StableHash(stored)
-			seriesHash := stored.Hash()
-			if legacy {
-				exemplarCount, err := r.count(10_000_000)
-				if err != nil {
-					return image, err
-				}
-				for range exemplarCount {
-					encoded, err := r.readBytes()
-					if err != nil {
-						return image, err
-					}
-					var exemplar mimirpb.Exemplar
-					if err := exemplar.Unmarshal(encoded); err != nil {
-						return image, err
-					}
-					image.legacy = append(image.legacy, legacyExemplar{tenantID, seriesHash, stored, exemplar})
-				}
-			}
-			if !t.series.insert(seriesHash, stored, series) {
-				return image, errors.New("duplicate series in head snapshot")
 			}
 		}
 		if _, exists := image.tenants[tenantID]; exists {
@@ -1090,5 +1018,259 @@ func readShard(r *snapshotReader, version int) (shardImage, error) {
 		}
 		image.tenants[tenantID] = t
 	}
+	if version >= 7 {
+		if err := readShardFiles(r, &image); err != nil {
+			return image, err
+		}
+	}
 	return image, nil
+}
+
+// readShardFiles reads a shard's chunk files.
+func readShardFiles(r *snapshotReader, image *shardImage) error {
+	var err error
+	if image.nextSequence, err = r.u32(); err != nil {
+		return err
+	}
+	fileCount, err := r.count(1_000_000)
+	if err != nil {
+		return err
+	}
+	image.files = make([]chunks.FileState, fileCount)
+	for index := range image.files {
+		file := &image.files[index]
+		if file.Sequence, err = r.u32(); err != nil {
+			return err
+		}
+		if file.Written, err = r.u64(); err != nil {
+			return err
+		}
+		if file.MaxTime, err = r.i64(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// readTenantState reads a tenant's times and metadata.
+func readTenantState(r *snapshotReader, version int, t *tenant) error {
+	legacy := version == 2
+	var err error
+	if !legacy {
+		if t.maxTime, err = r.i64(); err != nil {
+			return err
+		}
+	}
+	if version >= 5 {
+		if t.headMin, err = r.i64(); err != nil {
+			return err
+		}
+		if t.truncatedTo, err = r.i64(); err != nil {
+			return err
+		}
+	}
+	if version >= 6 {
+		if t.minTime, err = r.i64(); err != nil {
+			return err
+		}
+	}
+	metadataCount, err := r.count(10_000_000)
+	if err != nil {
+		return err
+	}
+	for range metadataCount {
+		encoded, err := r.readBytes()
+		if err != nil {
+			return err
+		}
+		var metadata mimirpb.MetricMetadata
+		if err := metadata.Unmarshal(encoded); err != nil {
+			return err
+		}
+		seen := nowMs()
+		if !legacy {
+			if seen, err = r.i64(); err != nil {
+				return err
+			}
+		}
+		set, ok := t.metadata[metadata.MetricFamilyName]
+		if !ok {
+			set = map[metadataKey]metadataEntry{}
+			t.metadata[metadata.MetricFamilyName] = set
+		}
+		set[metadataKey{int32(metadata.Type), metadata.Help, metadata.Unit}] = metadataEntry{metadata, seen}
+	}
+	return nil
+}
+
+// readSeries reads one of the tenant's series into it.
+func readSeries(r *snapshotReader, version int, tenantID string, t *tenant, image *shardImage) error {
+	legacy := version == 2
+	stored, err := r.labels()
+	if err != nil {
+		return err
+	}
+	series := Series{}
+	if series.lastIngestedMs, err = r.i64(); err != nil {
+		return err
+	}
+	if series.lastBucketCount, err = r.u32(); err != nil {
+		return err
+	}
+	if version >= 4 {
+		flag, err := r.u8()
+		if err != nil {
+			return err
+		}
+		series.nativeHistogram = flag == 1
+	}
+	if version >= 5 {
+		flag, err := r.u8()
+		if err != nil {
+			return err
+		}
+		series.headEvicted = flag == 1
+		if series.nonOwnedSinceS, err = r.u32(); err != nil {
+			return err
+		}
+	}
+	chunkCount, err := r.count(1_000_000)
+	if err != nil {
+		return err
+	}
+	metas := make([]ChunkMeta, chunkCount)
+	for index := range metas {
+		meta := &metas[index]
+		if meta.Ref, err = r.u64(); err != nil {
+			return err
+		}
+		if meta.MinTime, err = r.i64(); err != nil {
+			return err
+		}
+		if meta.MaxTime, err = r.i64(); err != nil {
+			return err
+		}
+		if meta.Len, err = r.u32(); err != nil {
+			return err
+		}
+		if meta.Encoding, err = r.u8(); err != nil {
+			return err
+		}
+		if version >= 4 {
+			flag, err := r.u8()
+			if err != nil {
+				return err
+			}
+			meta.OutOfOrder = flag == 1
+		}
+	}
+	series.setChunks(chunkListFromMetas(metas))
+	hasFloat, err := r.u8()
+	if err != nil {
+		return err
+	}
+	if hasFloat == 1 {
+		fh := &floatHead{}
+		if fh.minTime, err = r.i64(); err != nil {
+			return err
+		}
+		if fh.nextAt, err = r.i64(); err != nil {
+			return err
+		}
+		if fh.appender, err = chunks.ReadXORAppenderState(r); err != nil {
+			return err
+		}
+		series.floatHead = fh
+	}
+	histogramCount, err := r.count(1_000_000)
+	if err != nil {
+		return err
+	}
+	if histogramCount > 0 {
+		samples := make([]mimirpb.Histogram, histogramCount)
+		for index := range samples {
+			encoded, err := r.readBytes()
+			if err != nil {
+				return err
+			}
+			if err := samples[index].Unmarshal(encoded); err != nil {
+				return err
+			}
+		}
+		head, err := chunks.NewHistogramAppenderFromSamples(samples)
+		if err != nil {
+			return err
+		}
+		series.setHistogram(head)
+	}
+	nextAt, err := r.i64()
+	if err != nil {
+		return err
+	}
+	series.setHistogramNextAt(nextAt)
+	oooCount, err := r.count(1_000_000)
+	if err != nil {
+		return err
+	}
+	if oooCount > 0 {
+		series.setOutOfOrder(make([]oooSample, oooCount))
+	}
+	for index := range series.ooo() {
+		sample := &series.ooo()[index]
+		if sample.T, err = r.i64(); err != nil {
+			return err
+		}
+		kind := uint8(0)
+		if version >= 4 {
+			if kind, err = r.u8(); err != nil {
+				return err
+			}
+		}
+		if kind == 0 {
+			bits, err := r.u64()
+			if err != nil {
+				return err
+			}
+			sample.F = math.Float64frombits(bits)
+			continue
+		}
+		encoded, err := r.readBytes()
+		if err != nil {
+			return err
+		}
+		h := &mimirpb.Histogram{}
+		if err := h.Unmarshal(encoded); err != nil {
+			return err
+		}
+		sample.H = h
+	}
+	// Counted once the samples are read.
+	series.setOutOfOrder(series.ooo())
+	if version < 4 {
+		inferPreV4Flags(&series)
+	}
+	series.ownedHash = ShardByAllLabels(tenantID, stored)
+	series.shardHash = labels.StableHash(stored)
+	seriesHash := stored.Hash()
+	if legacy {
+		exemplarCount, err := r.count(10_000_000)
+		if err != nil {
+			return err
+		}
+		for range exemplarCount {
+			encoded, err := r.readBytes()
+			if err != nil {
+				return err
+			}
+			var exemplar mimirpb.Exemplar
+			if err := exemplar.Unmarshal(encoded); err != nil {
+				return err
+			}
+			image.legacy = append(image.legacy, legacyExemplar{tenantID, seriesHash, stored, exemplar})
+		}
+	}
+	if !t.series.insert(seriesHash, stored, series) {
+		return errors.New("duplicate series in head snapshot")
+	}
+	return nil
 }

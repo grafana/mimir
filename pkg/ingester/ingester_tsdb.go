@@ -403,8 +403,10 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
-	// Tenants whose engine lost its head in an unclean shutdown; guarded by tsdbsMtx.
+	// Tenants whose engine lost its head in an unclean shutdown, and the checkpoints of the engines that restored one;
+	// guarded by tsdbsMtx.
 	var unclean []string
+	var checkpoints [][]byte
 
 	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
@@ -433,6 +435,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				i.tsdbs[userID] = db
 				if uncleanlyRestored(db.db) {
 					unclean = append(unclean, userID)
+				}
+				if checkpoint := restoredCheckpoint(db.db); checkpoint != nil {
+					checkpoints = append(checkpoints, checkpoint)
 				}
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
@@ -467,6 +472,11 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	}
 	if err := i.resetKafkaOffsetsAfterUncleanShutdown(unclean); err != nil {
 		return errors.Wrap(err, "resetting the Kafka offsets after an unclean shutdown")
+	}
+	if len(unclean) == 0 {
+		if err := i.rewindKafkaOffsetsToCheckpoints(checkpoints); err != nil {
+			return errors.Wrap(err, "rewinding the Kafka offsets to the seriesstore snapshots")
+		}
 	}
 
 	// Update the usage statistics once all TSDBs have been opened.
