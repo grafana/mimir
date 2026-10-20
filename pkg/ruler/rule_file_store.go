@@ -23,6 +23,9 @@ type RuleFileStore interface {
 
 // NewRuleFileStore returns the RuleFileStore for the ruler config.
 func NewRuleFileStore(cfg Config, logger log.Logger) RuleFileStore {
+	if cfg.RuleRegistryEnabled {
+		return &registryRuleFileStore{registry: newRuleRegistry(cfg.RulePath, logger)}
+	}
 	return newFSRuleFileStore(cfg.RulePath, afero.NewMemMapFs(), logger)
 }
 
@@ -51,4 +54,26 @@ func (s *fsRuleFileStore) cleanupUser(user string) {
 
 func (s *fsRuleFileStore) cleanup() {
 	s.mapper.cleanup()
+}
+
+// registryRuleFileStore keeps the rule groups as protos.
+// The rules managers load them with no YAML encode or parse.
+type registryRuleFileStore struct {
+	registry *ruleRegistry
+}
+
+func (s *registryRuleFileStore) mapRules(user string, groups rulespb.RuleGroupList) (bool, []string, error) {
+	return s.registry.MapRules(user, groups.FormattedProto())
+}
+
+func (s *registryRuleFileStore) groupLoader(user string) promRules.GroupLoader {
+	return newRegistryLoader(s.registry, user)
+}
+
+func (s *registryRuleFileStore) cleanupUser(user string) {
+	s.registry.cleanupUser(user)
+}
+
+func (s *registryRuleFileStore) cleanup() {
+	s.registry.cleanup()
 }
