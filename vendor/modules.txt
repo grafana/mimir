@@ -1706,7 +1706,7 @@ go.uber.org/zap/zapgrpc
 # go.yaml.in/yaml/v2 v2.4.4
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
-# go.yaml.in/yaml/v3 v3.0.5 => github.com/grafana/go-yaml/v3 v3.0.0-20261002173312-a1d5f0fedb1c
+# go.yaml.in/yaml/v3 v3.0.5 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
 # go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -2168,7 +2168,7 @@ sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261019085500-2940f9b699fe
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
-# go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261002173312-a1d5f0fedb1c
+# go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
