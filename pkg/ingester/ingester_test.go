@@ -8257,7 +8257,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 		l := labels.FromStrings("n", "v")
 		for i := 0; i < numFullChunks; i++ {
-			// Not using db.Appender() as it checks for compaction.
+			// Not using db.AppenderV2() as it checks for compaction.
 			app := head.AppenderV2(context.Background())
 			_, err := app.Append(0, l, 0, int64(i)*chunkRange+1, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
