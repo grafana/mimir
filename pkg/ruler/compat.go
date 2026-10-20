@@ -113,7 +113,7 @@ func (a *PusherAppender) Rollback() error {
 	return nil
 }
 
-// PusherAppendable fulfills the storage.Appendable interface for prometheus manager
+// PusherAppendable fulfills the storage.AppendableV2 interface for prometheus manager
 type PusherAppendable struct {
 	pusher Pusher
 	userID string
@@ -131,7 +131,7 @@ func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites
 	}
 }
 
-// Appender returns a storage.Appender
+// AppenderV2 returns a storage.AppenderV2.
 func (t *PusherAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return &PusherAppender{
 		failedWrites: t.failedWrites,
@@ -163,7 +163,7 @@ func NewNoopAppendable() *NoopAppendable {
 	return &NoopAppendable{}
 }
 
-// Appender returns a storage.Appender.
+// AppenderV2 returns a storage.AppenderV2.
 func (t *NoopAppendable) AppenderV2(_ context.Context) storage.AppenderV2 {
 	return &NoopAppender{}
 }
