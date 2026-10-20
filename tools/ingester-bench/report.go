@@ -112,6 +112,11 @@ type Resources struct {
 	RSSMax         float64 `json:"rss_max_bytes"`
 	IngestLagAvg   float64 `json:"ingest_lag_avg_records"`
 	IngestLagMax   float64 `json:"ingest_lag_max_records"`
+	// The seriesstore engine's head snapshots since the ingester started, as they mostly run outside of the window.
+	HeadSnapshots               float64 `json:"head_snapshots,omitempty"`
+	HeadSnapshotFailures        float64 `json:"head_snapshot_failures,omitempty"`
+	HeadSnapshotRounds          float64 `json:"head_snapshot_rounds,omitempty"`
+	HeadSnapshotRoundSecondsAvg float64 `json:"head_snapshot_round_seconds_avg,omitempty"`
 }
 
 type APIReport struct {
@@ -186,6 +191,13 @@ func (s *sampler) resources(i int) Resources {
 		}
 		r.IngestLagAvg = sum / float64(len(lags))
 	}
+	end := s.end[i]
+	r.HeadSnapshots = end["cortex_ingester_seriesstore_head_snapshots_total{outcome=success}"]
+	r.HeadSnapshotFailures = end["cortex_ingester_seriesstore_head_snapshots_total{outcome=failure}"]
+	r.HeadSnapshotRounds = end["cortex_ingester_seriesstore_head_snapshot_round_duration_seconds_count"]
+	if r.HeadSnapshotRounds > 0 {
+		r.HeadSnapshotRoundSecondsAvg = end["cortex_ingester_seriesstore_head_snapshot_round_duration_seconds_sum"] / r.HeadSnapshotRounds
+	}
 	return r
 }
 
@@ -241,6 +253,19 @@ func (r Report) print(w io.Writer) {
 		{"RSS avg", a.RSSAvg, b.RSSAvg, gib},
 		{"RSS max", a.RSSMax, b.RSSMax, gib},
 		{"ingest lag avg", a.IngestLagAvg, b.IngestLagAvg, func(v float64) string { return fmt.Sprintf("%.0f records", v) }},
+	}
+	if a.HeadSnapshotRounds+b.HeadSnapshotRounds > 0 {
+		count := func(v float64) string { return fmt.Sprintf("%.0f", v) }
+		rows = append(rows, []struct {
+			name string
+			a, b float64
+			f    func(float64) string
+		}{
+			{"head snapshot rounds", a.HeadSnapshotRounds, b.HeadSnapshotRounds, count},
+			{"head snapshot round avg", a.HeadSnapshotRoundSecondsAvg, b.HeadSnapshotRoundSecondsAvg, func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
+			{"head snapshots", a.HeadSnapshots, b.HeadSnapshots, count},
+			{"head snapshot failures", a.HeadSnapshotFailures, b.HeadSnapshotFailures, count},
+		}...)
 	}
 	for _, row := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t\n", row.name, row.f(row.a), row.f(row.b), ratio(row.a, row.b))

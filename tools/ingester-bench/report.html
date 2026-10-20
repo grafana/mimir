@@ -447,7 +447,11 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
     ['Heap in use (avg)', 'heap_inuse_avg_bytes', fmt.bytes], ['Heap in use (max)', 'heap_inuse_max_bytes', fmt.bytes],
     ['Live heap (avg)', 'heap_alloc_avg_bytes', fmt.bytes], ['RSS (avg)', 'rss_avg_bytes', fmt.bytes], ['RSS (max)', 'rss_max_bytes', fmt.bytes],
     ['Ingest lag (avg)', 'ingest_lag_avg_records', fmt.count], ['Ingest lag (max)', 'ingest_lag_max_records', fmt.count],
-  ].map(([label, key, f]) => [label, f(res[0][key]), f(res[1][key]), ratioText(ratio(res[0][key], res[1][key]))]);
+  ].concat(res[0].head_snapshot_rounds || res[1].head_snapshot_rounds ? [
+    // Since the ingesters started, as the snapshots mostly run outside of the window.
+    ['Head snapshot rounds', 'head_snapshot_rounds', fmt.count], ['Head snapshot round (avg)', 'head_snapshot_round_seconds_avg', fmt.seconds],
+    ['Head snapshots', 'head_snapshots', fmt.count], ['Head snapshot failures', 'head_snapshot_failures', fmt.count],
+  ] : []).map(([label, key, f]) => [label, f(res[0][key] || 0), f(res[1][key] || 0), ratioText(ratio(res[0][key] || 0, res[1][key] || 0))]);
   resRows.unshift(['Replay', fmt.seconds(R.replay_seconds[0]), fmt.seconds(R.replay_seconds[1]), ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1]))]);
   table('resources', ['Measure', 'A', 'B', 'B/A'], resRows);
 

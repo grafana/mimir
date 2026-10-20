@@ -8,3 +8,5 @@ b:
   args:
     blocks-storage.tsdb.engine: seriesstore
     blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"
+    # For the head snapshots' lines, which are info.
+    log.level: info

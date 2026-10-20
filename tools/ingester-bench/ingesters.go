@@ -215,13 +215,18 @@ func (p *ingesterProcess) metrics() (map[string]float64, error) {
 			case m.Summary != nil:
 				out[name+"_count"] += float64(m.Summary.GetSampleCount())
 				continue
+			case m.Histogram != nil:
+				out[name+"_count"] += float64(m.Histogram.GetSampleCount())
+				out[name+"_sum"] += m.Histogram.GetSampleSum()
+				continue
 			default:
 				continue
 			}
 			key := name
 			for _, l := range m.Label {
 				// The few labels the report needs.
-				if l.GetName() == "cpu_class" || (name == "cortex_ingest_storage_reader_last_consumed_offset" && l.GetName() == "partition") {
+				if l.GetName() == "cpu_class" || (name == "cortex_ingest_storage_reader_last_consumed_offset" && l.GetName() == "partition") ||
+					(name == "cortex_ingester_seriesstore_head_snapshots_total" && l.GetName() == "outcome") {
 					key += "{" + l.GetName() + "=" + l.GetValue() + "}"
 				}
 			}
