@@ -44,9 +44,10 @@ jobs:
       - name: Run Flaky Tests Analysis
         uses: grafana/shared-workflows/actions/go-flaky-tests@fda601c4163fc8b5558029918e4e6259a2359682
         with:
-          loki-url: ${{ env.LOKI_URL }}
-          loki-username: ${{ env.LOKI_USERNAME }}
-          loki-password: ${{ env.LOKI_PASSWORD }}
+          # get-vault-secrets v2+ doesn't export secrets as env vars, they're only available in its JSON output.
+          loki-url: ${{ fromJSON(steps.get-secrets.outputs.secrets).LOKI_URL }}
+          loki-username: ${{ fromJSON(steps.get-secrets.outputs.secrets).LOKI_USERNAME }}
+          loki-password: ${{ fromJSON(steps.get-secrets.outputs.secrets).LOKI_PASSWORD }}
           repository: ${{ github.repository }}
           time-range: "7d"
           top-k: "3"
