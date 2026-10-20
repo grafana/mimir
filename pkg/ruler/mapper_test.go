@@ -8,11 +8,15 @@ package ruler
 import (
 	"net/url"
 	"os"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -958,6 +962,122 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, loadedUser2File2.Groups, 1)
 		require.Equal(t, "rulegroup_one", loadedUser2File2.Groups[0].Name)
 	})
+}
+
+func Test_registryLoader_Load(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+
+	t.Run("each load returns an equal, distinct result", func(t *testing.T) {
+		setupRuleSets()
+		r := newRuleRegistry("/rules", l)
+		_, files, err := r.MapRules(testUser1, testRuleSetAsProto(testUser1, initialRuleSet))
+		require.NoError(t, err)
+
+		loader := newRegistryLoader(r, testUser1)
+		first, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		second, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, first, second)
+		require.NotSame(t, first, second)
+	})
+
+	t.Run("a load after the rules change returns the new groups", func(t *testing.T) {
+		setupRuleSets()
+		r := newRuleRegistry("/rules", l)
+		_, files, err := r.MapRules(testUser1, testRuleSetAsProto(testUser1, initialRuleSet))
+		require.NoError(t, err)
+
+		loader := newRegistryLoader(r, testUser1)
+		loaded, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Len(t, loaded.Groups, 2)
+
+		_, _, err = r.MapRules(testUser1, testRuleSetAsProto(testUser1, updatedRuleSet))
+		require.NoError(t, err)
+
+		loaded, errs = loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Len(t, loaded.Groups, 3)
+	})
+
+	t.Run("each file loads its own groups", func(t *testing.T) {
+		setupRuleSets()
+		r := newRuleRegistry("/rules", l)
+		_, files, err := r.MapRules(testUser1, testRuleSetAsProto(testUser1, twoFilesRuleSet))
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+
+		loader := newRegistryLoader(r, testUser1)
+		one, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Len(t, one.Groups, 2)
+		two, errs := loader.Load(fileTwoUserOnePath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Len(t, two.Groups, 1)
+	})
+
+	t.Run("mutating a result does not change a later result", func(t *testing.T) {
+		// tenant.NormalizeTenantIDs sorts and deduplicates SourceTenants in place.
+		// The registry keeps its protos across loads.
+		// So a loaded group must not share the SourceTenants slice with the registry.
+		r := newRuleRegistry("/rules", l)
+		ruleConfigs := map[string][]rulefmt.RuleGroup{
+			"file /one": {
+				{
+					Name:          "federated_group",
+					SourceTenants: []string{"tenant-b", "tenant-a"},
+					Rules: []rulefmt.Rule{
+						{Record: "example_rule", Expr: "example_expr"},
+					},
+				},
+			},
+		}
+		_, files, err := r.MapRules(testUser1, testRuleSetAsProto(testUser1, ruleConfigs))
+		require.NoError(t, err)
+
+		loader := newRegistryLoader(r, testUser1)
+		first, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		slices.Sort(first.Groups[0].SourceTenants)
+		require.Equal(t, []string{"tenant-a", "tenant-b"}, first.Groups[0].SourceTenants)
+
+		second, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, []string{"tenant-b", "tenant-a"}, second.Groups[0].SourceTenants)
+	})
+}
+
+func Test_registryLoader_RetryAfterFailedLoad(t *testing.T) {
+	// LoadGroups stops at the first file that fails to load.
+	// Then Update returns, and the running groups do not change.
+	// On the retry, the registry must still return the groups of every file.
+	setupRuleSets()
+	r := newRuleRegistry("/rules", log.NewNopLogger())
+	broken := map[string][]rulefmt.RuleGroup{
+		"file /one": initialRuleSet["file /one"],
+		"file /two": {{Name: "broken", Rules: []rulefmt.Rule{{Record: "broken", Expr: "sum("}}}},
+	}
+	_, files, err := r.MapRules(testUser1, testRuleSetAsProto(testUser1, broken))
+	require.NoError(t, err)
+	require.Len(t, files, 2)
+
+	manager := promRules.NewManager(&promRules.ManagerOptions{GroupLoader: newRegistryLoader(r, testUser1)})
+
+	_, errs := manager.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, files...)
+	require.NotEmpty(t, errs)
+	require.ErrorContains(t, errs[0], fileTwoUserOnePath)
+
+	fixed := map[string][]rulefmt.RuleGroup{
+		"file /one": initialRuleSet["file /one"],
+		"file /two": {{Name: "fixed", Rules: []rulefmt.Rule{{Record: "fixed", Expr: "up"}}}},
+	}
+	_, files, err = r.MapRules(testUser1, testRuleSetAsProto(testUser1, fixed))
+	require.NoError(t, err)
+
+	groups, errs := manager.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, files...)
+	require.Empty(t, errs)
+	require.Len(t, groups, 3)
 }
 
 func requireFileExists(t *testing.T, fs afero.Fs, path string) {
