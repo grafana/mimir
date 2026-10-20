@@ -133,6 +133,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
+		useStartTimestamps:       opts.CommonOpts.UseStartTimestamps,
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           opts.Limits,
 		activeQueryTracker:       activeQueryTracker,
@@ -172,6 +173,7 @@ type QueryTracker interface {
 
 type Engine struct {
 	lookbackDelta      time.Duration
+	useStartTimestamps bool
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker QueryTracker
@@ -241,10 +243,17 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
+	useStartTimestamps := e.useStartTimestamps
+	if opts.UseStartTimestamps() != nil {
+		useStartTimestamps = *opts.UseStartTimestamps()
+	}
+
 	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, explain, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
+
+	plan.Parameters.UseStartTimestamps = useStartTimestamps
 
 	nodeRequests := []NodeEvaluationRequest{
 		{

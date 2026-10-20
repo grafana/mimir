@@ -1835,6 +1835,28 @@ func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
 	require.True(t, decoded.DecodeParameters().CacheDisabled)
 }
 
+func TestPlanEncoding_UseStartTimestampsPropagatesToQuerier(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	plan, err := planner.NewQueryPlan(t.Context(), "rate(some_metric[5m])", types.NewInstantQueryTimeRange(timestamp.Time(1000)), 5*time.Minute, false, nil, NoopPlanningObserver{})
+	require.NoError(t, err)
+	plan.Parameters.UseStartTimestamps = true
+
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
+	require.NoError(t, err)
+	require.True(t, encoded.UseStartTimestamps)
+
+	// Round-trip through the wire, as remote execution does.
+	marshalled, err := proto.Marshal(encoded)
+	require.NoError(t, err)
+	var decoded planning.EncodedQueryPlan
+	require.NoError(t, decoded.Unmarshal(marshalled))
+	require.True(t, decoded.UseStartTimestamps)
+	require.True(t, decoded.DecodeParameters().UseStartTimestamps)
+}
+
 func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
