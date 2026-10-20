@@ -315,6 +315,14 @@ func (f *realisticFixture) queries() []realisticQuery {
 		{"nameless-job/13h", all[0], all[1], []*promlabels.Matcher{eq("job", "job-17")}},
 		{"name-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{re("__name__", "metric_12.."), eq("namespace", "ns-5")}},
 		{"buckets/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("__name__", "request_duration_seconds_bucket"), eq("namespace", "ns-3")}},
+		// Entity-centric tools select by the labels every metric has, not by metric name: each of these spans thousands
+		// of metrics. ns-16 is in cluster-4, so the two select the same 33k series, and job-16 and job-46 2/5 of them.
+		{"entity-cluster-namespace/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("cluster", "cluster-4"), eq("namespace", "ns-16")}},
+		{"entity-cluster-namespace/13h", all[0], all[1], []*promlabels.Matcher{eq("cluster", "cluster-4"), eq("namespace", "ns-16")}},
+		{"entity-cluster-namespace-job-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("cluster", "cluster-4"), eq("namespace", "ns-16"), re("job", "job-(16|46)")}},
+		{"entity-namespace-not-job/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("namespace", "ns-16"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "job", "job-16")}},
+		{"entity-any-name-namespace-pod-regex/1h", last1h[0], last1h[1], []*promlabels.Matcher{re("__name__", ".+"), eq("namespace", "ns-16"), re("pod", "pod-1[0-9]{3}")}},
+		{"entity-pod/1h", last1h[0], last1h[1], []*promlabels.Matcher{eq("cluster", "cluster-4"), eq("pod", pod)}},
 	}
 }
 
@@ -413,6 +421,15 @@ func (f *realisticFixture) queryPhases(b *testing.B, prefix string) {
 		}},
 		{"label-values-pod-by-job/1h", end - realisticHoursMs, end, func(q storage.Querier) (int, error) {
 			values, _, err := q.LabelValues(context.Background(), "pod", nil, eq("job", "job-17"))
+			return len(values), err
+		}},
+		// An entity's metrics and its jobs, without a metric name.
+		{"label-values-name-by-entity/1h", end - realisticHoursMs, end, func(q storage.Querier) (int, error) {
+			values, _, err := q.LabelValues(context.Background(), "__name__", nil, eq("cluster", "cluster-4"), eq("namespace", "ns-16"))
+			return len(values), err
+		}},
+		{"label-values-job-by-entity/13h", 0, end, func(q storage.Querier) (int, error) {
+			values, _, err := q.LabelValues(context.Background(), "job", nil, eq("cluster", "cluster-4"), eq("namespace", "ns-16"))
 			return len(values), err
 		}},
 	}
