@@ -516,6 +516,11 @@ func restoredCheckpoint(db tenantEngine) []byte {
 // times as long as it could, and leaves the CPU and disk to queries.
 const seriesstoreSnapshotDuty = 0.1
 
+const (
+	snapshotOutcomeSuccess = "success"
+	snapshotOutcomeFailure = "failure"
+)
+
 // seriesstoreSnapshotsRunning snapshots the head of every seriesstore tenant each interval, one tenant at a time.
 func (i *Ingester) seriesstoreSnapshotsRunning(ctx context.Context) error {
 	ticker := time.NewTicker(i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval)
@@ -554,12 +559,16 @@ func (i *Ingester) snapshotSeriesstoreHeads(ctx context.Context) {
 		if err != nil {
 			if ctx.Err() == nil {
 				failures++
+				i.metrics.seriesstoreSnapshots.WithLabelValues(snapshotOutcomeFailure).Inc()
 				level.Warn(i.logger).Log("msg", "failed to snapshot the head", "user", userID, "err", err)
 			}
 			continue
 		}
 		snapshots++
+		i.metrics.seriesstoreSnapshots.WithLabelValues(snapshotOutcomeSuccess).Inc()
 	}
+	i.metrics.seriesstoreSnapshotRoundDuration.Observe(time.Since(started).Seconds())
+	i.metrics.seriesstoreLastSnapshotRound.SetToCurrentTime()
 	level.Info(i.logger).Log("msg", "snapshotted the heads", "tenants", snapshots, "failures", failures, "duration", time.Since(started))
 }
 

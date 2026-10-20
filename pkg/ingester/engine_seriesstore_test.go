@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -126,7 +128,8 @@ func TestIngester_SeriesstoreSnapshotsHeadsWithTheCommittedOffsets(t *testing.T)
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
 	dataDir := t.TempDir()
-	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, nil)
+	reg := prometheus.NewPedanticRegistry()
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, dataDir, reg)
 	require.NoError(t, err)
 	startAndWaitHealthy(t, ingester, r)
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
@@ -137,6 +140,13 @@ func TestIngester_SeriesstoreSnapshotsHeadsWithTheCommittedOffsets(t *testing.T)
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "kafka-offset.json"), []byte(`{"version":1,"partition_id":0,"offset":42}`), 0o644))
 
 	ingester.snapshotSeriesstoreHeads(context.Background())
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_seriesstore_head_snapshots_total Total number of tenants' heads the seriesstore engine snapshotted while ingesting, by outcome.
+		# TYPE cortex_ingester_seriesstore_head_snapshots_total counter
+		cortex_ingester_seriesstore_head_snapshots_total{outcome="failure"} 0
+		cortex_ingester_seriesstore_head_snapshots_total{outcome="success"} 1
+	`), "cortex_ingester_seriesstore_head_snapshots_total"))
+	require.Equal(t, 1, testutil.CollectAndCount(ingester.metrics.seriesstoreSnapshotRoundDuration))
 
 	crashed, err := store.OpenEngine(filepath.Join(dataDir, userID), userID, store.EngineOptions{Shards: 2, Checkpoints: true})
 	require.NoError(t, err)
