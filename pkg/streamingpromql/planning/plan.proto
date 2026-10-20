@@ -38,6 +38,9 @@ message EncodedQueryPlan {
 
   // explain requests extra diagnostic information in the query response.
   repeated types.ExplainValue explain = 9;
+
+  // useStartTimestamps enables the use of sample start timestamps in functions such as rate().
+  bool useStartTimestamps = 10;
 }
 
 message EncodedNode {

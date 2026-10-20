@@ -131,6 +131,9 @@ type QueryParameters struct {
 	// CacheDisabled reflects the request's Cache-Control: no-store option, carried in the plan so the
 	// querier's splitting/caching passes can honour it.
 	CacheDisabled bool
+
+	// UseStartTimestamps enables the use of sample start timestamps in functions such as rate().
+	UseStartTimestamps bool
 }
 
 // Node represents a node in the query plan graph.
@@ -342,6 +345,7 @@ func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Nod
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
 		CacheDisabled:            p.Parameters.CacheDisabled,
+		UseStartTimestamps:       p.Parameters.UseStartTimestamps,
 		Explain:                  p.Parameters.Explain,
 		Version:                  p.Version,
 	}
@@ -523,6 +527,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
 		CacheDisabled:            p.CacheDisabled,
+		UseStartTimestamps:       p.UseStartTimestamps,
 		Explain:                  p.Explain,
 	}
 }

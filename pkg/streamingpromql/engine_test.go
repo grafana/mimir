@@ -129,6 +129,54 @@ func TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected(t *testing.T) {
 	require.Nil(t, engine)
 }
 
+func TestEngine_UseStartTimestamps(t *testing.T) {
+	enabled, disabled := true, false
+
+	testCases := map[string]struct {
+		engineDefault bool
+		queryOverride *bool
+		expected      bool
+	}{
+		"engine default disabled, no override":    {engineDefault: false, queryOverride: nil, expected: false},
+		"engine default enabled, no override":     {engineDefault: true, queryOverride: nil, expected: true},
+		"engine default disabled, query enables":  {engineDefault: false, queryOverride: &enabled, expected: true},
+		"engine default enabled, query disables":  {engineDefault: true, queryOverride: &disabled, expected: false},
+		"engine default enabled, query also sets": {engineDefault: true, queryOverride: &enabled, expected: true},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := NewTestEngineOpts()
+			opts.CommonOpts.UseStartTimestamps = testCase.engineDefault
+
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			var observed []bool
+			engine.nodeMaterializers[planning.NODE_TYPE_VECTOR_SELECTOR] = planning.NodeMaterializerFunc[*core.VectorSelector](
+				func(ctx context.Context, v *core.VectorSelector, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+					observed = append(observed, params.QueryParameters.UseStartTimestamps)
+					return core.MaterializeVectorSelector(ctx, v, materializer, timeRange, params)
+				},
+			)
+
+			storage := promqltest.LoadedStorage(t, `
+				load 1m
+					some_metric 0+1x5
+			`)
+
+			queryOpts := types.NewMimirQueryOpts(false, 0, testCase.queryOverride, nil)
+			q, err := engine.NewInstantQuery(t.Context(), storage, queryOpts, "some_metric", timestamp.Time(0).Add(5*time.Minute))
+			require.NoError(t, err)
+			defer q.Close()
+
+			require.Equal(t, []bool{testCase.expected}, observed)
+		})
+	}
+}
+
 func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	t.Run("range query", func(t *testing.T) {
 		requireRangeQueryIsUnsupported(t, expression, expectedError)
