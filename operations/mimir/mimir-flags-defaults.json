@@ -1452,6 +1452,7 @@
   "alertmanager.alertmanager-client.health-check-grace-period": 0,
   "alertmanager.persist-interval": 900000000000,
   "alertmanager.enable-state-cleanup": true,
+  "alertmanager.require-explicit-sns-credentials": true,
   "alertmanager-storage.backend": "filesystem",
   "alertmanager-storage.s3.endpoint": "",
   "alertmanager-storage.s3.region": "",

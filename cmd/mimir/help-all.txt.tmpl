@@ -289,6 +289,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
+  -alertmanager.require-explicit-sns-credentials
+    	If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint. (default true)
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.cas-retry-delay duration
