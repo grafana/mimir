@@ -1249,33 +1249,47 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	}
 }
 
-// TestTSDBBuilderFloatChunkEncoding verifies that the block builder honors the
-// per-tenant float_chunk_encoding limit when building blocks: "xor2" produces
-// EncXOR2 chunks and the default ("" or "xor") produces EncXOR chunks. It also
-// guards that ingesting a created timestamp as a zero sample doesn't store start
-// timestamps in the chunks, which would switch XOR2 to the costlier per-sample
-// start timestamp encoding.
-func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
+// TestTSDBBuilderChunkEncoding verifies that the block builder honors the
+// per-tenant float_chunk_encoding and histogram_chunk_encoding limits when
+// building blocks: "xor2" produces EncXOR2 float chunks and the default ("" or
+// "xor") produces EncXOR; "histogram_st" produces EncHistogramST and
+// EncFloatHistogramST histogram chunks and the default ("" or "histogram")
+// produces EncHistogram and EncFloatHistogram.
+// It also checks that created timestamps produce zero samples without storing start timestamps in float chunks,
+// which would switch XOR2 to the costlier per-sample start timestamp encoding.
+func TestTSDBBuilderChunkEncoding(t *testing.T) {
 	const (
 		partitionID = int32(0)
 		userID      = "user1"
 	)
 
 	for _, tc := range []struct {
-		name                 string
-		encoding             string
-		withCreatedTimestamp bool
-		expectedEnc          chunkenc.Encoding
+		name                      string
+		floatEncoding             string
+		histogramEncoding         string
+		withCreatedTimestamp      bool
+		expectedFloatEnc          chunkenc.Encoding
+		expectedHistogramEnc      chunkenc.Encoding
+		expectedFloatHistogramEnc chunkenc.Encoding
 	}{
-		{name: "default is xor", encoding: "", expectedEnc: chunkenc.EncXOR},
-		{name: "xor", encoding: "xor", expectedEnc: chunkenc.EncXOR},
-		{name: "xor2", encoding: "xor2", expectedEnc: chunkenc.EncXOR2},
-		{name: "xor with created timestamp", encoding: "xor", withCreatedTimestamp: true, expectedEnc: chunkenc.EncXOR},
-		{name: "xor2 with created timestamp", encoding: "xor2", withCreatedTimestamp: true, expectedEnc: chunkenc.EncXOR2},
+		{name: "defaults", expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "xor", floatEncoding: "xor", expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "xor2", floatEncoding: "xor2", expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "histogram", histogramEncoding: "histogram", expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "histogram_st", histogramEncoding: "histogram_st", expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		// The two limits are independent: both new encodings can be written side by side in one block.
+		{name: "xor2 and histogram_st", floatEncoding: "xor2", histogramEncoding: "histogram_st", expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor with created timestamp", floatEncoding: "xor", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "xor2 with created timestamp", floatEncoding: "xor2", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
+		{name: "xor2 and histogram_st with created timestamp", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := map[string]*validation.Limits{
-				userID: {FloatChunkEncoding: tc.encoding},
+				userID: {
+					FloatChunkEncoding:               tc.floatEncoding,
+					HistogramChunkEncoding:           tc.histogramEncoding,
+					NativeHistogramsIngestionEnabled: true,
+				},
 			}
 			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 
@@ -1295,12 +1309,22 @@ func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 			}
 			ctx := user.InjectOrgID(t.Context(), userID)
 			for i := 0; i < 5; i++ {
-				req := createWriteRequest("1", floatSample(ts+int64(i*1000), float64(i)), nil)
-				if tc.withCreatedTimestamp {
-					req.Timeseries[0].CreatedTimestamp = createdTs
+				sampleTS := ts + int64(i*1000)
+				h := test.GenerateTestHistogram(i)
+				cbh := test.GenerateTestCustomBucketsHistogram(i)
+				for _, req := range []mimirpb.WriteRequest{
+					createWriteRequest("", floatSample(sampleTS, float64(i)), nil),
+					createWriteRequest("_int", nil, []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(sampleTS, h)}),
+					createWriteRequest("_int_custom", nil, []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(sampleTS, cbh)}),
+					createWriteRequest("_float", nil, []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(sampleTS, h.ToFloat(nil))}),
+					createWriteRequest("_float_custom", nil, []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(sampleTS, cbh.ToFloat(nil))}),
+				} {
+					if tc.withCreatedTimestamp {
+						req.Timeseries[0].CreatedTimestamp = createdTs
+					}
+					require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
 				}
-				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
-				expectedSamples = append(expectedSamples, sample{t: ts + int64(i*1000), v: float64(i)})
+				expectedSamples = append(expectedSamples, sample{t: sampleTS, v: float64(i)})
 			}
 
 			shipperDir := t.TempDir()
@@ -1312,10 +1336,20 @@ func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, db.Close()) })
 			require.NotEmpty(t, db.Blocks())
 
-			encs, samples := blockFloatChunks(t, db)
-			require.NotEmpty(t, encs)
-			for _, e := range encs {
-				require.Equal(t, tc.expectedEnc, e)
+			expected := map[string]chunkenc.Encoding{
+				"float":                  tc.expectedFloatEnc,
+				"histogram_int":          tc.expectedHistogramEnc,
+				"histogram_int_custom":   tc.expectedHistogramEnc,
+				"histogram_float":        tc.expectedFloatHistogramEnc,
+				"histogram_float_custom": tc.expectedFloatHistogramEnc,
+			}
+			encs, samples := blockChunks(t, db)
+			require.Len(t, encs, len(expected))
+			for series, expectedEnc := range expected {
+				require.NotEmpty(t, encs[series], "series %s", series)
+				for _, e := range encs[series] {
+					require.Equal(t, expectedEnc, e, "series %s", series)
+				}
 			}
 			require.Equal(t, expectedSamples, samples)
 		})
@@ -1327,22 +1361,22 @@ type sample struct {
 	v     float64
 }
 
-func blockFloatChunks(t *testing.T, db *tsdb.DB) ([]chunkenc.Encoding, []sample) {
+// blockChunks returns chunk encodings by series and decoded float samples.
+func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []sample) {
 	t.Helper()
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, q.Close()) })
 
 	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-	var (
-		encs    []chunkenc.Encoding
-		samples []sample
-	)
+	encs := map[string][]chunkenc.Encoding{}
+	var samples []sample
 	for ss.Next() {
+		series := ss.At().Labels().Get("foo")
 		it := ss.At().Iterator(nil)
 		for it.Next() {
 			chk := it.At().Chunk
-			encs = append(encs, chk.Encoding())
+			encs[series] = append(encs[series], chk.Encoding())
 			sit := chk.Iterator(nil)
 			for sit.Next() == chunkenc.ValFloat {
 				ts, v := sit.At()
