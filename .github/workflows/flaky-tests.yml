@@ -35,12 +35,8 @@ jobs:
             LOKI_USERNAME=flaky-tests-bot:loki-username
             LOKI_PASSWORD=flaky-tests-bot:loki-password
 
-      - name: Generate GitHub App Token
-        id: github-token
-        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
-        with:
-          github_app: mimir-github-bot
-
+      # The action runs gh with its github-token input, which defaults to github.token (see the issues: write permission above),
+      # so this workflow doesn't need a GitHub App token.
       - name: Run Flaky Tests Analysis
         uses: grafana/shared-workflows/actions/go-flaky-tests@fda601c4163fc8b5558029918e4e6259a2359682
         with:
@@ -53,5 +49,3 @@ jobs:
           top-k: "3"
           skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.skip-posting-issues || 'false' }}
           ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail.
-        env:
-          GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}
