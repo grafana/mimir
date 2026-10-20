@@ -36,7 +36,7 @@ require (
 	github.com/grafana/e2e v0.1.2-0.20260918025020-cfcdc6861c9c
 	github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/grafana/warpstream-go v0.1.4
+	github.com/grafana/warpstream-go v0.1.5
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/hashicorp/vault/api/auth/approle v0.12.0
