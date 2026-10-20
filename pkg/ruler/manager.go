@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -42,7 +41,7 @@ type DefaultMultiTenantManager struct {
 	dnsResolver    AddressProvider
 	refreshMetrics discovery.RefreshMetricsManager
 
-	mapper *mapper
+	ruleFiles RuleFileStore
 
 	// Struct for holding per-user Prometheus rules Managers.
 	userManagerMtx sync.RWMutex
@@ -66,7 +65,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, rulesFS afero.Fs) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, ruleFiles RuleFileStore) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 
 	userManagerMetrics := NewManagerMetrics(logger)
@@ -81,7 +80,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		dnsResolver:        dnsResolver,
 		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
-		mapper:             newMapper(cfg.RulePath, rulesFS, logger),
+		ruleFiles:          ruleFiles,
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -187,13 +186,14 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 	return err
 }
 
-// syncRulesToManager maps the rule files to disk, detects any changes and will create/update
-// the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
-// concurrently for the same user.
+// syncRulesToManager stores the rule groups of the user, detects any changes and will create/update
+// the user's Prometheus Rules Manager.
+// It is not safe to call concurrently for the same user.
+// The rule file stores depend on that.
 func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rulespb.RuleGroupList) {
-	// Map the files to disk and return the file names to be passed to the users manager if they
+	// Store the groups and return the file names to be passed to the users manager if they
 	// have been updated
-	update, files, err := r.mapper.MapRules(user, groups.Formatted())
+	update, files, err := r.ruleFiles.mapRules(user, groups)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to map rule files", "user", user, "err", err)
@@ -355,7 +355,7 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 		go mngr.Stop()
 		delete(r.userManagers, userID)
 
-		r.mapper.cleanupUser(userID)
+		r.ruleFiles.cleanupUser(userID)
 		r.lastReloadSuccessful.DeleteLabelValues(userID)
 		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 		r.configUpdatesTotal.DeleteLabelValues(userID)
@@ -419,8 +419,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.notifiersMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user notifiers stopped")
 
-	// cleanup user rules directories
-	r.mapper.cleanup()
+	r.ruleFiles.cleanup()
 }
 
 func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {

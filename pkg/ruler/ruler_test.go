@@ -263,9 +263,9 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	rulesFS := afero.NewMemMapFs()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, rulesFS, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, rulesFS)
+	ruleFileStore := newFSRuleFileStore(cfg.RulePath, afero.NewMemMapFs(), options.logger)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, ruleFileStore)
 	require.NoError(t, err)
 
 	return manager

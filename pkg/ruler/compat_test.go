@@ -563,6 +563,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 				Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 			}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
 			fs := afero.NewMemMapFs()
+			ruleFileStore := newFSRuleFileStore(cfg.RulePath, fs, options.logger)
 			ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
@@ -580,7 +581,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -633,11 +634,12 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 				notifierManager = notifier.NewManager(&notifier.Options{
 					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				fs        = afero.NewMemMapFs()
-				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				queryable = newMockQueryable()
-				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
-				eng       = promql.NewEngine(promql.EngineOpts{
+				fs            = afero.NewMemMapFs()
+				ruleFileStore = newFSRuleFileStore(cfg.RulePath, fs, options.logger)
+				ruleFiles     = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+				queryable     = newMockQueryable()
+				tracker       = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng           = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
 					Timeout:            2 * time.Minute,
@@ -648,7 +650,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager and start it.
@@ -768,7 +770,8 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
 			fs := afero.NewMemMapFs()
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			ruleFileStore := newFSRuleFileStore(cfg.RulePath, fs, options.logger)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
@@ -867,7 +870,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
 	fs := afero.NewMemMapFs()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+	ruleFileStore := newFSRuleFileStore(cfg.RulePath, fs, options.logger)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.
@@ -1217,10 +1221,11 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 				notifierManager = notifier.NewManager(&notifier.Options{
 					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				fs        = afero.NewMemMapFs()
-				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
-				eng       = promql.NewEngine(promql.EngineOpts{
+				fs            = afero.NewMemMapFs()
+				ruleFileStore = newFSRuleFileStore(cfg.RulePath, fs, options.logger)
+				ruleFiles     = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+				tracker       = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng           = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
 					Timeout:            2 * time.Minute,
@@ -1248,7 +1253,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			queryable := &storage.MockQueryable{MockQuerier: querier}
 			queryFunc := rules.EngineQueryFunc(eng, queryable)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
 
 			// Load rules into manager and start
