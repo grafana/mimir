@@ -12,13 +12,16 @@ import (
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -961,6 +964,36 @@ func Test_FSLoader_ParseCache_EvictsRemovedNamespaces(t *testing.T) {
 	loadAll(remainingFiles)
 	require.Len(t, loader.cur, 1)
 	require.Len(t, loader.prev, 1, "the removed namespace's entry must be gone after a second rotation")
+}
+
+func Test_FSLoader_ParseCache_RetryAfterFailedLoad(t *testing.T) {
+	// The rules manager loads the files in order and stops at the first error.
+	// Then Update returns, and the running groups do not change.
+	// On the retry, a cache hit must still return the groups of the files that loaded before the error.
+	setupRuleSets()
+	fs := afero.NewMemMapFs()
+	m := &mapper{Path: "/rules", FS: fs, logger: log.NewNopLogger()}
+	_, files, err := m.MapRules(testUser1, initialRuleSet)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+
+	brokenFile := "/rules/user1/broken"
+	require.NoError(t, afero.WriteFile(fs, brokenFile, []byte("groups:\n  - name: broken\n    rules:\n      - record: broken\n        expr: sum(\n"), 0o777))
+	files = append(files, brokenFile)
+
+	hits, misses := newTestCacheCounters()
+	manager := promRules.NewManager(&promRules.ManagerOptions{GroupLoader: NewFSLoader(fs, true, hits, misses)})
+
+	_, errs := manager.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, files...)
+	require.NotEmpty(t, errs)
+	require.ErrorContains(t, errs[0], brokenFile)
+	require.Equal(t, 0.0, testutil.ToFloat64(hits))
+
+	require.NoError(t, afero.WriteFile(fs, brokenFile, []byte("groups:\n  - name: fixed\n    rules:\n      - record: fixed\n        expr: up\n"), 0o777))
+	groups, errs := manager.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, files...)
+	require.Empty(t, errs)
+	require.Equal(t, 1.0, testutil.ToFloat64(hits), "the unchanged file must be a cache hit")
+	require.Len(t, groups, 3)
 }
 
 func Test_mapper_EncodeCache(t *testing.T) {
