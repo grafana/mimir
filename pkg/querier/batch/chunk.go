@@ -43,9 +43,8 @@ func (i *chunkIterator) reset(c chunk.Chunk, options IteratorOptions) {
 // non-zero start timestamps via its iterator's AtST method. Encodings that
 // cannot are skipped by the decoder to avoid an unnecessary per-sample call.
 func encodingSupportsStartTimestamps(encoding chunk.Encoding) bool {
-	//TODO(carrieedwards): Add histogramST and floatHistogramST encoding types
 	switch encoding {
-	case chunk.PrometheusXor2Chunk:
+	case chunk.PrometheusXor2Chunk, chunk.PrometheusHistogramSTChunk, chunk.PrometheusFloatHistogramSTChunk:
 		return true
 	default:
 		return false
