@@ -4,6 +4,7 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -580,17 +581,27 @@ func (r *snapshotReader) readBytes() ([]byte, error) {
 	return bytes, nil
 }
 
+// optionalBytes has no limit but the format's: the engine's state has a hash for every series of every block, which is
+// more than any other field holds.
 func (r *snapshotReader) optionalBytes() ([]byte, error) {
 	present, err := r.u8()
 	if err != nil || present == 0 {
 		return nil, err
 	}
-	read, err := r.readBytes()
+	n, err := r.count(math.MaxUint32)
 	if err != nil {
 		return nil, err
 	}
-	// Present but empty stays non-nil.
-	return append([]byte{}, read...), nil
+	// Grown as it is read, so a corrupt length runs out of snapshot before it allocates that much.
+	var buf bytes.Buffer
+	if _, err := io.CopyN(&buf, r, int64(n)); err != nil {
+		return nil, err
+	}
+	if buf.Len() == 0 {
+		// Present but empty stays non-nil.
+		return []byte{}, nil
+	}
+	return buf.Bytes(), nil
 }
 
 func (r *snapshotReader) str() (string, error) {
