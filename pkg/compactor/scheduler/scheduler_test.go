@@ -186,8 +186,27 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 	cfg := newTestSchedulerConfig()
 	cfg.DiscoveryPolls = []string{discoveryPollBackfills}
 	cfg.LanePolicy.Policy = lanePolicyBackfill
-	scheduler, _ := newTestScheduler(t, bkt, cfg)
+	scheduler, reg := newTestScheduler(t, bkt, cfg)
 	scheduler.rotator.Maintenance(t.Context(), false, true)
+
+	assertJobCounts := func(msg string, pendingBackfillCompaction, completedBackfillPhasePlan, completedBackfillCompaction int) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_scheduler_jobs_completed_total Total number of jobs successfully completed by workers.
+			# TYPE cortex_compactor_scheduler_jobs_completed_total counter
+			cortex_compactor_scheduler_jobs_completed_total{job_type="backfill_compaction"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="backfill_phase_plan"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} 0
+			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} 0
+			# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
+			# TYPE cortex_compactor_scheduler_pending_jobs gauge
+			cortex_compactor_scheduler_pending_jobs{job_type="backfill_compaction"} %d
+			cortex_compactor_scheduler_pending_jobs{job_type="backfill_phase_plan"} 0
+			cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 0
+			cortex_compactor_scheduler_pending_jobs{job_type="plan"} 0
+		`, completedBackfillCompaction, completedBackfillPhasePlan, pendingBackfillCompaction)),
+			"cortex_compactor_scheduler_jobs_completed_total", "cortex_compactor_scheduler_pending_jobs"), msg)
+	}
 
 	planLease, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
 		WorkerId:     "worker1",
@@ -206,6 +225,7 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+	assertJobCounts("backfill phase plan job completed", 1, 1, 0)
 
 	compactionLease, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
 		WorkerId:     "worker1",
@@ -215,6 +235,14 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 	require.Equal(t, backfillCompactionJobKeyPrefix+plannedID, compactionLease.Key.Id)
 	require.Equal(t, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, compactionLease.Spec.JobType)
 	require.Equal(t, backfillID, compactionLease.Spec.Job.BackfillId)
+
+	_, err = scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{
+		Tenant: compactionLease.Spec.Tenant,
+		Key:    compactionLease.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+	})
+	require.NoError(t, err)
+	assertJobCounts("backfill compaction job completed", 0, 1, 1)
 }
 
 func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
