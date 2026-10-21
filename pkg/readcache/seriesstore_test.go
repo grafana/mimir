@@ -265,3 +265,54 @@ func (c countingFloats) AppendFloats(timeseries []mimirpb.PreallocTimeseries, in
 	*c.ingested += ingested
 	return leftover, ingested, err
 }
+
+// Switching -readcache.engine leaves partition directories the new engine can't read: they go, with their offset files,
+// so the partitions start at the live edge.
+func TestSeriesstore_StartupRemovesTheOtherEnginesDirs(t *testing.T) {
+	const (
+		tenantID = "tenant-1"
+		pid      = int32(3)
+	)
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	seriesstoreCfg := newSeriesstoreTestConfig(t)
+	prometheusCfg := seriesstoreCfg
+	prometheusCfg.Engine = mimir_tsdb.EnginePrometheus
+	prometheusCfg.BlocksStorage.TSDB.Engine = mimir_tsdb.EnginePrometheus
+
+	for name, tc := range map[string]struct{ from, to Config }{
+		"prometheus to seriesstore": {from: prometheusCfg, to: seriesstoreCfg},
+		"seriesstore to prometheus": {from: seriesstoreCfg, to: prometheusCfg},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			tc.from.DataDir, tc.to.DataDir = dataDir, dataDir
+			db, err := openPartitionTSDB(tenantID, pid, 0, dataDir, tc.from.BlocksStorage.TSDB,
+				tc.from.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
+			require.NoError(t, err)
+			appendTestSample(t, db, "up", time.Now().UnixMilli())
+			require.NoError(t, db.Close())
+			r := newFrozenTestReadcache(tc.to, limits)
+			require.NoError(t, ingest.WriteOffsetFile(r.partitionOffsetFilePath(pid), pid, 9, log.NewNopLogger()))
+
+			r.restoreFrozenEpochsOnStartup(time.Now())
+
+			require.NoDirExists(t, db.Dir())
+			require.NoFileExists(t, r.partitionOffsetFilePath(pid))
+			require.Empty(t, r.unmarked)
+		})
+	}
+
+	t.Run("same engine", func(t *testing.T) {
+		cfg := newSeriesstoreTestConfig(t)
+		db := openSeriesstoreTestTSDB(t, cfg, limits, tenantID, pid)
+		require.NoError(t, db.Close())
+		r := newFrozenTestReadcache(cfg, limits)
+		require.NoError(t, ingest.WriteOffsetFile(r.partitionOffsetFilePath(pid), pid, 9, log.NewNopLogger()))
+
+		r.restoreFrozenEpochsOnStartup(time.Now())
+
+		require.DirExists(t, db.Dir())
+		require.FileExists(t, r.partitionOffsetFilePath(pid))
+		require.Len(t, r.unmarked, 1)
+	})
+}

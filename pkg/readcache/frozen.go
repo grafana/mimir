@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -495,6 +496,10 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				continue
 			}
 			dir := filepath.Join(tenantDir, dbEntry.Name())
+			if r.removeIfOtherEngine(dir, dbEntry.Name()) {
+				deleted++
+				continue
+			}
 			data, err := os.ReadFile(filepath.Join(dir, frozenMarkerFilename))
 			if os.IsNotExist(err) {
 				partitionID, epoch, ok := parsePartitionEpochDirName(dbEntry.Name())
@@ -627,6 +632,32 @@ func (r *Readcache) dropIfLost(db *partitionTSDB, what string) bool {
 	}
 	if err := os.RemoveAll(db.Dir()); err != nil {
 		level.Warn(r.logger).Log("msg", "removing a seriesstore engine that restored no snapshot", "user", db.tenantID, "partition", db.partitionID, "dir", db.Dir(), "err", err)
+	}
+	return true
+}
+
+// removeIfOtherEngine deletes a partition directory the other engine wrote, which this one can't read, and the
+// partition's offset file, which is past all of it: after -readcache.engine changes, the partition then starts at the
+// live edge instead of resuming into an empty store.
+func (r *Readcache) removeIfOtherEngine(dir, name string) bool {
+	partitionID, _, ok := parsePartitionEpochDirName(name)
+	if !ok {
+		return false
+	}
+	// Each engine creates its subdirectory when it opens.
+	other := "chunks_head"
+	if r.cfg.Engine != mimir_tsdb.EngineSeriesstore {
+		other = store.StoreDirName
+	}
+	if _, err := os.Stat(filepath.Join(dir, other)); err != nil {
+		return false
+	}
+	level.Warn(r.logger).Log("msg", "readcache: removing a partition dir written by another engine", "dir", dir, "engine", r.cfg.Engine)
+	if err := os.RemoveAll(dir); err != nil {
+		level.Warn(r.logger).Log("msg", "removing a partition dir written by another engine", "dir", dir, "err", err)
+	}
+	if err := os.Remove(r.partitionOffsetFilePath(partitionID)); err != nil && !os.IsNotExist(err) {
+		level.Warn(r.logger).Log("msg", "removing the offset file of a partition written by another engine", "partition", partitionID, "err", err)
 	}
 	return true
 }

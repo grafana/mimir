@@ -129,9 +129,9 @@ func (noopCallback) PreCreation(promlabels.Labels) error                        
 func (noopCallback) PostCreation(promlabels.Labels)                              {}
 func (noopCallback) PostDeletion(map[tsdbchunks.HeadSeriesRef]promlabels.Labels) {}
 
-// storeDirName is where an engine keeps its chunk files, cold blocks and snapshot in its
+// StoreDirName is where an engine keeps its chunk files, cold blocks and snapshot in its
 // directory.
-const storeDirName = "seriesstore"
+const StoreDirName = "seriesstore"
 
 // OpenEngine opens tenantID's engine in dir, restoring the head snapshot of its last Close. Without
 // one, whatever the directory held is dropped: chunk files are only readable through a snapshot.
@@ -162,7 +162,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	retention := Retention{Ms: opts.RetentionMs, Set: opts.RetentionMs > 0}
 	storeDir := ""
 	if dir != "" {
-		storeDir = filepath.Join(dir, storeDirName)
+		storeDir = filepath.Join(dir, StoreDirName)
 	}
 	// Active series are the ingester's; the store's own window only matters to its unused reports.
 	const activeWindowMs = 20 * 60 * 1000

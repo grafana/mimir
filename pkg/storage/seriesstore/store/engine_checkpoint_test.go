@@ -90,7 +90,7 @@ func TestEngineCheckpointKeepsTheFilesItReferences(t *testing.T) {
 	coldFiles := func(t *testing.T, dir string) int {
 		cold := 0
 		for shard := range 2 {
-			files, err := os.ReadDir(coldDir(filepath.Join(dir, storeDirName), shard))
+			files, err := os.ReadDir(coldDir(filepath.Join(dir, StoreDirName), shard))
 			require.NoError(t, err)
 			cold += len(files)
 		}
@@ -124,7 +124,7 @@ func TestEngineCanceledCheckpointKeepsTheLastOne(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.ErrorIs(t, e.Checkpoint(ctx, []byte("second"), 0.5), context.Canceled)
-	_, err := os.Stat(filepath.Join(dir, storeDirName, snapshotFileName+".tmp"))
+	_, err := os.Stat(filepath.Join(dir, StoreDirName, snapshotFileName+".tmp"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	crashed := openCheckpointedEngine(t, dir, 0)
