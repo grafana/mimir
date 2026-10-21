@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.27.2
+go 1.27.3
 
 require (
 	cloud.google.com/go/storage v1.62.3
