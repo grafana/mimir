@@ -56,15 +56,20 @@ type JobTracker struct {
 
 // plannerState is the bookkeeping for one plan job
 type plannerState struct {
+	id           string                  // ID of the plan job
 	lanes        []lane                  // lanes holding only jobs this plan job plans, since the lane policies assign each planned job type its own lane
-	leased       bool                    // used to decide whether to retain completed compaction jobs
 	completeTime time.Time               // time of the last completed plan job. Zero time if planning has never completed or the plan job is currently incomplete (pending or active).
 	completeJobs []*TrackedCompactionJob // tracked in order to reject jobs that may be from a stale planning view.
 }
 
 func (ps *plannerState) stopTrackingCompleteJobs() {
-	ps.leased = false
-	ps.completeJobs = make([]*TrackedCompactionJob, 0)
+	ps.completeJobs = nil
+}
+
+// isPlanJobLeased reports whether the plan job with the given state is leased. Callers must have exclusive access.
+func (jt *JobTracker) isPlanJobLeased(ps *plannerState) bool {
+	e, ok := jt.incompleteJobs[ps.id]
+	return ok && e.Value.(TrackedJob).IsLeased()
 }
 
 // completeJobsWith transforms []*TrackedCompactionJob to []TrackedJob while appending any additional provided values
@@ -77,8 +82,8 @@ func (ps *plannerState) completeJobsWith(additional ...TrackedJob) []TrackedJob 
 	return jobs
 }
 
-// planner returns the state of the plan job with the given ID, or nil if the ID is not a plan job
-func (jt *JobTracker) planner(id string) *plannerState {
+// plannerState returns the state of the plan job with the given ID, or nil if the ID is not a plan job
+func (jt *JobTracker) plannerState(id string) *plannerState {
 	switch id {
 	case planJobId:
 		return &jt.plan
@@ -88,8 +93,8 @@ func (jt *JobTracker) planner(id string) *plannerState {
 	return nil
 }
 
-// compactionPlanner returns the state of the plan job that planned a compaction job
-func (jt *JobTracker) compactionPlanner(j *TrackedCompactionJob) *plannerState {
+// compactionJobToPlannerState returns the state of the plan job that planned a compaction job
+func (jt *JobTracker) compactionJobToPlannerState(j *TrackedCompactionJob) *plannerState {
 	if len(j.value.backfillID) > 0 {
 		return &jt.backfillPhasePlan
 	}
@@ -127,12 +132,12 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		active:                         list.New(),
 		incompleteJobs:                 make(map[string]*list.Element),
 		plan: plannerState{
-			lanes:        plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_COMPACTION),
-			completeJobs: make([]*TrackedCompactionJob, 0),
+			id:    planJobId,
+			lanes: plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_COMPACTION),
 		},
 		backfillPhasePlan: plannerState{
-			lanes:        plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION),
-			completeJobs: make([]*TrackedCompactionJob, 0),
+			id:    backfillPhasePlanJobId,
+			lanes: plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION),
 		},
 	}
 }
@@ -163,7 +168,6 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	if planJob != nil {
 		if planJob.IsLeased() {
 			leased = append(leased, planJob)
-			jt.plan.leased = true
 		} else if planJob.IsComplete() {
 			jt.plan.completeTime = planJob.StatusTime()
 		} else {
@@ -174,7 +178,6 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	if backfillPhasePlanJob != nil {
 		if backfillPhasePlanJob.IsLeased() {
 			leased = append(leased, backfillPhasePlanJob)
-			jt.backfillPhasePlan.leased = true
 		} else if backfillPhasePlanJob.IsComplete() {
 			jt.backfillPhasePlan.completeTime = backfillPhasePlanJob.StatusTime()
 		} else {
@@ -186,7 +189,7 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 		if job.IsLeased() {
 			leased = append(leased, job)
 		} else if job.IsComplete() {
-			ps := jt.compactionPlanner(job)
+			ps := jt.compactionJobToPlannerState(job)
 			ps.completeJobs = append(ps.completeJobs, job)
 		} else {
 			pending = append(pending, job)
@@ -227,23 +230,24 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	jj := j.CopyBase()
 
 	jj.MarkLeased(jt.clock.Now())
-	if bj, ok := jj.(*TrackedBackfillPhasePlanJob); ok {
-		bj.hasOutstandingJobs = jt.hasOutstandingBackfillJobs()
-	}
 	if err := jt.persister.WriteJob(jj); err != nil {
 		return nil, false, err
 	}
 
 	p.Remove(e)
 
-	id := jj.ID()
-	if ps := jt.planner(id); ps != nil {
-		ps.leased = true
-	}
-	jt.incompleteJobs[id] = jt.active.PushBack(jj)
+	jt.incompleteJobs[jj.ID()] = jt.active.PushBack(jj)
 	jt.metrics.queue.Leased(jj)
 
-	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
+	response = jj.ToLeaseResponse(jt.tenant)
+
+	// It's a bit gross to handle one specific type here, but it feels cleaner than passing a func to ToLeaseResponse that is ignored by every other type.
+	if bp := response.Spec.BackfillPhasePlanning; bp != nil {
+		// Note: this is filling in a field in the response. It is therefore not persisted and doesn't have to be.
+		bp.HasOutstandingJobs = jt.hasOutstandingBackfillJobs()
+	}
+
+	return response, p.Len() == 0, nil
 }
 
 // hasOutstandingBackfillJobs reports whether any job planned by the backfill phase plan job is pending or active. Callers must have exclusive access.
@@ -294,20 +298,20 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	}
 
 	cj, isCompaction := j.(*TrackedCompactionJob)
-	if ps := jt.planner(id); ps != nil && ps.leased {
+	if ps := jt.plannerState(id); ps != nil && j.IsLeased() {
 		// A plan job that was leased is being abandoned. Complete is not checked here because plan jobs are completed through OfferCompactionJobs.
 		if err := jt.persister.WriteAndDeleteJobs(nil, ps.completeJobsWith(j)); err != nil {
 			return false, nil, fmt.Errorf("failed deleting jobs: %w", err)
 		}
 		ps.stopTrackingCompleteJobs()
-	} else if isCompaction && complete && jt.compactionPlanner(cj).leased {
+	} else if isCompaction && complete && jt.isPlanJobLeased(jt.compactionJobToPlannerState(cj)) {
 		// A compaction job completed and we should remember it for future conflict resolution since the plan job that planned it is currently leased
 		jj := cj.CopyBase().(*TrackedCompactionJob)
 		jj.MarkComplete(jt.clock.Now())
 		if err := jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, nil); err != nil {
 			return false, nil, fmt.Errorf("failed writing complete job: %w", err)
 		}
-		ps := jt.compactionPlanner(jj)
+		ps := jt.compactionJobToPlannerState(jj)
 		ps.completeJobs = append(ps.completeJobs, jj)
 	} else {
 		// This job is either completed or abandoned and we don't need to track it anymore
@@ -338,8 +342,8 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // If enforceLeaseExpiration is true, active jobs whose leases have exceeded leaseDuration are
 // returned to pending (if within the attempt limit) or dropped.
 //
-// A new plan job is added to pending when the current planning window (determined by planningInterval
-// and compactionWaitPeriod) has not yet been planned.
+// A new plan job or backfill phase plan job is added to pending when its current planning window
+// (determined by planningInterval, and compactionWaitPeriod for plan jobs) has not yet been planned.
 //
 // Maintenance returns the lanes whose pending queues transitioned from empty to non-empty.
 func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) ([]lane, error) {
@@ -355,29 +359,25 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	// Note: a plan job will never be created if there is already an active plan job (even if we're about to expire a lease).
 	// Therefore lease expiration and planning are mutually exclusive.
-	var planJob *TrackedPlanJob
-	var backfillPhasePlanJob *TrackedBackfillPhasePlanJob
+	var newPlanJobs []TrackedJob
 	if plan {
 		discoveredBy := discoverySources(jt.discoveredBy.Load())
-		if discoveredBy&discoveredByBlocks != 0 {
-			planJob = jt.computePlan(planningInterval, compactionWaitPeriod, now)
+		// L1 blocks are expected on even UTC hours and the planning for them is affected by the compaction wait period.
+		// Instead of only accounting for that wait period on even hours, account for it all the time for a better spread.
+		if discoveredBy&discoveredByBlocks != 0 && jt.shouldPlan(&jt.plan, planningInterval, compactionWaitPeriod, now) {
+			newPlanJobs = append(newPlanJobs, NewTrackedPlanJob(now))
 		}
-		if discoveredBy&discoveredByBackfills != 0 {
-			backfillPhasePlanJob = jt.computeBackfillPhasePlan(planningInterval, now)
+		// The compaction wait period isn't needed since backfill blocks are not tied to L1 timing
+		if discoveredBy&discoveredByBackfills != 0 && jt.shouldPlan(&jt.backfillPhasePlan, planningInterval, 0, now) {
+			newPlanJobs = append(newPlanJobs, NewTrackedBackfillPhasePlanJob(now))
 		}
 	}
 
-	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil && backfillPhasePlanJob == nil {
+	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && len(newPlanJobs) == 0 {
 		return nil, nil
 	}
 
-	writeJobs := reviveJobs
-	if planJob != nil {
-		writeJobs = append(writeJobs, planJob)
-	}
-	if backfillPhasePlanJob != nil {
-		writeJobs = append(writeJobs, backfillPhasePlanJob)
-	}
+	writeJobs := append(reviveJobs, newPlanJobs...)
 	if err := jt.persister.WriteAndDeleteJobs(writeJobs, deleteJobs); err != nil {
 		return nil, fmt.Errorf("failed persisting during job tracker maintenance: %w", err)
 	}
@@ -388,7 +388,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		jt.trackFailure(j)
 		id := j.ID()
 		// This only needs to be checked in the revive case due to plan jobs never respecting a maximum number of leases
-		if ps := jt.planner(id); ps != nil {
+		if ps := jt.plannerState(id); ps != nil {
 			ps.stopTrackingCompleteJobs()
 		}
 
@@ -408,22 +408,14 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		}
 	}
 
-	if planJob != nil {
+	for _, j := range newPlanJobs {
 		// Prefer the plan job at the front of the queue to refresh the view of pending jobs
-		if l, wasEmpty := jt.toPendingFront(planJob); wasEmpty {
+		if l, wasEmpty := jt.toPendingFront(j); wasEmpty {
 			becameNonEmpty = append(becameNonEmpty, l)
 		}
-		jt.metrics.queue.Pending(planJob)
+		jt.metrics.queue.Pending(j)
 		// Drop the previous completion time since there is now a pending job that overwrote it
-		jt.plan.completeTime = time.Time{}
-	}
-
-	if backfillPhasePlanJob != nil {
-		if l, wasEmpty := jt.toPendingFront(backfillPhasePlanJob); wasEmpty {
-			becameNonEmpty = append(becameNonEmpty, l)
-		}
-		jt.metrics.queue.Pending(backfillPhasePlanJob)
-		jt.backfillPhasePlan.completeTime = time.Time{}
+		jt.plannerState(j.ID()).completeTime = time.Time{}
 	}
 
 	return becameNonEmpty, nil
@@ -449,7 +441,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 				jj.ClearLease()
 				reviveJobs = append(reviveJobs, jj)
 
-				if ps := jt.planner(jj.ID()); ps != nil {
+				if ps := jt.plannerState(jj.ID()); ps != nil {
 					for _, completeJob := range ps.completeJobs {
 						deleteJobs = append(deleteJobs, completeJob)
 					}
@@ -466,45 +458,20 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 	return reviveJobs, deleteJobs
 }
 
-// computePlan determines if a new plan job should be created for the time window determined by planningInterval.
-// compactionWaitPeriod is the period of time compactors wait before compacting L1 blocks.
+// shouldPlan determines if a new plan job with the given state should be created for the time window determined by planningInterval.
+// waitPeriod offsets the planning windows.
 // This function only computes what needs to change without persisting or modifying in-memory state.
 // A write lock must be held in order to call this function.
-func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
-	if _, ok := jt.incompleteJobs[planJobId]; ok {
+func (jt *JobTracker) shouldPlan(ps *plannerState, planningInterval, waitPeriod time.Duration, now time.Time) bool {
+	if _, ok := jt.incompleteJobs[ps.id]; ok {
 		// There is already a plan job
-		return nil
+		return false
 	}
 
-	// L1 blocks are expected on even UTC hours and the planning for them is affected by the compaction wait period.
-	// Instead of only accounting for that wait period on even hours, account for it all the time for a better spread.
-	nextPlanningWindow := jt.plan.completeTime.UTC().Add(-compactionWaitPeriod).Truncate(planningInterval).Add(planningInterval).Add(compactionWaitPeriod)
+	nextPlanningWindow := ps.completeTime.UTC().Add(-waitPeriod).Truncate(planningInterval).Add(planningInterval).Add(waitPeriod)
 
-	if now.Before(nextPlanningWindow) {
-		// This window has already been planned
-		return nil
-	}
-
-	return NewTrackedPlanJob(now)
-}
-
-// computeBackfillPhasePlan determines if a new backfill phase plan job should be created for the time window determined by planningInterval.
-// This function only computes what needs to change without persisting or modifying in-memory state.
-// A write lock must be held in order to call this function.
-func (jt *JobTracker) computeBackfillPhasePlan(planningInterval time.Duration, now time.Time) *TrackedBackfillPhasePlanJob {
-	if _, ok := jt.incompleteJobs[backfillPhasePlanJobId]; ok {
-		// There is already a backfill phase plan job
-		return nil
-	}
-
-	// Unlike plan jobs, the compaction wait period is not accounted for since backfill blocks are not tied to L1 timing
-	nextPlanningWindow := jt.backfillPhasePlan.completeTime.UTC().Truncate(planningInterval).Add(planningInterval)
-	if now.Before(nextPlanningWindow) {
-		// This window has already been planned
-		return nil
-	}
-
-	return NewTrackedBackfillPhasePlanJob(now)
+	// Plan unless this window has already been planned
+	return !now.Before(nextPlanningWindow)
 }
 
 // RenewLease renews a lease to prevent it from being expired. This is intentionally not persisted. A buffer time is used across restarts instead.
@@ -540,6 +507,8 @@ func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (can
 		return false, nil, nil
 	}
 
+	ps := jt.plannerState(id)
+
 	revive := interrupted || jt.canRetry(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
@@ -550,14 +519,12 @@ func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (can
 			jj.DecrementLeaseCount()
 		}
 
-		if ps := jt.planner(id); ps != nil {
-			err = jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, ps.completeJobsWith())
-			if err != nil {
+		if ps != nil {
+			if err := jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, ps.completeJobsWith()); err != nil {
 				return false, nil, err
 			}
 		} else {
-			err = jt.persister.WriteJob(jj)
-			if err != nil {
+			if err := jt.persister.WriteJob(jj); err != nil {
 				return false, nil, err
 			}
 		}
@@ -568,8 +535,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (can
 			becamePending = &l
 		}
 	} else {
-		err := jt.persister.DeleteJob(j)
-		if err != nil {
+		if err := jt.persister.DeleteJob(j); err != nil {
 			return false, nil, err
 		}
 		jt.metrics.queue.Complete(j)
@@ -580,7 +546,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (can
 		jt.trackFailure(j)
 	}
 
-	if ps := jt.planner(id); ps != nil {
+	if ps != nil {
 		ps.stopTrackingCompleteJobs()
 	}
 
@@ -616,7 +582,7 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 		return 0, false, nil, nil
 	}
 	// Each plan job only replaces and conflicts with the jobs it planned, so planning and backfill phase planning for a tenant don't interfere
-	ps := jt.planner(planID)
+	ps := jt.plannerState(planID)
 
 	conflictMap := make(map[string]struct{})
 	if len(jobs) > 0 { // if there are no jobs being offered then there is nothing to check conflicts against
@@ -625,9 +591,9 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 			addBlocksToConflictMap(conflictMap, j)
 		}
 		for e := jt.active.Front(); e != nil; e = e.Next() {
-			// Have to skip over plan jobs
+			// Skip over non-compaction jobs or compaction jobs planned by a differing plan job
 			j, ok := e.Value.(*TrackedCompactionJob)
-			if ok && jt.compactionPlanner(j) == ps {
+			if ok && jt.compactionJobToPlannerState(j) == ps {
 				addBlocksToConflictMap(conflictMap, j)
 			}
 		}
@@ -635,13 +601,9 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 
 	acceptedJobs := make([]TrackedJob, 0, len(jobs)+1)
 	for _, j := range jobs {
-		e, ok := jt.incompleteJobs[j.ID()]
-		if ok {
-			prevJ := e.Value.(TrackedJob)
-			if prevJ.IsLeased() {
-				// We never replace jobs that are in progress
-				continue
-			}
+		if e, ok := jt.incompleteJobs[j.ID()]; ok && e.Value.(TrackedJob).IsLeased() {
+			// We never replace jobs that are in progress
+			continue
 		}
 
 		if jobConflicts(conflictMap, j) {

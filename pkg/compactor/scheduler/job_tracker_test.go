@@ -242,7 +242,6 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 	}
 
 	type expectedPlanner struct {
-		leased       bool
 		completeTime time.Time
 		completeJobs []string
 	}
@@ -262,9 +261,8 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 			expectedPending:      []string{backfillPhasePlanJobId},
 		},
 		"leased backfill phase plan job goes to active": {
-			backfillPhasePlanJob:      newLeasedBackfillPhasePlan(at(2, 0)),
-			expectedActive:            []string{backfillPhasePlanJobId},
-			expectedBackfillPhasePlan: expectedPlanner{leased: true},
+			backfillPhasePlanJob: newLeasedBackfillPhasePlan(at(2, 0)),
+			expectedActive:       []string{backfillPhasePlanJobId},
 		},
 		"complete backfill phase plan job recovers completion time": {
 			backfillPhasePlanJob:      newCompleteBackfillPhasePlan(at(2, 0)),
@@ -277,7 +275,6 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 		"leased plan job goes to active": {
 			planJob:        newLeasedPlan(at(2, 0)),
 			expectedActive: []string{planJobId},
-			expectedPlan:   expectedPlanner{leased: true},
 		},
 		"complete plan job recovers completion time": {
 			planJob:      newCompletePlan(at(2, 0)),
@@ -344,7 +341,6 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 					completeIDs = append(completeIDs, j.ID())
 				}
 				require.Equal(t, expected.completeJobs, completeIDs)
-				require.Equal(t, expected.leased, ps.leased)
 				require.Equal(t, expected.completeTime, ps.completeTime)
 			}
 			requirePlanner(tc.expectedPlan, &jt.plan)
@@ -441,8 +437,8 @@ func TestJobTracker_OfferCompactionJobs_PlanJobsAreSeparate(t *testing.T) {
 			}
 			require.NotContains(t, jt.incompleteJobs, tc.planID)
 			require.Contains(t, jt.incompleteJobs, tc.otherPlanID)
-			require.Empty(t, jt.planner(tc.planID).completeJobs)
-			require.Len(t, jt.planner(tc.otherPlanID).completeJobs, 1)
+			require.Empty(t, jt.plannerState(tc.planID).completeJobs)
+			require.Len(t, jt.plannerState(tc.otherPlanID).completeJobs, 1)
 		})
 	}
 }
