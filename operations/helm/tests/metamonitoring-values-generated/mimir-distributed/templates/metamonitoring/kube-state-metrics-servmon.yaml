@@ -15,11 +15,15 @@ spec:
     - port: http-metrics
       metricRelabelings:
         - action: keep
-          regex: "(^|.*;)metamonitoring-values-mimir.*"
+          # Retain workload metrics and this release gossip-ring endpoint addresses.
+          regex: "(?:[^;]*;){0,2}metamonitoring-values-mimir[^;]*;.*|;;;kube_endpoint_address;citestns;metamonitoring-values-mimir-gossip-ring"
           sourceLabels:
             - deployment
             - statefulset
             - pod
+            - __name__
+            - namespace
+            - endpoint
           separator: ';'
       relabelings:
         - targetLabel: cluster
