@@ -331,7 +331,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
+	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, planJobId, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, errFailedCompletingJob // this error is used because PlannedJobs is the completion of a plan job
