@@ -31,7 +31,10 @@ jobs:
     permissions:
       # create-github-app-token gets the app credentials from Vault via OIDC.
       id-token: write
-      # For reacting to and replying to the comment (as github-actions[bot], via the default token).
+      # For reacting to the comment (as github-actions[bot], via the default token). Reactions need this,
+      # not pull-requests. Safe here, as this job checks out and runs nothing from the PR or the comment.
+      issues: write
+      # For replying to the comment.
       pull-requests: write
     env:
       GH_REPO: ${{ github.repository }}
@@ -68,7 +71,8 @@ jobs:
             if [ "$user" = "$COMMENTER" ]; then is_allowed=true; fi
           done
           if [ "$is_allowed" != true ]; then
-            refuse "Not run: only $(printf '@%s ' "${allowed[@]}")can ask for failing upstream PromQL test cases to be disabled."
+            # Without naming (and so notifying) the team members each time.
+            refuse "Not run: only the MQE team can ask for failing upstream PromQL test cases to be disabled."
           fi
 
           # The same checks as the commit workflow does, so this only ever acts on a real vendoring PR.
