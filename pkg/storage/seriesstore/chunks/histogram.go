@@ -211,11 +211,13 @@ func (a *HistogramAppender) append(prev chunkenc.Appender, h *mimirpb.Histogram,
 	)
 	// Copied: chunkenc widens the layout of the histogram it's given in place.
 	if a.float {
-		model := mimirpb.FromFloatHistogramProtoToFloatHistogram(h).Copy()
+		view := mimirpb.FromFloatHistogramProtoToFloatHistogramValue(h)
+		model := view.Copy()
 		newChunk, recoded, app, err = a.app.AppendFloatHistogram(prev, 0, h.Timestamp, model, appendOnly)
 		last = mimirpb.FromFloatHistogramToHistogramProto(h.Timestamp, model)
 	} else {
-		model := mimirpb.FromHistogramProtoToHistogram(h).Copy()
+		view := mimirpb.FromHistogramProtoToHistogramValue(h)
+		model := view.Copy()
 		newChunk, recoded, app, err = a.app.AppendHistogram(prev, 0, h.Timestamp, model, appendOnly)
 		last = mimirpb.FromHistogramToHistogramProto(h.Timestamp, model)
 	}
