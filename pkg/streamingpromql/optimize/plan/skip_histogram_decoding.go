@@ -41,48 +41,94 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		return
 	}
 
-	// If we see a subquery, don't skip buckets. We need the buckets for correct counter reset detection.
-	if _, ok := node.(*core.Subquery); ok {
-		skipHistogramBuckets = false
-	}
-
-	// Don't skip buckets for range vector splitting either, buckets needed for counter reset detection at the boundary
-	// between splits.
-	if _, ok := node.(*rangevectorsplitting.SplitFunctionCall); ok {
-		skipHistogramBuckets = false
-	}
-
-	if f, ok := node.(*core.FunctionCall); ok {
-		switch f.Function {
-		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
-			skipHistogramBuckets = true
-		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE, functions.FUNCTION_HISTOGRAM_QUANTILES, functions.FUNCTION_HISTOGRAM_STDDEV, functions.FUNCTION_HISTOGRAM_STDVAR:
-			skipHistogramBuckets = false
-		case functions.FUNCTION_CHANGES:
-			// Detecting a change compares whole histograms, including their buckets.
-			skipHistogramBuckets = false
-		default:
-			// Nothing to do.
-		}
-	}
-
-	// count_values uses the string representation of the whole histogram, including its buckets, as the value label.
-	if a, ok := node.(*core.AggregateExpression); ok && a.Op == core.AGGREGATION_COUNT_VALUES {
-		skipHistogramBuckets = false
-	}
-
-	if b, ok := node.(*core.BinaryExpression); ok {
-		switch b.Op {
-		case core.BINARY_TRIM_UPPER, core.BINARY_TRIM_LOWER:
-			// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
-			skipHistogramBuckets = false
-		case core.BINARY_EQLC, core.BINARY_NEQ:
-			// Comparing histograms for (in)equality takes their buckets into account.
-			skipHistogramBuckets = false
-		}
-	}
+	skipHistogramBuckets = canSkipHistogramBucketsBelow(node, skipHistogramBuckets)
 
 	for child := range planning.ChildrenIter(node) {
 		s.applyToNode(child, skipHistogramBuckets)
+	}
+}
+
+// canSkipHistogramBucketsBelow reports whether the selectors below node only need histogram statistics.
+// skipHistogramBuckets is whether node itself only needs histogram statistics.
+//
+// Only nodes known not to look at buckets may appear between a selector and a histogram statistics function.
+// Any other node needs the buckets by default, so that a new function or operator misses out on this
+// optimization rather than silently returning wrong results.
+func canSkipHistogramBucketsBelow(node planning.Node, skipHistogramBuckets bool) bool {
+	switch n := node.(type) {
+	case *core.Subquery:
+		// We need the buckets for correct counter reset detection.
+		return false
+
+	case *rangevectorsplitting.SplitFunctionCall:
+		// We need the buckets for counter reset detection at the boundary between splits.
+		return false
+
+	case *core.FunctionCall:
+		switch n.Function {
+		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
+			// These functions only need the count and sum of a histogram, and return floats.
+			// Only floats flow above them, so it does not matter what is above them.
+			return true
+		}
+
+		return skipHistogramBuckets && isHistogramStatsSafeFunction(n.Function)
+
+	case *core.AggregateExpression:
+		switch n.Op {
+		case core.AGGREGATION_SUM, core.AGGREGATION_AVG, core.AGGREGATION_COUNT, core.AGGREGATION_GROUP, core.AGGREGATION_LIMITK, core.AGGREGATION_LIMIT_RATIO:
+			return skipHistogramBuckets
+		default:
+			// Notably, count_values uses the string representation of the whole histogram, including its buckets,
+			// and the others ignore histograms.
+			return false
+		}
+
+	case *core.BinaryExpression:
+		switch n.Op {
+		case core.BINARY_MUL, core.BINARY_DIV, core.BINARY_LAND, core.BINARY_LOR, core.BINARY_LUNLESS:
+			return skipHistogramBuckets
+		case core.BINARY_ADD, core.BINARY_SUB:
+			// Prometheus' engine needs the buckets here, because it drops the result when the counter reset hints
+			// conflict, and the hints depend on whether the buckets are decoded. Our binary operations ignore
+			// conflicting counter reset hints, so they do not need the buckets.
+			return skipHistogramBuckets
+		default:
+			// Notably, == and != compare the buckets, trimming changes them, and the others drop histograms.
+			return false
+		}
+
+	case *core.DeduplicateAndMerge, *core.DropName, *core.EvaluationRoot, *core.StepInvariantExpression, *core.UnaryExpression:
+		return skipHistogramBuckets
+
+	default:
+		return false
+	}
+}
+
+// isHistogramStatsSafeFunction reports whether f may appear between a selector and a histogram statistics function
+// without requiring histogram buckets.
+// These functions either pass histograms through, combine them using only their count and sum, or only look at
+// timestamps and labels. Functions that ignore histograms are not listed, as below a histogram statistics function
+// they always return an empty result.
+func isHistogramStatsSafeFunction(f functions.Function) bool {
+	switch f {
+	case functions.FUNCTION_RATE, functions.FUNCTION_INCREASE, functions.FUNCTION_IRATE, functions.FUNCTION_DELTA, functions.FUNCTION_IDELTA:
+		// Counter reset detection, where needed, happens in HistogramStatsIterator, which still sees the buckets.
+		return true
+	case functions.FUNCTION_SUM_OVER_TIME, functions.FUNCTION_AVG_OVER_TIME, functions.FUNCTION_FIRST_OVER_TIME, functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_COUNT_OVER_TIME, functions.FUNCTION_PRESENT_OVER_TIME, functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME, functions.FUNCTION_TS_OF_LAST_OVER_TIME:
+		return true
+	case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_SORT_BY_LABEL, functions.FUNCTION_SORT_BY_LABEL_DESC:
+		return true
+	case functions.FUNCTION_INFO:
+		// info only adds labels from the info series, and passes the sample values through unchanged.
+		return true
+	case functions.FUNCTION_SHARDING_CONCAT, functions.FUNCTION_SHARDING_AVG:
+		// Query sharding inserts these functions, which pass their input through unchanged.
+		return true
+	default:
+		return false
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Registers the functions that query sharding inserts.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -390,6 +391,92 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 						- BinaryExpression: LHS </ RHS
 							- LHS: VectorSelector: {__name__="some_metric"}
 							- RHS: NumberLiteral: 10
+			`,
+		},
+		"vector selectors eligible for skipping decoding with equality comparison above histogram_count": {
+			expr: `histogram_count(some_metric) == histogram_count(some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS == RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_count(...)
+							- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_count(...)
+							- VectorSelector: {__name__="some_other_metric"}, skip histogram buckets
+			`,
+		},
+		"matrix selector not eligible for skipping decoding due to changes": {
+			expr: `histogram_count(some_metric / on() changes(some_other_metric[5m]))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- BinaryExpression: LHS / on () RHS
+							- LHS: VectorSelector: {__name__="some_metric"}, skip histogram buckets
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: changes(...)
+									- MatrixSelector: {__name__="some_other_metric"}[5m0s]
+			`,
+		},
+		"matrix selector not eligible for skipping decoding due to resets": {
+			expr: `histogram_count(some_metric / on() resets(some_other_metric[5m]))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- BinaryExpression: LHS / on () RHS
+							- LHS: VectorSelector: {__name__="some_metric"}, skip histogram buckets
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: resets(...)
+									- MatrixSelector: {__name__="some_other_metric"}[5m0s]
+			`,
+		},
+		"vector selector not eligible for skipping decoding due to count_values": {
+			expr: `histogram_count(count_values("value", some_metric))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- AggregateExpression: count_values
+							- expression: VectorSelector: {__name__="some_metric"}
+							- parameter: StringLiteral: "value"
+			`,
+		},
+		"vector selector eligible for skipping decoding inside info": {
+			expr: `histogram_count(info(some_metric, {env="prod"}))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- FunctionCall: info(...)
+							- param 0: VectorSelector: {__name__="some_metric"}, skip histogram buckets
+							- param 1: DataLabelSelector: {env="prod"}
+			`,
+		},
+		"vector selectors eligible for skipping decoding in sharded avg": {
+			expr: `histogram_count(__sharded_avg__(sum(__sharded_concat__(sum(some_metric), sum(some_metric))) / sum(__sharded_concat__(count(some_metric), count(some_metric)))))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- FunctionCall: __sharded_avg__(...)
+							- BinaryExpression: LHS / RHS
+								- LHS: AggregateExpression: sum
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: AggregateExpression: sum
+											- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+										- param 1: AggregateExpression: sum
+											- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+								- RHS: AggregateExpression: sum
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: AggregateExpression: count
+											- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+										- param 1: AggregateExpression: count
+											- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+			`,
+		},
+		"vector selector eligible for skipping decoding inside evaluation root": {
+			expr: `histogram_count(__vector_evaluation_root__(some_metric))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- EvaluationRoot
+							- VectorSelector: {__name__="some_metric"}, skip histogram buckets
 			`,
 		},
 	}
