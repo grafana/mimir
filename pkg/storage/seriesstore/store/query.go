@@ -615,7 +615,9 @@ func (h headView) labelWindow(start, end int64) labelWindow {
 func (h headView) engineLabelWindow(w labelWindow, start, end int64) labelWindow {
 	w.head = h.minTime != math.MaxInt64 && end >= h.minTime && start <= h.maxTime
 	for _, block := range h.blocks {
-		if block.overlaps(start, end) {
+		// Prometheus's head still holds the series the engine evicted for being idle, and its index has them whatever
+		// the range.
+		if block.overlaps(start, end) || w.head && block.idleEvicted && block.maxTime > h.headMin {
 			w.blocks = append(w.blocks, block)
 		}
 	}

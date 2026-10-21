@@ -979,6 +979,11 @@ func (ix *engineIndex) forEachWith(name string, visit func(entry *seriesEntry, v
 // Prometheus's head still holds, as it only collects a series once a head compaction leaves it without samples since the
 // head's min valid time: a shard at a time, with the shard read-locked, as what visit gets is in the shard's blocks.
 func (ix *engineIndex) forEachIdleEvicted(compiled []compiledMatcher, visit func(series *coldSeries)) {
+	ix.forEachIdleEvictedIn(compiled, func(series *coldSeries, _ *tenant, _ uint64) { visit(series) })
+}
+
+// forEachIdleEvictedIn is forEachIdleEvicted, also giving visit the tenant of the series' shard and its labels' hash.
+func (ix *engineIndex) forEachIdleEvictedIn(compiled []compiledMatcher, visit func(series *coldSeries, t *tenant, hash uint64)) {
 	home, t := ix.e.home()
 	if t == nil {
 		return
@@ -997,12 +1002,12 @@ func (ix *engineIndex) forEachIdleEvicted(compiled []compiledMatcher, visit func
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if _, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t, ok := shard.tenants[ix.e.tenantID]; ok {
 			shard.cold.matchingIndexed(ix.e.tenantID, compiled, headMin, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
 				hash := series.block.labelsHash(table, index)
 				for i := range idle {
 					if idle[i].holds(hash) {
-						visit(series)
+						visit(series, t, hash)
 						return
 					}
 				}
@@ -1386,6 +1391,24 @@ func (ix *engineIndex) LabelValuesCounts(ctx context.Context, names []string, ma
 			}
 		}
 	})
+	if cutoffMs == math.MinInt64 {
+		// Prometheus's head still counts the series the engine evicted for being idle, once: those that took samples
+		// again are in memory too.
+		ix.forEachIdleEvictedIn(compiled, func(series *coldSeries, t *tenant, hash uint64) {
+			if t.series.hasHash(series.Get(metricNameLabel), hash) {
+				return
+			}
+			for _, w := range wanted {
+				if value, ok := series.lookup(labels.Name(w.id)); ok {
+					if _, seen := w.counts[value]; !seen {
+						// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
+						value = strings.Clone(value)
+					}
+					w.counts[value]++
+				}
+			}
+		})
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

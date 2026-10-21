@@ -183,6 +183,15 @@ func postingKey(value string) uint32 {
 	return uint32(labels.ValueHash(value))
 }
 
+// hasHash reports whether a series of the metric name has the label hash.
+func (b *seriesByName) hasHash(name string, hash uint64) bool {
+	groupID, ok := b.names[name]
+	if !ok {
+		return false
+	}
+	return b.groups[groupID].lookup(hash, func(entry *seriesEntry) bool { return entry.hash == hash })
+}
+
 // getOrInsert finds the series with labels pairs, sorted with hash hash, or adds it with
 // newLabels. The entry stays valid until the next insertion into its group.
 func (b *seriesByName) getOrInsert(name string, hash uint64, pairs [][2]string, newLabels func() labels.Labels) (*seriesEntry, bool) {

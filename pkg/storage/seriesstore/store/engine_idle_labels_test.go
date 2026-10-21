@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -12,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The head-only label lookups, which Mimir's LabelNamesAndValues makes, see the series the engine evicted for being idle
-// as Prometheus's head does: until a head compaction leaves them without samples, and across a restart.
+// The head-only label lookups, which Mimir's LabelNamesAndValues makes, those of a range of the head and the in-memory
+// label values cardinality see the series the engine evicted for being idle as Prometheus's head does: until a head
+// compaction leaves them without samples, and across a restart.
 func TestHeadLabelLookupsSeeIdleEvictedSeriesLikePrometheus(t *testing.T) {
 	ctx := context.Background()
 	const minute = int64(60_000)
@@ -55,12 +57,51 @@ func TestHeadLabelLookupsSeeIdleEvictedSeriesLikePrometheus(t *testing.T) {
 		}
 		return out
 	}
+	// The lookups of a range of the head's newest samples, which Mimir's LabelNames and LabelValues make: Prometheus's
+	// head index answers them with all of its series, whichever block range the range is in.
+	rangeStart := base + 55*minute
+	ranged := func(head headUnderTest) map[string][]string {
+		querier, err := head.Querier(rangeStart, rangeStart+5*minute)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, querier.Close()) }()
+		out := map[string][]string{}
+		for _, matchers := range [][]*promlabels.Matcher{nil, {promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric")}} {
+			names, _, err := querier.LabelNames(ctx, nil, matchers...)
+			require.NoError(t, err)
+			out[fmt.Sprint("names ", matchers)] = names
+			values, _, err := querier.LabelValues(ctx, "pod", nil, matchers...)
+			require.NoError(t, err)
+			out[fmt.Sprint("pod values ", matchers)] = values
+		}
+		return out
+	}
+	// The counts of the in-memory label values cardinality, which Prometheus's head index has the postings of.
+	counts := func(index tsdb.IndexReader) map[string]uint64 {
+		values, err := index.LabelValues(ctx, "pod", nil)
+		require.NoError(t, err)
+		out := map[string]uint64{}
+		for _, value := range values {
+			postings, err := index.Postings(ctx, "pod", value)
+			require.NoError(t, err)
+			for postings.Next() {
+				out[value]++
+			}
+			require.NoError(t, postings.Err())
+		}
+		return out
+	}
 	compare := func(msg string) {
 		engineIndex, err := engine.Index()
 		require.NoError(t, err)
 		referenceIndex, err := reference.Index()
 		require.NoError(t, err)
 		require.Equal(t, lookups(referenceIndex), lookups(engineIndex), msg)
+		require.Equal(t, ranged(reference), ranged(engine), msg)
+		engineCounts, err := engineIndex.(interface {
+			LabelValuesCounts(context.Context, []string, []*promlabels.Matcher, int64) (map[string]map[string]uint64, error)
+		}).LabelValuesCounts(ctx, []string{"pod"}, nil, math.MinInt64)
+		require.NoError(t, err)
+		require.Equal(t, counts(referenceIndex), engineCounts["pod"], msg)
 		require.NoError(t, referenceIndex.Close())
 	}
 	compare("evicted, but still in Prometheus's head")
@@ -71,12 +112,20 @@ func TestHeadLabelLookupsSeeIdleEvictedSeriesLikePrometheus(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Close()) })
 	compare("after a restart")
 
+	// A sample in the next block range, which the head spans too.
+	appendBoth(promlabels.FromStrings("__name__", "metric", "pod", "recent"), base+125*minute)
+	require.NoError(t, engine.Compact(ctx))
+	require.NoError(t, reference.Compact(ctx))
+	rangeStart = base + 121*minute
+	compare("evicted, but still in Prometheus's head, and a range of the next block")
+
 	// Samples hours later: the head compactions leave the stopped pods without samples, and Prometheus collects them.
-	for at := int64(1); at <= 5; at++ {
+	for at := int64(3); at <= 7; at++ {
 		appendBoth(promlabels.FromStrings("__name__", "metric", "pod", "late"), base+at*60*minute)
 		require.NoError(t, engine.Compact(ctx))
 		require.NoError(t, reference.Compact(ctx))
 	}
+	rangeStart = base + 55*minute
 	compare("after the head compactions")
 }
 
