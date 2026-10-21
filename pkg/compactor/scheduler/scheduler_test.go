@@ -217,6 +217,46 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 	require.Equal(t, backfillID, compactionLease.Spec.Job.BackfillId)
 }
 
+func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
+	const compactionKey = "0@17241709254077376921-merge--1761004800000-1761012000000"
+
+	scheduler, _ := newTestScheduler(t, objstore.NewInMemBucket(), newTestSchedulerConfig())
+	updatePlanJob := func(key string) error {
+		_, err := scheduler.UpdatePlanJob(t.Context(), &compactorschedulerpb.UpdatePlanJobRequest{
+			Tenant: "tenant1",
+			Key:    &compactorschedulerpb.JobKey{Id: key},
+			Update: compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS,
+		})
+		return err
+	}
+	updateCompactionJob := func(key string) error {
+		_, err := scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{
+			Tenant: "tenant1",
+			Key:    &compactorschedulerpb.JobKey{Id: key},
+			Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		})
+		return err
+	}
+
+	tests := map[string]struct {
+		update func(key string) error
+		key    string
+	}{
+		"plan job update with a compaction key":                  {update: updatePlanJob, key: compactionKey},
+		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobKeyPrefix + compactionKey},
+		"compaction job update with the plan job key":            {update: updateCompactionJob, key: planJobId},
+		"compaction job update with the backfill phase plan key": {update: updateCompactionJob, key: backfillPhasePlanJobId},
+		"compaction job update with an unknown typed key":        {update: updateCompactionJob, key: typedJobKeyPrefix + "z" + compactionKey},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tc.update(tc.key)
+			require.Equal(t, codes.InvalidArgument, status.Code(err), err)
+		})
+	}
+}
+
 func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
