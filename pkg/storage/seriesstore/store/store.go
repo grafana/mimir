@@ -99,6 +99,8 @@ type tenant struct {
 	// The blocks an engine's compactions would have written, oldest first; replaced, never
 	// changed, so lookups can keep reading a copy of the slice.
 	blocks []emulatedBlock
+	// The engine's out-of-order compactions retention still keeps the chunks of, oldest first.
+	oooCompactions []outOfOrderCompaction
 }
 
 func newTenant() *tenant {
@@ -238,8 +240,8 @@ type Store struct {
 	freezePending atomic.Bool
 	// Series whose oldest sample a head tick looked up, for tests.
 	oldestScans atomic.Uint64
-	// Retention's last cutoff: cold blocks keep references to chunks it removed.
-	prunedBefore atomic.Int64
+	// What retention last kept: cold blocks keep references to chunks it removed.
+	retained atomic.Pointer[retained]
 	// Whether the last head tick compacted, so this one checks for an early compaction with counts
 	// taken after it, like Mimir's check right after its regular compaction.
 	compactedLastTick atomic.Bool
@@ -299,7 +301,7 @@ func fromShards(shards []*shardState, threads int, activeWindowMs int64, retenti
 		flushSeries:                150,
 		pusherShards:               DefaultPusherShards(),
 	}
-	s.prunedBefore.Store(math.MinInt64)
+	s.retained.Store(retainedEverything)
 	return s
 }
 
@@ -1164,8 +1166,8 @@ func (s *Store) PruneExpired() error {
 
 func (s *Store) pruneBefore(cutoff int64) error {
 	for {
-		current := s.prunedBefore.Load()
-		if cutoff <= current || s.prunedBefore.CompareAndSwap(current, cutoff) {
+		current := s.retained.Load()
+		if cutoff <= current.cutoff || s.retained.CompareAndSwap(current, &retained{cutoff: cutoff}) {
 			break
 		}
 	}
@@ -1194,6 +1196,19 @@ func (s *Store) pruneBefore(cutoff int64) error {
 }
 
 // Like head truncation, retention drops whole chunks, so a chunk that straddles the cutoff stays.
+// pruneRetained is pruneSeries for an engine's series in store shard shard: what kept keeps of its chunks stay, and
+// its out-of-order head, which retention leaves alone, like Prometheus's.
+func pruneRetained(series *Series, kept *retained, shard int) bool {
+	series.chunks.retain(func(chunk *ChunkMeta) bool { return kept.keeps(*chunk, shard) })
+	if series.floatHead != nil && series.floatHead.lastTimestamp() < kept.cutoff {
+		series.floatHead = nil
+	}
+	if series.histogram() != nil && series.histogram().Last().Timestamp < kept.cutoff {
+		series.setHistogram(nil)
+	}
+	return series.hasSamples()
+}
+
 func pruneSeries(series *Series, cutoff int64) bool {
 	series.chunks.retain(func(chunk *ChunkMeta) bool { return chunk.MaxTime >= cutoff })
 	if series.floatHead != nil && series.floatHead.lastTimestamp() < cutoff {

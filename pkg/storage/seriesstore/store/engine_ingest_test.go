@@ -597,7 +597,7 @@ func TestEngineCostAttribution(t *testing.T) {
 	engine.SetCostAttribution(last)
 	engine.ActiveSeries(150)
 	require.Len(t, last.counted, 2)
-	require.NoError(t, engine.prune(1_000_000))
+	require.NoError(t, engine.pruneBefore(1_000_000))
 	require.Empty(t, last.counted)
 }
 

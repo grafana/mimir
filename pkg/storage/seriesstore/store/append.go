@@ -525,6 +525,9 @@ func writeChunk(series *Series, disk *chunks.DiskMapper, encoding int32, data []
 	if err != nil {
 		return err
 	}
+	if outOfOrder {
+		disk.NoteOutOfOrder(ref)
+	}
 	series.pushChunk(ChunkMeta{Ref: ref, MinTime: minTime, MaxTime: maxTime, Len: uint32(len(data)), Encoding: uint8(encoding), OutOfOrder: outOfOrder})
 	return nil
 }

@@ -147,8 +147,8 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool
 }
 
 // expiredBefore is the time before which data goes: the end of the newest in-order block written
-// before deadline, or math.MinInt64 when there's none. Out-of-order blocks go with the in-order
-// data they overlap, which Mimir keeps until they expire themselves.
+// before deadline, or math.MinInt64 when there's none. Out-of-order blocks expire on their own: one
+// of samples older than the in-order data still goes only once it was written before deadline.
 func expiredBefore(blocks []emulatedBlock, deadline int64) int64 {
 	cutoff := int64(math.MinInt64)
 	for _, block := range blocks {
@@ -159,12 +159,12 @@ func expiredBefore(blocks []emulatedBlock, deadline int64) int64 {
 	return cutoff
 }
 
-// pruneBlocks drops the blocks whose data is all older than cutoff, into a new slice: lookups may
-// still read the old one.
-func pruneBlocks(blocks []emulatedBlock, cutoff int64) []emulatedBlock {
+// pruneBlocks drops the blocks whose data is all older than cutoff, but the out-of-order ones written since deadline,
+// into a new slice: lookups may still read the old one.
+func pruneBlocks(blocks []emulatedBlock, cutoff, deadline int64) []emulatedBlock {
 	var kept []emulatedBlock
 	for _, block := range blocks {
-		if block.maxTime > cutoff {
+		if block.maxTime > cutoff || block.outOfOrder && block.createdMs >= deadline {
 			kept = append(kept, block)
 		}
 	}
@@ -212,13 +212,16 @@ func (e *Engine) oooIn(shard int, series *Series, start, end int64) bool {
 // out-of-order head.
 const (
 	engineStateFileName = "engine-state"
-	engineStateMagic    = "SSENGINE2"
-	// Without the blocks' creation times, which a restore then sets to its own time.
+	engineStateMagic    = "SSENGINE3"
+	// Without the out-of-order compactions, which a restore then has keep every out-of-order chunk until the
+	// out-of-order blocks expire.
+	engineStateMagicV2 = "SSENGINE2"
+	// Without the blocks' creation times either, which a restore then sets to its own time.
 	engineStateMagicV1 = "SSENGINE1"
 )
 
-// encodeState is the out-of-order head's watermarks and bounds and the blocks, which the head snapshot keeps for the
-// next Open. The compaction lock keeps them as they are.
+// encodeState is the out-of-order head's watermarks and bounds, the blocks and the out-of-order compactions, which
+// the head snapshot keeps for the next Open. The compaction lock keeps them as they are.
 func (e *Engine) encodeState() []byte {
 	home, t := e.home()
 	home.RLock()
@@ -246,6 +249,14 @@ func (e *Engine) encodeState() []byte {
 		}
 		buf = binary.AppendVarint(buf, block.createdMs)
 	}
+	buf = binary.AppendUvarint(buf, uint64(len(t.oooCompactions)))
+	for _, compaction := range t.oooCompactions {
+		buf = binary.AppendVarint(buf, compaction.createdMs)
+		buf = binary.AppendUvarint(buf, uint64(len(compaction.watermarks)))
+		for _, watermark := range compaction.watermarks {
+			buf = binary.AppendUvarint(buf, watermark)
+		}
+	}
 	home.RUnlock()
 	return binary.LittleEndian.AppendUint32(buf, crc32.ChecksumIEEE(buf))
 }
@@ -269,7 +280,8 @@ func takeState(dir string) ([]byte, error) {
 
 // restoreState applies a state takeState read; the head was restored with it.
 func (e *Engine) restoreState(buf []byte) error {
-	withCreation := bytes.HasPrefix(buf, []byte(engineStateMagic))
+	withCompactions := bytes.HasPrefix(buf, []byte(engineStateMagic))
+	withCreation := withCompactions || bytes.HasPrefix(buf, []byte(engineStateMagicV2))
 	if len(buf) < len(engineStateMagic)+4 || !withCreation && !bytes.HasPrefix(buf, []byte(engineStateMagicV1)) {
 		return errors.New("engine state: bad magic")
 	}
@@ -343,6 +355,40 @@ func (e *Engine) restoreState(buf []byte) error {
 		}
 		blocks = append(blocks, block)
 	}
+	var compactions []outOfOrderCompaction
+	if withCompactions {
+		if count, err = binary.ReadUvarint(r); err != nil {
+			return err
+		}
+		for range count {
+			var compaction outOfOrderCompaction
+			if compaction.createdMs, err = binary.ReadVarint(r); err != nil {
+				return err
+			}
+			shards, err := binary.ReadUvarint(r)
+			if err != nil {
+				return err
+			}
+			if shards != uint64(len(watermarks)) {
+				return fmt.Errorf("engine state: a compaction of %d shards, not %d", shards, len(watermarks))
+			}
+			compaction.watermarks = make([]uint64, shards)
+			for i := range compaction.watermarks {
+				if compaction.watermarks[i], err = binary.ReadUvarint(r); err != nil {
+					return err
+				}
+			}
+			compactions = append(compactions, compaction)
+		}
+	} else {
+		// Every out-of-order chunk is kept until the newest out-of-order block expires, as a compaction from no
+		// watermarks then.
+		for _, block := range blocks {
+			if block.outOfOrder && (compactions == nil || block.createdMs > compactions[0].createdMs) {
+				compactions = []outOfOrderCompaction{{createdMs: block.createdMs, watermarks: make([]uint64, len(watermarks))}}
+			}
+		}
+	}
 	if enabled == 1 {
 		e.oooWasEnabled.Store(true)
 	}
@@ -351,6 +397,7 @@ func (e *Engine) restoreState(buf []byte) error {
 	home.Lock()
 	defer home.Unlock()
 	t.blocks = blocks
+	t.oooCompactions = compactions
 	t.minOOOTime, t.maxOOOTime = minOOOTime, maxOOOTime
 	return nil
 }
@@ -392,6 +439,9 @@ func splitChunks(series *Series, disk *chunks.DiskMapper, cuts func(meta ChunkMe
 				ref, err := disk.Write(chunk.Data, chunk.MaxTime)
 				if err != nil {
 					return err
+				}
+				if meta.OutOfOrder {
+					disk.NoteOutOfOrder(ref)
 				}
 				out = append(out, ChunkMeta{Ref: ref, MinTime: chunk.MinTime, MaxTime: chunk.MaxTime, Len: uint32(len(chunk.Data)), Encoding: uint8(chunk.Encoding), OutOfOrder: meta.OutOfOrder})
 			}

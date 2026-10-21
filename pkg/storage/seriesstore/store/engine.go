@@ -283,10 +283,11 @@ func (e *Engine) adoptRestored() error {
 			e.callback.PostCreation(lset)
 		}
 	}
-	// The out-of-order head holds what the restored series have out of order.
+	// The out-of-order head holds what the restored series have out of order, and the chunk files the out-of-order
+	// chunks of the series and cold blocks, which the snapshot doesn't record.
 	minOOOTime, maxOOOTime := int64(math.MaxInt64), int64(math.MinInt64)
 	for _, shard := range e.store.shards {
-		shard.RLock()
+		shard.Lock()
 		if t, ok := shard.tenants[e.tenantID]; ok {
 			t.series.forEach(func(entry *seriesEntry) {
 				series := &entry.series
@@ -294,6 +295,7 @@ func (e *Engine) adoptRestored() error {
 				for chunk, more := it.next(); more; chunk, more = it.next() {
 					if chunk.OutOfOrder {
 						minOOOTime, maxOOOTime = min(minOOOTime, chunk.MinTime), max(maxOOOTime, chunk.MaxTime)
+						shard.disk.NoteOutOfOrder(uint64(chunk.Ref))
 					}
 				}
 				if n := len(series.ooo()); n > 0 {
@@ -301,7 +303,10 @@ func (e *Engine) adoptRestored() error {
 				}
 			})
 		}
-		shard.RUnlock()
+		for _, block := range shard.cold.blocks {
+			block.forEachOutOfOrder(shard.disk.NoteOutOfOrder)
+		}
+		shard.Unlock()
 	}
 	if minOOOTime <= maxOOOTime {
 		e.observeOOO(minOOOTime, maxOOOTime)
@@ -570,12 +575,23 @@ func (e *Engine) Compact(context.Context) error {
 	}
 	e.mergeColdBlocks()
 	if e.opts.RetentionMs > 0 {
+		deadline := satSub(nowMs(), e.opts.RetentionMs)
 		home, t := e.home()
 		home.RLock()
-		cutoff := expiredBefore(t.blocks, satSub(nowMs(), e.opts.RetentionMs))
+		cutoff := expiredBefore(t.blocks, deadline)
+		expired := cutoff > math.MinInt64
+		// The blocks the last cutoff came from are gone: data older than it stays gone.
+		cutoff = max(cutoff, e.store.retained.Load().cutoff)
+		for _, compaction := range t.oooCompactions {
+			expired = expired || compaction.createdMs < deadline
+		}
+		for _, block := range t.blocks {
+			expired = expired || block.outOfOrder && block.createdMs < deadline
+		}
+		kept := &retained{cutoff: cutoff, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
 		home.RUnlock()
-		if cutoff > math.MinInt64 {
-			return e.prune(cutoff)
+		if expired {
+			return e.prune(kept, deadline)
 		}
 	}
 	return nil
@@ -725,11 +741,20 @@ func (e *Engine) compactOOOHead() {
 		return
 	}
 	// Like Prometheus's, one block per block range of the out-of-order head's data.
+	wrote := false
 	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
 		blockMax := blockMin + chunkRangeMs
-		e.writeBlock(blockMin, blockMax, true, false, func(shard int, series *Series) bool {
+		wrote = e.writeBlock(blockMin, blockMax, true, false, func(shard int, series *Series) bool {
 			return e.oooIn(shard, series, blockMin, blockMax-1)
-		})
+		}) || wrote
+	}
+	if wrote {
+		// Retention keeps the chunks compacted from the watermarks the compaction started from for as long as its
+		// blocks.
+		home, t := e.home()
+		home.Lock()
+		t.oooCompactions = append(slices.Clip(t.oooCompactions), outOfOrderCompaction{createdMs: nowMs(), watermarks: slices.Clone(e.oooWatermarks)})
+		home.Unlock()
 	}
 	for index, shard := range e.store.shards {
 		shard.Lock()
@@ -1173,23 +1198,20 @@ func (e *Engine) canLeave(shard int, series *Series, maxt int64) bool {
 	return !ooo
 }
 
-// prune drops data older than cutoff, like the TSDB's block retention.
-func (e *Engine) prune(cutoff int64) error {
-	for {
-		current := e.store.prunedBefore.Load()
-		if cutoff <= current || e.store.prunedBefore.CompareAndSwap(current, cutoff) {
-			break
-		}
-	}
+// prune drops what kept doesn't keep, and the blocks and out-of-order compactions written before deadline, like the
+// TSDB's block retention. It runs with the compaction lock held.
+func (e *Engine) prune(kept *retained, deadline int64) error {
+	e.store.retained.Store(kept)
+	cutoff := kept.cutoff
 	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
 	var builder promlabels.ScratchBuilder
 	var errs []error
-	for _, shard := range e.store.shards {
+	for index, shard := range e.store.shards {
 		// Which groups hold series to remove is found a batch at a time, so the shard is locked for all of its series
 		// only when there are some, and then only for those groups.
 		var removable []uint32
 		_, found := e.scanShard(shard, nil, func(group uint32, entry *seriesEntry) {
-			if !pruneSeries(&entry.series, cutoff) && (len(removable) == 0 || removable[len(removable)-1] != group) {
+			if !pruneRetained(&entry.series, kept, index) && (len(removable) == 0 || removable[len(removable)-1] != group) {
 				removable = append(removable, group)
 			}
 		})
@@ -1198,7 +1220,7 @@ func (e *Engine) prune(cutoff int64) error {
 		}
 		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
-				keep := pruneSeries(&entry.series, cutoff)
+				keep := pruneRetained(&entry.series, kept, index)
 				if !keep {
 					t.uncount(entry, &builder)
 				}
@@ -1212,11 +1234,16 @@ func (e *Engine) prune(cutoff int64) error {
 		}
 		if shard == e.store.shards[0] {
 			if t, ok := shard.tenants[e.tenantID]; ok {
-				t.blocks = pruneBlocks(t.blocks, cutoff)
+				t.blocks = pruneBlocks(t.blocks, cutoff, deadline)
+				t.oooCompactions = retainedCompactions(t.oooCompactions, deadline)
 			}
 		}
-		shard.cold.pruneBefore(cutoff)
-		errs = append(errs, shard.disk.TruncateBefore(cutoff))
+		shard.cold.prune(kept, index)
+		outOfOrderFrom := uint64(math.MaxUint64)
+		if kept.outOfOrderFrom != nil {
+			outOfOrderFrom = kept.outOfOrderFrom[index]
+		}
+		errs = append(errs, shard.disk.TruncateRetained(cutoff, outOfOrderFrom))
 		shard.Unlock()
 	}
 	e.rebuildStalePostings()

@@ -1440,7 +1440,7 @@ func TestEngineQuerierKeepsTheChunkFilesItReadMapped(t *testing.T) {
 	// their files, which the querier still reads.
 	require.NoError(t, e.Compact(context.Background()))
 	e.compactionLock.Lock()
-	require.NoError(t, e.prune(2*time.Hour.Milliseconds()))
+	require.NoError(t, e.pruneBefore(2*time.Hour.Milliseconds()))
 	e.compactionLock.Unlock()
 	e.store.reads.mu.Lock()
 	deferred := len(e.store.reads.queue)
@@ -1688,7 +1688,7 @@ func TestEngineRegexSelectsTheSeriesThereAreAfterRemovals(t *testing.T) {
 	}
 	// The first lookup fills the label's dictionary with every value.
 	require.NotEmpty(t, selectPods())
-	require.NoError(t, e.prune(2*hourMs))
+	require.NoError(t, e.pruneBefore(2*hourMs))
 	for _, pod := range selectPods() {
 		n, err := strconv.Atoi(strings.TrimPrefix(pod, "pod-"))
 		require.NoError(t, err)

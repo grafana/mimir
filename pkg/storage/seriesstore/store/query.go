@@ -151,7 +151,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 	if err != nil {
 		return nil, err
 	}
-	prunedBefore := s.prunedBefore.Load()
+	kept := s.retained.Load()
 	coldKey := selectorKey(coldLabels)
 	var (
 		selected []selectedSeries
@@ -160,7 +160,8 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 	)
 	s.perShardWithCold(tenantID, func(t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		// Cold series, by labels: one may be in several blocks, and also back in memory.
-		coldSeries := s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, prunedBefore)
+		// The store's retention keeps out-of-order chunks by time, of whichever shard.
+		coldSeries := s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, 0)
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
 			if countersEnabled {
 				chunkBoundsDecodes.Add(1)
@@ -211,9 +212,9 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 	return views, nil
 }
 
-// selectCold returns the tenant's cold series of one store shard that match, by labels, with
-// their chunks newer than prunedBefore.
-func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end, prunedBefore int64) map[labels.Labels]*coldCandidateSeries {
+// selectCold returns the tenant's cold series of store shard shard that match, by labels, with
+// the chunks the retention kept.
+func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end int64, kept *retained, shard int) map[labels.Labels]*coldCandidateSeries {
 	if len(cold.blocks) == 0 {
 		return nil
 	}
@@ -314,7 +315,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			}
 			it := series.chunkIter()
 			for chunk, more := it.next(); more; chunk, more = it.next() {
-				if chunk.MaxTime >= prunedBefore {
+				if kept.keeps(chunk, shard) {
 					candidate.chunks = append(candidate.chunks, chunk)
 				}
 			}

@@ -34,6 +34,9 @@ type chunkFile struct {
 	data    []byte
 	written int
 	maxTime int64
+	// One past the reference of the last out-of-order chunk in the file, or 0: out-of-order chunks are kept by when
+	// they were compacted, not by their samples' times.
+	outOfOrderEnd Ref
 }
 
 // DiskMapper keeps completed chunks in memory-mapped files, like the Prometheus head's
@@ -205,13 +208,29 @@ func (m *DiskMapper) Holds(data []byte) bool {
 	return false
 }
 
+// NoteOutOfOrder records that the chunk at ref is an out-of-order one, which TruncateRetained keeps its file for.
+func (m *DiskMapper) NoteOutOfOrder(ref Ref) {
+	index := int(uint32(ref>>32) - m.first)
+	if index < 0 || index >= len(m.files) || m.files[index] == nil {
+		return
+	}
+	file := m.files[index]
+	file.outOfOrderEnd = max(file.outOfOrderEnd, ref+1)
+}
+
 // TruncateBefore deletes files whose chunks all end before cutoff; callers must drop references
 // to them first, unless DeferUnmaps keeps them mapped for them.
 func (m *DiskMapper) TruncateBefore(cutoff int64) error {
+	return m.TruncateRetained(cutoff, math.MaxUint64)
+}
+
+// TruncateRetained is TruncateBefore for files without out-of-order chunks from outOfOrderFrom on, which the
+// retention keeps whatever their samples' times.
+func (m *DiskMapper) TruncateRetained(cutoff int64, outOfOrderFrom Ref) error {
 	var errs []error
 	for index := 0; index < len(m.files)-1; index++ {
 		file := m.files[index]
-		if file == nil || file.maxTime >= cutoff {
+		if file == nil || file.maxTime >= cutoff || file.outOfOrderEnd > outOfOrderFrom {
 			continue
 		}
 		m.files[index] = nil

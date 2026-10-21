@@ -11,6 +11,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// A file of out-of-order chunks stays, whatever its chunks' times, until retention no longer keeps those chunks.
+func TestKeepsFilesOfRetainedOutOfOrderChunks(t *testing.T) {
+	defer func(size int) { FileSize = size }(FileSize)
+	FileSize = 16
+	directory := filepath.Join(t.TempDir(), "chunks")
+	mapper, err := OpenDiskMapper(directory)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mapper.Close() })
+	inOrder, err := mapper.Write(bytes.Repeat([]byte{1}, 16), 10)
+	require.NoError(t, err)
+	outOfOrder, err := mapper.Write(bytes.Repeat([]byte{2}, 16), 5)
+	require.NoError(t, err)
+	mapper.NoteOutOfOrder(outOfOrder)
+	// The current file, which is never removed.
+	_, err = mapper.Write(bytes.Repeat([]byte{3}, 16), 30)
+	require.NoError(t, err)
+
+	require.NoError(t, mapper.TruncateRetained(20, outOfOrder))
+	require.NoFileExists(t, filepath.Join(directory, fileName(uint32(inOrder>>32))))
+	require.FileExists(t, filepath.Join(directory, fileName(uint32(outOfOrder>>32))), "its chunk is retained")
+	require.NoError(t, mapper.TruncateRetained(20, outOfOrder+1))
+	require.NoFileExists(t, filepath.Join(directory, fileName(uint32(outOfOrder>>32))))
+}
+
 func TestReadsWrittenChunksAndDeletesExpiredFiles(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "chunks")
 	mapper, err := OpenDiskMapper(directory)

@@ -183,7 +183,7 @@ func TestLookupByPostingsFindsReturningSeriesOnce(t *testing.T) {
 	require.NoError(t, app.Commit())
 	// Its only sample is old: the head's compaction moves it out, and a prune removes it from what remains.
 	require.NoError(t, engine.Compact(ctx))
-	require.NoError(t, engine.prune(2*hourMs))
+	require.NoError(t, engine.pruneBefore(2*hourMs))
 	app = engine.Appender(ctx)
 	_, err = app.Append(0, back, 5*hourMs+1000, 2)
 	require.NoError(t, err)
@@ -270,7 +270,7 @@ func TestRepeatedNamelessSelectorsStayRight(t *testing.T) {
 	check("with a lot of new series")
 	addAll("a", 650, 660, 5*hourMs)
 	check("with a few")
-	require.NoError(t, engine.prune(2*hourMs))
+	require.NoError(t, engine.pruneBefore(2*hourMs))
 	for n := range 150 {
 		delete(alive, promlabels.FromStrings("__name__", "metric", "job", "a", "pod", fmt.Sprintf("p-%d", n)).String())
 	}
@@ -506,7 +506,7 @@ func TestRepeatedLookupsWithAMatcherOfARareLabelStayRight(t *testing.T) {
 	add(seriesDef{pod: "late", rare: "1"}, 5*hourMs)
 	add(seriesDef{pod: "late2", rare: "2"}, 5*hourMs)
 	check("with series added")
-	require.NoError(t, engine.prune(2*hourMs))
+	require.NoError(t, engine.pruneBefore(2*hourMs))
 	for lset, def := range alive {
 		if strings.HasPrefix(def.pod, "p-") {
 			if n, _ := strconv.Atoi(strings.TrimPrefix(def.pod, "p-")); n%2 == 0 {

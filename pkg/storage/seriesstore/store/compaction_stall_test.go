@@ -173,7 +173,7 @@ func TestPruneStall(t *testing.T) {
 	require.NoError(t, engine.Compact(context.Background()))
 	for _, cutoff := range []int64{stallHour, 3 * stallHour} {
 		measureStall(t, fmt.Sprintf("prune before %dh", cutoff/stallHour), engine, lsets, refs, func() {
-			require.NoError(t, engine.prune(cutoff))
+			require.NoError(t, engine.pruneBefore(cutoff))
 		})
 	}
 }

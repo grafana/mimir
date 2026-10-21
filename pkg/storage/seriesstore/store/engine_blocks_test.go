@@ -169,7 +169,7 @@ func TestPruneRemovesSeriesFoundInBatches(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
-	require.NoError(t, engine.prune(2*hourMs))
+	require.NoError(t, engine.pruneBefore(2*hourMs))
 	require.Equal(t, uint64(91), engine.NumSeries(), "the series with only old samples are gone, but the one that took a sample")
 
 	q, err := engine.Querier(0, 7*hourMs)

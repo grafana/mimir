@@ -211,3 +211,8 @@ func samplesOf(t testing.TB, s *Store, tenant, name string) []sample {
 	})
 	return out
 }
+
+// pruneBefore is the engine's retention by time only, of every chunk older than cutoff but the out-of-order head's.
+func (e *Engine) pruneBefore(cutoff int64) error {
+	return e.prune(&retained{cutoff: cutoff}, math.MinInt64)
+}

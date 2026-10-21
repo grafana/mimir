@@ -73,9 +73,11 @@ type coldMetricName struct {
 type coldBlock struct {
 	id               uint64
 	minTime, maxTime int64
-	path             string
-	data             []byte
-	mapped           bool
+	// One past the reference of its last out-of-order chunk, or 0, which retention keeps it for.
+	outOfOrderEnd uint64
+	path          string
+	data          []byte
+	mapped        bool
 	// File-local label name ids to names, and back.
 	names    []string
 	localIDs map[string]uint32
@@ -366,7 +368,23 @@ func parseColdBlock(id uint64, data []byte, mapped bool, path string, verify boo
 			block.onlyName, block.only = name, table
 		}
 	}
+	block.forEachOutOfOrder(func(ref uint64) { block.outOfOrderEnd = max(block.outOfOrderEnd, ref+1) })
 	return block, nil
+}
+
+// forEachOutOfOrder calls visit with the reference of each out-of-order chunk of the block's series.
+func (b *coldBlock) forEachOutOfOrder(visit func(ref uint64)) {
+	for _, table := range b.tenants {
+		for index := range table.seriesCount {
+			series := b.seriesIn(table, index)
+			it := series.chunkIter()
+			for chunk, more := it.next(); more; chunk, more = it.next() {
+				if chunk.OutOfOrder {
+					visit(uint64(chunk.Ref))
+				}
+			}
+		}
+	}
 }
 
 func (b *coldBlock) close() error {
@@ -1064,9 +1082,14 @@ func discardColdBlock(block *coldBlock) {
 
 // pruneBefore removes the blocks all older than cutoff.
 func (c *coldState) pruneBefore(cutoff int64) {
+	c.prune(&retained{cutoff: cutoff}, 0)
+}
+
+// prune removes the blocks of store shard shard with nothing the retention keeps.
+func (c *coldState) prune(r *retained, shard int) {
 	kept := c.blocks[:0]
 	for _, block := range c.blocks {
-		if block.maxTime >= cutoff {
+		if block.maxTime >= r.cutoff || r.outOfOrderFrom != nil && block.outOfOrderEnd > r.outOfOrderFrom[shard] {
 			kept = append(kept, block)
 			continue
 		}
