@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] HTTPRoute: Add support k8s Gateway API HTTPRoute #14439
+
 ### Grafana Mimir
 
 * [CHANGE] Reject empty values for `-blocks-storage.tsdb.float-chunk-encoding` and the per-tenant `float_chunk_encoding` setting. Use `xor` or `xor2`, or omit the per-tenant setting to inherit the global value. #16718
