@@ -117,7 +117,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:5ed6ba458b0e71eb06dba4395bfc9a86a8b914a858fea139fd45f92cf88c79d0" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -239,7 +239,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16885-836340b033@sha256:d6786272e31ea3b2a06e22f20539a471c0164f26ee16dd54bfebc527cac8513b
+LATEST_BUILD_IMAGE_TAG ?= pr16938-26e5e51f11@sha256:007dde95bea8f1b6d49cd5559b67c6334a172724a6d3d6edaa293f16eecd6850
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
