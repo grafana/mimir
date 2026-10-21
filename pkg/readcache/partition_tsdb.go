@@ -456,11 +456,15 @@ func (p *partitionTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
 	return &partitionQuerier{Querier: q, postingsCacheKey: p.postingsCacheKey}, nil
 }
 
-// ChunkQuerier returns a ChunkQuerier covering [mint, maxt].
+// ChunkQuerier returns a ChunkQuerier covering [mint, maxt]. The seriesstore
+// engine's has no postings cache to key, and streams a response itself.
 func (p *partitionTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := p.db.ChunkQuerier(mint, maxt)
 	if err != nil {
 		return nil, err
+	}
+	if _, ok := p.db.(seriesstoreStore); ok {
+		return q, nil
 	}
 	return &partitionChunkQuerier{ChunkQuerier: q, postingsCacheKey: p.postingsCacheKey}, nil
 }

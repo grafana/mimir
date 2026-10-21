@@ -137,3 +137,16 @@ func clientChunk(minTime, maxTime int64, encoding int32, data []byte) (client.Ch
 	}
 	return ch, int(binary.BigEndian.Uint16(data)), nil
 }
+
+// StreamSeriesstoreQuery answers a QueryStream from a chunk querier of the seriesstore engine as the ingester does: the
+// series it selected, in label order, and then their chunks, without the series set and chunk iterators of the generic
+// path, in messages of batchSize series. ok is false for a querier of another engine.
+func StreamSeriesstoreQuery(q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, batchSize int, send func(*client.QueryStreamResponse) error) (series, chunks, samples int, ok bool, err error) {
+	selector, ok := q.(streamedSelector)
+	if !ok {
+		return 0, 0, 0, false, nil
+	}
+	batching := streamBatching{SeriesBatchSize: batchSize, ChunksBatchSize: uint64(batchSize), ChunksBatchMessageBytes: queryStreamBatchMessageSize}
+	stats, err := streamingChunkQuerier{ChunkQuerier: q, selector: selector}.QueryStream(context.Background(), hints, matchers, batching, send)
+	return stats.Series, stats.Chunks, stats.Samples, true, err
+}

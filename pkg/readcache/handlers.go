@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
@@ -111,6 +112,12 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		r.queryStreamChunks.Observe(0)
 		// No owned partition for this tenant: send EOS and return.
 		return client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true})
+	}
+
+	if len(dbs) == 1 {
+		if _, ok := dbs[0].db.(seriesstoreStore); ok {
+			return r.queryStreamSeriesstore(ctx, spanlog, req, dbs[0], int64(from), int64(through), shard, matchers, stream)
+		}
 	}
 
 	type countedChunk struct {
@@ -348,6 +355,44 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	spanlog.SetTag("samples", samples)
 	spanlog.SetTag("chunks", numChunks)
 	spanlog.DebugLog("series", len(items), "samples", samples, "chunks", numChunks)
+	return nil
+}
+
+// queryStreamSeriesstore answers a QueryStream from a single seriesstore engine, the common case of a partition that
+// didn't move within the query's range: the engine selects the series in label order with chunks in range, so they are
+// streamed as it has them, without being gathered, sorted and merged first.
+func (r *Readcache) queryStreamSeriesstore(ctx context.Context, spanlog *spanlogger.SpanLogger, req *client.QueryRequest, db *partitionTSDB, from, through int64, shard *sharding.ShardSelector, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) error {
+	q, err := db.ChunkQuerier(from, through)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = q.Close() }()
+
+	// Whole chunks, like the other path: the PromQL engine trims them itself.
+	hints := &storage.SelectHints{Start: from, End: through, DisableTrimming: true}
+	if shard != nil {
+		hints.ShardIndex = shard.ShardIndex
+		hints.ShardCount = shard.ShardCount
+	}
+	series, chunks, samples, ok, err := ingester.StreamSeriesstoreQuery(q, hints, matchers, queryStreamBatchSize, func(resp *client.QueryStreamResponse) error {
+		return client.SendQueryStream(stream, resp)
+	})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.Errorf("the seriesstore engine's chunk querier doesn't stream")
+	}
+	r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageSelected).Observe(float64(series))
+	r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageReturned).Observe(float64(series))
+	r.queryLoad.Attribute(req.QueryAttributionHint, int64(samples))
+	if r.queriedSamples != nil {
+		r.queriedSamples.Observe(float64(samples))
+	}
+	r.queryStreamChunks.Observe(float64(chunks))
+	spanlog.SetTag("series", series)
+	spanlog.SetTag("samples", samples)
+	spanlog.SetTag("chunks", chunks)
 	return nil
 }
 
