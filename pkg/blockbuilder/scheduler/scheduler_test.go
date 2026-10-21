@@ -1346,6 +1346,35 @@ func TestUpdateSchedule_ProbeFailure(t *testing.T) {
 	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the next successful probe should record the produced records")
 }
 
+// TestUpdateSchedule_PartitionAddedWhileRunning verifies that records produced to a partition
+// added after startup, but before the scheduler first observes it, are included in its first job.
+func TestUpdateSchedule_PartitionAddedWhileRunning(t *testing.T) {
+	ctx := t.Context()
+
+	sched, cli := mustScheduler(t, 1)
+	require.NoError(t, sched.completeObservationMode(ctx))
+	sched.updateSchedule(ctx)
+
+	// Simulate a case when partitions were added to the topic during scheduler runtime.
+	_, err := kadm.NewClient(cli).CreatePartitions(ctx, 1, "ingest")
+	require.NoError(t, err)
+	cli.ForceMetadataRefresh()
+	produceRecords(ctx, t, cli, 1, 3)
+
+	sched.updateSchedule(ctx)
+
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
+	ps := sched.getPartitionState("ingest", 1)
+	require.Equal(t, int64(3), ps.offsets[0].endOffset)
+
+	job, err := ps.updateTime(time.Now().Add(sched.cfg.JobSize), sched.cfg.JobSize)
+	require.NoError(t, err)
+	require.NotNil(t, job, "the new partition's records should be cut into a job")
+	require.Equal(t, int64(0), job.StartOffset, "records produced before the first observation must not be skipped")
+	require.Equal(t, int64(3), job.EndOffset)
+}
+
 // TestUpdateSchedule_MultiCluster verifies that with compartments enabled the scheduler probes
 // every write cluster's end offsets.
 func TestUpdateSchedule_MultiCluster(t *testing.T) {
