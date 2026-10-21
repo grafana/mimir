@@ -51,8 +51,8 @@ type SeriesProfile struct {
 	LateShare      float64 `json:"late_share"`
 	LateMaxSeconds int     `json:"late_max_seconds"`
 	ExemplarShare  float64 `json:"exemplar_share"`
-	// With -backdated-window, the share of the series in tenants with that out-of-order window, and of their scrapes
-	// also written up to that far back, as devices that buffer their samples or a delayed pipeline do.
+	// With -backdated-window, the share of the series in tenants with that out-of-order window, and of their live
+	// scrapes also written up to that far back, as devices that buffer their samples or a delayed pipeline do.
 	BackdatedSeriesShare float64 `json:"backdated_series_share"`
 	BackdatedShare       float64 `json:"backdated_share"`
 }

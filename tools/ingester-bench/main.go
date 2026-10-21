@@ -85,7 +85,7 @@ func main() {
 	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
-	flag.DurationVar(&cfg.backdatedWindow, "backdated-window", 0, "Out-of-order window of the profile's share of tenants that write samples up to that late, such as 720h, which their reads go back as far as. 0 for none.")
+	flag.DurationVar(&cfg.backdatedWindow, "backdated-window", 0, "Out-of-order window of the profile's share of tenants that write samples up to that late once the feed is live, such as 720h, which their reads go back as far as. 0 for none.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
 	flag.StringVar(&cfg.readScales, "read-scales", "", "Factors of some reads' rates on top of -query-scale, such as LabelNamesAndValues=50,QueryStream=0: a short run of a small ingester sends a few of the rare reads otherwise.")
 	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")

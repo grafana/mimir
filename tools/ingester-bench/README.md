@@ -132,7 +132,7 @@ adds a report from elsewhere, and `-render=report.json` writes its `report.html`
 | `-duration`            | 15m           | Measurement window.                                                                                                                                               |
 | `-retention`           | 13h           | TSDB retention, and how far back reads go.                                                                                                                        |
 | `-out-of-order-window` | 2h            | Out-of-order window of the tenants.                                                                                                                               |
-| `-backdated-window`    | 0             | Out-of-order window, such as `720h`, of the profile's share of tenants that write some samples up to that late. Their reads go back as far. 0 for none.           |
+| `-backdated-window`    | 0             | Out-of-order window, such as `720h`, of the profile's share of tenants that write some live samples up to that late. Their reads go back as far. 0 for none.      |
 | `-query-scale`         | 1             | Factor of the profile's read rates.                                                                                                                               |
 | `-read-scales`         |               | Factors of some reads' rates, such as `LabelNamesAndValues=50,QueryStream=0`, so a short run gets enough of the rare reads.                                       |
 | `-compare-fraction`    | 1             | Share of reads whose answers are compared. All reads are sent and timed. Comparing at production rates takes the bench more CPU than reading takes the ingesters. |

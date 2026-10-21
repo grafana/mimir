@@ -214,8 +214,8 @@ func TestClassicHistogramSeriesFollowTheProfilesBuckets(t *testing.T) {
 	}
 }
 
-// A backdated tenant writes some of its scrapes again, between an hour and its window late and half a second off the
-// scrapes, reads as far back, and has the window as its out-of-order one; the other tenants are as without it.
+// A backdated tenant writes some of its live scrapes again, between an hour and its window late and half a second off
+// the scrapes, reads as far back, and has the window as its out-of-order one; the other tenants are as without it.
 func TestBackdatedTenantsWriteAndReadUpToTheirWindowLate(t *testing.T) {
 	const windowMs = 30 * 24 * 3_600_000
 	p := defaultProfile()
@@ -225,6 +225,18 @@ func TestBackdatedTenantsWriteAndReadUpToTheirWindowLate(t *testing.T) {
 	require.NoError(t, err)
 	defer f.close()
 	now := int64(1_700_000_000_000)
+	for _, tenant := range w.tenants {
+		for _, m := range tenant.metrics {
+			for slot := range m.slots {
+				f.scrape(m, slot, now, func(ts *mimirpb.TimeSeries) {
+					for _, sample := range ts.Samples {
+						require.Equal(t, now, sample.TimestampMs, "nothing backdated in the backfill")
+					}
+				})
+			}
+		}
+	}
+	f.backdating.Store(true)
 
 	backdatedTenants := map[string]bool{}
 	scrapes, late, backdatedSeries := 0, 0, 0

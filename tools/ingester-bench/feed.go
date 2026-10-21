@@ -52,8 +52,10 @@ type feed struct {
 	// thresholds of a slot's hash.
 	lateThreshold      uint64
 	backdatedThreshold uint64
-	exemplarMod        uint64
-	leValues           []string
+	// Set once the feed is live: the backfill is the ingesters' history, which has no backdated samples.
+	backdating  atomic.Bool
+	exemplarMod uint64
+	leValues    []string
 }
 
 type producedSecond struct {
@@ -127,6 +129,7 @@ func (f *feed) produceSeconds(ctx context.Context, from, to int64) error {
 
 // live produces each second once it passed, until ctx is done.
 func (f *feed) live(ctx context.Context, from int64) error {
+	f.backdating.Store(true)
 	next := from
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -286,7 +289,7 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 	f.emitScrape(m, slot, t, start, labels, true, emit)
 	// The scrape again, days late at most, of a timestamp half a second off the scrapes', which the series don't
 	// have yet: with the value it would have then had, as old as its series is now.
-	if m.tenant.backdated && m.hash64(slot, uint64(t)^7) < f.backdatedThreshold {
+	if m.tenant.backdated && f.backdating.Load() && m.hash64(slot, uint64(t)^7) < f.backdatedThreshold {
 		span := max(1, (w.backdatedWindowMs-2*3_600_000)/1000)
 		delay := 3_600_000 + int64(m.hash64(slot, uint64(t)^8)%uint64(span))*1000 + 500
 		// Labels of its own: serializing a request may give its series' back to a pool.
