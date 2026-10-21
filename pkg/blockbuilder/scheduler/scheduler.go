@@ -165,7 +165,9 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
 			}
 
-			s.updateSchedule(ctx)
+			if err := s.updateSchedule(ctx); err != nil {
+				return err
+			}
 			s.onScheduleUpdated()
 
 		case <-ctx.Done():
@@ -240,8 +242,9 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) err
 }
 
 // updateSchedule examines the state of the Kafka topic and updates the
-// schedule, creating consumption jobs if appropriate.
-func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
+// schedule, creating consumption jobs if appropriate. It returns an error only
+// if the scheduler can't continue without losing records, see recordEndOffsets.
+func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) error {
 	startTime := time.Now()
 	defer func() {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
@@ -264,14 +267,16 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return
+				return nil
 			}
 			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "failed to list end offsets", "err", err)
 			s.metrics.perClusterMetrics[clusterID].endOffsetProbeFailed.Inc()
 			failedClusters = append(failedClusters, clusterID)
 			continue
 		}
-		s.recordEndOffsets(clusterID, endOffsets, touched)
+		if err := s.recordEndOffsets(clusterID, endOffsets, touched); err != nil {
+			return s.compartmentError(clusterID, err)
+		}
 	}
 	if len(failedClusters) > 0 && len(failedClusters) < len(s.adminClients) {
 		level.Warn(s.logger).Log("msg", "advancing schedule despite failed end offset probes", "failed_write_compartments", fmt.Sprint(failedClusters))
@@ -294,12 +299,24 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
 	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
+
+	return nil
 }
 
 // recordEndOffsets records one cluster's end offsets into each partition's state, marking every
 // partition it touched so the caller can advance them once all clusters are recorded.
-func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.ListedOffsets, touched map[int32]struct{}) {
+//
+// The first end offset recorded for a partition becomes the start of its first job. Startup
+// records it for every partition, unless the partition didn't exist on the cluster yet, or its
+// probe failed. Such a partition can hold records below its first observed end offset, and
+// starting from there would skip them silently. Only the startup path knows where to resume
+// it from (planned offset or lookback), so we return an error to make the scheduler restart.
+func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.ListedOffsets, touched map[int32]struct{}) (err error) {
 	endOffsets.Each(func(o kadm.ListedOffset) {
+		if err != nil {
+			return
+		}
+
 		// Do not track end-offset=0 to reduce number of series.
 		// Otherwise, this creates a dummy series per-cluster-per-partition, regardless to if the partition is active.
 		if o.Offset != 0 {
@@ -310,9 +327,17 @@ func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.
 		defer s.mu.Unlock()
 
 		ps := s.getPartitionState(o.Topic, o.Partition)
+		// This should not happen, unless the topic changed its number of partitions while scheduler is in normal operations.
+		// The scheduler can't auto-recover from that; the safest option is to restart and reconcile partition state.
+		// A partition with end-offset=0 has never held records, so it's fine.
+		if ps.startOffsetEmpty(clusterID) && o.Offset != 0 {
+			err = fmt.Errorf("cluster %d partition %d never observed start offset but has end offset %d", clusterID, o.Partition, o.Offset)
+			return
+		}
 		ps.updateEndOffset(clusterID, o.Offset)
 		touched[o.Partition] = struct{}{}
 	})
+	return err
 }
 
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
