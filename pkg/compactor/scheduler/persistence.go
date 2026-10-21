@@ -22,10 +22,13 @@ func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistence
 	}
 }
 
+// JobRecoveryFilter returns a non-nil reason if a valid persisted job should be deleted instead of recovered
+type JobRecoveryFilter func(job TrackedJob) error
+
 type JobPersistenceManager interface {
 	CreationTime() time.Time
 	InitializeTenant(tenant string) (JobPersister, error)
-	RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
+	RecoverAll(allowedTenants *util.AllowList, filter JobRecoveryFilter, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
 	Close() error
 }
 
@@ -46,7 +49,7 @@ func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister
 	return &NopJobPersister{}, nil
 }
 
-func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(string, JobPersister) *JobTracker) (map[string]*JobTracker, error) {
+func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, filter JobRecoveryFilter, jobTrackerFactory func(string, JobPersister) *JobTracker) (map[string]*JobTracker, error) {
 	return make(map[string]*JobTracker), nil
 }
 

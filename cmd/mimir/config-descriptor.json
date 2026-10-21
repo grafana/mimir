@@ -15003,7 +15003,7 @@
               "kind": "field",
               "name": "policy",
               "required": false,
-              "desc": "The lane policy the compactor scheduler should use. Valid values: simple",
+              "desc": "The lane policy the compactor scheduler should use. Valid values: simple, backfill. backfill is required if and only if -compactor-scheduler.discovery-polls includes backfills.",
               "fieldValue": null,
               "fieldDefaultValue": "simple",
               "fieldFlag": "compactor-scheduler.lane-policy.policy",

@@ -6,6 +6,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +23,11 @@ func at(hour, minute int) time.Time {
 }
 
 func newTestJobTracker(clk clock.Clock) (*JobTracker, *prometheus.Registry) {
+	return newTestJobTrackerWithLanePolicy(clk, newSimpleLanePolicy())
+}
+
+func newTestJobTrackerWithLanePolicy(clk clock.Clock, lanePolicy lanePolicy) (*JobTracker, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
-	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(reg, lanePolicy)
 	jt := NewJobTracker(&NopJobPersister{}, "test", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 	jt.discoveredBy.Store(uint32(discoveredByBlocks))
@@ -42,10 +46,11 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	compactionWaitPeriod := 15 * time.Minute
 
 	tests := map[string]struct {
-		setup              func(jt *JobTracker)
-		now                time.Time
-		expectedPlan       bool
-		expectedTransition bool
+		setup                     func(jt *JobTracker)
+		now                       time.Time
+		expectedPlan              bool
+		expectedBackfillPhasePlan bool
+		expectedTransition        bool
 	}{
 		"plans when there is no pending plan": {
 			now:                at(3, 0),
@@ -61,13 +66,13 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		"skips within compaction wait period": {
 			setup: func(jt *JobTracker) {
 				// (3:30 - 15m = 3:15).Truncate(1h) = 3:00, so 3:00 + 1h = 4:00 + compactionWaitPeriod
-				jt.completePlanTime = at(3, 30)
+				jt.plan.completeTime = at(3, 30)
 			},
 			now: at(4, 0).Add(compactionWaitPeriod - time.Minute),
 		},
 		"plans after compaction wait period": {
 			setup: func(jt *JobTracker) {
-				jt.completePlanTime = at(3, 30)
+				jt.plan.completeTime = at(3, 30)
 			},
 			now:                at(4, 0).Add(compactionWaitPeriod),
 			expectedPlan:       true,
@@ -77,7 +82,42 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 			setup: func(jt *JobTracker) {
 				jt.discoveredBy.Store(uint32(discoveredByBackfills))
 			},
-			now: at(3, 0),
+			now:                       at(3, 0),
+			expectedBackfillPhasePlan: true,
+			expectedTransition:        true,
+		},
+		"plans both when found in the blocks bucket and backfills": {
+			setup: func(jt *JobTracker) {
+				jt.discoveredBy.Store(uint32(discoveredByBlocks | discoveredByBackfills))
+			},
+			now:                       at(3, 0),
+			expectedPlan:              true,
+			expectedBackfillPhasePlan: true,
+			expectedTransition:        true,
+		},
+		"skips backfill phase plan when there is a pending one": {
+			setup: func(jt *JobTracker) {
+				jt.discoveredBy.Store(uint32(discoveredByBackfills))
+				jt.toPendingBack(NewTrackedBackfillPhasePlanJob(time.Now()))
+			},
+			now:                       at(3, 0),
+			expectedBackfillPhasePlan: true, // the pending one remains
+		},
+		"skips backfill phase plan within the planning window": {
+			setup: func(jt *JobTracker) {
+				jt.discoveredBy.Store(uint32(discoveredByBackfills))
+				jt.backfillPhasePlan.completeTime = at(3, 30)
+			},
+			now: at(4, 0).Add(-time.Minute),
+		},
+		"plans backfill phase plan in the next window without a compaction wait period": {
+			setup: func(jt *JobTracker) {
+				jt.discoveredBy.Store(uint32(discoveredByBackfills))
+				jt.backfillPhasePlan.completeTime = at(3, 30)
+			},
+			now:                       at(4, 0),
+			expectedBackfillPhasePlan: true,
+			expectedTransition:        true,
 		},
 		"plan lane transitions even when compaction lane already pending": {
 			setup: func(jt *JobTracker) {
@@ -93,7 +133,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			clk := clock.NewMock()
 			clk.Set(tc.now)
-			jt, _ := newTestJobTracker(clk)
+			jt, _ := newTestJobTrackerWithLanePolicy(clk, newBackfillLanePolicy())
 			if tc.setup != nil {
 				tc.setup(jt)
 			}
@@ -101,12 +141,18 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 			transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
 			require.NoError(t, err)
 
+			require.Equal(t, tc.expectedTransition, len(transition) > 0)
+			// Only a newly created plan job makes the plan lane transition
+			require.Equal(t, tc.expectedPlan, slices.Contains(transition, planLane))
 			if tc.expectedPlan {
 				require.Contains(t, jt.incompleteJobs, planJobId)
-				require.Equal(t, tc.expectedTransition, len(transition) > 0)
-				require.True(t, jt.completePlanTime.IsZero())
+				require.True(t, jt.plan.completeTime.IsZero())
+			}
+			if tc.expectedBackfillPhasePlan {
+				require.Contains(t, jt.incompleteJobs, backfillPhasePlanJobId)
+				require.True(t, jt.backfillPhasePlan.completeTime.IsZero())
 			} else {
-				require.Empty(t, transition)
+				require.NotContains(t, jt.incompleteJobs, backfillPhasePlanJobId)
 			}
 		})
 	}
@@ -139,7 +185,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		clk := clock.NewMock()
 		clk.Set(at(2, 25))
 		jt, _ := newTestJobTracker(clk)
-		jt.completePlanTime = at(2, 3)
+		jt.plan.completeTime = at(2, 3)
 
 		transition, err := jt.Maintenance(leaseDuration, false, true, planInterval, waitPeriod)
 		require.NoError(t, err)
@@ -165,6 +211,12 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 		return j
 	}
 
+	newCompleteBackfillCompaction := func(id string) *TrackedCompactionJob {
+		j := NewTrackedCompactionJob(id, &CompactionJob{backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")}, 0, 0, at(1, 0))
+		j.MarkComplete(at(2, 0))
+		return j
+	}
+
 	newLeasedPlan := func(statusTime time.Time) *TrackedPlanJob {
 		j := NewTrackedPlanJob(at(1, 0))
 		j.MarkLeased(statusTime)
@@ -177,28 +229,56 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 		return j
 	}
 
+	newLeasedBackfillPhasePlan := func(statusTime time.Time) *TrackedBackfillPhasePlanJob {
+		j := NewTrackedBackfillPhasePlanJob(at(1, 0))
+		j.MarkLeased(statusTime)
+		return j
+	}
+
+	newCompleteBackfillPhasePlan := func(statusTime time.Time) *TrackedBackfillPhasePlanJob {
+		j := NewTrackedBackfillPhasePlanJob(at(1, 0))
+		j.MarkComplete(statusTime)
+		return j
+	}
+
+	type expectedPlanner struct {
+		completeTime time.Time
+		completeJobs []string
+	}
+
 	tests := map[string]struct {
-		compactionJobs       []*TrackedCompactionJob
-		planJob              *TrackedPlanJob
-		expectedPending      []string
-		expectedActive       []string
-		expectedCompleteJobs []string
-		expectedPlanLeased   bool
-		expectedPlanTime     time.Time
+		compactionJobs            []*TrackedCompactionJob
+		planJob                   *TrackedPlanJob
+		backfillPhasePlanJob      *TrackedBackfillPhasePlanJob
+		expectedPending           []string
+		expectedActive            []string
+		expectedPlan              expectedPlanner
+		expectedBackfillPhasePlan expectedPlanner
 	}{
 		"no jobs": {},
+		"available backfill phase plan job goes to pending": {
+			backfillPhasePlanJob: NewTrackedBackfillPhasePlanJob(at(1, 0)),
+			expectedPending:      []string{backfillPhasePlanJobId},
+		},
+		"leased backfill phase plan job goes to active": {
+			backfillPhasePlanJob: newLeasedBackfillPhasePlan(at(2, 0)),
+			expectedActive:       []string{backfillPhasePlanJobId},
+		},
+		"complete backfill phase plan job recovers completion time": {
+			backfillPhasePlanJob:      newCompleteBackfillPhasePlan(at(2, 0)),
+			expectedBackfillPhasePlan: expectedPlanner{completeTime: at(2, 0)},
+		},
 		"available plan job goes to pending": {
 			planJob:         NewTrackedPlanJob(at(1, 0)),
 			expectedPending: []string{planJobId},
 		},
 		"leased plan job goes to active": {
-			planJob:            newLeasedPlan(at(2, 0)),
-			expectedActive:     []string{planJobId},
-			expectedPlanLeased: true,
+			planJob:        newLeasedPlan(at(2, 0)),
+			expectedActive: []string{planJobId},
 		},
 		"complete plan job recovers completion time": {
-			planJob:          newCompletePlan(at(2, 0)),
-			expectedPlanTime: at(2, 0),
+			planJob:      newCompletePlan(at(2, 0)),
+			expectedPlan: expectedPlanner{completeTime: at(2, 0)},
 		},
 		"compaction jobs distributed by status": {
 			compactionJobs: []*TrackedCompactionJob{
@@ -206,9 +286,17 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 				newLeasedCompaction("bb", 2, at(3, 0)),
 				newCompleteCompaction("cc"),
 			},
-			expectedPending:      []string{"aa"},
-			expectedActive:       []string{"bb"},
-			expectedCompleteJobs: []string{"cc"},
+			expectedPending: []string{"aa"},
+			expectedActive:  []string{"bb"},
+			expectedPlan:    expectedPlanner{completeJobs: []string{"cc"}},
+		},
+		"complete compaction jobs are retained by the plan job that planned them": {
+			compactionJobs: []*TrackedCompactionJob{
+				newCompleteCompaction("cc"),
+				newCompleteBackfillCompaction("dd"),
+			},
+			expectedPlan:              expectedPlanner{completeJobs: []string{"cc"}},
+			expectedBackfillPhasePlan: expectedPlanner{completeJobs: []string{"dd"}},
 		},
 		"pending jobs sorted by order": {
 			compactionJobs: []*TrackedCompactionJob{
@@ -238,21 +326,174 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			jt, _ := newTestJobTracker(clock.NewMock())
+			jt, _ := newTestJobTrackerWithLanePolicy(clock.NewMock(), newBackfillLanePolicy())
 
-			jt.recoverFrom(tc.compactionJobs, tc.planJob)
+			jt.recoverFrom(tc.compactionJobs, tc.planJob, tc.backfillPhasePlanJob)
 			pendingIDs := append(toSlice(jt.pending[planLane]), toSlice(jt.pending[compactionLane])...)
+			pendingIDs = append(pendingIDs, toSlice(jt.pending[backfillPhasePlanLane])...)
 			require.Equal(t, tc.expectedPending, pendingIDs)
 
 			require.Equal(t, tc.expectedActive, toSlice(jt.active))
-			var completeIDs []string
-			for _, j := range jt.completeCompactionJobs {
-				completeIDs = append(completeIDs, j.ID())
+			requirePlanner := func(expected expectedPlanner, ps *plannerState) {
+				t.Helper()
+				var completeIDs []string
+				for _, j := range ps.completeJobs {
+					completeIDs = append(completeIDs, j.ID())
+				}
+				require.Equal(t, expected.completeJobs, completeIDs)
+				require.Equal(t, expected.completeTime, ps.completeTime)
 			}
-			require.Equal(t, tc.expectedCompleteJobs, completeIDs)
-			require.Equal(t, tc.expectedPlanLeased, jt.isPlanJobLeased)
-			require.Equal(t, tc.expectedPlanTime, jt.completePlanTime)
+			requirePlanner(tc.expectedPlan, &jt.plan)
+			requirePlanner(tc.expectedBackfillPhasePlan, &jt.backfillPhasePlan)
 			require.Len(t, jt.incompleteJobs, len(tc.expectedPending)+len(tc.expectedActive))
+		})
+	}
+}
+
+func TestJobTracker_OfferCompactionJobs_PlanJobsAreSeparate(t *testing.T) {
+	backfillID := []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")
+	newCompaction := func(id string, block string, order uint32) *TrackedCompactionJob {
+		return NewTrackedCompactionJob(id, &CompactionJob{blocks: [][]byte{[]byte(block)}}, order, 0, at(1, 0))
+	}
+	newBackfillCompaction := func(id string, block string, order uint32) *TrackedCompactionJob {
+		return NewTrackedCompactionJob(id, &CompactionJob{blocks: [][]byte{[]byte(block)}, backfillID: backfillID}, order, 0, at(1, 0))
+	}
+
+	tests := map[string]struct {
+		planID           string
+		offered          []*TrackedCompactionJob
+		expectedAccepted int
+		expectedPending  map[lane][]string
+		otherPlanID      string
+	}{
+		"plan job offer leaves backfill jobs alone": {
+			planID: planJobId,
+			offered: []*TrackedCompactionJob{
+				newCompaction("compaction-new", "block-3", 1),
+				newCompaction("compaction-conflict", "block-1", 2), // shares a block with the complete compaction job
+			},
+			expectedAccepted: 1,
+			expectedPending: map[lane][]string{
+				compactionLane:         {"compaction-new"},
+				backfillCompactionLane: {"backfill-pending"},
+			},
+			otherPlanID: backfillPhasePlanJobId,
+		},
+		"backfill phase plan job offer leaves compaction jobs alone": {
+			planID: backfillPhasePlanJobId,
+			offered: []*TrackedCompactionJob{
+				newBackfillCompaction("backfill-new", "backfill-block-3", 1),
+				newBackfillCompaction("backfill-conflict", "backfill-block-1", 2), // shares a block with the complete backfill compaction job
+			},
+			expectedAccepted: 1,
+			expectedPending: map[lane][]string{
+				compactionLane:         {"compaction-pending"},
+				backfillCompactionLane: {"backfill-new"},
+			},
+			otherPlanID: planJobId,
+		},
+	}
+
+	toSlice := func(l *list.List) []string {
+		var s []string
+		for e := l.Front(); e != nil; e = e.Next() {
+			s = append(s, e.Value.(TrackedJob).ID())
+		}
+		return s
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			jt, _ := newTestJobTrackerWithLanePolicy(clock.NewMock(), newBackfillLanePolicy())
+			jt.recoverFrom([]*TrackedCompactionJob{
+				newCompaction("compaction-complete", "block-1", 1),
+				newCompaction("compaction-pending", "block-2", 2),
+				newBackfillCompaction("backfill-complete", "backfill-block-1", 1),
+				newBackfillCompaction("backfill-pending", "backfill-block-2", 2),
+			}, NewTrackedPlanJob(at(1, 0)), NewTrackedBackfillPhasePlanJob(at(1, 0)))
+
+			planLeases := make(map[string]int64)
+			for _, l := range []lane{planLane, backfillPhasePlanLane} {
+				resp, _, err := jt.Lease(l)
+				require.NoError(t, err)
+				planLeases[resp.Key.Id] = resp.Key.Epoch
+			}
+			// Complete one job per plan job while both are leased so that each is retained for conflict detection
+			for _, l := range []lane{compactionLane, backfillCompactionLane} {
+				resp, _, err := jt.Lease(l)
+				require.NoError(t, err)
+				removed, _, err := jt.Remove(resp.Key.Id, resp.Key.Epoch, true)
+				require.NoError(t, err)
+				require.True(t, removed)
+			}
+
+			accepted, found, _, err := jt.OfferCompactionJobs(tc.planID, tc.offered, planLeases[tc.planID])
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, tc.expectedAccepted, accepted)
+
+			for l, expected := range tc.expectedPending {
+				require.Equal(t, expected, toSlice(jt.pending[l]), l.String())
+			}
+			require.NotContains(t, jt.incompleteJobs, tc.planID)
+			require.Contains(t, jt.incompleteJobs, tc.otherPlanID)
+			require.Empty(t, jt.plannerState(tc.planID).completeJobs)
+			require.Len(t, jt.plannerState(tc.otherPlanID).completeJobs, 1)
+		})
+	}
+}
+
+func TestJobTracker_Lease_BackfillPhasePlanHasOutstandingJobs(t *testing.T) {
+	leased := func(j *TrackedCompactionJob) *TrackedCompactionJob {
+		j.MarkLeased(at(2, 0))
+		return j
+	}
+	newCompaction := func() *TrackedCompactionJob {
+		return NewTrackedCompactionJob("0@17241709254077376921-merge--1761004800000-1761012000000", &CompactionJob{}, 1, 0, at(1, 0))
+	}
+	newBackfillCompaction := func() *TrackedCompactionJob {
+		return NewTrackedCompactionJob(backfillCompactionJobKeyPrefix+"0@17241709254077376921-merge--1761004800000-1761012000000", &CompactionJob{backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")}, 1, 0, at(1, 0))
+	}
+	newLeasedPlan := func() *TrackedPlanJob {
+		j := NewTrackedPlanJob(at(1, 0))
+		j.MarkLeased(at(2, 0))
+		return j
+	}
+
+	tests := map[string]struct {
+		compactionJobs []*TrackedCompactionJob
+		planJob        *TrackedPlanJob
+		expected       bool
+	}{
+		"no jobs": {},
+		"pending compaction job": {
+			compactionJobs: []*TrackedCompactionJob{newCompaction()},
+		},
+		"active compaction job": {
+			compactionJobs: []*TrackedCompactionJob{leased(newCompaction())},
+		},
+		"active plan job": {
+			planJob: newLeasedPlan(),
+		},
+		"pending backfill compaction job": {
+			compactionJobs: []*TrackedCompactionJob{newBackfillCompaction()},
+			expected:       true,
+		},
+		"active backfill compaction job": {
+			compactionJobs: []*TrackedCompactionJob{leased(newBackfillCompaction())},
+			expected:       true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			jt, _ := newTestJobTrackerWithLanePolicy(clock.NewMock(), newBackfillLanePolicy())
+			jt.recoverFrom(tc.compactionJobs, tc.planJob, NewTrackedBackfillPhasePlanJob(at(1, 0)))
+
+			resp, _, err := jt.Lease(backfillPhasePlanLane)
+			require.NoError(t, err)
+			require.Equal(t, backfillPhasePlanJobId, resp.Key.Id)
+			require.Equal(t, tc.expected, resp.Spec.BackfillPhasePlanning.HasOutstandingJobs)
 		})
 	}
 }
@@ -274,7 +515,7 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now())
 	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 2, 200, clk.Now())
 
-	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil)
+	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil, nil)
 	assertTrackerBytes(t, reg, "both jobs pending after recovery", 100, 200)
 
 	leaseResp, _, err := jt.Lease(compactionLane)
@@ -355,10 +596,10 @@ func TestJobTracker_Cleanup(t *testing.T) {
 
 	jt1.recoverFrom([]*TrackedCompactionJob{
 		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now()),
-	}, nil)
+	}, nil, nil)
 	jt2.recoverFrom([]*TrackedCompactionJob{
 		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 1, 200, clk.Now()),
-	}, nil)
+	}, nil, nil)
 	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
 
 	// Set time past the first planning window to force planning on Maintenance()
@@ -470,7 +711,7 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 			} else {
 				jt.recoverFrom([]*TrackedCompactionJob{
 					NewTrackedCompactionJob("merge-job", &CompactionJob{}, 1, 100, clk.Now()),
-				}, nil)
+				}, nil, nil)
 			}
 
 			for _, interrupted := range tc.interrupted {

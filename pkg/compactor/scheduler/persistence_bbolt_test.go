@@ -47,6 +47,10 @@ func newTestPlanJob() TrackedJob {
 	return job
 }
 
+func recoverEveryJob(TrackedJob) error {
+	return nil
+}
+
 func TestBboltJobPersistenceManager_InitializeTenant(t *testing.T) {
 	mgr, db := setupBboltManager(t)
 	t.Cleanup(func() {
@@ -81,7 +85,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	}
 
 	// Empty recovery should succeed
-	ctm, err := mgr.RecoverAll(allowedTenants, jobTrackerFactory)
+	ctm, err := mgr.RecoverAll(allowedTenants, recoverEveryJob, jobTrackerFactory)
 	require.NoError(t, err)
 	require.Empty(t, ctm)
 
@@ -92,7 +96,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	err = tenantPersister.WriteJob(newTestPlanJob())
 	require.NoError(t, err)
 
-	ctm, err = mgr.RecoverAll(allowedTenants, jobTrackerFactory)
+	ctm, err = mgr.RecoverAll(allowedTenants, recoverEveryJob, jobTrackerFactory)
 	require.NoError(t, err)
 	require.Len(t, ctm, 1)
 	require.Contains(t, ctm, "foo")
@@ -141,14 +145,30 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 	corruptKey := []byte("corrupt")
 	err = persister.WriteJob(compactionJob)
 	require.NoError(t, err)
+	// A valid job the filter rejects
+	err = persister.WriteJob(NewTrackedBackfillPhasePlanJob(time.Now()))
+	require.NoError(t, err)
+	// A typed key of an unknown type holding a valid compaction job must not be misread as one
+	unknownTypedKey := []byte(typedJobKeyPrefix + "z")
+	serializedCompactionJob, err := compactionJob.Serialize()
+	require.NoError(t, err)
 	err = db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(validTenant))
+		if err := b.Put(unknownTypedKey, serializedCompactionJob); err != nil {
+			return err
+		}
 		return b.Put(corruptKey, []byte("invalid protobuf"))
 	})
 	require.NoError(t, err)
 
 	allowedTenants := util.NewAllowList(nil, []string{disallowedTenant})
-	jobTrackers, err := mgr.RecoverAll(allowedTenants, jobTrackerFactory)
+	filter := func(job TrackedJob) error {
+		if job.Type() == compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING {
+			return errors.New("backfills are not supported")
+		}
+		return nil
+	}
+	jobTrackers, err := mgr.RecoverAll(allowedTenants, filter, jobTrackerFactory)
 	require.NoError(t, err)
 
 	// Only the valid tenant should be recovered
@@ -167,6 +187,8 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 		b := tx.Bucket([]byte(validTenant))
 		require.NotNil(t, b, "valid tenant bucket should remain")
 		require.Nil(t, b.Get(corruptKey), "corrupt key should be deleted")
+		require.Nil(t, b.Get(unknownTypedKey), "unknown typed key should be deleted")
+		require.Nil(t, b.Get([]byte(backfillPhasePlanJobId)), "filtered key should be deleted")
 		require.NotNil(t, b.Get([]byte(compactionJob.ID())), "valid job key should remain")
 		return nil
 	})
@@ -260,7 +282,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	allowedTenants := util.NewAllowList(nil, nil)
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
+	trackers, err := mgr.RecoverAll(allowedTenants, recoverEveryJob, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
@@ -323,7 +345,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	allowedTenants := util.NewAllowList(nil, nil)
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
+	trackers, err := mgr.RecoverAll(allowedTenants, recoverEveryJob, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
@@ -335,6 +357,18 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 	now := time.Now()
+
+	verifyCompactionJob := func(t *testing.T, written, read TrackedJob) {
+		writtenJob := written.(*TrackedCompactionJob)
+		readJob, ok := read.(*TrackedCompactionJob)
+		require.True(t, ok)
+		require.Equal(t, writtenJob.Type(), readJob.Type())
+		require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
+		require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
+		require.Equal(t, writtenJob.value.backfillID, readJob.value.backfillID)
+		require.Equal(t, writtenJob.order, readJob.order)
+		require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
+	}
 
 	tests := map[string]struct {
 		job                  TrackedJob
@@ -354,15 +388,23 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				order:           1,
 				totalBlockBytes: 12345,
 			},
-			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
-				writtenJob := written.(*TrackedCompactionJob)
-				readJob, ok := read.(*TrackedCompactionJob)
-				require.True(t, ok)
-				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
-				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
-				require.Equal(t, writtenJob.order, readJob.order)
-				require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
+			verifySpecificFields: verifyCompactionJob,
+		},
+		"backfill compaction job": {
+			job: &TrackedCompactionJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           backfillCompactionJobKeyPrefix + "0@17241709254077376921-merge--1761004800000-1761012000000",
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+				value:           &CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")},
+				order:           3,
+				totalBlockBytes: 734003200,
 			},
+			verifySpecificFields: verifyCompactionJob,
 		},
 		"plan job": {
 			job: &TrackedPlanJob{
@@ -377,6 +419,22 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			},
 			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
 				// No fields to validate
+			},
+		},
+		"backfill phase plan job": {
+			job: &TrackedBackfillPhasePlanJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           backfillPhasePlanJobId,
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				_, ok := read.(*TrackedBackfillPhasePlanJob)
+				require.True(t, ok)
 			},
 		},
 	}
@@ -395,26 +453,29 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanup *keyCleanup, err error) {
+			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, backfillPhasePlanJob *TrackedBackfillPhasePlanJob, cleanup *keyCleanup, err error) {
 				err = db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob, cleanup = jobsFromTenantBucket(b)
+					compactionJobs, planJob, backfillPhasePlanJob, cleanup = jobsFromTenantBucket(b, recoverEveryJob)
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, cleanup, err := readJobs()
+			compactionJobs, planJob, backfillPhasePlanJob, cleanup, err := readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
 			var readJob TrackedJob
-			if len(compactionJobs) == 1 {
+			switch {
+			case len(compactionJobs) == 1:
 				readJob = compactionJobs[0]
-			} else {
+			case planJob != nil:
 				readJob = planJob
+			default:
+				readJob = backfillPhasePlanJob
 			}
 			require.Equal(t, tc.job.ID(), readJob.ID())
 			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
@@ -427,11 +488,12 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, cleanup, err = readJobs()
+			compactionJobs, planJob, backfillPhasePlanJob, cleanup, err = readJobs()
 			require.NoError(t, err)
 			require.Nil(t, cleanup)
 			require.Empty(t, compactionJobs)
 			require.Nil(t, planJob)
+			require.Nil(t, backfillPhasePlanJob)
 		})
 	}
 }

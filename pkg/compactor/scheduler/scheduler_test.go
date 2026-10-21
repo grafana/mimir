@@ -17,6 +17,8 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
@@ -108,6 +110,181 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	assertIncompleteBytes("all compaction jobs complete", 0, 0)
 }
 
+func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
+	backfillID := []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")
+	compactionJob := &compactorschedulerpb.PlannedCompactionJob{
+		Id:  "0@17241709254077376921-merge--1761004800000-1761012000000",
+		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}},
+	}
+	backfillCompactionJob := &compactorschedulerpb.PlannedCompactionJob{
+		Id:  "0@17241709254077376921-merge--1761004800000-1761012000000",
+		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, BackfillId: backfillID},
+	}
+
+	tests := map[string]struct {
+		req          *compactorschedulerpb.PlannedJobsRequest
+		expectedCode codes.Code
+	}{
+		"plan job with a backfill ID": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:  &compactorschedulerpb.JobKey{Id: planJobId},
+				Jobs: []*compactorschedulerpb.PlannedCompactionJob{backfillCompactionJob},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"plan job with unchanged": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:       &compactorschedulerpb.JobKey{Id: planJobId},
+				Unchanged: true,
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"plan job with backfill jobs": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:      &compactorschedulerpb.JobKey{Id: planJobId},
+				Backfill: &compactorschedulerpb.PlannedBackfillJobs{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_VALIDATE, BackfillId: backfillID},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job without a backfill ID": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:  &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Jobs: []*compactorschedulerpb.PlannedCompactionJob{compactionJob},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+		"backfill phase plan job with unchanged": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:       &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
+				Unchanged: true,
+			},
+			expectedCode: codes.Unimplemented,
+		},
+		"key that is not a plan job key": {
+			req: &compactorschedulerpb.PlannedJobsRequest{
+				Key:  &compactorschedulerpb.JobKey{Id: compactionJob.Id},
+				Jobs: []*compactorschedulerpb.PlannedCompactionJob{compactionJob},
+			},
+			expectedCode: codes.InvalidArgument,
+		},
+	}
+
+	scheduler, _ := newTestScheduler(t, objstore.NewInMemBucket(), newTestSchedulerConfig())
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc.req.Tenant = "tenant1"
+			_, err := scheduler.PlannedJobs(t.Context(), tc.req)
+			require.Equal(t, tc.expectedCode, status.Code(err), err)
+		})
+	}
+}
+
+func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(t.Context(), backfillPhasesPrefix+"tenant1/backfill", strings.NewReader("")))
+
+	cfg := newTestSchedulerConfig()
+	cfg.DiscoveryPolls = []string{discoveryPollBackfills}
+	cfg.LanePolicy.Policy = lanePolicyBackfill
+	scheduler, reg := newTestScheduler(t, bkt, cfg)
+	scheduler.rotator.Maintenance(t.Context(), false, true)
+
+	assertJobCounts := func(msg string, pendingBackfillCompaction, completedBackfillPhasePlan, completedBackfillCompaction int) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_scheduler_jobs_completed_total Total number of jobs successfully completed by workers.
+			# TYPE cortex_compactor_scheduler_jobs_completed_total counter
+			cortex_compactor_scheduler_jobs_completed_total{job_type="backfill_compaction"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="backfill_phase_plan"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} 0
+			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} 0
+			# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
+			# TYPE cortex_compactor_scheduler_pending_jobs gauge
+			cortex_compactor_scheduler_pending_jobs{job_type="backfill_compaction"} %d
+			cortex_compactor_scheduler_pending_jobs{job_type="backfill_phase_plan"} 0
+			cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 0
+			cortex_compactor_scheduler_pending_jobs{job_type="plan"} 0
+		`, completedBackfillCompaction, completedBackfillPhasePlan, pendingBackfillCompaction)),
+			"cortex_compactor_scheduler_jobs_completed_total", "cortex_compactor_scheduler_pending_jobs"), msg)
+	}
+
+	planLease, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
+		WorkerId:     "worker1",
+		LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, backfillPhasePlanJobId, planLease.Key.Id)
+
+	const plannedID = "0@17241709254077376921-merge--1761004800000-1761012000000"
+	backfillID := []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")
+	_, err = scheduler.PlannedJobs(t.Context(), &compactorschedulerpb.PlannedJobsRequest{
+		Key:    planLease.Key,
+		Tenant: planLease.Spec.Tenant,
+		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+			{Id: plannedID, Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, BackfillId: backfillID}},
+		},
+	})
+	require.NoError(t, err)
+	assertJobCounts("backfill phase plan job completed", 1, 1, 0)
+
+	compactionLease, err := scheduler.LeaseJob(t.Context(), &compactorschedulerpb.LeaseJobRequest{
+		WorkerId:     "worker1",
+		LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, backfillCompactionJobKeyPrefix+plannedID, compactionLease.Key.Id)
+	require.Equal(t, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, compactionLease.Spec.JobType)
+	require.Equal(t, backfillID, compactionLease.Spec.Job.BackfillId)
+
+	_, err = scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{
+		Tenant: compactionLease.Spec.Tenant,
+		Key:    compactionLease.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+	})
+	require.NoError(t, err)
+	assertJobCounts("backfill compaction job completed", 0, 1, 1)
+}
+
+func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
+	const compactionKey = "0@17241709254077376921-merge--1761004800000-1761012000000"
+
+	scheduler, _ := newTestScheduler(t, objstore.NewInMemBucket(), newTestSchedulerConfig())
+	updatePlanJob := func(key string) error {
+		_, err := scheduler.UpdatePlanJob(t.Context(), &compactorschedulerpb.UpdatePlanJobRequest{
+			Tenant: "tenant1",
+			Key:    &compactorschedulerpb.JobKey{Id: key},
+			Update: compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS,
+		})
+		return err
+	}
+	updateCompactionJob := func(key string) error {
+		_, err := scheduler.UpdateCompactionJob(t.Context(), &compactorschedulerpb.UpdateCompactionJobRequest{
+			Tenant: "tenant1",
+			Key:    &compactorschedulerpb.JobKey{Id: key},
+			Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		})
+		return err
+	}
+
+	tests := map[string]struct {
+		update func(key string) error
+		key    string
+	}{
+		"plan job update with a compaction key":                  {update: updatePlanJob, key: compactionKey},
+		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobKeyPrefix + compactionKey},
+		"compaction job update with the plan job key":            {update: updateCompactionJob, key: planJobId},
+		"compaction job update with the backfill phase plan key": {update: updateCompactionJob, key: backfillPhasePlanJobId},
+		"compaction job update with an unknown typed key":        {update: updateCompactionJob, key: typedJobKeyPrefix + "z" + compactionKey},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tc.update(tc.key)
+			require.Equal(t, codes.InvalidArgument, status.Code(err), err)
+		})
+	}
+}
+
 func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
@@ -173,6 +350,49 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 			assertCounter(t, reg, 1)
 		})
 	})
+}
+
+func TestConfig_Validate_BackfillLanePolicy(t *testing.T) {
+	tests := map[string]struct {
+		discoveryPolls []string
+		lanePolicy     string
+		expectErr      bool
+	}{
+		"simple policy without the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks},
+			lanePolicy:     lanePolicySimple,
+		},
+		"backfill policy with the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks, discoveryPollBackfills},
+			lanePolicy:     lanePolicyBackfill,
+		},
+		"simple policy with the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks, discoveryPollBackfills},
+			lanePolicy:     lanePolicySimple,
+			expectErr:      true,
+		},
+		"backfill policy without the backfills poll": {
+			discoveryPolls: []string{discoveryPollBlocks},
+			lanePolicy:     lanePolicyBackfill,
+			expectErr:      true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := newTestSchedulerConfig()
+			cfg.PersistenceType = "none"
+			cfg.DiscoveryPolls = tc.discoveryPolls
+			cfg.LanePolicy.Policy = tc.lanePolicy
+
+			err := cfg.Validate()
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func newTestSchedulerConfig() Config {

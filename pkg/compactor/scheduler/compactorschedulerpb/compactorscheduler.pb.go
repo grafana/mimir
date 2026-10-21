@@ -34,21 +34,36 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type JobType int32
 
 const (
-	JOB_TYPE_UNKNOWN    JobType = 0
-	JOB_TYPE_COMPACTION JobType = 1
-	JOB_TYPE_PLANNING   JobType = 2
+	JOB_TYPE_UNKNOWN                 JobType = 0
+	JOB_TYPE_COMPACTION              JobType = 1
+	JOB_TYPE_PLANNING                JobType = 2
+	JOB_TYPE_BACKFILL_PHASE_PLANNING JobType = 3
+	JOB_TYPE_BACKFILL_CLEANUP        JobType = 4
+	JOB_TYPE_BACKFILL_VALIDATE       JobType = 5
+	JOB_TYPE_BACKFILL_COMPACTION     JobType = 6
+	JOB_TYPE_BACKFILL_COPY           JobType = 7
 )
 
 var JobType_name = map[int32]string{
 	0: "JOB_TYPE_UNKNOWN",
 	1: "JOB_TYPE_COMPACTION",
 	2: "JOB_TYPE_PLANNING",
+	3: "JOB_TYPE_BACKFILL_PHASE_PLANNING",
+	4: "JOB_TYPE_BACKFILL_CLEANUP",
+	5: "JOB_TYPE_BACKFILL_VALIDATE",
+	6: "JOB_TYPE_BACKFILL_COMPACTION",
+	7: "JOB_TYPE_BACKFILL_COPY",
 }
 
 var JobType_value = map[string]int32{
-	"JOB_TYPE_UNKNOWN":    0,
-	"JOB_TYPE_COMPACTION": 1,
-	"JOB_TYPE_PLANNING":   2,
+	"JOB_TYPE_UNKNOWN":                 0,
+	"JOB_TYPE_COMPACTION":              1,
+	"JOB_TYPE_PLANNING":                2,
+	"JOB_TYPE_BACKFILL_PHASE_PLANNING": 3,
+	"JOB_TYPE_BACKFILL_CLEANUP":        4,
+	"JOB_TYPE_BACKFILL_VALIDATE":       5,
+	"JOB_TYPE_BACKFILL_COMPACTION":     6,
+	"JOB_TYPE_BACKFILL_COPY":           7,
 }
 
 func (JobType) EnumDescriptor() ([]byte, []int) {
@@ -167,9 +182,12 @@ func (m *JobKey) GetEpoch() int64 {
 }
 
 type JobSpec struct {
-	Tenant  string         `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	Job     *CompactionJob `protobuf:"bytes,2,opt,name=job,proto3" json:"job,omitempty"`
-	JobType JobType        `protobuf:"varint,3,opt,name=job_type,json=jobType,proto3,enum=compactorschedulerpb.JobType" json:"job_type,omitempty"`
+	Tenant                string                    `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Job                   *CompactionJob            `protobuf:"bytes,2,opt,name=job,proto3" json:"job,omitempty"`
+	JobType               JobType                   `protobuf:"varint,3,opt,name=job_type,json=jobType,proto3,enum=compactorschedulerpb.JobType" json:"job_type,omitempty"`
+	BackfillPhasePlanning *BackfillPhasePlanningJob `protobuf:"bytes,4,opt,name=backfill_phase_planning,json=backfillPhasePlanning,proto3" json:"backfill_phase_planning,omitempty"`
+	BackfillCleanup       *BackfillCleanupJob       `protobuf:"bytes,5,opt,name=backfill_cleanup,json=backfillCleanup,proto3" json:"backfill_cleanup,omitempty"`
+	BackfillBlock         *BackfillBlockJob         `protobuf:"bytes,6,opt,name=backfill_block,json=backfillBlock,proto3" json:"backfill_block,omitempty"`
 }
 
 func (m *JobSpec) Reset()      { *m = JobSpec{} }
@@ -225,16 +243,175 @@ func (m *JobSpec) GetJobType() JobType {
 	return JOB_TYPE_UNKNOWN
 }
 
+func (m *JobSpec) GetBackfillPhasePlanning() *BackfillPhasePlanningJob {
+	if m != nil {
+		return m.BackfillPhasePlanning
+	}
+	return nil
+}
+
+func (m *JobSpec) GetBackfillCleanup() *BackfillCleanupJob {
+	if m != nil {
+		return m.BackfillCleanup
+	}
+	return nil
+}
+
+func (m *JobSpec) GetBackfillBlock() *BackfillBlockJob {
+	if m != nil {
+		return m.BackfillBlock
+	}
+	return nil
+}
+
+type BackfillBlockJob struct {
+	BackfillId []byte `protobuf:"bytes,1,opt,name=backfill_id,json=backfillId,proto3" json:"backfill_id,omitempty"`
+	BlockId    []byte `protobuf:"bytes,2,opt,name=block_id,json=blockId,proto3" json:"block_id,omitempty"`
+}
+
+func (m *BackfillBlockJob) Reset()      { *m = BackfillBlockJob{} }
+func (*BackfillBlockJob) ProtoMessage() {}
+func (*BackfillBlockJob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{2}
+}
+func (m *BackfillBlockJob) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BackfillBlockJob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BackfillBlockJob.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BackfillBlockJob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BackfillBlockJob.Merge(m, src)
+}
+func (m *BackfillBlockJob) XXX_Size() int {
+	return m.Size()
+}
+func (m *BackfillBlockJob) XXX_DiscardUnknown() {
+	xxx_messageInfo_BackfillBlockJob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BackfillBlockJob proto.InternalMessageInfo
+
+func (m *BackfillBlockJob) GetBackfillId() []byte {
+	if m != nil {
+		return m.BackfillId
+	}
+	return nil
+}
+
+func (m *BackfillBlockJob) GetBlockId() []byte {
+	if m != nil {
+		return m.BlockId
+	}
+	return nil
+}
+
+type BackfillPhasePlanningJob struct {
+	HasOutstandingJobs bool `protobuf:"varint,1,opt,name=has_outstanding_jobs,json=hasOutstandingJobs,proto3" json:"has_outstanding_jobs,omitempty"`
+}
+
+func (m *BackfillPhasePlanningJob) Reset()      { *m = BackfillPhasePlanningJob{} }
+func (*BackfillPhasePlanningJob) ProtoMessage() {}
+func (*BackfillPhasePlanningJob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{3}
+}
+func (m *BackfillPhasePlanningJob) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BackfillPhasePlanningJob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BackfillPhasePlanningJob.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BackfillPhasePlanningJob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BackfillPhasePlanningJob.Merge(m, src)
+}
+func (m *BackfillPhasePlanningJob) XXX_Size() int {
+	return m.Size()
+}
+func (m *BackfillPhasePlanningJob) XXX_DiscardUnknown() {
+	xxx_messageInfo_BackfillPhasePlanningJob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BackfillPhasePlanningJob proto.InternalMessageInfo
+
+func (m *BackfillPhasePlanningJob) GetHasOutstandingJobs() bool {
+	if m != nil {
+		return m.HasOutstandingJobs
+	}
+	return false
+}
+
+type BackfillCleanupJob struct {
+	BackfillId []byte `protobuf:"bytes,1,opt,name=backfill_id,json=backfillId,proto3" json:"backfill_id,omitempty"`
+}
+
+func (m *BackfillCleanupJob) Reset()      { *m = BackfillCleanupJob{} }
+func (*BackfillCleanupJob) ProtoMessage() {}
+func (*BackfillCleanupJob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{4}
+}
+func (m *BackfillCleanupJob) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BackfillCleanupJob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BackfillCleanupJob.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BackfillCleanupJob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BackfillCleanupJob.Merge(m, src)
+}
+func (m *BackfillCleanupJob) XXX_Size() int {
+	return m.Size()
+}
+func (m *BackfillCleanupJob) XXX_DiscardUnknown() {
+	xxx_messageInfo_BackfillCleanupJob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BackfillCleanupJob proto.InternalMessageInfo
+
+func (m *BackfillCleanupJob) GetBackfillId() []byte {
+	if m != nil {
+		return m.BackfillId
+	}
+	return nil
+}
+
 type CompactionJob struct {
 	BlockIds         [][]byte `protobuf:"bytes,1,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
 	Split            bool     `protobuf:"varint,2,opt,name=split,proto3" json:"split,omitempty"`
 	TotalBlocksBytes uint64   `protobuf:"varint,3,opt,name=total_blocks_bytes,json=totalBlocksBytes,proto3" json:"total_blocks_bytes,omitempty"`
+	BackfillId       []byte   `protobuf:"bytes,4,opt,name=backfill_id,json=backfillId,proto3" json:"backfill_id,omitempty"`
 }
 
 func (m *CompactionJob) Reset()      { *m = CompactionJob{} }
 func (*CompactionJob) ProtoMessage() {}
 func (*CompactionJob) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{2}
+	return fileDescriptor_cc7d2e2996592602, []int{5}
 }
 func (m *CompactionJob) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -284,6 +461,13 @@ func (m *CompactionJob) GetTotalBlocksBytes() uint64 {
 	return 0
 }
 
+func (m *CompactionJob) GetBackfillId() []byte {
+	if m != nil {
+		return m.BackfillId
+	}
+	return nil
+}
+
 type LaneRequest struct {
 	JobType JobType `protobuf:"varint,1,opt,name=job_type,json=jobType,proto3,enum=compactorschedulerpb.JobType" json:"job_type,omitempty"`
 }
@@ -291,7 +475,7 @@ type LaneRequest struct {
 func (m *LaneRequest) Reset()      { *m = LaneRequest{} }
 func (*LaneRequest) ProtoMessage() {}
 func (*LaneRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{3}
+	return fileDescriptor_cc7d2e2996592602, []int{6}
 }
 func (m *LaneRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -335,7 +519,7 @@ type LeaseJobRequest struct {
 func (m *LeaseJobRequest) Reset()      { *m = LeaseJobRequest{} }
 func (*LeaseJobRequest) ProtoMessage() {}
 func (*LeaseJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{4}
+	return fileDescriptor_cc7d2e2996592602, []int{7}
 }
 func (m *LeaseJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -386,7 +570,7 @@ type LeaseJobResponse struct {
 func (m *LeaseJobResponse) Reset()      { *m = LeaseJobResponse{} }
 func (*LeaseJobResponse) ProtoMessage() {}
 func (*LeaseJobResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{5}
+	return fileDescriptor_cc7d2e2996592602, []int{8}
 }
 func (m *LeaseJobResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -437,7 +621,7 @@ type PlannedCompactionJob struct {
 func (m *PlannedCompactionJob) Reset()      { *m = PlannedCompactionJob{} }
 func (*PlannedCompactionJob) ProtoMessage() {}
 func (*PlannedCompactionJob) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{6}
+	return fileDescriptor_cc7d2e2996592602, []int{9}
 }
 func (m *PlannedCompactionJob) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -480,16 +664,77 @@ func (m *PlannedCompactionJob) GetJob() *CompactionJob {
 	return nil
 }
 
+type PlannedBackfillJobs struct {
+	JobType    JobType  `protobuf:"varint,1,opt,name=job_type,json=jobType,proto3,enum=compactorschedulerpb.JobType" json:"job_type,omitempty"`
+	BackfillId []byte   `protobuf:"bytes,2,opt,name=backfill_id,json=backfillId,proto3" json:"backfill_id,omitempty"`
+	BlockIds   [][]byte `protobuf:"bytes,3,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
+}
+
+func (m *PlannedBackfillJobs) Reset()      { *m = PlannedBackfillJobs{} }
+func (*PlannedBackfillJobs) ProtoMessage() {}
+func (*PlannedBackfillJobs) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{10}
+}
+func (m *PlannedBackfillJobs) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PlannedBackfillJobs) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PlannedBackfillJobs.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PlannedBackfillJobs) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PlannedBackfillJobs.Merge(m, src)
+}
+func (m *PlannedBackfillJobs) XXX_Size() int {
+	return m.Size()
+}
+func (m *PlannedBackfillJobs) XXX_DiscardUnknown() {
+	xxx_messageInfo_PlannedBackfillJobs.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PlannedBackfillJobs proto.InternalMessageInfo
+
+func (m *PlannedBackfillJobs) GetJobType() JobType {
+	if m != nil {
+		return m.JobType
+	}
+	return JOB_TYPE_UNKNOWN
+}
+
+func (m *PlannedBackfillJobs) GetBackfillId() []byte {
+	if m != nil {
+		return m.BackfillId
+	}
+	return nil
+}
+
+func (m *PlannedBackfillJobs) GetBlockIds() [][]byte {
+	if m != nil {
+		return m.BlockIds
+	}
+	return nil
+}
+
 type PlannedJobsRequest struct {
-	Key    *JobKey                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Tenant string                  `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	Jobs   []*PlannedCompactionJob `protobuf:"bytes,3,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	Key       *JobKey                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Tenant    string                  `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Jobs      []*PlannedCompactionJob `protobuf:"bytes,3,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	Unchanged bool                    `protobuf:"varint,4,opt,name=unchanged,proto3" json:"unchanged,omitempty"`
+	Backfill  *PlannedBackfillJobs    `protobuf:"bytes,5,opt,name=backfill,proto3" json:"backfill,omitempty"`
 }
 
 func (m *PlannedJobsRequest) Reset()      { *m = PlannedJobsRequest{} }
 func (*PlannedJobsRequest) ProtoMessage() {}
 func (*PlannedJobsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{7}
+	return fileDescriptor_cc7d2e2996592602, []int{11}
 }
 func (m *PlannedJobsRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -539,13 +784,27 @@ func (m *PlannedJobsRequest) GetJobs() []*PlannedCompactionJob {
 	return nil
 }
 
+func (m *PlannedJobsRequest) GetUnchanged() bool {
+	if m != nil {
+		return m.Unchanged
+	}
+	return false
+}
+
+func (m *PlannedJobsRequest) GetBackfill() *PlannedBackfillJobs {
+	if m != nil {
+		return m.Backfill
+	}
+	return nil
+}
+
 type PlannedJobsResponse struct {
 }
 
 func (m *PlannedJobsResponse) Reset()      { *m = PlannedJobsResponse{} }
 func (*PlannedJobsResponse) ProtoMessage() {}
 func (*PlannedJobsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{8}
+	return fileDescriptor_cc7d2e2996592602, []int{12}
 }
 func (m *PlannedJobsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -583,7 +842,7 @@ type UpdatePlanJobRequest struct {
 func (m *UpdatePlanJobRequest) Reset()      { *m = UpdatePlanJobRequest{} }
 func (*UpdatePlanJobRequest) ProtoMessage() {}
 func (*UpdatePlanJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{9}
+	return fileDescriptor_cc7d2e2996592602, []int{13}
 }
 func (m *UpdatePlanJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -642,7 +901,7 @@ type UpdateCompactionJobRequest struct {
 func (m *UpdateCompactionJobRequest) Reset()      { *m = UpdateCompactionJobRequest{} }
 func (*UpdateCompactionJobRequest) ProtoMessage() {}
 func (*UpdateCompactionJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{10}
+	return fileDescriptor_cc7d2e2996592602, []int{14}
 }
 func (m *UpdateCompactionJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -692,13 +951,72 @@ func (m *UpdateCompactionJobRequest) GetUpdate() UpdateType {
 	return UPDATE_TYPE_UNKNOWN
 }
 
+type UpdateBackfillJobRequest struct {
+	Key    *JobKey    `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Tenant string     `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Update UpdateType `protobuf:"varint,3,opt,name=update,proto3,enum=compactorschedulerpb.UpdateType" json:"update,omitempty"`
+}
+
+func (m *UpdateBackfillJobRequest) Reset()      { *m = UpdateBackfillJobRequest{} }
+func (*UpdateBackfillJobRequest) ProtoMessage() {}
+func (*UpdateBackfillJobRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{15}
+}
+func (m *UpdateBackfillJobRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *UpdateBackfillJobRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_UpdateBackfillJobRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *UpdateBackfillJobRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_UpdateBackfillJobRequest.Merge(m, src)
+}
+func (m *UpdateBackfillJobRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *UpdateBackfillJobRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_UpdateBackfillJobRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_UpdateBackfillJobRequest proto.InternalMessageInfo
+
+func (m *UpdateBackfillJobRequest) GetKey() *JobKey {
+	if m != nil {
+		return m.Key
+	}
+	return nil
+}
+
+func (m *UpdateBackfillJobRequest) GetTenant() string {
+	if m != nil {
+		return m.Tenant
+	}
+	return ""
+}
+
+func (m *UpdateBackfillJobRequest) GetUpdate() UpdateType {
+	if m != nil {
+		return m.Update
+	}
+	return UPDATE_TYPE_UNKNOWN
+}
+
 type UpdateJobResponse struct {
 }
 
 func (m *UpdateJobResponse) Reset()      { *m = UpdateJobResponse{} }
 func (*UpdateJobResponse) ProtoMessage() {}
 func (*UpdateJobResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{11}
+	return fileDescriptor_cc7d2e2996592602, []int{16}
 }
 func (m *UpdateJobResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -738,7 +1056,7 @@ type StoredJobInfo struct {
 func (m *StoredJobInfo) Reset()      { *m = StoredJobInfo{} }
 func (*StoredJobInfo) ProtoMessage() {}
 func (*StoredJobInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{12}
+	return fileDescriptor_cc7d2e2996592602, []int{17}
 }
 func (m *StoredJobInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -811,7 +1129,7 @@ type StoredCompactionJob struct {
 func (m *StoredCompactionJob) Reset()      { *m = StoredCompactionJob{} }
 func (*StoredCompactionJob) ProtoMessage() {}
 func (*StoredCompactionJob) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{13}
+	return fileDescriptor_cc7d2e2996592602, []int{18}
 }
 func (m *StoredCompactionJob) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -861,6 +1179,116 @@ func (m *StoredCompactionJob) GetOrder() uint32 {
 	return 0
 }
 
+type StoredBackfillCleanupJob struct {
+	Info       *StoredJobInfo `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
+	BackfillId []byte         `protobuf:"bytes,2,opt,name=backfill_id,json=backfillId,proto3" json:"backfill_id,omitempty"`
+}
+
+func (m *StoredBackfillCleanupJob) Reset()      { *m = StoredBackfillCleanupJob{} }
+func (*StoredBackfillCleanupJob) ProtoMessage() {}
+func (*StoredBackfillCleanupJob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{19}
+}
+func (m *StoredBackfillCleanupJob) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StoredBackfillCleanupJob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StoredBackfillCleanupJob.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StoredBackfillCleanupJob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StoredBackfillCleanupJob.Merge(m, src)
+}
+func (m *StoredBackfillCleanupJob) XXX_Size() int {
+	return m.Size()
+}
+func (m *StoredBackfillCleanupJob) XXX_DiscardUnknown() {
+	xxx_messageInfo_StoredBackfillCleanupJob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StoredBackfillCleanupJob proto.InternalMessageInfo
+
+func (m *StoredBackfillCleanupJob) GetInfo() *StoredJobInfo {
+	if m != nil {
+		return m.Info
+	}
+	return nil
+}
+
+func (m *StoredBackfillCleanupJob) GetBackfillId() []byte {
+	if m != nil {
+		return m.BackfillId
+	}
+	return nil
+}
+
+type StoredBackfillBlockJob struct {
+	Info  *StoredJobInfo    `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
+	Job   *BackfillBlockJob `protobuf:"bytes,2,opt,name=job,proto3" json:"job,omitempty"`
+	Order uint32            `protobuf:"varint,3,opt,name=order,proto3" json:"order,omitempty"`
+}
+
+func (m *StoredBackfillBlockJob) Reset()      { *m = StoredBackfillBlockJob{} }
+func (*StoredBackfillBlockJob) ProtoMessage() {}
+func (*StoredBackfillBlockJob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cc7d2e2996592602, []int{20}
+}
+func (m *StoredBackfillBlockJob) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StoredBackfillBlockJob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StoredBackfillBlockJob.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StoredBackfillBlockJob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StoredBackfillBlockJob.Merge(m, src)
+}
+func (m *StoredBackfillBlockJob) XXX_Size() int {
+	return m.Size()
+}
+func (m *StoredBackfillBlockJob) XXX_DiscardUnknown() {
+	xxx_messageInfo_StoredBackfillBlockJob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StoredBackfillBlockJob proto.InternalMessageInfo
+
+func (m *StoredBackfillBlockJob) GetInfo() *StoredJobInfo {
+	if m != nil {
+		return m.Info
+	}
+	return nil
+}
+
+func (m *StoredBackfillBlockJob) GetJob() *BackfillBlockJob {
+	if m != nil {
+		return m.Job
+	}
+	return nil
+}
+
+func (m *StoredBackfillBlockJob) GetOrder() uint32 {
+	if m != nil {
+		return m.Order
+	}
+	return 0
+}
+
 type PersistenceMetadata struct {
 	ShardCount   uint32 `protobuf:"varint,1,opt,name=shard_count,json=shardCount,proto3" json:"shard_count,omitempty"`
 	CreationTime int64  `protobuf:"varint,2,opt,name=creation_time,json=creationTime,proto3" json:"creation_time,omitempty"`
@@ -869,7 +1297,7 @@ type PersistenceMetadata struct {
 func (m *PersistenceMetadata) Reset()      { *m = PersistenceMetadata{} }
 func (*PersistenceMetadata) ProtoMessage() {}
 func (*PersistenceMetadata) Descriptor() ([]byte, []int) {
-	return fileDescriptor_cc7d2e2996592602, []int{14}
+	return fileDescriptor_cc7d2e2996592602, []int{21}
 }
 func (m *PersistenceMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -918,90 +1346,119 @@ func init() {
 	proto.RegisterEnum("compactorschedulerpb.StoredJobStatus", StoredJobStatus_name, StoredJobStatus_value)
 	proto.RegisterType((*JobKey)(nil), "compactorschedulerpb.JobKey")
 	proto.RegisterType((*JobSpec)(nil), "compactorschedulerpb.JobSpec")
+	proto.RegisterType((*BackfillBlockJob)(nil), "compactorschedulerpb.BackfillBlockJob")
+	proto.RegisterType((*BackfillPhasePlanningJob)(nil), "compactorschedulerpb.BackfillPhasePlanningJob")
+	proto.RegisterType((*BackfillCleanupJob)(nil), "compactorschedulerpb.BackfillCleanupJob")
 	proto.RegisterType((*CompactionJob)(nil), "compactorschedulerpb.CompactionJob")
 	proto.RegisterType((*LaneRequest)(nil), "compactorschedulerpb.LaneRequest")
 	proto.RegisterType((*LeaseJobRequest)(nil), "compactorschedulerpb.LeaseJobRequest")
 	proto.RegisterType((*LeaseJobResponse)(nil), "compactorschedulerpb.LeaseJobResponse")
 	proto.RegisterType((*PlannedCompactionJob)(nil), "compactorschedulerpb.PlannedCompactionJob")
+	proto.RegisterType((*PlannedBackfillJobs)(nil), "compactorschedulerpb.PlannedBackfillJobs")
 	proto.RegisterType((*PlannedJobsRequest)(nil), "compactorschedulerpb.PlannedJobsRequest")
 	proto.RegisterType((*PlannedJobsResponse)(nil), "compactorschedulerpb.PlannedJobsResponse")
 	proto.RegisterType((*UpdatePlanJobRequest)(nil), "compactorschedulerpb.UpdatePlanJobRequest")
 	proto.RegisterType((*UpdateCompactionJobRequest)(nil), "compactorschedulerpb.UpdateCompactionJobRequest")
+	proto.RegisterType((*UpdateBackfillJobRequest)(nil), "compactorschedulerpb.UpdateBackfillJobRequest")
 	proto.RegisterType((*UpdateJobResponse)(nil), "compactorschedulerpb.UpdateJobResponse")
 	proto.RegisterType((*StoredJobInfo)(nil), "compactorschedulerpb.StoredJobInfo")
 	proto.RegisterType((*StoredCompactionJob)(nil), "compactorschedulerpb.StoredCompactionJob")
+	proto.RegisterType((*StoredBackfillCleanupJob)(nil), "compactorschedulerpb.StoredBackfillCleanupJob")
+	proto.RegisterType((*StoredBackfillBlockJob)(nil), "compactorschedulerpb.StoredBackfillBlockJob")
 	proto.RegisterType((*PersistenceMetadata)(nil), "compactorschedulerpb.PersistenceMetadata")
 }
 
 func init() { proto.RegisterFile("compactorscheduler.proto", fileDescriptor_cc7d2e2996592602) }
 
 var fileDescriptor_cc7d2e2996592602 = []byte{
-	// 1040 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x56, 0xcd, 0x6f, 0xe3, 0x44,
-	0x14, 0xcf, 0xc4, 0x69, 0xb7, 0x7d, 0x69, 0xba, 0xde, 0x49, 0x96, 0x0d, 0xe9, 0xd6, 0x1b, 0x5c,
-	0x3e, 0x42, 0x85, 0x0a, 0x04, 0x21, 0xf6, 0x02, 0x92, 0xd3, 0x9a, 0x2a, 0x69, 0xd6, 0x89, 0xc6,
-	0x2e, 0x68, 0x41, 0xc8, 0xb2, 0xe3, 0xd9, 0x6d, 0xda, 0xd4, 0x63, 0x6c, 0x07, 0x94, 0x1b, 0xff,
-	0x01, 0x88, 0x13, 0x12, 0x88, 0x33, 0x12, 0x67, 0xfe, 0x07, 0xb8, 0xf5, 0xb8, 0x47, 0x9a, 0x5e,
-	0x38, 0xee, 0x9f, 0x80, 0x3c, 0x76, 0xf3, 0xdd, 0xee, 0x87, 0x38, 0x70, 0xf3, 0xbc, 0xcf, 0xdf,
-	0x7b, 0xf3, 0x7b, 0x6f, 0x0c, 0xc5, 0x0e, 0x3b, 0xf5, 0xac, 0x4e, 0xc8, 0xfc, 0xa0, 0x73, 0x44,
-	0x9d, 0x7e, 0x8f, 0xfa, 0x3b, 0x9e, 0xcf, 0x42, 0x86, 0x0b, 0xf3, 0x1a, 0xcf, 0x2e, 0x15, 0x1e,
-	0xb3, 0xc7, 0x8c, 0x1b, 0xbc, 0x1b, 0x7d, 0xc5, 0xb6, 0xf2, 0x0e, 0x2c, 0x37, 0x98, 0x7d, 0x40,
-	0x07, 0x78, 0x1d, 0xd2, 0x5d, 0xa7, 0x88, 0xca, 0xa8, 0xb2, 0x4a, 0xd2, 0x5d, 0x07, 0x17, 0x60,
-	0x89, 0x7a, 0xac, 0x73, 0x54, 0x4c, 0x97, 0x51, 0x45, 0x20, 0xf1, 0x41, 0xfe, 0x11, 0xc1, 0x8d,
-	0x06, 0xb3, 0x75, 0x8f, 0x76, 0xf0, 0x2b, 0xb0, 0x1c, 0x52, 0xd7, 0x72, 0xc3, 0xc4, 0x2b, 0x39,
-	0xe1, 0x0f, 0x41, 0x38, 0x66, 0x36, 0xf7, 0xcb, 0x56, 0xb7, 0x76, 0x16, 0xa1, 0xd9, 0xd9, 0x8d,
-	0x85, 0x5d, 0xe6, 0x36, 0x98, 0x4d, 0x22, 0x7b, 0x7c, 0x1f, 0x56, 0x8e, 0x99, 0x6d, 0x86, 0x03,
-	0x8f, 0x16, 0x85, 0x32, 0xaa, 0xac, 0x57, 0x37, 0x17, 0xfb, 0x36, 0x98, 0x6d, 0x0c, 0x3c, 0x4a,
-	0x6e, 0x1c, 0xc7, 0x1f, 0xb2, 0x07, 0xb9, 0xa9, 0x78, 0x78, 0x03, 0x56, 0xed, 0x1e, 0xeb, 0x9c,
-	0x98, 0x5d, 0x27, 0x28, 0xa2, 0xb2, 0x50, 0x59, 0x23, 0x2b, 0x5c, 0x50, 0x77, 0x82, 0xa8, 0xb0,
-	0xc0, 0xeb, 0x75, 0x43, 0x0e, 0x70, 0x85, 0xc4, 0x07, 0xfc, 0x0e, 0xe0, 0x90, 0x85, 0x56, 0xcf,
-	0xe4, 0x76, 0x81, 0x69, 0x0f, 0x42, 0x1a, 0x70, 0x1c, 0x19, 0x22, 0x72, 0x4d, 0x8d, 0x2b, 0x6a,
-	0x91, 0x5c, 0xde, 0x87, 0x6c, 0xd3, 0x72, 0x29, 0xa1, 0x5f, 0xf7, 0x69, 0x10, 0x4e, 0x41, 0x47,
-	0x2f, 0x04, 0xfd, 0x1b, 0xb8, 0xd9, 0xa4, 0x56, 0x40, 0xa3, 0x2e, 0x24, 0xc1, 0x36, 0x60, 0xf5,
-	0x5b, 0xe6, 0x9f, 0x50, 0xdf, 0x1c, 0xdd, 0xc7, 0x4a, 0x2c, 0xa8, 0x3b, 0xf8, 0x53, 0xc8, 0xf5,
-	0x2c, 0x97, 0x9a, 0x7e, 0x6c, 0x1c, 0x14, 0xd3, 0x65, 0xa1, 0x92, 0xad, 0xbe, 0xb6, 0x38, 0xdd,
-	0x04, 0x46, 0xb2, 0xd6, 0x1b, 0x1f, 0x02, 0xb9, 0x0f, 0xe2, 0x38, 0x6f, 0xe0, 0x31, 0x37, 0xa0,
-	0x78, 0x07, 0x84, 0x13, 0x3a, 0xe0, 0x29, 0xb3, 0xd5, 0xbb, 0x57, 0x16, 0x70, 0x40, 0x07, 0x24,
-	0x32, 0xc4, 0xef, 0x43, 0x26, 0xf0, 0x68, 0x27, 0xb9, 0xe8, 0xab, 0x2b, 0x8e, 0xc8, 0x42, 0xb8,
-	0xa9, 0xfc, 0x15, 0x14, 0xda, 0x3d, 0xcb, 0x75, 0xa9, 0x33, 0x7d, 0x61, 0xb3, 0xe4, 0x7b, 0x39,
-	0x0a, 0xc9, 0xbf, 0x20, 0xc0, 0x49, 0xfc, 0x06, 0xb3, 0x83, 0xcb, 0x8e, 0xbe, 0x68, 0x61, 0x63,
-	0x62, 0xa7, 0xa7, 0x88, 0xfd, 0x09, 0x64, 0x8e, 0x99, 0x1d, 0xb1, 0x22, 0xea, 0xf9, 0xf6, 0xe2,
-	0x40, 0x8b, 0xea, 0x23, 0xdc, 0x4f, 0xbe, 0x0d, 0xf9, 0x29, 0x74, 0x71, 0xdf, 0xe5, 0x9f, 0x10,
-	0x14, 0x0e, 0x3d, 0xc7, 0x0a, 0x69, 0xa4, 0x9d, 0x60, 0xc2, 0x7f, 0x85, 0xfb, 0x3e, 0x2c, 0xf7,
-	0x79, 0xfc, 0x64, 0xae, 0xca, 0x8b, 0x43, 0xc5, 0x18, 0x38, 0x3f, 0x13, 0x7b, 0xf9, 0x57, 0x04,
-	0xa5, 0x58, 0x3c, 0x5d, 0xcf, 0xff, 0x06, 0x60, 0x1e, 0x6e, 0xc5, 0xd2, 0x09, 0x22, 0xcb, 0x7f,
-	0x21, 0xc8, 0xe9, 0x21, 0xf3, 0x79, 0x9f, 0xeb, 0xee, 0x23, 0x86, 0xb7, 0x20, 0xd7, 0xf1, 0xa9,
-	0x15, 0xc1, 0x37, 0xc3, 0xee, 0x69, 0x3c, 0xa5, 0x02, 0x59, 0xbb, 0x14, 0x1a, 0xdd, 0x53, 0x8a,
-	0x3f, 0x86, 0xe5, 0x20, 0xb4, 0xc2, 0x7e, 0xc0, 0xd1, 0xad, 0x57, 0xdf, 0x58, 0x8c, 0x62, 0x14,
-	0x59, 0xe7, 0xc6, 0x24, 0x71, 0xc2, 0xf7, 0x20, 0x1b, 0x7f, 0xc5, 0x19, 0x04, 0x9e, 0x01, 0x62,
-	0x11, 0x8f, 0xbf, 0x09, 0xe0, 0xf6, 0x4f, 0xcd, 0x5e, 0x34, 0x77, 0x41, 0x31, 0x53, 0x46, 0x95,
-	0x25, 0xb2, 0xea, 0xf6, 0x4f, 0xf9, 0x20, 0x06, 0xe3, 0x85, 0xbb, 0x34, 0xb9, 0x70, 0x7f, 0x46,
-	0x90, 0x8f, 0x33, 0x4e, 0x4f, 0xcc, 0x47, 0x90, 0xe9, 0xba, 0x8f, 0x58, 0xd2, 0xfb, 0xad, 0x67,
-	0x40, 0x8d, 0x9a, 0x40, 0xb8, 0xc3, 0xcb, 0x6e, 0xe7, 0x02, 0x2c, 0x31, 0xdf, 0xa1, 0x3e, 0xaf,
-	0x2b, 0x47, 0xe2, 0x83, 0xfc, 0x25, 0xe4, 0xdb, 0xd4, 0x0f, 0xba, 0x41, 0x48, 0xdd, 0x0e, 0x7d,
-	0x40, 0x43, 0xcb, 0xb1, 0x42, 0x8b, 0xb7, 0xe2, 0xc8, 0xf2, 0x1d, 0xb3, 0xc3, 0xfa, 0xc9, 0xf3,
-	0x90, 0x23, 0xc0, 0x45, 0xbb, 0x91, 0x64, 0xfe, 0x3e, 0xd2, 0xf3, 0xf7, 0xb1, 0xdd, 0xe2, 0x4f,
-	0x4d, 0x74, 0xdd, 0xb8, 0x00, 0x62, 0xa3, 0x55, 0x33, 0x8d, 0x87, 0x6d, 0xd5, 0x3c, 0xd4, 0x0e,
-	0xb4, 0xd6, 0xe7, 0x9a, 0x98, 0xc2, 0x77, 0x20, 0x3f, 0x92, 0xee, 0xb6, 0x1e, 0xb4, 0x95, 0x5d,
-	0xa3, 0xde, 0xd2, 0x44, 0x84, 0x6f, 0xc3, 0xad, 0x91, 0xa2, 0xdd, 0x54, 0x34, 0xad, 0xae, 0xed,
-	0x8b, 0xe9, 0xed, 0x3f, 0x10, 0xc0, 0x98, 0x43, 0x91, 0xfb, 0x61, 0x7b, 0x4f, 0x31, 0xd4, 0xd9,
-	0xb8, 0x1b, 0x70, 0x67, 0x52, 0x51, 0xd7, 0xcc, 0x36, 0x69, 0xed, 0x13, 0x55, 0xd7, 0x45, 0x84,
-	0x8b, 0x50, 0x98, 0x54, 0x46, 0x79, 0x9b, 0xaa, 0xa1, 0x8a, 0xe9, 0x59, 0x0d, 0x51, 0x15, 0x5d,
-	0xaf, 0xef, 0x6b, 0xa2, 0x30, 0x9b, 0x49, 0xa9, 0x29, 0xda, 0x5e, 0x4b, 0x13, 0x33, 0xf8, 0x75,
-	0x28, 0x4f, 0x67, 0x32, 0x54, 0x42, 0x0e, 0xdb, 0x86, 0xba, 0x37, 0x76, 0x5f, 0xda, 0xfe, 0x1e,
-	0xc1, 0xcd, 0x19, 0xd6, 0xe1, 0x4d, 0x78, 0x55, 0x37, 0x5a, 0x44, 0xdd, 0x33, 0xa3, 0x4a, 0x75,
-	0x43, 0x31, 0x0e, 0xf5, 0x89, 0x12, 0xee, 0xc1, 0xc6, 0xbc, 0x5a, 0xf9, 0x4c, 0xa9, 0x37, 0x95,
-	0x5a, 0x53, 0x15, 0x11, 0xbe, 0x0b, 0xc5, 0x79, 0x83, 0xa6, 0xaa, 0xe8, 0xea, 0x9e, 0x98, 0xc6,
-	0x12, 0x94, 0xe6, 0xb5, 0xa3, 0x52, 0x85, 0xea, 0xef, 0x02, 0xe0, 0xdd, 0x4b, 0xe6, 0xe8, 0x97,
-	0xcc, 0xc1, 0x0f, 0x61, 0xe5, 0xf2, 0x55, 0xc1, 0x57, 0x4c, 0xcf, 0xcc, 0x6b, 0x57, 0x7a, 0xf3,
-	0x59, 0x66, 0xc9, 0xe3, 0x64, 0x43, 0x76, 0x62, 0x77, 0xe2, 0xca, 0xb5, 0xcb, 0x77, 0x62, 0xf9,
-	0x97, 0xde, 0x7e, 0x0e, 0xcb, 0x24, 0x87, 0x03, 0xb9, 0xa9, 0x3d, 0x8c, 0xb7, 0xaf, 0xdb, 0x43,
-	0xd3, 0xcb, 0xba, 0xf4, 0xd6, 0x75, 0xb6, 0x93, 0x95, 0x78, 0x90, 0x5f, 0xb0, 0x52, 0xf1, 0x7b,
-	0xd7, 0xf9, 0x2f, 0xda, 0xbe, 0xcf, 0x9d, 0xb1, 0xd6, 0x38, 0x3b, 0x97, 0x52, 0x4f, 0xce, 0xa5,
-	0xd4, 0xd3, 0x73, 0x09, 0x7d, 0x37, 0x94, 0xd0, 0x6f, 0x43, 0x09, 0xfd, 0x39, 0x94, 0xd0, 0xd9,
-	0x50, 0x42, 0x7f, 0x0f, 0x25, 0xf4, 0xcf, 0x50, 0x4a, 0x3d, 0x1d, 0x4a, 0xe8, 0x87, 0x0b, 0x29,
-	0x75, 0x76, 0x21, 0xa5, 0x9e, 0x5c, 0x48, 0xa9, 0x2f, 0x16, 0xfe, 0x46, 0xda, 0xcb, 0xfc, 0xbf,
-	0xf1, 0x83, 0x7f, 0x03, 0x00, 0x00, 0xff, 0xff, 0x4b, 0x6b, 0xd8, 0xcb, 0x7f, 0x0a, 0x00, 0x00,
+	// 1390 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x58, 0x4f, 0x73, 0xda, 0xd6,
+	0x16, 0x47, 0x08, 0x30, 0x3e, 0x36, 0x8e, 0x72, 0x4d, 0x12, 0x82, 0x1d, 0x85, 0xa7, 0xbc, 0x97,
+	0x47, 0x3c, 0x6f, 0x78, 0xa9, 0x3b, 0x99, 0x66, 0xd3, 0xce, 0x08, 0xac, 0xb8, 0x60, 0x02, 0xcc,
+	0x15, 0x4e, 0x27, 0xed, 0x74, 0x34, 0x12, 0x5c, 0x1b, 0x6c, 0x2c, 0xa9, 0x48, 0xb4, 0xe3, 0x5d,
+	0xfb, 0x01, 0x3a, 0x6d, 0x77, 0xed, 0xb4, 0x93, 0x99, 0xee, 0xfa, 0x05, 0xfa, 0x1d, 0xda, 0x5d,
+	0x96, 0x59, 0x36, 0x64, 0xd3, 0x65, 0xa6, 0x9f, 0xa0, 0x73, 0xaf, 0x04, 0x08, 0x90, 0xb1, 0xe3,
+	0xe9, 0x22, 0x3b, 0xdd, 0xf3, 0xef, 0x77, 0xce, 0xb9, 0xe7, 0x9e, 0x73, 0x00, 0x32, 0x2d, 0xeb,
+	0xc4, 0xd6, 0x5b, 0xae, 0xd5, 0x77, 0x5a, 0x1d, 0xd2, 0x1e, 0xf4, 0x48, 0xbf, 0x60, 0xf7, 0x2d,
+	0xd7, 0x42, 0xe9, 0x79, 0x8e, 0x6d, 0x64, 0xd3, 0x87, 0xd6, 0xa1, 0xc5, 0x04, 0xfe, 0x4f, 0xbf,
+	0x3c, 0x59, 0xa9, 0x00, 0x89, 0x8a, 0x65, 0xec, 0x91, 0x53, 0xb4, 0x06, 0xd1, 0x6e, 0x3b, 0xc3,
+	0xe5, 0xb8, 0xfc, 0x32, 0x8e, 0x76, 0xdb, 0x28, 0x0d, 0x71, 0x62, 0x5b, 0xad, 0x4e, 0x26, 0x9a,
+	0xe3, 0xf2, 0x3c, 0xf6, 0x0e, 0xd2, 0x33, 0x1e, 0x96, 0x2a, 0x96, 0xa1, 0xda, 0xa4, 0x85, 0xae,
+	0x43, 0xc2, 0x25, 0xa6, 0x6e, 0xba, 0xbe, 0x96, 0x7f, 0x42, 0x0f, 0x80, 0x3f, 0xb2, 0x0c, 0xa6,
+	0xb7, 0xb2, 0x7d, 0xa7, 0x10, 0xe6, 0x4d, 0xa1, 0xe4, 0x11, 0xbb, 0x96, 0x59, 0xb1, 0x0c, 0x4c,
+	0xe5, 0xd1, 0x43, 0x48, 0x1e, 0x59, 0x86, 0xe6, 0x9e, 0xda, 0x24, 0xc3, 0xe7, 0xb8, 0xfc, 0xda,
+	0xf6, 0xad, 0x70, 0xdd, 0x8a, 0x65, 0x34, 0x4f, 0x6d, 0x82, 0x97, 0x8e, 0xbc, 0x0f, 0x74, 0x00,
+	0x37, 0x0c, 0xbd, 0x75, 0x7c, 0xd0, 0xed, 0xf5, 0x34, 0xbb, 0xa3, 0x3b, 0x44, 0xb3, 0x7b, 0xba,
+	0x69, 0x76, 0xcd, 0xc3, 0x4c, 0x8c, 0x39, 0x51, 0x08, 0x37, 0x54, 0xf4, 0x95, 0x1a, 0x54, 0xa7,
+	0xe1, 0xab, 0x50, 0x7f, 0xae, 0x19, 0x61, 0x1c, 0xa4, 0x82, 0x30, 0xc6, 0x69, 0xf5, 0x88, 0x6e,
+	0x0e, 0xec, 0x4c, 0x9c, 0x01, 0xe4, 0x17, 0x03, 0x94, 0x3c, 0x61, 0x6a, 0xfa, 0x8a, 0x31, 0x4d,
+	0x43, 0x8f, 0x61, 0x6d, 0x6c, 0xd4, 0xe8, 0x59, 0xad, 0xe3, 0x4c, 0x82, 0x99, 0xbc, 0xbb, 0xd8,
+	0x64, 0x91, 0x8a, 0x52, 0x83, 0x29, 0x23, 0x48, 0x91, 0x6a, 0x20, 0xcc, 0x8a, 0xa0, 0xdb, 0xb0,
+	0x32, 0x86, 0xf0, 0xef, 0x78, 0x15, 0xc3, 0x88, 0x54, 0x6e, 0xa3, 0x9b, 0x90, 0x64, 0xd0, 0x94,
+	0x1b, 0x65, 0xdc, 0x25, 0x76, 0x2e, 0xb7, 0xa5, 0x2a, 0x64, 0xce, 0x4a, 0x13, 0xba, 0x0f, 0xe9,
+	0x8e, 0xee, 0x68, 0xd6, 0xc0, 0x75, 0x5c, 0xdd, 0x6c, 0x77, 0xcd, 0x43, 0xed, 0xc8, 0x32, 0x1c,
+	0x06, 0x90, 0xc4, 0xa8, 0xa3, 0x3b, 0xf5, 0x09, 0xab, 0x62, 0x19, 0x8e, 0xf4, 0x00, 0xd0, 0x7c,
+	0x4e, 0xce, 0xf5, 0x4f, 0xfa, 0x8e, 0x83, 0xd4, 0x54, 0xc5, 0xa0, 0x0d, 0x58, 0x1e, 0x79, 0x4c,
+	0xf1, 0xf8, 0xfc, 0x2a, 0x4e, 0xfa, 0x2e, 0x3b, 0xb4, 0x74, 0x1d, 0xbb, 0xd7, 0x75, 0x59, 0x2c,
+	0x49, 0xec, 0x1d, 0xd0, 0xff, 0x00, 0xb9, 0x96, 0xab, 0xfb, 0x59, 0x76, 0x34, 0xe3, 0xd4, 0x25,
+	0x0e, 0xab, 0xb4, 0x18, 0x16, 0x18, 0x87, 0x25, 0xcc, 0x29, 0x52, 0xfa, 0xac, 0x4f, 0xb1, 0x39,
+	0x9f, 0x76, 0x61, 0xa5, 0xaa, 0x9b, 0x04, 0x93, 0xcf, 0x06, 0xc4, 0x71, 0xa7, 0xaa, 0x97, 0x7b,
+	0x93, 0xea, 0x95, 0x3e, 0x87, 0x2b, 0x55, 0xa2, 0x3b, 0x84, 0x5e, 0xa6, 0x6f, 0x6c, 0x03, 0x96,
+	0xbf, 0xb0, 0xfa, 0xc7, 0xa4, 0xaf, 0x8d, 0x9f, 0x64, 0xd2, 0x23, 0x94, 0xdb, 0xe8, 0x11, 0xa4,
+	0x7a, 0xba, 0x49, 0xb4, 0xbe, 0x27, 0xec, 0x64, 0xa2, 0x39, 0x3e, 0xbf, 0xb2, 0xfd, 0xaf, 0x70,
+	0xb8, 0x80, 0x8f, 0x78, 0xb5, 0x37, 0x39, 0x38, 0xd2, 0x00, 0x84, 0x09, 0xae, 0x63, 0x5b, 0xa6,
+	0x43, 0x50, 0x01, 0xf8, 0x63, 0x72, 0xca, 0x20, 0x57, 0xb6, 0x37, 0xcf, 0x0c, 0x60, 0x8f, 0x9c,
+	0x62, 0x2a, 0x88, 0xde, 0x81, 0x98, 0x63, 0x93, 0x96, 0xff, 0xd6, 0xcf, 0x8e, 0x98, 0xf6, 0x0b,
+	0xcc, 0x44, 0xa5, 0x4f, 0x21, 0xcd, 0x6a, 0x88, 0xb4, 0xa7, 0x6f, 0x74, 0xb6, 0xff, 0x5c, 0xae,
+	0x8b, 0x48, 0x5f, 0x73, 0xb0, 0xee, 0xdb, 0x1f, 0x55, 0x1a, 0xad, 0xbc, 0xcb, 0xdf, 0xcf, 0x6c,
+	0x25, 0x44, 0xe7, 0x5e, 0xcf, 0x54, 0x2d, 0xf2, 0xd3, 0xb5, 0x28, 0x7d, 0x15, 0x05, 0xe4, 0xfb,
+	0x43, 0xfd, 0x18, 0xdd, 0xf0, 0x9b, 0x26, 0x7a, 0xd2, 0x6b, 0xa3, 0x53, 0xbd, 0xf6, 0x03, 0x88,
+	0xb1, 0x27, 0xc7, 0xb3, 0x1a, 0xd8, 0x0a, 0x37, 0x14, 0x96, 0x6f, 0xcc, 0xf4, 0xd0, 0x26, 0x2c,
+	0x0f, 0xcc, 0x56, 0x47, 0x37, 0x0f, 0x89, 0x57, 0xe4, 0x49, 0x3c, 0x21, 0x20, 0x05, 0x92, 0xa3,
+	0x38, 0xfd, 0x46, 0x77, 0x6f, 0x21, 0x42, 0x30, 0xe3, 0x78, 0xac, 0x2a, 0x5d, 0x1b, 0x5f, 0x89,
+	0x97, 0x02, 0xaf, 0xd8, 0xa4, 0xef, 0x39, 0x48, 0xef, 0xdb, 0x6d, 0xdd, 0x65, 0x4d, 0x25, 0x50,
+	0xfe, 0xff, 0x54, 0x72, 0x1e, 0x42, 0x62, 0xc0, 0xec, 0xfb, 0xf3, 0x24, 0x17, 0x6e, 0xca, 0xf3,
+	0x81, 0x5d, 0xba, 0x2f, 0x2f, 0x3d, 0xe3, 0x20, 0xeb, 0x91, 0xa7, 0x93, 0xf6, 0xd6, 0x38, 0xf8,
+	0x13, 0x07, 0x19, 0x8f, 0x1c, 0xc8, 0xf9, 0xdb, 0xe3, 0xde, 0x3a, 0x5c, 0xf5, 0xa8, 0x81, 0xe6,
+	0x22, 0xfd, 0xce, 0x41, 0x4a, 0x75, 0xad, 0x3e, 0x2b, 0x83, 0xb2, 0x79, 0x60, 0xa1, 0x3b, 0x90,
+	0x6a, 0xf5, 0x89, 0x4e, 0xb3, 0xab, 0xb9, 0xdd, 0x13, 0xef, 0x65, 0xf2, 0x78, 0x75, 0x44, 0x6c,
+	0x76, 0x4f, 0x08, 0x7a, 0x1f, 0x12, 0x8e, 0xab, 0xbb, 0x03, 0x87, 0x79, 0xb7, 0xb6, 0xfd, 0x9f,
+	0x70, 0x2f, 0xc6, 0x96, 0x55, 0x26, 0x8c, 0x7d, 0x25, 0xfa, 0x7c, 0xbd, 0x2f, 0x0f, 0x81, 0x67,
+	0x08, 0xe0, 0x91, 0x98, 0xfd, 0x5b, 0x00, 0xe6, 0xe0, 0x44, 0xeb, 0xd1, 0x5e, 0xe8, 0xb0, 0x37,
+	0x10, 0xc7, 0xcb, 0xe6, 0xe0, 0x84, 0x35, 0x47, 0x67, 0xb2, 0x07, 0xc5, 0x83, 0x7b, 0xd0, 0x8f,
+	0x1c, 0xac, 0x7b, 0x88, 0xd3, 0x5d, 0xec, 0x3d, 0x88, 0x75, 0xcd, 0x03, 0xcb, 0xcf, 0xfd, 0x9d,
+	0x73, 0x5c, 0xa5, 0x49, 0xc0, 0x4c, 0xe1, 0xb2, 0x4b, 0x53, 0x1a, 0xe2, 0x56, 0xbf, 0x4d, 0xfa,
+	0x2c, 0xae, 0x14, 0xf6, 0x0e, 0x92, 0x0b, 0x19, 0x0f, 0x23, 0x64, 0xd8, 0x5e, 0xda, 0xc3, 0xf3,
+	0xfa, 0xa0, 0xf4, 0x33, 0x07, 0xd7, 0xa7, 0x61, 0xc7, 0x1b, 0xc8, 0xa5, 0x41, 0x1f, 0x06, 0xd3,
+	0x72, 0xd1, 0x95, 0x68, 0x41, 0x66, 0x3e, 0x81, 0xf5, 0x06, 0xe9, 0x3b, 0x5d, 0xc7, 0x25, 0x66,
+	0x8b, 0x3c, 0x26, 0xae, 0xde, 0xd6, 0x5d, 0x9d, 0x15, 0x49, 0x47, 0xef, 0xb7, 0xb5, 0x96, 0x35,
+	0xf0, 0xf7, 0xd9, 0x14, 0x06, 0x46, 0x2a, 0x51, 0xca, 0x7c, 0xa5, 0x46, 0xe7, 0x2b, 0x75, 0xeb,
+	0x2f, 0x8e, 0x2d, 0xc7, 0x6c, 0x6a, 0xa4, 0x41, 0xa8, 0xd4, 0x8b, 0x5a, 0xf3, 0x69, 0x43, 0xd1,
+	0xf6, 0x6b, 0x7b, 0xb5, 0xfa, 0x47, 0x35, 0x21, 0x82, 0x6e, 0xc0, 0xfa, 0x98, 0x5a, 0xaa, 0x3f,
+	0x6e, 0xc8, 0xa5, 0x66, 0xb9, 0x5e, 0x13, 0x38, 0x74, 0x0d, 0xae, 0x8e, 0x19, 0x8d, 0xaa, 0x5c,
+	0xab, 0x95, 0x6b, 0xbb, 0x42, 0x14, 0xfd, 0x1b, 0x72, 0x63, 0x72, 0x51, 0x2e, 0xed, 0x3d, 0x2a,
+	0x57, 0xab, 0x5a, 0xe3, 0x43, 0x59, 0x0d, 0x48, 0xf1, 0xe8, 0x16, 0xdc, 0x9c, 0x97, 0x2a, 0x55,
+	0x15, 0xb9, 0xb6, 0xdf, 0x10, 0x62, 0x48, 0x84, 0xec, 0x3c, 0xfb, 0x89, 0x5c, 0x2d, 0xef, 0xc8,
+	0x4d, 0x45, 0x88, 0xa3, 0x1c, 0x6c, 0x86, 0xa8, 0x4f, 0xbc, 0x4b, 0xa0, 0x2c, 0x5c, 0x0f, 0x93,
+	0x68, 0x3c, 0x15, 0x96, 0xb6, 0x7e, 0xe5, 0x00, 0x26, 0x1d, 0x80, 0x46, 0xb8, 0xdf, 0xa0, 0x86,
+	0x67, 0x43, 0xdf, 0x80, 0x1b, 0x41, 0x46, 0xb9, 0xa6, 0x35, 0x70, 0x7d, 0x17, 0x2b, 0xaa, 0x2a,
+	0x70, 0x28, 0x03, 0xe9, 0x20, 0x93, 0x82, 0x57, 0x95, 0xa6, 0x22, 0x44, 0x67, 0x39, 0x58, 0x91,
+	0x55, 0xb5, 0xbc, 0x5b, 0x13, 0xf8, 0x59, 0x24, 0xb9, 0x28, 0xd7, 0x76, 0xea, 0x35, 0x21, 0x46,
+	0x93, 0x36, 0x8d, 0xd4, 0x54, 0x30, 0xde, 0x6f, 0x34, 0x95, 0x9d, 0x89, 0x7a, 0x7c, 0xeb, 0x1b,
+	0x0e, 0xae, 0xcc, 0xf4, 0x0c, 0x9a, 0x48, 0xb5, 0x59, 0xc7, 0xca, 0x8e, 0x46, 0xc3, 0x55, 0x9b,
+	0x72, 0x73, 0x5f, 0x0d, 0x84, 0x70, 0x1b, 0x36, 0xe6, 0xd9, 0xf2, 0x13, 0xb9, 0x5c, 0x95, 0x8b,
+	0x55, 0x45, 0xe0, 0xd0, 0x26, 0x64, 0xe6, 0x05, 0xaa, 0x8a, 0xac, 0x2a, 0x3b, 0x42, 0x94, 0xde,
+	0xc3, 0x3c, 0x77, 0x1c, 0x2a, 0xbf, 0xfd, 0x43, 0x0c, 0x50, 0x69, 0x54, 0xe0, 0xea, 0xa8, 0xc0,
+	0xd1, 0x53, 0x48, 0x8e, 0xf6, 0x34, 0x74, 0x46, 0xef, 0x9b, 0xd9, 0x1f, 0xb3, 0x77, 0xcf, 0x13,
+	0xf3, 0xd7, 0x3d, 0x03, 0x56, 0x02, 0x83, 0x19, 0xe5, 0x17, 0x0e, 0xf7, 0xc0, 0xfa, 0x92, 0xbd,
+	0x77, 0x01, 0x49, 0x1f, 0xa3, 0x0d, 0xa9, 0xa9, 0x21, 0x8f, 0xb6, 0x16, 0x4d, 0x91, 0xe9, 0x4d,
+	0x20, 0xfb, 0xdf, 0x45, 0xb2, 0xc1, 0x48, 0x6c, 0x58, 0x0f, 0x99, 0xd7, 0xe8, 0xfe, 0x22, 0xfd,
+	0xb0, 0xd1, 0x7e, 0x71, 0xc4, 0xde, 0x68, 0xc4, 0x05, 0x06, 0x30, 0x2a, 0x2c, 0xd2, 0x9e, 0x9f,
+	0xd4, 0x17, 0x46, 0x2b, 0x56, 0x9e, 0xbf, 0x14, 0x23, 0x2f, 0x5e, 0x8a, 0x91, 0xd7, 0x2f, 0x45,
+	0xee, 0xcb, 0xa1, 0xc8, 0xfd, 0x32, 0x14, 0xb9, 0xdf, 0x86, 0x22, 0xf7, 0x7c, 0x28, 0x72, 0x7f,
+	0x0c, 0x45, 0xee, 0xcf, 0xa1, 0x18, 0x79, 0x3d, 0x14, 0xb9, 0x6f, 0x5f, 0x89, 0x91, 0xe7, 0xaf,
+	0xc4, 0xc8, 0x8b, 0x57, 0x62, 0xe4, 0xe3, 0xd0, 0x7f, 0x02, 0x8c, 0x04, 0xfb, 0xe9, 0xff, 0xee,
+	0xdf, 0x01, 0x00, 0x00, 0xff, 0xff, 0x20, 0xf8, 0xb0, 0xc9, 0x42, 0x10, 0x00, 0x00,
 }
 
 func (x JobType) String() string {
@@ -1080,6 +1537,90 @@ func (this *JobSpec) Equal(that interface{}) bool {
 	if this.JobType != that1.JobType {
 		return false
 	}
+	if !this.BackfillPhasePlanning.Equal(that1.BackfillPhasePlanning) {
+		return false
+	}
+	if !this.BackfillCleanup.Equal(that1.BackfillCleanup) {
+		return false
+	}
+	if !this.BackfillBlock.Equal(that1.BackfillBlock) {
+		return false
+	}
+	return true
+}
+func (this *BackfillBlockJob) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BackfillBlockJob)
+	if !ok {
+		that2, ok := that.(BackfillBlockJob)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.BackfillId, that1.BackfillId) {
+		return false
+	}
+	if !bytes.Equal(this.BlockId, that1.BlockId) {
+		return false
+	}
+	return true
+}
+func (this *BackfillPhasePlanningJob) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BackfillPhasePlanningJob)
+	if !ok {
+		that2, ok := that.(BackfillPhasePlanningJob)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.HasOutstandingJobs != that1.HasOutstandingJobs {
+		return false
+	}
+	return true
+}
+func (this *BackfillCleanupJob) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BackfillCleanupJob)
+	if !ok {
+		that2, ok := that.(BackfillCleanupJob)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.BackfillId, that1.BackfillId) {
+		return false
+	}
 	return true
 }
 func (this *CompactionJob) Equal(that interface{}) bool {
@@ -1113,6 +1654,9 @@ func (this *CompactionJob) Equal(that interface{}) bool {
 		return false
 	}
 	if this.TotalBlocksBytes != that1.TotalBlocksBytes {
+		return false
+	}
+	if !bytes.Equal(this.BackfillId, that1.BackfillId) {
 		return false
 	}
 	return true
@@ -1227,6 +1771,41 @@ func (this *PlannedCompactionJob) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *PlannedBackfillJobs) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PlannedBackfillJobs)
+	if !ok {
+		that2, ok := that.(PlannedBackfillJobs)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.JobType != that1.JobType {
+		return false
+	}
+	if !bytes.Equal(this.BackfillId, that1.BackfillId) {
+		return false
+	}
+	if len(this.BlockIds) != len(that1.BlockIds) {
+		return false
+	}
+	for i := range this.BlockIds {
+		if !bytes.Equal(this.BlockIds[i], that1.BlockIds[i]) {
+			return false
+		}
+	}
+	return true
+}
 func (this *PlannedJobsRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -1259,6 +1838,12 @@ func (this *PlannedJobsRequest) Equal(that interface{}) bool {
 		if !this.Jobs[i].Equal(that1.Jobs[i]) {
 			return false
 		}
+	}
+	if this.Unchanged != that1.Unchanged {
+		return false
+	}
+	if !this.Backfill.Equal(that1.Backfill) {
+		return false
 	}
 	return true
 }
@@ -1321,6 +1906,36 @@ func (this *UpdateCompactionJobRequest) Equal(that interface{}) bool {
 	that1, ok := that.(*UpdateCompactionJobRequest)
 	if !ok {
 		that2, ok := that.(UpdateCompactionJobRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Key.Equal(that1.Key) {
+		return false
+	}
+	if this.Tenant != that1.Tenant {
+		return false
+	}
+	if this.Update != that1.Update {
+		return false
+	}
+	return true
+}
+func (this *UpdateBackfillJobRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*UpdateBackfillJobRequest)
+	if !ok {
+		that2, ok := that.(UpdateBackfillJobRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -1430,6 +2045,63 @@ func (this *StoredCompactionJob) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *StoredBackfillCleanupJob) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StoredBackfillCleanupJob)
+	if !ok {
+		that2, ok := that.(StoredBackfillCleanupJob)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Info.Equal(that1.Info) {
+		return false
+	}
+	if !bytes.Equal(this.BackfillId, that1.BackfillId) {
+		return false
+	}
+	return true
+}
+func (this *StoredBackfillBlockJob) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StoredBackfillBlockJob)
+	if !ok {
+		that2, ok := that.(StoredBackfillBlockJob)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Info.Equal(that1.Info) {
+		return false
+	}
+	if !this.Job.Equal(that1.Job) {
+		return false
+	}
+	if this.Order != that1.Order {
+		return false
+	}
+	return true
+}
 func (this *PersistenceMetadata) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -1472,13 +2144,53 @@ func (this *JobSpec) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 10)
 	s = append(s, "&compactorschedulerpb.JobSpec{")
 	s = append(s, "Tenant: "+fmt.Sprintf("%#v", this.Tenant)+",\n")
 	if this.Job != nil {
 		s = append(s, "Job: "+fmt.Sprintf("%#v", this.Job)+",\n")
 	}
 	s = append(s, "JobType: "+fmt.Sprintf("%#v", this.JobType)+",\n")
+	if this.BackfillPhasePlanning != nil {
+		s = append(s, "BackfillPhasePlanning: "+fmt.Sprintf("%#v", this.BackfillPhasePlanning)+",\n")
+	}
+	if this.BackfillCleanup != nil {
+		s = append(s, "BackfillCleanup: "+fmt.Sprintf("%#v", this.BackfillCleanup)+",\n")
+	}
+	if this.BackfillBlock != nil {
+		s = append(s, "BackfillBlock: "+fmt.Sprintf("%#v", this.BackfillBlock)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *BackfillBlockJob) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&compactorschedulerpb.BackfillBlockJob{")
+	s = append(s, "BackfillId: "+fmt.Sprintf("%#v", this.BackfillId)+",\n")
+	s = append(s, "BlockId: "+fmt.Sprintf("%#v", this.BlockId)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *BackfillPhasePlanningJob) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&compactorschedulerpb.BackfillPhasePlanningJob{")
+	s = append(s, "HasOutstandingJobs: "+fmt.Sprintf("%#v", this.HasOutstandingJobs)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *BackfillCleanupJob) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&compactorschedulerpb.BackfillCleanupJob{")
+	s = append(s, "BackfillId: "+fmt.Sprintf("%#v", this.BackfillId)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1486,11 +2198,12 @@ func (this *CompactionJob) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&compactorschedulerpb.CompactionJob{")
 	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
 	s = append(s, "Split: "+fmt.Sprintf("%#v", this.Split)+",\n")
 	s = append(s, "TotalBlocksBytes: "+fmt.Sprintf("%#v", this.TotalBlocksBytes)+",\n")
+	s = append(s, "BackfillId: "+fmt.Sprintf("%#v", this.BackfillId)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1545,11 +2258,23 @@ func (this *PlannedCompactionJob) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *PlannedJobsRequest) GoString() string {
+func (this *PlannedBackfillJobs) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 7)
+	s = append(s, "&compactorschedulerpb.PlannedBackfillJobs{")
+	s = append(s, "JobType: "+fmt.Sprintf("%#v", this.JobType)+",\n")
+	s = append(s, "BackfillId: "+fmt.Sprintf("%#v", this.BackfillId)+",\n")
+	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PlannedJobsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
 	s = append(s, "&compactorschedulerpb.PlannedJobsRequest{")
 	if this.Key != nil {
 		s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
@@ -1557,6 +2282,10 @@ func (this *PlannedJobsRequest) GoString() string {
 	s = append(s, "Tenant: "+fmt.Sprintf("%#v", this.Tenant)+",\n")
 	if this.Jobs != nil {
 		s = append(s, "Jobs: "+fmt.Sprintf("%#v", this.Jobs)+",\n")
+	}
+	s = append(s, "Unchanged: "+fmt.Sprintf("%#v", this.Unchanged)+",\n")
+	if this.Backfill != nil {
+		s = append(s, "Backfill: "+fmt.Sprintf("%#v", this.Backfill)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -1590,6 +2319,20 @@ func (this *UpdateCompactionJobRequest) GoString() string {
 	}
 	s := make([]string, 0, 7)
 	s = append(s, "&compactorschedulerpb.UpdateCompactionJobRequest{")
+	if this.Key != nil {
+		s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
+	}
+	s = append(s, "Tenant: "+fmt.Sprintf("%#v", this.Tenant)+",\n")
+	s = append(s, "Update: "+fmt.Sprintf("%#v", this.Update)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *UpdateBackfillJobRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&compactorschedulerpb.UpdateBackfillJobRequest{")
 	if this.Key != nil {
 		s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
 	}
@@ -1637,6 +2380,35 @@ func (this *StoredCompactionJob) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *StoredBackfillCleanupJob) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&compactorschedulerpb.StoredBackfillCleanupJob{")
+	if this.Info != nil {
+		s = append(s, "Info: "+fmt.Sprintf("%#v", this.Info)+",\n")
+	}
+	s = append(s, "BackfillId: "+fmt.Sprintf("%#v", this.BackfillId)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StoredBackfillBlockJob) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&compactorschedulerpb.StoredBackfillBlockJob{")
+	if this.Info != nil {
+		s = append(s, "Info: "+fmt.Sprintf("%#v", this.Info)+",\n")
+	}
+	if this.Job != nil {
+		s = append(s, "Job: "+fmt.Sprintf("%#v", this.Job)+",\n")
+	}
+	s = append(s, "Order: "+fmt.Sprintf("%#v", this.Order)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *PersistenceMetadata) GoString() string {
 	if this == nil {
 		return "nil"
@@ -1673,6 +2445,7 @@ type CompactorSchedulerClient interface {
 	PlannedJobs(ctx context.Context, in *PlannedJobsRequest, opts ...grpc.CallOption) (*PlannedJobsResponse, error)
 	UpdatePlanJob(ctx context.Context, in *UpdatePlanJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
 	UpdateCompactionJob(ctx context.Context, in *UpdateCompactionJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
+	UpdateBackfillJob(ctx context.Context, in *UpdateBackfillJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
 }
 
 type compactorSchedulerClient struct {
@@ -1719,12 +2492,22 @@ func (c *compactorSchedulerClient) UpdateCompactionJob(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *compactorSchedulerClient) UpdateBackfillJob(ctx context.Context, in *UpdateBackfillJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error) {
+	out := new(UpdateJobResponse)
+	err := c.cc.Invoke(ctx, "/compactorschedulerpb.CompactorScheduler/UpdateBackfillJob", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CompactorSchedulerServer is the server API for CompactorScheduler service.
 type CompactorSchedulerServer interface {
 	LeaseJob(context.Context, *LeaseJobRequest) (*LeaseJobResponse, error)
 	PlannedJobs(context.Context, *PlannedJobsRequest) (*PlannedJobsResponse, error)
 	UpdatePlanJob(context.Context, *UpdatePlanJobRequest) (*UpdateJobResponse, error)
 	UpdateCompactionJob(context.Context, *UpdateCompactionJobRequest) (*UpdateJobResponse, error)
+	UpdateBackfillJob(context.Context, *UpdateBackfillJobRequest) (*UpdateJobResponse, error)
 }
 
 // UnimplementedCompactorSchedulerServer can be embedded to have forward compatible implementations.
@@ -1742,6 +2525,9 @@ func (*UnimplementedCompactorSchedulerServer) UpdatePlanJob(ctx context.Context,
 }
 func (*UnimplementedCompactorSchedulerServer) UpdateCompactionJob(ctx context.Context, req *UpdateCompactionJobRequest) (*UpdateJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateCompactionJob not implemented")
+}
+func (*UnimplementedCompactorSchedulerServer) UpdateBackfillJob(ctx context.Context, req *UpdateBackfillJobRequest) (*UpdateJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackfillJob not implemented")
 }
 
 func RegisterCompactorSchedulerServer(s *grpc.Server, srv CompactorSchedulerServer) {
@@ -1820,6 +2606,24 @@ func _CompactorScheduler_UpdateCompactionJob_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CompactorScheduler_UpdateBackfillJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBackfillJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompactorSchedulerServer).UpdateBackfillJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/compactorschedulerpb.CompactorScheduler/UpdateBackfillJob",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompactorSchedulerServer).UpdateBackfillJob(ctx, req.(*UpdateBackfillJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _CompactorScheduler_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "compactorschedulerpb.CompactorScheduler",
 	HandlerType: (*CompactorSchedulerServer)(nil),
@@ -1839,6 +2643,10 @@ var _CompactorScheduler_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateCompactionJob",
 			Handler:    _CompactorScheduler_UpdateCompactionJob_Handler,
+		},
+		{
+			MethodName: "UpdateBackfillJob",
+			Handler:    _CompactorScheduler_UpdateBackfillJob_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1900,6 +2708,42 @@ func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.BackfillBlock != nil {
+		{
+			size, err := m.BackfillBlock.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.BackfillCleanup != nil {
+		{
+			size, err := m.BackfillCleanup.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.BackfillPhasePlanning != nil {
+		{
+			size, err := m.BackfillPhasePlanning.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
 	if m.JobType != 0 {
 		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.JobType))
 		i--
@@ -1927,6 +2771,106 @@ func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *BackfillBlockJob) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BackfillBlockJob) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BackfillBlockJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BlockId) > 0 {
+		i -= len(m.BlockId)
+		copy(dAtA[i:], m.BlockId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BlockId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.BackfillId) > 0 {
+		i -= len(m.BackfillId)
+		copy(dAtA[i:], m.BackfillId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BackfillId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *BackfillPhasePlanningJob) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BackfillPhasePlanningJob) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BackfillPhasePlanningJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.HasOutstandingJobs {
+		i--
+		if m.HasOutstandingJobs {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *BackfillCleanupJob) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BackfillCleanupJob) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BackfillCleanupJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BackfillId) > 0 {
+		i -= len(m.BackfillId)
+		copy(dAtA[i:], m.BackfillId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BackfillId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *CompactionJob) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1947,6 +2891,13 @@ func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.BackfillId) > 0 {
+		i -= len(m.BackfillId)
+		copy(dAtA[i:], m.BackfillId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BackfillId)))
+		i--
+		dAtA[i] = 0x22
+	}
 	if m.TotalBlocksBytes != 0 {
 		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.TotalBlocksBytes))
 		i--
@@ -2135,6 +3086,50 @@ func (m *PlannedCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *PlannedBackfillJobs) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PlannedBackfillJobs) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PlannedBackfillJobs) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BlockIds) > 0 {
+		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.BlockIds[iNdEx])
+			copy(dAtA[i:], m.BlockIds[iNdEx])
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.BackfillId) > 0 {
+		i -= len(m.BackfillId)
+		copy(dAtA[i:], m.BackfillId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BackfillId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.JobType != 0 {
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.JobType))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *PlannedJobsRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -2155,6 +3150,28 @@ func (m *PlannedJobsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Backfill != nil {
+		{
+			size, err := m.Backfill.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.Unchanged {
+		i--
+		if m.Unchanged {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x20
+	}
 	if len(m.Jobs) > 0 {
 		for iNdEx := len(m.Jobs) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -2277,6 +3294,53 @@ func (m *UpdateCompactionJobRequest) MarshalTo(dAtA []byte) (int, error) {
 }
 
 func (m *UpdateCompactionJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Update != 0 {
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Update))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Tenant) > 0 {
+		i -= len(m.Tenant)
+		copy(dAtA[i:], m.Tenant)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Tenant)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Key != nil {
+		{
+			size, err := m.Key.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *UpdateBackfillJobRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *UpdateBackfillJobRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *UpdateBackfillJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -2431,6 +3495,100 @@ func (m *StoredCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *StoredBackfillCleanupJob) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StoredBackfillCleanupJob) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StoredBackfillCleanupJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BackfillId) > 0 {
+		i -= len(m.BackfillId)
+		copy(dAtA[i:], m.BackfillId)
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BackfillId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Info != nil {
+		{
+			size, err := m.Info.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StoredBackfillBlockJob) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StoredBackfillBlockJob) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StoredBackfillBlockJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Order != 0 {
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Order))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Job != nil {
+		{
+			size, err := m.Job.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Info != nil {
+		{
+			size, err := m.Info.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *PersistenceMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -2508,6 +3666,60 @@ func (m *JobSpec) Size() (n int) {
 	if m.JobType != 0 {
 		n += 1 + sovCompactorscheduler(uint64(m.JobType))
 	}
+	if m.BackfillPhasePlanning != nil {
+		l = m.BackfillPhasePlanning.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if m.BackfillCleanup != nil {
+		l = m.BackfillCleanup.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if m.BackfillBlock != nil {
+		l = m.BackfillBlock.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	return n
+}
+
+func (m *BackfillBlockJob) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.BackfillId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	l = len(m.BlockId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	return n
+}
+
+func (m *BackfillPhasePlanningJob) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.HasOutstandingJobs {
+		n += 2
+	}
+	return n
+}
+
+func (m *BackfillCleanupJob) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.BackfillId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
 	return n
 }
 
@@ -2528,6 +3740,10 @@ func (m *CompactionJob) Size() (n int) {
 	}
 	if m.TotalBlocksBytes != 0 {
 		n += 1 + sovCompactorscheduler(uint64(m.TotalBlocksBytes))
+	}
+	l = len(m.BackfillId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
 	}
 	return n
 }
@@ -2597,6 +3813,28 @@ func (m *PlannedCompactionJob) Size() (n int) {
 	return n
 }
 
+func (m *PlannedBackfillJobs) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.JobType != 0 {
+		n += 1 + sovCompactorscheduler(uint64(m.JobType))
+	}
+	l = len(m.BackfillId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if len(m.BlockIds) > 0 {
+		for _, b := range m.BlockIds {
+			l = len(b)
+			n += 1 + l + sovCompactorscheduler(uint64(l))
+		}
+	}
+	return n
+}
+
 func (m *PlannedJobsRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2616,6 +3854,13 @@ func (m *PlannedJobsRequest) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovCompactorscheduler(uint64(l))
 		}
+	}
+	if m.Unchanged {
+		n += 2
+	}
+	if m.Backfill != nil {
+		l = m.Backfill.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
 	}
 	return n
 }
@@ -2650,6 +3895,26 @@ func (m *UpdatePlanJobRequest) Size() (n int) {
 }
 
 func (m *UpdateCompactionJobRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Key != nil {
+		l = m.Key.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	l = len(m.Tenant)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if m.Update != 0 {
+		n += 1 + sovCompactorscheduler(uint64(m.Update))
+	}
+	return n
+}
+
+func (m *UpdateBackfillJobRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -2722,6 +3987,43 @@ func (m *StoredCompactionJob) Size() (n int) {
 	return n
 }
 
+func (m *StoredBackfillCleanupJob) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Info != nil {
+		l = m.Info.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	l = len(m.BackfillId)
+	if l > 0 {
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	return n
+}
+
+func (m *StoredBackfillBlockJob) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Info != nil {
+		l = m.Info.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if m.Job != nil {
+		l = m.Job.Size()
+		n += 1 + l + sovCompactorscheduler(uint64(l))
+	}
+	if m.Order != 0 {
+		n += 1 + sovCompactorscheduler(uint64(m.Order))
+	}
+	return n
+}
+
 func (m *PersistenceMetadata) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2762,6 +4064,40 @@ func (this *JobSpec) String() string {
 		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
 		`Job:` + strings.Replace(this.Job.String(), "CompactionJob", "CompactionJob", 1) + `,`,
 		`JobType:` + fmt.Sprintf("%v", this.JobType) + `,`,
+		`BackfillPhasePlanning:` + strings.Replace(this.BackfillPhasePlanning.String(), "BackfillPhasePlanningJob", "BackfillPhasePlanningJob", 1) + `,`,
+		`BackfillCleanup:` + strings.Replace(this.BackfillCleanup.String(), "BackfillCleanupJob", "BackfillCleanupJob", 1) + `,`,
+		`BackfillBlock:` + strings.Replace(this.BackfillBlock.String(), "BackfillBlockJob", "BackfillBlockJob", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BackfillBlockJob) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&BackfillBlockJob{`,
+		`BackfillId:` + fmt.Sprintf("%v", this.BackfillId) + `,`,
+		`BlockId:` + fmt.Sprintf("%v", this.BlockId) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BackfillPhasePlanningJob) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&BackfillPhasePlanningJob{`,
+		`HasOutstandingJobs:` + fmt.Sprintf("%v", this.HasOutstandingJobs) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BackfillCleanupJob) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&BackfillCleanupJob{`,
+		`BackfillId:` + fmt.Sprintf("%v", this.BackfillId) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2774,6 +4110,7 @@ func (this *CompactionJob) String() string {
 		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
 		`Split:` + fmt.Sprintf("%v", this.Split) + `,`,
 		`TotalBlocksBytes:` + fmt.Sprintf("%v", this.TotalBlocksBytes) + `,`,
+		`BackfillId:` + fmt.Sprintf("%v", this.BackfillId) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2826,6 +4163,18 @@ func (this *PlannedCompactionJob) String() string {
 	}, "")
 	return s
 }
+func (this *PlannedBackfillJobs) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PlannedBackfillJobs{`,
+		`JobType:` + fmt.Sprintf("%v", this.JobType) + `,`,
+		`BackfillId:` + fmt.Sprintf("%v", this.BackfillId) + `,`,
+		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *PlannedJobsRequest) String() string {
 	if this == nil {
 		return "nil"
@@ -2839,6 +4188,8 @@ func (this *PlannedJobsRequest) String() string {
 		`Key:` + strings.Replace(this.Key.String(), "JobKey", "JobKey", 1) + `,`,
 		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
 		`Jobs:` + repeatedStringForJobs + `,`,
+		`Unchanged:` + fmt.Sprintf("%v", this.Unchanged) + `,`,
+		`Backfill:` + strings.Replace(this.Backfill.String(), "PlannedBackfillJobs", "PlannedBackfillJobs", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2876,6 +4227,18 @@ func (this *UpdateCompactionJobRequest) String() string {
 	}, "")
 	return s
 }
+func (this *UpdateBackfillJobRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&UpdateBackfillJobRequest{`,
+		`Key:` + strings.Replace(this.Key.String(), "JobKey", "JobKey", 1) + `,`,
+		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
+		`Update:` + fmt.Sprintf("%v", this.Update) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *UpdateJobResponse) String() string {
 	if this == nil {
 		return "nil"
@@ -2906,6 +4269,29 @@ func (this *StoredCompactionJob) String() string {
 	s := strings.Join([]string{`&StoredCompactionJob{`,
 		`Info:` + strings.Replace(this.Info.String(), "StoredJobInfo", "StoredJobInfo", 1) + `,`,
 		`Job:` + strings.Replace(this.Job.String(), "CompactionJob", "CompactionJob", 1) + `,`,
+		`Order:` + fmt.Sprintf("%v", this.Order) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StoredBackfillCleanupJob) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&StoredBackfillCleanupJob{`,
+		`Info:` + strings.Replace(this.Info.String(), "StoredJobInfo", "StoredJobInfo", 1) + `,`,
+		`BackfillId:` + fmt.Sprintf("%v", this.BackfillId) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StoredBackfillBlockJob) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&StoredBackfillBlockJob{`,
+		`Info:` + strings.Replace(this.Info.String(), "StoredJobInfo", "StoredJobInfo", 1) + `,`,
+		`Job:` + strings.Replace(this.Job.String(), "BackfillBlockJob", "BackfillBlockJob", 1) + `,`,
 		`Order:` + fmt.Sprintf("%v", this.Order) + `,`,
 		`}`,
 	}, "")
@@ -3147,6 +4533,386 @@ func (m *JobSpec) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillPhasePlanning", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.BackfillPhasePlanning == nil {
+				m.BackfillPhasePlanning = &BackfillPhasePlanningJob{}
+			}
+			if err := m.BackfillPhasePlanning.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillCleanup", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.BackfillCleanup == nil {
+				m.BackfillCleanup = &BackfillCleanupJob{}
+			}
+			if err := m.BackfillCleanup.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillBlock", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.BackfillBlock == nil {
+				m.BackfillBlock = &BackfillBlockJob{}
+			}
+			if err := m.BackfillBlock.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BackfillBlockJob) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BackfillBlockJob: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BackfillBlockJob: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BackfillId = append(m.BackfillId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BackfillId == nil {
+				m.BackfillId = []byte{}
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockId = append(m.BlockId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BlockId == nil {
+				m.BlockId = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BackfillPhasePlanningJob) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BackfillPhasePlanningJob: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BackfillPhasePlanningJob: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HasOutstandingJobs", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.HasOutstandingJobs = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BackfillCleanupJob) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BackfillCleanupJob: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BackfillCleanupJob: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BackfillId = append(m.BackfillId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BackfillId == nil {
+				m.BackfillId = []byte{}
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
@@ -3268,6 +5034,40 @@ func (m *CompactionJob) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BackfillId = append(m.BackfillId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BackfillId == nil {
+				m.BackfillId = []byte{}
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
@@ -3714,6 +5514,141 @@ func (m *PlannedCompactionJob) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *PlannedBackfillJobs) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PlannedBackfillJobs: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PlannedBackfillJobs: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field JobType", wireType)
+			}
+			m.JobType = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.JobType |= JobType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BackfillId = append(m.BackfillId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BackfillId == nil {
+				m.BackfillId = []byte{}
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockIds = append(m.BlockIds, make([]byte, postIndex-iNdEx))
+			copy(m.BlockIds[len(m.BlockIds)-1], dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *PlannedJobsRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -3842,6 +5777,62 @@ func (m *PlannedJobsRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Jobs = append(m.Jobs, &PlannedCompactionJob{})
 			if err := m.Jobs[len(m.Jobs)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Unchanged", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Unchanged = bool(v != 0)
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Backfill", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Backfill == nil {
+				m.Backfill = &PlannedBackfillJobs{}
+			}
+			if err := m.Backfill.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -4080,6 +6071,143 @@ func (m *UpdateCompactionJobRequest) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: UpdateCompactionJobRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Key == nil {
+				m.Key = &JobKey{}
+			}
+			if err := m.Key.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Tenant", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Tenant = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Update", wireType)
+			}
+			m.Update = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Update |= UpdateType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *UpdateBackfillJobRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: UpdateBackfillJobRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: UpdateBackfillJobRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -4481,6 +6609,267 @@ func (m *StoredCompactionJob) Unmarshal(dAtA []byte) error {
 			}
 			if m.Job == nil {
 				m.Job = &CompactionJob{}
+			}
+			if err := m.Job.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Order", wireType)
+			}
+			m.Order = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Order |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StoredBackfillCleanupJob) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StoredBackfillCleanupJob: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StoredBackfillCleanupJob: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Info", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Info == nil {
+				m.Info = &StoredJobInfo{}
+			}
+			if err := m.Info.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BackfillId", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BackfillId = append(m.BackfillId[:0], dAtA[iNdEx:postIndex]...)
+			if m.BackfillId == nil {
+				m.BackfillId = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCompactorscheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StoredBackfillBlockJob) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCompactorscheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StoredBackfillBlockJob: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StoredBackfillBlockJob: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Info", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Info == nil {
+				m.Info = &StoredJobInfo{}
+			}
+			if err := m.Info.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Job", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCompactorscheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Job == nil {
+				m.Job = &BackfillBlockJob{}
 			}
 			if err := m.Job.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err

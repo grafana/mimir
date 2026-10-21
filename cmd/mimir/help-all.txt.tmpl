@@ -1126,7 +1126,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor-scheduler.discovery-polls comma-separated-list-of-strings
     	[experimental] Comma-separated list of polls used to discover tenants. A tenant is tracked while it is found by any poll. Valid values: blocks, backfills (default blocks)
   -compactor-scheduler.lane-policy.policy string
-    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
+    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple, backfill. backfill is required if and only if -compactor-scheduler.discovery-polls includes backfills. (default "simple")
   -compactor-scheduler.lease-duration duration
     	[experimental] The duration of time without contact until the scheduler is able to lease a work item to another worker. (default 10m0s)
   -compactor-scheduler.maintenance-interval duration

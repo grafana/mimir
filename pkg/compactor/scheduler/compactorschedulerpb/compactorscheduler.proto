@@ -19,18 +19,40 @@ enum JobType {
   JOB_TYPE_UNKNOWN = 0;
   JOB_TYPE_COMPACTION = 1;
   JOB_TYPE_PLANNING = 2;
+  JOB_TYPE_BACKFILL_PHASE_PLANNING = 3;
+  JOB_TYPE_BACKFILL_CLEANUP = 4;
+  JOB_TYPE_BACKFILL_VALIDATE = 5;
+  JOB_TYPE_BACKFILL_COMPACTION = 6;
+  JOB_TYPE_BACKFILL_COPY = 7;
 }
 
 message JobSpec {
   string tenant = 1;
   CompactionJob job = 2;
   JobType job_type = 3;
+  BackfillPhasePlanningJob backfill_phase_planning = 4;
+  BackfillCleanupJob backfill_cleanup = 5;
+  BackfillBlockJob backfill_block = 6;
+}
+
+message BackfillBlockJob {
+  bytes backfill_id = 1;
+  bytes block_id = 2;
+}
+
+message BackfillPhasePlanningJob {
+  bool has_outstanding_jobs = 1;
+}
+
+message BackfillCleanupJob {
+  bytes backfill_id = 1;
 }
 
 message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
   uint64 total_blocks_bytes = 3;
+  bytes backfill_id = 4;
 }
 
 service CompactorScheduler {
@@ -38,6 +60,7 @@ service CompactorScheduler {
   rpc PlannedJobs(PlannedJobsRequest) returns (PlannedJobsResponse);
   rpc UpdatePlanJob(UpdatePlanJobRequest) returns (UpdateJobResponse);
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
+  rpc UpdateBackfillJob(UpdateBackfillJobRequest) returns (UpdateJobResponse);
 }
 
 message LaneRequest {
@@ -59,10 +82,18 @@ message PlannedCompactionJob {
   CompactionJob job = 2;
 }
 
+message PlannedBackfillJobs {
+  JobType job_type = 1;
+  bytes backfill_id = 2;
+  repeated bytes block_ids = 3;
+}
+
 message PlannedJobsRequest {
   JobKey key = 1;
   string tenant = 2;
   repeated PlannedCompactionJob jobs = 3;
+  bool unchanged = 4;
+  PlannedBackfillJobs backfill = 5;
 }
 
 message PlannedJobsResponse {}
@@ -88,6 +119,12 @@ message UpdateCompactionJobRequest {
   UpdateType update = 3;
 }
 
+message UpdateBackfillJobRequest {
+  JobKey key = 1;
+  string tenant = 2;
+  UpdateType update = 3;
+}
+
 message UpdateJobResponse {}
 
 enum StoredJobStatus {
@@ -108,6 +145,17 @@ message StoredJobInfo {
 message StoredCompactionJob {
   StoredJobInfo info = 1;
   CompactionJob job = 2;
+  uint32 order = 3;
+}
+
+message StoredBackfillCleanupJob {
+  StoredJobInfo info = 1;
+  bytes backfill_id = 2;
+}
+
+message StoredBackfillBlockJob {
+  StoredJobInfo info = 1;
+  BackfillBlockJob job = 2;
   uint32 order = 3;
 }
 
