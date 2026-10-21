@@ -31,6 +31,7 @@ import (
 	pkg_distributor "github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -212,6 +213,11 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			distributorError:       pkg_distributor.ErrResponseTooLarge,
 			expectedHTTPStatusCode: http.StatusRequestEntityTooLarge,
 			expectedHTTPBody:       "response too large: try narrowing the label selector\n",
+		},
+		"receive budget exceeded": {
+			distributorError:       fmt.Errorf("%s: %w", globalerror.CardinalityAnalysisStreamingMergeReceivedBytesExceeded(1024), pkg_distributor.ErrResponseTooLarge),
+			expectedHTTPStatusCode: http.StatusRequestEntityTooLarge,
+			expectedHTTPBody:       globalerror.CardinalityAnalysisStreamingMergeReceivedBytesExceeded(1024) + ": response too large: try narrowing the label selector\n",
 		},
 	}
 

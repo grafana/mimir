@@ -3,14 +3,15 @@
 package distributor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
@@ -48,8 +49,8 @@ func prepareLabelValuesCount(t *testing.T, cfg prepConfig, streaming bool, serie
 		flagext.DefaultValues(cfg.limits)
 	}
 	cfg.limits.CardinalityAnalysisStreamingMergeEnabled = streaming
-	// Small messages, so that labels are split across messages. Mock ingesters don't clamp the size.
-	cfg.limits.CardinalityAnalysisStreamingMergeMessageSize = 64
+	// Exercise the minimum message target; the querier clamps requests before sending them.
+	cfg.limits.CardinalityAnalysisStreamingMergeMessageSize = 16 * 1024
 	cfg.numDistributors = 1
 
 	ds, _, _, _ := prepare(t, cfg)
@@ -149,9 +150,9 @@ func TestDistributor_LabelValuesCountPerLabelName_Fallback(t *testing.T) {
 		require.Equal(t, expected, counts)
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_distributor_label_names_and_values_merges_total The total number of label names cardinality merges by merge method, and whether the streaming merge fell back to the in-memory merge. A retried request counts once per attempt.
+			# HELP cortex_distributor_label_names_and_values_merges_total The total number of label names cardinality merges by merge method (map, map_fallback or streaming). A retried request counts once per attempt.
 			# TYPE cortex_distributor_label_names_and_values_merges_total counter
-			cortex_distributor_label_names_and_values_merges_total{fallback="true",method="map"} 1
+			cortex_distributor_label_names_and_values_merges_total{method="map_fallback"} 1
 		`), "cortex_distributor_label_names_and_values_merges_total"))
 	})
 
@@ -176,9 +177,9 @@ func TestDistributor_LabelValuesCountPerLabelName_Fallback(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected, counts)
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_distributor_label_names_and_values_merges_total The total number of label names cardinality merges by merge method, and whether the streaming merge fell back to the in-memory merge. A retried request counts once per attempt.
+			# HELP cortex_distributor_label_names_and_values_merges_total The total number of label names cardinality merges by merge method (map, map_fallback or streaming). A retried request counts once per attempt.
 			# TYPE cortex_distributor_label_names_and_values_merges_total counter
-			cortex_distributor_label_names_and_values_merges_total{fallback="false",method="streaming"} 1
+			cortex_distributor_label_names_and_values_merges_total{method="streaming"} 1
 		`), "cortex_distributor_label_names_and_values_merges_total"))
 	})
 }
@@ -224,7 +225,7 @@ func TestDistributor_LabelValuesCountPerLabelName_StreamErrors(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expected, counts)
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.
+				# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of retries of the streaming merge after an ingester stream failed after quorum.
 				# TYPE cortex_distributor_label_names_and_values_streaming_retries_total counter
 				cortex_distributor_label_names_and_values_streaming_retries_total 1
 			`), "cortex_distributor_label_names_and_values_streaming_retries_total"))
@@ -270,7 +271,7 @@ func TestDistributor_LabelValuesCountPerLabelName_StreamErrors(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected, counts)
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.
+			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of retries of the streaming merge after an ingester stream failed after quorum.
 			# TYPE cortex_distributor_label_names_and_values_streaming_retries_total counter
 			cortex_distributor_label_names_and_values_streaming_retries_total 1
 		`), "cortex_distributor_label_names_and_values_streaming_retries_total"))
@@ -288,7 +289,7 @@ func TestDistributor_LabelValuesCountPerLabelName_StreamErrors(t *testing.T) {
 		_, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
 		require.ErrorIs(t, err, errFail)
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.
+			# HELP cortex_distributor_label_names_and_values_streaming_retries_total The total number of retries of the streaming merge after an ingester stream failed after quorum.
 			# TYPE cortex_distributor_label_names_and_values_streaming_retries_total counter
 			cortex_distributor_label_names_and_values_streaming_retries_total %d
 		`, maxLabelValuesCountStreamingRetries)), "cortex_distributor_label_names_and_values_streaming_retries_total"))
@@ -373,9 +374,9 @@ func TestExcludeFailedReplica(t *testing.T) {
 
 func TestMergeLabelNamesAndValuesStreamsInMemory_KeepsFirstError(t *testing.T) {
 	// The first stream's message exceeds the size limit. The second stream blocks until it's cancelled, and its
-	// cancellation returns only once its goroutine has had time to report the cancellation error first.
+	// cancellation returns only once the other goroutine has reported its cancellation error.
 	tooLarge := &client.LabelNamesAndValuesResponse{Items: []*client.LabelValues{{LabelName: "name", Values: []string{strings.Repeat("v", 100)}}}}
-	blocked := &cancelBlockingLabelNamesAndValuesStream{unblock: make(chan struct{}), returned: make(chan struct{})}
+	blocked := &cancelBlockingLabelNamesAndValuesStream{unblock: make(chan struct{}), reported: make(chan struct{})}
 	streams := []*labelNamesAndValuesStream{
 		{instance: ring.InstanceDesc{Addr: "too-large"}, stream: &labelNamesAndValuesMockStream{}, cancel: func(error) {}, first: tooLarge},
 		{instance: ring.InstanceDesc{Addr: "blocked"}, stream: blocked, cancel: blocked.cancel, first: &client.LabelNamesAndValuesResponse{}},
@@ -385,30 +386,28 @@ func TestMergeLabelNamesAndValuesStreamsInMemory_KeepsFirstError(t *testing.T) {
 	require.ErrorIs(t, err, ErrResponseTooLarge)
 }
 
-// cancelBlockingLabelNamesAndValuesStream blocks Recv until cancel is called. cancel waits until Recv has returned
-// the cancellation error, so the stream's goroutine is likely to finish before the one that called cancel.
+// cancelBlockingLabelNamesAndValuesStream holds the first cancellation until the
+// receiving goroutine reports its error by calling cancel again.
 type cancelBlockingLabelNamesAndValuesStream struct {
 	grpc.ClientStream
-	// cancelled is set by the first cancel call. Later calls return at once, unlike sync.Once, which would block
-	// them until the first call returns and let the other goroutine report its error first.
+	// The second cancel acknowledges that the receiving goroutine recorded its error.
 	cancelled atomic.Bool
 	unblock   chan struct{}
-	returned  chan struct{}
+	reported  chan struct{}
 }
 
 func (s *cancelBlockingLabelNamesAndValuesStream) Recv() (*client.LabelNamesAndValuesResponse, error) {
 	<-s.unblock
-	defer close(s.returned)
 	return nil, context.Canceled
 }
 
 func (s *cancelBlockingLabelNamesAndValuesStream) cancel(error) {
 	if !s.cancelled.CompareAndSwap(false, true) {
+		close(s.reported)
 		return
 	}
 	close(s.unblock)
-	<-s.returned
-	time.Sleep(50 * time.Millisecond)
+	<-s.reported
 }
 
 func TestDistributor_LabelValuesCountPerLabelName_NoGoroutineLeak(t *testing.T) {
@@ -441,4 +440,226 @@ func TestDistributor_LabelValuesCountPerLabelName_NoGoroutineLeak(t *testing.T) 
 			goleak.VerifyNone(t, ignoreCurrent)
 		})
 	}
+}
+
+func TestDistributor_LabelValuesCountPerLabelName_MessageSize(t *testing.T) {
+	for requested, expected := range map[int]uint64{-1: 16 * 1024, 0: 16 * 1024, 1: 16 * 1024, 64 * 1024: 64 * 1024, 1 << 30: 256 * 1024} {
+		t.Run(fmt.Sprint(requested), func(t *testing.T) {
+			limits := validation.Limits{}
+			flagext.DefaultValues(&limits)
+			limits.CardinalityAnalysisStreamingMergeEnabled = true
+			limits.CardinalityAnalysisStreamingMergeMessageSize = requested
+			ds, ingesters, _, _ := prepare(t, prepConfig{numDistributors: 1, numIngesters: 1, happyIngesters: 1, replicationFactor: 1, limits: &limits})
+			_, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
+			require.NoError(t, err)
+			require.Equal(t, 1, ingesters[0].countCalls("LabelNamesAndValues"))
+			ingesters[0].assertCalledFunc("LabelNamesAndValues", func(args ...any) {
+				req := args[1].(*client.LabelNamesAndValuesRequest)
+				require.True(t, req.SortValues)
+				require.Equal(t, expected, req.TargetMessageSizeBytes)
+			})
+		})
+	}
+}
+
+func TestDistributor_LabelValuesCountPerLabelName_ReceiveBudget(t *testing.T) {
+	series, expected := labelValuesCountFixtures()
+	for name, behaviour := range map[string]labelNamesAndValuesBehaviour{"sorted": labelNamesAndValuesCurrent, "fallback": labelNamesAndValuesOld} {
+		for _, limit := range []int64{1, 0, 1 << 30} {
+			t.Run(fmt.Sprintf("%s/limit=%d", name, limit), func(t *testing.T) {
+				reg := prometheus.NewPedanticRegistry()
+				limits := validation.Limits{}
+				flagext.DefaultValues(&limits)
+				limits.CardinalityAnalysisStreamingMergeMaxReceivedBytes = limit
+				ds, _ := prepareLabelValuesCount(t, prepConfig{
+					limits:       &limits,
+					numIngesters: 3, happyIngesters: 3, replicationFactor: 3, reg: reg,
+					labelNamesAndValuesBehaviour: func(string, int) labelNamesAndValuesBehaviour { return behaviour },
+				}, true, series)
+				ignoreCurrent := goleak.IgnoreCurrent()
+				counts, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
+				if limit == 1 {
+					require.ErrorIs(t, err, ErrResponseTooLarge)
+					require.True(t, validation.IsLimitError(err))
+					require.Contains(t, err.Error(), "err-mimir-cardinality-analysis-streaming-merge-max-received-bytes")
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, expected, counts)
+				}
+				require.Zero(t, testutil.ToFloat64(ds[0].labelNamesAndValuesStreamingRetries))
+				goleak.VerifyNone(t, ignoreCurrent)
+			})
+		}
+	}
+}
+
+func TestBudgetedLabelNamesAndValuesStream(t *testing.T) {
+	msg := &client.LabelNamesAndValuesResponse{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "name", Values: []string{"value"}}}}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	budget := &labelNamesAndValuesReceiveBudget{limit: int64(2 * msg.Size()), cancel: cancel, err: ErrResponseTooLarge}
+	open := func() *budgetedLabelNamesAndValuesStream {
+		return &budgetedLabelNamesAndValuesStream{
+			Ingester_LabelNamesAndValuesClient: &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{msg}}, budget: budget,
+		}
+	}
+	// New streams, including retry streams, share the same budget. The exact boundary succeeds.
+	for range 2 {
+		got, err := open().Recv()
+		require.NoError(t, err)
+		require.Equal(t, msg, got)
+	}
+	require.NoError(t, ctx.Err())
+	_, err := open().Recv()
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	require.ErrorIs(t, context.Cause(ctx), ErrResponseTooLarge)
+	// Once exhausted, cancellation or EOF from another stream cannot replace the cause.
+	_, err = open().Recv()
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+}
+
+func TestLabelValuesCursor_OrderErrorsHideIngester(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		first, second *client.LabelNamesAndValuesResponse
+	}{
+		{"label order", &client.LabelNamesAndValuesResponse{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "z", Values: []string{"a"}}, {LabelName: "a", Values: []string{"b"}}}}, nil},
+		{"value order", &client.LabelNamesAndValuesResponse{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"z", "a"}}}}, nil},
+		{"sorting confirmation", &client.LabelNamesAndValuesResponse{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"a"}}}}, &client.LabelNamesAndValuesResponse{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			messages := make(chan labelNamesAndValuesMessage, 1)
+			if tc.second != nil {
+				messages <- labelNamesAndValuesMessage{msg: tc.second}
+			}
+			close(messages)
+			var logs bytes.Buffer
+			c := &labelValuesCursor{instance: ring.InstanceDesc{Addr: "private-ingester:9095", Zone: "zone-a"}, msg: tc.first, messages: messages, logger: log.NewLogfmtLogger(&logs)}
+			ok, err := c.next()
+			require.NoError(t, err)
+			require.True(t, ok)
+			_, err = c.next()
+			require.ErrorIs(t, err, errLabelValuesOutOfOrder)
+			require.NotContains(t, err.Error(), c.instance.Addr)
+			require.Contains(t, logs.String(), "ingester=private-ingester:9095")
+			require.Contains(t, logs.String(), "zone=zone-a")
+		})
+	}
+}
+
+func TestDistributor_LabelValuesCountPerLabelName_ReceiveBudgetAcrossRetry(t *testing.T) {
+	series, _ := labelValuesCountFixtures()
+	values := map[string]map[string]struct{}{}
+	for _, labels := range series {
+		for i := 0; i < len(labels); i += 2 {
+			if values[labels[i]] == nil {
+				values[labels[i]] = map[string]struct{}{}
+			}
+			values[labels[i]][labels[i+1]] = struct{}{}
+		}
+	}
+	response := &client.LabelNamesAndValuesResponse{ValuesSorted: true}
+	for name, vals := range values {
+		item := &client.LabelValues{LabelName: name}
+		for val := range vals {
+			item.Values = append(item.Values, val)
+		}
+		response.Items = append(response.Items, item)
+	}
+	// Each replica fits in one message. Three messages allow the first attempt
+	// (including its losing quorum candidate), but not both attempts together.
+	require.Less(t, response.Size(), 16*1024)
+	reg := prometheus.NewPedanticRegistry()
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	limits.CardinalityAnalysisStreamingMergeMaxReceivedBytes = int64(3 * response.Size())
+	ds, _ := prepareLabelValuesCount(t, prepConfig{
+		limits:       &limits,
+		numIngesters: 3, happyIngesters: 3, replicationFactor: 3, reg: reg,
+		configure:               func(cfg *Config) { cfg.MinimizeIngesterRequests = false },
+		labelNamesAndValuesGate: newLabelNamesAndValuesGate(),
+		labelNamesAndValuesBehaviour: func(_ string, idx int) labelNamesAndValuesBehaviour {
+			switch idx {
+			case 0:
+				return labelNamesAndValuesFailAfterFirstMessage
+			case 1:
+				return labelNamesAndValuesCurrentAfterFailure
+			default:
+				return labelNamesAndValuesCurrent
+			}
+		},
+	}, true, series)
+	ignoreCurrent := goleak.IgnoreCurrent()
+	_, err := ds[0].LabelValuesCountPerLabelName(labelValuesCountContext(t), nil, cardinality.InMemoryMethod)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	require.Equal(t, float64(1), testutil.ToFloat64(ds[0].labelNamesAndValuesStreamingRetries))
+	goleak.VerifyNone(t, ignoreCurrent)
+}
+
+func TestLabelValuesCount_ReceiveBudgetAfterFirstMessage(t *testing.T) {
+	for _, fallback := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fallback=%t", fallback), func(t *testing.T) {
+			msg := &client.LabelNamesAndValuesResponse{ValuesSorted: !fallback, Items: []*client.LabelValues{{LabelName: "name", Values: []string{"a"}}}}
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			budget := &labelNamesAndValuesReceiveBudget{limit: int64(msg.Size()), cancel: cancel, err: ErrResponseTooLarge}
+			stream := &budgetedLabelNamesAndValuesStream{
+				Ingester_LabelNamesAndValuesClient: &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{msg, msg}}, budget: budget,
+			}
+			first, err := stream.Recv()
+			require.NoError(t, err)
+			streams := []*labelNamesAndValuesStream{{stream: stream, first: first, cancel: cancel}}
+			if fallback {
+				_, err = mergeLabelNamesAndValuesStreamsInMemory(streams, 1<<30)
+			} else {
+				_, _, err = countDistinctLabelValues(streams)
+			}
+			require.ErrorIs(t, err, ErrResponseTooLarge)
+			require.ErrorIs(t, context.Cause(ctx), ErrResponseTooLarge)
+			var streamErr *labelNamesAndValuesStreamError
+			require.False(t, errors.As(err, &streamErr), "a receive budget error must not trigger a retry")
+		})
+	}
+}
+
+func TestBudgetedLabelNamesAndValuesStream_CloseDrainsUnderlyingStream(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	var drained atomic.Bool
+	underlying := &labelNamesAndValuesMockStream{
+		responses:  []*client.LabelNamesAndValuesResponse{{ValuesSorted: true}},
+		afterFirst: func() { drained.Store(true) },
+	}
+	budget := &labelNamesAndValuesReceiveBudget{limit: 1, cancel: cancel, err: ErrResponseTooLarge}
+	stream := &budgetedLabelNamesAndValuesStream{Ingester_LabelNamesAndValuesClient: underlying, budget: budget}
+	_, err := stream.Recv()
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	require.ErrorIs(t, context.Cause(ctx), ErrResponseTooLarge)
+	closeLabelNamesAndValuesStream(stream)
+	require.True(t, drained.Load(), "cleanup must receive the underlying stream's terminal status even after the budget is exhausted")
+}
+
+func TestCountDistinctLabelValues_AcrossMessages(t *testing.T) {
+	// A label spans messages, and duplicate values arrive from both streams.
+	responses := [][]*client.LabelNamesAndValuesResponse{
+		{
+			{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"a", "b"}}}},
+			{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"c"}}, {LabelName: "b", Values: []string{"a"}}}},
+			{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "b", Values: []string{"b"}}}},
+		},
+		{
+			{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"a"}}}},
+			{ValuesSorted: true, Items: []*client.LabelValues{{LabelName: "a", Values: []string{"b", "c"}}, {LabelName: "b", Values: []string{"a", "b"}}}},
+		},
+	}
+	var streams []*labelNamesAndValuesStream
+	for _, messages := range responses {
+		_, cancel := context.WithCancelCause(t.Context())
+		t.Cleanup(func() { cancel(nil) })
+		streams = append(streams, &labelNamesAndValuesStream{first: messages[0], stream: &labelNamesAndValuesMockStream{responses: messages[1:]}, cancel: cancel})
+	}
+	counts, stats, err := countDistinctLabelValues(streams)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int{"a": 3, "b": 2}, counts)
+	require.Equal(t, 5, stats.distinctValues)
 }

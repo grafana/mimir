@@ -101,7 +101,7 @@ func TestLabelNamesAndValues_SortValues(t *testing.T) {
 		"label-bb": {"b5555555", "b3333333", "b0000000", "b4444444", "b1111111", "b2222222", "b6666666"},
 		"label-cc": {"c1111111", "c0000000"},
 	}
-	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
+	mockServer := mockLabelNamesAndValuesServer{context: t.Context()}
 	var valueFilter = func(_, value string) (bool, error) {
 		// Filtering must keep the order.
 		return !strings.HasSuffix(value, "4444444"), nil

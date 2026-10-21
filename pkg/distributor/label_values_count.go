@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -60,7 +62,7 @@ func (d *Distributor) LabelValuesCountPerLabelName(ctx context.Context, matchers
 		return d.labelValuesCountStreaming(ctx, replicationSets, req, userID)
 	}
 
-	d.labelNamesAndValuesMerges.WithLabelValues("map", "false").Inc()
+	d.labelNamesAndValuesMerges.WithLabelValues("map").Inc()
 	merger, err := d.mergeLabelNamesAndValuesInMemory(ctx, replicationSets, req, userID)
 	if err != nil {
 		return nil, err
@@ -79,10 +81,24 @@ func (d *Distributor) labelValuesCountStreaming(ctx context.Context, replication
 	defer spanLog.Finish()
 
 	req.SortValues = true
-	req.TargetMessageSizeBytes = uint64(max(0, d.limits.CardinalityAnalysisStreamingMergeMessageSize(userID)))
+	req.TargetMessageSizeBytes = uint64(min(max(16*1024, d.limits.CardinalityAnalysisStreamingMergeMessageSize(userID)), 256*1024))
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	budget := &labelNamesAndValuesReceiveBudget{
+		limit:  d.limits.CardinalityAnalysisStreamingMergeMaxReceivedBytes(userID),
+		cancel: cancel,
+	}
+	budget.err = fmt.Errorf("%s: %w", globalerror.CardinalityAnalysisStreamingMergeReceivedBytesExceeded(budget.limit), ErrResponseTooLarge)
+	defer func() { spanLog.SetTag("received_bytes", budget.received.Load()) }()
 
 	for retries := 0; ; retries++ {
-		counts, err := d.labelValuesCountStreamingAttempt(ctx, spanLog, replicationSets, req, userID)
+		counts, err := d.labelValuesCountStreamingAttempt(ctx, spanLog, replicationSets, req, userID, budget)
+		// Cancellation can race with another stream error. Always preserve the budget error.
+		if budget.isExceeded() {
+			level.Warn(spanLog).Log("msg", "label names cardinality receive budget exceeded", "received_bytes", budget.received.Load(), "limit_bytes", budget.limit)
+			return nil, budget.err
+		}
 		var streamErr *labelNamesAndValuesStreamError
 		if !errors.As(err, &streamErr) {
 			return counts, err
@@ -91,16 +107,16 @@ func (d *Distributor) labelValuesCountStreaming(ctx context.Context, replication
 			return nil, streamErr.err
 		}
 		if retries >= maxLabelValuesCountStreamingRetries {
-			level.Debug(spanLog).Log("msg", "an ingester stream failed after quorum and the retry limit is reached, not retrying", "ingester", streamErr.instance.Addr, "retries", retries, "err", streamErr.err)
+			level.Warn(spanLog).Log("msg", "an ingester stream failed after quorum and the retry limit is reached, not retrying", "ingester", streamErr.instance.Addr, "zone", streamErr.instance.Zone, "retries", retries, "err", streamErr.err)
 			return nil, streamErr.err
 		}
 		next, ok := excludeFailedReplica(replicationSets, streamErr.instance)
 		if !ok {
-			level.Debug(spanLog).Log("msg", "an ingester stream failed after quorum and no replica can be excluded, not retrying", "ingester", streamErr.instance.Addr, "retries", retries, "err", streamErr.err)
+			level.Warn(spanLog).Log("msg", "an ingester stream failed after quorum and no replica can be excluded, not retrying", "ingester", streamErr.instance.Addr, "zone", streamErr.instance.Zone, "retries", retries, "err", streamErr.err)
 			return nil, streamErr.err
 		}
 
-		level.Debug(spanLog).Log("msg", "an ingester stream failed after quorum, retrying the request without it", "ingester", streamErr.instance.Addr, "zone", streamErr.instance.Zone, "err", streamErr.err)
+		level.Warn(spanLog).Log("msg", "an ingester stream failed after quorum, retrying the request without it", "ingester", streamErr.instance.Addr, "zone", streamErr.instance.Zone, "retries", retries+1, "err", streamErr.err)
 		spanLog.SetTag("retries", retries+1)
 		d.labelNamesAndValuesStreamingRetries.Inc()
 		replicationSets = next
@@ -177,11 +193,11 @@ func excludeFailedReplica(sets []ring.ReplicationSet, failed ring.InstanceDesc) 
 
 // labelValuesCountStreamingAttempt opens the streams through quorum and merges them once.
 // Errors from streams after quorum are wrapped with streamFailure.
-func (d *Distributor) labelValuesCountStreamingAttempt(ctx context.Context, spanLog *spanlogger.SpanLogger, replicationSets []ring.ReplicationSet, req *ingester_client.LabelNamesAndValuesRequest, userID string) (map[string]int, error) {
+func (d *Distributor) labelValuesCountStreamingAttempt(ctx context.Context, spanLog *spanlogger.SpanLogger, replicationSets []ring.ReplicationSet, req *ingester_client.LabelNamesAndValuesRequest, userID string, budget *labelNamesAndValuesReceiveBudget) (map[string]int, error) {
 	// Each call keeps its stream open after it returns, so that the merge can read the rest of it.
 	// The stream owns the call's context and cancels it when closed, as DoMultiUntilQuorumWithoutSuccessfulContextCancellation requires.
 	openStream := func(ctx context.Context, ing *ring.InstanceDesc, cancel context.CancelCauseFunc) (*labelNamesAndValuesStream, error) {
-		s, err := d.openLabelNamesAndValuesStream(ctx, ing, req, cancel)
+		s, err := d.openLabelNamesAndValuesStream(ctx, ing, req, cancel, budget)
 		if err != nil {
 			cancel(err)
 			return nil, err
@@ -201,29 +217,26 @@ func (d *Distributor) labelValuesCountStreamingAttempt(ctx context.Context, span
 		}
 	}()
 
-	unsorted := 0
+	var unsorted []string
 	for _, s := range streams {
 		if s.first != nil && !s.first.ValuesSorted {
-			unsorted++
+			unsorted = append(unsorted, s.instance.Addr)
 		}
 	}
 	spanLog.SetTag("streams", len(streams))
-	spanLog.SetTag("fallback", unsorted > 0)
+	spanLog.SetTag("fallback", len(unsorted) > 0)
 
-	if unsorted > 0 {
-		level.Debug(spanLog).Log("msg", "some ingesters don't support sorted label values, falling back to the in-memory merge", "streams", len(streams), "unsorted_streams", unsorted)
-		d.labelNamesAndValuesMerges.WithLabelValues("map", "true").Inc()
+	if len(unsorted) > 0 {
+		level.Info(spanLog).Log("msg", "some ingesters don't support sorted label values, falling back to the in-memory merge", "streams", len(streams), "unsorted_ingesters", unsorted)
+		d.labelNamesAndValuesMerges.WithLabelValues("map_fallback").Inc()
 		return mergeLabelNamesAndValuesStreamsInMemory(streams, d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID))
 	}
 
-	d.labelNamesAndValuesMerges.WithLabelValues("streaming", "false").Inc()
+	d.labelNamesAndValuesMerges.WithLabelValues("streaming").Inc()
 	counts, stats, err := countDistinctLabelValues(streams)
 	spanLog.SetTag("label_names", len(counts))
 	spanLog.SetTag("distinct_values", stats.distinctValues)
-	spanLog.SetTag("received_bytes", stats.receivedBytes)
-	if errors.Is(err, errLabelValuesOutOfOrder) {
-		level.Warn(spanLog).Log("msg", "streaming label values merge failed", "err", err)
-	}
+	spanLog.SetTag("attempt_received_bytes", stats.receivedBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -238,12 +251,13 @@ type labelNamesAndValuesStream struct {
 	// first is the first message, or nil if the stream ended without any message.
 	first *ingester_client.LabelNamesAndValuesResponse
 
+	logger    log.Logger
 	closeOnce sync.Once
 }
 
 // openLabelNamesAndValuesStream opens the stream and receives the first message, so that connection errors
 // are handled by the quorum logic and the caller can check if the ingester supports sorting.
-func (d *Distributor) openLabelNamesAndValuesStream(ctx context.Context, ing *ring.InstanceDesc, req *ingester_client.LabelNamesAndValuesRequest, cancel context.CancelCauseFunc) (*labelNamesAndValuesStream, error) {
+func (d *Distributor) openLabelNamesAndValuesStream(ctx context.Context, ing *ring.InstanceDesc, req *ingester_client.LabelNamesAndValuesRequest, cancel context.CancelCauseFunc, budget *labelNamesAndValuesReceiveBudget) (*labelNamesAndValuesStream, error) {
 	c, err := d.ingesterPool.GetClientForInstance(*ing)
 	if err != nil {
 		return nil, err
@@ -252,15 +266,17 @@ func (d *Distributor) openLabelNamesAndValuesStream(ctx context.Context, ing *ri
 	if err != nil {
 		return nil, err
 	}
+	stream = &budgetedLabelNamesAndValuesStream{Ingester_LabelNamesAndValuesClient: stream, budget: budget}
 	first, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
 		// The ingester has no data for the tenant.
 		first = nil
 	} else if err != nil {
-		_ = util.CloseAndExhaust[*ingester_client.LabelNamesAndValuesResponse](stream)
+		cancel(err)
+		closeLabelNamesAndValuesStream(stream)
 		return nil, err
 	}
-	return &labelNamesAndValuesStream{instance: *ing, stream: stream, cancel: cancel, first: first}, nil
+	return &labelNamesAndValuesStream{instance: *ing, stream: stream, cancel: cancel, first: first, logger: d.log}, nil
 }
 
 // close cancels the stream's context and releases the stream. It's safe to call more than once, but not while
@@ -269,7 +285,7 @@ func (s *labelNamesAndValuesStream) close() {
 	s.closeOnce.Do(func() {
 		// Cancel first, so that draining the stream doesn't read the rest of it.
 		s.cancel(errStreamClosed)
-		_ = util.CloseAndExhaust[*ingester_client.LabelNamesAndValuesResponse](s.stream)
+		closeLabelNamesAndValuesStream(s.stream)
 	})
 }
 
@@ -358,7 +374,7 @@ func countDistinctLabelValues(streams []*labelNamesAndValuesStream) (map[string]
 			receiveLabelNamesAndValues(s.stream, messages, done, &receivedBytes)
 		}()
 
-		c := &labelValuesCursor{instance: s.instance, msg: s.first, messages: messages}
+		c := &labelValuesCursor{instance: s.instance, msg: s.first, messages: messages, logger: s.logger}
 		// The first message isn't needed anymore once the cursor holds it.
 		s.first = nil
 		ok, err := c.next()
@@ -440,6 +456,7 @@ func receiveLabelNamesAndValues(stream ingester_client.Ingester_LabelNamesAndVal
 
 // labelValuesCursor iterates the (label name, value) pairs of one stream and checks that they're strictly increasing.
 type labelValuesCursor struct {
+	logger   log.Logger
 	instance ring.InstanceDesc
 	messages <-chan labelNamesAndValuesMessage
 
@@ -459,10 +476,10 @@ func (c *labelValuesCursor) next() (bool, error) {
 					name, value := item.LabelName, item.Values[c.valIdx]
 					c.valIdx++
 					if c.hasCurrentValues && name < c.name {
-						return false, fmt.Errorf("%w: ingester %s sent label %q after label %q", errLabelValuesOutOfOrder, c.instance.Addr, name, c.name)
+						return false, c.orderError(fmt.Sprintf("label %q followed label %q", name, c.name))
 					}
 					if c.hasCurrentValues && name == c.name && value <= c.value {
-						return false, fmt.Errorf("%w: ingester %s sent the values of label %q out of order", errLabelValuesOutOfOrder, c.instance.Addr, name)
+						return false, c.orderError(fmt.Sprintf("values of label %q are out of order", name))
 					}
 					c.name, c.value, c.hasCurrentValues = name, value, true
 					return true, nil
@@ -481,7 +498,7 @@ func (c *labelValuesCursor) next() (bool, error) {
 			return false, streamFailure(c.instance, m.err)
 		}
 		if !m.msg.ValuesSorted {
-			return false, fmt.Errorf("%w: ingester %s stopped confirming sorted values", errLabelValuesOutOfOrder, c.instance.Addr)
+			return false, c.orderError("stream stopped confirming sorted values")
 		}
 		c.msg, c.itemIdx, c.valIdx = m.msg, 0, 0
 	}
@@ -505,4 +522,59 @@ func (h *labelValuesCursorHeap) Pop() any {
 	old[len(old)-1] = nil
 	*h = old[:len(old)-1]
 	return c
+}
+
+// orderError keeps the ingester identity in internal logs, outside the returned HTTP error.
+func (c *labelValuesCursor) orderError(detail string) error {
+	err := fmt.Errorf("%w: %s", errLabelValuesOutOfOrder, detail)
+	if c.logger != nil {
+		level.Warn(c.logger).Log("msg", "ingester violated sorted label values contract", "ingester", c.instance.Addr, "zone", c.instance.Zone, "err", err)
+	}
+	return err
+}
+
+// labelNamesAndValuesReceiveBudget accounts for uncompressed protobuf bytes across all
+// streams, quorum candidates, retries and fallback for a single request. In-flight
+// receives may overshoot the limit; cancellation stops further processing.
+type labelNamesAndValuesReceiveBudget struct {
+	received atomic.Int64
+	limit    int64
+	cancel   context.CancelCauseFunc
+	err      error
+}
+
+func (b *labelNamesAndValuesReceiveBudget) isExceeded() bool {
+	return b.limit > 0 && b.received.Load() > b.limit
+}
+
+// budgetedLabelNamesAndValuesStream charges every message, including the first one
+// read while opening streams through quorum, before passing it to either merger.
+type budgetedLabelNamesAndValuesStream struct {
+	ingester_client.Ingester_LabelNamesAndValuesClient
+	budget *labelNamesAndValuesReceiveBudget
+}
+
+func (s *budgetedLabelNamesAndValuesStream) Recv() (*ingester_client.LabelNamesAndValuesResponse, error) {
+	if s.budget.isExceeded() {
+		return nil, s.budget.err
+	}
+	msg, err := s.Ingester_LabelNamesAndValuesClient.Recv()
+	if err == nil {
+		s.budget.received.Add(int64(msg.Size()))
+	}
+	if s.budget.isExceeded() {
+		s.budget.cancel(s.budget.err)
+		return nil, s.budget.err
+	}
+	return msg, err
+}
+
+// closeLabelNamesAndValuesStream drains the underlying gRPC stream after cancellation.
+// An exhausted budget wrapper returns its own error without receiving, so draining
+// the wrapper would prevent middleware from observing the stream's terminal status.
+func closeLabelNamesAndValuesStream(stream ingester_client.Ingester_LabelNamesAndValuesClient) {
+	if budgeted, ok := stream.(*budgetedLabelNamesAndValuesStream); ok {
+		stream = budgeted.Ingester_LabelNamesAndValuesClient
+	}
+	_ = util.CloseAndExhaust[*ingester_client.LabelNamesAndValuesResponse](stream)
 }

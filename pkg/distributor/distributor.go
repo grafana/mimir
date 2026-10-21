@@ -586,11 +586,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"method", "status_code"})),
 		labelNamesAndValuesMerges: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_label_names_and_values_merges_total",
-			Help: "The total number of label names cardinality merges by merge method, and whether the streaming merge fell back to the in-memory merge. A retried request counts once per attempt.",
-		}, []string{"method", "fallback"}),
+			Help: "The total number of label names cardinality merges by merge method (map, map_fallback or streaming). A retried request counts once per attempt.",
+		}, []string{"method"}),
 		labelNamesAndValuesStreamingRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_distributor_label_names_and_values_streaming_retries_total",
-			Help: "The total number of label names cardinality requests that the streaming merge retried because an ingester stream failed after quorum.",
+			Help: "The total number of retries of the streaming merge after an ingester stream failed after quorum.",
 		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",

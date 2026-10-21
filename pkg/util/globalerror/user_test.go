@@ -58,3 +58,7 @@ func TestID_MessageWithPerTenantLimitConfig(t *testing.T) {
 		assert.Equal(t, tc.expected, tc.actual)
 	}
 }
+
+func TestCardinalityAnalysisStreamingMergeReceivedBytesExceeded(t *testing.T) {
+	assert.Equal(t, "label names cardinality request exceeded the maximum received bytes (1024) (err-mimir-cardinality-analysis-streaming-merge-max-received-bytes). To adjust the related per-tenant limit, configure -querier.cardinality-analysis-streaming-merge-max-received-bytes, or contact your service administrator.", CardinalityAnalysisStreamingMergeReceivedBytesExceeded(1024))
+}

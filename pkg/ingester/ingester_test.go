@@ -5462,7 +5462,7 @@ func TestIngester_LabelNamesAndValues_SortValuesAndMessageSize(t *testing.T) {
 	}
 
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
-	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx := user.InjectOrgID(t.Context(), "test")
 	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
 
 	t.Run("sorted, requested message size", func(t *testing.T) {

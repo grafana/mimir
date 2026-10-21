@@ -7606,6 +7606,7 @@ func newLabelNamesAndValuesGate() *labelNamesAndValuesGate {
 func (g *labelNamesAndValuesGate) open() { g.once.Do(func() { close(g.ch) }) }
 
 func (i *mockIngester) LabelNamesAndValues(ctx context.Context, req *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+	i.trackCall("LabelNamesAndValues", ctx, req)
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
 	}

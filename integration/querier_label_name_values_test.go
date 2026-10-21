@@ -195,8 +195,7 @@ func testQuerierLabelNamesAndValues(t *testing.T, numSeriesToPush int, selector 
 		method = "streaming"
 	}
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_label_names_and_values_merges_total"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "method", method),
-		labels.MustNewMatcher(labels.MatchEqual, "fallback", "false"))))
+		labels.MustNewMatcher(labels.MatchEqual, "method", method))))
 }
 
 func TestQuerierLabelValuesCardinality(t *testing.T) {
