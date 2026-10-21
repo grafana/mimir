@@ -33,12 +33,13 @@ func TestPlanCompaction(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		ranges        []int64
-		shardCount    uint32
-		oooShardCount uint32
-		splitGroups   uint32
-		blocks        []*block.Meta
-		expected      []*job
+		ranges                        []int64
+		shardCount                    uint32
+		oooShardCount                 uint32
+		splitGroups                   uint32
+		skipElapsedIntermediateRanges bool
+		blocks                        []*block.Meta
+		expected                      []*job
 	}{
 		"no input blocks": {
 			ranges:   []int64{20},
@@ -549,6 +550,80 @@ func TestPlanCompaction(t *testing.T) {
 				}},
 			},
 		},
+		"should skip the intermediate range when a single job for it stands in the way": {
+			ranges:                        []int64{10, 20, 40},
+			shardCount:                    1,
+			skipElapsedIntermediateRanges: true,
+			blocks: []*block.Meta{
+				// Already compacted on the 2nd level range [0, 20].
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				// Still on the 1st level range, covering the rest of the 3rd level range [0, 40].
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 0,
+					rangeEnd:   40,
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+					},
+				}},
+			},
+		},
+		"should NOT skip the intermediate range if disabled": {
+			ranges:                        []int64{10, 20, 40},
+			shardCount:                    1,
+			skipElapsedIntermediateRanges: false,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 20,
+					rangeEnd:   40,
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+					},
+				}},
+			},
+		},
+		"should NOT skip the intermediate range if more than one job for it stands in the way": {
+			ranges:                        []int64{10, 20, 40},
+			shardCount:                    1,
+			skipElapsedIntermediateRanges: true,
+			blocks: []*block.Meta{
+				// Both halves of the 3rd level range [0, 40] are still on the 1st level range, so
+				// two 2nd level jobs stand in the way.
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 0,
+					rangeEnd:   20,
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+					},
+				}},
+				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 20,
+					rangeEnd:   40,
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+					},
+				}},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -557,7 +632,7 @@ func TestPlanCompaction(t *testing.T) {
 			cfg.splitAndMergeShards[userID] = int(testData.shardCount)
 			cfg.oooSplitAndMergeShards[userID] = int(testData.oooShardCount)
 			cfg.splitGroups[userID] = int(testData.splitGroups)
-			actual := planCompaction(userID, testData.blocks, testData.ranges, cfg)
+			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.skipElapsedIntermediateRanges, cfg)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))
@@ -671,6 +746,57 @@ func TestPlanSplitting(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, planSplitting(userID, testData.blocks, testData.splitGroups))
+		})
+	}
+}
+
+func TestCanSkipElapsedIntermediateRange(t *testing.T) {
+	var (
+		twoHours = 2 * time.Hour.Milliseconds()
+		halfDay  = 12 * time.Hour.Milliseconds()
+		day      = 24 * time.Hour.Milliseconds()
+	)
+
+	// The candidate merges a whole day, replacing the job for the day's second half.
+	candidate := &job{stage: stageMerge, blocksGroup: blocksGroup{rangeStart: 0, rangeEnd: day}}
+
+	tests := map[string]struct {
+		conflictingRangeStart int64
+		highestMaxTime        int64
+		now                   int64
+		expected              bool
+	}{
+		"should skip the intermediate range once blocks for a more recent range exist": {
+			conflictingRangeStart: halfDay,
+			highestMaxTime:        day + twoHours,
+			now:                   day + twoHours,
+			expected:              true,
+		},
+		"should skip the intermediate range once the candidate range ended a range length ago": {
+			conflictingRangeStart: halfDay,
+			highestMaxTime:        day - twoHours,
+			now:                   2 * day,
+			expected:              true,
+		},
+		"should NOT skip the intermediate range while the candidate range is not in the past yet": {
+			conflictingRangeStart: halfDay,
+			highestMaxTime:        day - twoHours,
+			now:                   day - twoHours,
+			expected:              false,
+		},
+		"should NOT skip the smallest range, which is never an intermediate one": {
+			conflictingRangeStart: day - twoHours,
+			highestMaxTime:        day + twoHours,
+			now:                   day + twoHours,
+			expected:              false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			conflicting := &job{stage: stageMerge, blocksGroup: blocksGroup{rangeStart: testData.conflictingRangeStart, rangeEnd: day}}
+
+			assert.Equal(t, testData.expected, canSkipElapsedIntermediateRange(candidate, conflicting, twoHours, testData.highestMaxTime, testData.now))
 		})
 	}
 }
@@ -903,7 +1029,7 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 
 		cfg := newMockConfigProvider()
 		cfg.splitGroups[userID] = 1
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, false, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
@@ -924,7 +1050,7 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 		cfg := newMockConfigProvider()
 		cfg.splitAndMergeShards[userID] = 8
 		cfg.splitGroups[userID] = 1
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, false, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
@@ -950,7 +1076,7 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 		cfg.splitAndMergeShards[userID] = 8
 		cfg.oooSplitAndMergeShards[userID] = 2
 		cfg.splitGroups[userID] = 1
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, false, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
