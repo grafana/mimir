@@ -284,8 +284,8 @@ func lastOf(series *Series) lastInOrder {
 	}
 	if hh := series.histogram(); hh != nil {
 		if h := hh.Last(); !last.ok || h.Timestamp > last.t {
-			copied := *h
-			last = lastInOrder{t: h.Timestamp, ok: true, isHist: true, h: &copied}
+			// Not copied: an append replaces the appender's last histogram, it never changes it.
+			last = lastInOrder{t: h.Timestamp, ok: true, isHist: true, h: h}
 		}
 	}
 	return last
@@ -446,7 +446,7 @@ func (a *engineAppender) AppendSTZeroSample(ref storage.SeriesRef, lset promlabe
 		return 0, err
 	}
 	var isOOO bool
-	a.e.withSeries(id, func(series *Series) {
+	location, _ := a.e.withSeriesAt(id, func(series *Series) {
 		isOOO, err = appendableFloat(lastOf(series), st, 0, a.headMaxt, a.minValidTime, a.oooWindow)
 	})
 	if err != nil {
@@ -455,7 +455,7 @@ func (a *engineAppender) AppendSTZeroSample(ref storage.SeriesRef, lset promlabe
 	if isOOO {
 		return storage.SeriesRef(id), storage.ErrOutOfOrderST
 	}
-	a.push(pendingSample{ref: id, t: st, v: 0, kind: sampleFloat})
+	a.push(pendingSample{ref: id, location: location, t: st, v: 0, kind: sampleFloat})
 	return storage.SeriesRef(id), nil
 }
 
@@ -481,16 +481,16 @@ func (a *engineAppender) AppendHistogram(ref storage.SeriesRef, lset promlabels.
 	if h == nil && fh == nil {
 		return storage.SeriesRef(id), nil
 	}
-	a.e.withSeries(id, func(series *Series) {
+	location, _ := a.e.withSeriesAt(id, func(series *Series) {
 		_, err = appendableHistogram(lastOf(series), t, h, fh, a.headMaxt, a.minValidTime, a.oooWindow)
 	})
 	if err != nil {
 		return 0, err
 	}
 	if h != nil {
-		a.push(pendingSample{ref: id, t: t, kind: sampleHistogram, h: h})
+		a.push(pendingSample{ref: id, location: location, t: t, kind: sampleHistogram, h: h})
 	} else {
-		a.push(pendingSample{ref: id, t: t, kind: sampleFloatHistogram, fh: fh})
+		a.push(pendingSample{ref: id, location: location, t: t, kind: sampleFloatHistogram, fh: fh})
 	}
 	return storage.SeriesRef(id), nil
 }

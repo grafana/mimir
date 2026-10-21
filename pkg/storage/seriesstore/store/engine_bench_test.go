@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,43 @@ func BenchmarkEngineAppend(b *testing.B) {
 				ts := int64(i+1) * benchInterval
 				for n, ref := range refs {
 					if _, err := app.Append(ref, lsets[n], ts, float64(i)); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*benchSeries), "ns/sample")
+		})
+	}
+}
+
+// BenchmarkEngineAppendHistogram appends a native histogram sample to every series of a tenant whose first metric name
+// has many series, by cached series refs: Commit finds each series where Append saw it.
+func BenchmarkEngineAppendHistogram(b *testing.B) {
+	for _, name := range benchEngines {
+		b.Run(name, func(b *testing.B) {
+			head := benchHeads(b, 1, name)[name]
+			lsets := make([]promlabels.Labels, benchSeries)
+			for n := range lsets {
+				lsets[n] = promlabels.FromStrings("__name__", fmt.Sprintf("histogram_%d", n%50), "pod", fmt.Sprintf("pod-%d", n))
+			}
+			refs := make([]storage.SeriesRef, benchSeries)
+			h := &histogram.Histogram{Count: 3, Sum: 3, Schema: 0, PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}}, PositiveBuckets: []int64{3}}
+			app := head.Appender(context.Background())
+			for n := range lsets {
+				ref, err := app.AppendHistogram(0, lsets[n], benchInterval, h, nil)
+				require.NoError(b, err)
+				refs[n] = ref
+			}
+			require.NoError(b, app.Commit())
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				app := head.Appender(context.Background())
+				ts := int64(i+2) * benchInterval
+				for n, ref := range refs {
+					if _, err := app.AppendHistogram(ref, lsets[n], ts, h, nil); err != nil {
 						b.Fatal(err)
 					}
 				}
