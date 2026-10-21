@@ -213,3 +213,70 @@ func TestClassicHistogramSeriesFollowTheProfilesBuckets(t *testing.T) {
 		require.Equal(t, m.slots*(len(f.leValues)+2), m.seriesCount())
 	}
 }
+
+// A backdated tenant writes some of its scrapes again, between an hour and its window late and half a second off the
+// scrapes, reads as far back, and has the window as its out-of-order one; the other tenants are as without it.
+func TestBackdatedTenantsWriteAndReadUpToTheirWindowLate(t *testing.T) {
+	const windowMs = 30 * 24 * 3_600_000
+	p := defaultProfile()
+	w := newWorld(p.Series, 20_000, 1)
+	w.backdate(windowMs)
+	f, err := newFeed(w, "", 0)
+	require.NoError(t, err)
+	defer f.close()
+	now := int64(1_700_000_000_000)
+
+	backdatedTenants := map[string]bool{}
+	scrapes, late, backdatedSeries := 0, 0, 0
+	for _, tenant := range w.tenants {
+		for _, m := range tenant.metrics {
+			for slot := range m.slots {
+				if tenant.backdated {
+					scrapes++
+				}
+				f.scrape(m, slot, now, func(ts *mimirpb.TimeSeries) {
+					for _, sample := range ts.Samples {
+						if sample.TimestampMs != now {
+							late++
+							require.True(t, tenant.backdated, tenant.id)
+							require.GreaterOrEqual(t, sample.TimestampMs, now-windowMs+3_600_000)
+							require.LessOrEqual(t, sample.TimestampMs, now-3_600_000)
+							require.Equal(t, int64(500), sample.TimestampMs%1000)
+						}
+					}
+				})
+			}
+		}
+		if tenant.backdated {
+			backdatedTenants[tenant.id] = true
+			backdatedSeries += tenant.series
+		}
+	}
+	require.InDelta(t, p.Series.BackdatedShare, float64(late)/float64(scrapes), 0.01)
+	require.InDelta(t, p.Series.BackdatedSeriesShare, float64(backdatedSeries)/float64(w.totalSeries()), 0.1)
+	require.Less(t, len(backdatedTenants), len(w.tenants)/2)
+
+	path := filepath.Join(t.TempDir(), "overrides.json")
+	require.NoError(t, writeOverrides(w, path))
+	overrides, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Len(t, regexp.MustCompile(`"out_of_order_time_window": "30d"`).FindAll(overrides, -1), len(backdatedTenants))
+
+	g := newQueryGen(w, p.Queries, 13*3_600_000, func() int64 { return now - 13*3_600_000 }, func() int64 { return now })
+	r := rand.New(rand.NewPCG(1, 2))
+	whole := 0
+	for range 20_000 {
+		req := g.next(r, "QueryStream")
+		if req == nil {
+			continue
+		}
+		if !backdatedTenants[req.tenant] {
+			require.GreaterOrEqual(t, req.query.StartTimestampMs, now-13*3_600_000, req.tenant)
+			continue
+		}
+		if req.query.StartTimestampMs == now-windowMs {
+			whole++
+		}
+	}
+	require.Positive(t, whole, "reads over all of the window")
+}

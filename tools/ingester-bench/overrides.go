@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
+
+	"github.com/prometheus/common/model"
 )
 
 // Per-tenant limits the ingesters run with, as a multi-tenant cell sets them: a series limit and an early head
@@ -28,6 +31,7 @@ type tenantLimits struct {
 	EarlyHeadCompactionOwnedSeriesThreshold int                    `json:"early_head_compaction_owned_series_threshold"`
 	AdditionalCostAttributionTrackers       map[string]costTracker `json:"additional_cost_attribution_trackers,omitempty"`
 	ActiveSeriesAdditionalCustomTrackers    map[string]string      `json:"active_series_additional_custom_trackers,omitempty"`
+	OutOfOrderTimeWindow                    string                 `json:"out_of_order_time_window,omitempty"`
 }
 
 type costTracker struct {
@@ -63,6 +67,9 @@ func writeOverrides(w *world, path string) error {
 		}
 		if float64(index) < customTrackersShare*float64(len(tenants)) || index == 0 {
 			limits.ActiveSeriesAdditionalCustomTrackers = customTrackers(t)
+		}
+		if t.backdated {
+			limits.OutOfOrderTimeWindow = model.Duration(time.Duration(w.backdatedWindowMs) * time.Millisecond).String()
 		}
 		overrides[t.id] = limits
 	}

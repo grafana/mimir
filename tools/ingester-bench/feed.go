@@ -48,10 +48,12 @@ type feed struct {
 	err     error
 
 	late lateQueue
-	// Fraction of samples written late, as a threshold of a slot's hash.
-	lateThreshold uint64
-	exemplarMod   uint64
-	leValues      []string
+	// Fraction of samples written late, and of the backdated tenants' also written up to their window late, as
+	// thresholds of a slot's hash.
+	lateThreshold      uint64
+	backdatedThreshold uint64
+	exemplarMod        uint64
+	leValues           []string
 }
 
 type producedSecond struct {
@@ -90,6 +92,7 @@ func newFeed(w *world, dataDir string, port int) (*feed, error) {
 	f := &feed{world: w, cluster: cluster, client: client}
 	f.lastOffset.Store(-1)
 	f.lateThreshold = uint64(w.profile.LateShare * math.MaxUint64)
+	f.backdatedThreshold = uint64(w.profile.BackdatedShare * math.MaxUint64)
 	if w.profile.ExemplarShare > 0 {
 		f.exemplarMod = uint64(math.Round(1 / w.profile.ExemplarShare))
 	}
@@ -262,7 +265,7 @@ func (f *feed) offsetProducedBefore(d time.Duration) int64 {
 }
 
 // scrape adds the series of the slot's scrape at t: its samples, the stale markers of its previous generation's
-// series, and the late ones for later.
+// series, the late ones for later, and a backdated tenant's scrape again, days late.
 func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeSeries)) {
 	w := f.world
 	generation := w.generation(m, slot, t)
@@ -279,8 +282,23 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 		delay := m.intervalMs + int64(m.hash64(slot, uint64(t)^4)%uint64(max(1, int64(w.profile.LateMaxSeconds)*1000-m.intervalMs)))
 		emit = func(ts *mimirpb.TimeSeries) { f.late.push(m.tenant.id, t+delay, ts) }
 	}
-	value := m.sample(slot, t, start)
 	labels := f.familyLabels(m, slot, generation)
+	f.emitScrape(m, slot, t, start, labels, true, emit)
+	// The scrape again, days late at most, of a timestamp half a second off the scrapes', which the series don't
+	// have yet: with the value it would have then had, as old as its series is now.
+	if m.tenant.backdated && m.hash64(slot, uint64(t)^7) < f.backdatedThreshold {
+		span := max(1, (w.backdatedWindowMs-2*3_600_000)/1000)
+		delay := 3_600_000 + int64(m.hash64(slot, uint64(t)^8)%uint64(span))*1000 + 500
+		// Labels of its own: serializing a request may give its series' back to a pool.
+		f.emitScrape(m, slot, t-delay, start-delay, f.familyLabels(m, slot, generation), false, add)
+	}
+}
+
+// emitScrape emits the series of the slot's scrape at t of its generation that started at start, with labels, and
+// with its exemplars if any.
+func (f *feed) emitScrape(m *metricModel, slot int, t, start int64, labels [][]mimirpb.LabelAdapter, exemplars bool, emit func(*mimirpb.TimeSeries)) {
+	w := f.world
+	value := m.sample(slot, t, start)
 	switch m.kind {
 	case kindNativeHistogram:
 		emit(&mimirpb.TimeSeries{Labels: labels[0], Histograms: []mimirpb.Histogram{m.nativeHistogram(slot, t, start, w.profile.NativeBuckets)}})
@@ -296,7 +314,7 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 		emit(&mimirpb.TimeSeries{Labels: labels[len(f.leValues)+1], Samples: []mimirpb.Sample{{TimestampMs: t, Value: value}}})
 	default:
 		ts := &mimirpb.TimeSeries{Labels: labels[0], Samples: []mimirpb.Sample{{TimestampMs: t, Value: value}}}
-		if f.exemplarMod > 0 && m.kind == kindCounter && m.hash64(slot, uint64(t)^5)%f.exemplarMod == 0 {
+		if exemplars && f.exemplarMod > 0 && m.kind == kindCounter && m.hash64(slot, uint64(t)^5)%f.exemplarMod == 0 {
 			ts.Exemplars = []mimirpb.Exemplar{{TimestampMs: t, Value: 1, Labels: []mimirpb.LabelAdapter{{Name: "trace_id", Value: strconv.FormatUint(m.hash64(slot, uint64(t)^6), 16)}}}}
 		}
 		emit(ts)

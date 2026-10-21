@@ -3,9 +3,11 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand/v2" //#nosec G404 -- Synthetic data and reads, reproducible from a seed: no need for a CSPRNG -- nosemgrep: math-random-used
+	"slices"
 	"sort"
 	"strconv"
 
@@ -33,6 +35,8 @@ type world struct {
 	seed       uint64
 	tenants    []*tenantModel
 	lifetimeMs int64
+	// The out-of-order window of the backdated tenants, 0 without any.
+	backdatedWindowMs int64
 	// Label names by rank: "l0" is the one most metrics have.
 	labelWeights []float64
 }
@@ -40,6 +44,8 @@ type world struct {
 type tenantModel struct {
 	id      string
 	metrics []*metricModel
+	// Whether the tenant writes samples up to the world's backdated window late.
+	backdated bool
 	// Label values by label name, shared by the tenant's metrics, which use the first ones they need.
 	pools  map[string][]string
 	series int
@@ -90,6 +96,27 @@ func newWorld(p SeriesProfile, totalSeries int, seed uint64) *world {
 		w.tenants = append(w.tenants, w.newTenant(r, fmt.Sprintf("tenant-%03d", i), series))
 	}
 	return w
+}
+
+// backdate gives tenants with the profile's share of the series, picked by a hash of their ids so that the world is
+// the same otherwise, an out-of-order window of windowMs, which they write samples that late in.
+func (w *world) backdate(windowMs int64) {
+	w.backdatedWindowMs = windowMs
+	if windowMs <= 0 {
+		return
+	}
+	tenants := slices.Clone(w.tenants)
+	slices.SortFunc(tenants, func(a, b *tenantModel) int {
+		return cmp.Compare(seededHash(w.seed, a.id, "backdated"), seededHash(w.seed, b.id, "backdated"))
+	})
+	series, total := 0, w.totalSeries()
+	for _, t := range tenants {
+		if float64(series) >= w.profile.BackdatedSeriesShare*float64(total) {
+			break
+		}
+		t.backdated = true
+		series += t.series
+	}
 }
 
 func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {

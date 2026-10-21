@@ -219,8 +219,13 @@ func (g *queryGen) next(r *rand.Rand, rpc string) *request {
 	s := g.shape(r, rpc)
 	now := g.now()
 	end := now - s.SinceMaxMs
-	// Reads of what's older than the ingesters' data go to the store-gateways only.
-	if end < max(now-g.retention, g.dataStart()) {
+	// Reads of what's older than the ingesters' data go to the store-gateways only: for a backdated tenant, the
+	// queriers ask the ingesters over all of its out-of-order window, which its samples go back as far as.
+	earliest := max(now-g.retention, g.dataStart())
+	if t.backdated {
+		earliest = max(now, g.dataStart()) - g.world.backdatedWindowMs
+	}
+	if end < earliest {
 		return nil
 	}
 	var sel Selector
@@ -230,7 +235,10 @@ func (g *queryGen) next(r *rand.Rand, rpc string) *request {
 	target := max(1, s.Fetched/max(1, len(s.Selectors)))
 	m := g.metricFor(r, t, target)
 	matchers := g.matchers(r, t, m, sel)
-	start := max(g.dataStart(), end-s.RangeMs-sel.RangeMs-5*60_000)
+	start := max(earliest, end-s.RangeMs-sel.RangeMs-5*60_000)
+	if t.backdated && r.Float64() < g.profile.BackdatedRangeShare {
+		start = earliest
+	}
 	switch rpc {
 	case "QueryStream":
 		if s.Sharded > 0 {

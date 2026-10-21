@@ -132,6 +132,7 @@ adds a report from elsewhere, and `-render=report.json` writes its `report.html`
 | `-duration`            | 15m           | Measurement window.                                                                                                                                               |
 | `-retention`           | 13h           | TSDB retention, and how far back reads go.                                                                                                                        |
 | `-out-of-order-window` | 2h            | Out-of-order window of the tenants.                                                                                                                               |
+| `-backdated-window`    | 0             | Out-of-order window, such as `720h`, of the profile's share of tenants that write some samples up to that late. Their reads go back as far. 0 for none.           |
 | `-query-scale`         | 1             | Factor of the profile's read rates.                                                                                                                               |
 | `-read-scales`         |               | Factors of some reads' rates, such as `LabelNamesAndValues=50,QueryStream=0`, so a short run gets enough of the rare reads.                                       |
 | `-compare-fraction`    | 1             | Share of reads whose answers are compared. All reads are sent and timed. Comparing at production rates takes the bench more CPU than reading takes the ingesters. |
@@ -149,10 +150,12 @@ The built-in profile ([`profile.go`](profile.go)) describes the series and the r
   - tenants and how their sizes spread;
   - metrics, label names and values;
   - classic and native histograms;
-  - scrape intervals, churn, late samples and exemplars.
+  - scrape intervals, churn, late samples and exemplars;
+  - with `-backdated-window`, the tenants that write samples days late, and how many.
 - **Reads:**
   - rates per million series, by RPC;
   - query classes, each with its own matchers, ranges and series counts: alerting and recording rules, dashboard
-    panels, explore, long-range and sharded queries, dashboard variables, the series browser and cardinality.
+    panels, explore, long-range and sharded queries, dashboard variables, the series browser and cardinality;
+  - the share of the backdated tenants' reads over all of their window.
 
 A `-profile` file replaces any of these fields.

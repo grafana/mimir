@@ -51,6 +51,10 @@ type SeriesProfile struct {
 	LateShare      float64 `json:"late_share"`
 	LateMaxSeconds int     `json:"late_max_seconds"`
 	ExemplarShare  float64 `json:"exemplar_share"`
+	// With -backdated-window, the share of the series in tenants with that out-of-order window, and of their scrapes
+	// also written up to that far back, as devices that buffer their samples or a delayed pipeline do.
+	BackdatedSeriesShare float64 `json:"backdated_series_share"`
+	BackdatedShare       float64 `json:"backdated_share"`
 }
 
 type QueriesProfile struct {
@@ -61,6 +65,9 @@ type QueriesProfile struct {
 	Shapes        []QueryShape  `json:"shapes,omitempty"`
 	Distributions *ShapeProfile `json:"distributions,omitempty"`
 	Classes       []QueryClass  `json:"classes,omitempty"`
+	// Share of the reads of the tenants with a backdated window over all of it, as a dashboard of it is: their other
+	// reads may go that far back too, which the queriers then ask the ingesters for.
+	BackdatedRangeShare float64 `json:"backdated_range_share"`
 }
 
 // QueryClass is a kind of query, such as an alerting rule's or a dashboard panel's: what it reads correlates, as a
@@ -242,8 +249,11 @@ func defaultProfile() Profile {
 			LateShare:             0.013,
 			LateMaxSeconds:        600,
 			ExemplarShare:         0.003,
+			BackdatedSeriesShare:  0.1,
+			BackdatedShare:        0.02,
 		},
 		Queries: QueriesProfile{
+			BackdatedRangeShare: 0.2,
 			RatePerMillionSeries: map[string]float64{
 				"QueryStream":             600,
 				"ActiveSeries":            30,
