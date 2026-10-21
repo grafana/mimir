@@ -289,7 +289,19 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, errNotRunning
 	}
 
-	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+	planID := req.Key.Id
+	isBackfill := planID == backfillPhasePlanJobId
+	switch {
+	case planID != planJobId && !isBackfill:
+		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a plan job key", planID)
+	case req.Unchanged || req.Backfill != nil:
+		if isBackfill {
+			return nil, status.Error(codes.Unimplemented, "unchanged and backfill planned jobs are not supported yet")
+		}
+		return nil, status.Error(codes.InvalidArgument, "unchanged and backfill planned jobs are only valid for backfill phase plan jobs")
+	}
+
+	logger := log.With(s.logger, "user", req.Tenant, "plan_job_id", planID, "epoch", req.Key.Epoch)
 	level.Info(logger).Log("msg", "received plan results", "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
@@ -298,6 +310,13 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	for i, job := range req.Jobs {
 		if job.Job == nil {
 			return nil, status.Errorf(codes.InvalidArgument, "planned job %q is missing required job field", job.Id)
+		}
+		// The backfill ID determines the job type, so it must match the plan job to keep each plan job's jobs apart
+		if hasBackfillID := len(job.Job.BackfillId) > 0; hasBackfillID != isBackfill {
+			if isBackfill {
+				return nil, status.Errorf(codes.InvalidArgument, "planned job %q is missing a backfill ID required by backfill phase plan jobs", job.Id)
+			}
+			return nil, status.Errorf(codes.InvalidArgument, "planned job %q has a backfill ID, which is only valid for backfill phase plan jobs", job.Id)
 		}
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
@@ -317,11 +336,16 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 
 		idSet[job.Id] = struct{}{}
 
+		id := job.Id
+		if isBackfill {
+			id = backfillCompactionJobKeyPrefix + id
+		}
 		jobs = append(jobs, NewTrackedCompactionJob(
-			job.Id,
+			id,
 			&CompactionJob{
-				blocks:  job.Job.BlockIds,
-				isSplit: job.Job.Split,
+				blocks:     job.Job.BlockIds,
+				isSplit:    job.Job.Split,
+				backfillID: job.Job.BackfillId,
 			},
 			// Technically this casting could truncate, but that's an unrealistic case.
 			// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
@@ -331,7 +355,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, planJobId, jobs, req.Key.Epoch)
+	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, planID, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, errFailedCompletingJob // this error is used because PlannedJobs is the completion of a plan job
