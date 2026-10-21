@@ -39,13 +39,16 @@ import (
 )
 
 func TestAMConfigValidationAPI(t *testing.T) {
+	const testTenant = "testing"
+
 	testCases := []struct {
-		name                                  string
-		cfg                                   string
-		maxConfigSize                         int
-		maxTemplates                          int
-		maxTemplateSize                       int
-		requireExplicitSNSReceiverCredentials bool
+		name                                               string
+		cfg                                                string
+		maxConfigSize                                      int
+		maxTemplates                                       int
+		maxTemplateSize                                    int
+		requireExplicitSNSReceiverCredentials              bool
+		tenantsExemptFromConfigValidationForExistingConfig []string
 
 		response string
 		err      error
@@ -1113,6 +1116,25 @@ alertmanager_config: |
 `,
 			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSUseAWSHTTPClientNotAllowed),
 		},
+		{
+			name:                                  "Should return an error if the configuration fails validation, even if the tenant is explicitly allowed to load existing invalid config",
+			requireExplicitSNSReceiverCredentials: true,
+			tenantsExemptFromConfigValidationForExistingConfig: []string{testTenant},
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            profile: some-profile
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
 	}
 
 	limits := &mockAlertManagerLimits{}
@@ -1128,9 +1150,10 @@ alertmanager_config: |
 			limits.maxTemplatesCount = tc.maxTemplates
 			limits.maxSizeOfTemplate = tc.maxTemplateSize
 			am.cfg.RequireExplicitSNSReceiverCredentials = tc.requireExplicitSNSReceiverCredentials
+			am.cfg.TenantsExemptFromConfigValidationForExistingConfig = tc.tenantsExemptFromConfigValidationForExistingConfig
 
 			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v2/alerts", bytes.NewReader([]byte(tc.cfg)))
-			ctx := user.InjectOrgID(req.Context(), "testing")
+			ctx := user.InjectOrgID(req.Context(), testTenant)
 			w := httptest.NewRecorder()
 			am.SetUserConfig(w, req.WithContext(ctx))
 			resp := w.Result()
