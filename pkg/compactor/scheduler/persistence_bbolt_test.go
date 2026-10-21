@@ -393,7 +393,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 		"backfill compaction job": {
 			job: &TrackedCompactionJob{
 				baseTrackedJob: baseTrackedJob{
-					id:           "id",
+					id:           backfillCompactionJobKeyPrefix + "0@17241709254077376921-merge--1761004800000-1761012000000",
 					creationTime: now,
 					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
 					statusTime:   now.Add(10 * time.Second),

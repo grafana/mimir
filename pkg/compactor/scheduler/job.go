@@ -20,12 +20,17 @@ const (
 	planJobId        = "p"
 	infiniteLeases   = 0
 
-	typedJobKeyPrefix      = "#"
-	backfillPhasePlanJobId = typedJobKeyPrefix + "b" // the suffix is empty since a tenant has at most one backfill
+	typedJobKeyPrefix              = "#"
+	backfillPhasePlanJobId         = typedJobKeyPrefix + "b" // the suffix is empty since a tenant has at most one backfill
+	backfillCompactionJobKeyPrefix = typedJobKeyPrefix + "k" // the suffix is the ID from the planner, kept apart from compaction job IDs
 )
 
 func isTypedJobKey(id string) bool {
 	return strings.HasPrefix(id, typedJobKeyPrefix)
+}
+
+func isBackfillCompactionJobKey(id string) bool {
+	return strings.HasPrefix(id, backfillCompactionJobKeyPrefix)
 }
 
 type TrackedJob interface {
@@ -259,6 +264,7 @@ func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {
 // TrackedBackfillPhasePlanJob plans the work of the current phase of a tenant's backfill
 type TrackedBackfillPhasePlanJob struct {
 	baseTrackedJob
+	hasOutstandingJobs bool // set when leased and not persisted, since it only describes the lease
 }
 
 func NewTrackedBackfillPhasePlanJob(creationTime time.Time) *TrackedBackfillPhasePlanJob {
@@ -286,6 +292,9 @@ func (j *TrackedBackfillPhasePlanJob) ToLeaseResponse(tenant string) *compactors
 		Spec: &compactorschedulerpb.JobSpec{
 			Tenant:  tenant,
 			JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			BackfillPhasePlanning: &compactorschedulerpb.BackfillPhasePlanningJob{
+				HasOutstandingJobs: j.hasOutstandingJobs,
+			},
 		},
 	}
 }

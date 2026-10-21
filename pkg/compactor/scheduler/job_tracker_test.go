@@ -447,6 +447,61 @@ func TestJobTracker_OfferCompactionJobs_PlanJobsAreSeparate(t *testing.T) {
 	}
 }
 
+func TestJobTracker_Lease_BackfillPhasePlanHasOutstandingJobs(t *testing.T) {
+	leased := func(j *TrackedCompactionJob) *TrackedCompactionJob {
+		j.MarkLeased(at(2, 0))
+		return j
+	}
+	newCompaction := func() *TrackedCompactionJob {
+		return NewTrackedCompactionJob("0@17241709254077376921-merge--1761004800000-1761012000000", &CompactionJob{}, 1, 0, at(1, 0))
+	}
+	newBackfillCompaction := func() *TrackedCompactionJob {
+		return NewTrackedCompactionJob(backfillCompactionJobKeyPrefix+"0@17241709254077376921-merge--1761004800000-1761012000000", &CompactionJob{backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")}, 1, 0, at(1, 0))
+	}
+	newLeasedPlan := func() *TrackedPlanJob {
+		j := NewTrackedPlanJob(at(1, 0))
+		j.MarkLeased(at(2, 0))
+		return j
+	}
+
+	tests := map[string]struct {
+		compactionJobs []*TrackedCompactionJob
+		planJob        *TrackedPlanJob
+		expected       bool
+	}{
+		"no jobs": {},
+		"pending compaction job": {
+			compactionJobs: []*TrackedCompactionJob{newCompaction()},
+		},
+		"active compaction job": {
+			compactionJobs: []*TrackedCompactionJob{leased(newCompaction())},
+		},
+		"active plan job": {
+			planJob: newLeasedPlan(),
+		},
+		"pending backfill compaction job": {
+			compactionJobs: []*TrackedCompactionJob{newBackfillCompaction()},
+			expected:       true,
+		},
+		"active backfill compaction job": {
+			compactionJobs: []*TrackedCompactionJob{leased(newBackfillCompaction())},
+			expected:       true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			jt, _ := newTestJobTrackerWithLanePolicy(clock.NewMock(), newBackfillLanePolicy())
+			jt.recoverFrom(tc.compactionJobs, tc.planJob, NewTrackedBackfillPhasePlanJob(at(1, 0)))
+
+			resp, _, err := jt.Lease(backfillPhasePlanLane)
+			require.NoError(t, err)
+			require.Equal(t, backfillPhasePlanJobId, resp.Key.Id)
+			require.Equal(t, tc.expected, resp.Spec.BackfillPhasePlanning.HasOutstandingJobs)
+		})
+	}
+}
+
 func assertTrackerBytes(t *testing.T, reg *prometheus.Registry, msg string, splitBytes, mergeBytes float64) {
 	t.Helper()
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
