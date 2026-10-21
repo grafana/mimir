@@ -6,11 +6,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -315,4 +317,23 @@ func TestSeriesstore_StartupRemovesTheOtherEnginesDirs(t *testing.T) {
 		require.FileExists(t, r.partitionOffsetFilePath(pid))
 		require.Len(t, r.unmarked, 1)
 	})
+}
+
+// A seriesstore engine reports its in-memory series like the Prometheus head, which cortex_readcache_memory_series sums.
+func TestSeriesstore_ReportsHeadSeries(t *testing.T) {
+	cfg := newSeriesstoreTestConfig(t)
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	reg := prometheus.NewRegistry()
+	db, err := openPartitionTSDB("tenant-1", 3, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), reg, log.NewNopLogger())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	appendTestSample(t, db, "up", time.Now().UnixMilli())
+	appendTestSample(t, db, "down", time.Now().UnixMilli())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP prometheus_tsdb_head_series Total number of series in the head block.
+		# TYPE prometheus_tsdb_head_series gauge
+		prometheus_tsdb_head_series 2
+	`), "prometheus_tsdb_head_series"))
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -254,6 +255,11 @@ func openPartitionTSDB(
 		if err != nil {
 			return nil, fmt.Errorf("opening partition seriesstore engine %q: %w", dir, err)
 		}
+		// The Prometheus head's gauge, which cortex_readcache_memory_series sums.
+		promauto.With(tsdbPromReg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_series",
+			Help: "Total number of series in the head block.",
+		}, func() float64 { return float64(engine.NumSeries()) })
 		partitionDB.db = engine
 		partitionDB.touchLastAppend(time.Now())
 		return partitionDB, nil
