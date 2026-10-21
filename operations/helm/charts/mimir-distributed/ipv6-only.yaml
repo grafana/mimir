@@ -1,0 +1,54 @@
+# These values override the default configuration to run Grafana Mimir on an IPv6 only Kubernetes cluster.
+# On such a cluster every Pod and Service address is IPv6, so each Mimir component has to be told to
+# advertise an IPv6 address in its ring, and the memberlist transport and the HTTP and gRPC listeners
+# have to bind to the IPv6 wildcard address.
+#
+# The addresses are written as "::" and not "[::]" because Mimir passes the server listen addresses
+# through net.JoinHostPort and the memberlist bind address through net.ParseIP, and both want the
+# unbracketed form. The bundled Kafka is the exception, see below.
+
+mimir:
+  structuredConfig:
+    server:
+      http_listen_address: "::"
+      grpc_listen_address: "::"
+    memberlist:
+      bind_addr:
+        - "::"
+    alertmanager:
+      sharding_ring:
+        instance_enable_ipv6: true
+    compactor:
+      sharding_ring:
+        instance_enable_ipv6: true
+    distributor:
+      ring:
+        instance_enable_ipv6: true
+    frontend:
+      instance_enable_ipv6: true
+    ingester:
+      ring:
+        instance_enable_ipv6: true
+    overrides_exporter:
+      ring:
+        instance_enable_ipv6: true
+    querier:
+      ring:
+        instance_enable_ipv6: true
+    query_scheduler:
+      ring:
+        instance_enable_ipv6: true
+    ruler:
+      ring:
+        instance_enable_ipv6: true
+    store_gateway:
+      sharding_ring:
+        instance_enable_ipv6: true
+
+# Kafka parses each listener as a URI, so here the wildcard host has to be bracketed.
+# The listeners are a hardcoded default in the Kafka StatefulSet, but the container environment is
+# merged by name, so this entry replaces the default instead of being appended to it.
+kafka:
+  env:
+    - name: KAFKA_LISTENERS
+      value: PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093

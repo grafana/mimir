@@ -363,10 +363,13 @@ func newOTLPParser(
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-				actual: int(r.ContentLength),
-				limit:  maxRecvMsgSize,
-			}.Error())
+			sizeErr := distributorMaxOTLPRequestSizeErr{limit: maxRecvMsgSize}
+			if compression == util.NoCompression {
+				sizeErr.actual = int(r.ContentLength)
+			} else {
+				sizeErr.compressed = int(r.ContentLength)
+			}
+			return 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, sizeErr.Error())
 		}
 
 		spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.decodeAndConvert")

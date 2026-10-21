@@ -30,9 +30,10 @@ import (
 func parseBlockedQueriesYAML(t *testing.T, yamlStr string) []validation.BlockedQuery {
 	t.Helper()
 
-	// Initialize with minimal required defaults to pass validation
+	// Initialize with minimal required defaults to pass validation.
 	limits := validation.Limits{
-		IngestStorageReadConsistency: "eventual", // Required for validation
+		IngestStorageReadConsistency: "eventual", // Required for validation.
+		FloatChunkEncoding:           validation.DefaultFloatChunkEncodingValue,
 	}
 
 	err := yaml.Unmarshal([]byte(yamlStr), &limits)

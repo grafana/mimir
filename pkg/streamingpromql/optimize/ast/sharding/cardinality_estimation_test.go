@@ -8,12 +8,15 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -223,6 +226,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr(originalExpression)
 		require.NoError(t, err)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -233,6 +238,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
 		require.Zero(t, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "total_miss")
 	})
 
 	t.Run("returns the cardinality of a single selector", func(t *testing.T) {
@@ -244,6 +250,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 		expectedEstimatesInStats := writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, fooMatchers, minT, maxT, 1234)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -255,6 +263,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
 		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "hit")
 	})
 
 	t.Run("returns the total cardinality across selectors", func(t *testing.T) {
@@ -269,6 +278,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expectedEstimatesInStats = append(expectedEstimatesInStats, writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, fooMatchers, minT, maxT, 100)...)
 		expectedEstimatesInStats = append(expectedEstimatesInStats, writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, barMatchers, minT, maxT, 500)...)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -280,6 +291,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
 		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "hit")
 	})
 
 	t.Run("does not count repeated selectors multiple times", func(t *testing.T) {
@@ -291,6 +303,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 		expectedEstimatesInStats := writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, fooMatchers, minT, maxT, 100)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -302,6 +316,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
 		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "hit")
 	})
 
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {
@@ -314,6 +329,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 		expectedEstimatesInStats := writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, fooMatchers, minT, maxT, 100)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -324,6 +341,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
 		require.Zero(t, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "partial_miss")
 	})
 
 	t.Run("returns the maximum cardinality across the buckets of a single selector", func(t *testing.T) {
@@ -350,6 +368,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			expectedEstimatesInStats = append(expectedEstimatesInStats, writeSelectorCardinalityEntry(t, ctx, cfg, k, cardinality, fooMatchers))
 		}
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, wideTimeRange, lookbackDelta)
@@ -361,6 +381,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
 		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "hit")
 	})
 
 	t.Run("ignores entries whose stored selector does not match (hash collision)", func(t *testing.T) {
@@ -379,6 +400,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			writeSelectorCardinalityEntry(t, ctx, cfg, k, 4321, fooMatchers)
 		}
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -389,6 +412,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
 		require.Zero(t, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "total_miss")
 	})
 
 	t.Run("queries no more than the maximum allowed number of buckets, even if the selector queries a longer time range", func(t *testing.T) {
@@ -400,6 +424,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr(originalExpression)
 		require.NoError(t, err)
 
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
 		qs, ctx := stats.ContextWithEmptyStats(ctx)
 		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
@@ -410,7 +436,24 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
 		require.Zero(t, qs.LoadEstimatedSeriesCount())
+		requireCardinalityEstimationLookupOutcome(t, reg, "total_miss")
 	})
+}
+
+func requireCardinalityEstimationLookupOutcome(t *testing.T, reg *prometheus.Registry, expectedOutcome string) {
+	t.Helper()
+
+	const metricName = "cortex_mimir_query_engine_cardinality_estimation_lookups_total"
+	expected := fmt.Sprintf("# HELP %[1]s Total number of query requests where an attempt was made to estimate cardinality from the cardinality cache, by outcome.\n# TYPE %[1]s counter\n", metricName)
+	for _, outcome := range []string{"hit", "partial_miss", "total_miss"} {
+		value := 0
+		if outcome == expectedOutcome {
+			value = 1
+		}
+		expected += fmt.Sprintf("%s{outcome=%q} %d\n", metricName, outcome, value)
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), metricName))
 }
 
 func TestSelectorCardinalityCacheKeys(t *testing.T) {
@@ -489,7 +532,7 @@ func TestSelectorCardinalityCacheKeys(t *testing.T) {
 
 func TestSelectorCardinalityCacheKey_DifferentOriginalExpressions(t *testing.T) {
 	ctx := context.Background()
-	_, cfg := setupCardinalityEstimationTest()
+	cfg := createCardinalityEstimationTestOptions(false)
 	keyForFoo, err := selectorCardinalityCacheKey(ctx, cfg, "foo", "foo", 0, 1000, 2000)
 	require.NoError(t, err)
 
@@ -497,6 +540,16 @@ func TestSelectorCardinalityCacheKey_DifferentOriginalExpressions(t *testing.T) 
 	require.NoError(t, err)
 
 	require.NotEqual(t, keyForFoo, keyForFooBar, "identical selectors with different expressions should result in different keys")
+}
+
+func TestSelectorCardinalityCacheKey_CryptographicHashingEnabled(t *testing.T) {
+	ctx := context.Background()
+	cfg := createCardinalityEstimationTestOptions(true)
+
+	key, err := selectorCardinalityCacheKey(ctx, cfg, "foo", "foo", 0, 1000, 2000)
+	require.NoError(t, err)
+	require.Nil(t, key.plain, "plaintext key should not be populated when cryptographic hashing is enabled")
+	require.NotEqual(t, "", key.hashed, "hashed key should be populated when cryptographic hashing is enabled")
 }
 
 func TestRequestHintsCardinalityEstimator(t *testing.T) {
@@ -566,6 +619,22 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 
 	t.Run("stores a single selector's cardinality", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 1, c.SetCount)
+
+		result := estimateFoo(t, cfg)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
+	})
+
+	t.Run("stores a single selector's cardinality with cryptographic hashing enabled", func(t *testing.T) {
+		cfg := createCardinalityEstimationTestOptions(true)
+		c := caching.NewInMemoryCache()
+		cfg.Backend = c
+
 		ctx, qs := newCtxWithStats()
 		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
 
@@ -785,14 +854,225 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	})
 }
 
+func TestCardinalityEstimationCacheKeyMetrics(t *testing.T) {
+	const userID = "user-1"
+	lookbackDelta := 5 * time.Minute
+	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
+
+	setup := func(useCryptographicHash bool) (streamingpromql.CardinalityEstimationConfig, *prometheus.Registry) {
+		cfg := createCardinalityEstimationTestOptions(useCryptographicHash)
+		cfg.Backend = caching.NewInMemoryCache()
+		reg := prometheus.NewPedanticRegistry()
+		cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
+		return cfg, reg
+	}
+
+	// generatedKeys function returns the count of cache keys produced and the sum of their sizes
+	generatedKeys := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig, expression, selector string, minT, maxT int64, limitBucketCount bool) (int, int) {
+		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, selector, minT, maxT, limitBucketCount, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		keyBytes := 0
+		for _, k := range keys {
+			keyBytes += k.size()
+		}
+		return len(keys), keyBytes
+	}
+
+	type observation struct {
+		count, keys, keyBytes int
+	}
+
+	expectedMetrics := func(read, seen, write observation) string {
+		operations := []struct {
+			name string
+			observation
+		}{{"read", read}, {"seen", seen}, {"write", write}}
+
+		family := func(name, help string, value func(observation) (int, int)) string {
+			var b strings.Builder
+			fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s histogram\n", name, help, name)
+			for _, op := range operations {
+				count, sum := value(op.observation)
+				fmt.Fprintf(&b, "%s_bucket{operation=%q,le=\"+Inf\"} %d\n", name, op.name, count)
+				fmt.Fprintf(&b, "%s_sum{operation=%q} %d\n", name, op.name, sum)
+				fmt.Fprintf(&b, "%s_count{operation=%q} %d\n", name, op.name, count)
+			}
+			return b.String()
+		}
+
+		return family("cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query", "Number of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+			func(o observation) (int, int) { return o.count, o.keys }) +
+			family("cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes", "Total bytes of cardinality estimation cache keys held in memory per query to estimate or store cardinality.",
+				func(o observation) (int, int) { return o.count, o.keyBytes }) +
+			family("cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes", "Size in bytes of each cardinality estimation cache key held in memory to estimate or store cardinality.",
+				func(o observation) (int, int) { return o.keys, o.keyBytes })
+	}
+
+	metricNames := []string{
+		"cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query",
+		"cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes",
+		"cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes",
+	}
+
+	estimate := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig, expression string, timeRange types.QueryTimeRange) {
+		expr, err := promqlext.NewPromQLParser().ParseExpr(expression)
+		require.NoError(t, err)
+		ctx := user.InjectOrgID(context.Background(), userID)
+		_, err = NewCacheCardinalityEstimator(cfg, log.NewNopLogger()).EstimateSeriesCount(ctx, expression, expr, timeRange, lookbackDelta)
+		require.NoError(t, err)
+	}
+
+	t.Run("read path counts the keys generated for every selector", func(t *testing.T) {
+		cfg, reg := setup(false)
+		const expression = "foo + bar"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		fooKeys, fooKeyBytes := generatedKeys(t, cfg, expression, `__name__="foo"`, minT, maxT, true)
+		barKeys, barKeyBytes := generatedKeys(t, cfg, expression, `__name__="bar"`, minT, maxT, true)
+		require.GreaterOrEqual(t, fooKeys, 3, "12h spans at least 3 buckets of 4h")
+		require.GreaterOrEqual(t, barKeys, 3, "12h spans at least 3 buckets of 4h")
+
+		estimate(t, cfg, expression, timeRange)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: fooKeys + barKeys, keyBytes: fooKeyBytes + barKeyBytes}, observation{}, observation{})), metricNames...))
+	})
+
+	t.Run("read path counts only the sampled keys when the range exceeds the bucket limit", func(t *testing.T) {
+		cfg, reg := setup(false)
+		const expression = "foo + bar"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(60*24*time.Hour), time.Hour)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		fooKeys, fooKeyBytes := generatedKeys(t, cfg, expression, `__name__="foo"`, minT, maxT, true)
+		_, barKeyBytes := generatedKeys(t, cfg, expression, `__name__="bar"`, minT, maxT, true)
+		require.Equal(t, fooKeys, int(cfg.MaxBucketsReadPerSelector), "Buckets are capped by config")
+
+		estimate(t, cfg, expression, timeRange)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{count: 1, keys: 2 * int(cfg.MaxBucketsReadPerSelector), keyBytes: fooKeyBytes + barKeyBytes}, observation{}, observation{})), metricNames...))
+	})
+
+	t.Run("read path records nothing for an expression without selectors", func(t *testing.T) {
+		cfg, reg := setup(false)
+		estimate(t, cfg, "vector(1)", types.NewInstantQueryTimeRange(start))
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{}, observation{})), metricNames...))
+	})
+
+	postProcess := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig, expression string, minT, maxT int64, existingEstimates []stats.SelectorCardinality) {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		qs, ctx := stats.ContextWithEmptyStats(ctx)
+		for _, shard := range []string{"1_of_2", "2_of_2"} {
+			qs.AddSeenSelectorCardinality(stats.SelectorCardinality{
+				Matchers: []stats.LabelMatcher{
+					{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+					{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: shard},
+				},
+				MinT:        minT,
+				MaxT:        maxT,
+				SeriesCount: 10,
+			})
+		}
+		for _, e := range existingEstimates {
+			qs.AddEstimatedSelectorCardinality(e)
+		}
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, expression))
+	}
+
+	t.Run("write path counts each unique key once across reported shards", func(t *testing.T) {
+		cfg, reg := setup(false)
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		bucketKeys, bucketKeyBytes := generatedKeys(t, cfg, expression, `__name__="foo"`, minT, maxT, false)
+		require.GreaterOrEqual(t, bucketKeys, 3, "12h spans at least 3 buckets of 4h")
+
+		postProcess(t, cfg, expression, minT, maxT, nil)
+
+		unique := observation{count: 1, keys: bucketKeys, keyBytes: bucketKeyBytes}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, unique, unique)), metricNames...))
+	})
+
+	t.Run("write path counts only the keys written to the cache", func(t *testing.T) {
+		cfg, reg := setup(false)
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, `__name__="foo"`, minT, maxT, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(keys), 3, "12h spans at least 3 buckets of 4h")
+		bucketKeyBytes := 0
+		for _, k := range keys {
+			bucketKeyBytes += k.size()
+		}
+
+		// The existing estimate for the first bucket equals the seen cardinality, so the first bucket is not written.
+		skipped := keys[0]
+		postProcess(t, cfg, expression, minT, maxT, []stats.SelectorCardinality{{
+			Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+			MinT:        skipped.bucketMinT,
+			MaxT:        skipped.bucketMaxT,
+			SeriesCount: 20,
+		}})
+
+		seen := observation{count: 1, keys: len(keys), keyBytes: bucketKeyBytes}
+		written := observation{count: 1, keys: len(keys) - 1, keyBytes: bucketKeyBytes - skipped.size()}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, seen, written)), metricNames...))
+	})
+
+	t.Run("hashed key bytes are counted when the plain key is not stored", func(t *testing.T) {
+		cfg, reg := setup(true)
+		const expression = "foo"
+		timeRange := types.NewRangeQueryTimeRange(start, start.Add(12*time.Hour), time.Minute)
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+		keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, expression, `__name__="foo"`, minT, maxT, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(keys), 3, "12h spans at least 3 buckets of 4h")
+		bucketKeyBytes := 0
+		for _, k := range keys {
+			require.Nil(t, k.plain, "the plain key is not stored when a cryptographic hash is used")
+			bucketKeyBytes += len(k.hashed)
+		}
+		require.Positive(t, bucketKeyBytes)
+
+		estimate(t, cfg, expression, timeRange)
+		postProcess(t, cfg, expression, minT, maxT, nil)
+
+		all := observation{count: 1, keys: len(keys), keyBytes: bucketKeyBytes}
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(all, all, all)), metricNames...))
+	})
+
+	t.Run("write path records nothing when there are no reported cardinalities", func(t *testing.T) {
+		cfg, reg := setup(false)
+		_, ctx := stats.ContextWithEmptyStats(user.InjectOrgID(context.Background(), userID))
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, "foo"))
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics(observation{}, observation{}, observation{})), metricNames...))
+	})
+}
+
 func setupCardinalityEstimationTest() (*caching.InMemoryCache, streamingpromql.CardinalityEstimationConfig) {
-	cfg := streamingpromql.CardinalityEstimationConfig{}
-	flagext.DefaultValues(&cfg)
+	cfg := createCardinalityEstimationTestOptions(false)
 	backend := caching.NewInMemoryCache()
 	cfg.Backend = backend
-	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.StaticPrefixGenerator("non-hashable-prefix:"), caching.StaticPrefixGenerator("hashable-prefix:"))
 
 	return backend, cfg
+}
+
+func createCardinalityEstimationTestOptions(useCryptographicHash bool) streamingpromql.CardinalityEstimationConfig {
+	cfg := streamingpromql.CardinalityEstimationConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.UseCryptographicHash = useCryptographicHash
+	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.StaticPrefixGenerator("non-hashable-prefix:"), caching.StaticPrefixGenerator("hashable-prefix:"), useCryptographicHash)
+	cfg.Metrics = streamingpromql.NewCardinalityEstimationMetrics(prometheus.NewPedanticRegistry())
+
+	return cfg
 }
 
 func writeSelectorCardinalityEntry(t *testing.T, ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, key cacheKey, cardinality uint64, matchers []stats.LabelMatcher) stats.SelectorCardinality {

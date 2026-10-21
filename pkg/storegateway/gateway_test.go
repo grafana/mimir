@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -79,13 +80,32 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = -3
 			},
-			expected: errInvalidTenantShardSize,
+			expected: fmt.Errorf("invalid tenant shard size: %w", errInvalidTenantShardSize),
 		},
 		"should pass if shard size has been set": {
 			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
+		},
+		"should fail if shard size per zone is negative": {
+			setup: func(_ *Config, limits *validation.Limits) {
+				limits.StoreGatewayTenantShardSizePerZone = -1
+			},
+			expected: fmt.Errorf("invalid tenant shard size per zone: %w", errInvalidTenantShardSize),
+		},
+		"should pass if shard size per zone has been set": {
+			setup: func(_ *Config, limits *validation.Limits) {
+				limits.StoreGatewayTenantShardSizePerZone = 1
+			},
+			expected: nil,
+		},
+		"should fail if both shard size and shard size per zone have been set": {
+			setup: func(_ *Config, limits *validation.Limits) {
+				limits.StoreGatewayTenantShardSize = 3
+				limits.StoreGatewayTenantShardSizePerZone = 1
+			},
+			expected: errTenantShardSizeWithShardSizePerZone,
 		},
 		"should pass with an in-range read compartment ID when compartments are enabled": {
 			setup: func(cfg *Config, _ *validation.Limits) {
@@ -1580,8 +1600,8 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 	addSample := func(i int) {
 		lbls := labels.FromStrings("series_id", strconv.Itoa(i))
 
-		app := db.Appender(ctx)
-		_, err := app.Append(0, lbls, minT+(step*int64(i)), float64(i))
+		app := db.AppenderV2(ctx)
+		_, err := app.Append(0, lbls, 0, minT+(step*int64(i)), float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Compact(ctx))
@@ -1626,8 +1646,8 @@ func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.L
 			break
 		}
 
-		app := db.Appender(context.Background())
-		_, err := app.Append(0, lbls, timestamp, value)
+		app := db.AppenderV2(context.Background())
+		_, err := app.Append(0, lbls, 0, timestamp, value, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Compact(ctx))

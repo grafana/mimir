@@ -193,6 +193,7 @@ func TestScalarOperator_Finalize(t *testing.T) {
 		memoryConsumptionTracker,
 		false,
 		false,
+		0,
 	)
 
 	inner := scalars.NewInstantVectorToScalar(selector, timeRange, memoryConsumptionTracker, posrange.PositionRange{})

@@ -17,6 +17,7 @@ import (
 
 //node:generate
 type DeduplicateAndMerge struct {
+	NodeIdentifier
 	*DeduplicateAndMergeDetails
 	Inner planning.Node `node:"child"`
 }

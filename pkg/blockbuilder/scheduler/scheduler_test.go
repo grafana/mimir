@@ -1065,7 +1065,7 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now(), 0)
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), 0, "ingest", time.Now())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
 		{partition: 0, resume: 0},
@@ -1271,8 +1271,7 @@ func TestKafkaFlush_MultiCluster_ClustersFailToCommit(t *testing.T) {
 }
 
 func TestUpdateSchedule(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
+	ctx := t.Context()
 
 	var vnet kfake.VirtualNetwork
 
@@ -1280,9 +1279,18 @@ func TestUpdateSchedule(t *testing.T) {
 	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 	reg := sched.register.(*prometheus.Registry)
 
+	// Partition 0 has pre-existing data. The scheduler will record its start_offset only.
+	produceResult := cli.ProduceSync(ctx, &kgo.Record{
+		Timestamp: time.Unix(int64(0), 1),
+		Value:     []byte("initial value"),
+		Topic:     "ingest",
+		Partition: 0,
+	})
+	require.NoError(t, produceResult.FirstErr())
+
 	require.NoError(t, sched.completeObservationMode(ctx))
 
-	// Partition i gets i records.
+	// Push more data to all partitions: partition i gets i records.
 	for i := range int32(4) {
 		for n := range i {
 			produceResult := cli.ProduceSync(ctx, &kgo.Record{
@@ -1301,14 +1309,11 @@ func TestUpdateSchedule(t *testing.T) {
 		`# HELP cortex_blockbuilder_scheduler_partition_start_offset The observed start offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_start_offset gauge
 		cortex_blockbuilder_scheduler_partition_start_offset{partition="0"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="1"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="2"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="3"} 0
 	`), "cortex_blockbuilder_scheduler_partition_start_offset"))
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
 		`# HELP cortex_blockbuilder_scheduler_partition_end_offset The observed end offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_end_offset gauge
-		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 0
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="1"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
@@ -1559,7 +1564,8 @@ func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 // TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
 // each partition's state, and that commits for other topics in the group don't pollute it.
 func TestLoadInitialCommittedOffsets(t *testing.T) {
-	sched, _ := mustScheduler(t, 2)
+	// Partition 2 has no committed offset; GatherAndCompare below checks its absence in the full metric family.
+	sched, _ := mustScheduler(t, 3)
 	ctx := t.Context()
 	admin := sched.adminClients[0]
 
@@ -1577,6 +1583,16 @@ func TestLoadInitialCommittedOffsets(t *testing.T) {
 	requireOffsets(t, sched, "ingest", 0, map[int]int64{0: 42}, "partition 0 should be seeded from its committed offset")
 	requireOffsets(t, sched, "ingest", 1, map[int]int64{0: 64}, "partition 1 should be seeded from its committed offset")
 	require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+
+	// Loaded offsets must be exposed before observation mode or the first periodic flush completes.
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(sched.metrics.perClusterMetrics[0].committedOffset)
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
+# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0"} 42
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1"} 64
+`), "cortex_blockbuilder_scheduler_partition_committed_offset"))
 }
 
 // TestLoadInitialCommittedOffsets_MultiCluster verifies each cluster's committed offsets seed
@@ -1608,6 +1624,23 @@ func TestLoadInitialCommittedOffsets_MultiCluster(t *testing.T) {
 	requireOffsets(t, sched, "ingest", 1, map[int]int64{0: 64, 1: 7})
 	requireOffsets(t, sched, "ingest", 2, map[int]int64{0: 11, 2: 88})
 	require.Len(t, sched.partitionStates, 3, "foreign topic commits should not seed partition state")
+
+	// Each compartment must expose only its loaded offsets.
+	reg := prometheus.NewPedanticRegistry()
+	for clusterID, metrics := range sched.metrics.perClusterMetrics {
+		prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": fmt.Sprint(clusterID)}, reg).MustRegister(metrics.committedOffset)
+	}
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
+# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="0"} 42
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1",write_compartment="0"} 64
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="2",write_compartment="0"} 11
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="1"} 1000
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1",write_compartment="1"} 7
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="2"} 5
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="2",write_compartment="2"} 88
+`), "cortex_blockbuilder_scheduler_partition_committed_offset"))
 }
 
 // TestLoadInitialCommittedOffsets_MultiCluster_OneClusterFails verifies that startup seeding

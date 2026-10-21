@@ -288,6 +288,10 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 		return err
 	}
 
+	if err := cfg.IngesterPartitionRing.Validate(); err != nil {
+		return err
+	}
+
 	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
 		return err
 	}
@@ -639,13 +643,16 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
 		}
 
-		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
+		i.ingestPartitionLifecycler, err = ring.NewPartitionInstanceLifecycler(
 			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
 			partitionRingName,
 			partitionRingKey,
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+		if err != nil {
+			return nil, errors.Wrap(err, "creating ingester partition lifecycler")
+		}
 		i.ingestPartitionLifecycler.BasicService = i.ingestPartitionLifecycler.WithName("partition-instance-lifecycler")
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.EffectiveIngestionPartitionsTenantWriteShardSize)

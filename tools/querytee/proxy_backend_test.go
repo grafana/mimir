@@ -202,6 +202,7 @@ func Test_ProxyBackend_ClusterValidationLabel(t *testing.T) {
 func Test_ProxyBackend_ShouldHandleTenants(t *testing.T) {
 	tests := map[string]struct {
 		excludeTenants []string
+		includeTenants []string
 		tenantIDs      []string
 		expected       bool
 	}{
@@ -235,6 +236,31 @@ func Test_ProxyBackend_ShouldHandleTenants(t *testing.T) {
 			tenantIDs:      []string{"23", "12345"},
 			expected:       true,
 		},
+		"single included tenant": {
+			includeTenants: []string{"23", "432"},
+			tenantIDs:      []string{"23"},
+			expected:       true,
+		},
+		"single non-included tenant": {
+			includeTenants: []string{"23", "432"},
+			tenantIDs:      []string{"12345"},
+			expected:       false,
+		},
+		"no tenant in request with inclusions configured": {
+			includeTenants: []string{"23"},
+			tenantIDs:      nil,
+			expected:       false,
+		},
+		"multi-tenant, all included": {
+			includeTenants: []string{"23", "432"},
+			tenantIDs:      []string{"23", "432"},
+			expected:       true,
+		},
+		"multi-tenant, some included": {
+			includeTenants: []string{"23", "432"},
+			tenantIDs:      []string{"23", "12345"},
+			expected:       false,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -242,7 +268,7 @@ func Test_ProxyBackend_ShouldHandleTenants(t *testing.T) {
 			u, err := url.Parse("http://localhost:9090")
 			require.NoError(t, err)
 
-			backend := NewProxyBackend("test", u, time.Second, false, false, "", BackendConfig{ExcludeTenants: testData.excludeTenants})
+			backend := NewProxyBackend("test", u, time.Second, false, false, "", BackendConfig{ExcludeTenants: testData.excludeTenants, IncludeTenants: testData.includeTenants})
 			assert.Equal(t, testData.expected, backend.ShouldHandleTenants(testData.tenantIDs))
 		})
 	}

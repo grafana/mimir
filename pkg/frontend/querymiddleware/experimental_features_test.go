@@ -156,7 +156,10 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 func TestExperimentalFeaturesMiddleware_ExtendedRangeSelectorSettingIsNoOp(t *testing.T) {
 	for _, enabled := range []string{"", "anchored", "smoothed", "anchored,smoothed", "all"} {
 		t.Run(fmt.Sprintf("enabled=%q", enabled), func(t *testing.T) {
-			tenantLimits := validation.Limits{IngestStorageReadConsistency: "eventual"}
+			tenantLimits := validation.Limits{
+				IngestStorageReadConsistency: "eventual",
+				FloatChunkEncoding:           validation.DefaultFloatChunkEncodingValue,
+			}
 			err := yaml.Unmarshal([]byte(fmt.Sprintf("enabled_promql_extended_range_selectors: %q\n", enabled)), &tenantLimits)
 			require.NoError(t, err)
 			limits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{
@@ -175,9 +178,9 @@ func TestExperimentalFeaturesMiddleware_ExtendedRangeSelectorSettingIsNoOp(t *te
 						require.NoError(t, err)
 						var req MetricsQueryRequest
 						if instant {
-							req = NewPrometheusInstantQueryRequest("/", nil, 1000, 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+							req = NewPrometheusInstantQueryRequest("/", nil, 1000, 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 						} else {
-							req = NewPrometheusRangeQueryRequest("/", nil, 1000, 2000, 1000, 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+							req = NewPrometheusRangeQueryRequest("/", nil, 1000, 2000, 1000, 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 						}
 
 						called := false
@@ -204,7 +207,7 @@ func TestExperimentalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *t
 	handler := middleware.Wrap(inner)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "", nil)
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 

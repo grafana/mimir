@@ -58,14 +58,26 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 			skipHistogramBuckets = true
 		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE, functions.FUNCTION_HISTOGRAM_QUANTILES, functions.FUNCTION_HISTOGRAM_STDDEV, functions.FUNCTION_HISTOGRAM_STDVAR:
 			skipHistogramBuckets = false
+		case functions.FUNCTION_CHANGES:
+			// Detecting a change compares whole histograms, including their buckets.
+			skipHistogramBuckets = false
 		default:
 			// Nothing to do.
 		}
 	}
 
-	// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
+	// count_values uses the string representation of the whole histogram, including its buckets, as the value label.
+	if a, ok := node.(*core.AggregateExpression); ok && a.Op == core.AGGREGATION_COUNT_VALUES {
+		skipHistogramBuckets = false
+	}
+
 	if b, ok := node.(*core.BinaryExpression); ok {
-		if b.Op == core.BINARY_TRIM_UPPER || b.Op == core.BINARY_TRIM_LOWER {
+		switch b.Op {
+		case core.BINARY_TRIM_UPPER, core.BINARY_TRIM_LOWER:
+			// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
+			skipHistogramBuckets = false
+		case core.BINARY_EQLC, core.BINARY_NEQ:
+			// Comparing histograms for (in)equality takes their buckets into account.
 			skipHistogramBuckets = false
 		}
 	}
