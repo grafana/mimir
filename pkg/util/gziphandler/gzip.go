@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 )
 
 const (
@@ -24,6 +26,9 @@ const (
 	contentEncoding = "Content-Encoding"
 	contentType     = "Content-Type"
 	contentLength   = "Content-Length"
+
+	// sniffLen is the maximum number of bytes considered by http.DetectContentType.
+	sniffLen = 512
 )
 
 type codings map[string]float64
@@ -103,12 +108,27 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 
 	// If we have already decided not to use GZIP, immediately passthrough.
 	if w.ignore {
-		return w.ResponseWriter.Write(b)
+		n, err := w.ResponseWriter.Write(b)
+		if err == nil && n < len(b) {
+			err = io.ErrShortWrite
+		}
+		return n, err
 	}
 
-	// Save the write into a buffer for later use in GZIP responseWriter (if content is long enough) or at close with regular responseWriter.
-	// On the first write, w.buf changes from nil to a valid slice
-	w.buf = append(w.buf, b...)
+	// Buffer only enough to select the encoding and sniff the content type.
+	// A handler can supply the entire response in one Write.
+	// Input stays buffered across calls only while it's shorter than minSize,
+	// so previous is always below the limit.
+	previous := len(w.buf)
+	limit := max(w.minSize, sniffLen)
+	if previous >= limit {
+		assert.Unreachable("gzip response prefix reached the decision limit", map[string]any{
+			"previous": previous,
+			"limit":    limit,
+		})
+	}
+	buffered := min(len(b), limit-previous)
+	w.buf = append(w.buf, b[:buffered]...)
 
 	var (
 		cl, _ = strconv.Atoi(w.Header().Get(contentLength))
@@ -120,13 +140,13 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 	// There's no need to check whether the client rejected the identity encoding
 	// because we already know that this has a different encoding.
 	if ce != "" {
-		return w.startPlainWrite(len(b))
+		return w.startPlainWrite(b[buffered:], previous)
 	}
 
 	// Don't encode when content length is known, it's less than min size,
 	// and the caller didn't reject the identity encoding.
 	if cl > 0 && cl < w.minSize && !w.rejectsIdentity {
-		return w.startPlainWrite(len(b))
+		return w.startPlainWrite(b[buffered:], previous)
 	}
 
 	// Only continue if we handle the content type (or it's still unknown).
@@ -146,16 +166,21 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 			// Note that we're ignoring the `rejectsIdentity` here, because we'd have to return a 406 Not Acceptable
 			// in that case, but we still might be wrapped by another handler that handles a different encoding.
 			if handleContentType(w.contentTypes, ct) {
-				if err := w.startGzip(); err != nil {
-					return 0, err
+				n, err := w.startGzip()
+				if err != nil {
+					return max(0, n-previous), err
 				}
-				return len(b), nil
+				if buffered == len(b) {
+					return buffered, nil
+				}
+				n, err = w.gw.Write(b[buffered:])
+				return buffered + n, err
 			}
 		}
 	}
 
 	// If we got here, we should not GZIP this response.
-	return w.startPlainWrite(len(b))
+	return w.startPlainWrite(b[buffered:], previous)
 }
 
 // Unwrap returns the underlying ResponseWriter. This interface is used by
@@ -164,15 +189,19 @@ func (w *GzipResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
-func (w *GzipResponseWriter) startPlainWrite(blen int) (int, error) {
-	if err := w.startPlain(); err != nil {
-		return 0, err
+func (w *GzipResponseWriter) startPlainWrite(b []byte, previous int) (int, error) {
+	n, err := w.startPlain()
+	// Bytes buffered by an earlier Write were already acknowledged.
+	n = max(0, n-previous)
+	if err != nil || len(b) == 0 {
+		return n, err
 	}
-	return blen, nil
+	m, err := w.Write(b)
+	return n + m, err
 }
 
 // startGzip initializes a GZIP writer and writes the buffer.
-func (w *GzipResponseWriter) startGzip() error {
+func (w *GzipResponseWriter) startGzip() (int, error) {
 	// Set the GZIP header.
 	w.Header().Set(contentEncoding, "gzip")
 
@@ -191,24 +220,26 @@ func (w *GzipResponseWriter) startGzip() error {
 	// Initialize and flush the buffer into the gzip response if there are any bytes.
 	// If there aren't any, we shouldn't initialize it yet because on Close it will
 	// write the gzip header even if nothing was ever written.
-	if len(w.buf) > 0 {
+	buf := w.buf
+	w.buf = nil
+	if len(buf) > 0 {
 		// Initialize the GZIP response.
 		w.init()
-		n, err := w.gw.Write(w.buf)
+		n, err := w.gw.Write(buf)
 
 		// This should never happen (per io.Writer docs), but if the write didn't
 		// accept the entire buffer but returned no specific error, we have no clue
 		// what's going on, so abort just to be safe.
-		if err == nil && n < len(w.buf) {
+		if err == nil && n < len(buf) {
 			err = io.ErrShortWrite
 		}
-		return err
+		return n, err
 	}
-	return nil
+	return 0, nil
 }
 
 // startPlain writes to sent bytes and buffer the underlying ResponseWriter without gzip.
-func (w *GzipResponseWriter) startPlain() error {
+func (w *GzipResponseWriter) startPlain() (int, error) {
 	if w.code != 0 {
 		w.ResponseWriter.WriteHeader(w.code)
 		// Ensure that no other WriteHeader's happen
@@ -216,18 +247,19 @@ func (w *GzipResponseWriter) startPlain() error {
 	}
 	w.ignore = true
 	// If Write was never called then don't call Write on the underlying ResponseWriter.
-	if w.buf == nil {
-		return nil
-	}
-	n, err := w.ResponseWriter.Write(w.buf)
+	buf := w.buf
 	w.buf = nil
+	if buf == nil {
+		return 0, nil
+	}
+	n, err := w.ResponseWriter.Write(buf)
 	// This should never happen (per io.Writer docs), but if the write didn't
 	// accept the entire buffer but returned no specific error, we have no clue
 	// what's going on, so abort just to be safe.
-	if err == nil && n < len(w.buf) {
+	if err == nil && n < len(buf) {
 		err = io.ErrShortWrite
 	}
-	return err
+	return n, err
 }
 
 // WriteHeader just saves the response code until close or GZIP effective writes.
@@ -255,7 +287,7 @@ func (w *GzipResponseWriter) Close() error {
 
 	if w.gw == nil {
 		// GZIP not triggered yet, write out regular response.
-		err := w.startPlain()
+		_, err := w.startPlain()
 		// Returns the error if any at write.
 		if err != nil {
 			err = fmt.Errorf("gziphandler: write to regular responseWriter at close gets error: %q", err.Error())
