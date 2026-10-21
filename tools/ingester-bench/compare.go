@@ -238,6 +238,9 @@ func chunkSamples(wire client.Chunk, start, end int64, f func(string) error) err
 		return err
 	}
 	it := c.Iterator(nil)
+	// A histogram of its own, which the iterator copies into: one it returns otherwise shares the iterator's spans, which
+	// compacting it would change for the chunk's next histograms.
+	var into histogram.FloatHistogram
 	for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 		t := it.AtT()
 		if t < start || t > end {
@@ -249,7 +252,8 @@ func chunkSamples(wire client.Chunk, start, end int64, f func(string) error) err
 			_, x := it.At()
 			v = "f" + strconv.FormatUint(math.Float64bits(x), 16)
 		default:
-			_, h := it.AtFloatHistogram(nil)
+			// A stale marker is a new histogram, not into.
+			_, h := it.AtFloatHistogram(&into)
 			// Counter reset hints depend on chunk boundaries, which differ between engines.
 			if h.CounterResetHint != histogram.GaugeType {
 				h.CounterResetHint = histogram.UnknownCounterReset
