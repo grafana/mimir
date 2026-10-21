@@ -227,6 +227,9 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	jj := j.CopyBase()
 
 	jj.MarkLeased(jt.clock.Now())
+	if bj, ok := jj.(*TrackedBackfillPhasePlanJob); ok {
+		bj.hasOutstandingJobs = jt.hasOutstandingBackfillJobs()
+	}
 	if err := jt.persister.WriteJob(jj); err != nil {
 		return nil, false, err
 	}
@@ -241,6 +244,23 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	jt.metrics.queue.Leased(jj)
 
 	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
+}
+
+// hasOutstandingBackfillJobs reports whether any job planned by the backfill phase plan job is pending or active. Callers must have exclusive access.
+func (jt *JobTracker) hasOutstandingBackfillJobs() bool {
+	lanes := jt.backfillPhasePlan.lanes
+	for _, l := range lanes {
+		if jt.pending[l].Len() > 0 {
+			return true
+		}
+	}
+	// Active jobs are not kept in lanes, but the lane a job is assigned to still identifies the plan job that planned it
+	for e := jt.active.Front(); e != nil; e = e.Next() {
+		if slices.Contains(lanes, jt.lanePolicy.LaneForJob(e.Value.(TrackedJob))) {
+			return true
+		}
+	}
+	return false
 }
 
 // isPendingEmpty reports whether the provided lane has no pending jobs. Callers must have exclusive access.
