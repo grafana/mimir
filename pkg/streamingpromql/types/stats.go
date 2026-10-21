@@ -632,13 +632,13 @@ func (s *subsetStats) Add(other *subsetStats) error {
 		}
 
 		for idx := range otherSamples.samplesProcessedPerStep {
-			ourSamples.samplesProcessedPerStep[idx] += other.samplesProcessedPerStep[idx]
+			ourSamples.samplesProcessedPerStep[idx] += otherSamples.samplesProcessedPerStep[idx]
 		}
 		for idx := range otherSamples.samplesReadIfSubsequentStep {
-			ourSamples.samplesReadIfSubsequentStep[idx] += other.samplesReadIfSubsequentStep[idx]
+			ourSamples.samplesReadIfSubsequentStep[idx] += otherSamples.samplesReadIfSubsequentStep[idx]
 		}
 		for idx := range otherSamples.samplesReadIfFirstStep {
-			ourSamples.samplesReadIfFirstStep[idx] += other.samplesReadIfFirstStep[idx]
+			ourSamples.samplesReadIfFirstStep[idx] += otherSamples.samplesReadIfFirstStep[idx]
 		}
 	}
 

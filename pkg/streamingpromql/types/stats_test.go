@@ -697,27 +697,32 @@ func TestOperatorEvaluationStats_Add_WithMultiNode(t *testing.T) {
 
 	require.NoError(t, s1.TrackSampleForInstantVectorSelector(0, 1, nil, 1))
 	require.NoError(t, s1.TrackSampleForInstantVectorSelector(0, 2, nil, 2))
-	require.NoError(t, s2.TrackSampleForInstantVectorSelector(0, 3, nil, 2))
+
+	require.NoError(t, s2.TrackSampleForInstantVectorSelector(0, 3, nil, 1))
+	require.NoError(t, s2.TrackSampleForInstantVectorSelector(0, 4, nil, 2))
 
 	require.NoError(t, s1.Add(s2))
 
 	// Overall stats should be summed.
-	require.Equal(t, []int64{6}, s1.allSeries.samplesProcessedPerStep)
-	require.Equal(t, []int64{6}, s1.allSeries.samplesReadIfSubsequentStep)
-	require.Equal(t, []int64{6}, s1.allSeries.samplesReadIfFirstStep)
+	require.Equal(t, []int64{10}, s1.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{10}, s1.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{10}, s1.allSeries.samplesReadIfFirstStep)
 
 	// Each node should be included in s1 and summed.
-	require.Equal(t, []int64{1}, s1.allSeries.samplesPerNode[1].samplesProcessedPerStep)
-	require.Equal(t, []int64{1}, s1.allSeries.samplesPerNode[1].samplesReadIfSubsequentStep)
-	require.Equal(t, []int64{1}, s1.allSeries.samplesPerNode[1].samplesReadIfFirstStep)
-	require.Equal(t, []int64{5}, s1.allSeries.samplesPerNode[2].samplesProcessedPerStep)
-	require.Equal(t, []int64{5}, s1.allSeries.samplesPerNode[2].samplesReadIfSubsequentStep)
-	require.Equal(t, []int64{5}, s1.allSeries.samplesPerNode[2].samplesReadIfFirstStep)
+	require.Equal(t, []int64{4}, s1.allSeries.samplesPerNode[1].samplesProcessedPerStep)
+	require.Equal(t, []int64{4}, s1.allSeries.samplesPerNode[1].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{4}, s1.allSeries.samplesPerNode[1].samplesReadIfFirstStep)
+	require.Equal(t, []int64{6}, s1.allSeries.samplesPerNode[2].samplesProcessedPerStep)
+	require.Equal(t, []int64{6}, s1.allSeries.samplesPerNode[2].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{6}, s1.allSeries.samplesPerNode[2].samplesReadIfFirstStep)
 
 	// Per-node stats in s2 should be unchanged.
-	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[2].samplesProcessedPerStep)
-	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[2].samplesReadIfSubsequentStep)
-	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[2].samplesReadIfFirstStep)
+	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[1].samplesProcessedPerStep)
+	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[1].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{3}, s2.allSeries.samplesPerNode[1].samplesReadIfFirstStep)
+	require.Equal(t, []int64{4}, s2.allSeries.samplesPerNode[2].samplesProcessedPerStep)
+	require.Equal(t, []int64{4}, s2.allSeries.samplesPerNode[2].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{4}, s2.allSeries.samplesPerNode[2].samplesReadIfFirstStep)
 
 	s1.Close()
 	s2.Close()
