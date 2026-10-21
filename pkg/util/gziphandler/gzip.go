@@ -93,6 +93,8 @@ type GzipResponseWriter struct {
 	buf     []byte // Holds the first part of the write before reaching the minSize or the end of the write.
 	ignore  bool   // If true, then we immediately passthru writes to the underlying ResponseWriter.
 
+	gzipPending bool // If true, an empty write selected GZIP, and the GZIP writer starts on the first non-empty write.
+
 	contentTypes    []parsedContentType // Only compress if the response is one of these content-types. All are accepted if empty.
 	rejectsIdentity bool                // If true, then request explicitly rejected non-encoded requests.
 }
@@ -111,6 +113,16 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 			err = io.ErrShortWrite
 		}
 		return n, err
+	}
+
+	// The headers already claim GZIP, so compress once there's data.
+	if w.gzipPending {
+		if len(b) == 0 {
+			return 0, nil
+		}
+		w.gzipPending = false
+		w.init()
+		return w.gw.Write(b)
 	}
 
 	// Buffer only enough to select the encoding and sniff the content type.
@@ -226,6 +238,7 @@ func (w *GzipResponseWriter) startGzip() (int, error) {
 		}
 		return n, err
 	}
+	w.gzipPending = true
 	return 0, nil
 }
 
@@ -296,7 +309,7 @@ func (w *GzipResponseWriter) Close() error {
 // http.ResponseWriter if it is an http.Flusher. This makes GzipResponseWriter
 // an http.Flusher.
 func (w *GzipResponseWriter) Flush() {
-	if w.gw == nil && !w.ignore {
+	if w.gw == nil && !w.ignore && !w.gzipPending {
 		// Only flush once startGzip or startPlain has been called.
 		//
 		// Flush is thus a no-op until we're certain whether a plain
