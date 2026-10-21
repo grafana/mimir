@@ -610,8 +610,6 @@
     if $._config.configmaps[name] != extraOverridesConfigmapMountpoint(name)
   ],
 
-  assert clashingExtraOverridesConfigmapErrors == [] : std.join('\n', clashingExtraOverridesConfigmapErrors),
-
   // The hidden "configmap" field of a tenant sets its config map (default: overrides_configmap).
   // A list of names puts the tenant in more than one config map, for migrations.
   local overridesConfigmaps(tenantOverrides) =
@@ -651,6 +649,8 @@
       })
     for name in std.objectFields($.overrides_by_configmap)
     if name != $._config.overrides_configmap
+  } + {
+    assert clashingExtraOverridesConfigmapErrors == [] : std.join('\n', clashingExtraOverridesConfigmapErrors),
   },
 
   // This removed the CPU limit from the config.  NB won't show up in subset
