@@ -381,8 +381,11 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 		return nil, errNotRunning
 	}
 
-	// Not logging the key ID because plan jobs all have an identical ID
-	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+	if !isPlanJobKey(req.Key.Id) {
+		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a plan job key", req.Key.Id)
+	}
+
+	logger := log.With(s.logger, "user", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
 
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
@@ -435,6 +438,10 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
 		return nil, errNotRunning
+	}
+
+	if !isCompactionJobKey(req.Key.Id) {
+		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a compaction job key", req.Key.Id)
 	}
 
 	logger := log.With(s.logger, "user", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)

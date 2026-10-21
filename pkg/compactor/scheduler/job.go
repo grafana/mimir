@@ -33,6 +33,18 @@ func isBackfillCompactionJobKey(id string) bool {
 	return strings.HasPrefix(id, backfillCompactionJobKeyPrefix)
 }
 
+func isPlanJobKey(id string) bool {
+	return id == planJobId || id == backfillPhasePlanJobId
+}
+
+// isCompactionJobKey reports whether a key is for a compaction job, with or without a backfill ID
+func isCompactionJobKey(id string) bool {
+	if len(id) == reservedJobIdLen {
+		return false
+	}
+	return !isTypedJobKey(id) || isBackfillCompactionJobKey(id)
+}
+
 type TrackedJob interface {
 	ID() string
 	Type() compactorschedulerpb.JobType
