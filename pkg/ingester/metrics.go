@@ -75,6 +75,11 @@ type ingesterMetrics struct {
 	appenderCommitDuration                 prometheus.Histogram
 	idleTsdbChecks                         *prometheus.CounterVec
 
+	// Seriesstore head snapshots metrics.
+	seriesstoreSnapshots             *prometheus.CounterVec
+	seriesstoreSnapshotRoundDuration prometheus.Histogram
+	seriesstoreLastSnapshotRound     prometheus.Gauge
+
 	// Reference counter for forced/idle compactions across all user TSDBs.
 	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
 	forcedCompactionsCount int64
@@ -402,6 +407,20 @@ func newIngesterMetrics(
 
 		idleTsdbChecks: idleTsdbChecks,
 
+		seriesstoreSnapshots: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_seriesstore_head_snapshots_total",
+			Help: "Total number of tenants' heads the seriesstore engine snapshotted while ingesting, by outcome.",
+		}, []string{"outcome"}),
+		seriesstoreSnapshotRoundDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_seriesstore_head_snapshot_round_duration_seconds",
+			Help:    "The time it takes the seriesstore engine to snapshot the heads of every tenant, paced to use little CPU and disk.",
+			Buckets: prometheus.ExponentialBuckets(10, 2, 9),
+		}),
+		seriesstoreLastSnapshotRound: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_seriesstore_head_snapshot_last_round_timestamp_seconds",
+			Help: "Unix timestamp of the end of the last round of the seriesstore engine's head snapshots.",
+		}),
+
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
 			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
@@ -429,6 +448,8 @@ func newIngesterMetrics(
 
 	// Initialize expected rejected request labels
 	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
+	m.seriesstoreSnapshots.WithLabelValues(snapshotOutcomeSuccess)
+	m.seriesstoreSnapshots.WithLabelValues(snapshotOutcomeFailure)
 	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
 	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)

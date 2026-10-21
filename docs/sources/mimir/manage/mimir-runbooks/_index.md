@@ -325,7 +325,7 @@ How to **investigate**:
 - Check the `Mimir / Alertmanager` dashboard
   - Looking at the dashboard you should see which part of the stack is affected
 - Deduce where in the stack the latency is being introduced
-  - **Configuration API (gateway) + Alertmanager UI**
+  - **Configuration API (gateway) + Alertmanager API**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
       - Network issues such as packet loss between the client and gateway.
       - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
@@ -1381,18 +1381,23 @@ How to **investigate**:
 
 ### MimirMemberlistBridgeZoneUnavailable
 
-This alert fires when there are no available memberlist-bridge pods in a zone where it's expected to be deployed.
+This alert fires when there are no ready memberlist-bridge pods in a zone where it's expected to be deployed.
 
 How it **works**:
 
 - The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
-- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
-- If a zone has no alive bridge running, the memberlist client automatically temporarily disables the zone-aware routing in order to reduce the likelihood of network partitioning. However, detecting that bridges are unhealthy may take a while, and during this period of time, one or more zones could fail to receive memberlist updates. For this reason, you should always have at least one healthy bridge per zone.
+- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), cross-zone gossip travels between the bridges. Members only gossip within their own zone.
+- If a zone that holds memberlist members has no alive bridge, the memberlist client automatically and temporarily disables the zone-aware routing, in order to reduce the likelihood of network partitioning. A zone that holds only bridges does not trigger this.
+- The failover does not wait for the suspicion timeout. It tests for `StateAlive`, and a suspected node is already not alive. A graceful shutdown sends a leave message, so a rolling update is detected without waiting for a probe at all.
+- You should still always have at least one healthy bridge in every zone that holds members. The reason is not the detection lag. While the failover is engaged the cluster gossips full mesh, which is the unoptimised state that bridges exist to avoid.
 - This alert triggers when a zone has a memberlist-bridge deployment configured but no bridge pods are in ready state in that zone.
+- Once the auto-failover has taken effect, the ongoing consequence is inter-AZ data transfer rather than lost memberlist updates, because node selection has reverted to full mesh. Gossip fan-out is unchanged, because the number of peers contacted per interval is the configured `GossipNodes` count and does not depend on zone-aware routing. This is why the alert is a warning and not a page.
+- The alert is built from the memberlist-bridge Deployment status rather than from the Pod readiness of its pods, so that a monitoring gap suppresses the alert instead of firing it.
 
 How to **investigate**:
 
-- Check the status of memberlist-bridge pods in the affected zone, and why they're not running
+- Check the status of memberlist-bridge pods in the affected zone, and why they're not ready
+- Check whether the auto-failover has taken effect, using `memberlist_client_zone_aware_routing_select_nodes_skipped_total`. If that counter is not increasing, the affected zone holds no memberlist members, so losing its bridges cannot partition anything.
 - In case of emergency, disable zone-aware routing in Mimir by setting `-memberlist.zone-aware-routing.enabled=false` on each Mimir component or by using the following jsonnet snippet:
   ```
   _config+:: {
@@ -1406,7 +1411,7 @@ This alert fires when memberlist zone-aware routing auto-failover triggers becau
 
 How it **works**:
 
-- When memberlist zone-aware routing is enabled and a zone has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
+- When memberlist zone-aware routing is enabled and a zone that holds members has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
 - When the failover triggers, inter-AZ data transfer will occur. Inter-AZ data transfer is billed in most cloud providers.
 - This alert triggers when the auto-failover mechanism is actively skipping nodes due to missing bridges.
 
@@ -3981,6 +3986,8 @@ Use `evaluation stats` when asking:
 - How much memory did the PromQL engine use in the query-frontend? (queriers also log a `evaluation stats` line showing their peak memory consumption)
 - Which shard/time-chunk is causing problems?
 - Was the expression modified from what the user submitted?
+
+Range and instant queries log every stat attribute in the list below. Remote read, series, cardinality, active series, and label requests log only the stats that their code paths can set. For example, label names and label values requests do not log `fetched_series_count`, `sharded_queries`, or `samples_processed`, but do log `results_cache_hit_bytes` and `results_cache_miss_bytes`. Other endpoints log every stat attribute.
 
 When looking at `msg="query stats"` consider the following attributes;
 

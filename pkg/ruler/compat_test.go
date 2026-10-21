@@ -173,7 +173,7 @@ func TestPusherAppendable(t *testing.T) {
 			var expReq []mimirpb.PreallocTimeseries
 
 			pusher.response = &mimirpb.WriteResponse{}
-			a := pa.Appender(ctx)
+			a := pa.AppenderV2(ctx)
 			for _, tcSeries := range tc.series {
 				var err error
 				lbls := tcSeries.Labels
@@ -187,15 +187,13 @@ func TestPusherAppendable(t *testing.T) {
 				}
 				expReq = append(expReq, timeseries)
 
-				if sample.H() != nil || sample.FH() != nil {
-					_, err = a.AppendHistogram(0, lbls, sample.T(), sample.H(), sample.FH())
-					if sample.H() != nil {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sample.T(), sample.H()))
-					} else {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sample.T(), sample.FH()))
-					}
-				} else {
-					_, err = a.Append(0, lbls, sample.T(), sample.F())
+				_, err = a.Append(0, lbls, sample.ST(), sample.T(), sample.F(), sample.H(), sample.FH(), storage.AppendV2Options{})
+				switch {
+				case sample.H() != nil:
+					timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sample.T(), sample.H()))
+				case sample.FH() != nil:
+					timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sample.T(), sample.FH()))
+				default:
 					timeseries.Samples = append(timeseries.Samples, mimirpb.Sample{
 						TimestampMs: sample.T(),
 						Value:       sample.F(),
@@ -277,8 +275,8 @@ func TestPusherErrors(t *testing.T) {
 			lbls, err := promqlext.NewPromQLParser().ParseMetric("foo_bar")
 			require.NoError(t, err)
 
-			a := pa.Appender(ctx)
-			_, err = a.Append(0, lbls, int64(model.Now()), 123456)
+			a := pa.AppenderV2(ctx)
+			_, err = a.Append(0, lbls, 0, int64(model.Now()), 123456, nil, nil, storage.AppendV2Options{})
 			require.NoError(t, err)
 
 			require.Equal(t, tc.returnedError, a.Commit())

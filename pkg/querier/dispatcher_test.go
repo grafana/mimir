@@ -1744,7 +1744,7 @@ func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, plann
 		nodes = append(nodes, node)
 	}
 
-	encodedPlan, nodeIndices, err := plan.ToEncodedPlan(false, true, nodes...)
+	encodedPlan, nodeIndices, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), nodes...)
 	require.NoError(t, err)
 
 	evaluationNodes := make([]querierpb.EvaluationNode, 0, len(nodeIndices))
@@ -2322,7 +2322,7 @@ func TestDispatcher_RingErrorTranslation(t *testing.T) {
 			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
-			encodedPlan, nodeIndices, err := plan.ToEncodedPlan(false, true, plan.Root)
+			encodedPlan, nodeIndices, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), plan.Root)
 			require.NoError(t, err)
 
 			body := &querierpb.EvaluateQueryRequest{

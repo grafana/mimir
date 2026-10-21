@@ -1,0 +1,7 @@
+# The configuration of the ingesters of job.yaml, under the -config files of run-in-kubernetes.sh: the read path's
+# utilization limits of their CPU requests and memory limit, as a cell sets them, its CPU requests and as many again
+# and 3/4 of its memory limit.
+common:
+  args:
+    ingester.read-path-cpu-utilization-limit: "8"
+    ingester.read-path-memory-utilization-limit: "25769803776"

@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingester bench report</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --border: #e3e2de;
+  --grid: #ecebe7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --series-a: #2a78d6;
+  --series-b: #eb6834;
+  --phase: rgba(11, 11, 11, 0.045);
+  --phase-window: rgba(42, 120, 214, 0.08);
+  --bad: #c62828;
+  --good: #1b7f3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --grid: #262624;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --series-a: #3987e5;
+    --series-b: #d95926;
+    --phase: rgba(240, 239, 236, 0.05);
+    --phase-window: rgba(57, 135, 229, 0.12);
+    --bad: #ef6b6b;
+    --good: #4cc27a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --border: #2e2e2c;
+  --grid: #262624;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --series-a: #3987e5;
+  --series-b: #d95926;
+  --phase: rgba(240, 239, 236, 0.05);
+  --phase-window: rgba(57, 135, 229, 0.12);
+  --bad: #ef6b6b;
+  --good: #4cc27a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 32px 0 12px; }
+.sub { color: var(--text-secondary); margin: 0 0 16px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 0; }
+button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button[aria-pressed="true"] { border-color: var(--text-secondary); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; }
+.tile .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .detail { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; gap: 16px; color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
+.swatch { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+@media (max-width: 440px) { .charts { grid-template-columns: 1fr; } }
+.chart { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px 12px 6px; position: relative; min-width: 0; }
+.chart h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.chart .summary { color: var(--text-muted); font-size: 12px; margin: 0 0 6px; font-variant-numeric: tabular-nums; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .axis text { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart .grid line { stroke: var(--grid); stroke-width: 1; }
+.chart .phase-label { fill: var(--text-muted); font-size: 9px; }
+.chart details { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+.chart details table { margin-top: 6px; max-height: 240px; display: block; overflow: auto; }
+.tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; font-variant-numeric: tabular-nums; }
+.tooltip .t { color: var(--text-muted); margin-bottom: 2px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.tablewrap { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface-1); }
+td.wrap { white-space: normal; text-align: left; word-break: break-all; font-family: ui-monospace, monospace; font-size: 11px; }
+.bad { color: var(--bad); font-weight: 600; }
+.good { color: var(--good); font-weight: 600; }
+.muted { color: var(--text-muted); }
+pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ingester bench report</h1>
+  <p class="sub" id="subtitle"></p>
+  <div class="toolbar">
+    <span class="muted">Charts:</span>
+    <button type="button" data-range="all" aria-pressed="true">Whole run</button>
+    <button type="button" data-range="reads" aria-pressed="false">From the first read</button>
+    <button type="button" data-range="window" aria-pressed="false">Measurement window</button>
+    <span style="flex:1"></span>
+    <button type="button" id="theme">Toggle theme</button>
+  </div>
+
+  <h2>Summary of the measurement window</h2>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Resources over time</h2>
+  <div class="legend" id="legend"></div>
+  <div class="charts" id="resource-charts"></div>
+
+  <h2>Reads over time</h2>
+  <div class="charts" id="read-charts"></div>
+
+  <h2>Resources in the measurement window</h2>
+  <div class="tablewrap"><table id="resources"></table></div>
+
+  <h2>Read latency in the measurement window</h2>
+  <div class="tablewrap"><table id="latency"></table></div>
+
+  <h2>Reads in the measurement window</h2>
+  <div class="tablewrap"><table id="apis"></table></div>
+
+  <h2>Phases</h2>
+  <div class="tablewrap"><table id="phases"></table></div>
+
+  <h2>Slowest reads</h2>
+  <div class="tablewrap"><table id="slow"></table></div>
+
+  <h2>Mismatches</h2>
+  <div id="mismatches"></div>
+
+  <h2>Run</h2>
+  <div class="tablewrap"><table id="config"></table></div>
+</main>
+<script type="application/json" id="report-data">__REPORT_DATA__</script>
+<script>
+(() => {
+  const R = JSON.parse(document.getElementById('report-data').textContent);
+  const names = R.ingesters || ['A', 'B'];
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const el = (tag, attrs = {}, text) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  const svgEl = (tag, attrs = {}) => {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+
+  // Formats by unit.
+  const fmt = {
+    cores: (v) => v == null ? '–' : v.toFixed(v < 1 ? 3 : 2),
+    bytes: (v) => {
+      if (v == null) return '–';
+      const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB']; let i = 0;
+      while (Math.abs(v) >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return v.toFixed(v < 10 ? 2 : 1) + ' ' + u[i];
+    },
+    rate_bytes: (v) => v == null ? '–' : fmt.bytes(v) + '/s',
+    count: (v) => {
+      if (v == null) return '–';
+      const a = Math.abs(v);
+      if (a >= 1e9) return (v / 1e9).toFixed(2) + 'G';
+      if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+      if (a >= 1e4) return (v / 1e3).toFixed(1) + 'k';
+      if (Number.isInteger(v)) return String(v);
+      return a >= 100 ? v.toFixed(0) : v.toFixed(a >= 10 ? 1 : 2);
+    },
+    ms: (v) => v == null ? '–' : (v >= 1000 ? (v / 1000).toFixed(2) + ' s' : v.toFixed(v < 10 ? 2 : 1) + ' ms'),
+    seconds: (v) => v == null ? '–' : v.toFixed(0) + ' s',
+  };
+  const clock = (t) => new Date(t * 1000).toISOString().substring(11, 19);
+  const ratio = (a, b) => a ? (b / a) : null;
+  const ratioText = (r) => r == null ? '–' : r.toFixed(2) + '×';
+
+  // Phases and the chart ranges they set.
+  const phases = R.phases || [];
+  const phase = (name) => phases.find((p) => p.name === name);
+  const firstRead = phase('warmup');
+  const windowPhase = phase('window');
+  let range = 'all';
+
+  document.getElementById('subtitle').textContent =
+    `${fmt.count(R.series)} series in ${R.tenants} tenants, ${fmt.count(R.samples_per_second)} samples/s · A = ${names[0]}, B = ${names[1]} · ` +
+    `${Math.round(R.window_seconds || 0)} s window` + (R.started ? ` · started ${new Date(R.started * 1000).toISOString().replace('T', ' ').substring(0, 19)} UTC` : '');
+
+  const legend = document.getElementById('legend');
+  names.forEach((n, i) => {
+    const s = el('span');
+    const sw = el('span', { class: 'swatch' }); sw.style.background = `var(--series-${'ab'[i]})`;
+    s.append(sw, document.createTextNode(n));
+    legend.append(s);
+  });
+
+  // Headline tiles: B relative to A over the window.
+  const res = R.resources || [{}, {}];
+  const apis = R.apis || {};
+  const tiles = document.getElementById('tiles');
+  const tile = (label, value, detail, cls) => {
+    const t = el('div', { class: 'tile' });
+    t.append(el('div', { class: 'label' }, label));
+    const v = el('div', { class: 'value' + (cls ? ' ' + cls : '') }, value);
+    t.append(v);
+    if (detail) t.append(el('div', { class: 'detail' }, detail));
+    tiles.append(t);
+  };
+  const resTile = (label, key, f) => tile(label + ' B/A', ratioText(ratio(res[0][key], res[1][key])), `A ${f(res[0][key])} · B ${f(res[1][key])}`);
+  resTile('CPU', 'cpu_cores', fmt.cores);
+  resTile('GC CPU', 'gc_cpu_cores', fmt.cores);
+  resTile('Allocated', 'alloc_bytes_per_second', fmt.rate_bytes);
+  resTile('Heap in use', 'heap_inuse_avg_bytes', fmt.bytes);
+  resTile('Live heap', 'heap_alloc_avg_bytes', fmt.bytes);
+  resTile('RSS', 'rss_avg_bytes', fmt.bytes);
+  if (apis.QueryStream) {
+    const l = apis.QueryStream.latency_ms;
+    tile('QueryStream p99 B/A', ratioText(ratio(l[0].P99, l[1].P99)), `A ${fmt.ms(l[0].P99)} · B ${fmt.ms(l[1].P99)}`);
+  }
+  const totalMismatch = Object.values(apis).reduce((s, a) => s + (a.mismatch || 0), 0);
+  const totalCompared = Object.values(apis).reduce((s, a) => s + (a.compared || 0), 0);
+  const totalErrors = Object.values(apis).reduce((s, a) => s + a.errors[0] + a.errors[1], 0);
+  tile('Persistent mismatches', fmt.count(totalMismatch), `of ${fmt.count(totalCompared)} compared reads`, totalMismatch ? 'bad' : 'good');
+  tile('Read errors', fmt.count(totalErrors), 'A and B', totalErrors ? 'bad' : 'good');
+  tile('Replay B/A', ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1])), `A ${fmt.seconds(R.replay_seconds[0])} · B ${fmt.seconds(R.replay_seconds[1])}`);
+
+  // A line chart of one measure, of one or two series, with the run's phases behind.
+  const tooltip = el('div', { class: 'tooltip' }); tooltip.style.display = 'none';
+  const charts = [];
+  function chart(container, title, unit, series) {
+    const box = el('div', { class: 'chart' });
+    box.append(el('h3', {}, title));
+    const summary = el('p', { class: 'summary' });
+    box.append(summary);
+    const svg = svgEl('svg', { viewBox: '0 0 400 170', role: 'img', 'aria-label': title });
+    box.append(svg);
+    const details = el('details');
+    details.append(el('summary', {}, 'Data'));
+    box.append(details);
+    container.append(box);
+    const c = { box, svg, details, summary, title, unit, series, step: container.id === 'read-charts' ? (R.timeline.bucket_seconds || 10) : null };
+    charts.push(c);
+    return c;
+  }
+  function draw(c) {
+    const { svg, unit, series } = c;
+    svg.replaceChildren();
+    const W = 400, H = 170, L = 46, Rp = 34, T = 14, B = 22;
+    let [t0, t1] = [Infinity, -Infinity];
+    const lo = range === 'window' && windowPhase ? windowPhase.start : range === 'reads' && firstRead ? firstRead.start : -Infinity;
+    const hi = range === 'window' && windowPhase ? windowPhase.end : Infinity;
+    const pts = series.map((s) => s.points.filter((p) => p[0] >= lo && p[0] <= hi));
+    let ymax = 0;
+    pts.forEach((ps) => ps.forEach(([t, v]) => {
+      t0 = Math.min(t0, t); t1 = Math.max(t1, t);
+      if (v != null && isFinite(v)) ymax = Math.max(ymax, v);
+    }));
+    if (!isFinite(t0)) { c.summary.textContent = 'No data'; return; }
+    if (t1 === t0) t1 = t0 + 1;
+    // Round ticks in the unit they show in.
+    const base = unit === 'bytes' || unit === 'rate_bytes' ? Math.pow(1024, Math.max(0, Math.floor(Math.log(ymax || 1) / Math.log(1024)))) : 1;
+    ymax = niceMax((ymax || 1) / base) * base;
+    const x = (t) => L + (t - t0) / (t1 - t0) * (W - L - Rp);
+    const y = (v) => T + (1 - v / ymax) * (H - T - B);
+    // Phases.
+    phases.forEach((p) => {
+      const a = Math.max(p.start, t0), b = Math.min(p.end, t1);
+      if (b <= a) return;
+      svg.append(svgEl('rect', { x: x(a), y: T, width: Math.max(0.5, x(b) - x(a)), height: H - T - B, fill: p.name === 'window' ? css('--phase-window') : css('--phase') }));
+      if (x(b) - x(a) > 34) {
+        const label = svgEl('text', { x: x(a) + 3, y: T + 9, class: 'phase-label' });
+        label.textContent = p.name; svg.append(label);
+      }
+    });
+    // Grid and axes.
+    const g = svgEl('g', { class: 'grid' }); const ax = svgEl('g', { class: 'axis' });
+    for (let i = 0; i <= 4; i++) {
+      const v = ymax * i / 4, yy = y(v);
+      g.append(svgEl('line', { x1: L, x2: W - Rp, y1: yy, y2: yy }));
+      const tx = svgEl('text', { x: L - 4, y: yy + 3, 'text-anchor': 'end' }); tx.textContent = fmt[unit](v); ax.append(tx);
+    }
+    for (let i = 0; i <= 4; i++) {
+      const t = t0 + (t1 - t0) * i / 4;
+      const tx = svgEl('text', { x: x(t), y: H - 6, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle' }); tx.textContent = clock(t).substring(0, 5); ax.append(tx);
+    }
+    svg.append(g, ax);
+    // Lines, broken where an ingester didn't answer or a series has no point for a while; sparse series as dots.
+    const step = c.step || R.timeline.interval_seconds || 5;
+    pts.forEach((ps, i) => {
+      let d = '', pen = false, previous = null;
+      const sparse = ps.length < 40;
+      ps.forEach(([t, v]) => {
+        if (v == null || !isFinite(v) || (previous != null && t - previous > 3 * step)) pen = false;
+        previous = t;
+        if (v == null || !isFinite(v)) return;
+        d += (pen ? 'L' : 'M') + x(t).toFixed(1) + ' ' + y(v).toFixed(1); pen = true;
+        if (sparse) svg.append(svgEl('circle', { cx: x(t), cy: y(v), r: 3, fill: css(series[i].color), stroke: css('--surface-1'), 'stroke-width': 2 }));
+      });
+      svg.append(svgEl('path', { d, fill: 'none', stroke: css(series[i].color), 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+      // Direct label at the line's end, for identity without the legend.
+      const last = [...ps].reverse().find((p) => p[1] != null && isFinite(p[1]));
+      if (last && series.length > 1) {
+        const tx = svgEl('text', { x: x(last[0]) + 4, y: y(last[1]) + 3, fill: css('--text-secondary'), 'font-size': 10 });
+        tx.textContent = series[i].short; svg.append(tx);
+      }
+    });
+    // Summary: mean and peak per series in range.
+    c.summary.textContent = series.map((s, i) => {
+      const vs = pts[i].map((p) => p[1]).filter((v) => v != null && isFinite(v));
+      if (!vs.length) return `${s.short}: –`;
+      const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+      return `${s.short} mean ${fmt[unit](mean)} · max ${fmt[unit](Math.max(...vs))}`;
+    }).join('   ');
+    // Hover: crosshair and the nearest values.
+    const cross = svgEl('line', { y1: T, y2: H - B, stroke: css('--text-muted'), 'stroke-width': 1, visibility: 'hidden' });
+    const dots = series.map((s) => svgEl('circle', { r: 4, fill: css(s.color), stroke: css('--surface-1'), 'stroke-width': 2, visibility: 'hidden' }));
+    svg.append(cross, ...dots);
+    const hit = svgEl('rect', { x: L, y: T, width: W - L - Rp, height: H - T - B, fill: 'transparent' });
+    svg.append(hit);
+    hit.addEventListener('mousemove', (ev) => {
+      const r = svg.getBoundingClientRect();
+      const t = t0 + ((ev.clientX - r.left) / r.width * W - L) / (W - L - Rp) * (t1 - t0);
+      cross.setAttribute('x1', x(t)); cross.setAttribute('x2', x(t)); cross.setAttribute('visibility', 'visible');
+      tooltip.replaceChildren(el('div', { class: 't' }, clock(t) + ' UTC'));
+      pts.forEach((ps, i) => {
+        let best = null;
+        ps.forEach((p) => { if (best == null || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p; });
+        const row = el('div');
+        const sw = el('span', { class: 'swatch' }); sw.style.background = css(series[i].color);
+        row.append(sw, document.createTextNode(`${series[i].short}  ${best ? fmt[unit](best[1]) : '–'}`));
+        tooltip.append(row);
+        if (best && best[1] != null) {
+          dots[i].setAttribute('cx', x(best[0])); dots[i].setAttribute('cy', y(best[1])); dots[i].setAttribute('visibility', 'visible');
+        }
+      });
+      const br = c.box.getBoundingClientRect();
+      tooltip.style.display = 'block';
+      c.box.append(tooltip);
+      const left = ev.clientX - br.left + 12;
+      tooltip.style.left = Math.min(left, br.width - tooltip.offsetWidth - 4) + 'px';
+      tooltip.style.top = (ev.clientY - br.top + 12) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none'; cross.setAttribute('visibility', 'hidden');
+      dots.forEach((d) => d.setAttribute('visibility', 'hidden'));
+    });
+    // Table view of the plotted points.
+    c.details.ontoggle = () => {
+      if (!c.details.open || c.details.querySelector('table')) return;
+      const tbl = el('table');
+      const head = el('tr'); head.append(el('th', {}, 'Time (UTC)'), ...series.map((s) => el('th', {}, s.short)));
+      tbl.append(head);
+      const byT = new Map();
+      pts.forEach((ps, i) => ps.forEach(([t, v]) => { if (!byT.has(t)) byT.set(t, []); byT.get(t)[i] = v; }));
+      [...byT.keys()].sort((a, b) => a - b).forEach((t) => {
+        const tr = el('tr'); tr.append(el('td', {}, clock(t)), ...series.map((_, i) => el('td', {}, fmt[unit](byT.get(t)[i]))));
+        tbl.append(tr);
+      });
+      c.details.append(tbl);
+    };
+  }
+  function niceMax(v) {
+    const e = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (v <= m * e) return m * e;
+    return 10 * e;
+  }
+
+  // Series from the timeline.
+  const tl = R.timeline || { ingesters: [[], []], apis: {}, feed: [] };
+  const ing = (key, scale = 1) => names.map((n, i) => ({
+    short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`,
+    points: (tl.ingesters[i] || []).map((p) => [p.t, p.up ? p[key] * scale : null]),
+  }));
+  const resourceCharts = document.getElementById('resource-charts');
+  [
+    ['CPU', 'cores', 'cpu_cores'],
+    ['GC CPU', 'cores', 'gc_cpu_cores'],
+    ['Allocated per second', 'rate_bytes', 'alloc_bytes_per_second'],
+    ['Allocations per second', 'count', 'allocs_per_second'],
+    ['Heap in use', 'bytes', 'heap_inuse_bytes'],
+    ['Live heap', 'bytes', 'heap_alloc_bytes'],
+    ['RSS', 'bytes', 'rss_bytes'],
+    ['GC cycles per minute', 'count', 'gc_per_minute'],
+    ['Goroutines', 'count', 'goroutines'],
+    ['In-memory series', 'count', 'memory_series'],
+    ['Active series', 'count', 'active_series'],
+    ['Ingested samples per second', 'count', 'ingested_samples_per_second'],
+    ['Ingest lag (records)', 'count', 'lag_records'],
+  ].forEach(([title, unit, key]) => chart(resourceCharts, title, unit, ing(key)));
+  chart(resourceCharts, 'Samples produced per second', 'count', [{ short: 'feed', name: 'feed', color: '--text-secondary', points: (tl.feed || []).map((p) => [p.t, p.samples_per_second]) }]);
+
+  const readCharts = document.getElementById('read-charts');
+  const apiNames = Object.keys(tl.apis || {}).sort((a, b) => (apis[b] ? apis[b].sent : 0) - (apis[a] ? apis[a].sent : 0));
+  apiNames.forEach((api) => {
+    const ps = tl.apis[api];
+    const lat = (key) => names.map((n, i) => ({ short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`, points: ps.map((p) => [p.t, p[key][i] || null]) }));
+    chart(readCharts, `${api} p99 latency`, 'ms', lat('p99_ms'));
+    chart(readCharts, `${api} p50 latency`, 'ms', lat('p50_ms'));
+    chart(readCharts, `${api} reads per second`, 'count', [{ short: 'reads', name: 'reads', color: '--text-secondary', points: ps.map((p) => [p.t, p.reads / (tl.bucket_seconds || 10)]) }]);
+    if (ps.some((p) => p.errors[0] || p.errors[1])) {
+      chart(readCharts, `${api} errors`, 'count', names.map((n, i) => ({ short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`, points: ps.map((p) => [p.t, p.errors[i]]) })));
+    }
+  });
+
+  const redraw = () => charts.forEach(draw);
+  redraw();
+  document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => {
+    range = b.dataset.range;
+    document.querySelectorAll('[data-range]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    redraw();
+  }));
+  document.getElementById('theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('ingester-bench-theme', root.dataset.theme); } catch (e) {}
+    redraw();
+  });
+  try { const saved = localStorage.getItem('ingester-bench-theme'); if (saved) { document.documentElement.dataset.theme = saved; redraw(); } } catch (e) {}
+
+  // Tables.
+  const table = (id, head, rows) => {
+    const t = document.getElementById(id);
+    const tr = el('tr'); head.forEach((h) => tr.append(el('th', {}, h))); t.append(tr);
+    rows.forEach((r) => {
+      const row = el('tr');
+      r.forEach((cell) => {
+        if (cell instanceof Node) { const td = el('td'); td.append(cell); row.append(td); }
+        else if (cell && typeof cell === 'object') { row.append(el('td', cell.attrs || {}, cell.text)); }
+        else row.append(el('td', {}, cell));
+      });
+      t.append(row);
+    });
+  };
+  const resRows = [
+    ['CPU', 'cpu_cores', fmt.cores], ['GC CPU', 'gc_cpu_cores', fmt.cores], ['Allocated', 'alloc_bytes_per_second', fmt.rate_bytes],
+    ['Allocations', 'allocs_per_second', (v) => fmt.count(v) + '/s'], ['GC cycles', 'gc_cycles_per_minute', (v) => fmt.count(v) + '/min'],
+    ['Heap in use (avg)', 'heap_inuse_avg_bytes', fmt.bytes], ['Heap in use (max)', 'heap_inuse_max_bytes', fmt.bytes],
+    ['Live heap (avg)', 'heap_alloc_avg_bytes', fmt.bytes], ['RSS (avg)', 'rss_avg_bytes', fmt.bytes], ['RSS (max)', 'rss_max_bytes', fmt.bytes],
+    ['Ingest lag (avg)', 'ingest_lag_avg_records', fmt.count], ['Ingest lag (max)', 'ingest_lag_max_records', fmt.count],
+  ].concat(res[0].head_snapshot_rounds || res[1].head_snapshot_rounds ? [
+    // Since the ingesters started, as the snapshots mostly run outside of the window.
+    ['Head snapshot rounds', 'head_snapshot_rounds', fmt.count], ['Head snapshot round (avg)', 'head_snapshot_round_seconds_avg', fmt.seconds],
+    ['Head snapshots', 'head_snapshots', fmt.count], ['Head snapshot failures', 'head_snapshot_failures', fmt.count],
+  ] : []).map(([label, key, f]) => [label, f(res[0][key] || 0), f(res[1][key] || 0), ratioText(ratio(res[0][key] || 0, res[1][key] || 0))]);
+  resRows.unshift(['Replay', fmt.seconds(R.replay_seconds[0]), fmt.seconds(R.replay_seconds[1]), ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1]))]);
+  table('resources', ['Measure', 'A', 'B', 'B/A'], resRows);
+
+  const apiOrder = apiNames.concat(Object.keys(apis).filter((a) => !apiNames.includes(a))).filter((a) => apis[a]);
+  table('latency', ['Read', 'A', 'B', 'B/A'], apiOrder.flatMap((a) => [['p50', 'P50'], ['p99', 'P99']].map(([label, key]) => {
+    const l = apis[a].latency_ms;
+    return [`${a} ${label}`, fmt.ms(l[0][key]), fmt.ms(l[1][key]), ratioText(ratio(l[0][key], l[1][key]))];
+  })));
+
+  table('apis', ['API', 'Sent', 'Compared', 'Mismatch', 'Match after retry', 'Too large', 'Dropped', 'Errors A', 'Errors B',
+    'p50 A', 'p50 B', 'p90 A', 'p90 B', 'p99 A', 'p99 B', 'p99.9 A', 'p99.9 B', 'Max A', 'Max B', 'Items per read'],
+    apiNames.concat(Object.keys(apis).filter((a) => !apiNames.includes(a))).filter((a) => apis[a]).map((a) => {
+      const x = apis[a], l = x.latency_ms;
+      return [a, x.sent, x.compared, { text: x.mismatch, attrs: x.mismatch ? { class: 'bad' } : {} }, x.match_after_retry, x.too_large, x.dropped,
+        { text: x.errors[0], attrs: x.errors[0] ? { class: 'bad' } : {} }, { text: x.errors[1], attrs: x.errors[1] ? { class: 'bad' } : {} },
+        fmt.ms(l[0].P50), fmt.ms(l[1].P50), fmt.ms(l[0].P90), fmt.ms(l[1].P90), fmt.ms(l[0].P99), fmt.ms(l[1].P99),
+        fmt.ms(l[0].P999), fmt.ms(l[1].P999), fmt.ms(l[0].Max), fmt.ms(l[1].Max), fmt.count(x.items_per_read)];
+    }));
+  Object.entries(apis).forEach(([a, x]) => (x.first_errors || []).forEach((e, i) => {
+    if (e) document.getElementById('apis').parentElement.after(el('p', { class: 'muted' }, `First ${a} error of ${'AB'[i]}: ${e}`));
+  }));
+
+  table('phases', ['Phase', 'Start (UTC)', 'End (UTC)', 'Duration'], phases.map((p) => [p.name, clock(p.start), clock(p.end), fmt.seconds(p.end - p.start)]));
+  table('slow', ['Time (UTC)', 'Ingester', 'Took', 'Error', 'Request'], (R.slow_reads || []).slice(0, 100).map((s) =>
+    [clock(s.t), s.ingester, fmt.ms(s.ms), s.error || '', { text: s.request, attrs: { class: 'wrap' } }]));
+  if (!(R.slow_reads || []).length) document.getElementById('slow').append(el('tr', {}, '')), document.getElementById('slow').parentElement.after(el('p', { class: 'muted' }, 'No read took longer than 5 s.'));
+
+  const mm = document.getElementById('mismatches');
+  if ((R.mismatch_examples || []).length) R.mismatch_examples.forEach((m) => mm.append(el('pre', {}, m)));
+  else mm.append(el('p', { class: 'good' }, 'No persistent mismatch.'));
+
+  table('config', ['Setting', 'Value'], Object.keys(R.config || {}).sort().map((k) => [k, { text: R.config[k], attrs: { class: 'wrap' } }]));
+})();
+</script>
+</body>
+</html>

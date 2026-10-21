@@ -12058,7 +12058,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.",
+                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.version=2. Supported values: memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.bucket-store.index-header-cache.backend",
@@ -13202,36 +13202,15 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "bucket_reader",
+                  "kind": "field",
+                  "name": "version",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "enabled",
-                      "required": false,
-                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "index_sections",
-                      "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "postings-offsets-table",
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
-                    }
-                  ],
+                  "desc": "Index-header format version. Version 1 keeps the symbols and postings offsets tables on local disk. Version 2 keeps only the symbols table on local disk and reads the postings offsets table from the TSDB index in object storage.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.version",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -13278,6 +13257,28 @@
               "fieldDefaultValue": "./tsdb/",
               "fieldFlag": "blocks-storage.tsdb.dir",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "engine",
+              "required": false,
+              "desc": "Storage engine of the ingesters' per-tenant TSDBs. Supported values: prometheus, seriesstore. seriesstore keeps series in the seriesstore layout and requires ingest storage without block shipping; it has no WAL, so after an unclean shutdown the ingester replays Kafka from its oldest head snapshot, or from the retention period without one.",
+              "fieldValue": null,
+              "fieldDefaultValue": "prometheus",
+              "fieldFlag": "blocks-storage.tsdb.engine",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "seriesstore_snapshot_interval",
+              "required": false,
+              "desc": "How often the seriesstore engine snapshots each tenant's head while ingesting, paced to use little CPU and disk. After an unclean shutdown, the ingester replays Kafka from the oldest snapshot instead of from the retention period. 0 disables the snapshots.",
+              "fieldValue": null,
+              "fieldDefaultValue": 900000000000,
+              "fieldFlag": "blocks-storage.tsdb.seriesstore-snapshot-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -16959,7 +16960,7 @@
           "required": false,
           "desc": "Minimum amount of time to wait before resending an alert to Alertmanager.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "ruler.resend-delay",
           "fieldType": "duration",
           "fieldCategory": "advanced"

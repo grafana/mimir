@@ -1,0 +1,92 @@
+# Runs the bench as one pod of three containers. The driver runs the generator, the in-process Kafka and the reads, with
+# exclusive CPUs on a node whose kubelet has the static CPU manager policy: its requests are its limits, in whole CPUs.
+# The ingesters run as a multi-tenant cell runs them, with CPU requests and no CPU limit, GOMAXPROCS and the read path's
+# utilization limits from their requests and their memory limit. Each ingester container waits for the command line
+# the driver writes once the backfill is done, and runs it as its own process: the bench's binary, which an init
+# container copies, waits for it in the ingester's image. run-in-kubernetes.sh sets the images, the configuration's
+# ConfigMap and the profile's if any; read the report from the driver's logs, or, while it holds, from its port 8090:
+# kubectl port-forward <pod> 8090, then report.html, report.json and the profiles at http://localhost:8090/.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingester-bench
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        # A run is an hour's worth of state: nodes being consolidated must not evict it.
+        karpenter.sh/do-not-disrupt: "true"
+    spec:
+      restartPolicy: Never
+      # The driver stops the ingesters through their PIDs.
+      shareProcessNamespace: true
+      initContainers:
+        - name: install
+          image: IMAGE
+          args: [-install=/shared/ingester-bench]
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+      containers:
+        - name: driver
+          image: IMAGE
+          args:
+            - -external=/shared
+            - -config=/config/config.json
+            - -out=/out
+            - -kafka-port=9092
+            - -kafka-dir=/out/kafka
+            # About 2M series in memory, with the ones churned out the head still has.
+            - -series=1650000
+            - -backfill=4h
+            # Past the ingesters' active series idle timeout after the replay, so the active series are as they'd be after hours.
+            - -warmup=21m
+            - -duration=20m
+            - -hold=1h
+            # Comparing every read at production rates takes the driver more CPU than reading takes the ingesters.
+            - -compare-fraction=0.1
+            # - -profile=/profile/profile.json
+          # The in-process Kafka holds the backfill, and reads of the largest queries hold their responses.
+          resources:
+            requests: { cpu: "8", memory: 32Gi }
+            limits: { cpu: "8", memory: 32Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: out, mountPath: /out }
+            - { name: config, mountPath: /config }
+            # - { name: profile, mountPath: /profile }
+        - name: ingester-a
+          image: IMAGE_A
+          command: [/shared/ingester-bench]
+          args: [-exec=/shared/a.json]
+          # The read path's CPU limit and one more.
+          env:
+            - { name: GOMAXPROCS, value: "9" }
+          resources:
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { memory: 32Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: data-a, mountPath: /data }
+        - name: ingester-b
+          image: IMAGE_B
+          command: [/shared/ingester-bench]
+          args: [-exec=/shared/b.json]
+          # The read path's CPU limit and one more.
+          env:
+            - { name: GOMAXPROCS, value: "9" }
+          resources:
+            requests: { cpu: "4", memory: 24Gi }
+            limits: { memory: 32Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+            - { name: data-b, mountPath: /data }
+      # Kafka's log and the ingesters' blocks and WAL are on volumes of their own, as a cell's are: a retention's worth of
+      # them on the node's disk, shared with its other pods, gets the run evicted.
+      volumes:
+        - { name: shared, emptyDir: {} }
+        - { name: config, configMap: { name: ingester-bench-config } }
+        - { name: out, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 200Gi } } } } } }
+        - { name: data-a, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 100Gi } } } } } }
+        - { name: data-b, ephemeral: { volumeClaimTemplate: { spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 100Gi } } } } } }
+        # - { name: profile, configMap: { name: ingester-bench-profile } }

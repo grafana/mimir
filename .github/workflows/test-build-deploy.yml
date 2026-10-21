@@ -203,7 +203,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -220,11 +220,11 @@ jobs:
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-integration-tests
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /home/runner/.cache/go-build
+        run: du -sh ~/.cache/go-build
       - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
@@ -706,7 +706,7 @@ jobs:
       - name: Restore Go build cache
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
