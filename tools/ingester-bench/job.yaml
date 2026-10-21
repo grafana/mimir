@@ -41,7 +41,7 @@ spec:
             - -backfill=4h
             # Past the ingesters' active series idle timeout after the replay, so the active series are as they'd be after hours.
             - -warmup=21m
-            - -duration=15m
+            - -duration=20m
             - -hold=1h
             # Comparing every read at production rates takes the driver more CPU than reading takes the ingesters.
             - -compare-fraction=0.1

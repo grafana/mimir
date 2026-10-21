@@ -82,7 +82,7 @@ func main() {
 	flag.Uint64Var(&cfg.seed, "seed", 1, "Seed of the synthetic data and reads.")
 	flag.DurationVar(&cfg.backfill, "backfill", 4*time.Hour, "History written before the ingesters start, which they replay. The head and the active series are as they are after hours of ingestion by then; the retention's worth, such as 13h, adds the cold data only the oldest reads read.")
 	flag.DurationVar(&cfg.warmup, "warmup", 21*time.Minute, "Time of live feed and reads before the measurement window. An ingester counts every series a replay ingested as active for its active series idle timeout, 20 minutes by default, so the counts are only as they'd be after hours of ingestion past it.")
-	flag.DurationVar(&cfg.duration, "duration", 15*time.Minute, "Measurement window.")
+	flag.DurationVar(&cfg.duration, "duration", 20*time.Minute, "Measurement window.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
 	flag.DurationVar(&cfg.backdatedWindow, "backdated-window", 0, "Out-of-order window of the profile's share of tenants that write samples up to that late once the feed is live, such as 720h, which their reads go back as far as. 0 for none.")

@@ -66,7 +66,7 @@ The pod is sized as a cell's ingesters:
 
 For CPU numbers you can trust, run it on nodes whose kubelet has the static CPU manager policy.
 
-A run takes the backfill, the replay, the warmup and the window: about 1h15m with a 13h backfill and the defaults.
+A run takes the backfill, the replay, the warmup and the window: about 1h20m with a 13h backfill and the defaults.
 
 ## Configuration
 
@@ -129,7 +129,7 @@ adds a report from elsewhere, and `-render=report.json` writes its `report.html`
 | `-seed`                | 1             | Seed of the synthetic data and reads.                                                                                                                             |
 | `-backfill`            | 4h            | History the ingesters replay. A retention's worth, `13h`, adds the cold blocks only the oldest reads read.                                                        |
 | `-warmup`              | 21m           | Live feed and reads before the window.                                                                                                                            |
-| `-duration`            | 15m           | Measurement window.                                                                                                                                               |
+| `-duration`            | 20m           | Measurement window.                                                                                                                                               |
 | `-retention`           | 13h           | TSDB retention, and how far back reads go.                                                                                                                        |
 | `-out-of-order-window` | 2h            | Out-of-order window of the tenants.                                                                                                                               |
 | `-backdated-window`    | 0             | Out-of-order window, such as `720h`, of the profile's share of tenants that write some live samples up to that late. Their reads go back as far. 0 for none.      |

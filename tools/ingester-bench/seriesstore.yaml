@@ -1,5 +1,10 @@
 # The comparison of this branch: the Prometheus TSDB of the r416 release, against the seriesstore engine of the tree.
 # Started by the bench rather than run-in-kubernetes.sh, A needs a binary of the release instead of its image.
+common:
+  args:
+    # The TSDB checks for a head compaction every 5 minutes rather than the defaults' 15, for a few within the
+    # window; the seriesstore engine doesn't compact on that schedule.
+    blocks-storage.tsdb.head-compaction-interval: 5m
 a:
   name: prometheus r416
   image: grafana/mimir:r416-1df78b2a@sha256:7e42cd97b8dba8abf5ae3a2d808672bdb6da4134802f8efec6a667aefb4b1add
