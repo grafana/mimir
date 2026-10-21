@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const (
@@ -889,8 +891,12 @@ func (r *Readcache) closeLiveForRestart(p *partitionState) error {
 	p.tenantsMu.Unlock()
 
 	for tenant, db := range tenants {
-		if err := r.flushPartitionHead(db); err != nil && firstErr == nil {
-			firstErr = err
+		// The seriesstore engine snapshots its head on close: a flush would only write it to disk for the next process to
+		// bring back into memory.
+		if r.cfg.Engine != mimir_tsdb.EngineSeriesstore {
+			if err := r.flushPartitionHead(db); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 		if r.tsdbMetrics != nil {
 			r.tsdbMetrics.RemoveRegistryForTenant(tsdbMetricsTenantID(tenant, p.partitionID))

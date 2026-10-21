@@ -18,6 +18,7 @@ import (
 )
 
 func TestPartitionTSDB_SharedPostingsCacheIsIsolatedAndInvalidated(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	cfg := newTestConfig(t, false, 0)
 	cfg.BlocksStorage.TSDB.SharedPostingsForMatchersCache = true
 	cfg.BlocksStorage.TSDB.HeadPostingsForMatchersCacheInvalidation = true

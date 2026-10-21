@@ -357,6 +357,7 @@ func New(
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating readcache config: %w", err)
 	}
+	cfg.BlocksStorage.TSDB.Engine = cfg.Engine
 
 	tsdbCfg := cfg.BlocksStorage.TSDB
 	r := &Readcache{
@@ -1246,7 +1247,7 @@ func (r *Readcache) compactHeads() {
 		}
 		p.tenantsMu.RUnlock()
 		for _, db := range dbs {
-			if !r.cfg.IngesterScheduleCompaction {
+			if !r.cfg.ingesterScheduledCompaction() {
 				if err := db.CompactHead(); err != nil {
 					level.Warn(r.logger).Log("msg", "readcache head compaction failed",
 						"user", db.tenantID, "partition", db.partitionID, "err", err)

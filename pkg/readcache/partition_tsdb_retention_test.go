@@ -33,6 +33,7 @@ import (
 // passed into tsdb.Options, leaving the readcache effectively
 // unbounded (or bounded by the shared 13h ingester knob).
 func TestPartitionTSDB_LocalBlockRetention_DeletesOldBlocks(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	const retention = 500 * time.Millisecond
 	const blockRange = 100 * time.Millisecond
 
@@ -111,6 +112,7 @@ func TestPartitionTSDB_LocalBlockRetention_DeletesOldBlocks(t *testing.T) {
 // Mirrors the structure of the positive test so any change to one
 // without the other is obviously asymmetric.
 func TestPartitionTSDB_LocalBlockRetention_Zero_DisablesRetention(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	const blockRange = 100 * time.Millisecond
 
 	cfg := newTestConfig(t, false, 0)

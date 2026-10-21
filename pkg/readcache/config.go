@@ -65,6 +65,10 @@ type Config struct {
 	// under the append lock.
 	IngesterScheduleCompaction bool `yaml:"ingester_schedule_compaction" category:"experimental"`
 
+	// Engine is the storage of each (tenant, partition, epoch). It is the readcache's own, not
+	// -blocks-storage.tsdb.engine, which the readcache inherits from the ingesters' arguments.
+	Engine string `yaml:"engine" category:"experimental"`
+
 	// TSDBConfigUpdatePeriod is how often readcache reapplies per-tenant
 	// TSDB settings from runtime limits (out-of-order window, exemplar
 	// cap), matching the ingester's -ingester.tsdb-config-update-period
@@ -127,11 +131,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.OwnedPartitions, "readcache.owned-partitions", "", "Legacy static comma-separated list of int32 partition IDs this readcache instance owns. Ignored when -readcache.rebalancer-address is set. Intended for tests and degraded-mode bring-up only.")
 	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often to flush each head with a full-range compaction while holding the append lock. Ignored when -readcache.ingester-schedule-compaction is set.")
 	f.BoolVar(&cfg.IngesterScheduleCompaction, "readcache.ingester-schedule-compaction", false, "Compact like the ingester: DB.Compact on the zone-staggered -blocks-storage.tsdb.head-compaction-interval, flush and close idle TSDBs, and flush a head before freezing its partition. When false, each head is flushed in full on -readcache.head-compaction-interval while holding the append lock.")
+	f.StringVar(&cfg.Engine, "readcache.engine", tsdb.EnginePrometheus, fmt.Sprintf("Storage engine of each (tenant, partition) the readcache keeps. Supported values: %s, %s. %s has no WAL: it snapshots its heads on shutdown and every -blocks-storage.tsdb.seriesstore-snapshot-interval, and after an unclean shutdown replays the partition from the oldest snapshot. It always compacts like -readcache.ingester-schedule-compaction, and writes a frozen partition's series straight to disk.", tsdb.EnginePrometheus, tsdb.EngineSeriesstore, tsdb.EngineSeriesstore))
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "readcache.tsdb-config-update-period", 15*time.Second, "Period with which readcache updates per-tenant TSDB configuration from runtime limits (e.g. out-of-order samples window, exemplars), mirroring the ingester.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
 	f.DurationVar(&cfg.AdoptCatchUpPeriod, "readcache.adopt-catch-up-period", 15*time.Minute, "How much Kafka history to replay asynchronously when a running readcache freshly acquires a partition. The partition remains non-warm until it catches up to the live edge. 0 starts at the live edge without replay.")
 	f.IntVar(&cfg.MaxExemplarsPerPartitionTSDB, "readcache.max-exemplars-per-partition-tsdb", 100000, "Upper bound on the exemplar-storage capacity of each per-(tenant, partition) TSDB. The effective capacity is min(tenant's max-global-exemplars-per-user, this cap); the circular exemplar storage preallocates its full capacity per TSDB, so an uncapped global limit multiplies across every open (tenant, partition) TSDB. 0 or negative disables the cap.")
 	cfg.InstanceRing.RegisterFlags(f, logger)
+}
+
+// ingesterScheduledCompaction is whether the readcache compacts like the ingester. The seriesstore engine always does:
+// the legacy full-range flush every hour would move every series of its head to disk, and back at its next sample.
+func (cfg *Config) ingesterScheduledCompaction() bool {
+	return cfg.IngesterScheduleCompaction || cfg.Engine == tsdb.EngineSeriesstore
 }
 
 // Validate returns nil if the Config is internally consistent.
@@ -147,6 +158,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.HeadCompactionInterval <= 0 {
 		return fmt.Errorf("head-compaction-interval must be positive")
+	}
+	if cfg.Engine != tsdb.EnginePrometheus && cfg.Engine != tsdb.EngineSeriesstore {
+		return fmt.Errorf("unsupported engine %q: expected %q or %q", cfg.Engine, tsdb.EnginePrometheus, tsdb.EngineSeriesstore)
 	}
 	if cfg.TSDBConfigUpdatePeriod <= 0 {
 		return fmt.Errorf("tsdb-config-update-period must be positive")

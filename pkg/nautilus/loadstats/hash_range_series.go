@@ -154,6 +154,13 @@ func (h *RangeSeries) LogSummary(logger log.Logger) {
 	)
 }
 
+// SecondaryHashHead is a head that walks its series' secondary hashes: the Prometheus TSDB's head and the seriesstore
+// engine are both one.
+type SecondaryHashHead interface {
+	ForEachSecondaryHash(fn func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32))
+	Index() (tsdb.IndexReader, error)
+}
+
 // CountSeriesByHashRange walks all series in head using the secondary
 // hash cached on each TSDB series, looks up which of the provided
 // sorted, non-overlapping ranges (if any) contains it, and increments
@@ -173,7 +180,7 @@ func (h *RangeSeries) LogSummary(logger log.Logger) {
 //
 // Returns the number of series it observed (regardless of whether they
 // landed in an owned range).
-func CountSeriesByHashRange(ctx context.Context, head *tsdb.Head, ranges []assignment.HashRange, counts []int64, examples []string) (int64, error) {
+func CountSeriesByHashRange(ctx context.Context, head SecondaryHashHead, ranges []assignment.HashRange, counts []int64, examples []string) (int64, error) {
 	wantExamples := examples != nil && len(examples) == len(ranges)
 	exampleRefs := make([]chunks.HeadSeriesRef, len(ranges))
 	exampleRefsSet := make([]bool, len(ranges))
@@ -218,7 +225,7 @@ func CountSeriesByHashRange(ctx context.Context, head *tsdb.Head, ranges []assig
 	return walked, nil
 }
 
-func loadSeriesExamples(ctx context.Context, head *tsdb.Head, exampleRefs []chunks.HeadSeriesRef, exampleRefsSet []bool, examples []string) error {
+func loadSeriesExamples(ctx context.Context, head SecondaryHashHead, exampleRefs []chunks.HeadSeriesRef, exampleRefsSet []bool, examples []string) error {
 	idx, err := head.Index()
 	if err != nil {
 		return err

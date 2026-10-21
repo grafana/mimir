@@ -42,6 +42,24 @@ import (
 //
 // If withKafka is true a fake Kafka cluster is created with
 // numPartitions partitions and the kafka config is wired to it.
+// testEngine is the engine the tests run the readcache on: READCACHE_TEST_ENGINE=seriesstore runs them on the seriesstore
+// engine.
+func testEngine() string {
+	if engine := os.Getenv("READCACHE_TEST_ENGINE"); engine != "" {
+		return engine
+	}
+	return tsdb.EnginePrometheus
+}
+
+// skipUnlessPrometheusEngine skips a test of a Prometheus TSDB feature, such as blocks or postings caches, that the
+// seriesstore engine doesn't have.
+func skipUnlessPrometheusEngine(t *testing.T) {
+	t.Helper()
+	if testEngine() != tsdb.EnginePrometheus {
+		t.Skipf("tests a feature of the %s engine", tsdb.EnginePrometheus)
+	}
+}
+
 func newTestConfig(t *testing.T, withKafka bool, numPartitions int32) Config {
 	t.Helper()
 
@@ -60,6 +78,8 @@ func newTestConfig(t *testing.T, withKafka bool, numPartitions int32) Config {
 	blocksCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
 	blocksCfg.TSDB.Dir = t.TempDir()
 	cfg.BlocksStorage = blocksCfg
+	cfg.Engine = testEngine()
+	cfg.BlocksStorage.TSDB.Engine = cfg.Engine
 
 	if withKafka {
 		_, addr := testkafka.CreateCluster(t, numPartitions, topic)

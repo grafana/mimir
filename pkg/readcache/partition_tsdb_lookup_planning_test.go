@@ -16,6 +16,7 @@ import (
 )
 
 func TestPartitionTSDB_IndexLookupPlanning(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	const (
 		tenantID    = "tenant-a"
 		partitionID = int32(7)

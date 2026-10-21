@@ -245,6 +245,7 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 // bounds, series/sample counts, size) once the head has been compacted
 // into a block.
 func TestReadcache_AdminPage_ShowsBlockDetails(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	const (
 		tenantID  = "tenant-1"
 		pid       = int32(2)

@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -53,7 +52,7 @@ type partitionTSDB struct {
 	dir              string
 	postingsCacheKey string
 
-	db              *tsdb.DB
+	db              partitionStore
 	plannerProvider *lookupplan.PlannerProvider
 
 	mu     sync.RWMutex
@@ -238,6 +237,27 @@ func openPartitionTSDB(
 		dir:              dir,
 		postingsCacheKey: postingsKey,
 	}
+	if cfg.Engine == mimir_tsdb.EngineSeriesstore {
+		var maxSeries int
+		if limits != nil {
+			maxSeries = limits.MaxGlobalSeriesPerUser(tenantID)
+		}
+		engine, err := openSeriesstoreStore(dir, tenantID, seriesstoreStoreOptions{
+			shards:                 seriesstoreShardsFor(maxSeries),
+			retentionMs:            localBlockRetention.Milliseconds(),
+			outOfOrderTimeWindowMs: oooTW.Milliseconds(),
+			maxExemplars:           maxExemplars,
+			timelyCompaction:       cfg.TimelyHeadCompaction,
+			idleEvictionMs:         seriesstoreIdleEviction.Milliseconds(),
+			callback:               seriesLifecycleCallback,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("opening partition seriesstore engine %q: %w", dir, err)
+		}
+		partitionDB.db = engine
+		partitionDB.touchLastAppend(time.Now())
+		return partitionDB, nil
+	}
 	if cfg.IndexLookupPlanning.Enabled {
 		plannerFactory := lookupplan.NewPlannerFactory(
 			lookupPlanMetrics.ForUser(tenantID),
@@ -293,7 +313,7 @@ func openPartitionTSDB(
 	// Prometheus's own loop is unstaggered. Readcache compacts from
 	// its service ticker instead.
 	db.DisableCompactions()
-	partitionDB.db = db
+	partitionDB.db = prometheusStore{DB: db}
 	partitionDB.touchLastAppend(time.Now())
 	if cfg.SharedPostingsForMatchersCache && cfg.HeadPostingsForMatchersCacheInvalidation {
 		seriesLifecycleCallback.postingsCache = db.Head().PostingsForMatchersCache()
@@ -362,10 +382,9 @@ func (p *partitionTSDB) sampleBounds() (minT, maxT int64) {
 		minT = min(minT, h.MinTime())
 		maxT = max(maxT, h.MaxTime())
 	}
-	for _, b := range p.db.Blocks() {
-		m := b.Meta()
-		minT = min(minT, m.MinTime)
-		maxT = max(maxT, m.MaxTime)
+	if blockMin, blockMax, ok := p.db.BlockTimes(); ok {
+		minT = min(minT, blockMin)
+		maxT = max(maxT, blockMax)
 	}
 	if minT > maxT {
 		return 0, -1
@@ -415,17 +434,7 @@ func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, ma
 	if oooTW < 0 {
 		oooTW = 0
 	}
-	cfg := config.Config{
-		StorageConfig: config.StorageConfig{
-			ExemplarsConfig: &config.ExemplarsConfig{
-				MaxExemplars: effectiveMaxExemplars(limits, p.tenantID, maxExemplarsCap),
-			},
-			TSDBConfig: &config.TSDBConfig{
-				OutOfOrderTimeWindow: oooTW.Milliseconds(),
-			},
-		},
-	}
-	if err := p.db.ApplyConfig(&cfg); err != nil {
+	if err := p.db.ApplySettings(oooTW.Milliseconds(), effectiveMaxExemplars(limits, p.tenantID, maxExemplarsCap)); err != nil {
 		level.Error(logger).Log("msg", "failed to apply config to readcache partition TSDB", "user", p.tenantID, "partition", p.partitionID, "err", err)
 		return err
 	}
@@ -505,7 +514,7 @@ func (p *partitionTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQu
 }
 
 // Head returns the in-memory head.
-func (p *partitionTSDB) Head() *tsdb.Head {
+func (p *partitionTSDB) Head() partitionHead {
 	return p.db.Head()
 }
 
@@ -521,7 +530,7 @@ func (p *partitionTSDB) CompactHead() error {
 	defer p.lockForMutation(tsdbMutationCompact)()
 
 	h := p.db.Head()
-	if err := p.db.CompactHead(tsdb.NewRangeHead(h, h.MinTime(), h.MaxTime())); err != nil {
+	if err := p.db.CompactHeadRange(h.MinTime(), h.MaxTime()); err != nil {
 		return err
 	}
 	return p.db.CompactOOOHead(context.Background())
@@ -577,7 +586,7 @@ func (p *partitionTSDB) compactHeadForced(blockDuration, forcedMaxTime int64) er
 		if !isValid {
 			break
 		}
-		if err := p.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
+		if err := p.db.CompactHeadRange(blockMinTime, blockMaxTime); err != nil {
 			return err
 		}
 		if isLast {

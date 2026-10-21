@@ -26,7 +26,7 @@ func (r *Readcache) initCompactionSchedule() {
 }
 
 func (r *Readcache) startCompactionTicker() (func(), <-chan time.Time) {
-	if !r.cfg.IngesterScheduleCompaction {
+	if !r.cfg.ingesterScheduledCompaction() {
 		interval := r.cfg.HeadCompactionInterval
 		if interval <= 0 {
 			interval = time.Hour
@@ -237,7 +237,7 @@ func (r *Readcache) closeIdleTSDB(db *partitionTSDB) {
 // flushPartitionHead forces the head out to blocks before a partition
 // is detached. The Kafka reader has already stopped.
 func (r *Readcache) flushPartitionHead(db *partitionTSDB) error {
-	if !r.cfg.IngesterScheduleCompaction {
+	if !r.cfg.ingesterScheduledCompaction() {
 		return nil
 	}
 	if db.IsClosed() || db.Head() == nil || db.Head().NumSeries() == 0 {

@@ -46,6 +46,7 @@ func TestEffectiveMaxExemplars(t *testing.T) {
 // permanently-live heap for a handful of actual exemplars, pinning
 // ~30 cores in GC mark work.
 func TestPartitionTSDB_MaxExemplarsCap(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	const (
 		globalLimit = 1_000_000
 		perTSDBCap  = 1_000

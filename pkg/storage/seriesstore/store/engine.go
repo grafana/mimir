@@ -491,6 +491,22 @@ func (e *Engine) Meta() tsdb.BlockMeta {
 	return tsdb.BlockMeta{MinTime: minTime, MaxTime: maxTime, ULID: headULID, Stats: tsdb.BlockStats{NumSeries: e.NumSeries()}}
 }
 
+// BlockTimes is the span of the blocks the head's compactions wrote, like the min and max times of the Prometheus TSDB's
+// blocks' metas: the max time is exclusive. ok is false without blocks.
+func (e *Engine) BlockTimes() (minTime, maxTime int64, ok bool) {
+	home, t := e.home()
+	home.RLock()
+	defer home.RUnlock()
+	if t == nil || len(t.blocks) == 0 {
+		return 0, 0, false
+	}
+	minTime, maxTime = int64(math.MaxInt64), int64(math.MinInt64)
+	for _, block := range t.blocks {
+		minTime, maxTime = min(minTime, block.minTime), max(maxTime, block.maxTime)
+	}
+	return minTime, maxTime, true
+}
+
 // initTime sets the head's time bounds from its first sample, like Prometheus's initAppender.
 func (e *Engine) initTime(timestamp int64) {
 	home, t := e.home()

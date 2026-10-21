@@ -73,7 +73,14 @@ type WriteRequestTimeseriesPush struct {
 	MaxSeriesPerMetric func() int
 	ActiveSeries       *activeseries.ActiveSeries
 	App                ExtendedAppender
-	Head               *tsdb.Head
+	Head               PushHead
+}
+
+// PushHead is the part of a head PushWriteRequestTimeseries reads: the Prometheus TSDB's head and the seriesstore
+// engine are both one.
+type PushHead interface {
+	AppendableMinValidTime() (int64, bool)
+	MustIndex() tsdb.IndexReader
 }
 
 // PushWriteRequestTimeseriesResult is the outcome of PushWriteRequestTimeseries.
@@ -279,7 +286,7 @@ func pushSamplesToExtendedAppender(
 	userID string,
 	timeseries []mimirpb.PreallocTimeseries,
 	app ExtendedAppender,
-	head *tsdb.Head,
+	head PushHead,
 	startAppend time.Time,
 	stats *PushStats,
 	errProcessor *mimir_storage.SoftAppendErrorProcessor,

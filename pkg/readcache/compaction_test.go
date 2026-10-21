@@ -138,6 +138,7 @@ func TestCloseIdleTSDBRemovesEmptyDirectory(t *testing.T) {
 }
 
 func TestIngesterScheduleCompactionFlagGatesIdleCloseAndFlush(t *testing.T) {
+	skipUnlessPrometheusEngine(t)
 	cfg := newTestConfig(t, false, 0)
 	cfg.LocalBlockRetention = time.Hour
 	limits := validation.NewOverrides(validation.Limits{}, nil)

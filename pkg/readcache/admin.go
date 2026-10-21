@@ -301,14 +301,14 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		p.tenantsMu.RLock()
 		for tenantID, db := range p.tenants {
 			minT, maxT := db.sampleBounds()
-			blocks := db.db.Blocks()
+			blocks := db.Blocks()
 			rows = append(rows, adminTSDBView{
 				Tenant:           tenantID,
 				PartitionID:      p.partitionID,
 				Epoch:            p.epoch,
 				Active:           true,
 				Warm:             warm,
-				HeadSeries:       int64(db.db.Head().NumSeries()),
+				HeadSeries:       int64(db.Head().NumSeries()),
 				NumBlocks:        len(blocks),
 				MinT:             fmtTSDBTime(minT, maxT),
 				MaxT:             fmtTSDBTimeMax(minT, maxT),
@@ -329,13 +329,13 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		for _, ep := range eps {
 			for tenantID, db := range ep.tenants {
 				minT, maxT := db.sampleBounds()
-				blocks := db.db.Blocks()
+				blocks := db.Blocks()
 				row := adminTSDBView{
 					Tenant:           tenantID,
 					PartitionID:      ep.partitionID,
 					Epoch:            ep.epoch,
 					Active:           false,
-					HeadSeries:       int64(db.db.Head().NumSeries()),
+					HeadSeries:       int64(db.Head().NumSeries()),
 					NumBlocks:        len(blocks),
 					MinT:             fmtTSDBTime(minT, maxT),
 					MaxT:             fmtTSDBTimeMax(minT, maxT),
