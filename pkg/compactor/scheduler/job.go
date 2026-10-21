@@ -276,7 +276,6 @@ func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {
 // TrackedBackfillPhasePlanJob plans the work of the current phase of a tenant's backfill
 type TrackedBackfillPhasePlanJob struct {
 	baseTrackedJob
-	hasOutstandingJobs bool // set when leased and not persisted, since it only describes the lease
 }
 
 func NewTrackedBackfillPhasePlanJob(creationTime time.Time) *TrackedBackfillPhasePlanJob {
@@ -302,11 +301,9 @@ func (j *TrackedBackfillPhasePlanJob) ToLeaseResponse(tenant string) *compactors
 			Epoch: j.epoch,
 		},
 		Spec: &compactorschedulerpb.JobSpec{
-			Tenant:  tenant,
-			JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
-			BackfillPhasePlanning: &compactorschedulerpb.BackfillPhasePlanningJob{
-				HasOutstandingJobs: j.hasOutstandingJobs,
-			},
+			Tenant:                tenant,
+			JobType:               compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			BackfillPhasePlanning: &compactorschedulerpb.BackfillPhasePlanningJob{},
 		},
 	}
 }
