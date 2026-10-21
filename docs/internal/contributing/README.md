@@ -52,6 +52,9 @@ We try to keep imports sorted into three groups:
 
 Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
 
+Use `go.uber.org/atomic` instead of `sync/atomic` for atomic values.
+The lint rules block direct imports of `sync/atomic`; only use it for exceptional cases that cannot use `go.uber.org/atomic`, and document the exception with a lint ignore.
+
 You're using an IDE you may find useful the following settings for the Grafana Mimir project:
 
 - [VSCode](vscode-goimports-settings.json)
