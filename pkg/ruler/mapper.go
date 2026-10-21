@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/spf13/afero"
 	"go.yaml.in/yaml/v3"
 
@@ -349,7 +351,53 @@ func (r registryLoader) Load(identifier string, ignoreUnknownFields bool, nameVa
 	if rgs == nil {
 		return nil, []error{fmt.Errorf("%s: rule file not found in registry", identifier)}
 	}
+	if errs := validateRuleGroups(identifier, rgs, nameValidationScheme, r.parser); len(errs) > 0 {
+		return nil, errs
+	}
 	return rgs, nil
+}
+
+// validateRuleGroups copies the checks of rulefmt.RuleGroups.Validate.
+// That method needs the YAML nodes of a parsed file, and the registry has none.
+// Compare it with vendor/github.com/prometheus/prometheus/model/rulefmt/rulefmt.go after each Prometheus update.
+func validateRuleGroups(identifier string, rgs *rulefmt.RuleGroups, scheme model.ValidationScheme, p parser.Parser) []error {
+	if err := namevalidationutil.CheckNameValidationScheme(scheme); err != nil {
+		return []error{fmt.Errorf("%s: %w", identifier, err)}
+	}
+
+	var errs []error
+	names := map[string]struct{}{}
+	for _, g := range rgs.Groups {
+		if g.Name == "" {
+			errs = append(errs, fmt.Errorf("%s: Groupname must not be empty", identifier))
+		}
+		if _, ok := names[g.Name]; ok {
+			errs = append(errs, fmt.Errorf("%s: groupname: \"%s\" is repeated in the same file", identifier, g.Name))
+		}
+		names[g.Name] = struct{}{}
+
+		for k, v := range g.Labels {
+			if !scheme.IsValidLabelName(k) || k == model.MetricNameLabel {
+				errs = append(errs, fmt.Errorf("%s: invalid label name: %s", identifier, k))
+			}
+			if !model.LabelValue(v).IsValid() {
+				errs = append(errs, fmt.Errorf("%s: invalid label value: %s", identifier, v))
+			}
+		}
+
+		for i, r := range g.Rules {
+			ruleName := r.Alert
+			if ruleName == "" {
+				ruleName = r.Record
+			}
+			for _, err := range r.Validate(rulefmt.RuleNode{}, scheme, p) {
+				// The empty node gives some errors the position 0:0.
+				// Unwrap drops that position.
+				errs = append(errs, fmt.Errorf("%s: group %q, rule %d, %q: %w", identifier, g.Name, i+1, ruleName, errors.Unwrap(&err)))
+			}
+		}
+	}
+	return errs
 }
 
 func (r registryLoader) Parse(query string) (parser.Expr, error) { return r.parser.ParseExpr(query) }
