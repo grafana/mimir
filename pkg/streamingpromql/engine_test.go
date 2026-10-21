@@ -4103,9 +4103,6 @@ func TestQueryStats(t *testing.T) {
 				600000: 10,
 			},
 
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
-
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				600000: 6,
@@ -4118,9 +4115,6 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 3, 120000: 5, 180000: 7, 240000: 9, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
 			},
-
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
 
 			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
