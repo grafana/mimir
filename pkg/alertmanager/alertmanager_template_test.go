@@ -43,6 +43,16 @@ func Test_withCustomFunctions(t *testing.T) {
 			result:   `sum by (foo)(rate(bar{foo="bar"}[3m]))`,
 		},
 		{
+			name: "parse out query from Loki GeneratorURL",
+			alerts: template.Alerts{
+				template.Alert{
+          GeneratorURL: "https://foo.bar/explore?left=" + url.QueryEscape(`{"queries":[{"expr":"up{foo!=\"bar\"}","queryType":"range"}]}`),
+				},
+			},
+			template: `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
+			result:   `up{foo!="bar"}`,
+		},
+		{
 			name: "error on missing query in GeneratorURL",
 			alerts: template.Alerts{
 				template.Alert{
@@ -50,7 +60,7 @@ func Test_withCustomFunctions(t *testing.T) {
 				},
 			},
 			template:      `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
-			expectedError: "query not found in the generator URL",
+			expectedError: `query not found in the generator URL, no "g0.expr" or "left" parameter`,
 		},
 		{
 			name: "error on URL decoding query in GeneratorURL",
