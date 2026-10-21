@@ -101,6 +101,10 @@ type tenant struct {
 	blocks []emulatedBlock
 	// The engine's out-of-order compactions retention still keeps the chunks of, oldest first.
 	oooCompactions []outOfOrderCompaction
+	// An engine's series of this shard that appenders created, by how many of them haven't committed or rolled back:
+	// without samples until then, the head's garbage collection would take them, and their appender's samples with
+	// them, like Prometheus's memSeries.pendingCommit keeps them.
+	created map[uint64]int32
 }
 
 func newTenant() *tenant {

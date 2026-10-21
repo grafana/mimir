@@ -3,6 +3,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -75,6 +76,8 @@ type engineAppender struct {
 	pairs [][2]string
 	// Commit's order of the samples, by shard.
 	order []int32
+	// The series the appender created, which stay until it commits or rolls back.
+	created []uint64
 }
 
 // appendBuffers are an appender's buffers, which appenders reuse: the ingester opens one per
@@ -181,6 +184,7 @@ func (a *engineAppender) getOrCreate(ref storage.SeriesRef, lset promlabels.Labe
 	}
 	created, isNew := a.e.create(lset, hash, &a.pairs)
 	if isNew {
+		a.created = append(a.created, created)
 		// The callback may keep the labels: give it the engine's own copy.
 		a.e.callback.PostCreation(lset.Copy())
 	}
@@ -219,6 +223,10 @@ func (e *Engine) create(lset promlabels.Labels, hash uint64, scratch *[][2]strin
 	ref := e.newRef(index)
 	entry.series.ref = ref
 	entry.series.inHead = true
+	if t.created == nil {
+		t.created = map[uint64]int32{}
+	}
+	t.created[ref]++
 	entry.series.shardHash = promlabels.StableHash(lset)
 	if e.opts.SecondaryHashFunction != nil {
 		entry.series.ownedHash = e.opts.SecondaryHashFunction(lset)
@@ -602,8 +610,36 @@ func (a *engineAppender) UpdateMetadata(ref storage.SeriesRef, _ promlabels.Labe
 }
 
 func (a *engineAppender) Rollback() error {
+	a.releaseCreated()
 	a.release()
 	return nil
+}
+
+// releaseCreated lets the series the appender created go, now that they have its samples or never will.
+func (a *engineAppender) releaseCreated() {
+	if len(a.created) == 0 {
+		return
+	}
+	slices.SortFunc(a.created, func(x, y uint64) int { return cmp.Compare(refShard(x), refShard(y)) })
+	for start := 0; start < len(a.created); {
+		index := refShard(a.created[start])
+		end := start
+		for end < len(a.created) && refShard(a.created[end]) == index {
+			end++
+		}
+		shard := a.e.store.shards[index]
+		shard.Lock()
+		if t, ok := shard.tenants[a.e.tenantID]; ok {
+			for _, ref := range a.created[start:end] {
+				if t.created[ref]--; t.created[ref] <= 0 {
+					delete(t.created, ref)
+				}
+			}
+		}
+		shard.Unlock()
+		start = end
+	}
+	a.created = a.created[:0]
 }
 
 // Commit applies the appender's samples: those that still fit their series, as checked again with
@@ -611,6 +647,7 @@ func (a *engineAppender) Rollback() error {
 // an error, like Prometheus's commit.
 func (a *engineAppender) Commit() error {
 	if len(a.samples) == 0 && len(a.exemplars) == 0 {
+		a.releaseCreated()
 		a.release()
 		return nil
 	}
@@ -675,6 +712,7 @@ func (a *engineAppender) Commit() error {
 		a.e.observeOOO(oooMin, oooMax)
 	}
 	a.commitExemplars()
+	a.releaseCreated()
 	a.release()
 	return errors.Join(errs...)
 }

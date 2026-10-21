@@ -858,6 +858,10 @@ func (e *Engine) headGC() {
 			inOrder, seriesMint := inOrderFrom(series, mint)
 			ooo, oooMint := e.oooState(index, series)
 			if series.headEvicted || (!inOrder && !ooo) {
+				if !series.headEvicted && e.createdLocked(shard, series.ref) {
+					series.inHead = true
+					return true
+				}
 				return false
 			}
 			series.inHead = true
@@ -1194,6 +1198,9 @@ func (e *Engine) canLeave(shard int, series *Series, maxt int64) bool {
 	if newest, ok := series.maxTime(); ok && newest > maxt {
 		return false
 	}
+	if e.createdLocked(e.store.shards[shard], series.ref) {
+		return false
+	}
 	ooo, _ := e.oooState(shard, series)
 	return !ooo
 }
@@ -1211,7 +1218,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 		// only when there are some, and then only for those groups.
 		var removable []uint32
 		_, found := e.scanShard(shard, nil, func(group uint32, entry *seriesEntry) {
-			if !pruneRetained(&entry.series, kept, index) && (len(removable) == 0 || removable[len(removable)-1] != group) {
+			if !pruneRetained(&entry.series, kept, index) && !e.createdLocked(shard, entry.series.ref) && (len(removable) == 0 || removable[len(removable)-1] != group) {
 				removable = append(removable, group)
 			}
 		})
@@ -1220,7 +1227,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 		}
 		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
-				keep := pruneRetained(&entry.series, kept, index)
+				keep := pruneRetained(&entry.series, kept, index) || e.createdLocked(shard, entry.series.ref)
 				if !keep {
 					t.uncount(entry, &builder)
 				}
@@ -1258,6 +1265,12 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 type refLocation struct {
 	group uint32
 	index int32
+}
+
+// createdLocked reports whether an appender that created the series ref hasn't committed yet, with its shard locked.
+func (e *Engine) createdLocked(shard *shardState, ref uint64) bool {
+	t, ok := shard.tenants[e.tenantID]
+	return ok && t.created[ref] > 0
 }
 
 // lookupLocked finds the series ref, with its shard locked.
