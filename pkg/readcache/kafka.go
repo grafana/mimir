@@ -331,7 +331,7 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 			level.Warn(r.logger).Log("msg", "readcache: removing stale offset file on fresh partition acquisition",
 				"partition", p.partitionID, "offset_file", offsetFilePath, "err", err)
 		}
-	} else if _, err := os.Stat(offsetFilePath); err == nil {
+	} else if _, err := os.Stat(offsetFilePath); err == nil && !r.rewindSeriesstoreResume(p, offsetFilePath) {
 		kafkaCfg.ConsumeFromPositionAtStartup = "last-offset"
 		kafkaCfg.ConsumerGroupOffsetCommitFileEnforced = true
 		kafkaCfg.TargetConsumerLagAtStartup = 0
@@ -341,6 +341,19 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 		}
 		level.Info(r.logger).Log("msg", "readcache: resuming partition from stored offset file",
 			"partition", p.partitionID, "offset_file", offsetFilePath)
+	} else if err == nil {
+		// A seriesstore engine of the partition restored no snapshot: what it consumed is gone, and the offset file
+		// is past it. The reader replays as far back as a resume would.
+		kafkaCfg.ConsumeFromPositionAtStartup = "timestamp"
+		kafkaCfg.ConsumeFromTimestampAtStartup = time.Now().Add(-maxOffsetResumeReplay).UnixMilli()
+		kafkaCfg.TargetConsumerLagAtStartup = 0
+		kafkaCfg.MaxConsumerLagAtStartup = 0
+		if err := os.Remove(offsetFilePath); err != nil && !os.IsNotExist(err) {
+			level.Warn(r.logger).Log("msg", "readcache: removing the offset file of a partition replayed from a timestamp",
+				"partition", p.partitionID, "offset_file", offsetFilePath, "err", err)
+		}
+		level.Warn(r.logger).Log("msg", "readcache: a seriesstore engine restored no snapshot, replaying the partition",
+			"partition", p.partitionID, "replay", maxOffsetResumeReplay)
 	} else {
 		kafkaCfg.ConsumeFromPositionAtStartup = "end"
 		kafkaCfg.ConsumeFromTimestampAtStartup = 0

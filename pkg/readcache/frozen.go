@@ -3,6 +3,7 @@
 package readcache
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -196,6 +197,14 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 		if err := r.flushPartitionHead(db); err != nil {
 			level.Warn(r.logger).Log("msg", "flushing readcache head before freeze",
 				"user", db.tenantID, "partition", partitionID, "err", err)
+		}
+		// Nothing writes to a frozen seriesstore engine: with its head on disk, a snapshot now restores all of it after a
+		// crash, which it couldn't replay from Kafka.
+		if engine, ok := db.db.(seriesstoreStore); ok && !db.IsClosed() {
+			if err := engine.Checkpoint(context.Background(), nil, 0); err != nil {
+				level.Warn(r.logger).Log("msg", "snapshotting a frozen seriesstore engine",
+					"user", db.tenantID, "partition", partitionID, "err", err)
+			}
 		}
 	}
 
@@ -571,6 +580,9 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				}
 				continue
 			}
+			if r.dropIfLost(db, "frozen epoch") {
+				continue
+			}
 			r.instrumentTSDB(db)
 
 			addRestored(marker, tenant, db)
@@ -599,6 +611,24 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 	// tenant of the same epoch, means this directory is history: living
 	// in it would overlap the frozen copy or reopen a dir it already holds.
 	r.forgetUnusableResumeEpochs()
+}
+
+// dropIfLost closes and deletes a seriesstore engine that restored no snapshot: no Kafka offset is kept for a partition
+// this pod no longer consumes, so what it had is gone, and serving the rest would answer queries with partial data.
+func (r *Readcache) dropIfLost(db *partitionTSDB, what string) bool {
+	engine, ok := db.db.(seriesstoreStore)
+	if !ok || engine.Restored() {
+		return false
+	}
+	level.Warn(r.logger).Log("msg", "a seriesstore engine of a "+what+" restored no snapshot; deleting dir",
+		"user", db.tenantID, "partition", db.partitionID, "dir", db.Dir())
+	if err := db.Close(); err != nil {
+		level.Warn(r.logger).Log("msg", "closing a seriesstore engine that restored no snapshot", "user", db.tenantID, "partition", db.partitionID, "err", err)
+	}
+	if err := os.RemoveAll(db.Dir()); err != nil {
+		level.Warn(r.logger).Log("msg", "removing a seriesstore engine that restored no snapshot", "user", db.tenantID, "partition", db.partitionID, "dir", db.Dir(), "err", err)
+	}
+	return true
 }
 
 // unmarkedTSDBDir is a tenant TSDB directory with no frozen marker.
@@ -807,6 +837,9 @@ func (r *Readcache) adoptUnmarkedDir(dir unmarkedTSDBDir, now time.Time, cutoff 
 			level.Warn(r.logger).Log("msg", "removing unopenable unmarked partition TSDB dir",
 				"user", dir.tenant, "partition", dir.partitionID, "epoch", dir.epoch, "dir", dir.dir, "err", removeErr)
 		}
+		return
+	}
+	if r.dropIfLost(db, "unmarked partition") {
 		return
 	}
 	r.instrumentTSDB(db)

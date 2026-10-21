@@ -647,6 +647,10 @@ func (r *Readcache) running(ctx context.Context) error {
 		go r.runSpotlightLoop(ctx)
 	}
 
+	if interval := r.seriesstoreCheckpointInterval(); interval > 0 {
+		go r.runSeriesstoreCheckpoints(ctx, interval)
+	}
+
 	// Prime the cheap partition totals immediately and run the slower
 	// per-range refresh in its coalescing worker.
 	r.refreshPartitionSeriesCounts()
@@ -1231,15 +1235,19 @@ func (r *Readcache) applyPartitionTSDBTenantSettings() {
 	}
 }
 
-func (r *Readcache) compactHeads() {
+// ownedPartitionStates is a snapshot of the partitions this readcache owns.
+func (r *Readcache) ownedPartitionStates() []*partitionState {
 	r.partitionMu.RLock()
+	defer r.partitionMu.RUnlock()
 	parts := make([]*partitionState, 0, len(r.partitions))
 	for _, p := range r.partitions {
 		parts = append(parts, p)
 	}
-	r.partitionMu.RUnlock()
+	return parts
+}
 
-	for _, p := range parts {
+func (r *Readcache) compactHeads() {
+	for _, p := range r.ownedPartitionStates() {
 		p.tenantsMu.RLock()
 		dbs := make([]*partitionTSDB, 0, len(p.tenants))
 		for _, db := range p.tenants {
