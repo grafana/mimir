@@ -372,6 +372,10 @@ func deserializeJob(k, v []byte) (TrackedJob, error) {
 			job, err := deserializeBackfillPhasePlanJob(v)
 			return job, err
 		}
+		if isBackfillCompactionJobKey(string(k)) {
+			job, err := deserializeCompactionJob(k, v)
+			return job, err
+		}
 		// Never misread an unknown typed key as a compaction job
 		return nil, errors.New("unknown key")
 	}
