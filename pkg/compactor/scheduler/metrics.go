@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	jobTypePlan              = "plan"
-	jobTypeCompaction        = "compaction"
-	jobTypeBackfillPhasePlan = "backfill_phase_plan"
+	jobTypePlan               = "plan"
+	jobTypeCompaction         = "compaction"
+	jobTypeBackfillPhasePlan  = "backfill_phase_plan"
+	jobTypeBackfillCompaction = "backfill_compaction"
 
 	compactionTypeSplit = "split"
 	compactionTypeMerge = "merge"
@@ -25,6 +26,8 @@ func jobTypeLabel(t compactorschedulerpb.JobType) string {
 		return jobTypePlan
 	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
 		return jobTypeBackfillPhasePlan
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
+		return jobTypeBackfillCompaction
 	}
 	return jobTypeCompaction
 }
@@ -90,13 +93,12 @@ func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *sche
 	}, []string{"lane"})
 
 	// Pre-initialize job type labels so we get zeros instead of no data. The gauges are also cached to avoid label lookups.
-	m.jobsCompleted.WithLabelValues(jobTypePlan)
-	m.jobsCompleted.WithLabelValues(jobTypeCompaction)
 	jobTypes := lanePolicy.JobTypes()
 	m.pendingJobsByType = make(map[string]prometheus.Gauge, len(jobTypes))
 	m.activeJobsByType = make(map[string]prometheus.Gauge, len(jobTypes))
 	for _, t := range jobTypes {
 		jobType := jobTypeLabel(t)
+		m.jobsCompleted.WithLabelValues(jobType)
 		m.pendingJobsByType[jobType] = m.pendingJobs.WithLabelValues(jobType)
 		m.activeJobsByType[jobType] = m.activeJobs.WithLabelValues(jobType)
 	}
