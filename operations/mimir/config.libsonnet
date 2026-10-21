@@ -381,8 +381,6 @@
     overrides_configmap: 'overrides',
     overrides_configmap_mountpoint: '/etc/mimir',
 
-    local extraOverridesConfigmapMountpoint(name) = '%s-%s' % [$._config.overrides_configmap_mountpoint, name],
-
     // Configmaps mounted to all components. Maps config map name to mount point.
     configmaps: {
       [$._config.overrides_configmap]: $._config.overrides_configmap_mountpoint,
@@ -602,6 +600,17 @@
   },
 
   local configMap = $.core.v1.configMap,
+
+  local extraOverridesConfigmapMountpoint(name) = '%s-%s' % [$._config.overrides_configmap_mountpoint, name],
+
+  local clashingExtraOverridesConfigmapErrors = [
+    'tenant "configmap" field "%s" clashes with configmaps (mounted at "%s", not "%s"): use another name'
+    % [name, $._config.configmaps[name], extraOverridesConfigmapMountpoint(name)]
+    for name in std.objectFields($.extra_overrides_configs)
+    if $._config.configmaps[name] != extraOverridesConfigmapMountpoint(name)
+  ],
+
+  assert clashingExtraOverridesConfigmapErrors == [] : std.join('\n', clashingExtraOverridesConfigmapErrors),
 
   // The hidden "configmap" field of a tenant sets its config map (default: overrides_configmap).
   // A list of names puts the tenant in more than one config map, for migrations.
