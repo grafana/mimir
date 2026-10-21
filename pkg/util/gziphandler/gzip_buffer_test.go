@@ -188,19 +188,21 @@ func TestGzipResponseWriter(t *testing.T) {
 		require.Equal(t, "a", rec.Body.String())
 	})
 
+	// Each trigger makes an empty write select gzip.
+	emptyWriteTriggers := []struct {
+		name            string
+		minSize         int
+		contentLength   bool // Declare a Content-Length of at least minSize.
+		rejectsIdentity bool
+	}{
+		{name: "content length", minSize: DefaultMinSize, contentLength: true},
+		{name: "identity rejected", minSize: DefaultMinSize, rejectsIdentity: true},
+		{name: "no minimum size", minSize: 0},
+	}
+
 	t.Run("empty write", func(t *testing.T) {
-		// Each row makes the empty write select gzip. As for a HEAD or 304 response, the headers then claim gzip,
-		// but no gzip stream is written.
-		for _, tc := range []struct {
-			name            string
-			minSize         int
-			contentLength   bool
-			rejectsIdentity bool
-		}{
-			{name: "content length", minSize: DefaultMinSize, contentLength: true},
-			{name: "identity rejected", minSize: DefaultMinSize, rejectsIdentity: true},
-			{name: "no minimum size", minSize: 0},
-		} {
+		// As for a HEAD or 304 response, the headers claim gzip, but no gzip stream is written.
+		for _, tc := range emptyWriteTriggers {
 			t.Run(tc.name, func(t *testing.T) {
 				rec := httptest.NewRecorder()
 				w := newBufferTestWriter(rec, tc.minSize)
@@ -218,6 +220,40 @@ func TestGzipResponseWriter(t *testing.T) {
 				require.Equal(t, http.StatusNotModified, rec.Code)
 				require.Equal(t, "gzip", rec.Header().Get(contentEncoding))
 				require.Empty(t, rec.Body.Bytes())
+			})
+		}
+	})
+
+	t.Run("empty write before body", func(t *testing.T) {
+		body := bytes.Repeat([]byte("a"), 2*DefaultMinSize)
+		for _, tc := range emptyWriteTriggers {
+			t.Run(tc.name, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				w := newBufferTestWriter(rec, tc.minSize)
+				w.rejectsIdentity = tc.rejectsIdentity
+				if tc.contentLength {
+					rec.Header().Set(contentLength, strconv.Itoa(len(body)))
+				}
+				// The empty write selects GZIP and sets the headers.
+				n, err := w.Write(nil)
+				require.NoError(t, err)
+				require.Zero(t, n)
+				require.Nil(t, w.gw, "an empty write must not create a gzip stream")
+				w.Flush()
+				require.True(t, rec.Flushed, "the headers are decided, so Flush must reach the client")
+				n, err = w.Write(body)
+				require.NoError(t, err)
+				require.Equal(t, len(body), n)
+				require.NoError(t, w.Close())
+
+				require.Equal(t, "gzip", rec.Header().Get(contentEncoding))
+				require.Empty(t, rec.Header().Get(contentLength))
+				reader, err := gzip.NewReader(rec.Body)
+				require.NoError(t, err, "the body must be compressed")
+				decoded, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				require.NoError(t, reader.Close())
+				require.Equal(t, body, decoded)
 			})
 		}
 	})
