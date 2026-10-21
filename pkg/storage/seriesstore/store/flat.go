@@ -205,7 +205,7 @@ func (r *refIndex) reset(count int) {
 // tenant of millions of series. It has no say in what exists: a hit is checked against the entry it points to, so what
 // removals move or drop only makes lookups miss, and a slot a series shares with another is the last one's.
 type locationCache struct {
-	// Buckets of two slots, for the hashes that share one.
+	// Buckets of a cache line of slots, for the hashes that share one.
 	slots []locationSlot
 	mask  uint64
 	used  int
@@ -214,7 +214,20 @@ type locationCache struct {
 type locationSlot struct {
 	// The position in the group plus one, zero for a slot that is empty.
 	index uint32
-	group uint32
+	// The group, and in the low byte bits of the hash the bucket isn't picked by: a slot of another series of the
+	// bucket is told apart without reading its entry, which is a cache miss.
+	groupTag uint32
+}
+
+const (
+	locationBucket  = 8
+	locationTagBits = 8
+	// A group the slot can't name isn't remembered, and its lookups take the longer way.
+	maxLocationGroup = 1<<(32-locationTagBits) - 1
+)
+
+func locationTag(hash uint64) uint32 {
+	return uint32(hash >> (64 - locationTagBits))
 }
 
 // findAll calls visit with each position the hash may be at until it returns true.
@@ -222,32 +235,38 @@ func (c *locationCache) findAll(hash uint64, visit func(group uint32, index int)
 	if len(c.slots) == 0 {
 		return false
 	}
-	at := (hash & c.mask) &^ 1
-	for _, slot := range c.slots[at : at+2] {
-		if slot.index != 0 && visit(slot.group, int(slot.index)-1) {
+	at := (hash & c.mask) &^ (locationBucket - 1)
+	tag := locationTag(hash)
+	for _, slot := range c.slots[at : at+locationBucket] {
+		if slot.index == 0 {
+			// A bucket fills from its first slot.
+			return false
+		}
+		if slot.groupTag&(1<<locationTagBits-1) == tag && visit(slot.groupTag>>locationTagBits, int(slot.index)-1) {
 			return true
 		}
 	}
 	return false
 }
 
-// remember records where the series with hash is, replacing one of the bucket's slots.
+// remember records where the series with hash is, in the first slot of its bucket: the oldest slot goes when it is
+// full.
 func (c *locationCache) remember(hash uint64, group uint32, index int, series int) {
-	if series > len(c.slots) {
-		// Grown for twice the series it holds, which empties it: it fills again from the lookups that miss.
-		c.slots = make([]locationSlot, max(1024, 1<<bits.Len(uint(series))))
+	if group > maxLocationGroup {
+		return
+	}
+	if 2*series > len(c.slots) {
+		// Grown for four times the series it holds, which empties it: it fills again from the lookups that miss. A
+		// bucket then holds two or three series on average, so few overflow.
+		c.slots = make([]locationSlot, max(1024, 1<<bits.Len(uint(2*series))))
 		c.mask = uint64(len(c.slots) - 1)
 	}
-	at := (hash & c.mask) &^ 1
-	slot := locationSlot{uint32(index) + 1, group}
-	if c.slots[at] == slot || c.slots[at+1] == slot {
-		return
+	at := (hash & c.mask) &^ (locationBucket - 1)
+	bucket := c.slots[at : at+locationBucket]
+	slot := locationSlot{uint32(index) + 1, group<<locationTagBits | locationTag(hash)}
+	position := 0
+	for ; position < locationBucket-1 && bucket[position].index != 0 && bucket[position] != slot; position++ {
 	}
-	if c.slots[at].index == 0 {
-		c.slots[at] = slot
-		return
-	}
-	// The older slot of the bucket goes: the newer one moves to the first.
-	c.slots[at+1] = c.slots[at]
-	c.slots[at] = slot
+	copy(bucket[1:position+1], bucket[:position])
+	bucket[0] = slot
 }
