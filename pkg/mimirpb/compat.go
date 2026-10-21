@@ -253,10 +253,17 @@ func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
 	if hp == nil {
 		return nil
 	}
+	h := FromHistogramProtoToHistogramValue(hp)
+	return &h
+}
+
+// FromHistogramProtoToHistogramValue is FromHistogramProtoToHistogram for a caller that keeps the histogram on its
+// stack, or copies it.
+func FromHistogramProtoToHistogramValue(hp *Histogram) histogram.Histogram {
 	if hp.IsFloatHistogram() {
 		panic("FromHistogramProtoToHistogram called on float histogram")
 	}
-	return &histogram.Histogram{
+	return histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
 		ZeroThreshold:    hp.ZeroThreshold,
@@ -307,10 +314,17 @@ func FromFloatHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHist
 	if hp == nil {
 		return nil
 	}
+	h := FromFloatHistogramProtoToFloatHistogramValue(hp)
+	return &h
+}
+
+// FromFloatHistogramProtoToFloatHistogramValue is FromFloatHistogramProtoToFloatHistogram for a caller that keeps the
+// histogram on its stack, or copies it.
+func FromFloatHistogramProtoToFloatHistogramValue(hp *Histogram) histogram.FloatHistogram {
 	if !hp.IsFloatHistogram() {
 		panic("FromFloatHistogramProtoToFloatHistogram called on integer histogram")
 	}
-	return &histogram.FloatHistogram{
+	return histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
 		ZeroThreshold:    hp.ZeroThreshold,
