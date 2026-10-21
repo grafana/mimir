@@ -50,6 +50,7 @@ type lanePolicy interface {
 	CompactionLanes() []lane                                               // The lanes that carry compaction jobs.
 	JobTypes() []compactorschedulerpb.JobType                              // The job types this policy assigns to lanes.
 	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
+	LaneForJobType(compactorschedulerpb.JobType) (lane, bool)              // The lane jobs of this type are assigned to, if the policy supports the type.
 	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
 
@@ -106,17 +107,19 @@ func (slp *simpleLanePolicy) JobTypes() []compactorschedulerpb.JobType {
 	return slp.jobTypes
 }
 
+func (slp *simpleLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
+	switch jobType {
+	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		return planLane, true
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
+		return compactionLane, true
+	}
+	return 0, false
+}
+
 // requestedLanes maps a lease request to scheduler lanes
 func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	return lanesForRequest(req, slp.allLanes, func(jobType compactorschedulerpb.JobType) (lane, bool) {
-		switch jobType {
-		case compactorschedulerpb.JOB_TYPE_PLANNING:
-			return planLane, true
-		case compactorschedulerpb.JOB_TYPE_COMPACTION:
-			return compactionLane, true
-		}
-		return 0, false
-	})
+	return lanesForRequest(req, slp.allLanes, slp.LaneForJobType)
 }
 
 // backfillLanePolicy is simpleLanePolicy with lanes for backfill phase plan jobs and backfill compaction jobs
@@ -163,20 +166,22 @@ func (blp *backfillLanePolicy) JobTypes() []compactorschedulerpb.JobType {
 	return blp.jobTypes
 }
 
+func (blp *backfillLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
+	switch jobType {
+	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		return planLane, true
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
+		return compactionLane, true
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
+		return backfillPhasePlanLane, true
+	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
+		return backfillCompactionLane, true
+	}
+	return 0, false
+}
+
 func (blp *backfillLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	return lanesForRequest(req, blp.allLanes, func(jobType compactorschedulerpb.JobType) (lane, bool) {
-		switch jobType {
-		case compactorschedulerpb.JOB_TYPE_PLANNING:
-			return planLane, true
-		case compactorschedulerpb.JOB_TYPE_COMPACTION:
-			return compactionLane, true
-		case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
-			return backfillPhasePlanLane, true
-		case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
-			return backfillCompactionLane, true
-		}
-		return 0, false
-	})
+	return lanesForRequest(req, blp.allLanes, blp.LaneForJobType)
 }
 
 // lanesForRequest validates the lanes of a lease request, using laneForJobType to map each requested job type to a lane
