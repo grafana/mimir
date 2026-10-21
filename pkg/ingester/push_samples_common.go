@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -74,6 +75,74 @@ type WriteRequestTimeseriesPush struct {
 	ActiveSeries       *activeseries.ActiveSeries
 	App                ExtendedAppender
 	Head               PushHead
+	// Floats, when set, appends the float samples of the series it already has without App, which then gets the
+	// other series only. It isn't used with ActiveSeries, which it doesn't update.
+	Floats FloatsAppender
+}
+
+// FloatsAppender appends float samples to the series it has, like the seriesstore engine's AppendFloats: it returns
+// the indices of the series it didn't handle, and the samples it ingested.
+type FloatsAppender interface {
+	AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink store.FloatSink) (leftover []int, ingested int, err error)
+}
+
+// floatsErrorSink classifies the errors of a FloatsAppender like those of the appender's samples.
+type floatsErrorSink struct {
+	timeseries   []mimirpb.PreallocTimeseries
+	errProcessor *mimir_storage.SoftAppendErrorProcessor
+}
+
+func (s floatsErrorSink) Error(series int, err error, timestampMs int64) bool {
+	return s.errProcessor.ProcessErr(err, timestampMs, s.timeseries[series].Labels)
+}
+
+func (floatsErrorSink) Ingested(int, labels.Labels, storage.SeriesRef) {}
+
+func (floatsErrorSink) NeedsLabels() bool { return false }
+
+func (floatsErrorSink) IngestedRef(int, storage.SeriesRef) bool { return true }
+
+// appendFloatsFirst appends what p.Floats handles of the request, and returns the series left to the appender, in
+// the order of the request: a series may be created by one that comes before it.
+func appendFloatsFirst(p WriteRequestTimeseriesPush, startAppend time.Time, stats *PushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor) ([]mimirpb.PreallocTimeseries, error) {
+	var fast []int
+	for i := range p.Timeseries {
+		ts := &p.Timeseries[i]
+		if len(ts.Samples) > 0 && ts.CreatedTimestamp == 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 {
+			fast = append(fast, i)
+		}
+	}
+	if len(fast) == 0 {
+		return p.Timeseries, nil
+	}
+	maxTimestampMs := startAppend.Add(p.Limits.CreationGracePeriod(p.UserID)).UnixMilli()
+	minTimestampMs := int64(math.MinInt64)
+	if p.Limits.PastGracePeriod(p.UserID) > 0 {
+		minTimestampMs = startAppend.Add(-p.Limits.PastGracePeriod(p.UserID)).Add(-p.Limits.OutOfOrderTimeWindow(p.UserID)).UnixMilli()
+	}
+	sink := floatsErrorSink{timeseries: p.Timeseries, errProcessor: errProcessor}
+	leftover, ingested, err := p.Floats.AppendFloats(p.Timeseries, fast, minTimestampMs, maxTimestampMs, startAppend.UnixMilli(), p.Source == mimirpb.OTLP, sink)
+	stats.SucceededSamplesCount += ingested
+	if err != nil {
+		return nil, err
+	}
+	if len(leftover) == len(fast) {
+		return p.Timeseries, nil
+	}
+	handled := make([]bool, len(p.Timeseries))
+	for _, i := range fast {
+		handled[i] = true
+	}
+	for _, i := range leftover {
+		handled[i] = false
+	}
+	rest := make([]mimirpb.PreallocTimeseries, 0, len(p.Timeseries)-len(fast)+len(leftover))
+	for i, ts := range p.Timeseries {
+		if !handled[i] {
+			rest = append(rest, ts)
+		}
+	}
+	return rest, nil
 }
 
 // PushHead is the part of a head PushWriteRequestTimeseries reads: the Prometheus TSDB's head and the seriesstore
@@ -126,6 +195,22 @@ func PushWriteRequestTimeseries(ctx context.Context, p WriteRequestTimeseriesPus
 		p.Logger,
 	)
 
+	timeseries := p.Timeseries
+	if p.Floats != nil && p.ActiveSeries == nil {
+		rest, err := appendFloatsFirst(p, startAppend, &stats, &errProcessor)
+		if err != nil {
+			if rbErr := p.App.Rollback(); rbErr != nil {
+				level.Warn(p.Logger).Log("msg", "failed to rollback appender on error", "user", p.UserID, "err", rbErr)
+			}
+			return PushWriteRequestTimeseriesResult{
+				Stats:          stats,
+				AppendDuration: time.Since(startAppend),
+				Err:            wrapOrAnnotateWithUser(err, p.UserID),
+			}
+		}
+		timeseries = rest
+	}
+
 	minAppendTime, minAppendTimeAvailable := p.Head.AppendableMinValidTime()
 
 	if err := pushSamplesToExtendedAppender(
@@ -133,7 +218,7 @@ func PushWriteRequestTimeseries(ctx context.Context, p WriteRequestTimeseriesPus
 		p.Samplers,
 		p.Discard,
 		p.UserID,
-		p.Timeseries,
+		timeseries,
 		p.App,
 		p.Head,
 		startAppend,

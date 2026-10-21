@@ -16,8 +16,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -195,4 +198,70 @@ func TestSeriesstore_ResumeReplaysFromTheOldestCheckpoint(t *testing.T) {
 		require.Equal(t, int64(9), offset(t, restarted), "a clean shutdown's snapshot has every record")
 		require.Len(t, queryTestSamples(t, restartedPartition.tenants["tenant-a"], "up"), 1)
 	})
+}
+
+// The seriesstore engine appends the floats of the series it has without the appender: the samples it stores, the push's
+// statistics and its first soft error are the appender's.
+func TestSeriesstore_FloatsFastPathIsTheAppenders(t *testing.T) {
+	const tenantID = "tenant-1"
+	cfg := newSeriesstoreTestConfig(t)
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	now := time.Now().UnixMilli()
+	series := func(name string, timestamps ...int64) mimirpb.PreallocTimeseries {
+		ts := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, name))}}
+		for _, timestamp := range timestamps {
+			ts.Samples = append(ts.Samples, mimirpb.Sample{TimestampMs: timestamp, Value: float64(timestamp)})
+		}
+		return ts
+	}
+	var fastIngested int
+	push := func(db *partitionTSDB, fast bool, timeseries ...mimirpb.PreallocTimeseries) ingester.PushWriteRequestTimeseriesResult {
+		var floats ingester.FloatsAppender
+		if fast {
+			floats = countingFloats{FloatsAppender: db.db.(seriesstoreStore).Engine, ingested: &fastIngested}
+		}
+		return ingester.PushWriteRequestTimeseries(context.Background(), ingester.WriteRequestTimeseriesPush{
+			UserID:             tenantID,
+			Timeseries:         timeseries,
+			Limits:             limits,
+			Logger:             log.NewNopLogger(),
+			Samplers:           ingester.NewIngesterErrSamplers(10),
+			MaxSeriesPerUser:   func() int { return 0 },
+			MaxSeriesPerMetric: func() int { return 0 },
+			App:                db.Appender(context.Background()).(ingester.ExtendedAppender),
+			Head:               db.Head(),
+			Floats:             floats,
+		})
+	}
+
+	var results []ingester.PushWriteRequestTimeseriesResult
+	var stored [][]int64
+	for i, fast := range []bool{false, true} {
+		db := openSeriesstoreTestTSDB(t, cfg, limits, tenantID, int32(i))
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		require.NoError(t, push(db, fast, series("existing", now-2000), series("other", now-2000)).Err)
+		// Two samples of the same time, a duplicate and a sample far in the future, and a new series.
+		existing := series("existing", now-1000, now-1000)
+		existing.Samples[1].Value = -1
+		result := push(db, fast, existing, series("other", now-2000, now+time.Hour.Milliseconds()), series("new", now))
+		require.NoError(t, result.Err)
+		results = append(results, result)
+		stored = append(stored, append(append(queryTestSamples(t, db, "existing"), queryTestSamples(t, db, "other")...), queryTestSamples(t, db, "new")...))
+	}
+	require.Equal(t, 3, fastIngested, "the existing series' samples must take the fast path")
+	require.Equal(t, results[0].Stats, results[1].Stats)
+	require.Equal(t, stored[0], stored[1])
+	require.Error(t, results[0].FirstPartialErr)
+	require.EqualError(t, results[1].FirstPartialErr, results[0].FirstPartialErr.Error())
+}
+
+type countingFloats struct {
+	ingester.FloatsAppender
+	ingested *int
+}
+
+func (c countingFloats) AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink store.FloatSink) ([]int, int, error) {
+	leftover, ingested, err := c.FloatsAppender.AppendFloats(timeseries, indices, minTimestampMs, maxTimestampMs, ingestedAtMs, otlp, sink)
+	*c.ingested += ingested
+	return leftover, ingested, err
 }

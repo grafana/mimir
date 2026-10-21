@@ -110,13 +110,22 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 
 	// Serialize with ApplyConfig and Close. Regular compaction does not
 	// take this lock. Kafka ingest may use parallel pusher shards
-	// (ingestion-concurrency-max).
-	unlock := db.lockForMutation(tsdbMutationAppend)
-	defer unlock()
+	// (ingestion-concurrency-max). The seriesstore engine takes appends
+	// from several goroutines at once, by store shard, and the fence
+	// above already has Close wait for this one.
+	engine, seriesstore := db.db.(seriesstoreStore)
+	if !seriesstore {
+		unlock := db.lockForMutation(tsdbMutationAppend)
+		defer unlock()
+	}
 	if db.IsClosed() {
 		return errTSDBClosed
 	}
 
+	var floats ingester.FloatsAppender
+	if seriesstore {
+		floats = engine.Engine
+	}
 	app := db.Appender(ctx).(ingester.ExtendedAppender)
 	res := ingester.PushWriteRequestTimeseries(ctx, ingester.WriteRequestTimeseriesPush{
 		UserID:             userID,
@@ -131,6 +140,7 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 		ActiveSeries:       nil,
 		App:                app,
 		Head:               db.Head(),
+		Floats:             floats,
 	})
 	if res.Err != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.Err)
