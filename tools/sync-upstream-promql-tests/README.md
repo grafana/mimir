@@ -8,7 +8,9 @@ Run this tool with `go run .` in this directory, or via `make sync-upstream-prom
 
 ## Fixing a failing mimir-prometheus vendoring PR
 
-When a `[main] Update mimir-prometheus to ...` PR fails `TestOurUpstreamTestCasesAreInSyncWithUpstream` or `TestUpstreamTestCases`:
+For `[main] Update mimir-prometheus to ...` PRs this is done automatically. When the vendoring bot opens the PR, the "Sync upstream PromQL test cases" workflow runs both tools, then "Commit synced upstream PromQL test cases" pushes the result to the PR as up to two commits from `mimir-vendoring[bot]` (re-sync, then disable) and comments the list of disabled cases on the PR, mentioning the MQE team if it disabled any cases that weren't already disabled. Review that list before approving, in particular any previously-passing cases that now fail, since those may be real regressions. It only commits while every commit on the PR is from the bot and the branch hasn't changed since the sync ran. While `DRY_RUN` is set in the commit workflow, it only comments what it would commit.
+
+If that didn't happen or failed, or for other branches, fix the PR locally:
 
 1. Check out the PR branch, run `make sync-upstream-promql-tests` and commit the result on its own, so reviewers can see upstream's changes separately from what gets disabled.
 2. Run `make disable-failing-upstream-promql-tests MIMIR_SYNC_BASELINE_REF=HEAD~1` and commit the result. It prints the cases it disabled, grouped by cause and by whether they are new upstream cases or existing ones. Review that list before pushing: a divergent result may be a real bug in Mimir's engine rather than something to disable.
