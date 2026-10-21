@@ -6,7 +6,7 @@
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.2.3@sha256:b97ba4f9b27fe7af16ee3d37e6815783c9d4a51289b6240a9024ec471611ae9b AS helm
 FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
-FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c
+FROM golang:1.26.10-trixie@sha256:7202554ed358a37f41c44e4910ae29bbc5ef0715f289ac637218adbb0ca132dd
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
