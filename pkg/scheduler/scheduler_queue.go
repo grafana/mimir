@@ -41,6 +41,7 @@ func newSchedulerQueue(
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
+	reservationMetrics *queue.ReservationMetrics,
 ) (*schedulerQueue, error) {
 	q, err := queue.New(
 		logger,
@@ -50,6 +51,7 @@ func newSchedulerQueue(
 		maxQueueLength,
 		discardedRequests,
 		enqueueDuration,
+		reservationMetrics,
 	)
 	if err != nil {
 		return nil, err
@@ -108,12 +110,42 @@ func (sq *schedulerQueue) stopping(_ error) error {
 // Enqueue submits a SchedulerRequest, deriving the queue dimension from the
 // request itself and the per-tenant max-queriers from the configured Limits.
 func (sq *schedulerQueue) Enqueue(req *SchedulerRequest, successFn func()) error {
+	return sq.submit(req, successFn, sq.queue.SubmitItemToEnqueue)
+}
+
+// EnqueueIntoSlot is Enqueue for a request that uses one of req.UserID's reserved slots.
+func (sq *schedulerQueue) EnqueueIntoSlot(req *SchedulerRequest, successFn func()) error {
+	return sq.submit(req, successFn, sq.queue.SubmitItemIntoSlot)
+}
+
+func (sq *schedulerQueue) submit(req *SchedulerRequest, successFn func(), submitItem func(tenantID string, item queue.Item, queueDimension string, maxConsumers int, successFn func()) error) error {
 	tenantIDs, err := tenant.TenantIDsFromOrgID(req.UserID)
 	if err != nil {
 		return err
 	}
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, sq.limits.MaxQueriersPerUser)
-	return sq.queue.SubmitItemToEnqueue(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
+	return submitItem(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
+}
+
+// ReserveSlots reserves count queue slots for tenantID. It rejects an invalid tenant ID first,
+// because the queue uses tenantID as a metric label value.
+func (sq *schedulerQueue) ReserveSlots(tenantID string, count int) error {
+	if _, err := tenant.TenantIDsFromOrgID(tenantID); err != nil {
+		return err
+	}
+	return sq.queue.SubmitReserveSlots(tenantID, count)
+}
+
+// ReleaseSlots releases count previously reserved queue slots for tenantID.
+func (sq *schedulerQueue) ReleaseSlots(tenantID string, count int) error {
+	return sq.queue.SubmitReleaseSlots(tenantID, count)
+}
+
+// DeleteUnusedSlotsGauge deletes tenantID's unused reserved slots gauge now if the tenant holds no
+// reserved slot. Otherwise the queue deletes it when the tenant's last reserved slot is released
+// or used.
+func (sq *schedulerQueue) DeleteUnusedSlotsGauge(tenantID string) error {
+	return sq.queue.SubmitDeleteUnusedSlotsGauge(tenantID)
 }
 
 func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) error {

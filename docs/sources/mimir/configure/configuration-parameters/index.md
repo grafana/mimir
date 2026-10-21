@@ -2583,7 +2583,8 @@ The `query_scheduler` block configures the query-scheduler.
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
 # In-flight requests above this limit will fail with HTTP response status code
-# 429.
+# 429. When -query-scheduler.queue-reservation-enabled is true, the reserved
+# queue slots also count against this limit.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
@@ -2605,6 +2606,21 @@ The `query_scheduler` block configures the query-scheduler.
 # Disabling it skips per-tenant peak tracking on enqueue and dequeue.
 # CLI flag: -query-scheduler.max-queue-length-metric-enabled
 [max_queue_length_metric_enabled: <boolean> | default = false]
+
+# (experimental) Enable queue reservation: the query-frontend reserves queue
+# slots for all sub-requests of a parent query before it sends them. A query is
+# then either shed entirely before any sub-request is dispatched, or admitted
+# with no tail sub-request rejected. Requires a query-frontend that also
+# supports queue reservation; has no effect otherwise.
+# CLI flag: -query-scheduler.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
+# (experimental) Maximum time an open reservation waits for its next
+# sub-requests before the query-scheduler releases its unused queue slots.
+# Sub-requests already in the queue stay there. Only applies when
+# -query-scheduler.queue-reservation-enabled is true.
+# CLI flag: -query-scheduler.queue-reservation-timeout
+[queue_reservation_timeout: <duration> | default = 5s]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.

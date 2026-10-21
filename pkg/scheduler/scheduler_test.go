@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/promtest"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -96,7 +99,8 @@ func setupSchedulerWithLogger(t *testing.T, reg prometheus.Registerer, logger lo
 	s, err := NewScheduler(cfg, &limits{queriers: 2}, logger, reg)
 	require.NoError(t, err)
 
-	server := grpc.NewServer()
+	// WaitForHandlers makes Stop wait for the FrontendLoop handlers that a test leaves open.
+	server := grpc.NewServer(grpc.WaitForHandlers(true))
 	schedulerpb.RegisterSchedulerForFrontendServer(server, s)
 	schedulerpb.RegisterSchedulerForQuerierServer(server, s)
 
@@ -115,6 +119,7 @@ func setupSchedulerWithLogger(t *testing.T, reg prometheus.Registerer, logger lo
 	}()
 
 	t.Cleanup(func() {
+		server.Stop()
 		_ = l.Close()
 	})
 
@@ -752,19 +757,284 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	// The "queued" span is never ended for a rejected request, so it is never exported. The
 	// "enqueue" span is, which is why the root query ID has to be on that one.
-	var enqueueSpanRootQueryIDs []string
-	for _, span := range spans {
-		if span.Name != "enqueue" {
-			continue
-		}
-		for _, attr := range span.Attributes {
-			if attr.Key == "root_query_id" {
-				enqueueSpanRootQueryIDs = append(enqueueSpanRootQueryIDs, attr.Value.AsString())
-			}
-		}
-	}
-	require.Equal(t, []string{rejectedRootQueryID}, enqueueSpanRootQueryIDs,
+	require.Equal(t, []string{rejectedRootQueryID}, enqueueSpanRootQueryIDsForTest(),
 		"the rejected request's enqueue span must carry the root query ID")
+}
+
+func TestSchedulerQueueReservation_FullLifecycle(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+
+	fl, initMsg := initFrontendLoopWithResponse(t, frontendClient, "frontend-1")
+	require.True(t, initMsg.QueueReservationSupported)
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+
+	// A reserved ENQUEUE carries its own root query ID, as a plain one does.
+	completing := reservedEnqueue("reservation-1", "test", 2)
+	completing.RootQueryID = "root-2"
+	spanExporter.Reset()
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, fl, "reservation-1", "test", 1))
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completing).Status)
+	require.Equal(t, "root-2", pendingRequestForTest(t, scheduler, 2).RootQueryID)
+	require.Equal(t, []string{"root-2"}, enqueueSpanRootQueryIDsForTest(), "the enqueue span must carry the ENQUEUE's root query ID")
+
+	require.Equal(t, 0.0, testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")))
+	require.Equal(t, 0.0, testutil.ToFloat64(scheduler.unusedReservedSlots.WithLabelValues("test")))
+	for _, queryID := range []uint64{1, 2} {
+		require.Equal(t, "test", pendingRequestForTest(t, scheduler, queryID).UserID)
+	}
+	scheduler.reservationsMu.Lock()
+	frontendReservations := len(scheduler.reservationsByFrontend["frontend-1"])
+	scheduler.reservationsMu.Unlock()
+	require.Zero(t, frontendReservations, "the frontend index must drop a completed reservation")
+
+	// The second sub-request completed the reservation, so the reservation is closed.
+	resp := sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", 3))
+	require.Equal(t, schedulerpb.ERROR, resp.Status)
+	require.Equal(t, errReservationClosed.Error(), resp.Error)
+
+	scheduler.inflightRequestsMu.Lock()
+	insertedForReservation := len(scheduler.schedulerInflightRequests)
+	scheduler.inflightRequestsMu.Unlock()
+	require.Equal(t, 2, insertedForReservation, "the first two sub-requests must have been inserted before the third was rejected")
+}
+
+func TestSchedulerQueueReservation_FrontendDisconnect(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	leaving := initFrontendLoop(t, frontendClient, "frontend-1")
+	staying := initFrontendLoop(t, frontendClient, "frontend-2")
+	otherTenantSlots := scheduler.unusedReservedSlots.WithLabelValues("other")
+
+	// frontend-1 holds two reservations of tenant "test" and one of tenant "other". So the release
+	// sums the slots of one tenant and releases once for each tenant.
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, leaving, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, leaving, reserveMessage("reservation-2", "test", 1)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, leaving, reserveMessage("reservation-3", "other", 2)).Status)
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, leaving, "reservation-1", "test", 10))
+	inserted := pendingRequestForTest(t, scheduler, 10)
+	require.NoError(t, inserted.Ctx.Err())
+	// Reservation IDs belong to the frontend that allocated them, so frontend-2 can use the same ID.
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, staying, reserveMessage("reservation-1", "test", 1)).Status)
+	require.Equal(t, 3.0, unusedReservedSlotsForTest(scheduler))
+	require.Equal(t, 2.0, testutil.ToFloat64(otherTenantSlots))
+
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](leaving))
+
+	// The disconnect counts a reservation after it released the unused slots of every reservation
+	// of the frontend.
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")) == 2 &&
+			testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("other")) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the end of the frontend's last stream must close every reservation of the frontend")
+	require.Equal(t, 1.0, unusedReservedSlotsForTest(scheduler), "the disconnect must release only the unused slots of frontend-1")
+	require.Zero(t, testutil.ToFloat64(otherTenantSlots))
+	require.Equal(t, 1.0, testutil.ToFloat64(scheduler.connectedFrontendClients))
+	require.ErrorIs(t, context.Cause(inserted.Ctx), errFrontendDisconnected, "the disconnect must cancel the sub-requests of the frontend")
+
+	scheduler.reservationsMu.Lock()
+	_, indexed := scheduler.reservationsByFrontend["frontend-1"]
+	scheduler.reservationsMu.Unlock()
+	require.False(t, indexed, "the disconnect must drop the frontend from the index")
+	openReservationForTest(t, scheduler, reservationKey{frontendAddr: "frontend-2", reservationID: "reservation-1"})
+
+	// The release frees the cap. What stays used is the queued sub-request and the reservation of
+	// frontend-2.
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, staying, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant-2)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, staying, reserveMessage("reservation-3", "other", testMaxOutstandingPerTenant)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, staying, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, ReservationID: "reservation-1"}).Status)
+}
+
+func TestSchedulerQueueReservation_CloseReleasesUnusedSlotsAndKeepsInsertedSubRequests(t *testing.T) {
+	testCases := map[string]struct {
+		reservationTimeout time.Duration
+		totalSubRequests   int
+		insertedQueryIDs   []uint64
+		expectedTimeouts   float64
+	}{
+		"abort via CANCEL": {
+			totalSubRequests: testMaxOutstandingPerTenant,
+		},
+		"abort via CANCEL keeps inserted sub-requests": {
+			totalSubRequests: 2,
+			insertedQueryIDs: []uint64{10},
+		},
+		"reservation timeout": {
+			reservationTimeout: 50 * time.Millisecond,
+			totalSubRequests:   testMaxOutstandingPerTenant,
+			expectedTimeouts:   1,
+		},
+		"reservation timeout keeps inserted sub-requests": {
+			reservationTimeout: 50 * time.Millisecond,
+			totalSubRequests:   2,
+			insertedQueryIDs:   []uint64{10},
+			expectedTimeouts:   1,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var opts []func(*Config)
+			if testCase.reservationTimeout > 0 {
+				opts = append(opts, func(cfg *Config) { cfg.QueueReservationTimeout = testCase.reservationTimeout })
+			}
+			scheduler, frontendClient := setupReservationScheduler(t, opts...)
+			fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+			require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", testCase.totalSubRequests)).Status)
+			require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, fl, "reservation-1", "test", testCase.insertedQueryIDs...))
+			var inserted []*SchedulerRequest
+			for _, queryID := range testCase.insertedQueryIDs {
+				inserted = append(inserted, pendingRequestForTest(t, scheduler, queryID))
+			}
+
+			if testCase.reservationTimeout > 0 {
+				// The reaper counts the timeout and then the incomplete reservation, both after it
+				// released the slots.
+				require.Eventually(t, func() bool {
+					return testutil.ToFloat64(scheduler.reservationTimeouts.WithLabelValues("test")) == 1 &&
+						testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")) == 1
+				}, 5*time.Second, 10*time.Millisecond, "the reservation timeout must be counted")
+				require.Zero(t, unusedReservedSlotsForTest(scheduler), "a timed-out reservation must release its unused slots")
+			} else {
+				abort := &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, QueryID: 0, ReservationID: "reservation-1"}
+				require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, abort).Status)
+				require.Zero(t, unusedReservedSlotsForTest(scheduler), "an abort must release every reserved slot")
+			}
+			require.Equal(t, testCase.expectedTimeouts, testutil.ToFloat64(scheduler.reservationTimeouts.WithLabelValues("test")))
+			require.Equal(t, 1.0, testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")))
+			func() {
+				scheduler.reservationsMu.Lock()
+				defer scheduler.reservationsMu.Unlock()
+				require.Empty(t, scheduler.reservationsByFrontend["frontend-1"], "a close must remove the reservation from the frontend index")
+			}()
+
+			// The frontend cancels inserted sub-requests with a CANCEL per query when it needs to.
+			for i, req := range inserted {
+				require.NoError(t, req.Ctx.Err(), "a close releases only the unused slots")
+				require.True(t, isPendingForTest(scheduler, testCase.insertedQueryIDs[i]))
+			}
+
+			// The close released every unused slot. So the cap admits all slots that no queued
+			// sub-request uses.
+			freeSlots := testMaxOutstandingPerTenant - len(testCase.insertedQueryIDs)
+			require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", freeSlots)).Status)
+		})
+	}
+}
+
+func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
+	testCases := map[string]struct {
+		queueReservationDisabled bool
+		reservationID            string
+		userID                   string
+		totalSubRequests         uint64
+		// expectedError is empty when the test does not check the error text.
+		expectedError string
+	}{
+		"queue reservation disabled": {
+			queueReservationDisabled: true,
+			reservationID:            "reservation-1",
+			userID:                   "test",
+			totalSubRequests:         1,
+			expectedError:            errQueueReservationDisabled.Error(),
+		},
+		"zero total sub-requests": {
+			reservationID:    "reservation-1",
+			userID:           "test",
+			totalSubRequests: 0,
+			expectedError:    "invalid total sub-requests count",
+		},
+		"total sub-requests above math.MaxInt": {
+			reservationID:    "reservation-1",
+			userID:           "test",
+			totalSubRequests: math.MaxUint64,
+			expectedError:    "invalid total sub-requests count",
+		},
+		// A CANCEL with an empty reservationID cannot abort a reservation. So RESERVE must not
+		// open one.
+		"empty reservation ID": {
+			reservationID:    "",
+			userID:           "test",
+			totalSubRequests: 1,
+			expectedError:    "invalid reservation ID",
+		},
+		// A tenant ID that is not valid UTF-8 would panic as a metric label value.
+		"tenant ID that is not valid UTF-8": {
+			reservationID:    "reservation-1",
+			userID:           "bad\xff",
+			totalSubRequests: 1,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient := setupReservationScheduler(t, func(cfg *Config) {
+				cfg.QueueReservationEnabled = !testCase.queueReservationDisabled
+			})
+			fl, initMsg := initFrontendLoopWithResponse(t, frontendClient, "frontend-1")
+			require.Equal(t, !testCase.queueReservationDisabled, initMsg.QueueReservationSupported)
+
+			resp := sendFrontendMessage(t, fl, &schedulerpb.FrontendToScheduler{
+				Type:             schedulerpb.RESERVE,
+				ReservationID:    testCase.reservationID,
+				UserID:           testCase.userID,
+				TotalSubRequests: testCase.totalSubRequests,
+			})
+			require.Equal(t, schedulerpb.ERROR, resp.Status)
+			if testCase.expectedError != "" {
+				require.Equal(t, testCase.expectedError, resp.Error)
+			} else {
+				require.NotEmpty(t, resp.Error)
+			}
+
+			require.Zero(t, unusedReservedSlotsForTest(scheduler))
+			scheduler.reservationsMu.Lock()
+			defer scheduler.reservationsMu.Unlock()
+			require.Empty(t, scheduler.openReservations, "a rejected RESERVE must not add a reservation")
+		})
+	}
+}
+
+func TestSchedulerQueueReservation_CleanupMetricsForInactiveUser(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, _ := setupScheduler(t, reg, func(cfg *Config) {
+		cfg.QueueReservationEnabled = true
+	})
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 1)).Status)
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant+1)).Status)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_reservation_unused_slots Number of reserved queue slots that no queued sub-request uses yet.
+		# TYPE cortex_query_scheduler_reservation_unused_slots gauge
+		cortex_query_scheduler_reservation_unused_slots{user="test"} 1
+	`), "cortex_query_scheduler_reservation_unused_slots"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_reservation_discarded_total Total number of queue reservations discarded because the tenant had too many outstanding requests.
+		# TYPE cortex_query_scheduler_reservation_discarded_total counter
+		cortex_query_scheduler_reservation_discarded_total{user="test"} 1
+	`), "cortex_query_scheduler_reservation_discarded_total"))
+	// Every sub-request of the rejected reservation counts as a discarded request.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_query_scheduler_discarded_requests_total Total number of query requests discarded. A rejected queue reservation counts each of its sub-requests.
+		# TYPE cortex_query_scheduler_discarded_requests_total counter
+		cortex_query_scheduler_discarded_requests_total{user="test"} %d
+	`, testMaxOutstandingPerTenant+1)), "cortex_query_scheduler_discarded_requests_total"))
+
+	// The cleanup keeps the unused slots gauge while a reservation is open, so the abort comes first.
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, ReservationID: "reservation-1"}).Status)
+
+	scheduler.cleanupMetricsForInactiveUser("test")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_reservation_unused_slots"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_reservation_discarded_total"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_discarded_requests_total"))
 }
 
 func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
@@ -1036,6 +1306,13 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 }
 
 func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) schedulerpb.SchedulerForFrontend_FrontendLoopClient {
+	loop, _ := initFrontendLoopWithResponse(t, client, frontendAddr)
+	return loop
+}
+
+// initFrontendLoopWithResponse is like initFrontendLoop, but also returns the scheduler's response
+// to INIT so callers can inspect fields on it (e.g. QueueReservationSupported).
+func initFrontendLoopWithResponse(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) (schedulerpb.SchedulerForFrontend_FrontendLoopClient, *schedulerpb.SchedulerToFrontend) {
 	loop, err := client.FrontendLoop(context.Background())
 	require.NoError(t, err)
 
@@ -1049,7 +1326,7 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.OK, resp.Status)
 
-	return loop
+	return loop, resp
 }
 
 func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
@@ -1060,10 +1337,7 @@ func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerier
 	return querierLoop
 }
 func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *schedulerpb.FrontendToScheduler) {
-	require.NoError(t, frontendLoop.Send(req))
-	msg, err := frontendLoop.Recv()
-	require.NoError(t, err)
-	require.Equal(t, schedulerpb.OK, msg.Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, frontendLoop, req).Status)
 }
 
 // If this verification succeeds, there will be leaked goroutine left behind. It will be cleaned once grpc server is shut down.
@@ -1199,4 +1473,710 @@ func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*fr
 	defer f.mu.Unlock()
 
 	return f.httpResponses[queryID], f.grpcResponses[queryID]
+}
+
+func sendFrontendMessage(t *testing.T, fl schedulerpb.SchedulerForFrontend_FrontendLoopClient, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	t.Helper()
+	require.NoError(t, fl.Send(msg))
+	resp, err := fl.Recv()
+	require.NoError(t, err)
+	return resp
+}
+
+func reserveMessage(reservationID string, userID string, totalSubRequests int) *schedulerpb.FrontendToScheduler {
+	return &schedulerpb.FrontendToScheduler{
+		Type:             schedulerpb.RESERVE,
+		ReservationID:    reservationID,
+		UserID:           userID,
+		TotalSubRequests: uint64(totalSubRequests),
+	}
+}
+
+// reservedEnqueue returns a reserved ENQUEUE for queryID in the reservation that reservationID
+// identifies.
+func reservedEnqueue(reservationID string, userID string, queryID uint64) *schedulerpb.FrontendToScheduler {
+	return &schedulerpb.FrontendToScheduler{
+		Type:          schedulerpb.ENQUEUE,
+		ReservationID: reservationID,
+		UserID:        userID,
+		QueryID:       queryID,
+		Payload:       &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
+	}
+}
+
+// sendReservedEnqueues sends one reserved ENQUEUE for each of queryIDs on fl. It stops at the first
+// reply that is not OK and returns that status. Otherwise it returns OK.
+func sendReservedEnqueues(t *testing.T, fl schedulerpb.SchedulerForFrontend_FrontendLoopClient, reservationID string, userID string, queryIDs ...uint64) schedulerpb.SchedulerToFrontendStatus {
+	t.Helper()
+	for _, queryID := range queryIDs {
+		if resp := sendFrontendMessage(t, fl, reservedEnqueue(reservationID, userID, queryID)); resp.Status != schedulerpb.OK {
+			return resp.Status
+		}
+	}
+	return schedulerpb.OK
+}
+
+// startReservedEnqueueForTest claims one slot of the open reservation at key.
+func startReservedEnqueueForTest(t *testing.T, scheduler *Scheduler, key reservationKey) {
+	t.Helper()
+	_, err := scheduler.startReservedEnqueue(key, "test", time.Now())
+	require.NoError(t, err)
+}
+
+func setupReservationScheduler(t *testing.T, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient) {
+	return setupReservationSchedulerWithLogger(t, log.NewNopLogger(), opts...)
+}
+
+func setupReservationSchedulerWithLogger(t *testing.T, logger log.Logger, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient) {
+	scheduler, frontendClient, _ := setupSchedulerWithLogger(t, nil, logger, append([]func(*Config){func(cfg *Config) {
+		cfg.QueueReservationEnabled = true
+	}}, opts...)...)
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+	return scheduler, frontendClient
+}
+
+func TestSchedulerQueueReservation_DuplicateReserveIsRejectedAndReleasesItsSlots(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, schedulerpb.ERROR, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler),
+		"a rejected duplicate RESERVE must release the slots that it reserved")
+
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler))
+	scheduler.reservationsMu.Lock()
+	indexed := len(scheduler.reservationsByFrontend["frontend-1"])
+	scheduler.reservationsMu.Unlock()
+	require.Equal(t, 1, indexed, "a rejected RESERVE must not add an entry to the frontend index")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, ReservationID: "reservation-1"}).Status)
+	require.Equal(t, 0.0, unusedReservedSlotsForTest(scheduler))
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
+}
+
+func TestSchedulerQueueReservation_RejectedReserveLogsOnce(t *testing.T) {
+	logs := &concurrency.SyncBuffer{}
+	_, frontendClient := setupReservationSchedulerWithLogger(t, log.NewLogfmtLogger(logs))
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	// One queued sub-request and two unused slots, so that the log line has distinct counts.
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 3)).Status)
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, fl, "reservation-1", "test", 10))
+
+	const message = "rejected reservation because the tenant has too many outstanding requests"
+	require.NotContains(t, logs.String(), message, "an accepted reservation must not log a rejection")
+
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", 4)).Status)
+
+	require.Equal(t, 1, strings.Count(logs.String(), message), "a rejected reservation must log one line")
+	var rejection string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, message) {
+			rejection = line
+		}
+	}
+	require.Equal(t,
+		fmt.Sprintf(`level=warn msg="%s" tenant=test addr=frontend-1 reservation_id=reservation-2 requested=4 queued=1 reserved=2 max_tenant_queue_size=%d`, message, testMaxOutstandingPerTenant),
+		rejection)
+}
+
+func TestSchedulerQueueReservation_RejectsReservedEnqueue(t *testing.T) {
+	testCases := map[string]struct {
+		queueReservationDisabled bool
+		// reserve makes frontend-1 open reservation-1 for 1 sub-request before the reserved
+		// ENQUEUE.
+		reserve               bool
+		senderAddr            string
+		reservationID         string
+		userID                string
+		expectedError         error
+		expectedReservedSlots float64
+	}{
+		"unknown reservation": {
+			senderAddr:    "frontend-1",
+			reservationID: "reservation-7",
+			userID:        "test",
+			expectedError: errReservationClosed,
+		},
+		// Reservation IDs belong to the frontend that allocated them.
+		"reservation of another frontend": {
+			reserve:               true,
+			senderAddr:            "frontend-2",
+			reservationID:         "reservation-1",
+			userID:                "test",
+			expectedError:         errReservationClosed,
+			expectedReservedSlots: 1,
+		},
+		"another tenant": {
+			reserve:               true,
+			senderAddr:            "frontend-1",
+			reservationID:         "reservation-1",
+			userID:                "other-tenant",
+			expectedError:         errReservationOtherTenant,
+			expectedReservedSlots: 1,
+		},
+		// A reserved ENQUEUE must carry the reservation's tenant.
+		"empty tenant": {
+			reserve:               true,
+			senderAddr:            "frontend-1",
+			reservationID:         "reservation-1",
+			userID:                "",
+			expectedError:         errReservationOtherTenant,
+			expectedReservedSlots: 1,
+		},
+		// With queue reservation disabled, no reservation can be open.
+		"queue reservation disabled": {
+			queueReservationDisabled: true,
+			senderAddr:               "frontend-1",
+			reservationID:            "reservation-1",
+			userID:                   "test",
+			expectedError:            errReservationClosed,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient := setupReservationScheduler(t, func(cfg *Config) {
+				cfg.QueueReservationEnabled = !testCase.queueReservationDisabled
+			})
+			opener := initFrontendLoop(t, frontendClient, "frontend-1")
+			sender := opener
+			if testCase.senderAddr != "frontend-1" {
+				sender = initFrontendLoop(t, frontendClient, testCase.senderAddr)
+			}
+			if testCase.reserve {
+				require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, opener, reserveMessage("reservation-1", "test", 1)).Status)
+			}
+
+			resp := sendFrontendMessage(t, sender, reservedEnqueue(testCase.reservationID, testCase.userID, 10))
+			require.Equal(t, schedulerpb.ERROR, resp.Status)
+			require.Equal(t, testCase.expectedError.Error(), resp.Error)
+
+			scheduler.inflightRequestsMu.Lock()
+			_, pending := scheduler.schedulerInflightRequests[NewSchedulerRequestKey(testCase.senderAddr, 10)]
+			scheduler.inflightRequestsMu.Unlock()
+			require.False(t, pending, "a rejected reserved ENQUEUE must not reach the queue")
+			require.Equal(t, testCase.expectedReservedSlots, unusedReservedSlotsForTest(scheduler))
+
+			if testCase.reserve {
+				// The rejection keeps the reservation, so its own frontend can still use it.
+				require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, opener, "reservation-1", "test", 11))
+			}
+		})
+	}
+}
+
+// enqueueSpanRootQueryIDsForTest returns the root query ID attributes of the exported "enqueue"
+// spans.
+func enqueueSpanRootQueryIDsForTest() []string {
+	var ids []string
+	for _, span := range spanExporter.GetSpans() {
+		if span.Name != "enqueue" {
+			continue
+		}
+		for _, attr := range span.Attributes {
+			if attr.Key == rootqueryid.FieldName {
+				ids = append(ids, attr.Value.AsString())
+			}
+		}
+	}
+	return ids
+}
+
+func TestSchedulerQueueReservation_AbortBeforeReserveIsIgnoredAndTheTimeoutReleases(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+
+	// The abort reaches the scheduler before the RESERVE adds the reservation.
+	scheduler.abortReservation(key.frontendAddr, key.reservationID)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler), "the early abort must not release the slots")
+
+	expireReservation(scheduler, key)
+	require.NoError(t, scheduler.reapExpiredReservations(t.Context()))
+	// The scheduler's own reaper can remove the reservation first. Either reaper counts the timeout
+	// after it released the slots.
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(scheduler.reservationTimeouts.WithLabelValues("test")) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the reservation timeout must be counted")
+	require.Zero(t, unusedReservedSlotsForTest(scheduler), "the reservation timeout must release the slots")
+}
+
+func TestSchedulerQueueReservation_ReservedEnqueueRefreshesTheDeadline(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+
+	// The reservation timeout is an idle timeout, so each sub-request moves the deadline forward.
+	// now is later than the deadline that the RESERVE set, so the move is visible. The test does
+	// not expire the reservation, because the scheduler's own reaper would race it.
+	now := time.Now().Add(time.Hour)
+	res, err := scheduler.startReservedEnqueue(key, "test", now)
+	require.NoError(t, err)
+
+	scheduler.reservationsMu.Lock()
+	defer scheduler.reservationsMu.Unlock()
+	require.Equal(t, now.Add(scheduler.cfg.QueueReservationTimeout), res.deadline)
+}
+
+func TestSchedulerQueueReservation_ReservedEnqueueBeyondTotalSubRequestsIsRejected(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 1)).Status)
+
+	// Each stream can claim a slot before its sub-request reaches the queue. So the claim check
+	// counts in-flight claims, and the second claim must fail.
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	startReservedEnqueueForTest(t, scheduler, key)
+	_, err := scheduler.startReservedEnqueue(key, "test", time.Now())
+	require.ErrorIs(t, err, errReservationOverDelivered)
+}
+
+func TestSchedulerQueueReservation_ReaperKeepsExpiredReservationWithInflightSubRequest(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	res := openReservationForTest(t, scheduler, key)
+	startReservedEnqueueForTest(t, scheduler, key)
+
+	// The scheduler's own reaper also skips this reservation, so the test does not race it.
+	expireReservation(scheduler, key)
+	require.NoError(t, scheduler.reapExpiredReservations(t.Context()))
+
+	require.Same(t, res, openReservationForTest(t, scheduler, key), "the reaper must keep a reservation that has a sub-request in flight")
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler), "the reaper must keep the reservation's slots")
+	require.Zero(t, testutil.ToFloat64(scheduler.reservationTimeouts.WithLabelValues("test")))
+}
+
+func TestSchedulerQueueReservation_SuccessfulReservedEnqueueMovesTheDeadlineForward(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	res := openReservationForTest(t, scheduler, key)
+	startReservedEnqueueForTest(t, scheduler, key)
+
+	// The reaper skips a reservation with an in-flight sub-request, so this deadline stays in the
+	// past until the sub-request ends.
+	scheduler.reservationsMu.Lock()
+	res.deadline = time.Now().Add(-time.Second)
+	scheduler.reservationsMu.Unlock()
+
+	req := newReservedRequestForTest(100)
+	require.NoError(t, scheduler.queue.EnqueueIntoSlot(req, func() { scheduler.addRequestToPending(req) }))
+	before := time.Now()
+	scheduler.finishReservedEnqueue(res, nil)
+
+	scheduler.reservationsMu.Lock()
+	defer scheduler.reservationsMu.Unlock()
+	require.False(t, res.deadline.Before(before.Add(scheduler.cfg.QueueReservationTimeout)),
+		"a successful reserved ENQUEUE must move the deadline forward from the end of its insert")
+}
+
+func TestSchedulerQueueReservation_ExtendDeadlineNeverMovesTheDeadlineBack(t *testing.T) {
+	scheduler := &Scheduler{cfg: Config{QueueReservationTimeout: time.Minute}}
+	base := time.Now()
+	initial := base.Add(scheduler.cfg.QueueReservationTimeout)
+
+	testCases := map[string]struct {
+		now              time.Time
+		expectedDeadline time.Time
+	}{
+		"a later now moves the deadline forward": {
+			now:              base.Add(time.Second),
+			expectedDeadline: base.Add(time.Second).Add(scheduler.cfg.QueueReservationTimeout),
+		},
+		"an earlier now keeps the deadline": {
+			now:              base.Add(-time.Second),
+			expectedDeadline: initial,
+		},
+		"the same now keeps the deadline": {
+			now:              base,
+			expectedDeadline: initial,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			res := &openReservation{deadline: initial}
+			scheduler.reservationsMu.Lock()
+			defer scheduler.reservationsMu.Unlock()
+			scheduler.extendDeadlineLocked(res, testCase.now)
+			require.True(t, testCase.expectedDeadline.Equal(res.deadline), "got %s, want %s", res.deadline, testCase.expectedDeadline)
+		})
+	}
+}
+
+func TestConfig_Validate_RejectsNonPositiveQueueReservationTimeout(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		cfg := Config{}
+		flagext.DefaultValues(&cfg)
+		cfg.QueueReservationEnabled = true
+		cfg.QueueReservationTimeout = timeout
+		require.ErrorIs(t, cfg.Validate(), errInvalidQueueReservationTimeout, "timeout %s", timeout)
+
+		cfg.QueueReservationEnabled = false
+		require.NoError(t, cfg.Validate(), "the timeout is not used when queue reservation is disabled")
+	}
+}
+
+func openReservationForTest(t *testing.T, scheduler *Scheduler, key reservationKey) *openReservation {
+	t.Helper()
+	scheduler.reservationsMu.Lock()
+	defer scheduler.reservationsMu.Unlock()
+	res := scheduler.openReservations[key]
+	require.NotNil(t, res)
+	return res
+}
+
+func unusedReservedSlotsForTest(scheduler *Scheduler) float64 {
+	return testutil.ToFloat64(scheduler.unusedReservedSlots.WithLabelValues("test"))
+}
+
+func newReservedRequestForTest(queryID uint64) *SchedulerRequest {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	return &SchedulerRequest{FrontendAddr: "frontend-1", UserID: "test", QueryID: queryID, Ctx: ctx, CancelFunc: cancel}
+}
+
+func TestSchedulerQueueReservation_CloseDuringInflightSubRequestKeepsSiblingReservation(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", 1)).Status)
+
+	keyA := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	resA := openReservationForTest(t, scheduler, keyA)
+
+	// Reservation A's sub-request claims a slot. Then an abort closes A before the sub-request
+	// reaches the queue.
+	startReservedEnqueueForTest(t, scheduler, keyA)
+	scheduler.abortReservation(keyA.frontendAddr, keyA.reservationID)
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler), "the close must keep the in-flight sub-request's slot")
+
+	// The in-flight sub-request now reaches the queue and uses its slot.
+	req := newReservedRequestForTest(100)
+	require.NoError(t, scheduler.queue.EnqueueIntoSlot(req, func() { scheduler.addRequestToPending(req) }))
+	scheduler.finishReservedEnqueue(resA, nil)
+	require.NoError(t, req.Ctx.Err(), "a sub-request inserted after its reservation closed stays in the queue, as a plain request does")
+	_, err := scheduler.startReservedEnqueue(keyA, "test", time.Now())
+	require.ErrorIs(t, err, errReservationClosed, "the next sub-request of the closed reservation must be rejected")
+
+	// Reservation B is intact.
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, fl, "reservation-2", "test", 200))
+	require.Zero(t, unusedReservedSlotsForTest(scheduler))
+}
+
+// Each stream of the frontend can have one sub-request of the reservation in flight. This test
+// calls startReservedEnqueue and finishReservedEnqueue directly, so it does not need several
+// streams.
+func TestSchedulerQueueReservation_CloseDuringInflightSubRequests(t *testing.T) {
+	testCases := map[string]struct {
+		totalSubRequests int
+		// finishErrs holds one entry for each in-flight sub-request. A nil entry inserts the
+		// sub-request into the queue before it finishes.
+		finishErrs                      []error
+		expectedReservedSlotsAfterClose float64
+		expectedIncomplete              float64
+	}{
+		// The close keeps the failed sub-request's slot, so only the sub-request's handler can
+		// release it.
+		"failed in-flight sub-request releases its slot": {
+			totalSubRequests:                2,
+			finishErrs:                      []error{errors.New("boom")},
+			expectedReservedSlotsAfterClose: 1,
+			expectedIncomplete:              1,
+		},
+		// Every sub-request of the reservation is in the queue. So the reservation is not
+		// incomplete.
+		"last in-flight sub-request reaches the queue": {
+			totalSubRequests:                1,
+			finishErrs:                      []error{nil},
+			expectedReservedSlotsAfterClose: 1,
+			expectedIncomplete:              0,
+		},
+		"two failed in-flight sub-requests count one incomplete reservation": {
+			totalSubRequests:                3,
+			finishErrs:                      []error{errors.New("boom"), errors.New("boom")},
+			expectedReservedSlotsAfterClose: 2,
+			expectedIncomplete:              1,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient := setupReservationScheduler(t)
+			fl := initFrontendLoop(t, frontendClient, "frontend-1")
+			require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", testCase.totalSubRequests)).Status)
+
+			key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+			res := openReservationForTest(t, scheduler, key)
+			for range testCase.finishErrs {
+				startReservedEnqueueForTest(t, scheduler, key)
+			}
+			scheduler.abortReservation(key.frontendAddr, key.reservationID)
+			require.Equal(t, testCase.expectedReservedSlotsAfterClose, unusedReservedSlotsForTest(scheduler),
+				"the close must keep the slots of the in-flight sub-requests")
+
+			for i, finishErr := range testCase.finishErrs {
+				if finishErr == nil {
+					req := newReservedRequestForTest(uint64(100 + i))
+					require.NoError(t, scheduler.queue.EnqueueIntoSlot(req, func() { scheduler.addRequestToPending(req) }))
+				}
+				scheduler.finishReservedEnqueue(res, finishErr)
+			}
+			require.Zero(t, unusedReservedSlotsForTest(scheduler))
+			require.Equal(t, testCase.expectedIncomplete, testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")),
+				"the last in-flight sub-request counts the reservation as incomplete, once")
+		})
+	}
+}
+
+func TestSchedulerQueueReservation_FailedSubRequestInOpenReservationClosesItAndReleasesTheRest(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 3)).Status)
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, fl, "reservation-1", "test", 10))
+	inserted := pendingRequestForTest(t, scheduler, 10)
+
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	res := openReservationForTest(t, scheduler, key)
+	startReservedEnqueueForTest(t, scheduler, key)
+	scheduler.finishReservedEnqueue(res, errors.New("boom"))
+
+	require.Zero(t, unusedReservedSlotsForTest(scheduler), "a failed sub-request must release the reservation's remaining slots")
+	require.NoError(t, inserted.Ctx.Err(), "a failed reservation keeps the sub-requests it already inserted")
+	require.True(t, isPendingForTest(scheduler, 10))
+	require.Equal(t, 1.0, testutil.ToFloat64(scheduler.incompleteReservations.WithLabelValues("test")))
+	scheduler.reservationsMu.Lock()
+	require.NotContains(t, scheduler.openReservations, key)
+	scheduler.reservationsMu.Unlock()
+}
+
+func TestQueueErrorResponse(t *testing.T) {
+	testCases := map[string]struct {
+		err           error
+		expectedError string
+		expectedCode  schedulerpb.SchedulerToFrontendStatus
+	}{
+		"no error":                  {err: nil, expectedCode: schedulerpb.OK},
+		"queue stopped":             {err: queue.ErrStopped, expectedCode: schedulerpb.SHUTTING_DOWN},
+		"too many requests":         {err: queue.ErrTooManyRequests, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"rejected reservation":      {err: &queue.ReservationRejectedError{}, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"any other error":           {err: errors.New("boom"), expectedCode: schedulerpb.ERROR, expectedError: "boom"},
+		"wrapped queue stopped":     {err: fmt.Errorf("wrapped: %w", queue.ErrStopped), expectedCode: schedulerpb.SHUTTING_DOWN},
+		"wrapped too many requests": {err: fmt.Errorf("wrapped: %w", queue.ErrTooManyRequests), expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			resp := queueErrorResponse(testCase.err)
+			require.Equal(t, testCase.expectedCode, resp.Status)
+			require.Equal(t, testCase.expectedError, resp.Error)
+		})
+	}
+}
+
+func pendingRequestForTest(t *testing.T, scheduler *Scheduler, queryID uint64) *SchedulerRequest {
+	t.Helper()
+	scheduler.inflightRequestsMu.Lock()
+	defer scheduler.inflightRequestsMu.Unlock()
+	req := scheduler.schedulerInflightRequests[NewSchedulerRequestKey("frontend-1", queryID)]
+	require.NotNil(t, req)
+	return req
+}
+
+func isPendingForTest(scheduler *Scheduler, queryID uint64) bool {
+	scheduler.inflightRequestsMu.Lock()
+	defer scheduler.inflightRequestsMu.Unlock()
+	_, ok := scheduler.schedulerInflightRequests[NewSchedulerRequestKey("frontend-1", queryID)]
+	return ok
+}
+
+func TestSchedulerQueueReservation_StreamCloseKeepsTheReservationWhileTheFrontendHasAnotherStream(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	opener := initFrontendLoop(t, frontendClient, "frontend-1")
+	other := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, opener, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, opener, "reservation-1", "test", 10))
+	inserted := pendingRequestForTest(t, scheduler, 10)
+
+	require.NoError(t, opener.CloseSend())
+	test.Poll(t, 5*time.Second, float64(1), func() interface{} {
+		return testutil.ToFloat64(scheduler.connectedFrontendClients)
+	})
+	require.Equal(t, 1.0, unusedReservedSlotsForTest(scheduler), "the reservation belongs to the frontend, so one closed stream releases nothing")
+	require.NoError(t, inserted.Ctx.Err())
+
+	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, other, "reservation-1", "test", 11))
+	require.Zero(t, unusedReservedSlotsForTest(scheduler))
+	require.True(t, isPendingForTest(scheduler, 11))
+}
+
+func TestSchedulerQueueReservation_CleanupKeepsReservedSlotsWhileReservationIsOpen(t *testing.T) {
+	scheduler, frontendClient := setupReservationScheduler(t)
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+
+	scheduler.cleanupMetricsForInactiveUser("test")
+
+	// The reservation still holds 2 slots. A deleted gauge would restart at 0 and go negative on
+	// release.
+	require.Equal(t, 2.0, unusedReservedSlotsForTest(scheduler))
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, ReservationID: "reservation-1"}).Status)
+	require.Zero(t, unusedReservedSlotsForTest(scheduler))
+}
+
+// setupReservationSchedulerWithFastCleanup returns a started scheduler whose inactive-user cleanup
+// runs every 10ms and purges a tenant after 100ms of inactivity. Its reservations outlive that
+// limit. It returns after the cleanup purged tenant "test", which holds the open reservation
+// "reservation-1" for 2 sub-requests. A test holds the returned mutex to stop the cleanup while it
+// checks a counter that it created. The returned counter counts the cleanups of tenant "test".
+func setupReservationSchedulerWithFastCleanup(t *testing.T) (*Scheduler, *sync.Mutex, *atomic.Int64) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
+	cfg.QueueReservationEnabled = true
+	cfg.QueueReservationTimeout = time.Hour
+	scheduler, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	// The default cleanup waits for minutes, so the test uses its own. The default one stays idle
+	// in the scheduler's subservices.
+	pause := &sync.Mutex{}
+	cleanups := &atomic.Int64{}
+	activeUsers := util.NewActiveUsersCleanupService(10*time.Millisecond, 100*time.Millisecond, func(user string) {
+		pause.Lock()
+		defer pause.Unlock()
+		if user == "test" {
+			cleanups.Add(1)
+		}
+		scheduler.cleanupMetricsForInactiveUser(user)
+	})
+	scheduler.activeUsers = activeUsers
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), activeUsers))
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), scheduler))
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), activeUsers))
+	})
+
+	require.Equal(t, schedulerpb.OK, scheduler.createReservation("frontend-1", reserveMessage("reservation-1", "test", 2)).Status)
+	// The rejected RESERVE creates a discardedReservations counter that the cleanup deletes, so the
+	// test can see the cleanup.
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, scheduler.createReservation("frontend-1", reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
+	require.Eventually(t, func() bool {
+		return testutil.CollectAndCount(scheduler.discardedReservations) == 0
+	}, 5*time.Second, 10*time.Millisecond, "the cleanup must purge the inactive tenant")
+	return scheduler, pause, cleanups
+}
+
+// expireReservation moves the deadline of the reservation at key into the past. The scheduler's own
+// reaper can then close it before the test calls reapExpiredReservations, unless a sub-request is
+// in flight. So a test must not assume that its own reap closes the reservation. It waits for the
+// timeout counter instead.
+func expireReservation(scheduler *Scheduler, key reservationKey) {
+	scheduler.reservationsMu.Lock()
+	defer scheduler.reservationsMu.Unlock()
+	scheduler.openReservations[key].deadline = time.Now().Add(-time.Second)
+}
+
+// requireCountersWhilePaused runs check while the cleanup cannot run. A failed check still
+// releases pause, so the cleanup service can stop.
+func requireCountersWhilePaused(pause *sync.Mutex, check func()) {
+	pause.Lock()
+	defer pause.Unlock()
+	check()
+}
+
+func requireReservationCountersDeletedEventually(t *testing.T, scheduler *Scheduler) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return testutil.CollectAndCount(scheduler.reservationTimeouts) == 0 &&
+			testutil.CollectAndCount(scheduler.incompleteReservations) == 0
+	}, 5*time.Second, 10*time.Millisecond, "a later cleanup must delete the counters that the reservation created")
+}
+
+func TestSchedulerQueueReservation_TimeoutAfterTenantCleanupKeepsTenantActive(t *testing.T) {
+	scheduler, pause, _ := setupReservationSchedulerWithFastCleanup(t)
+
+	requireCountersWhilePaused(pause, func() {
+		expireReservation(scheduler, reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"})
+		require.NoError(t, scheduler.reapExpiredReservations(t.Context()))
+		// The scheduler's own reaper can win the race, so the test waits for either.
+		require.Eventually(t, func() bool {
+			return testutil.CollectAndCount(scheduler.reservationTimeouts) == 1
+		}, 5*time.Second, 10*time.Millisecond)
+	})
+	requireReservationCountersDeletedEventually(t, scheduler)
+}
+
+func TestSchedulerQueueReservation_AbortAfterTenantCleanupKeepsTenantActive(t *testing.T) {
+	scheduler, pause, _ := setupReservationSchedulerWithFastCleanup(t)
+
+	requireCountersWhilePaused(pause, func() {
+		scheduler.abortReservation("frontend-1", "reservation-1")
+		require.Equal(t, 1, testutil.CollectAndCount(scheduler.incompleteReservations))
+	})
+	requireReservationCountersDeletedEventually(t, scheduler)
+}
+
+func TestSchedulerQueueReservation_FailedSubRequestAfterTenantCleanupKeepsTenantActive(t *testing.T) {
+	scheduler, pause, _ := setupReservationSchedulerWithFastCleanup(t)
+	key := reservationKey{frontendAddr: "frontend-1", reservationID: "reservation-1"}
+	res := openReservationForTest(t, scheduler, key)
+	startReservedEnqueueForTest(t, scheduler, key)
+
+	requireCountersWhilePaused(pause, func() {
+		scheduler.finishReservedEnqueue(res, errors.New("boom"))
+		require.Equal(t, 1, testutil.CollectAndCount(scheduler.incompleteReservations))
+	})
+	requireReservationCountersDeletedEventually(t, scheduler)
+}
+
+func TestSchedulerQueueReservation_ActivityAfterTenantCleanupMarksTenantActive(t *testing.T) {
+	testCases := map[string]struct {
+		activity func(t *testing.T, scheduler *Scheduler)
+	}{
+		// Both sub-requests arrive, so no incomplete count marks the tenant active. Only the
+		// successFn of each insert does.
+		"sub-request insert": {
+			activity: func(t *testing.T, scheduler *Scheduler) {
+				for _, queryID := range []uint64{10, 11} {
+					require.NoError(t, scheduler.enqueueRequest(context.Background(), "frontend-1", reservedEnqueue("reservation-1", "test", queryID)))
+				}
+			},
+		},
+		"admitted reserve": {
+			activity: func(t *testing.T, scheduler *Scheduler) {
+				require.Equal(t, schedulerpb.OK, scheduler.createReservation("frontend-1", reserveMessage("reservation-3", "test", 1)).Status)
+			},
+		},
+		"rejected reserve": {
+			activity: func(t *testing.T, scheduler *Scheduler) {
+				require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, scheduler.createReservation("frontend-1", reserveMessage("reservation-3", "test", testMaxOutstandingPerTenant)).Status)
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, _, cleanups := setupReservationSchedulerWithFastCleanup(t)
+			before := cleanups.Load()
+
+			testCase.activity(t, scheduler)
+			require.Eventually(t, func() bool {
+				return cleanups.Load() > before
+			}, 5*time.Second, 10*time.Millisecond, "the tenant must be active again, so a later cleanup runs for it")
+		})
+	}
 }

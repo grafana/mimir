@@ -834,3 +834,241 @@ func getNextTenantForConsumer(qb *queueBroker, lastTenantIndex int, consumerID s
 	}
 	return lastTenantIndex
 }
+
+func newTestQueueBroker(maxTenantQueueSize int) *queueBroker {
+	return newQueueBroker(maxTenantQueueSize, 0)
+}
+
+func TestQueueBroker_ReserveForTenant(t *testing.T) {
+	testCases := map[string]struct {
+		maxTenantQueueSize int
+		queuedItems        int
+		reserved           int
+		count              int
+		expectedErr        error
+		expectedReserved   int
+	}{
+		"reservation that fills the cap consumes it immediately": {
+			maxTenantQueueSize: 5,
+			reserved:           5,
+			count:              1,
+			expectedErr:        ErrTooManyRequests,
+			expectedReserved:   5,
+		},
+		"queued items count against the cap": {
+			maxTenantQueueSize: 5,
+			queuedItems:        1,
+			reserved:           4,
+			count:              1,
+			expectedErr:        ErrTooManyRequests,
+			expectedReserved:   4,
+		},
+		// A non-positive count is a caller bug, not a full queue, so it must not report
+		// ErrTooManyRequests.
+		"zero count": {
+			maxTenantQueueSize: 5,
+			count:              0,
+			expectedErr:        errInvalidReservationCount,
+		},
+		"negative count": {
+			maxTenantQueueSize: 5,
+			count:              -1,
+			expectedErr:        errInvalidReservationCount,
+		},
+		// The occupancy is already 1, so occupancy+count wraps negative at count == math.MaxInt. A
+		// check that adds instead of subtracts would then admit the reservation.
+		"count above the cap does not overflow": {
+			maxTenantQueueSize: 5,
+			queuedItems:        1,
+			count:              math.MaxInt,
+			expectedErr:        ErrTooManyRequests,
+		},
+		// The occupancy is math.MaxInt, so occupancy+1 wraps negative.
+		"cap of math.MaxInt does not overflow": {
+			maxTenantQueueSize: math.MaxInt,
+			reserved:           math.MaxInt,
+			count:              1,
+			expectedErr:        ErrTooManyRequests,
+			expectedReserved:   math.MaxInt,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			qb := newTestQueueBroker(testCase.maxTenantQueueSize)
+			for i := 0; i < testCase.queuedItems; i++ {
+				require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: i}, 0))
+			}
+			if testCase.reserved > 0 {
+				require.NoError(t, qb.reserveForTenant("tenant-a", testCase.reserved))
+			}
+
+			require.ErrorIs(t, qb.reserveForTenant("tenant-a", testCase.count), testCase.expectedErr)
+
+			// A rejected reservation must not change the reserved count.
+			if testCase.expectedReserved == 0 {
+				require.NotContains(t, qb.reservedByTenant, "tenant-a")
+			} else {
+				require.Equal(t, testCase.expectedReserved, qb.reservedByTenant["tenant-a"])
+			}
+			// A reservation does not create the tenant. Only a queued item does.
+			require.Equal(t, testCase.queuedItems > 0, qb.tenantConsumerAssignments.tenantsByID["tenant-a"] != nil)
+		})
+	}
+}
+
+func TestQueueBroker_ReserveForTenant_RejectionReportsOccupancy(t *testing.T) {
+	qb := newTestQueueBroker(6)
+	require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: "plain-1"}, 0))
+	require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: "plain-2"}, 0))
+	require.NoError(t, qb.reserveForTenant("tenant-a", 3))
+
+	err := qb.reserveForTenant("tenant-a", 2)
+
+	var rejected *ReservationRejectedError
+	require.ErrorAs(t, err, &rejected)
+	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 2, Reserved: 3, MaxTenantQueueSize: 6}, *rejected)
+	require.ErrorIs(t, err, ErrTooManyRequests)
+}
+
+func TestQueueBroker_ReleaseForTenant(t *testing.T) {
+	const maxTenantQueueSize = 5
+
+	testCases := map[string]struct {
+		reserved          int
+		release           int
+		expectedLeaked    int
+		expectedRemaining int
+	}{
+		"exact release returns the occupancy to its prior value": {
+			reserved: 5,
+			release:  5,
+		},
+		"partial release keeps the remaining slots": {
+			reserved:          5,
+			release:           2,
+			expectedRemaining: 3,
+		},
+		// The tenant's reservation is then 0, not negative.
+		"over-release clamps at zero and reports the leak": {
+			reserved:       2,
+			release:        5,
+			expectedLeaked: 3,
+		},
+		"release for an unknown tenant reports a full leak": {
+			release:        3,
+			expectedLeaked: 3,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			qb := newTestQueueBroker(maxTenantQueueSize)
+			if testCase.reserved > 0 {
+				require.NoError(t, qb.reserveForTenant("tenant-a", testCase.reserved))
+			}
+
+			require.Equal(t, testCase.expectedLeaked, qb.releaseForTenant("tenant-a", testCase.release))
+
+			if testCase.expectedRemaining == 0 {
+				require.NotContains(t, qb.reservedByTenant, "tenant-a")
+			} else {
+				require.Equal(t, testCase.expectedRemaining, qb.reservedByTenant["tenant-a"])
+			}
+			// The tenant has no queued item, so no tenant state stays after the release.
+			require.Nil(t, qb.tenantConsumerAssignments.tenantsByID["tenant-a"])
+			require.NotContains(t, qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder(), "tenant-a")
+
+			// The release frees the cap that the remaining slots do not hold.
+			require.NoError(t, qb.reserveForTenant("tenant-a", maxTenantQueueSize-testCase.expectedRemaining))
+		})
+	}
+}
+
+func TestQueueBroker_EnqueueItemBack_RejectsWhenReservationsFillCap(t *testing.T) {
+	testCases := map[string]struct {
+		maxTenantQueueSize int
+	}{
+		"reservations fill the cap": {maxTenantQueueSize: 2},
+		// The occupancy is math.MaxInt, so occupancy+1 wraps negative.
+		"cap of math.MaxInt does not overflow": {maxTenantQueueSize: math.MaxInt},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			qb := newTestQueueBroker(testCase.maxTenantQueueSize)
+			require.NoError(t, qb.reserveForTenant("tenant-a", testCase.maxTenantQueueSize))
+
+			err := qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: "plain-1"}, 0)
+			require.ErrorIs(t, err, ErrTooManyRequests)
+			require.Equal(t, 0, qb.itemCount())
+
+			// A rejected enqueue adds no item, so it must not register the tenant either.
+			require.Nil(t, qb.tenantConsumerAssignments.tenantsByID["tenant-a"])
+			require.NotContains(t, qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder(), "tenant-a")
+		})
+	}
+}
+
+func TestQueueBroker_EnqueueItemFront_DoesNotTouchReservations(t *testing.T) {
+	// cap=2 makes 1 queued item plus 1 reserved slot fill the cap. So the second reservation fails
+	// only if enqueueItemFront keeps the reservation.
+	qb := newTestQueueBroker(2)
+	require.NoError(t, qb.reserveForTenant("tenant-a", 1))
+
+	// enqueueItemFront is the re-enqueue path for a dequeued-but-undeliverable item; it must not
+	// consume or otherwise alter reservedByTenant.
+	require.NoError(t, qb.enqueueItemFront(&tenantItem{tenantID: "tenant-a", item: "item-1"}, 0))
+
+	err := qb.reserveForTenant("tenant-a", 1)
+	require.ErrorIs(t, err, ErrTooManyRequests)
+}
+
+func dequeueForTest(t *testing.T, qb *queueBroker, conn *ConsumerWorkerConn) *tenantItem {
+	t.Helper()
+	dequeued, _, _, err := qb.dequeueItemForConsumer(NewConsumerWorkerDequeueRequest(conn, FirstTenant()))
+	require.NoError(t, err)
+	return dequeued
+}
+
+func TestQueueBroker_ReservedSlotsSurviveTenantQueueDraining(t *testing.T) {
+	// cap=4 is the only cap for which both checks pass on correct code. A dropped reservation then
+	// makes the first check fail: reserving 3 would succeed on an occupancy of 0.
+	qb := newTestQueueBroker(4)
+	conn := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1")
+	qb.addConsumerWorkerConn(conn)
+
+	require.NoError(t, qb.reserveForTenant("tenant-a", 3))
+	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-1"}, 0))
+	require.Equal(t, "item-1", dequeueForTest(t, qb, conn).item)
+
+	// The queue is now empty, but 2 reserved slots are still unused. A further reservation must
+	// still count them, which proves that the dequeue did not drop them.
+	require.ErrorIs(t, qb.reserveForTenant("tenant-a", 3), ErrTooManyRequests)
+	require.NoError(t, qb.reserveForTenant("tenant-a", 2))
+
+	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-2"}, 0))
+	dequeued := dequeueForTest(t, qb, conn)
+	require.NotNil(t, dequeued, "an item inserted after the tenant's queue drained must stay dispatchable")
+	require.Equal(t, "item-2", dequeued.item)
+}
+
+func TestQueueBroker_RejectedPlainEnqueueDoesNotDuplicateTenantOrderEntry(t *testing.T) {
+	qb := newTestQueueBroker(2)
+	conn := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1")
+	qb.addConsumerWorkerConn(conn)
+
+	require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-x", item: "x-1"}, 0))
+	require.NoError(t, qb.reserveForTenant("tenant-a", 2))
+	require.ErrorIs(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: "plain-1"}, 0), ErrTooManyRequests)
+	require.Equal(t, "x-1", dequeueForTest(t, qb, conn).item)
+	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "a-1"}, 0))
+
+	count := 0
+	for _, id := range qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder() {
+		if id == "tenant-a" {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "tenant-a must appear in the tenant order exactly once")
+}

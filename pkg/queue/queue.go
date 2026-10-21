@@ -27,10 +27,41 @@ const (
 var (
 	ErrInvalidTenantID            = errors.New("invalid tenant id")
 	ErrTooManyRequests            = errors.New("too many outstanding requests")
+	ErrNoReservation              = errors.New("no outstanding reservation for tenant")
 	ErrStopped                    = errors.New("queue is stopped")
 	ErrConsumerShuttingDown       = errors.New("consumer has informed the scheduler it is shutting down")
 	ErrConsumerWorkerDisconnected = errors.New("consumer worker has disconnected")
+
+	errInvalidReservationCount = errors.New("a reservation count must be greater than 0")
 )
+
+// ReservationRejectedError is the error of a reservation that the per-tenant queue cap rejects. It
+// wraps ErrTooManyRequests. It carries the tenant's occupancy, so the caller can log it outside
+// dispatcherLoop.
+type ReservationRejectedError struct {
+	Requested          int
+	Queued             int
+	Reserved           int
+	MaxTenantQueueSize int
+}
+
+func (e *ReservationRejectedError) Error() string {
+	return ErrTooManyRequests.Error()
+}
+
+func (e *ReservationRejectedError) Unwrap() error {
+	return ErrTooManyRequests
+}
+
+// ReservationMetrics holds the metrics of queue reservations.
+type ReservationMetrics struct {
+	// Size observes the slot count of each accepted reservation.
+	Size prometheus.Histogram
+	// Discarded counts the reservations that the per-tenant queue cap rejected, per user.
+	Discarded *prometheus.CounterVec
+	// UnusedSlots is the number of reserved slots that no queued item uses yet, per user.
+	UnusedSlots *prometheus.GaugeVec
+}
 
 // Item is the opaque type the queue dispatches between producers and
 // consumers. Callers cast to the concrete type they enqueued.
@@ -68,10 +99,21 @@ type Queue struct {
 	enqueueDuration   prometheus.Histogram
 	maxQueueLength    *MaxQueueLengthGauge // per user; nil when the metric is disabled
 
+	reservationSize       prometheus.Histogram
+	discardedReservations *prometheus.CounterVec // per user
+	unusedReservedSlots   *prometheus.GaugeVec   // per user
+
+	// deferredUnusedSlotsGaugeDeletes holds the tenants whose unusedReservedSlots gauge must be
+	// deleted when their last reserved slot is released or used. The inactive-user cleanup adds a
+	// tenant here when it still holds slots. The gauge cannot be deleted at that point: a deleted
+	// gauge restarts at 0, so the later release of the held slots would take it below 0. Only
+	// dispatcherLoop uses it.
+	deferredUnusedSlotsGaugeDeletes map[string]struct{}
+
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	itemsToEnqueue                        chan itemToEnqueue
+	producerOperations                    chan producerOperation
 	consumerWorkerOperations              chan *consumerWorkerOperation
 	waitingDequeueRequests                chan *ConsumerWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
@@ -148,15 +190,35 @@ func (qwo *consumerWorkerOperation) AwaitConsumerWorkerConnUpdate() error {
 	}
 }
 
-type itemToEnqueue struct {
+type producerOpKind int
+
+const (
+	// opEnqueue is the zero value, so a producerOperation that does not set op is a plain enqueue.
+	opEnqueue producerOpKind = iota
+	opReserveSlots
+	opReleaseSlots
+	opEnqueueIntoSlot
+	opDeleteUnusedSlotsGauge
+)
+
+// producerOperation is one operation that dispatcherLoop applies to the queue. op selects the
+// operation, and each operation uses a subset of the fields.
+type producerOperation struct {
+	op             producerOpKind
 	tenantID       string
 	queueDimension string
 	item           Item
 	maxConsumers   int
+	count          int // used by opReserveSlots and opReleaseSlots
 	successFn      func()
 	errChan        chan error
 }
 
+// New creates a Queue. It rejects an enqueue or a reservation that would make a tenant's queued
+// items plus unused reserved slots exceed maxOutstandingPerTenant.
+//
+// A caller that never reserves slots can pass a nil reservationMetrics. The queue then uses
+// reservation metrics that no registry exposes.
 func New(
 	log log.Logger,
 	maxOutstandingPerTenant int,
@@ -165,7 +227,16 @@ func New(
 	maxQueueLength *MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
+	reservationMetrics *ReservationMetrics,
 ) (*Queue, error) {
+	if reservationMetrics == nil {
+		reservationMetrics = &ReservationMetrics{
+			Size:        prometheus.NewHistogram(prometheus.HistogramOpts{Name: "unregistered_reservation_size"}),
+			Discarded:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "unregistered_reservation_discarded"}, []string{"user"}),
+			UnusedSlots: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "unregistered_reservation_unused_slots"}, []string{"user"}),
+		}
+	}
+
 	q := &Queue{
 		// settings
 		log:                     log,
@@ -178,12 +249,17 @@ func New(
 		maxQueueLength:           maxQueueLength,
 		discardedRequests:        discardedRequests,
 		enqueueDuration:          enqueueDuration,
+		reservationSize:          reservationMetrics.Size,
+		discardedReservations:    reservationMetrics.Discarded,
+		unusedReservedSlots:      reservationMetrics.UnusedSlots,
+
+		deferredUnusedSlotsGaugeDeletes: map[string]struct{}{},
 
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 
-		itemsToEnqueue:                        make(chan itemToEnqueue),
+		producerOperations:                    make(chan producerOperation),
 		consumerWorkerOperations:              make(chan *consumerWorkerOperation),
 		waitingDequeueRequests:                make(chan *ConsumerWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
@@ -239,10 +315,11 @@ func (q *Queue) dispatcherLoop() {
 		case consumerWorkerOp := <-q.consumerWorkerOperations:
 			// Need to attempt to dispatch queries only if consumer-worker operation results in a resharding
 			needToDispatchQueries = q.processConsumerWorkerOperation(consumerWorkerOp)
-		case toEnqueue := <-q.itemsToEnqueue:
-			err := q.enqueueItemInternal(toEnqueue)
-			toEnqueue.errChan <- err
-			if err == nil {
+		case producerOp := <-q.producerOperations:
+			err := q.processProducerOperation(producerOp)
+			producerOp.errChan <- err
+			// Only an enqueue adds an item, so the other ops cannot make a waiting dequeue succeed.
+			if err == nil && (producerOp.op == opEnqueue || producerOp.op == opEnqueueIntoSlot) {
 				needToDispatchQueries = true
 			}
 		case waitingDequeueReq := <-q.waitingDequeueRequests:
@@ -314,31 +391,90 @@ func (q *Queue) dispatcherLoop() {
 	}
 }
 
-// enqueueItemInternal processes an item into the Queue's internal queue structure.
+// processProducerOperation applies one producerOperation that dispatcherLoop received.
 //
-// If the item is enqueued successFn is called before the item can be dispatched to a consumer.
-func (q *Queue) enqueueItemInternal(r itemToEnqueue) error {
-	ti := tenantItem{
-		tenantID:       r.tenantID,
-		queueDimension: r.queueDimension,
-		item:           r.item,
-	}
-	err := q.queueBroker.enqueueItemBack(&ti, r.maxConsumers)
-	if err != nil {
-		if errors.Is(err, ErrTooManyRequests) {
-			q.discardedRequests.WithLabelValues(r.tenantID).Inc()
+// For opEnqueue and opEnqueueIntoSlot, if the item is enqueued successFn is called before the
+// item can be dispatched to a consumer.
+func (q *Queue) processProducerOperation(r producerOperation) error {
+	switch r.op {
+	case opReserveSlots:
+		err := q.queueBroker.reserveForTenant(r.tenantID, r.count)
+		if err != nil {
+			if errors.Is(err, ErrTooManyRequests) {
+				q.discardedReservations.WithLabelValues(r.tenantID).Inc()
+				q.discardedRequests.WithLabelValues(r.tenantID).Add(float64(r.count))
+			}
+			return err
 		}
-		return err
-	}
-	if r.successFn != nil {
-		r.successFn()
-	}
+		q.reservationSize.Observe(float64(r.count))
+		q.unusedReservedSlots.WithLabelValues(r.tenantID).Add(float64(r.count))
+		// A new reservation cancels a deferred delete. The caller's next inactive-tenant cleanup
+		// deletes the gauge.
+		delete(q.deferredUnusedSlotsGaugeDeletes, r.tenantID)
+		return nil
 
-	q.queueLength.WithLabelValues(r.tenantID).Inc()
-	if q.maxQueueLength != nil {
-		q.maxQueueLength.inc(r.tenantID)
+	case opReleaseSlots:
+		leaked := q.queueBroker.releaseForTenant(r.tenantID, r.count)
+		q.unusedReservedSlots.WithLabelValues(r.tenantID).Sub(float64(r.count - leaked))
+		q.deleteDeferredUnusedSlotsGauge(r.tenantID)
+		if leaked > 0 {
+			level.Warn(q.log).Log(
+				"msg", "reservation release exceeded outstanding reservation; this is a bug",
+				"tenant", r.tenantID, "leaked", leaked,
+			)
+		}
+		return nil
+
+	case opDeleteUnusedSlotsGauge:
+		if q.queueBroker.reservedByTenant[r.tenantID] == 0 {
+			q.unusedReservedSlots.DeleteLabelValues(r.tenantID)
+		} else {
+			// The caller already forgot the inactive tenant, so no later cleanup deletes the gauge.
+			// deleteDeferredUnusedSlotsGauge deletes it when the tenant's last reserved slot is
+			// released or used.
+			q.deferredUnusedSlotsGaugeDeletes[r.tenantID] = struct{}{}
+		}
+		return nil
+
+	case opEnqueue, opEnqueueIntoSlot:
+		intoSlot := r.op == opEnqueueIntoSlot
+		ti := tenantItem{
+			tenantID:       r.tenantID,
+			queueDimension: r.queueDimension,
+			item:           r.item,
+		}
+		var err error
+		if intoSlot {
+			err = q.queueBroker.enqueueReservedItemBack(&ti, r.maxConsumers)
+		} else {
+			err = q.queueBroker.enqueueItemBack(&ti, r.maxConsumers)
+		}
+		if err != nil {
+			if errors.Is(err, ErrTooManyRequests) {
+				q.discardedRequests.WithLabelValues(r.tenantID).Inc()
+			}
+			return err
+		}
+		if intoSlot {
+			q.unusedReservedSlots.WithLabelValues(r.tenantID).Dec()
+			q.deleteDeferredUnusedSlotsGauge(r.tenantID)
+		}
+		// Update the per-tenant series before successFn marks the tenant active. In the other
+		// order, a cleanup can delete the series between the mark and the update. The update then
+		// recreates series that no cleanup deletes.
+		// MaxQueueLengthGauge.dec ignores a deleted tenant, so a dequeue does not recreate its depth.
+		q.queueLength.WithLabelValues(r.tenantID).Inc()
+		if q.maxQueueLength != nil {
+			q.maxQueueLength.inc(r.tenantID)
+		}
+		if r.successFn != nil {
+			r.successFn()
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown queue op: %v", r.op)
 	}
-	return nil
 }
 
 // trySendNextItemForConsumer attempts to dequeue and send a request for a waiting consumer-worker connection.
@@ -402,22 +538,87 @@ func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequ
 // maxConsumers is tenant-specific value to compute which consumers should handle requests for this tenant.
 // It is passed to SubmitItemToEnqueue because the value can change between calls.
 func (q *Queue) SubmitItemToEnqueue(tenantID string, item Item, queueDimension string, maxConsumers int, successFn func()) error {
+	return q.submitItem(opEnqueue, tenantID, item, queueDimension, maxConsumers, successFn)
+}
+
+// SubmitReserveSlots reserves count queue slots for tenantID against the per-tenant queue cap.
+// The cap check counts the queued items and the slots that other reservations of the tenant
+// hold. The caller blocks until dispatcherLoop has processed the reservation and returned its
+// result. Returns a *ReservationRejectedError if the reservation would exceed the cap,
+// ErrInvalidTenantID if tenantID is empty, errInvalidReservationCount if count is less than 1,
+// or ErrStopped if the Queue service stopped before dispatcherLoop received the reservation.
+//
+// The reservation does not create the tenant. SubmitItemIntoSlot creates it when the first item
+// is inserted. A reservation enqueues no item, so it does not observe enqueueDuration.
+func (q *Queue) SubmitReserveSlots(tenantID string, count int) error {
+	return q.submitProducerOperation(producerOperation{op: opReserveSlots, tenantID: tenantID, count: count})
+}
+
+// SubmitReleaseSlots releases count previously reserved slots for tenantID, for example when a
+// reservation closes before all its items are inserted. A release larger than the reserved
+// slots is a caller bug: the queue logs a warning and sets the tenant's reserved slots to zero.
+// The caller blocks until dispatcherLoop has processed the release and returned its result.
+// Returns ErrStopped if the Queue service stopped before dispatcherLoop received the release.
+func (q *Queue) SubmitReleaseSlots(tenantID string, count int) error {
+	return q.submitProducerOperation(producerOperation{op: opReleaseSlots, tenantID: tenantID, count: count})
+}
+
+// SubmitDeleteUnusedSlotsGauge deletes the unusedReservedSlots gauge of tenantID now when the
+// tenant holds no reserved slot. Otherwise, the queue deletes the gauge when the tenant's last
+// reserved slot is released or used. A new reservation before that cancels the delete. The
+// inactive-user cleanup calls it. The delete runs on the dispatcher goroutine with every other
+// update of the gauge, so a release cannot take a deleted gauge negative. The caller blocks until
+// dispatcherLoop has processed the delete and returned its result. Returns ErrStopped if the Queue
+// service stopped before dispatcherLoop received the delete.
+func (q *Queue) SubmitDeleteUnusedSlotsGauge(tenantID string) error {
+	return q.submitProducerOperation(producerOperation{op: opDeleteUnusedSlotsGauge, tenantID: tenantID})
+}
+
+// deleteDeferredUnusedSlotsGauge deletes the unusedReservedSlots gauge of tenantID if a cleanup
+// deferred its delete and the tenant now holds no reserved slot. Only dispatcherLoop calls it.
+func (q *Queue) deleteDeferredUnusedSlotsGauge(tenantID string) {
+	if _, ok := q.deferredUnusedSlotsGaugeDeletes[tenantID]; !ok || q.queueBroker.reservedByTenant[tenantID] > 0 {
+		return
+	}
+	delete(q.deferredUnusedSlotsGaugeDeletes, tenantID)
+	q.unusedReservedSlots.DeleteLabelValues(tenantID)
+}
+
+// SubmitItemIntoSlot inserts item for tenantID and uses one of tenantID's reserved slots. The
+// caller blocks until dispatcherLoop has processed the insert and returned its result. If item is
+// successfully enqueued, successFn is called before any consumer can receive it. Returns
+// ErrNoReservation if tenantID has no reserved slot, or ErrStopped if the Queue service stopped
+// before dispatcherLoop received the insert.
+//
+// queueDimension and maxConsumers have the same meaning as for SubmitItemToEnqueue.
+func (q *Queue) SubmitItemIntoSlot(tenantID string, item Item, queueDimension string, maxConsumers int, successFn func()) error {
+	return q.submitItem(opEnqueueIntoSlot, tenantID, item, queueDimension, maxConsumers, successFn)
+}
+
+// submitItem submits an opEnqueue or opEnqueueIntoSlot operation and observes enqueueDuration.
+func (q *Queue) submitItem(op producerOpKind, tenantID string, item Item, queueDimension string, maxConsumers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	r := itemToEnqueue{
+	return q.submitProducerOperation(producerOperation{
+		op:             op,
 		tenantID:       tenantID,
 		queueDimension: queueDimension,
 		item:           item,
 		maxConsumers:   maxConsumers,
 		successFn:      successFn,
-		errChan:        make(chan error),
-	}
+	})
+}
+
+// submitProducerOperation sends r to dispatcherLoop and blocks until dispatcherLoop returns its
+// result. Returns ErrStopped if the Queue service stopped before dispatcherLoop received r.
+func (q *Queue) submitProducerOperation(r producerOperation) error {
+	r.errChan = make(chan error)
 
 	select {
-	case q.itemsToEnqueue <- r:
+	case q.producerOperations <- r:
 		return <-r.errChan
 	case <-q.stopCompleted:
 		return ErrStopped
