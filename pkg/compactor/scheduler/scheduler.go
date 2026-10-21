@@ -368,7 +368,11 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return nil, errNotRunning
 		}
 	}
-	s.metrics.jobsCompleted.WithLabelValues(jobTypePlan).Inc()
+	planJobType := compactorschedulerpb.JOB_TYPE_PLANNING
+	if isBackfill {
+		planJobType = compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING
+	}
+	s.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(planJobType)).Inc()
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
 }
 
@@ -460,7 +464,11 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 			return nil, errFailedCompletingJob
 		}
 		if removed {
-			s.metrics.jobsCompleted.WithLabelValues(jobTypeCompaction).Inc()
+			jobType := compactorschedulerpb.JOB_TYPE_COMPACTION
+			if isBackfillCompactionJobKey(req.Key.Id) {
+				jobType = compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION
+			}
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(jobType)).Inc()
 			level.Info(logger).Log("msg", "compaction job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
