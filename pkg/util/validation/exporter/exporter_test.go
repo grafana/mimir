@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -572,4 +573,28 @@ cortex_limited_query_rule_expires_at{id="limit-1",user="tenant-with-id-and-expir
 cortex_limited_query_rule_expires_at{id="limit-dup",user="tenant-with-duplicate-id"} %d
 `, earlier.Unix(), later.Unix(), earlier.Unix())
 	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedLimitedExpiry), "cortex_limited_query_rule_expires_at"))
+}
+
+func TestOverridesExporter_blockedLabelNamesForLabelValueBytes(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-with-blocks": {
+			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs", "message"},
+		},
+		"tenant-with-duplicates-and-name": {
+			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs", "logs", model.MetricNameLabel, ""},
+		},
+		"tenant-without-blocks": {},
+	}
+
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	expected := `
+# HELP cortex_limits_blocked_label_names_for_label_value_bytes Set to 1 for each label name blocked for a tenant by blocked_label_names_for_label_value_bytes.
+# TYPE cortex_limits_blocked_label_names_for_label_value_bytes gauge
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-blocks"} 1
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-duplicates-and-name"} 1
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="message",user="tenant-with-blocks"} 1
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expected), "cortex_limits_blocked_label_names_for_label_value_bytes"))
 }

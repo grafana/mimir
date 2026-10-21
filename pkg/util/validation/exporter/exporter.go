@@ -160,6 +160,7 @@ type OverridesExporter struct {
 	defaultsDescription       *prometheus.Desc
 	blockedQueryRuleExpiresAt *prometheus.Desc
 	limitedQueryRuleExpiresAt *prometheus.Desc
+	blockedLabelNames         *prometheus.Desc
 	logger                    log.Logger
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
@@ -203,6 +204,12 @@ func NewOverridesExporter(
 			"cortex_limited_query_rule_expires_at",
 			"Unix timestamp of the earliest expires_at among a tenant's limited-query (rate-limit) rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
 			[]string{"user", "id"},
+			nil,
+		),
+		blockedLabelNames: prometheus.NewDesc(
+			"cortex_limits_blocked_label_names_for_label_value_bytes",
+			"Set to 1 for each label name blocked for a tenant by blocked_label_names_for_label_value_bytes.",
+			[]string{"user", "label_name"},
 			nil,
 		),
 		exportedMetrics: setupExportedMetrics(enabledMetrics, config.ExtraMetrics),
@@ -372,6 +379,7 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- oe.overrideDescription
 	ch <- oe.blockedQueryRuleExpiresAt
 	ch <- oe.limitedQueryRuleExpiresAt
+	ch <- oe.blockedLabelNames
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
@@ -433,6 +441,20 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 	for key, expiresAt := range limitedExpiry {
 		ch <- prometheus.MustNewConstMetric(oe.limitedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
+	}
+
+	for tenant, limits := range allLimits {
+		exported := map[string]struct{}{}
+		for _, name := range limits.BlockedLabelNamesForLabelValueBytes {
+			if name == "" || name == model.MetricNameLabel {
+				continue
+			}
+			if _, ok := exported[name]; ok {
+				continue
+			}
+			exported[name] = struct{}{}
+			ch <- prometheus.MustNewConstMetric(oe.blockedLabelNames, prometheus.GaugeValue, 1, tenant, name)
+		}
 	}
 }
 
