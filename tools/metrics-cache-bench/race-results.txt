@@ -1,0 +1,1 @@
+ok  	github.com/grafana/mimir/tools/metrics-cache-bench	1.360s

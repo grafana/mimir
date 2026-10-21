@@ -1,0 +1,28 @@
+=== RUN   TestCache
+=== RUN   TestCache/text/identity
+=== RUN   TestCache/text/gzip
+=== RUN   TestCache/openmetrics/identity
+=== RUN   TestCache/openmetrics/gzip
+=== RUN   TestCache/protobuf/identity
+=== RUN   TestCache/protobuf/gzip
+=== RUN   TestCache/errors_not_cached
+--- PASS: TestCache (0.01s)
+    --- PASS: TestCache/text/identity (0.00s)
+    --- PASS: TestCache/text/gzip (0.00s)
+    --- PASS: TestCache/openmetrics/identity (0.00s)
+    --- PASS: TestCache/openmetrics/gzip (0.00s)
+    --- PASS: TestCache/protobuf/identity (0.00s)
+    --- PASS: TestCache/protobuf/gzip (0.00s)
+    --- PASS: TestCache/errors_not_cached (0.00s)
+=== RUN   TestFixture
+    cache_test.go:206: text/identity: body=9185337 bytes, buffer-capacity=16777216 bytes, content-type=text/plain; version=0.0.4; charset=utf-8; escaping=underscores
+    cache_test.go:206: text/gzip: body=737782 bytes, buffer-capacity=1048576 bytes, content-type=text/plain; version=0.0.4; charset=utf-8; escaping=underscores
+    cache_test.go:206: openmetrics/identity: body=9441163 bytes, buffer-capacity=16777216 bytes, content-type=application/openmetrics-text; version=1.0.0; charset=utf-8; escaping=underscores
+    cache_test.go:206: openmetrics/gzip: body=734627 bytes, buffer-capacity=1048576 bytes, content-type=application/openmetrics-text; version=1.0.0; charset=utf-8; escaping=underscores
+    cache_test.go:206: protobuf/identity: body=7151798 bytes, buffer-capacity=9437184 bytes, content-type=application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited; escaping=underscores
+    cache_test.go:206: protobuf/gzip: body=993369 bytes, buffer-capacity=1048576 bytes, content-type=application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited; escaping=underscores
+--- PASS: TestFixture (1.41s)
+=== RUN   TestCacheFreshness
+--- PASS: TestCacheFreshness (0.00s)
+PASS
+ok  	github.com/grafana/mimir/tools/metrics-cache-bench	1.724s

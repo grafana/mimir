@@ -1,0 +1,26 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/tools/metrics-cache-bench
+cpu: Apple M3 Pro
+BenchmarkMetricsHTTP/identity/uncached-11         	      20	 175020373 ns/op	 298405400 cpu-ns/op	46539976 B/op	  548079 allocs/op
+BenchmarkMetricsHTTP/identity/uncached-11         	      20	 181326685 ns/op	 302555850 cpu-ns/op	46540205 B/op	  548079 allocs/op
+BenchmarkMetricsHTTP/identity/uncached-11         	      20	 168329177 ns/op	 292060000 cpu-ns/op	46544557 B/op	  548080 allocs/op
+BenchmarkMetricsHTTP/identity/uncached-11         	      20	 169983085 ns/op	 295104300 cpu-ns/op	46544519 B/op	  548080 allocs/op
+BenchmarkMetricsHTTP/identity/uncached-11         	      20	 184401485 ns/op	 303005650 cpu-ns/op	46541064 B/op	  548078 allocs/op
+BenchmarkMetricsHTTP/identity/cached_20_per_minute-11         	      20	  32897485 ns/op	  53723750 cpu-ns/op	16021205 B/op	  109243 allocs/op
+BenchmarkMetricsHTTP/identity/cached_20_per_minute-11         	      20	  36438194 ns/op	  60055700 cpu-ns/op	16022941 B/op	  109246 allocs/op
+BenchmarkMetricsHTTP/identity/cached_20_per_minute-11         	      20	  32588319 ns/op	  54422450 cpu-ns/op	16020400 B/op	  109244 allocs/op
+BenchmarkMetricsHTTP/identity/cached_20_per_minute-11         	      20	  34109942 ns/op	  57035100 cpu-ns/op	16022322 B/op	  109244 allocs/op
+BenchmarkMetricsHTTP/identity/cached_20_per_minute-11         	      20	  34687521 ns/op	  55178200 cpu-ns/op	16022919 B/op	  109245 allocs/op
+BenchmarkMetricsHTTP/gzip/uncached-11                         	      20	 173014696 ns/op	 275835000 cpu-ns/op	47553641 B/op	  546211 allocs/op
+BenchmarkMetricsHTTP/gzip/uncached-11                         	      20	 175089267 ns/op	 283178750 cpu-ns/op	47445947 B/op	  546209 allocs/op
+BenchmarkMetricsHTTP/gzip/uncached-11                         	      20	 174461442 ns/op	 276948300 cpu-ns/op	47387240 B/op	  546206 allocs/op
+BenchmarkMetricsHTTP/gzip/uncached-11                         	      20	 177422240 ns/op	 282657200 cpu-ns/op	47391569 B/op	  546206 allocs/op
+BenchmarkMetricsHTTP/gzip/uncached-11                         	      20	 178253417 ns/op	 275914700 cpu-ns/op	47548766 B/op	  546209 allocs/op
+BenchmarkMetricsHTTP/gzip/cached_20_per_minute-11             	      20	  32973838 ns/op	  50889050 cpu-ns/op	 9893668 B/op	  109249 allocs/op
+BenchmarkMetricsHTTP/gzip/cached_20_per_minute-11             	      20	  33834692 ns/op	  53938500 cpu-ns/op	 9896241 B/op	  109251 allocs/op
+BenchmarkMetricsHTTP/gzip/cached_20_per_minute-11             	      20	  37549919 ns/op	  60138950 cpu-ns/op	 9947921 B/op	  109249 allocs/op
+BenchmarkMetricsHTTP/gzip/cached_20_per_minute-11             	      20	  36863388 ns/op	  57723950 cpu-ns/op	 9949906 B/op	  109251 allocs/op
+BenchmarkMetricsHTTP/gzip/cached_20_per_minute-11             	      20	  40024202 ns/op	  60238900 cpu-ns/op	 9949657 B/op	  109250 allocs/op
+PASS
+ok  	github.com/grafana/mimir/tools/metrics-cache-bench	51.511s
