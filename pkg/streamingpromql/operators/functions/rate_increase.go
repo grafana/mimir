@@ -156,7 +156,10 @@ func CalculateHistogramDelta(hHead, hTail []promql.HPoint, emitAnnotation types.
 		return promql.HPoint{}, promql.HPoint{}, nil, 0, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta = lastPoint.H.CopyToSchema(desiredSchema)
+	delta, err = lastPoint.H.CopyToSchema(desiredSchema)
+	if err != nil {
+		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
+	}
 	_, _, nhcbBoundsReconciled, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
@@ -208,7 +211,10 @@ func CalculateHistogramDelta(hHead, hTail []promql.HPoint, emitAnnotation types.
 	}
 
 	if delta.Schema != desiredSchema {
-		delta = delta.CopyToSchema(desiredSchema)
+		delta, err = delta.CopyToSchema(desiredSchema)
+		if err != nil {
+			return promql.HPoint{}, promql.HPoint{}, nil, 0, err
+		}
 	}
 	return firstPoint, lastPoint, delta, fpHistCount, nil
 }
