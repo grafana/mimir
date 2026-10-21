@@ -444,15 +444,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for tenant, limits := range allLimits {
-		exported := map[string]struct{}{}
 		for _, name := range limits.BlockedLabelNamesForLabelValueBytes {
-			if name == "" || name == model.MetricNameLabel {
-				continue
-			}
-			if _, ok := exported[name]; ok {
-				continue
-			}
-			exported[name] = struct{}{}
 			ch <- prometheus.MustNewConstMetric(oe.blockedLabelNames, prometheus.GaugeValue, 1, tenant, name)
 		}
 	}

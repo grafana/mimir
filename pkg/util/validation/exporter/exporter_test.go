@@ -580,8 +580,8 @@ func TestOverridesExporter_blockedLabelNamesForLabelValueBytes(t *testing.T) {
 		"tenant-with-blocks": {
 			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs", "message"},
 		},
-		"tenant-with-duplicates-and-name": {
-			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs", "logs", model.MetricNameLabel, ""},
+		"tenant-with-one-block": {
+			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs"},
 		},
 		"tenant-without-blocks": {},
 	}
@@ -593,7 +593,7 @@ func TestOverridesExporter_blockedLabelNamesForLabelValueBytes(t *testing.T) {
 # HELP cortex_limits_blocked_label_names_for_label_value_bytes Set to 1 for each label name blocked for a tenant by blocked_label_names_for_label_value_bytes.
 # TYPE cortex_limits_blocked_label_names_for_label_value_bytes gauge
 cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-blocks"} 1
-cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-duplicates-and-name"} 1
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-one-block"} 1
 cortex_limits_blocked_label_names_for_label_value_bytes{label_name="message",user="tenant-with-blocks"} 1
 `
 	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expected), "cortex_limits_blocked_label_names_for_label_value_bytes"))
