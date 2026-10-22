@@ -278,9 +278,6 @@ func newBlockedLabelNames(names []string) blockedLabelNames {
 	}
 	set := make(blockedLabelNames, len(names))
 	for _, name := range names {
-		if name == model.MetricNameLabel {
-			continue
-		}
 		set[name] = struct{}{}
 	}
 	return set
