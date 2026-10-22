@@ -6,6 +6,9 @@
 FROM golang:1.27.3-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c AS go-base
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
+# Override toolchain directive in go.mod, to ensure the image's Go version is used.
+# Be aware that the official Go Dockerfiles already do this, but let's be explicit.
+# https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
 
 FROM go-base AS rebuilt-tools
