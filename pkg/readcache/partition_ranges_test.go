@@ -491,7 +491,7 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 			makeTSForHash("metric_c", 7),
 			makeTSForHash("metric_d", 2),
 		}
-		pr.recordSampleBatch("user-1", ts)
+		pr.recordSampleBatch("user-1", ts, nil)
 
 		// Sum of per-range EwmaRate.newEvents must equal total
 		// samples pushed in (3+5+7+2 = 17). Anything less would
@@ -533,7 +533,7 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 			makeTSForHash("a", 1), makeTSForHash("b", 1), makeTSForHash("c", 1),
 			makeTSForHash("d", 1), makeTSForHash("e", 1), makeTSForHash("f", 1),
 		}
-		pr.recordSampleBatch("user-1", ts)
+		pr.recordSampleBatch("user-1", ts, nil)
 
 		pr.tickSampleRates()
 
@@ -555,7 +555,7 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 
 		// Push a burst, then tick until rate decays toward zero.
 		ts := []mimirpb.PreallocTimeseries{makeTSForHash("burst", 1000)}
-		pr.recordSampleBatch("user-1", ts)
+		pr.recordSampleBatch("user-1", ts, nil)
 		pr.tickSampleRates()
 
 		current, _ := pr.adminSnapshot()
@@ -595,7 +595,7 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 		// zero residue, then move the range off this partition.
 		pr.recordSampleBatch("user-1", []mimirpb.PreallocTimeseries{
 			makeTSForHash("metric", 1),
-		})
+		}, nil)
 
 		// Range moves to another partition; on our side it falls
 		// into historical until residue clears.
@@ -628,8 +628,8 @@ func TestPartitionRanges_TenantScopedCountsAndRates(t *testing.T) {
 	pr.setRangesForTenant("tenant-a", []assignment.HashRange{fullRange})
 	pr.setRangesForTenant("tenant-b", []assignment.HashRange{fullRange})
 
-	pr.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 3)})
-	pr.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 7)})
+	pr.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 3)}, nil)
+	pr.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared_metric", 7)}, nil)
 	require.True(t, pr.applyWalkResultForTenant("tenant-a", []assignment.HashRange{fullRange}, []int64{11}, []string{`{__name__="tenant_a"}`}))
 	require.True(t, pr.applyWalkResultForTenant("tenant-b", []assignment.HashRange{fullRange}, []int64{22}, []string{`{__name__="tenant_b"}`}))
 	pr.tickSampleRates()
@@ -704,7 +704,7 @@ func TestPartitionRanges_RecordSampleBatchByMetric(t *testing.T) {
 	slices.SortFunc(ranges, func(a, b assignment.HashRange) int { return cmp.Compare(a.Lo, b.Lo) })
 	pr := newPartitionRanges()
 	pr.setRanges(ranges)
-	pr.recordSampleBatch(userID, batch)
+	pr.recordSampleBatch(userID, batch, nil)
 
 	want := map[assignment.HashRange]int64{}
 	for _, ts := range batch {

@@ -615,8 +615,11 @@ func appendTenantAdminSnapshotLocked(current, historical []hashRangeCount, tenan
 // this matches the existing cortex_readcache_samples_ingested_total
 // counter so an operator can compare per-second rates here against
 // per-partition rates there for sanity.
-func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb.PreallocTimeseries) {
-	if len(timeseries) == 0 {
+//
+// The series hashed, whose owned series tokens the store gave when it
+// appended to them, are counted by them, and their labels aren't read.
+func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb.PreallocTimeseries, hashed *pushHashes) {
+	if len(timeseries) == 0 && (hashed == nil || len(hashed.samples) == 0) {
 		return
 	}
 	pr.mu.RLock()
@@ -632,26 +635,37 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 	if len(state.currentRanges) == 0 {
 		return
 	}
+	rangeIndex := func(hash uint32) int {
+		// currentRanges is sorted by Lo and non-overlapping (the rebalancer's assignment guarantees this).
+		return sort.Search(len(state.currentRanges), func(i int) bool {
+			return state.currentRanges[i].Lo > hash
+		}) - 1
+	}
+	if hashed != nil {
+		for _, series := range hashed.samples {
+			if idx := rangeIndex(series.hash); idx >= 0 {
+				if r := state.currentRanges[idx]; r.Contains(series.hash) {
+					if rate := state.sampleRates[r]; rate != nil {
+						rate.Add(series.n)
+					}
+				}
+			}
+		}
+	}
 	// The locality hash's top bits are the metric name's, so a metric's series hash into one interval, and a range
 	// that holds the whole interval counts them all: their labels are hashed only for a metric that ranges split.
 	// A request's series of a metric come one after the other.
 	hasher := localityHasher{user: mimirpb.ShardByUser(userID)}
 	var (
-		metric     string
-		metricLo   uint32
-		known      bool
-		whole      bool
-		wholeRate  *util_math.EwmaRate
-		rangeIndex = func(hash uint32) int {
-			// currentRanges is sorted by Lo and non-overlapping (the rebalancer's assignment guarantees this).
-			return sort.Search(len(state.currentRanges), func(i int) bool {
-				return state.currentRanges[i].Lo > hash
-			}) - 1
-		}
+		metric    string
+		metricLo  uint32
+		known     bool
+		whole     bool
+		wholeRate *util_math.EwmaRate
 	)
-	for _, ts := range timeseries {
+	for i, ts := range timeseries {
 		n := int64(len(ts.Samples) + len(ts.Histograms))
-		if n == 0 {
+		if n == 0 || hashed != nil && i < len(hashed.known) && hashed.known[i] {
 			continue
 		}
 		if name := metricNameOf(ts.Labels); !known || name != metric {
@@ -689,6 +703,28 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 		}
 	}
 }
+
+// pushHashes are the owned series tokens of the series of a push the store appended to, which recordSampleBatch
+// counts their samples by.
+type pushHashes struct {
+	// By the index of the series in the push's, for a push of decoded series.
+	known   []bool
+	samples []hashedSamples
+}
+
+// hashedSamples are the samples of a series with its owned series token.
+type hashedSamples struct {
+	hash uint32
+	n    int64
+}
+
+func (h *pushHashes) reset(series int) {
+	h.known = slices.Grow(h.known[:0], series)[:series]
+	clear(h.known)
+	h.samples = h.samples[:0]
+}
+
+var pushHashesPool = sync.Pool{New: func() any { return &pushHashes{} }}
 
 // localityHasher is mimirpb.ShardByMetricNameLocality for consecutive series, which share their first labels when they
 // are of a metric: the FNV state after the labels the series has in common with the previous one is taken up from

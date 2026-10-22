@@ -78,21 +78,37 @@ type WriteRequestTimeseriesPush struct {
 	// Floats, when set, appends the float samples of the series it already has without App, which then gets the
 	// other series only. It isn't used with ActiveSeries, which it doesn't update.
 	Floats FloatsAppender
+	// IngestedOwnedHash, when set, is told the owned series token of each series Floats appends a sample to, by its
+	// index: what hashing the series' labels would give, without it.
+	IngestedOwnedHash func(series int, ownedHash uint32)
+	// Record, when set with Floats, is the request read in place, in place of Timeseries: Floats appends the floats of
+	// the series it has without them being decoded, and Decode decodes the others, which are the series of the
+	// request for the rest of the push.
+	Record *store.RW2Record
+	Decode func(indices []int) ([]mimirpb.PreallocTimeseries, error)
 }
 
 // FloatsAppender appends float samples to the series it has, like the seriesstore engine's AppendFloats: it returns
 // the indices of the series it didn't handle, and the samples it ingested.
 type FloatsAppender interface {
 	AppendFloats(timeseries []mimirpb.PreallocTimeseries, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink store.FloatSink) (leftover []int, ingested int, err error)
+	AppendRW2(record *store.RW2Record, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink store.FloatSink) (leftover []int, ingested int, err error)
 }
 
 // floatsErrorSink classifies the errors of a FloatsAppender like those of the appender's samples.
 type floatsErrorSink struct {
 	timeseries   []mimirpb.PreallocTimeseries
+	record       *store.RW2Record
 	errProcessor *mimir_storage.SoftAppendErrorProcessor
+	ownedHash    func(series int, ownedHash uint32)
 }
 
 func (s floatsErrorSink) Error(series int, err error, timestampMs int64) bool {
+	if s.record != nil {
+		// Built only for an error, which is rare.
+		lbls, _ := s.record.Series(series)
+		return s.errProcessor.ProcessErr(err, timestampMs, lbls)
+	}
 	return s.errProcessor.ProcessErr(err, timestampMs, s.timeseries[series].Labels)
 }
 
@@ -101,6 +117,36 @@ func (floatsErrorSink) Ingested(int, labels.Labels, storage.SeriesRef) {}
 func (floatsErrorSink) NeedsLabels() bool { return false }
 
 func (floatsErrorSink) IngestedRef(int, storage.SeriesRef) bool { return true }
+
+func (s floatsErrorSink) IngestedOwnedHash(series int, ownedHash uint32) {
+	if s.ownedHash != nil {
+		s.ownedHash(series, ownedHash)
+	}
+}
+
+// floatsTimeRange is the range of the timestamps of the samples a FloatsAppender appends, outside which they are
+// rejected.
+func floatsTimeRange(p WriteRequestTimeseriesPush, startAppend time.Time) (minTimestampMs, maxTimestampMs int64) {
+	maxTimestampMs = startAppend.Add(p.Limits.CreationGracePeriod(p.UserID)).UnixMilli()
+	minTimestampMs = int64(math.MinInt64)
+	if p.Limits.PastGracePeriod(p.UserID) > 0 {
+		minTimestampMs = startAppend.Add(-p.Limits.PastGracePeriod(p.UserID)).Add(-p.Limits.OutOfOrderTimeWindow(p.UserID)).UnixMilli()
+	}
+	return minTimestampMs, maxTimestampMs
+}
+
+// appendRecordFirst appends what p.Floats handles of p.Record, and returns the other series decoded, which are left to
+// the appender, in the order of the record.
+func appendRecordFirst(p WriteRequestTimeseriesPush, startAppend time.Time, stats *PushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor) ([]mimirpb.PreallocTimeseries, error) {
+	minTimestampMs, maxTimestampMs := floatsTimeRange(p, startAppend)
+	sink := floatsErrorSink{record: p.Record, errProcessor: errProcessor, ownedHash: p.IngestedOwnedHash}
+	leftover, ingested, err := p.Floats.AppendRW2(p.Record, minTimestampMs, maxTimestampMs, startAppend.UnixMilli(), p.Source == mimirpb.OTLP, sink)
+	stats.SucceededSamplesCount += ingested
+	if err != nil || len(leftover) == 0 {
+		return nil, err
+	}
+	return p.Decode(leftover)
+}
 
 // appendFloatsFirst appends what p.Floats handles of the request, and returns the series left to the appender, in
 // the order of the request: a series may be created by one that comes before it.
@@ -115,12 +161,8 @@ func appendFloatsFirst(p WriteRequestTimeseriesPush, startAppend time.Time, stat
 	if len(fast) == 0 {
 		return p.Timeseries, nil
 	}
-	maxTimestampMs := startAppend.Add(p.Limits.CreationGracePeriod(p.UserID)).UnixMilli()
-	minTimestampMs := int64(math.MinInt64)
-	if p.Limits.PastGracePeriod(p.UserID) > 0 {
-		minTimestampMs = startAppend.Add(-p.Limits.PastGracePeriod(p.UserID)).Add(-p.Limits.OutOfOrderTimeWindow(p.UserID)).UnixMilli()
-	}
-	sink := floatsErrorSink{timeseries: p.Timeseries, errProcessor: errProcessor}
+	minTimestampMs, maxTimestampMs := floatsTimeRange(p, startAppend)
+	sink := floatsErrorSink{timeseries: p.Timeseries, errProcessor: errProcessor, ownedHash: p.IngestedOwnedHash}
 	leftover, ingested, err := p.Floats.AppendFloats(p.Timeseries, fast, minTimestampMs, maxTimestampMs, startAppend.UnixMilli(), p.Source == mimirpb.OTLP, sink)
 	stats.SucceededSamplesCount += ingested
 	if err != nil {
@@ -196,8 +238,24 @@ func PushWriteRequestTimeseries(ctx context.Context, p WriteRequestTimeseriesPus
 	)
 
 	timeseries := p.Timeseries
+	if p.Record != nil && (p.Floats == nil || p.ActiveSeries != nil) {
+		// Without Floats, all of the record goes to the appender.
+		all := make([]int, p.Record.Len())
+		for i := range all {
+			all[i] = i
+		}
+		decoded, err := p.Decode(all)
+		if err != nil {
+			return PushWriteRequestTimeseriesResult{Err: wrapOrAnnotateWithUser(err, p.UserID)}
+		}
+		timeseries, p.Record = decoded, nil
+	}
 	if p.Floats != nil && p.ActiveSeries == nil {
-		rest, err := appendFloatsFirst(p, startAppend, &stats, &errProcessor)
+		first := appendFloatsFirst
+		if p.Record != nil {
+			first = appendRecordFirst
+		}
+		rest, err := first(p, startAppend, &stats, &errProcessor)
 		if err != nil {
 			if rbErr := p.App.Rollback(); rbErr != nil {
 				level.Warn(p.Logger).Log("msg", "failed to rollback appender on error", "user", p.UserID, "err", rbErr)

@@ -136,6 +136,37 @@ func TestAppendRW2AppendsWhatDecodingDoes(t *testing.T) {
 	require.Equal(t, 500, ingested)
 }
 
+// ownedHashSink is told the owned series tokens of the series that got samples.
+type ownedHashSink struct {
+	rw2Sink
+	hashes map[int]uint32
+}
+
+func (s *ownedHashSink) IngestedOwnedHash(series int, ownedHash uint32) { s.hashes[series] = ownedHash }
+
+// A sink that wants the owned series tokens of the series that got samples is told them, both for a decoded request
+// and for a record: what hashing the series' labels gives.
+func TestAppendFloatsReportsOwnedHashes(t *testing.T) {
+	const existing, total = 300, 400
+	engine := rw2Engine(t, existing)
+	content := rw2Records(t, 0, total, total, 1000)[0]
+
+	sink := &ownedHashSink{hashes: map[int]uint32{}}
+	leftover, _ := appendRW2(t, engine, content, sink)
+	require.Len(t, leftover, total-existing)
+	require.Len(t, sink.hashes, existing)
+	for series, hash := range sink.hashes {
+		require.Equal(t, secondaryHash(rw2Labels(series)), hash, "series %d", series)
+	}
+
+	sink = &ownedHashSink{hashes: map[int]uint32{}}
+	appendDecoded(t, engine, rw2Records(t, 0, total, total, 2000)[0], sink)
+	require.Len(t, sink.hashes, existing)
+	for series, hash := range sink.hashes {
+		require.Equal(t, secondaryHash(rw2Labels(series)), hash, "series %d", series)
+	}
+}
+
 func TestAppendRW2RejectsMalformedRecords(t *testing.T) {
 	content := rw2Records(t, 0, 10, 10, 1000)[0]
 	for _, cut := range []int{1, len(content) / 2, len(content) - 1} {

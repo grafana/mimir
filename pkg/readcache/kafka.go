@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -21,6 +22,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // partitionPusher is the Pusher handed to a per-partition
@@ -101,8 +104,163 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	return err
 }
 
+// AcceptsRecords implements ingest.RecordPusher: a seriesstore readcache appends the floats of the series its stores
+// have from the records as they are, as an ingester does, and decodes the rest only.
+func (p *partitionPusher) AcceptsRecords() bool {
+	return p.rc.cfg.Engine == mimir_tsdb.EngineSeriesstore
+}
+
+// PushRecord implements ingest.RecordPusher. A record a store can't append in place is decoded, and pushed as the
+// reader would have.
+func (p *partitionPusher) PushRecord(ctx context.Context, content []byte, version int) error {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return errors.Wrap(err, "extracting tenant from kafka record context")
+	}
+	db, err := p.rc.getOrOpenTSDB(userID, p.partitionID)
+	if err != nil {
+		return errors.Wrap(err, "opening partition TSDB")
+	}
+	if db == nil {
+		// See PushToStorageAndReleaseRequest.
+		return nil
+	}
+	var record *store.RW2Record
+	if _, seriesstore := db.db.(seriesstoreStore); seriesstore && version == 2 {
+		record, _ = store.ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+	}
+	if record == nil || !record.Complete() {
+		// What else the record has, or all of it, is read by decoding it.
+		if record != nil {
+			record.Release()
+		}
+		req := &mimirpb.PreallocWriteRequest{}
+		if err := ingest.DeserializeRecordContent(content, req, version); err != nil {
+			return fmt.Errorf("%w: %w", ingest.ErrMalformedRecord, err)
+		}
+		return p.PushToStorageAndReleaseRequest(ctx, &req.WriteRequest)
+	}
+	defer record.Release()
+	err = p.appendBatchToOpenTSDB(ctx, pushBatch{record: record, version: version}, userID, db)
+	if errors.Is(err, errTSDBClosed) {
+		// See PushToStorageAndReleaseRequest.
+		db, err = p.rc.getOrOpenTSDB(userID, p.partitionID)
+		if err != nil {
+			return errors.Wrap(err, "opening partition TSDB")
+		}
+		if db == nil {
+			return nil
+		}
+		err = p.appendBatchToOpenTSDB(ctx, pushBatch{record: record, version: version}, userID, db)
+	}
+	return err
+}
+
 func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.WriteRequest, userID string, db *partitionTSDB) error {
-	tracked, err := db.beginAppend(req.MinTimestamp())
+	return p.appendBatchToOpenTSDB(ctx, pushBatch{req: req}, userID, db)
+}
+
+// pushBatch is what a push appends: a decoded request, or a record read in place.
+type pushBatch struct {
+	req *mimirpb.WriteRequest
+
+	// For a record.
+	record  *store.RW2Record
+	version int
+	// The series of the record left to the appender, decoded, and their indices in the record.
+	decoded *mimirpb.PreallocWriteRequest
+	indices []int
+	subset  *[]byte
+}
+
+func (b *pushBatch) minTimestamp() int64 {
+	if b.record != nil {
+		return b.record.MinTimestamp()
+	}
+	return b.req.MinTimestamp()
+}
+
+func (b *pushBatch) source() mimirpb.WriteRequest_SourceEnum {
+	if b.record != nil {
+		return b.record.Source()
+	}
+	return b.req.Source
+}
+
+// decode decodes the series of the record at indices, which are in order.
+func (b *pushBatch) decode(indices []int) ([]mimirpb.PreallocTimeseries, error) {
+	b.subset = recordSubsets.Get().(*[]byte)
+	*b.subset = b.record.Subset(indices, *b.subset)
+	b.decoded, b.indices = &mimirpb.PreallocWriteRequest{}, indices
+	if err := ingest.DeserializeRecordContent(*b.subset, b.decoded, b.version); err != nil {
+		return nil, fmt.Errorf("%w: %w", ingest.ErrMalformedRecord, err)
+	}
+	return b.decoded.Timeseries, nil
+}
+
+func (b *pushBatch) release() {
+	if b.decoded != nil {
+		b.decoded.FreeBuffer()
+		mimirpb.ReuseSlice(b.decoded.Timeseries)
+		b.decoded = nil
+	}
+	if b.subset != nil {
+		recordSubsets.Put(b.subset)
+		b.subset = nil
+	}
+}
+
+// samples is how many samples the batch has.
+func (b *pushBatch) samples() int {
+	n := 0
+	if b.record != nil {
+		for index := range b.record.Len() {
+			n += len(b.record.Floats(index))
+		}
+		if b.decoded != nil {
+			for _, ts := range b.decoded.Timeseries {
+				n += len(ts.Histograms)
+			}
+		}
+		return n
+	}
+	for _, ts := range b.req.Timeseries {
+		n += len(ts.Samples) + len(ts.Histograms)
+	}
+	return n
+}
+
+// unhashed are the series of the batch whose owned series tokens hashed doesn't have, which are known by their
+// labels: of a record, the decoded ones, and the few others, which had errors, built from it.
+func (b *pushBatch) unhashed(hashed *pushHashes) []mimirpb.PreallocTimeseries {
+	if b.record == nil {
+		return b.req.Timeseries
+	}
+	var out []mimirpb.PreallocTimeseries
+	position := 0
+	for index := range b.record.Len() {
+		if position < len(b.indices) && b.indices[position] == index {
+			if position < len(b.decoded.Timeseries) {
+				out = append(out, b.decoded.Timeseries[position])
+			}
+			position++
+			continue
+		}
+		if !hashed.known[index] && len(b.record.Floats(index)) > 0 {
+			lbls, samples := b.record.Series(index)
+			out = append(out, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: lbls, Samples: samples}})
+		}
+	}
+	return out
+}
+
+// recordSubsets are the buffers of the records of the series of a record that are decoded, which the decoding refers
+// to until the push is done.
+var recordSubsets = sync.Pool{New: func() any { return new([]byte) }}
+
+func (p *partitionPusher) appendBatchToOpenTSDB(ctx context.Context, batch pushBatch, userID string, db *partitionTSDB) error {
+	defer batch.release()
+	tracked, err := db.beginAppend(batch.minTimestamp())
 	if err != nil {
 		return err
 	}
@@ -126,11 +284,42 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 	if seriesstore {
 		floats = engine.Engine
 	}
+	// The samples are counted by range only once the partition is warm: see below.
+	attribute := p.ranges != nil && (p.warm == nil || p.warm.Load())
+	var hashed *pushHashes
+	var ownedHash func(series int, ownedHash uint32)
+	if attribute && seriesstore {
+		hashed = pushHashesPool.Get().(*pushHashes)
+		defer pushHashesPool.Put(hashed)
+		if batch.record != nil {
+			hashed.reset(batch.record.Len())
+			ownedHash = func(series int, hash uint32) {
+				hashed.known[series] = true
+				hashed.samples = append(hashed.samples, hashedSamples{hash: hash, n: int64(len(batch.record.Floats(series)))})
+			}
+		} else {
+			hashed.reset(len(batch.req.Timeseries))
+			ownedHash = func(series int, hash uint32) {
+				hashed.known[series] = true
+				hashed.samples = append(hashed.samples, hashedSamples{hash: hash, n: int64(len(batch.req.Timeseries[series].Samples))})
+			}
+		}
+	}
+	var (
+		timeseries []mimirpb.PreallocTimeseries
+		record     *store.RW2Record
+		decode     func([]int) ([]mimirpb.PreallocTimeseries, error)
+	)
+	if batch.record != nil {
+		record, decode = batch.record, batch.decode
+	} else {
+		timeseries = batch.req.Timeseries
+	}
 	app := db.Appender(ctx).(ingester.ExtendedAppender)
 	res := ingester.PushWriteRequestTimeseries(ctx, ingester.WriteRequestTimeseriesPush{
 		UserID:             userID,
-		Timeseries:         req.Timeseries,
-		Source:             req.Source,
+		Timeseries:         timeseries,
+		Source:             batch.source(),
 		Limits:             p.rc.limits,
 		Logger:             p.rc.logger,
 		Samplers:           p.rc.pushErrSamplers,
@@ -141,6 +330,9 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 		App:                app,
 		Head:               db.Head(),
 		Floats:             floats,
+		IngestedOwnedHash:  ownedHash,
+		Record:             record,
+		Decode:             decode,
 	})
 	if res.Err != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.Err)
@@ -158,11 +350,7 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 	// partition to handle, not how many individual samples passed
 	// validation.
 	if p.samplesIngested != nil {
-		var n int
-		for _, ts := range req.Timeseries {
-			n += len(ts.Samples) + len(ts.Histograms)
-		}
-		if n > 0 {
+		if n := batch.samples(); n > 0 {
 			p.samplesIngested.Add(float64(n))
 		}
 	}
@@ -207,8 +395,17 @@ func (p *partitionPusher) appendToOpenTSDB(ctx context.Context, req *mimirpb.Wri
 	// matches what a freshly adopted range already reported while
 	// its EWMA was uninitialised, and the slicer treats 0 as "no
 	// movable load", so it does not yank ranges around.
-	if p.ranges != nil && (p.warm == nil || p.warm.Load()) {
-		p.ranges.recordSampleBatch(userID, req.Timeseries)
+	if attribute {
+		if hashed != nil {
+			unhashed := batch.unhashed(hashed)
+			if batch.record != nil {
+				// What isn't known by its owned series token is all of unhashed.
+				hashed.known = hashed.known[:0]
+			}
+			p.ranges.recordSampleBatch(userID, unhashed, hashed)
+		} else {
+			p.ranges.recordSampleBatch(userID, batch.req.Timeseries, nil)
+		}
 	}
 	if res.FirstPartialErr != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.FirstPartialErr)

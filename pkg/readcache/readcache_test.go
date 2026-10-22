@@ -60,7 +60,7 @@ func skipUnlessPrometheusEngine(t *testing.T) {
 	}
 }
 
-func newTestConfig(t *testing.T, withKafka bool, numPartitions int32) Config {
+func newTestConfig(t testing.TB, withKafka bool, numPartitions int32) Config {
 	t.Helper()
 
 	const topic = "test-topic"
@@ -458,8 +458,8 @@ func TestReadcache_HashRangeStats_EmitsTenantScopedRates(t *testing.T) {
 	fullRange := assignment.HashRange{Lo: 0, Hi: ^uint32(0)}
 	p.ranges.setRangesForTenant("tenant-a", []assignment.HashRange{fullRange})
 	p.ranges.setRangesForTenant("tenant-b", []assignment.HashRange{fullRange})
-	p.ranges.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 3)})
-	p.ranges.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 7)})
+	p.ranges.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 3)}, nil)
+	p.ranges.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 7)}, nil)
 	require.True(t, p.ranges.applyWalkResultForTenant("tenant-a", []assignment.HashRange{fullRange}, []int64{11}, nil))
 	require.True(t, p.ranges.applyWalkResultForTenant("tenant-b", []assignment.HashRange{fullRange}, []int64{22}, nil))
 	p.ranges.tickSampleRates()

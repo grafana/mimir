@@ -36,6 +36,12 @@ type RefSink interface {
 	IngestedRef(series int, ref storage.SeriesRef) bool
 }
 
+// OwnedHashSink is a FloatSink told the owned series token of each series that got a sample, as
+// EngineOptions.SecondaryHashFunction gave it: what hashing the series' labels again would.
+type OwnedHashSink interface {
+	IngestedOwnedHash(series int, ownedHash uint32)
+}
+
 type floatSeries struct {
 	index int
 	hash  uint64
@@ -53,8 +59,9 @@ type floatError struct {
 
 // floatIngested is a series that got a sample.
 type floatIngested struct {
-	series int
-	ref    storage.SeriesRef
+	series    int
+	ref       storage.SeriesRef
+	ownedHash uint32
 }
 
 // AppendFloats appends the float samples of the series at indices to the series the engine already has, and
@@ -312,7 +319,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 					if ingested > oldIngested {
 						// The series are active, as the active series counts tell, and not by a histogram.
 						entry.series.markIngested(ingestedAtMs, otlp, -1)
-						touched = append(touched, floatIngested{int(position), storage.SeriesRef(entry.series.ref)})
+						touched = append(touched, floatIngested{int(position), storage.SeriesRef(entry.series.ref), entry.series.ownedHash})
 					}
 					if stop {
 						break
@@ -337,6 +344,11 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 		return leftover, ingested, err
 	}
 
+	if hashSink, ok := sink.(OwnedHashSink); ok {
+		for _, series := range touched {
+			hashSink.IngestedOwnedHash(prepared[series.series].index, series.ownedHash)
+		}
+	}
 	// The sink may look the series up, which it can't while a shard is locked. It hears of the failures in the
 	// order of the request.
 	slices.SortStableFunc(failures, func(a, b floatError) int { return cmp.Compare(a.series, b.series) })

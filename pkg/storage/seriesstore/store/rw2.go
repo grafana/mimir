@@ -365,6 +365,11 @@ func (r *RW2Record) Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample)
 	return adapters, r.source.samples(index)
 }
 
+// Floats returns the floats of the series at index, which refer to the record's content.
+func (r *RW2Record) Floats(index int) []mimirpb.Sample {
+	return r.source.samples(index)
+}
+
 // Subset appends to into the content of a record with the series at indices, which are in order, and the record's
 // symbols and fields of its own: what decoding only those series needs.
 func (r *RW2Record) Subset(indices []int, into []byte) []byte {
