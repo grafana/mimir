@@ -4,6 +4,7 @@ package error
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -191,4 +192,26 @@ func TestTypeForError(t *testing.T) {
 			require.Equal(t, testCase.expected, TypeForError(err, fallback))
 		})
 	}
+}
+
+func TestAPIError_EncodeJSON(t *testing.T) {
+	t.Run("without details", func(t *testing.T) {
+		encoded, err := New(TypeExec, "query failed").EncodeJSON()
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"error","errorType":"execution","error":"query failed"}`, string(encoded))
+	})
+
+	t.Run("with details", func(t *testing.T) {
+		encoded, err := NewWithDetails(TypeExec, "query failed", json.RawMessage(`{"code":"incompatible","series":["foo"]}`)).EncodeJSON()
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"error","errorType":"execution","error":"query failed","errorDetails":{"code":"incompatible","series":["foo"]}}`, string(encoded))
+	})
+}
+
+func TestDetailsFromError(t *testing.T) {
+	details := json.RawMessage(`{"code":"incompatible"}`)
+	err := fmt.Errorf("wrapped: %w", NewWithDetails(TypeExec, "query failed", details))
+
+	require.JSONEq(t, string(details), string(DetailsFromError(err)))
+	require.Nil(t, DetailsFromError(errors.New("plain error")))
 }

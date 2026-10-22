@@ -60,6 +60,7 @@ message CachedError {
   string key = 1 [(gogoproto.jsontag) = "key"];
   string errorType = 2 [(gogoproto.jsontag) = "errorType"];
   string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
+  bytes details = 4 [(gogoproto.jsontag) = "details"];
 }
 
 message CachedResponse {

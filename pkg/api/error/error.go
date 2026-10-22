@@ -103,6 +103,10 @@ func typeForCode(code codes.Code, err error, fallback Type) Type {
 type APIError struct {
 	Type    Type
 	Message string
+
+	// Details is optional machine-readable context about the error. It is passed through to
+	// clients unchanged and must contain valid JSON.
+	Details json.RawMessage
 }
 
 func (e *APIError) Error() string {
@@ -139,13 +143,15 @@ func (e *APIError) StatusCode() int {
 func (e *APIError) EncodeJSON() ([]byte, error) {
 	return json.Marshal(
 		struct {
-			Status    string `json:"status"`
-			ErrorType Type   `json:"errorType,omitempty"`
-			Error     string `json:"error,omitempty"`
+			Status       string          `json:"status"`
+			ErrorType    Type            `json:"errorType,omitempty"`
+			Error        string          `json:"error,omitempty"`
+			ErrorDetails json.RawMessage `json:"errorDetails,omitempty"`
 		}{
-			Status:    "error",
-			Error:     e.Message,
-			ErrorType: e.Type,
+			Status:       "error",
+			Error:        e.Message,
+			ErrorType:    e.Type,
+			ErrorDetails: e.Details,
 		},
 	)
 }
@@ -179,9 +185,28 @@ func New(typ Type, msg string) *APIError {
 	}
 }
 
+// NewWithDetails creates a new apiError with a static message and machine-readable details.
+// details is passed through to clients unchanged and must contain valid JSON.
+func NewWithDetails(typ Type, msg string, details json.RawMessage) *APIError {
+	return &APIError{
+		Message: msg,
+		Type:    typ,
+		Details: details,
+	}
+}
+
 // Newf creates a new apiError with a formatted message
 func Newf(typ Type, tmpl string, args ...interface{}) *APIError {
 	return New(typ, fmt.Sprintf(tmpl, args...))
+}
+
+// DetailsFromError returns the machine-readable details attached to err, if any.
+func DetailsFromError(err error) json.RawMessage {
+	apiErr := &APIError{}
+	if !errors.As(err, &apiErr) {
+		return nil
+	}
+	return apiErr.Details
 }
 
 // IsAPIError returns true if the error provided is an apiError.

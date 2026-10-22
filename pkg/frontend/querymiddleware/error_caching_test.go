@@ -259,7 +259,8 @@ func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
 
 	c := cache.NewInstrumentedMockCache()
 
-	innerErr := apierror.New(apierror.TypeTooLargeEntry, "response is too big")
+	details := []byte(`{"code":"incompatible"}`)
+	innerErr := apierror.NewWithDetails(apierror.TypeTooLargeEntry, "response is too big", details)
 	inner := &mockHandler{}
 	inner.On("Do", mock.Anything, mock.Anything).
 		Once(). // The handler is queried once; the rest of the requests are served from the cache.
@@ -282,6 +283,7 @@ func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
 	// Test that for the second query, the error we got from the cache is of the expected type.
 	if wantErr := new(apierror.APIError); assert.ErrorAs(t, err, &wantErr) {
 		require.Equal(t, apierror.TypeTooLargeEntry, wantErr.Type)
+		require.Equal(t, details, []byte(wantErr.Details))
 	}
 
 	require.Nil(t, res)

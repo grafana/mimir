@@ -98,6 +98,9 @@ message EvaluateQueryResponseRangeVectorStepData {
 message Error {
   cortexpb.QueryErrorType type = 1;
   string message = 2;
+  // Optional machine-readable error details. Opaque to Mimir: carried from the error as produced
+  // by the component that raised it to the client, unchanged.
+  bytes details = 3;
 }
 
 message EvaluateQueryResponseEvaluationCompleted {

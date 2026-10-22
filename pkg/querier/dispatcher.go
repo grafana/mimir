@@ -312,6 +312,7 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 			Error: &querierpb.Error{
 				Type:    typ,
 				Message: errMsg,
+				Details: apierror.DetailsFromError(err),
 			},
 		},
 	}

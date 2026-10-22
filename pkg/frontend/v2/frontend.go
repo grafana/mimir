@@ -689,7 +689,7 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 		return err
 	}
 
-	return apierror.New(apierror.Type(errorType), e.Message)
+	return apierror.NewWithDetails(apierror.Type(errorType), e.Message, e.Details)
 }
 
 func (s *ProtobufResponseStream) Close() {

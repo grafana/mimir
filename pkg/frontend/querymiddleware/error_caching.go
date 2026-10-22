@@ -160,7 +160,7 @@ func (e *errorCachingHandler) loadErrorFromCache(ctx context.Context, key, hashe
 		return nil
 	}
 
-	return apierror.New(apierror.Type(cachedError.ErrorType), cachedError.ErrorMessage)
+	return apierror.NewWithDetails(apierror.Type(cachedError.ErrorType), cachedError.ErrorMessage, cachedError.Details)
 }
 
 func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.Duration, apiErr *apierror.APIError, spanLog *spanlogger.SpanLogger) {
@@ -168,6 +168,7 @@ func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.
 		Key:          key,
 		ErrorType:    string(apiErr.Type),
 		ErrorMessage: apiErr.Message,
+		Details:      apiErr.Details,
 	})
 
 	if err != nil {

@@ -2567,3 +2567,24 @@ func TestFrontendToSchedulerEnqueueRequestRootQueryID(t *testing.T) {
 		})
 	}
 }
+
+func TestProtobufResponseStream_errorFromMessage(t *testing.T) {
+	details := []byte(`{"code":"incompatible"}`)
+	msg := &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    mimirpb.QUERY_ERROR_TYPE_EXECUTION,
+				Message: "query failed",
+				Details: details,
+			},
+		},
+	}
+
+	err := (&ProtobufResponseStream{}).errorFromMessage(msg)
+
+	var apiErr *apierror.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, apierror.TypeExec, apiErr.Type)
+	require.Equal(t, "query failed", apiErr.Message)
+	require.Equal(t, details, []byte(apiErr.Details))
+}

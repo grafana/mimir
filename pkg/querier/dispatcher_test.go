@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -2112,6 +2113,7 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 		err             error
 		expectedMessage string
 		expectedType    mimirpb.QueryErrorType
+		expectedDetails []byte
 	}{
 		"generic error": {
 			err:             errors.New("error with no type"),
@@ -2128,6 +2130,12 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 			expectedMessage: "wrapped: error with 'too large entry' type",
 			expectedType:    mimirpb.QUERY_ERROR_TYPE_TOO_LARGE_ENTRY,
 		},
+		"APIError instance with details": {
+			err:             apierror.NewWithDetails(apierror.TypeExec, "query failed", json.RawMessage(`{"code":"incompatible"}`)),
+			expectedMessage: "query failed",
+			expectedType:    mimirpb.QUERY_ERROR_TYPE_EXECUTION,
+			expectedDetails: []byte(`{"code":"incompatible"}`),
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -2143,6 +2151,7 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 			expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(testCase.expectedType, testCase.expectedMessage),
 			}
+			expectedMessages[0].GetError().Details = testCase.expectedDetails
 
 			require.Equal(t, expectedMessages, stream.messages)
 		})
