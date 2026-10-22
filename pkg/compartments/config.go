@@ -90,12 +90,13 @@ func WithReadCompartmentSuffix(name string, compartmentID int) string {
 	return name + "-rc-" + strconv.Itoa(compartmentID)
 }
 
-const readCompartmentTenantIDInfix = "/rc/"
+// ReadCompartmentTenantIDInfix is inserted into tenant IDs as "/rc/<id>" before any metadata.
+const ReadCompartmentTenantIDInfix = "/rc/"
 
 // TenantIDWithReadCompartment returns tenantIDWithMetadata with "/rc/<compartmentID>" inserted
 // before any tenant metadata suffix.
 func TenantIDWithReadCompartment(tenantIDWithMetadata string, compartmentID int) string {
-	suffix := readCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
+	suffix := ReadCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
 	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
 		return tenantIDWithMetadata[:idx] + suffix + tenantIDWithMetadata[idx:]
 	}
@@ -106,20 +107,31 @@ func TenantIDWithReadCompartment(tenantIDWithMetadata string, compartmentID int)
 // tenant metadata or at the end of tenantIDWithMetadata. It returns the input unchanged when no
 // such suffix is present.
 func TrimReadCompartmentFromTenantID(tenantIDWithMetadata string) string {
-	tenantID, metadata := tenantIDWithMetadata, ""
+	tenantID, metadata, _, ok := SplitReadCompartmentTenantID(tenantIDWithMetadata)
+	if !ok {
+		return tenantIDWithMetadata
+	}
+	return tenantID + metadata
+}
+
+// SplitReadCompartmentTenantID splits tenantIDWithMetadata into the tenant ID without a
+// well-formed "/rc/<compartmentID>" suffix, the metadata (including the leading ':'), and the compartmentID.
+// ok is false when no well-formed suffix is present. The returned strings are slices of the
+// input and do not allocate.
+func SplitReadCompartmentTenantID(tenantIDWithMetadata string) (tenantID, metadata, compartmentID string, ok bool) {
+	tenantWithCompartment, metadata := tenantIDWithMetadata, ""
 	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
-		tenantID, metadata = tenantIDWithMetadata[:idx], tenantIDWithMetadata[idx:]
+		tenantWithCompartment, metadata = tenantIDWithMetadata[:idx], tenantIDWithMetadata[idx:]
 	}
 
-	rcIdx := strings.LastIndex(tenantID, readCompartmentTenantIDInfix)
+	rcIdx := strings.LastIndex(tenantWithCompartment, ReadCompartmentTenantIDInfix)
 	if rcIdx < 0 {
-		return tenantIDWithMetadata
+		return "", "", "", false
 	}
 
-	digits := tenantID[rcIdx+len(readCompartmentTenantIDInfix):]
-	if _, err := strconv.Atoi(digits); err != nil {
-		return tenantIDWithMetadata
+	compartmentID = tenantWithCompartment[rcIdx+len(ReadCompartmentTenantIDInfix):]
+	if _, err := strconv.Atoi(compartmentID); err != nil {
+		return "", "", "", false
 	}
-
-	return tenantID[:rcIdx] + metadata
+	return tenantWithCompartment[:rcIdx], metadata, compartmentID, true
 }
