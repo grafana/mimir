@@ -130,6 +130,18 @@ var (
 		nil,
 	)
 
+	StartTimestampSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []int64 {
+			return make([]int64, 0, size)
+		}),
+		limiter.StartTimestampSlices,
+		Int64Size,
+		false,
+		EnableManglingReturnedSlices,
+		mangleInt64,
+		nil,
+	)
+
 	BoolSlicePool = NewLimitingBucketedPool(
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []bool {
 			return make([]bool, 0, size)
