@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/grafana/dskit/user"
@@ -24,30 +25,6 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		labelAdapters(model.MetricNameLabel, "test_2"),
 	}
 
-	// combine adds up counts, or unions hashes, the way the querier does.
-	combine := func(res SeriesCountsResult) map[string]int64 {
-		out := map[string]int64{}
-		sets := map[string]map[uint64]struct{}{}
-		for _, resp := range res.Responses {
-			for _, g := range resp.Groups {
-				if res.Hashed {
-					if sets[g.Value] == nil {
-						sets[g.Value] = map[uint64]struct{}{}
-					}
-					for _, h := range g.Hashes {
-						sets[g.Value][h] = struct{}{}
-					}
-					continue
-				}
-				out[g.Value] += g.Counts[0]
-			}
-		}
-		for v, set := range sets {
-			out[v] = int64(len(set))
-		}
-		return out
-	}
-
 	for name, tc := range map[string]struct {
 		cfg        prepConfig
 		wantHashed bool
@@ -59,8 +36,20 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 			cfg:        prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3},
 			wantHashed: true,
 		},
-		"ingest storage": {
-			cfg: prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+		"ingest storage, one partition": {
+			cfg: prepConfig{numIngesters: 1, happyIngesters: 1, numDistributors: 1, ingestStorageEnabled: true, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+		},
+		"ingest storage, several partitions": {
+			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			wantHashed: true,
+		},
+		"classic replication, three zones, two ingesters each": {
+			cfg:        prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+			wantHashed: true,
+		},
+		"classic replication, three zones, replication factor 2": {
+			cfg:        prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 2, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+			wantHashed: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -79,18 +68,118 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
-					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combine(res))
+					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
 
 					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, GroupBy: "status"})
 					require.NoError(t, err)
-					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combine(byStatus))
+					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
 
 					if tc.wantHashed {
 						_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, StepMs: 100000})
-						require.ErrorContains(t, err, "per-bucket series counts need ingest storage or zone-aware replication")
+						require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
 					}
 				})
 			}
 		})
 	}
+}
+
+// A series can be in more than one replication set, or on more than one
+// ingester of a zone: after a tenant's partitions change inside the
+// lookback, the old partition's head still holds a series whose new samples
+// go to another partition, and after a classic ring change the old owner
+// still holds it. Each such series must count once.
+func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cfg prepConfig
+		// moved reports whether to, which doesn't hold the series, holds it
+		// after the move from from.
+		moved func(from, to *mockIngester) bool
+	}{
+		"ingest storage, series in two partitions": {
+			cfg: prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			moved: func(from, to *mockIngester) bool {
+				return to.partitionID() != from.partitionID()
+			},
+		},
+		"classic replication, three zones, series on two ingesters of each zone": {
+			cfg: prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+			moved: func(from, to *mockIngester) bool {
+				return to.zone == from.zone
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds, ingesters, _, _ := prepare(t, tc.cfg)
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+			_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+			require.NoError(t, err)
+			req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000}
+			_, err = ds[0].SeriesCounts(ctx, nil, req)
+			require.NoError(t, err)
+
+			// Copy the series to the ingesters that don't hold it, the
+			// way it stays in the head it was written to.
+			var holders, others []*mockIngester
+			for _, ing := range ingesters {
+				if len(ing.series()) > 0 {
+					holders = append(holders, ing)
+				} else {
+					others = append(others, ing)
+				}
+			}
+			require.NotEmpty(t, holders)
+			copied := 0
+			for _, to := range others {
+				for _, from := range holders {
+					if !tc.moved(from, to) {
+						continue
+					}
+					to.Lock()
+					if to.timeseries == nil {
+						to.timeseries = map[uint32]*mimirpb.PreallocTimeseries{}
+					}
+					maps.Copy(to.timeseries, from.series())
+					to.Unlock()
+					copied++
+					break
+				}
+			}
+			require.NotZero(t, copied)
+
+			res, err := ds[0].SeriesCounts(ctx, nil, req)
+			require.NoError(t, err)
+			assert.True(t, res.Hashed)
+			assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
+
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, StepMs: 100000})
+			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
+		})
+	}
+}
+
+// combineSeriesCounts adds up counts, or unions hashes, the way the querier
+// does.
+func combineSeriesCounts(res SeriesCountsResult) map[string]int64 {
+	out := map[string]int64{}
+	sets := map[string]map[uint64]struct{}{}
+	for _, resp := range res.Responses {
+		for _, g := range resp.Groups {
+			if res.Hashed {
+				if sets[g.Value] == nil {
+					sets[g.Value] = map[uint64]struct{}{}
+				}
+				for _, h := range g.Hashes {
+					sets[g.Value][h] = struct{}{}
+				}
+				continue
+			}
+			out[g.Value] += g.Counts[0]
+		}
+	}
+	for v, set := range sets {
+		out[v] = int64(len(set))
+	}
+	return out
 }
