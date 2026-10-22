@@ -1997,7 +1997,7 @@ func (d *Distributor) trackSeriesAsync(ctx context.Context, usageTrackerUserID s
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
-	userID = compartments.TrimReadCompartmentFromTenantID(tenant.TrimMetadata(userID))
+	userID = compartments.BaseTenantID(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 

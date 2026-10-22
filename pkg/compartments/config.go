@@ -7,8 +7,6 @@ import (
 	"flag"
 	"strconv"
 	"strings"
-
-	"github.com/grafana/dskit/tenant"
 )
 
 const (
@@ -90,67 +88,4 @@ func ReplaceWriteCompartment(s string, writeCompartmentID int) string {
 // compartment.
 func WithReadCompartmentSuffix(name string, compartmentID int) string {
 	return name + "-rc-" + strconv.Itoa(compartmentID)
-}
-
-// ReadCompartmentTenantIDInfix is inserted into tenant IDs as "/rc/<id>" before any metadata.
-const ReadCompartmentTenantIDInfix = "/rc/"
-
-// TenantIDWithReadCompartment returns tenantID with the "/rc/<compartmentID>" suffix. tenantID must
-// not contain tenant metadata. Use tenant.Metadata.WithTenant to add the metadata after the suffix.
-func TenantIDWithReadCompartment(tenantID string, compartmentID int) string {
-	return tenantID + ReadCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
-}
-
-// TrimReadCompartmentFromTenantID removes a well-formed "/rc/<digits>" that sits right before the
-// tenant metadata or at the end of tenantIDWithMetadata. It returns the input unchanged when no
-// such suffix is present.
-func TrimReadCompartmentFromTenantID(tenantIDWithMetadata string) string {
-	tenantID, metadata, ok := SplitReadCompartmentTenantID(tenantIDWithMetadata)
-	if !ok {
-		return tenantIDWithMetadata
-	}
-	return tenantID + metadata
-}
-
-// SplitReadCompartmentTenantID splits tenantIDWithMetadata into the tenant ID without a
-// well-formed "/rc/<compartmentID>" suffix and the metadata (including the leading ':').
-// ok is false when no well-formed suffix is present. The returned strings are slices of the
-// input and do not allocate.
-func SplitReadCompartmentTenantID(tenantIDWithMetadata string) (tenantID, metadata string, ok bool) {
-	// Most tenant IDs have no read compartment suffix. IndexByte finds those IDs faster than LastIndex.
-	if strings.IndexByte(tenantIDWithMetadata, '/') < 0 {
-		return "", "", false
-	}
-
-	tenantWithCompartment, metadata := tenantIDWithMetadata, ""
-	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
-		tenantWithCompartment, metadata = tenantIDWithMetadata[:idx], tenantIDWithMetadata[idx:]
-	}
-
-	rcIdx := strings.LastIndex(tenantWithCompartment, ReadCompartmentTenantIDInfix)
-	if rcIdx < 0 {
-		return "", "", false
-	}
-
-	if _, err := strconv.Atoi(tenantWithCompartment[rcIdx+len(ReadCompartmentTenantIDInfix):]); err != nil {
-		return "", "", false
-	}
-	return tenantWithCompartment[:rcIdx], metadata, true
-}
-
-// ParseTenantIDWithMetadata parses tenantIDWithMetadata like tenant.ParseWithMetadata. It also accepts
-// a well-formed "/rc/<compartmentID>" suffix before the metadata, and the returned tenantID keeps that
-// suffix. It does not allocate when the input is valid.
-func ParseTenantIDWithMetadata(tenantIDWithMetadata string) (tenantID string, metadata tenant.Metadata, err error) {
-	baseTenantID, metadataSource, ok := SplitReadCompartmentTenantID(tenantIDWithMetadata)
-	if !ok {
-		return tenant.ParseWithMetadata(tenantIDWithMetadata)
-	}
-	if err := tenant.ValidTenantID(baseTenantID); err != nil {
-		return "", tenant.Metadata{}, err
-	}
-	if metadata, err = tenant.ParseMetadata(metadataSource); err != nil {
-		return "", tenant.Metadata{}, err
-	}
-	return tenantIDWithMetadata[:len(tenantIDWithMetadata)-len(metadataSource)], metadata, nil
 }
