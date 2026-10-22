@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
@@ -214,7 +215,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
 
-		if err := parseTenantIDWithReadCompartment(tenantID); err != nil {
+		if _, _, err := compartments.ParseTenantIDWithMetadata(tenantID); err != nil {
 			level.Warn(t.logger).Log("msg", "skipping snapshot data for invalid tenant ID", "tenant", fmt.Sprintf("%q", tenantID), "err", err)
 			continue
 		}
