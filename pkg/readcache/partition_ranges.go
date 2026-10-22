@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 
@@ -634,8 +635,10 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 	// The locality hash's top bits are the metric name's, so a metric's series hash into one interval, and a range
 	// that holds the whole interval counts them all: their labels are hashed only for a metric that ranges split.
 	// A request's series of a metric come one after the other.
+	hasher := localityHasher{user: mimirpb.ShardByUser(userID)}
 	var (
 		metric     string
+		metricLo   uint32
 		known      bool
 		whole      bool
 		wholeRate  *util_math.EwmaRate
@@ -654,6 +657,7 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 		if name := metricNameOf(ts.Labels); !known || name != metric {
 			metric, known = name, true
 			lo, hi := mimirpb.MetricNameHashRange(userID, metric)
+			metricLo = lo
 			idx := rangeIndex(hi)
 			switch {
 			case idx < 0 || state.currentRanges[idx].Hi < lo:
@@ -671,7 +675,7 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 			}
 			continue
 		}
-		hash := mimirpb.ShardByMetricNameLocality(userID, metric, ts.Labels)
+		hash := hasher.hash(metricLo, ts.Labels)
 		idx := rangeIndex(hash)
 		if idx < 0 {
 			continue
@@ -684,6 +688,41 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 			rate.Add(n)
 		}
 	}
+}
+
+// localityHasher is mimirpb.ShardByMetricNameLocality for consecutive series, which share their first labels when they
+// are of a metric: the FNV state after the labels the series has in common with the previous one is taken up from
+// there, comparing them costing less than hashing them.
+type localityHasher struct {
+	user uint32
+	// The previous series' labels, and the hash state after each.
+	previous []mimirpb.LabelAdapter
+	states   []uint32
+}
+
+// hash returns the locality hash of the series ls of the metric whose hashes start at metricLo.
+func (h *localityHasher) hash(metricLo uint32, ls []mimirpb.LabelAdapter) uint32 {
+	shared := 0
+	for shared < len(ls) && shared < len(h.previous) && sameString(ls[shared].Name, h.previous[shared].Name) && sameString(ls[shared].Value, h.previous[shared].Value) {
+		shared++
+	}
+	state := h.user
+	if shared > 0 {
+		state = h.states[shared-1]
+	}
+	h.states = h.states[:shared]
+	for _, l := range ls[shared:] {
+		state = mimirpb.HashAdd32(state, l.Name)
+		state = mimirpb.HashAdd32(state, l.Value)
+		h.states = append(h.states, state)
+	}
+	h.previous = ls
+	return metricLo | (state & mimirpb.LabelBitsMask)
+}
+
+// sameString compares strings, most of which a request's symbols share the bytes of.
+func sameString(a, b string) bool {
+	return len(a) == len(b) && (unsafe.StringData(a) == unsafe.StringData(b) || a == b)
 }
 
 // tickSampleRates advances every EwmaRate in this partition by one

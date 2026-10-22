@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
@@ -721,5 +722,24 @@ func TestPartitionRanges_RecordSampleBatchByMetric(t *testing.T) {
 		rate := rateOf(pr.sampleRates[r])
 		pr.mu.RUnlock()
 		assert.InDelta(t, float64(want[r])/15.0, rate, 1e-9, "range %v", r)
+	}
+}
+
+// The hasher takes up the hash of the labels a series shares with the previous one: it hashes as if it didn't.
+func TestLocalityHasher(t *testing.T) {
+	const userID = "user-1"
+	random := rand.New(rand.NewPCG(1, 2))
+	value := func(n int) string { return fmt.Sprintf("v%d", random.IntN(n)) }
+	hasher := localityHasher{user: mimirpb.ShardByUser(userID)}
+	for range 2000 {
+		metric := value(3)
+		ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metric}}
+		for _, name := range []string{"cluster", "job", "pod", "zone"} {
+			if random.IntN(4) > 0 {
+				ls = append(ls, mimirpb.LabelAdapter{Name: name, Value: value(3)})
+			}
+		}
+		lo, _ := mimirpb.MetricNameHashRange(userID, metric)
+		require.Equal(t, mimirpb.ShardByMetricNameLocality(userID, metric, ls), hasher.hash(lo, ls), "%v", ls)
 	}
 }
