@@ -11592,7 +11592,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 				if elementCount%2 != 0 {
 					return errorOddNumberOfLabelRefs
 				}
-				if elementCount != 0 && len(m.Labels) == 0 {
+				if elementCount != 0 && len(m.Labels) == 0 && cap(m.Labels) < elementCount/2 {
 					m.Labels = make([]LabelAdapter, 0, elementCount/2)
 				}
 				idx := 0
@@ -11888,7 +11888,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 				if elementCount%2 != 0 {
 					return errorOddNumberOfExemplarLabelRefs
 				}
-				if elementCount != 0 && len(m.Labels) == 0 {
+				if elementCount != 0 && len(m.Labels) == 0 && cap(m.Labels) < elementCount/2 {
 					m.Labels = make([]LabelAdapter, 0, elementCount/2)
 				}
 				idx := 0
