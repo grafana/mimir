@@ -89,3 +89,42 @@ func ReplaceWriteCompartment(s string, writeCompartmentID int) string {
 func WithReadCompartmentSuffix(name string, compartmentID int) string {
 	return name + "-rc-" + strconv.Itoa(compartmentID)
 }
+
+const readCompartmentTenantIDInfix = "/rc/"
+
+// TenantIDWithReadCompartment returns tenantIDWithMetadata with "/rc/<compartmentID>" inserted
+// before any tenant metadata suffix.
+func TenantIDWithReadCompartment(tenantIDWithMetadata string, compartmentID int) string {
+	suffix := readCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
+	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
+		return tenantIDWithMetadata[:idx] + suffix + tenantIDWithMetadata[idx:]
+	}
+	return tenantIDWithMetadata + suffix
+}
+
+// TrimReadCompartmentFromTenantID removes a well-formed "/rc/<digits>" that sits right before the
+// tenant metadata or at the end of tenantIDWithMetadata. It returns the input unchanged when no
+// such suffix is present.
+func TrimReadCompartmentFromTenantID(tenantIDWithMetadata string) string {
+	tenantID, metadata := tenantIDWithMetadata, ""
+	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
+		tenantID, metadata = tenantIDWithMetadata[:idx], tenantIDWithMetadata[idx:]
+	}
+
+	rcIdx := strings.LastIndex(tenantID, readCompartmentTenantIDInfix)
+	if rcIdx < 0 {
+		return tenantIDWithMetadata
+	}
+
+	digits := tenantID[rcIdx+len(readCompartmentTenantIDInfix):]
+	if len(digits) == 0 {
+		return tenantIDWithMetadata
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return tenantIDWithMetadata
+		}
+	}
+
+	return tenantID[:rcIdx] + metadata
+}

@@ -69,3 +69,88 @@ func TestWithReadCompartmentSuffix(t *testing.T) {
 	assert.Equal(t, "ingester-partitions-rc-3", WithReadCompartmentSuffix("ingester-partitions", 3))
 	assert.Equal(t, "blocks-rc-2", WithReadCompartmentSuffix("blocks", 2))
 }
+
+func TestTenantIDWithReadCompartment(t *testing.T) {
+	tests := map[string]struct {
+		tenantIDWithMetadata string
+		compartmentID        int
+		expected             string
+	}{
+		"without metadata": {
+			tenantIDWithMetadata: "123",
+			compartmentID:        2,
+			expected:             "123/rc/2",
+		},
+		"with metadata": {
+			tenantIDWithMetadata: "123:source=k6",
+			compartmentID:        2,
+			expected:             "123/rc/2:source=k6",
+		},
+		"compartment zero": {
+			tenantIDWithMetadata: "user",
+			compartmentID:        0,
+			expected:             "user/rc/0",
+		},
+		"multiple metadata keys": {
+			tenantIDWithMetadata: "user:a=1:b=2",
+			compartmentID:        7,
+			expected:             "user/rc/7:a=1:b=2",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, TenantIDWithReadCompartment(tc.tenantIDWithMetadata, tc.compartmentID))
+		})
+	}
+}
+
+func TestTrimReadCompartmentFromTenantID(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected string
+	}{
+		"without metadata": {
+			input:    "tenant/rc/1",
+			expected: "tenant",
+		},
+		"with metadata": {
+			input:    "tenant/rc/1:source=x",
+			expected: "tenant:source=x",
+		},
+		"compartment zero": {
+			input:    "user/rc/0",
+			expected: "user",
+		},
+		"no compartment suffix": {
+			input:    "tenant",
+			expected: "tenant",
+		},
+		"metadata only, no compartment": {
+			input:    "tenant:source=x",
+			expected: "tenant:source=x",
+		},
+		"malformed non-digit compartment": {
+			input:    "tenant/rc/x",
+			expected: "tenant/rc/x",
+		},
+		"malformed empty compartment": {
+			input:    "tenant/rc/",
+			expected: "tenant/rc/",
+		},
+		"malformed wrong infix": {
+			input:    "tenant/foo/1",
+			expected: "tenant/foo/1",
+		},
+		"malformed non-digit with metadata": {
+			input:    "tenant/rc/x:source=x",
+			expected: "tenant/rc/x:source=x",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, TrimReadCompartmentFromTenantID(tc.input))
+		})
+	}
+}
