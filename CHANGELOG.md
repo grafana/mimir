@@ -75,6 +75,7 @@
 * [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
 * [ENHANCEMENT] Query-frontend: Queries using the `histogram_avg()` function are now shardable. #16921
 * [ENHANCEMENT] HTTP: Avoid copying and retaining entire response bodies while initializing gzip compression. #16944
+* [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
