@@ -119,6 +119,11 @@ func TrimReadCompartmentFromTenantID(tenantIDWithMetadata string) string {
 // ok is false when no well-formed suffix is present. The returned strings are slices of the
 // input and do not allocate.
 func SplitReadCompartmentTenantID(tenantIDWithMetadata string) (tenantID, metadata, compartmentID string, ok bool) {
+	// Most tenant IDs have no read compartment suffix. IndexByte finds those IDs faster than LastIndex.
+	if strings.IndexByte(tenantIDWithMetadata, '/') < 0 {
+		return "", "", "", false
+	}
+
 	tenantWithCompartment, metadata := tenantIDWithMetadata, ""
 	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
 		tenantWithCompartment, metadata = tenantIDWithMetadata[:idx], tenantIDWithMetadata[idx:]
