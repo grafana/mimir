@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -33,10 +34,15 @@ type ingestersMock struct {
 	gotSeriesCounts *client.SeriesCountsRequest
 	seriesCounts    distributor.SeriesCountsResult
 	seriesCountsErr error
+	// seriesCountsFunc, when set, answers SeriesCounts instead.
+	seriesCountsFunc func(*client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
 }
 
 func (m *ingestersMock) SeriesCounts(_ context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 	m.gotSeriesCounts = req
+	if m.seriesCountsFunc != nil {
+		return m.seriesCountsFunc(req)
+	}
 	return m.seriesCounts, m.seriesCountsErr
 }
 
@@ -413,4 +419,46 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: hour / 2})
 	require.ErrorContains(t, err, "capped at 48")
 	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+}
+
+// Under ingest storage with several partitions the distributor can't add
+// up per-bucket counts, since a series can be in two partitions; the
+// estimator answers each bucket as its own window, deduplicated by hash.
+func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	q := &BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}
+	// Series 2 moved from partition 0 to partition 1 in the first bucket,
+	// so both partitions' heads hold it.
+	byBucket := map[int64][]*client.SeriesCountsResponse{
+		96 * hour: {
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
+		},
+		97 * hour: {
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}, MinTimeMs: 90 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
+		},
+	}
+	var got []*client.SeriesCountsRequest
+	ing := &ingestersMock{seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+		got = append(got, req)
+		if req.StepMs > 0 {
+			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
+		}
+		return distributor.SeriesCountsResult{Hashed: true, Responses: byBucket[req.StartTimestampMs]}, nil
+	}}
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e.now = func() time.Time { return now }
+
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
+	require.NoError(t, err)
+	assert.Equal(t, readPerBucket, res.Read)
+	assert.Equal(t, sourceHead, res.Source)
+	assert.True(t, res.Dedup)
+	assert.Equal(t, map[string][]int64{"up": {3, 3}}, res.Counts)
+	require.Len(t, got, 3)
+	assert.Equal(t, int64(0), got[1].StepMs)
+	assert.Equal(t, int64(0), got[2].StepMs)
 }
