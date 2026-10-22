@@ -117,13 +117,8 @@ func TrimReadCompartmentFromTenantID(tenantIDWithMetadata string) string {
 	}
 
 	digits := tenantID[rcIdx+len(readCompartmentTenantIDInfix):]
-	if len(digits) == 0 {
+	if _, err := strconv.Atoi(digits); err != nil {
 		return tenantIDWithMetadata
-	}
-	for i := 0; i < len(digits); i++ {
-		if digits[i] < '0' || digits[i] > '9' {
-			return tenantIDWithMetadata
-		}
 	}
 
 	return tenantID[:rcIdx] + metadata
