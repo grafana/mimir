@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -235,6 +236,133 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 	}
 }
 
+func TestDistributor_Push_Compartments_ShouldEnforceMaxSeriesLimitsPerCompartment(t *testing.T) {
+	t.Parallel()
+
+	const (
+		userID          = "user"
+		numCompartments = 3
+		userLimit       = 40000
+	)
+
+	now := time.Now()
+	router := compartmentsTestRouter(numCompartments)
+
+	const metricA, metricC = "metric_a", "metric_c"
+	compartmentA := int32(router.CompartmentForMetric(userID, metricA))
+	compartmentC := int32(router.CompartmentForMetric(userID, metricC))
+	require.NotEqual(t, compartmentA, compartmentC)
+
+	createTimeseries := func() []mimirpb.PreallocTimeseries {
+		return []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, metricA, "instance", "1"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, metricC, "instance", "1"}, makeSamples(now.UnixMilli(), 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, metricA, "instance", "2"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, metricC, "instance", "2"}, makeSamples(now.UnixMilli(), 4), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, metricC, "instance", "3"}, makeSamples(now.UnixMilli(), 5), nil, nil),
+		}
+	}
+	var hashes []uint64
+	for _, ts := range createTimeseries() {
+		hashes = append(hashes, labels.StableHash(mimirpb.FromLabelAdaptersToLabels(ts.Labels)))
+	}
+	hashA1, hashA2 := hashes[0], hashes[2]
+	hashC1, hashC2, hashC3 := hashes[1], hashes[3], hashes[4]
+
+	userA := compartments.TenantIDWithReadCompartment(userID, int(compartmentA))
+	userC := compartments.TenantIDWithReadCompartment(userID, int(compartmentC))
+	hashesA := []uint64{hashA1, hashA2}
+	hashesC := []uint64{hashC1, hashC2, hashC3}
+
+	testCases := map[string]struct {
+		canTrackAsyncA           bool
+		canTrackAsyncC           bool
+		rejectedHashesA          []uint64
+		rejectedHashesC          []uint64
+		expectedErrorMessage     string
+		expectedAcceptedMetricsA []string
+		expectedAcceptedMetricsC []string
+		expectAsync              bool
+	}{
+		"series rejected in one compartment": {
+			rejectedHashesC:          []uint64{hashC3},
+			expectedErrorMessage:     fmt.Sprintf("exceeded the active series limit in the read compartments %d. 1 series were rejected", compartmentC),
+			expectedAcceptedMetricsA: []string{metricA, metricA},
+			expectedAcceptedMetricsC: []string{metricC, metricC},
+		},
+		"series rejected in many compartments": {
+			rejectedHashesA:          []uint64{hashA1},
+			rejectedHashesC:          []uint64{hashC1, hashC2},
+			expectedErrorMessage:     fmt.Sprintf("exceeded the active series limit in the read compartments %d,%d. 3 series were rejected", min(compartmentA, compartmentC), max(compartmentA, compartmentC)),
+			expectedAcceptedMetricsA: []string{metricA},
+			expectedAcceptedMetricsC: []string{metricC},
+		},
+		"async when every compartment is far from its limit": {
+			canTrackAsyncA:           true,
+			canTrackAsyncC:           true,
+			expectAsync:              true,
+			expectedAcceptedMetricsA: []string{metricA, metricA},
+			expectedAcceptedMetricsC: []string{metricC, metricC, metricC},
+		},
+		"sync when one compartment is close to its limit": {
+			canTrackAsyncA:           true,
+			canTrackAsyncC:           false,
+			rejectedHashesC:          []uint64{hashC3},
+			expectedErrorMessage:     fmt.Sprintf("exceeded the active series limit in the read compartments %d. 1 series were rejected", compartmentC),
+			expectedAcceptedMetricsA: []string{metricA, metricA},
+			expectedAcceptedMetricsC: []string{metricC, metricC},
+		},
+	}
+
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			d, kafkaCluster, compartmentTopics := prepareCompartmentsTestDistributor(t, numCompartments)
+
+			defaults := prepareDefaultLimits()
+			defaults.MaxActiveSeriesPerUser = userLimit
+			d.limits = validation.NewOverrides(*defaults, nil)
+
+			usageTracker := &usageTrackerClientMock{}
+			usageTracker.On("CanTrackAsync", userA).Return(testData.canTrackAsyncA)
+			usageTracker.On("CanTrackAsync", userC).Return(testData.canTrackAsyncC)
+			usageTracker.On("TrackSeries", mock.Anything, userA, mock.Anything).Return(testData.rejectedHashesA, nil)
+			usageTracker.On("TrackSeries", mock.Anything, userC, mock.Anything).Return(testData.rejectedHashesC, nil)
+			usageTracker.On("TrackSeriesAsync", mock.Anything, userA, mock.Anything).Return(nil)
+			usageTracker.On("TrackSeriesAsync", mock.Anything, userC, mock.Anything).Return(nil)
+
+			d.cfg.UsageTrackerEnabled = true
+			d.usageTrackerClient = usageTracker
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+			res, err := d.Push(ctx, &mimirpb.WriteRequest{Timeseries: createTimeseries()})
+			if testData.expectedErrorMessage != "" {
+				require.ErrorContains(t, err, testData.expectedErrorMessage)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, res)
+			}
+
+			if testData.expectAsync {
+				usageTracker.AssertNumberOfCalls(t, "TrackSeriesAsync", 2)
+				usageTracker.AssertCalled(t, "TrackSeriesAsync", mock.Anything, userA, hashesA)
+				usageTracker.AssertCalled(t, "TrackSeriesAsync", mock.Anything, userC, hashesC)
+				usageTracker.AssertNumberOfCalls(t, "TrackSeries", 0)
+			} else {
+				usageTracker.AssertNumberOfCalls(t, "TrackSeries", 2)
+				usageTracker.AssertCalled(t, "TrackSeries", mock.Anything, userA, hashesA)
+				usageTracker.AssertCalled(t, "TrackSeries", mock.Anything, userC, hashesC)
+			}
+
+			recordsA := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{compartmentTopics[compartmentA]}, numCompartments, time.Second)
+			recordsC := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{compartmentTopics[compartmentC]}, numCompartments, time.Second)
+			require.Equal(t, testData.expectedAcceptedMetricsA, metricNamesFromRecords(t, recordsA))
+			require.Equal(t, testData.expectedAcceptedMetricsC, metricNamesFromRecords(t, recordsC))
+		})
+	}
+}
+
 func TestDistributor_ObserveAsyncUsageTrackerRejection(t *testing.T) {
 	tests := map[string]struct {
 		userID             string
@@ -246,6 +374,14 @@ func TestDistributor_ObserveAsyncUsageTrackerRejection(t *testing.T) {
 		},
 		"tenant metadata uses main tenant ID": {
 			userID:             "user-1:source=test-run",
+			expectedMetricUser: "user-1",
+		},
+		"read compartment suffix uses main tenant ID": {
+			userID:             "user-1/rc/2",
+			expectedMetricUser: "user-1",
+		},
+		"read compartment suffix with metadata uses main tenant ID": {
+			userID:             "user-1/rc/2:source=test-run",
 			expectedMetricUser: "user-1",
 		},
 	}

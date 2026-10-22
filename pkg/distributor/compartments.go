@@ -68,3 +68,58 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 	}
 	return filtered, initialMetadataIndex
 }
+
+// readCompartmentSeries holds the series hashes of a write request that belong to one read
+// compartment, along with the usage-tracker user ID for that compartment.
+type readCompartmentSeries struct {
+	compartment        int32
+	usageTrackerUserID string
+	seriesHashes       []uint64
+}
+
+// groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
+// timeseries. The returned groups are ordered by ascending compartment ID and share one backing
+// array for the hashes.
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID, limitsKey string, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
+	numCompartments := router.NumCompartments()
+	counts := make([]int, numCompartments)
+	seriesCompartments := make([]int, len(timeseries))
+	for i, ts := range timeseries {
+		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		compartment := router.CompartmentForMetric(userID, metricName)
+		seriesCompartments[i] = compartment
+		counts[compartment]++
+	}
+
+	numGroups := 0
+	for _, count := range counts {
+		if count > 0 {
+			numGroups++
+		}
+	}
+
+	hashes := make([]uint64, len(seriesHashes))
+	groups := make([]readCompartmentSeries, 0, numGroups)
+	start := 0
+	positions := make([]int, numCompartments)
+	for compartment, count := range counts {
+		positions[compartment] = start
+		if count > 0 {
+			end := start + count
+			groups = append(groups, readCompartmentSeries{
+				compartment:        int32(compartment),
+				usageTrackerUserID: compartments.TenantIDWithReadCompartment(limitsKey, compartment),
+				seriesHashes:       hashes[start:end:end],
+			})
+			start = end
+		}
+	}
+
+	for i, hash := range seriesHashes {
+		compartment := seriesCompartments[i]
+		hashes[positions[compartment]] = hash
+		positions[compartment]++
+	}
+
+	return groups
+}
