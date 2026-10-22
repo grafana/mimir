@@ -7,6 +7,8 @@ import (
 	"flag"
 	"strconv"
 	"strings"
+
+	"github.com/grafana/dskit/tenant"
 )
 
 const (
@@ -139,4 +141,21 @@ func SplitReadCompartmentTenantID(tenantIDWithMetadata string) (tenantID, metada
 		return "", "", "", false
 	}
 	return tenantWithCompartment[:rcIdx], metadata, compartmentID, true
+}
+
+// ParseTenantIDWithMetadata parses tenantIDWithMetadata like tenant.ParseWithMetadata. It also accepts
+// a well-formed "/rc/<compartmentID>" suffix before the metadata, and the returned tenantID keeps that
+// suffix. It does not allocate when the input is valid.
+func ParseTenantIDWithMetadata(tenantIDWithMetadata string) (tenantID string, metadata tenant.Metadata, err error) {
+	baseTenantID, metadataSource, _, ok := SplitReadCompartmentTenantID(tenantIDWithMetadata)
+	if !ok {
+		return tenant.ParseWithMetadata(tenantIDWithMetadata)
+	}
+	if err := tenant.ValidTenantID(baseTenantID); err != nil {
+		return "", tenant.Metadata{}, err
+	}
+	if metadata, err = tenant.ParseMetadata(metadataSource); err != nil {
+		return "", tenant.Metadata{}, err
+	}
+	return tenantIDWithMetadata[:len(tenantIDWithMetadata)-len(metadataSource)], metadata, nil
 }

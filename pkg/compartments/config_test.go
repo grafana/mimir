@@ -5,6 +5,7 @@ package compartments
 import (
 	"testing"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -151,6 +152,63 @@ func TestTrimReadCompartmentFromTenantID(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tc.expected, TrimReadCompartmentFromTenantID(tc.input))
+		})
+	}
+}
+
+func TestParseTenantIDWithMetadata(t *testing.T) {
+	tests := map[string]struct {
+		input            string
+		expectedTenantID string
+		expectedMetadata string
+		expectedErr      error
+	}{
+		"without read compartment": {
+			input:            "tenant",
+			expectedTenantID: "tenant",
+		},
+		"without read compartment, with metadata": {
+			input:            "tenant:source=x",
+			expectedTenantID: "tenant",
+			expectedMetadata: ":source=x",
+		},
+		"with read compartment": {
+			input:            "tenant/rc/1",
+			expectedTenantID: "tenant/rc/1",
+		},
+		"with read compartment and metadata": {
+			input:            "tenant/rc/1:source=x",
+			expectedTenantID: "tenant/rc/1",
+			expectedMetadata: ":source=x",
+		},
+		"malformed non-digit compartment": {
+			input:       "tenant/rc/x",
+			expectedErr: tenant.ValidTenantID("tenant/rc/x"),
+		},
+		"malformed wrong infix": {
+			input:       "tenant/foo/1",
+			expectedErr: tenant.ValidTenantID("tenant/foo/1"),
+		},
+		"invalid tenant ID with read compartment": {
+			input:       "bad tenant/rc/1",
+			expectedErr: tenant.ValidTenantID("bad tenant"),
+		},
+		"invalid metadata with read compartment": {
+			input:       "tenant/rc/1:source=\xb5",
+			expectedErr: tenant.ValidMetadata(":source=\xb5"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tenantID, metadata, err := ParseTenantIDWithMetadata(tc.input)
+			if tc.expectedErr != nil {
+				require.EqualError(t, err, tc.expectedErr.Error())
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedTenantID, tenantID)
+			assert.Equal(t, tenant.NewMetadata(tc.expectedMetadata), metadata)
 		})
 	}
 }
