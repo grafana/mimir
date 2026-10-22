@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/grafana/dskit/concurrency"
@@ -21,28 +22,26 @@ import (
 type SeriesCountsResult struct {
 	Responses []*ingester_client.SeriesCountsResponse
 	// Hashed is set when the responses carry hashes, either because the
-	// request asked for them or because the replication places a series on
-	// several ingesters of one zone, where counts can't be added up.
+	// request asked for them or because more than one ingester of a zone is
+	// asked, where counts can't be added up.
 	Hashed bool
 }
 
-// errSeriesCountsNeedZones is returned for per-bucket counts when the
-// replication can't give each series once by adding up counts.
-type errSeriesCountsNeedZones struct{ replicationFactor int }
-
-func (e errSeriesCountsNeedZones) Error() string {
-	return "per-bucket series counts need ingest storage or zone-aware replication: with a replication factor above 1 in one zone, counts from several ingesters can't be added up"
-}
+// ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts
+// when the replication can't give each series once by adding up counts.
+var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need one ingester per zone: a series can be on several ingesters of a zone or in several partitions, so their counts can't be added up")
 
 // SeriesCounts asks the ingesters to count series per value of one label
 // over a window, from their heads' chunk metas. It takes the same
-// replication sets as a query. In zone-aware mode, which includes ingest
-// storage where each replication set is one partition, it keeps the
-// largest zone's count per group and bucket for each replication set: a
-// zone that answered in full holds every series of that set once, so the
-// counts add up across sets. Without zones and with a replication factor above 1, a series is on
-// several ingesters, so it asks for hashes instead and the caller unions
-// them.
+// replication sets as a query. Counts are kept only when one ingester per
+// zone is asked: then it takes the largest zone's count per group and
+// bucket, since a zone that answered in full holds every series once.
+// Otherwise it asks for hashes and the caller unions them. Several
+// ingesters of a zone, or several partitions under ingest storage, are not
+// known to hold disjoint series: after the tenant's partitions or the ring
+// change inside the lookback, a series written before stays in the old
+// owner's head while its new samples go to the new one. Per-bucket counts,
+// which hashes don't carry, are refused then with ErrSeriesCountsNeedOneIngesterPerZone.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
@@ -53,15 +52,9 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	}
 
 	out := SeriesCountsResult{Hashed: req.Hashes}
-	needHashes := false
-	for _, rs := range replicationSets {
-		if !zoneAware(rs) && d.ingestersRing.ReplicationFactor() > 1 && len(rs.Instances) > 1 {
-			needHashes = true
-		}
-	}
-	if needHashes && !req.Hashes {
+	if !d.seriesCountsAddUp(replicationSets) && !req.Hashes {
 		if req.StepMs > 0 {
-			return SeriesCountsResult{}, errSeriesCountsNeedZones{d.ingestersRing.ReplicationFactor()}
+			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
 		withHashes := *req
 		withHashes.Hashes = true
@@ -113,8 +106,8 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	for i, answers := range perSet {
 		if out.Hashed || !zoneAware(replicationSets[i]) {
 			// Hashes union to the same count however many replicas sent
-			// them, and without zones and a replication factor of 1 each
-			// series is on one ingester.
+			// them, and without zones counts are kept only for a single
+			// ingester.
 			for _, a := range answers {
 				out.Responses = append(out.Responses, a.resp)
 			}
@@ -123,6 +116,26 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		out.Responses = append(out.Responses, maxOverZones(answersByZone(answers)))
 	}
 	return out, nil
+}
+
+// seriesCountsAddUp reports whether the counts of the ingesters in sets
+// give each series once: there is one replication set, and either it has a
+// single instance or it is zone-aware with one instance per zone and every
+// zone holds a full copy. Under ingest storage each zone of a partition
+// does; with classic replication only when there are no more zones than
+// the replication factor.
+func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet) bool {
+	if len(sets) != 1 {
+		return false
+	}
+	rs := sets[0]
+	if len(rs.Instances) == 1 {
+		return true
+	}
+	if !zoneAware(rs) || rs.ZoneCount() != len(rs.Instances) {
+		return false
+	}
+	return d.cfg.IngestStorageConfig.Enabled || rs.ZoneCount() <= d.ingestersRing.ReplicationFactor()
 }
 
 type seriesCountsAnswer struct {
