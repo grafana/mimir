@@ -345,21 +345,30 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 			return leftover, ingested, failure.err
 		}
 	}
-	// In the order of the request, which the prepared series are in.
-	slices.SortFunc(touched, func(a, b floatIngested) int { return cmp.Compare(a.series, b.series) })
+	// In the order of the request, which the prepared series are in: placed by position, a series ref never being 0,
+	// rather than sorted.
+	refs := slices.Grow(buffers.refs[:0], len(prepared))[:len(prepared)]
+	clear(refs)
+	for _, series := range touched {
+		refs[series.series] = series.ref
+	}
+	buffers.refs = refs
 	needsLabels := sink.NeedsLabels()
 	refSink, byRef := sink.(RefSink)
-	for _, series := range touched {
-		prep := prepared[series.series]
+	for position, ref := range refs {
+		if ref == 0 {
+			continue
+		}
+		prep := prepared[position]
 		if byRef {
-			if refSink.IngestedRef(prep.index, series.ref) {
+			if refSink.IngestedRef(prep.index, ref) {
 				continue
 			}
 			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
 		} else if needsLabels {
 			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
 		}
-		sink.Ingested(prep.index, scratch, series.ref)
+		sink.Ingested(prep.index, scratch, ref)
 	}
 	return leftover, ingested, nil
 }
@@ -411,6 +420,7 @@ func adapterHashMatches() bool {
 type floatScratch struct {
 	prepared      []floatSeries
 	candidates    []locationCandidate
+	refs          []storage.SeriesRef
 	counts, next  []int
 	ordered       []int32
 	pairs         [][2]string
