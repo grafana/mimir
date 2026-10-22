@@ -61,43 +61,6 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 	require.Equal(t, uint64(1+2+1+4), queryStats.LoadPhysicalSamplesRead())
 }
 
-func BenchmarkOperatorEvaluationStats_TrackSampleForInstantVectorSelector(b *testing.B) {
-	start := timestamp.Time(0)
-	step := time.Minute
-	end := start.Add(360 * step)
-	timeRange := NewRangeQueryTimeRange(start, end, step)
-
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-
-	s, err := NewOperatorEvaluationStats(context.Background(), timeRange, memoryConsumptionTracker, 0)
-	require.NoError(b, err)
-
-	nodeId := int64(5)
-
-	for b.Loop() {
-		for i := range 360 {
-			//_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 1, []bool{true, true, false}, nodeId)
-			//_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 2, []bool{true, true, true}, nodeId)
-			//_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 3, []bool{true, false, true}, nodeId)
-			//_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 4, []bool{true, true, true}, nodeId)
-			//_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 5, []bool{true, true, true}, nodeId)
-
-			_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 1, []bool{}, nodeId)
-			_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 2, []bool{}, nodeId)
-			_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 3, []bool{}, nodeId)
-			_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 4, []bool{}, nodeId)
-			_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 5, []bool{}, nodeId)
-		}
-	}
-
-	//fmt.Fprintf(os.Stderr, "!!! PEAK: %d\n", memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
-
-	//fmt.Printf("!!! STATS: %+v\n", s.allSeries.samplesPerNode)
-
-	s.Close()
-}
-
 func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
 	testCases := map[string]struct {
 		append          func(ts int64, floats *FPointRingBuffer, histograms *HPointRingBuffer) error
@@ -2311,4 +2274,44 @@ func TestOperatorEvaluationStats_HalveCounts_MultiNode(t *testing.T) {
 	s.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
+}
+
+func BenchmarkOperatorEvaluationStats_TrackSampleForInstantVectorSelector(b *testing.B) {
+	const numSteps = 360
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(numSteps * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	runBenchmark := func(b *testing.B, nodeIdGenFn func(i int) int64) {
+		memory := limiter.NewUnlimitedMemoryConsumptionTracker(b.Context())
+		s, err := NewOperatorEvaluationStats(context.Background(), timeRange, memory, 0)
+		require.NoError(b, err)
+
+		for b.Loop() {
+			for i := range numSteps {
+				nodeId := nodeIdGenFn(i)
+				_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 1, []bool{}, nodeId)
+				_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 2, []bool{}, nodeId)
+				_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 3, []bool{}, nodeId)
+				_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 4, []bool{}, nodeId)
+				_ = s.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(time.Duration(i)*step)), 5, []bool{}, nodeId)
+			}
+		}
+
+		s.Close()
+		require.Zero(b, memory.CurrentEstimatedMemoryConsumptionBytes())
+	}
+
+	b.Run("per-node stats enabled", func(b *testing.B) {
+		runBenchmark(b, func(i int) int64 {
+			return int64(i%4 + 1)
+		})
+	})
+
+	b.Run("per-node stats disabled", func(b *testing.B) {
+		runBenchmark(b, func(i int) int64 {
+			return 0
+		})
+	})
 }
