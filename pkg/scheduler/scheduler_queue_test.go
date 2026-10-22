@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/queue"
@@ -25,11 +26,11 @@ func newTestSchedulerQueueWithLimits(t *testing.T, l Limits) *schedulerQueue {
 		cfg,
 		l,
 		log.NewNopLogger(),
-		prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_gauge"}, []string{"user"}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{Name: "test_gauge"}, []string{"user"}),
 		nil,
-		prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_counter"}, []string{"user"}),
-		prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_histogram"}),
-		prometheus.NewSummaryVec(prometheus.SummaryOpts{Name: "test_summary"}, []string{"query_component"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{Name: "test_counter"}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{Name: "test_histogram"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{Name: "test_summary"}, []string{"query_component"}),
 		nil,
 	)
 	require.NoError(t, err)

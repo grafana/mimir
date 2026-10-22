@@ -8,18 +8,18 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/services"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/promtest"
 )
@@ -43,16 +43,17 @@ type testQueueOptions struct {
 
 // newUnstartedTestQueueWith returns a Queue that the caller must start, if it needs dispatcherLoop.
 func newUnstartedTestQueueWith(tb testing.TB, maxOutstandingPerTenant int, opts testQueueOptions) (*Queue, *testQueueMetrics) {
+	reg := prometheus.NewPedanticRegistry()
+	f := promauto.With(reg)
 	m := &testQueueMetrics{
-		reg:                   prometheus.NewPedanticRegistry(),
-		queueLength:           prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_queue_length"}, []string{"user"}),
-		discardedRequests:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_requests"}, []string{"user"}),
-		enqueueDuration:       prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_enqueue_duration"}),
-		reservationSize:       prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_reservation_size"}),
-		discardedReservations: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_reservations"}, []string{"user"}),
-		unusedSlots:           prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_unused_slots"}, []string{"user"}),
+		reg:                   reg,
+		queueLength:           f.NewGaugeVec(prometheus.GaugeOpts{Name: "test_queue_length"}, []string{"user"}),
+		discardedRequests:     f.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_requests"}, []string{"user"}),
+		enqueueDuration:       f.NewHistogram(prometheus.HistogramOpts{Name: "test_enqueue_duration"}),
+		reservationSize:       f.NewHistogram(prometheus.HistogramOpts{Name: "test_reservation_size"}),
+		discardedReservations: f.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_reservations"}, []string{"user"}),
+		unusedSlots:           f.NewGaugeVec(prometheus.GaugeOpts{Name: "test_unused_slots"}, []string{"user"}),
 	}
-	m.reg.MustRegister(m.queueLength, m.discardedRequests, m.enqueueDuration, m.reservationSize, m.discardedReservations, m.unusedSlots)
 
 	logger := opts.logger
 	if logger == nil {

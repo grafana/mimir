@@ -9,9 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/grafana/dskit/services"
+	"github.com/stretchr/testify/require"
 )
 
 // lockingSuccessFn takes a mutex, as the scheduler's successFn does through addRequestToPending.

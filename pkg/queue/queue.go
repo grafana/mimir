@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 )
 
@@ -231,9 +232,9 @@ func New(
 ) (*Queue, error) {
 	if reservationMetrics == nil {
 		reservationMetrics = &ReservationMetrics{
-			Size:        prometheus.NewHistogram(prometheus.HistogramOpts{Name: "unregistered_reservation_size"}),
-			Discarded:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "unregistered_reservation_discarded"}, []string{"user"}),
-			UnusedSlots: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "unregistered_reservation_unused_slots"}, []string{"user"}),
+			Size:        promauto.With(nil).NewHistogram(prometheus.HistogramOpts{Name: "unregistered_reservation_size"}),
+			Discarded:   promauto.With(nil).NewCounterVec(prometheus.CounterOpts{Name: "unregistered_reservation_discarded"}, []string{"user"}),
+			UnusedSlots: promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{Name: "unregistered_reservation_unused_slots"}, []string{"user"}),
 		}
 	}
 

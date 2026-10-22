@@ -68,7 +68,7 @@
 * [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
 * [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892
 * [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
-* [ENHANCEMENT] Query-scheduler: Add the experimental `-query-scheduler.queue-reservation-enabled` and `-query-scheduler.queue-reservation-timeout` flags. With queue reservation enabled, the query-scheduler accepts a reservation of queue slots for all sub-requests of a parent query. It can then reject a whole query before it dispatches any sub-request. The query-frontend does not send reservations yet. #TODO
+* [ENHANCEMENT] Query-scheduler: Add the experimental `-query-scheduler.queue-reservation-enabled` and `-query-scheduler.queue-reservation-timeout` flags. With queue reservation enabled, the query-scheduler accepts a reservation of queue slots for all sub-requests of a parent query. It can then reject a whole query before it dispatches any sub-request. The query-frontend does not send reservations yet. #16935
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
@@ -151,7 +151,7 @@
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [ENHANCEMENT] Add `multi_zone_store_gateway_zone_(a|b)_enabled` config. #16607
-* [ENHANCEMENT] Add the `queue_reservation_enabled` config option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler. #TODO
+* [ENHANCEMENT] Add the `queue_reservation_enabled` config option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler. #16935
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 

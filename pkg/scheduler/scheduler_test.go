@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +37,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -2009,7 +2009,7 @@ func TestSchedulerQueueReservation_StreamCloseKeepsTheReservationWhileTheFronten
 	require.Equal(t, schedulerpb.OK, sendReservedEnqueues(t, opener, "reservation-1", "test", 10))
 	inserted := pendingRequestForTest(t, scheduler, 10)
 
-	require.NoError(t, opener.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](opener))
 	test.Poll(t, 5*time.Second, float64(1), func() interface{} {
 		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
