@@ -249,6 +249,47 @@ func (c *locationCache) findAll(hash uint64, visit func(group uint32, index int)
 	return false
 }
 
+// locationCandidate is the entry a slot of the location cache points to, with the series' hash.
+type locationCandidate struct {
+	entry *seriesEntry
+	group uint32
+	index int
+	// What was read of the entry's memory, kept so the reads are.
+	touched int64
+}
+
+// candidate returns the entry of the first slot of the hash's bucket that has its tag and points to an entry of the
+// hash. It also reads the start of the entry's labels and of its float head, which checking the entry and appending
+// to it read next: for a batch of series looked up first, those cache misses overlap rather than wait on each other.
+func (c *locationCache) candidate(hash uint64, groups []group) locationCandidate {
+	if len(c.slots) == 0 {
+		return locationCandidate{}
+	}
+	at := (hash & c.mask) &^ (locationBucket - 1)
+	tag := locationTag(hash)
+	for _, slot := range c.slots[at : at+locationBucket] {
+		if slot.index == 0 {
+			break
+		}
+		if slot.groupTag&(1<<locationTagBits-1) != tag {
+			continue
+		}
+		group, index := slot.groupTag>>locationTagBits, int(slot.index)-1
+		if entries := groups[group].entries; index < len(entries) && entries[index].hash == hash {
+			entry := &entries[index]
+			var touched int64
+			if len(entry.labels) > 0 {
+				touched = int64(entry.labels[0])
+			}
+			if head := entry.series.floatHead; head != nil {
+				touched += head.minTime
+			}
+			return locationCandidate{entry: entry, group: group, index: index, touched: touched}
+		}
+	}
+	return locationCandidate{}
+}
+
 // remember records where the series with hash is, in the first slot of its bucket: the oldest slot goes when it is
 // full.
 func (c *locationCache) remember(hash uint64, group uint32, index int, series int) {
