@@ -2596,9 +2596,9 @@
               "kind": "field",
               "name": "trust_compacted_blocks_after",
               "required": false,
-              "desc": "A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. 0 disables it, and windows inside -querier.query-ingesters-within always ask the ingesters.",
+              "desc": "A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. With ingest storage, a compacted block can miss a partition whose block-builder lags, and the count misses that partition's series without being marked as a lower bound. 0 disables it, so windows inside -querier.query-ingesters-within are always counted from the ingesters.",
               "fieldValue": null,
-              "fieldDefaultValue": 3600000000000,
+              "fieldDefaultValue": 0,
               "fieldFlag": "querier.cardinality-estimate.trust-compacted-blocks-after",
               "fieldType": "duration",
               "fieldCategory": "experimental"
