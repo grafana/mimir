@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -699,7 +700,7 @@ func (i *Ingester) pushSamplesToAppender(
 				}
 
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-					zih, zfh := zeroHistogramFor(ih, fh)
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 					if ref != 0 {
 						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					} else {
@@ -976,23 +977,4 @@ func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64
 		}
 	}
 	return true
-}
-
-// zeroHistogramFor returns the zero sample to append for a created timestamp. It matches the type and layout of the
-// given histogram so that appending it doesn't cut a new chunk.
-func zeroHistogramFor(h *histogram.Histogram, fh *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
-	if fh != nil {
-		return nil, &histogram.FloatHistogram{
-			CounterResetHint: histogram.CounterReset,
-			Schema:           fh.Schema,
-			ZeroThreshold:    fh.ZeroThreshold,
-			CustomValues:     fh.CustomValues,
-		}
-	}
-	return &histogram.Histogram{
-		CounterResetHint: histogram.CounterReset,
-		Schema:           h.Schema,
-		ZeroThreshold:    h.ZeroThreshold,
-		CustomValues:     h.CustomValues,
-	}, nil
 }

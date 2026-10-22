@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tracing"
@@ -1056,6 +1057,102 @@ func TestValidateLabelDuplication(t *testing.T) {
 	}
 }
 
+func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
+	ts := time.Now()
+	userID := "testUser"
+
+	baseCfg := func(blocked []string) labelValidationConfig {
+		return labelValidationConfig{
+			maxLabelNameLength:                  100,
+			maxLabelNamesPerSeries:              10,
+			maxLabelValueLength:                 100,
+			nameValidationScheme:                model.LegacyValidation,
+			blockedLabelNamesForLabelValueBytes: newBlockedLabelNames(blocked),
+		}
+	}
+
+	t.Run("series with a blocked label name is rejected", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		m := newSampleValidationMetrics(reg)
+		cfg := baseCfg([]string{"logs"})
+		ls := []mimirpb.LabelAdapter{
+			{Name: model.MetricNameLabel, Value: "foo"},
+			{Name: "logs", Value: "some log line"},
+		}
+
+		err := validateLabels(m, cfg, userID, "", ls, false, false, nil, ts, nil)
+		require.Equal(t, blockedLabelValueBytesError{
+			LabelName: "logs",
+			Series:    mimirpb.FromLabelAdaptersToString(ls),
+		}, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+			# TYPE cortex_discarded_samples_total counter
+			cortex_discarded_samples_total{group="",reason="label_value_bytes_blocked_label",user="testUser"} 1
+		`), "cortex_discarded_samples_total"))
+	})
+
+	t.Run("series without a blocked label name is unaffected", func(t *testing.T) {
+		cfg := baseCfg([]string{"logs"})
+		ls := []mimirpb.LabelAdapter{
+			{Name: model.MetricNameLabel, Value: "foo"},
+			{Name: "team", Value: "a"},
+		}
+
+		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("__name__ is never blocked even if configured", func(t *testing.T) {
+		cfg := baseCfg([]string{model.MetricNameLabel, "logs"})
+		ls := []mimirpb.LabelAdapter{
+			{Name: model.MetricNameLabel, Value: "foo"},
+			{Name: "team", Value: "a"},
+		}
+
+		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("no blocked label names configured disables the check", func(t *testing.T) {
+		cfg := baseCfg(nil)
+		ls := []mimirpb.LabelAdapter{
+			{Name: model.MetricNameLabel, Value: "foo"},
+			{Name: "logs", Value: "some log line"},
+		}
+
+		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("blocked label check takes priority over value-too-long for the same label", func(t *testing.T) {
+		cfg := baseCfg([]string{"logs"})
+		cfg.maxLabelValueLength = 5
+		ls := []mimirpb.LabelAdapter{
+			{Name: model.MetricNameLabel, Value: "foo"},
+			{Name: "logs", Value: "a value that is definitely too long"},
+		}
+
+		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		require.Equal(t, blockedLabelValueBytesError{
+			LabelName: "logs",
+			Series:    mimirpb.FromLabelAdaptersToString(ls),
+		}, err)
+	})
+}
+
+func TestNewBlockedLabelNames(t *testing.T) {
+	assert.Nil(t, newBlockedLabelNames(nil))
+	assert.Nil(t, newBlockedLabelNames([]string{}))
+
+	set := newBlockedLabelNames([]string{"logs", model.MetricNameLabel, "message"})
+	assert.True(t, set.contains("logs"))
+	assert.True(t, set.contains("message"))
+	assert.False(t, set.contains(model.MetricNameLabel))
+	assert.False(t, set.contains("other"))
+}
+
 func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	buf, err := (&mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -1501,6 +1598,7 @@ func TestNewValidationConfigFieldCompleteness(t *testing.T) {
 	limits.MaxNativeHistogramBuckets = 100
 	limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
 	require.NoError(t, limits.LabelValueLengthOverLimitStrategy.Set("truncate"))
+	limits.BlockedLabelNamesForLabelValueBytes = flagext.StringSliceCSV{"logs"}
 
 	// 3. Create overrides
 	overrides := validation.NewOverrides(*limits, nil)
