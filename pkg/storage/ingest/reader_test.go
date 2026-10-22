@@ -3615,6 +3615,12 @@ func withFetchConcurrency(i int) readerTestCfgOpt {
 	}
 }
 
+func withClientRack(rack string) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.ClientRack = rack
+	}
+}
+
 func withMaxBufferedBytes(i int) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.MaxBufferedBytes = i
@@ -3702,6 +3708,61 @@ func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicN
 	})
 
 	return reader
+}
+
+func TestSingleClusterPartitionReader_ShouldWarnIfClientRackIsSetWithConcurrentFetching(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	tests := map[string]struct {
+		clientRack          string
+		fetchConcurrencyMax int
+		expectWarning       bool
+	}{
+		"no client rack configured": {
+			clientRack:          "",
+			fetchConcurrencyMax: 2,
+			expectWarning:       false,
+		},
+		"client rack configured and concurrent fetching enabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 2,
+			expectWarning:       true,
+		},
+		"client rack configured and concurrent fetching disabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 0,
+			expectWarning:       false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancelCause(context.Background())
+			t.Cleanup(func() { cancel(errors.New("test done")) })
+
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+			consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+
+			logs := &concurrency.SyncBuffer{}
+			createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
+				withClientRack(testData.clientRack),
+				withFetchConcurrency(testData.fetchConcurrencyMax),
+				withLogger(log.NewLogfmtLogger(logs)),
+			)
+
+			const warning = "the configured Kafka client rack has no effect because concurrent fetching is enabled"
+			if testData.expectWarning {
+				assert.Contains(t, logs.String(), warning)
+			} else {
+				assert.NotContains(t, logs.String(), warning)
+			}
+		})
+	}
 }
 
 func TestSingleClusterPartitionReader_Commit(t *testing.T) {
