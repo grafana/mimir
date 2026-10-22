@@ -21,15 +21,19 @@ import (
 )
 
 const (
-	// producerBatchMaxBytes is the max allowed size of a batch of Kafka records.
+	// producerBatchMaxBytes is the default maximum size of a batch of Kafka records.
 	producerBatchMaxBytes = 16_000_000
+
+	// Leave room for Kafka record and request framing when validating nested size limits.
+	producerSizeOverheadBytes          = 16384
+	defaultProducerMaxRequestSizeBytes = 100 << 20
 
 	// maxProducerRecordDataBytesLimit is the max allowed size of a single record data. Given we have a limit
 	// on the max batch size (producerBatchMaxBytes), a Kafka record data can't be bigger than the batch size
 	// minus some overhead required to serialise the batch and the record itself. We use 16KB as such overhead
 	// in the worst case scenario, which is expected to be way above the actual one.
-	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
-	minProducerRecordDataBytesLimit = 1024 * 1024
+	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - producerSizeOverheadBytes
+	minProducerRecordDataBytesLimit = 1
 
 	defaultMaxInflightProduceRequests = 20
 
@@ -38,11 +42,9 @@ const (
 
 var (
 	// ErrWriteRequestDataItemTooLarge is the error returned when a split WriteRequest failed to be written to
-	// a partition because it's larger than the max allowed record size. The size reported here is always
-	// maxProducerRecordDataBytesLimit, regardless of the configured max record data size, because the ingestion
-	// fails only if bigger than the upper limit.
+	// a partition because it exceeds the configured producer or broker size limit.
 	ErrWriteRequestDataItemTooLarge = errors.New(globalerror.DistributorMaxWriteRequestDataItemSize.Message(
-		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
+		"the write request contains a timeseries or metadata item which exceeds the Kafka producer or broker size limit"))
 
 	// ErrWriterNotRunning is the error returned if someone tries to use Writer but the service is not
 	// in the running state.
