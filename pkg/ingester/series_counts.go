@@ -233,6 +233,11 @@ type countSource struct {
 	close  func()
 }
 
+// countSourcesBetweenReadsHook, if set, runs after countSources opens the
+// head and before it lists the blocks. Tests use it to run a head
+// compaction between the two reads.
+var countSourcesBetweenReadsHook func()
+
 // countSources opens the index of every local block and of the head that
 // overlaps [minT, maxT), oldest first. The head's index keeps only the
 // chunks inside the window; a block's index returns all of a series'
@@ -246,6 +251,33 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			out = nil
 		}
 	}()
+	// Read the head first. Opening its chunk reader registers a read in the
+	// head's isolation state, and every head truncation or series eviction
+	// waits for overlapping reads before it removes data
+	// (WaitForPendingReadersInTimeRange). Any compaction whose block is not
+	// in the list read below therefore can't remove its data from the head
+	// until this request is done; one whose block is listed may already
+	// have, and the block holds it. A series in both counts once.
+	var headSrc *countSource
+	head := db.Head()
+	if head.NumSeries() > 0 && head.MaxTime() >= minT && head.MinTime() < maxT {
+		// The window end is exclusive and the range head's is not.
+		rh := tsdb.NewRangeHead(head, minT, maxT-1)
+		chunkr, err := rh.Chunks()
+		if err != nil {
+			return out, err
+		}
+		idx, err := rh.Index()
+		if err != nil {
+			_ = chunkr.Close()
+			return out, err
+		}
+		headSrc = &countSource{minT: head.MinTime(), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
+		out = append(out, headSrc)
+	}
+	if countSourcesBetweenReadsHook != nil {
+		countSourcesBetweenReadsHook()
+	}
 	for _, b := range db.Blocks() {
 		if b.MaxTime() <= minT || b.MinTime() >= maxT {
 			continue
@@ -255,21 +287,6 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			return out, err
 		}
 		out = append(out, &countSource{minT: b.MinTime(), idx: idx, close: func() { _ = idx.Close() }})
-	}
-	head := db.Head()
-	if head.NumSeries() > 0 && head.MaxTime() >= minT && head.MinTime() < maxT {
-		// The window end is exclusive and the range head's is not.
-		rh := tsdb.NewRangeHead(head, minT, maxT-1)
-		idx, err := rh.Index()
-		if err != nil {
-			return out, err
-		}
-		chunkr, err := rh.Chunks()
-		if err != nil {
-			_ = idx.Close()
-			return out, err
-		}
-		out = append(out, &countSource{minT: head.MinTime(), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }})
 	}
 	return out, nil
 }
