@@ -33,18 +33,25 @@ import (
 )
 
 type ruleRegistry struct {
-	prefix string
-	rules  map[string]map[string]rulespb.RuleGroupList // tenant -> rule file name -> groups
-	mtx    sync.RWMutex
-	logger log.Logger
+	prefix      string
+	rules       map[string]map[string]rulespb.RuleGroupList // tenant -> rule file name -> groups
+	validations map[string]map[string]ruleValidation        // tenant -> rule file name -> last validation
+	mtx         sync.RWMutex
+	logger      log.Logger
+}
+
+type ruleValidation struct {
+	scheme model.ValidationScheme
+	errs   []error
 }
 
 func newRuleRegistry(prefix string, logger log.Logger) *ruleRegistry {
 	return &ruleRegistry{
-		prefix: prefix,
-		rules:  map[string]map[string]rulespb.RuleGroupList{},
-		mtx:    sync.RWMutex{},
-		logger: logger,
+		prefix:      prefix,
+		rules:       map[string]map[string]rulespb.RuleGroupList{},
+		validations: map[string]map[string]ruleValidation{},
+		mtx:         sync.RWMutex{},
+		logger:      logger,
 	}
 }
 
@@ -52,12 +59,14 @@ func (r *ruleRegistry) cleanupUser(userID string) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	delete(r.rules, userID)
+	delete(r.validations, userID)
 }
 
 func (r *ruleRegistry) cleanup() {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	clear(r.rules)
+	clear(r.validations)
 }
 
 func (r *ruleRegistry) users() ([]string, error) {
@@ -104,6 +113,7 @@ func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.Rule
 			cloneLabelStrings(groups)
 			anyUpdated = true
 			r.rules[user][fullFileName] = groups
+			delete(r.validations[user], fullFileName)
 		}
 	}
 
@@ -125,6 +135,7 @@ func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.Rule
 
 		if ruleGroups == nil {
 			delete(r.rules[user], existingFile)
+			delete(r.validations[user], existingFile)
 			anyUpdated = true
 		}
 	}
@@ -176,6 +187,31 @@ func (r *ruleRegistry) get(user string, identifier string) *rulefmt.RuleGroups {
 	}
 
 	return &rulefmt.RuleGroups{Groups: fmtGroups}
+}
+
+// validation returns the stored validation result of a namespace, if that validation used scheme.
+func (r *ruleRegistry) validation(user string, identifier string, scheme model.ValidationScheme) ([]error, bool) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	v, ok := r.validations[user][identifier]
+	return v.errs, ok && v.scheme == scheme
+}
+
+// storeValidation keeps the validation result of a namespace until MapRules changes or removes the namespace.
+// syncRulesToManager does not run concurrently for the same user.
+// So the namespace cannot change between the validation and this store.
+func (r *ruleRegistry) storeValidation(user string, identifier string, scheme model.ValidationScheme, errs []error) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if _, ok := r.rules[user][identifier]; !ok {
+		return
+	}
+	if r.validations[user] == nil {
+		r.validations[user] = map[string]ruleValidation{}
+	}
+	r.validations[user][identifier] = ruleValidation{scheme: scheme, errs: errs}
 }
 
 // mapper is designed to enusre the provided rule sets are identical
@@ -351,7 +387,14 @@ func (r registryLoader) Load(identifier string, ignoreUnknownFields bool, nameVa
 	if rgs == nil {
 		return nil, []error{fmt.Errorf("%s: rule file not found in registry", identifier)}
 	}
-	if errs := validateRuleGroups(identifier, rgs, nameValidationScheme, r.parser); len(errs) > 0 {
+	// LoadGroups loads every namespace of the user when one namespace changes.
+	// So validate a namespace only once after each change.
+	errs, ok := r.registry.validation(r.user, identifier, nameValidationScheme)
+	if !ok {
+		errs = validateRuleGroups(identifier, rgs, nameValidationScheme, r.parser)
+		r.registry.storeValidation(r.user, identifier, nameValidationScheme, errs)
+	}
+	if len(errs) > 0 {
 		return nil, errs
 	}
 	return rgs, nil

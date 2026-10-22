@@ -174,3 +174,30 @@ func TestRuleFileStore_LoadValidatesRuleGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestRegistryRuleFileStore_LoadValidatesChangedNamespaces(t *testing.T) {
+	const user = "user-1"
+	invalid := createRuleGroup("group-1", user, &rulespb.RuleDesc{Record: "sum:metric", Expr: "sum(metric)", For: time.Minute})
+	valid := createRuleGroup("group-1", user, createRecordingRule("sum:metric", "sum(metric)"))
+
+	store := NewRuleFileStore(Config{RulePath: t.TempDir(), RuleRegistryEnabled: true}, log.NewNopLogger())
+	steps := []struct {
+		group      *rulespb.RuleGroupDesc
+		wantUpdate bool
+		wantErrs   int
+	}{
+		{group: invalid, wantUpdate: true, wantErrs: 1},
+		{group: invalid, wantUpdate: false, wantErrs: 1},
+		{group: valid, wantUpdate: true, wantErrs: 0},
+		{group: invalid, wantUpdate: true, wantErrs: 1},
+	}
+	for i, step := range steps {
+		update, files, err := store.mapRules(user, rulespb.RuleGroupList{step.group})
+		require.NoError(t, err)
+		require.Equal(t, step.wantUpdate, update, "step %d", i)
+		require.Len(t, files, 1)
+
+		_, errs := store.groupLoader(user).Load(files[0], false, model.UTF8Validation)
+		require.Len(t, errs, step.wantErrs, "step %d", i)
+	}
+}
