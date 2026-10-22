@@ -233,8 +233,9 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 // the window ended at least -querier.cardinality-estimate.trust-compacted-blocks-after
 // ago, and blocks that the compactor wrote, not the ingesters or the
 // block-builder, cover it. The compactor merges a range only once newer
-// blocks exist, so its output for a range in the past holds what was
-// written into that range by then.
+// blocks exist, but it does not wait for every partition's block-builder
+// block, so under ingest storage its output can miss a partition that lags.
+// That is why the default is 0.
 func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, now time.Time) bool {
 	trust := e.blocks.estimateCfg.TrustCompactedBlocksAfter
 	if trust <= 0 || req.MaxT > util.TimeToMillis(now.Add(-trust)) {

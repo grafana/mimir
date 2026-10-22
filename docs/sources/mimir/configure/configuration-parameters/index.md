@@ -2146,10 +2146,12 @@ cardinality_estimate:
   # count for a past day can use the index-headers before
   # -querier.query-store-after has passed. Data written into that range after it
   # was compacted, such as late out-of-order samples, is not counted until it is
-  # compacted too. 0 disables it, and windows inside
-  # -querier.query-ingesters-within always ask the ingesters.
+  # compacted too. With ingest storage, a compacted block can miss a partition
+  # whose block-builder lags, and the count misses that partition's series
+  # without being marked as a lower bound. 0 disables it, so windows inside
+  # -querier.query-ingesters-within are always counted from the ingesters.
   # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
-  [trust_compacted_blocks_after: <duration> | default = 1h]
+  [trust_compacted_blocks_after: <duration> | default = 0s]
 
 
 # (advanced) Maximum number of remote read queries that can be executed
