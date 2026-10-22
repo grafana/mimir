@@ -175,6 +175,14 @@
 * [ENHANCEMENT] query-tee: Add per-backend `include_tenants` option to the `-backend.config-file` configuration. Only requests whose `X-Scope-OrgID` tenants are all included are sent to that backend, while the preferred backend always receives all traffic. #16879
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query`, `/api/v1/cardinality/*`, and `/api/v1/search/*` endpoints to all backends. #16879
 
+## 3.2.3
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.26.10 and update distroless runtime images to address compromised CA trust (CVE-2026-111943). #16939
+* [BUGFIX] Update `golang.org/x/net` to v0.60.0 for HTTP/2 security fixes. #16832
+* [BUGFIX] Upgrade Go to 1.26.9 to address [CVE-2026-56857](https://pkg.go.dev/vuln/GO-2026-6604), [CVE-2026-56866](https://pkg.go.dev/vuln/GO-2026-6605), [CVE-2026-78659](https://pkg.go.dev/vuln/GO-2026-6603), [CVE-2026-78660](https://pkg.go.dev/vuln/GO-2026-6610), [CVE-2026-78663](https://pkg.go.dev/vuln/GO-2026-6612), [CVE-2026-78667](https://pkg.go.dev/vuln/GO-2026-6609), [CVE-2026-78669](https://pkg.go.dev/vuln/GO-2026-6611), [CVE-2026-94439](https://pkg.go.dev/vuln/GO-2026-6613), [CVE-2026-94440](https://pkg.go.dev/vuln/GO-2026-6608), [CVE-2026-94448](https://pkg.go.dev/vuln/GO-2026-6599), [CVE-2026-97030](https://pkg.go.dev/vuln/GO-2026-6600), [CVE-2026-97031](https://pkg.go.dev/vuln/GO-2026-6607), and [CVE-2026-97032](https://pkg.go.dev/vuln/GO-2026-6617). #16861 #16884
+
 ## 3.2.2
 
 ### Grafana Mimir
