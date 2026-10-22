@@ -2438,7 +2438,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.cardinality-estimate.max-metric-names int
     	[experimental] Maximum number of distinct metric names a store-gateway may return for one cardinality estimate read from the index-headers. A request over it fails. 0 means no limit. (default 10000000)
   -querier.cardinality-estimate.trust-compacted-blocks-after duration
-    	[experimental] A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. 0 disables it, and windows inside -querier.query-ingesters-within always ask the ingesters. (default 1h0m0s)
+    	[experimental] A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. With ingest storage, a compacted block can miss a partition whose block-builder lags, and the count misses that partition's series without being marked as a lower bound. 0 disables it, so windows inside -querier.query-ingesters-within are always counted from the ingesters.
   -querier.default-evaluation-interval duration
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
