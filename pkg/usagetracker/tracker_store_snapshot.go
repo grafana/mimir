@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"golang.org/x/sync/errgroup"
 
@@ -215,7 +214,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
 
-		if _, _, err := tenant.ParseWithMetadata(tenantID); err != nil {
+		if err := parseTenantIDWithReadCompartment(tenantID); err != nil {
 			level.Warn(t.logger).Log("msg", "skipping snapshot data for invalid tenant ID", "tenant", fmt.Sprintf("%q", tenantID), "err", err)
 			continue
 		}

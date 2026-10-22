@@ -21,7 +21,7 @@ import (
 
 func TestUsageTracker_InvalidTenantID(t *testing.T) {
 	tracker := newReadyTestUsageTracker(t, nil)
-	for _, userID := range []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5"} {
+	for _, userID := range []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "tenant/rc/x", "tenant/rc/", "tenant/foo/1"} {
 		t.Run(fmt.Sprintf("%q", userID), func(t *testing.T) {
 			batchResp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
 				Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
@@ -40,16 +40,21 @@ func TestUsageTracker_InvalidTenantID(t *testing.T) {
 		})
 	}
 
-	// Tracking keys can include validated tenant metadata.
-	_, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
-		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
-			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{{UserID: "tenant:compartment=foo", SeriesHashes: []uint64{2}}}},
-		},
-	})
-	require.NoError(t, err)
-	withRLock(&tracker.partitionsMtx, func() {
-		require.Equal(t, map[string]uint64{"tenant:compartment=foo": 1}, tracker.partitions[0].store.seriesCountsForTests())
-	})
+	// Tracking keys can include validated tenant metadata and a read-compartment suffix.
+	for _, userID := range []string{"tenant:compartment=foo", "tenant/rc/1", "tenant/rc/1:source=x"} {
+		t.Run(fmt.Sprintf("valid %q", userID), func(t *testing.T) {
+			tracker := newReadyTestUsageTracker(t, nil)
+			_, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+				Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+					{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{{UserID: userID, SeriesHashes: []uint64{2}}}},
+				},
+			})
+			require.NoError(t, err)
+			withRLock(&tracker.partitionsMtx, func() {
+				require.Equal(t, map[string]uint64{userID: 1}, tracker.partitions[0].store.seriesCountsForTests())
+			})
+		})
+	}
 }
 
 func TestTrackerStore_CollectWithCorruptTenantID(t *testing.T) {
@@ -86,10 +91,10 @@ func TestTrackerStore_CollectWithCorruptTenantID(t *testing.T) {
 func TestTrackerStore_ReplaySkipsInvalidTenantIDs(t *testing.T) {
 	now := time.Now()
 	store := newTrackerStore(20*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
-	for _, userID := range []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "valid", "tenant:compartment=foo"} {
+	for _, userID := range []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "tenant/rc/x", "tenant/rc/", "tenant/foo/1", "valid", "tenant:compartment=foo", "tenant/rc/1", "tenant/rc/1:source=x"} {
 		store.processCreatedSeriesEvent(userID, []uint64{1}, now, now)
 	}
-	require.Equal(t, map[string]uint64{"valid": 1, "tenant:compartment=foo": 1}, store.seriesCountsForTests())
+	require.Equal(t, map[string]uint64{"valid": 1, "tenant:compartment=foo": 1, "tenant/rc/1": 1, "tenant/rc/1:source=x": 1}, store.seriesCountsForTests())
 }
 
 func TestTrackerStore_LoadSnapshotSkipsInvalidTenantIDs(t *testing.T) {
@@ -99,7 +104,7 @@ func TestTrackerStore_LoadSnapshotSkipsInvalidTenantIDs(t *testing.T) {
 	data.PutUvarint64(1)
 	data.PutByte(0)
 	data.PutBE64(uint64(now.Unix()))
-	users := []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "valid", "tenant:compartment=foo"}
+	users := []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "tenant/rc/x", "tenant/rc/", "tenant/foo/1", "valid", "tenant:compartment=foo", "tenant/rc/1", "tenant/rc/1:source=x"}
 	data.PutUvarint64(uint64(len(users)))
 	for _, userID := range users {
 		data.PutUvarintStr(userID)
@@ -109,7 +114,7 @@ func TestTrackerStore_LoadSnapshotSkipsInvalidTenantIDs(t *testing.T) {
 	}
 	store := newTrackerStore(20*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 	require.NoError(t, store.loadSnapshot(data.Get(), now))
-	require.Equal(t, map[string]uint64{"valid": 1, "tenant:compartment=foo": 1}, store.seriesCountsForTests())
+	require.Equal(t, map[string]uint64{"valid": 1, "tenant:compartment=foo": 1, "tenant/rc/1": 1, "tenant/rc/1:source=x": 1}, store.seriesCountsForTests())
 	reg := prometheus.NewPedanticRegistry()
 	require.NoError(t, reg.Register(store))
 	_, err := reg.Gather()

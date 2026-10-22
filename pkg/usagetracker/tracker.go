@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -781,7 +780,7 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 	// Validate the whole batch before tracking any series.
 	for _, partition := range req.Partitions {
 		for _, user := range partition.Users {
-			if _, _, err := tenant.ParseWithMetadata(user.UserID); err != nil {
+			if err := parseTenantIDWithReadCompartment(user.UserID); err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid tenant ID %q", user.UserID)
 			}
 		}
