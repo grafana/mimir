@@ -278,8 +278,9 @@ func (c *locationCache) candidate(hash uint64, groups []group) locationCandidate
 		if entries := groups[group].entries; index < len(entries) && entries[index].hash == hash {
 			entry := &entries[index]
 			var touched int64
-			if len(entry.labels) > 0 {
-				touched = int64(entry.labels[0])
+			if size := len(entry.labels); size > 0 {
+				// Both ends: the labels of a series are about two cache lines.
+				touched = int64(entry.labels[0]) + int64(entry.labels[size-1])
 			}
 			if head := entry.series.floatHead; head != nil {
 				touched += head.minTime
