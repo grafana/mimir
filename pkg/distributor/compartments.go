@@ -83,32 +83,24 @@ type readCompartmentSeries struct {
 func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID, limitsKey string, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
 	numCompartments := router.NumCompartments()
 
-	// Find the read compartment of each series and count how many series each compartment has.
-	counts := make([]int, numCompartments)
+	// Find the read compartment of each series. At first, offsets holds the number of series of each
+	// compartment.
+	offsets := make([]int, numCompartments)
 	seriesCompartments := make([]int, len(timeseries))
 	for i, ts := range timeseries {
 		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 		compartment := router.CompartmentForMetric(userID, metricName)
 		seriesCompartments[i] = compartment
-		counts[compartment]++
-	}
-
-	// Count how many compartments have at least one series, so the groups slice can be sized once.
-	numGroups := 0
-	for _, count := range counts {
-		if count > 0 {
-			numGroups++
-		}
+		offsets[compartment]++
 	}
 
 	// Reserve one contiguous slice of the shared hashes array for each non-empty compartment, in
-	// ascending compartment order. positions[compartment] starts at the first free slot of that slice.
+	// ascending compartment order. Then offsets[compartment] is the first free slot of that slice.
 	hashes := make([]uint64, len(seriesHashes))
-	groups := make([]readCompartmentSeries, 0, numGroups)
+	groups := make([]readCompartmentSeries, 0, numCompartments)
 	start := 0
-	positions := make([]int, numCompartments)
-	for compartment, count := range counts {
-		positions[compartment] = start
+	for compartment, count := range offsets {
+		offsets[compartment] = start
 		if count > 0 {
 			end := start + count
 			groups = append(groups, readCompartmentSeries{
@@ -124,8 +116,8 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 	// hashes keep the order of the original request.
 	for i, hash := range seriesHashes {
 		compartment := seriesCompartments[i]
-		hashes[positions[compartment]] = hash
-		positions[compartment]++
+		hashes[offsets[compartment]] = hash
+		offsets[compartment]++
 	}
 
 	return groups
