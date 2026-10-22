@@ -854,8 +854,6 @@ func (s *subsetStats) Encode() EncodedSubsetStats {
 }
 
 func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*subsetStats, error) {
-	var memoryConsumption uint64
-
 	if len(e.SamplesProcessedPerStep) != timeRange.StepCount {
 		return nil, fmt.Errorf("number of 'samples processed' steps in encoded form (%d) does not match expected (%d)", len(e.SamplesProcessedPerStep), timeRange.StepCount)
 	}
@@ -868,9 +866,11 @@ func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionT
 		return nil, fmt.Errorf("number of 'samples read if first step' steps in encoded form (%d) does not match expected (%d)", len(e.SamplesReadIfFirstStep), timeRange.StepCount)
 	}
 
-	memoryConsumption += uint64(cap(e.SamplesProcessedPerStep)+cap(e.SamplesReadIfSubsequentStep)+cap(e.SamplesReadIfFirstStep)) * Int64Size
-	samplesPerNode := make(map[int64]*nodeSamples, len(e.SamplesPerNode))
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SamplesProcessedPerStep)+cap(e.SamplesReadIfSubsequentStep)+cap(e.SamplesReadIfFirstStep))*Int64Size, limiter.Int64Slices); err != nil {
+		return nil, err
+	}
 
+	samplesPerNode := make(map[int64]*nodeSamples, len(e.SamplesPerNode))
 	for _, node := range e.SamplesPerNode {
 		if len(node.SamplesProcessedPerStep) != timeRange.StepCount {
 			return nil, fmt.Errorf("number of 'samples processed' steps in encoded form (%d) does not match expected (%d)", len(node.SamplesProcessedPerStep), timeRange.StepCount)
@@ -884,16 +884,19 @@ func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionT
 			return nil, fmt.Errorf("number of 'samples read if first step' steps in encoded form (%d) does not match expected (%d)", len(node.SamplesReadIfFirstStep), timeRange.StepCount)
 		}
 
-		memoryConsumption += uint64(cap(node.SamplesProcessedPerStep)+cap(node.SamplesReadIfSubsequentStep)+cap(node.SamplesReadIfFirstStep)) * Int64Size
+		if _, ok := samplesPerNode[node.NodeId]; ok {
+			return nil, fmt.Errorf("duplicate entry for per-node stats in encoded form for node ID %d", node.NodeId)
+		}
+
+		if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(node.SamplesProcessedPerStep)+cap(node.SamplesReadIfSubsequentStep)+cap(node.SamplesReadIfFirstStep))*Int64Size, limiter.Int64Slices); err != nil {
+			return nil, err
+		}
+
 		samplesPerNode[node.NodeId] = &nodeSamples{
 			samplesProcessedPerStep:     node.SamplesProcessedPerStep,
 			samplesReadIfSubsequentStep: node.SamplesReadIfSubsequentStep,
 			samplesReadIfFirstStep:      node.SamplesReadIfFirstStep,
 		}
-	}
-
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(memoryConsumption, limiter.Int64Slices); err != nil {
-		return nil, err
 	}
 
 	return &subsetStats{
