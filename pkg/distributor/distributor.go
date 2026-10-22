@@ -1867,33 +1867,30 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			seriesHashes[idx] = labels.StableHash(nonCopiedLabels)
 		}
 
-		var groups []readCompartmentSeries
-		if d.compartmentRouter != nil {
-			groups = groupSeriesHashesByReadCompartment(d.compartmentRouter, userID, limitsKey, req.Timeseries, seriesHashes)
-		} else {
-			groups = []readCompartmentSeries{{usageTrackerUserID: limitsKey, seriesHashes: seriesHashes}}
-		}
-
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		canTrackAsync := true
-		for _, group := range groups {
-			// Check if the usage tracker client allows asynchronous tracking for this compartment.
-			// If any compartment is too close to its series limit, we must perform synchronous tracking.
-			if !d.usageTrackerClient.CanTrackAsync(group.usageTrackerUserID) {
-				canTrackAsync = false
-				break
-			}
+		var (
+			groups        []readCompartmentSeries
+			canTrackAsync bool
+		)
+		if d.compartmentRouter == nil {
+			canTrackAsync = d.usageTrackerClient.CanTrackAsync(limitsKey)
+		} else {
+			groups = groupSeriesHashesByReadCompartment(d.compartmentRouter, userID, limitsKey, req.Timeseries, seriesHashes)
+			canTrackAsync = d.canTrackReadCompartmentsAsync(groups)
 		}
+
 		if canTrackAsync {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
 
 			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
-			for _, group := range groups {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, group.usageTrackerUserID, group.seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", group.usageTrackerUserID, "series", len(group.seriesHashes))
+			if d.compartmentRouter == nil {
+				d.trackSeriesAsync(ctx, limitsKey, seriesHashes)
+			} else {
+				for _, group := range groups {
+					d.trackSeriesAsync(ctx, group.usageTrackerUserID, group.seriesHashes)
 				}
 			}
 
@@ -1901,7 +1898,15 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, rejectingCompartments, err := d.trackSeriesPerReadCompartment(ctx, groups)
+		var (
+			rejectedHashes        []uint64
+			rejectingCompartments []int32
+		)
+		if d.compartmentRouter == nil {
+			rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
+		} else {
+			rejectedHashes, rejectingCompartments, err = d.trackSeriesPerReadCompartment(ctx, groups)
+		}
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
@@ -1945,26 +1950,39 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 	})
 }
 
+// canTrackReadCompartmentsAsync returns true when the usage-tracker client can track the series of
+// all read compartments in groups asynchronously.
+func (d *Distributor) canTrackReadCompartmentsAsync(groups []readCompartmentSeries) bool {
+	for _, group := range groups {
+		if !d.usageTrackerClient.CanTrackAsync(group.usageTrackerUserID) {
+			return false
+		}
+	}
+	return true
+}
+
+// trackSeriesAsync tracks seriesHashes for usageTrackerUserID. It does not wait for the result.
+func (d *Distributor) trackSeriesAsync(ctx context.Context, usageTrackerUserID string, seriesHashes []uint64) {
+	if err := d.usageTrackerClient.TrackSeriesAsync(ctx, usageTrackerUserID, seriesHashes); err != nil {
+		level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", usageTrackerUserID, "series", len(seriesHashes))
+	}
+}
+
 // trackSeriesPerReadCompartment tracks the series of each read compartment and merges the rejected
-// hashes. When compartments are enabled the calls run concurrently so they can share a sync batch.
+// hashes. The calls run concurrently, so they can share a sync batch.
 func (d *Distributor) trackSeriesPerReadCompartment(ctx context.Context, groups []readCompartmentSeries) (rejectedHashes []uint64, rejectingCompartments []int32, err error) {
 	type trackResult struct {
 		rejected []uint64
 	}
 	results := make([]trackResult, len(groups))
-	trackSeries := func(ctx context.Context, idx int) error {
+	err = concurrency.ForEachJob(ctx, len(groups), len(groups), func(ctx context.Context, idx int) error {
 		rejected, err := d.usageTrackerClient.TrackSeries(ctx, groups[idx].usageTrackerUserID, groups[idx].seriesHashes)
 		if err != nil {
 			return err
 		}
 		results[idx].rejected = rejected
 		return nil
-	}
-	if d.compartmentRouter != nil {
-		err = concurrency.ForEachJob(ctx, len(groups), len(groups), trackSeries)
-	} else {
-		err = trackSeries(ctx, 0)
-	}
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1974,9 +1992,7 @@ func (d *Distributor) trackSeriesPerReadCompartment(ctx context.Context, groups 
 			continue
 		}
 		rejectedHashes = append(rejectedHashes, results[idx].rejected...)
-		if d.compartmentRouter != nil {
-			rejectingCompartments = append(rejectingCompartments, group.compartment)
-		}
+		rejectingCompartments = append(rejectingCompartments, group.compartment)
 	}
 	return rejectedHashes, rejectingCompartments, nil
 }
