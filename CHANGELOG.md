@@ -89,6 +89,7 @@
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
 * [BUGFIX] Compactor: Abandon a compaction job in scheduler mode when a source block file is missing from object storage rather than attempting to retry the job. #16538
+* [BUGFIX] Compactor: Complete a compaction job in scheduler mode when a known error is mitigated rather than abandoning the job. #16963
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Ingest storage: Avoid retaining redundant partition shuffle-shard cache entries for equivalent out-of-range shard sizes. #16615
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
