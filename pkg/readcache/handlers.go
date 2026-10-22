@@ -361,6 +361,9 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 // queryStreamSeriesstore answers a QueryStream from a single seriesstore engine, the common case of a partition that
 // didn't move within the query's range: the engine selects the series in label order with chunks in range, so they are
 // streamed as it has them, without being gathered, sorted and merged first.
+// slowSeriesstoreQuery is how long a query stream of the seriesstore engine takes to be logged with where its time went.
+const slowSeriesstoreQuery = 200 * time.Millisecond
+
 func (r *Readcache) queryStreamSeriesstore(ctx context.Context, spanlog *spanlogger.SpanLogger, req *client.QueryRequest, db *partitionTSDB, from, through int64, shard *sharding.ShardSelector, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) error {
 	q, err := db.ChunkQuerier(from, through)
 	if err != nil {
@@ -374,9 +377,26 @@ func (r *Readcache) queryStreamSeriesstore(ctx context.Context, spanlog *spanlog
 		hints.ShardIndex = shard.ShardIndex
 		hints.ShardCount = shard.ShardCount
 	}
+	// What a query waits on the querier to take its messages, apart from what the select and encoding cost, which
+	// tells a slow query's store from its client.
+	started := time.Now()
+	var sending time.Duration
+	var messages int
 	series, chunks, samples, ok, err := ingester.StreamSeriesstoreQuery(q, hints, matchers, queryStreamBatchSize, func(resp *client.QueryStreamResponse) error {
-		return client.SendQueryStream(stream, resp)
+		sendStarted := time.Now()
+		err := client.SendQueryStream(stream, resp)
+		sending += time.Since(sendStarted)
+		messages++
+		return err
 	})
+	elapsed := time.Since(started)
+	spanlog.SetTag("send_ms", sending.Milliseconds())
+	spanlog.SetTag("select_and_encode_ms", (elapsed - sending).Milliseconds())
+	if elapsed > slowSeriesstoreQuery {
+		level.Info(r.logger).Log("msg", "slow seriesstore query stream", "user", db.tenantID, "partition", db.partitionID,
+			"matchers", util.LabelMatchersToString(matchers), "series", series, "chunks", chunks, "samples", samples, "messages", messages,
+			"duration", elapsed, "send", sending, "select_and_encode", elapsed-sending, "err", err)
+	}
 	if err != nil {
 		return err
 	}
