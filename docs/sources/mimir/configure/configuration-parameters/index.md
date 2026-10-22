@@ -5200,10 +5200,11 @@ blocked_requests:
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
 
-# Maximum size in bytes of distinct label names and values. When querier
-# receives response from ingester, it merges the response with responses from
-# other ingesters. This maximum size limit is applied to the merged(distinct)
-# results. If the limit is reached, an error is returned.
+# Maximum size in bytes of the distinct values of any single label name, while
+# the querier merges the cardinality label names responses from the ingesters.
+# Because the responses are merged one label name at a time, this bounds the
+# querier memory a single request can use. If the limit is reached, an error is
+# returned.
 # CLI flag: -querier.label-names-and-values-results-max-size-bytes
 [label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
 
