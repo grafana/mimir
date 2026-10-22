@@ -75,6 +75,7 @@
 * [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892
 * [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
 * [ENHANCEMENT] Query-frontend: Queries using the `histogram_avg()` function are now shardable. #16921
+* [ENHANCEMENT] All: Reduce the memory that YAML encoding allocates for large documents. #16926
 * [ENHANCEMENT] HTTP: Avoid copying and retaining entire response bodies while initializing gzip compression. #16944
 * [ENHANCEMENT] Distributor: Reduce memory and CPU used to merge label values cardinality responses when ingest storage is enabled. Memory now grows with the size of the ingester responses rather than with the number of label values times the number of partitions. #16904
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
