@@ -357,6 +357,10 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 
 // headCounts counts series per value of req.GroupBy in the ingesters'
 // heads and local blocks over the window, from the series' chunk metas.
+// The distributor asks for hashes whenever more than one ingester per zone
+// answers, since a series can be in two partitions or on two ingesters of
+// a zone; a per-bucket count it can't add up is refused and answered
+// bucket by bucket.
 // When that walk is over max_index_bytes, no step is asked for and the
 // window is inside the time every head holds, the head is counted as one
 // bucket from its postings instead (headWholeCounts) and the response says
@@ -430,8 +434,8 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 // samples are all outside the window but are not yet removed by a head
 // compaction; the result says so with HeadWhole. Under ingest storage the
 // distributor takes one zone's answer per partition and adds up the
-// partitions, which share no series; with classic replication it takes the
-// largest zone's sum.
+// partitions; with classic replication it takes the largest zone's sum. A
+// series that moved between partitions or ingesters counts in each.
 func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	groupBy := req.GroupBy
 	if groupBy == "" {
@@ -464,8 +468,10 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 // classifyIngesterError turns an ingester's gRPC status, as the
 // distributor passes it on, into an estimate error.
 func classifyIngesterError(err error) error {
-	if strings.Contains(err.Error(), "need ingest storage or zone-aware replication") {
-		return badEstimateRequest("ingesters: %v", err)
+	if errors.Is(err, distributor.ErrSeriesCountsNeedOneIngesterPerZone) {
+		// Estimate answers the buckets one by one, each deduplicated by
+		// hash.
+		return badEstimateRequest("%w: ingesters: %v", errStepNeedsOneSource, err)
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		st, ok := status.FromError(e)
