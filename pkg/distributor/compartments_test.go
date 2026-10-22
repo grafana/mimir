@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,9 +106,9 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	const (
 		userID          = "user-1"
-		limitsKey       = "user-1:source=test"
 		numCompartments = 5
 	)
+	metadata := tenant.NewMetadata(":source=test")
 	router := compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
 
 	metricNames := []string{"metric_a", "metric_b", "metric_a", "metric_c", "metric_d", "metric_b"}
@@ -136,5 +137,5 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	require.Greater(t, len(expected), 1)
 	require.Less(t, len(expected), numCompartments)
 
-	assert.Equal(t, expected, groupSeriesHashesByReadCompartment(router, userID, limitsKey, timeseries, seriesHashes))
+	assert.Equal(t, expected, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
 }

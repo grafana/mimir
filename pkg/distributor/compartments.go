@@ -3,6 +3,8 @@
 package distributor
 
 import (
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -80,7 +82,7 @@ type readCompartmentSeries struct {
 // groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
 // timeseries. The returned groups are ordered by ascending compartment ID and share one backing
 // array for the hashes.
-func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID, limitsKey string, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
 	numCompartments := router.NumCompartments()
 
 	// Find the read compartment of each series. At first, offsets holds the number of series of each
@@ -105,7 +107,7 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 			end := start + count
 			groups = append(groups, readCompartmentSeries{
 				compartment:        int32(compartment),
-				usageTrackerUserID: compartments.TenantIDWithReadCompartment(limitsKey, compartment),
+				usageTrackerUserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
 				seriesHashes:       hashes[start:end:end],
 			})
 			start = end

@@ -95,14 +95,10 @@ func WithReadCompartmentSuffix(name string, compartmentID int) string {
 // ReadCompartmentTenantIDInfix is inserted into tenant IDs as "/rc/<id>" before any metadata.
 const ReadCompartmentTenantIDInfix = "/rc/"
 
-// TenantIDWithReadCompartment returns tenantIDWithMetadata with "/rc/<compartmentID>" inserted
-// before any tenant metadata suffix.
-func TenantIDWithReadCompartment(tenantIDWithMetadata string, compartmentID int) string {
-	suffix := ReadCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
-	if idx := strings.IndexByte(tenantIDWithMetadata, ':'); idx != -1 {
-		return tenantIDWithMetadata[:idx] + suffix + tenantIDWithMetadata[idx:]
-	}
-	return tenantIDWithMetadata + suffix
+// TenantIDWithReadCompartment returns tenantID with the "/rc/<compartmentID>" suffix. tenantID must
+// not contain tenant metadata. Use tenant.Metadata.WithTenant to add the metadata after the suffix.
+func TenantIDWithReadCompartment(tenantID string, compartmentID int) string {
+	return tenantID + ReadCompartmentTenantIDInfix + strconv.Itoa(compartmentID)
 }
 
 // TrimReadCompartmentFromTenantID removes a well-formed "/rc/<digits>" that sits right before the

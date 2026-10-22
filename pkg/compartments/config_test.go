@@ -72,38 +72,8 @@ func TestWithReadCompartmentSuffix(t *testing.T) {
 }
 
 func TestTenantIDWithReadCompartment(t *testing.T) {
-	tests := map[string]struct {
-		tenantIDWithMetadata string
-		compartmentID        int
-		expected             string
-	}{
-		"without metadata": {
-			tenantIDWithMetadata: "123",
-			compartmentID:        2,
-			expected:             "123/rc/2",
-		},
-		"with metadata": {
-			tenantIDWithMetadata: "123:source=k6",
-			compartmentID:        2,
-			expected:             "123/rc/2:source=k6",
-		},
-		"compartment zero": {
-			tenantIDWithMetadata: "user",
-			compartmentID:        0,
-			expected:             "user/rc/0",
-		},
-		"multiple metadata keys": {
-			tenantIDWithMetadata: "user:a=1:b=2",
-			compartmentID:        7,
-			expected:             "user/rc/7:a=1:b=2",
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, TenantIDWithReadCompartment(tc.tenantIDWithMetadata, tc.compartmentID))
-		})
-	}
+	assert.Equal(t, "123/rc/2", TenantIDWithReadCompartment("123", 2))
+	assert.Equal(t, "user/rc/0", TenantIDWithReadCompartment("user", 0))
 }
 
 func TestTrimReadCompartmentFromTenantID(t *testing.T) {
