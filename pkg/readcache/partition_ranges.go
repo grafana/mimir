@@ -631,19 +631,48 @@ func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb
 	if len(state.currentRanges) == 0 {
 		return
 	}
+	// The locality hash's top bits are the metric name's, so a metric's series hash into one interval, and a range
+	// that holds the whole interval counts them all: their labels are hashed only for a metric that ranges split.
+	// A request's series of a metric come one after the other.
+	var (
+		metric     string
+		known      bool
+		whole      bool
+		wholeRate  *util_math.EwmaRate
+		rangeIndex = func(hash uint32) int {
+			// currentRanges is sorted by Lo and non-overlapping (the rebalancer's assignment guarantees this).
+			return sort.Search(len(state.currentRanges), func(i int) bool {
+				return state.currentRanges[i].Lo > hash
+			}) - 1
+		}
+	)
 	for _, ts := range timeseries {
 		n := int64(len(ts.Samples) + len(ts.Histograms))
 		if n == 0 {
 			continue
 		}
-		metric := metricNameOf(ts.Labels)
+		if name := metricNameOf(ts.Labels); !known || name != metric {
+			metric, known = name, true
+			lo, hi := mimirpb.MetricNameHashRange(userID, metric)
+			idx := rangeIndex(hi)
+			switch {
+			case idx < 0 || state.currentRanges[idx].Hi < lo:
+				// No range holds any of the metric's hashes.
+				whole, wholeRate = true, nil
+			case state.currentRanges[idx].Lo <= lo && state.currentRanges[idx].Hi >= hi:
+				whole, wholeRate = true, state.sampleRates[state.currentRanges[idx]]
+			default:
+				whole = false
+			}
+		}
+		if whole {
+			if wholeRate != nil {
+				wholeRate.Add(n)
+			}
+			continue
+		}
 		hash := mimirpb.ShardByMetricNameLocality(userID, metric, ts.Labels)
-		// Binary-search this tenant's currentRanges for the tile containing
-		// hash. currentRanges is sorted by Lo and non-overlapping (the
-		// rebalancer's assignment guarantees this).
-		idx := sort.Search(len(state.currentRanges), func(i int) bool {
-			return state.currentRanges[i].Lo > hash
-		}) - 1
+		idx := rangeIndex(hash)
 		if idx < 0 {
 			continue
 		}

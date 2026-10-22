@@ -3,7 +3,10 @@
 package readcache
 
 import (
+	"cmp"
+	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -673,4 +676,50 @@ func TestPartitionRanges_ResidueRemainsTenantScoped(t *testing.T) {
 	assert.Equal(t, hashRangeCount{TenantID: "tenant-a", Range: oldRange, Count: 13}, snapshot[0])
 	assert.Equal(t, hashRangeCount{TenantID: "tenant-a", Range: newRange, Count: 5}, snapshot[1])
 	assert.Equal(t, hashRangeCount{TenantID: "tenant-b", Range: oldRange, Count: 29}, snapshot[2])
+}
+
+// Ranges that hold whole metrics, split one, or miss it count each series' samples where its own locality hash is.
+func TestPartitionRanges_RecordSampleBatchByMetric(t *testing.T) {
+	const userID = "user-1"
+	series := func(metric string, pods ...int) []mimirpb.PreallocTimeseries {
+		var out []mimirpb.PreallocTimeseries
+		for _, pod := range pods {
+			ts := makeTSForHash(metric, 1+pod%3)
+			ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: "pod", Value: fmt.Sprintf("pod-%d", pod)})
+			out = append(out, ts)
+		}
+		return out
+	}
+	var batch []mimirpb.PreallocTimeseries
+	batch = append(batch, series("split", 0, 1, 2, 3, 4, 5, 6, 7)...)
+	batch = append(batch, series("whole", 0, 1, 2)...)
+	batch = append(batch, series("missed", 0, 1)...)
+	batch = append(batch, series("split", 8, 9)...)
+
+	splitLo, splitHi := mimirpb.MetricNameHashRange(userID, "split")
+	wholeLo, wholeHi := mimirpb.MetricNameHashRange(userID, "whole")
+	middle := splitLo + (splitHi-splitLo)/2
+	ranges := []assignment.HashRange{hr(splitLo, middle), hr(middle+1, splitHi), hr(wholeLo, wholeHi)}
+	slices.SortFunc(ranges, func(a, b assignment.HashRange) int { return cmp.Compare(a.Lo, b.Lo) })
+	pr := newPartitionRanges()
+	pr.setRanges(ranges)
+	pr.recordSampleBatch(userID, batch)
+
+	want := map[assignment.HashRange]int64{}
+	for _, ts := range batch {
+		hash := mimirpb.ShardByMetricNameLocality(userID, metricNameOf(ts.Labels), ts.Labels)
+		for _, r := range ranges {
+			if r.Contains(hash) {
+				want[r] += int64(len(ts.Samples))
+			}
+		}
+	}
+	require.NotZero(t, want[ranges[0]]+want[ranges[1]])
+	pr.tickSampleRates()
+	for _, r := range ranges {
+		pr.mu.RLock()
+		rate := rateOf(pr.sampleRates[r])
+		pr.mu.RUnlock()
+		assert.InDelta(t, float64(want[r])/15.0, rate, 1e-9, "range %v", r)
+	}
 }
