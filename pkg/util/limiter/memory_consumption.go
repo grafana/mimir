@@ -79,7 +79,8 @@ const (
 	BufferedQuerierResponses
 	CachedResponses
 	BinaryOperationOutputSeries
-	memoryConsumptionSourceCount = BinaryOperationOutputSeries + 1
+	StartTimestampSlices
+	memoryConsumptionSourceCount = StartTimestampSlices + 1
 )
 
 const (
@@ -140,6 +141,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "cached responses"
 	case BinaryOperationOutputSeries:
 		return "binary operation output series"
+	case StartTimestampSlices:
+		return "[]int64 (start timestamps)"
 	default:
 		return unknownMemorySource
 	}
