@@ -700,7 +700,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	}
 
 	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
-		// The error was known and mitigated
+		level.Warn(userLogger).Log("msg", "compaction job failed with a known error that was mitigated, completing job", "err", err)
 		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
 	}
 
