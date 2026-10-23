@@ -4,6 +4,7 @@ package querier
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,12 +17,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/labelaccess"
+	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -115,7 +120,10 @@ type estimateCheck struct {
 // (default 10000, 0 for always exact), min_count to drop groups below a
 // count, limit to keep the largest groups, and snap=true to widen a window
 // inside one block range to that range. With a step, a group's count is its
-// largest bucket. read in the response says how it was answered. With
+// largest bucket. The table is sorted largest first, except a name table
+// read from the index-headers without a limit, which is merged from the
+// store-gateways' sorted streams as it is written and so is sorted by name
+// (see writeNameTable). read in the response says how it was answered. With
 // compare=true, allowed only when cfg.CompareEnabled, it also answers the
 // request by loading chunks, as a PromQL count would, and reports whether
 // the two agree and what each cost.
@@ -157,15 +165,16 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 
 		start := time.Now()
+		// The name table from the index-headers is merged as it is written,
+		// except for compare=true, which needs the counts to compare, and
+		// per-bucket counts, which answer each bucket as its own estimate.
+		req.StreamNames = !opts.compare && req.Step == 0
 		res, err := e.Estimate(r.Context(), tenantID, &req)
 		if err != nil {
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
 		}
 		elapsed := time.Since(start)
-		if q.metrics != nil {
-			q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(elapsed.Seconds())
-		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
@@ -175,6 +184,30 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
 			Counts:    make([]estimateGroup, 0, len(res.Counts)),
+		}
+		if res.names != nil {
+			defer res.names.close()
+			started, err := writeNameTable(r.Context(), w, &out, res.names, opts, start)
+			if err != nil {
+				if !started {
+					http.Error(w, err.Error(), estimateHTTPStatus(err))
+					return
+				}
+				// The status is sent: the body says what failed, and so does the log.
+				logger := log.Logger(log.NewNopLogger())
+				if q.logger != nil {
+					logger = q.logger
+				}
+				level.Warn(util_log.WithContext(r.Context(), logger)).Log("msg", "cardinality estimate name table failed after it started", "err", err)
+				return
+			}
+			if q.metrics != nil {
+				q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(time.Since(start).Seconds())
+			}
+			return
+		}
+		if q.metrics != nil {
+			q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(elapsed.Seconds())
 		}
 		for v, counts := range res.Counts {
 			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
@@ -204,19 +237,142 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			out.HasMore = true
 		}
 		w.Header().Set("Content-Type", "application/json")
-		// An answer that is not complete, that counts the whole head
-		// whatever the window (head_whole, also when one bucket of a
-		// per-bucket answer did), or that loaded chunks for compare=true,
-		// must not be kept by the query-frontend's cache. A table cut by
-		// limit or min_count is complete for the parameters asked, which
-		// are in the cache key.
-		if out.LowerBound || out.CoverageGap || out.HeadWhole || out.Compare != nil {
-			w.Header().Set("Cache-Control", "no-store")
-		}
+		setEstimateCacheControl(w, &out)
 		if err := writeEstimateResponse(w, &out); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+// setEstimateCacheControl marks an answer that is not complete, that counts
+// the whole head whatever the window (head_whole, also when one bucket of a
+// per-bucket answer did), or that loaded chunks for compare=true, so the
+// query-frontend's cache doesn't keep it. A table cut by limit or min_count
+// is complete for the parameters asked, which are in the cache key.
+func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
+	if out.LowerBound || out.CoverageGap || out.HeadWhole || out.Compare != nil {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+}
+
+// nameTableBufferBytes is how much of a name table's rows the handler holds
+// before it starts sending them. A table that fits is answered whole, so a
+// failure while merging still gets an error status. It is the
+// query-frontend cache's body cap, so a table that doesn't fit could not be
+// cached anyway.
+const nameTableBufferBytes = 1 << 20
+
+// writeNameTable merges t into the response's table and writes it. With a
+// limit, only the largest groups are held, and the table is written once
+// merged, largest first. Without one, rows are written in name order as they
+// are merged; a table larger than nameTableBufferBytes is sent before the
+// merge ends, marked Cache-Control: no-store and streamed from the querier
+// to the query-frontend in chunks, with groups, total and has_more after the
+// counts. started reports whether anything was written when err is returned;
+// a merge that fails after that ends the table with an error field in place
+// of the totals. A store-gateway lost while merging fails the table: its
+// blocks are retried only while the calls are opened (openNameTable), since
+// rows already merged can't be taken back.
+func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions, start time.Time) (started bool, err error) {
+	if opts.limit > 0 {
+		top := &topGroups{n: opts.limit, tracker: t.tracker}
+		if err := t.merge(ctx, func(name string, count int64) error {
+			out.Groups++
+			out.Total += count
+			if count < opts.minCount {
+				return nil
+			}
+			return top.offer(estimateGroup{Value: name, Count: count})
+		}); err != nil {
+			return false, err
+		}
+		out.Counts, out.HasMore = top.sorted()
+		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
+		w.Header().Set("Content-Type", "application/json")
+		setEstimateCacheControl(w, out)
+		return true, writeEstimateResponse(w, out)
+	}
+
+	var (
+		rows bytes.Buffer
+		n    int
+	)
+	writeHead := func() error {
+		started = true
+		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
+		return writeNameTableHead(w, out)
+	}
+	mergeErr := t.merge(ctx, func(name string, count int64) error {
+		out.Groups++
+		out.Total += count
+		if count < opts.minCount {
+			return nil
+		}
+		if n > 0 {
+			rows.WriteByte(',')
+		}
+		n++
+		b, err := json.Marshal(estimateGroup{Value: name, Count: count})
+		if err != nil {
+			return err
+		}
+		rows.Write(b)
+		if rows.Len() < nameTableBufferBytes {
+			return nil
+		}
+		if !started {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+			if err := writeHead(); err != nil {
+				return err
+			}
+		}
+		_, err = w.Write(rows.Bytes())
+		rows.Reset()
+		return err
+	})
+	if mergeErr != nil && !started {
+		return false, mergeErr
+	}
+	if !started {
+		w.Header().Set("Content-Type", "application/json")
+		setEstimateCacheControl(w, out)
+		if err := writeHead(); err != nil {
+			return true, err
+		}
+	}
+	if _, err := w.Write(rows.Bytes()); err != nil {
+		return true, err
+	}
+	if mergeErr != nil {
+		msg, _ := json.Marshal(mergeErr.Error())
+		_, err := fmt.Fprintf(w, `],"error":%s}`+"\n", msg)
+		return true, errors.Join(mergeErr, err)
+	}
+	_, err = fmt.Fprintf(w, `],"groups":%d,"total":%d,"has_more":false}`+"\n", out.Groups, out.Total)
+	return true, err
+}
+
+// writeNameTableHead writes the response up to the start of its counts
+// array, leaving out the fields known only once the table is merged.
+func writeNameTableHead(w io.Writer, out *estimateResponse) error {
+	head, err := json.Marshal(struct {
+		*estimateResponse
+		Counts  []estimateGroup `json:"counts,omitempty"`
+		Total   *int64          `json:"total,omitempty"`
+		Groups  *int            `json:"groups,omitempty"`
+		HasMore *bool           `json:"has_more,omitempty"`
+	}{estimateResponse: out})
+	if err != nil {
+		return err
+	}
+	// head ends with "}", which the counts array replaces.
+	if _, err := w.Write(head[:len(head)-1]); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, `,"counts":[`)
+	return err
 }
 
 // applyLabelAccessPolicies adds the tenant's enforced selector to req, so
