@@ -30,6 +30,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 6.1.1
+
+* [CHANGE] Upgrade Mimir to [3.1.8](https://github.com/grafana/mimir/releases/tag/mimir-3.1.8) for security fixes. #16977
+
 ## 6.1.0
 
 * [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
