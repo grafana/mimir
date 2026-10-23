@@ -122,6 +122,10 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
+	// Native histories belong to the series' lazy sidecars. The store indexes
+	// their presence so sparse queries can filter references before label sorting.
+	nativeMetricMetadata *nativeMetricMetadataStore
+
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
@@ -262,6 +266,9 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata enables experimental in-memory native metadata.
+	EnableNativeMetadata bool
+
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
 }
@@ -370,6 +377,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		pfmc:              opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
 		seriesStateQuit:   make(chan struct{}),
 	}
+	if opts.EnableNativeMetadata {
+		h.nativeMetricMetadata = newNativeMetricMetadataStore()
+	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
@@ -436,6 +446,9 @@ func (h *Head) resetInMemoryState() error {
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
 	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.reset()
+	}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -740,6 +753,26 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
 		)
+		if store := h.nativeMetricMetadata; store != nil {
+			r.MustRegister(
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_native_metric_metadata_series",
+					Help: "Number of Head series with native metric metadata.",
+				}, func() float64 { return float64(store.series.Load()) }),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_native_metric_metadata_versions",
+					Help: "Number of native metric metadata versions in the Head.",
+				}, func() float64 { return float64(store.versions.Load()) }),
+				prometheus.NewCounterFunc(prometheus.CounterOpts{
+					Name: "prometheus_tsdb_head_native_metric_metadata_version_evictions_total",
+					Help: "Total number of native metric metadata versions evicted by the per-series limit.",
+				}, func() float64 { return float64(store.evictions.Load()) }),
+				prometheus.NewCounterFunc(prometheus.CounterOpts{
+					Name: "prometheus_tsdb_head_native_metric_metadata_oversized_total",
+					Help: "Total number of appended samples whose native metric metadata exceeded the size limit and was skipped.",
+				}, func() float64 { return float64(store.oversized.Load()) }),
+			)
+		}
 	}
 	return m
 }
@@ -2111,6 +2144,9 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2740,6 +2776,9 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2837,6 +2876,9 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -3077,7 +3119,9 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
-	meta unique.Handle[metadata.Metadata]
+	// Lazily allocated after either metadata path commits state for this series.
+	// The series lock protects this pointer and its contents.
+	metadata *memSeriesMetadata
 
 	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
 	// A rolled-back exemplar may conservatively delay eviction until this time.
@@ -3134,6 +3178,45 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// memSeriesMetadata holds the independent native and legacy metadata state.
+type memSeriesMetadata struct {
+	native *nativeSeriesMetadata
+	legacy unique.Handle[metadata.Metadata]
+}
+
+func (s *memSeries) ensureMetadataLocked() *memSeriesMetadata {
+	if s.metadata == nil {
+		s.metadata = &memSeriesMetadata{}
+	}
+	return s.metadata
+}
+
+func (s *memSeries) legacyMetadataLocked() unique.Handle[metadata.Metadata] {
+	if s.metadata == nil {
+		return unique.Handle[metadata.Metadata]{}
+	}
+	return s.metadata.legacy
+}
+
+func (s *memSeries) setLegacyMetadataLocked(m unique.Handle[metadata.Metadata]) {
+	s.ensureMetadataLocked().legacy = m
+}
+
+func (s *memSeries) nativeMetadataLocked() *nativeSeriesMetadata {
+	if s.metadata == nil {
+		return nil
+	}
+	return s.metadata.native
+}
+
+// initNativeMetadataLocked attaches empty native state to the series, keeping
+// any sidecar already published by legacy metadata.
+func (s *memSeries) initNativeMetadataLocked() *nativeSeriesMetadata {
+	native := &nativeSeriesMetadata{}
+	s.ensureMetadataLocked().native = native
+	return native
 }
 
 // Layout of memSeries.state. After construction, it is only read or written with
