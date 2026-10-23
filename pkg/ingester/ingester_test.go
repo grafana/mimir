@@ -91,6 +91,10 @@ func TestMain(m *testing.M) {
 		// chunkWriteQueue goroutines before encountering the error and doesn't clean them up.
 		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
 		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/chunks.(*chunkWriteQueue).start.func1"),
+
+		// TestIngesterRetainsNoRecordBuffers registers a codec that frees instrumented buffers after a period, which
+		// starts the goroutine that does it for the rest of the process.
+		goleak.IgnoreAnyFunction("github.com/grafana/mimir/pkg/mimirpb.freeInstrumentedBuffers"),
 	)
 }
 
