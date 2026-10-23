@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // rw2Labels is a series like a Kubernetes scrape's: a dozen labels, most of them of few values.
@@ -134,6 +135,44 @@ func TestAppendRW2AppendsWhatDecodingDoes(t *testing.T) {
 	// The series the engine didn't have are left over, a record's last 500 of 1000.
 	_, ingested := appendRW2(t, direct, rw2Records(t, existing-500, 1000, 1000, 3000)[0], &rw2Sink{})
 	require.Equal(t, 500, ingested)
+}
+
+func TestRW2KeyIsTheSeriesEncodedLabels(t *testing.T) {
+	known := rw2Labels(1)
+	unseen := promlabels.NewBuilder(known).Set("rw2_key_test_unseen_name", "value").Labels()
+	req := &mimirpb.WriteRequest{}
+	for _, series := range []promlabels.Labels{known, unseen} {
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(series),
+			Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
+		}})
+	}
+	recs, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	read := func() *RW2Record {
+		record, err := ReadRW2(recs[0].Value, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+		require.NoError(t, err)
+		t.Cleanup(record.Release)
+		return record
+	}
+
+	record := read()
+	pairs, _ := record.source.pairs(0, nil)
+	want := labels.FromSorted(pairs)
+	key, ok := record.source.key(0, nil)
+	require.True(t, ok)
+	require.Equal(t, string(want), string(key))
+	// No series has a label of a name the engine never saw.
+	_, ok = record.source.key(1, nil)
+	require.False(t, ok)
+
+	// A record looks its names up again: one may have been added since.
+	pairs, _ = record.source.pairs(1, nil)
+	want = labels.FromSorted(pairs)
+	key, ok = read().source.key(1, nil)
+	require.True(t, ok)
+	require.Equal(t, string(want), string(key))
 }
 
 func TestAppendRW2RejectsMalformedRecords(t *testing.T) {

@@ -42,6 +42,8 @@ type floatSeries struct {
 	// The series' metric name, and where its label pairs are in the pairs of the call.
 	name             string
 	pairsAt, pairsTo int32
+	// Where the series' labels, encoded, are in the keys of the call, when keyTo isn't negative.
+	keyAt, keyTo int32
 }
 
 // floatError is a sample that wasn't ingested, which the sink hears of once the shards are unlocked.
@@ -89,6 +91,22 @@ func (s adapterSource) pairs(index int, into [][2]string) ([][2]string, string) 
 
 func (s adapterSource) samples(index int) []mimirpb.Sample { return s[index].Samples }
 
+// keySource is a floatSource that encodes a series' labels as labels.Labels does: comparing a series with those bytes
+// is one string comparison, where labels.Labels.EqPairs resolves and compares each name. The fast path compares every
+// series it appends to.
+type keySource interface {
+	// key appends the series' encoded labels to into, or reports false when the engine can't have the series.
+	key(index int, into []byte) ([]byte, bool)
+}
+
+// sameLabels reports whether l are the labels of series.
+func sameLabels(l labels.Labels, series *floatSeries, keys []byte, pairs [][2]string) bool {
+	if series.keyTo >= 0 {
+		return string(l) == string(keys[series.keyAt:series.keyTo])
+	}
+	return l.EqPairs(pairs[series.pairsAt:series.pairsTo])
+}
+
 func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
@@ -112,11 +130,13 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 		builder  promlabels.ScratchBuilder
 		scratch  promlabels.Labels
 		pairs    = buffers.pairs
+		keys     = buffers.keys[:0]
 		prepared = buffers.prepared[:0]
 		counts   = slices.Grow(buffers.counts[:0], shards+1)[:shards+1]
 	)
 	clear(counts)
 	pairs = pairs[:0]
+	keyed, _ := source.(keySource)
 	for _, index := range indices {
 		at := len(pairs)
 		var name string
@@ -129,7 +149,16 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 			scratch = pairsLabels(&builder, pairs[at:])
 			hash = scratch.Hash()
 		}
-		prepared = append(prepared, floatSeries{index: index, hash: hash, name: name, pairsAt: int32(at), pairsTo: int32(len(pairs))})
+		keyAt, keyTo := len(keys), -1
+		if keyed != nil {
+			var ok bool
+			if keys, ok = keyed.key(index, keys); ok {
+				keyTo = len(keys)
+			} else {
+				keys = keys[:keyAt]
+			}
+		}
+		prepared = append(prepared, floatSeries{index: index, hash: hash, name: name, pairsAt: int32(at), pairsTo: int32(len(pairs)), keyAt: int32(keyAt), keyTo: int32(keyTo)})
 		counts[shardFor(hash, shards)+1]++
 	}
 	for shard := range shards {
@@ -204,7 +233,6 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 				for k, position := range chunk {
 					prep := prepared[position]
 					seriesSamples := source.samples(prep.index)
-					seriesPairs := pairs[prep.pairsAt:prep.pairsTo]
 					var (
 						entry      *seriesEntry
 						foundGroup uint32
@@ -212,19 +240,19 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 					)
 					if nextIndex >= 0 && prep.name == nextName {
 						if entries := t.series.groups[nextGroup].entries; nextIndex < len(entries) {
-							if candidate := &entries[nextIndex]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
+							if candidate := &entries[nextIndex]; candidate.hash == prep.hash && sameLabels(candidate.labels, &prep, keys, pairs) {
 								entry, foundGroup, foundIndex = candidate, nextGroup, nextIndex
 							}
 						}
 					}
-					if candidate := candidates[k]; entry == nil && candidate.entry != nil && candidate.entry.labels.EqPairs(seriesPairs) {
+					if candidate := candidates[k]; entry == nil && candidate.entry != nil && sameLabels(candidate.entry.labels, &prep, keys, pairs) {
 						entry, foundGroup, foundIndex = candidate.entry, candidate.group, candidate.index
 					}
 					if entry == nil {
 						// Where the series was last found is one read; its name group and the group's table are more.
 						t.series.locs.findAll(prep.hash, func(group uint32, index int) bool {
 							if entries := t.series.groups[group].entries; index < len(entries) {
-								if candidate := &entries[index]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
+								if candidate := &entries[index]; candidate.hash == prep.hash && sameLabels(candidate.labels, &prep, keys, pairs) {
 									entry, foundGroup, foundIndex = candidate, group, index
 									return true
 								}
@@ -236,7 +264,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						if groupID, ok := t.series.names[prep.name]; ok {
 							g := &t.series.groups[groupID]
 							for index, ok := g.first.get(prep.hash, g.entries); ok && index >= 0; index = g.entries[index].next {
-								if candidate := &g.entries[index]; candidate.hash == prep.hash && candidate.labels.EqPairs(seriesPairs) {
+								if candidate := &g.entries[index]; candidate.hash == prep.hash && sameLabels(candidate.labels, &prep, keys, pairs) {
 									entry, foundGroup, foundIndex = candidate, groupID, int(index)
 									t.series.locs.remember(prep.hash, groupID, int(index), t.series.len)
 									break
@@ -331,7 +359,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 		e.observeOOO(oooMin, oooMax)
 	}
 	buffers.prepared, buffers.counts, buffers.ordered, buffers.next = prepared, counts, ordered, next
-	buffers.pairs, buffers.failures, buffers.accepted, buffers.touched = pairs, failures, accepted, touched
+	buffers.pairs, buffers.keys, buffers.failures, buffers.accepted, buffers.touched = pairs, keys, failures, accepted, touched
 	slices.Sort(leftover)
 	if err != nil {
 		return leftover, ingested, err
@@ -424,6 +452,7 @@ type floatScratch struct {
 	counts, next  []int
 	ordered       []int32
 	pairs         [][2]string
+	keys          []byte
 	failures      []floatError
 	accepted      []mimirpb.Sample
 	touched       []floatIngested

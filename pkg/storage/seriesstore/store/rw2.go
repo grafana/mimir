@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 var errMalformedRW2 = errors.New("malformed remote write 2.0 record")
@@ -52,7 +53,13 @@ type rw2Source struct {
 	partial bool
 	// The oldest timestamp of the record's samples, histograms and exemplars.
 	minTimestamp int64
+	// Each symbol's label name id plus one, by reference, once looked up, or absentName: a record names its series'
+	// labels with a few symbols, which are looked up once rather than for every series.
+	nameIDs []uint32
 }
+
+// absentName is a symbol no label name has: no series has a label of that name.
+const absentName = ^uint32(0)
 
 var rw2Sources = sync.Pool{New: func() any { return &rw2Source{} }}
 
@@ -84,6 +91,33 @@ func (s *rw2Source) pairs(index int, into [][2]string) ([][2]string, string) {
 		}
 	}
 	return into, name
+}
+
+// key appends the series' labels as labels.Labels encodes them, or reports false when one of its names isn't one the
+// engine has, which no series it has can then have.
+func (s *rw2Source) key(index int, into []byte) ([]byte, bool) {
+	series := &s.series[index]
+	refs := s.refs[series.refsAt:series.refsTo]
+	for at := 0; at+1 < len(refs); at += 2 {
+		id := s.nameIDs[refs[at]]
+		if id == 0 {
+			// References were checked when the record was read.
+			name, _ := s.symbol(refs[at])
+			id = absentName
+			if known, ok := labels.Lookup(name); ok {
+				id = known + 1
+			}
+			s.nameIDs[refs[at]] = id
+		}
+		if id == absentName {
+			return into, false
+		}
+		value, _ := s.symbol(refs[at+1])
+		into = labels.PutVarint(into, uint64(id-1))
+		into = labels.PutVarint(into, uint64(len(value)))
+		into = append(into, value...)
+	}
+	return into, true
 }
 
 func (s *rw2Source) samples(index int) []mimirpb.Sample {
@@ -126,6 +160,9 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 		}
 	}
 	clear(s.bodies)
+	symbols := int(s.offset) + len(s.symbols)
+	s.nameIDs = slices.Grow(s.nameIDs[:0], symbols)[:symbols]
+	clear(s.nameIDs)
 	return nil
 }
 
