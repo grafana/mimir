@@ -380,7 +380,8 @@ func TestSchedulerLogsRejectedSubRequestWithRootQueryID(t *testing.T) {
 }
 
 func TestSchedulerEnqueueWithCancel(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -399,6 +400,13 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_dropped_requests_total Total number of queued requests that the query-scheduler removed without sending them to a querier, because their context was cancelled.
+			# TYPE cortex_query_scheduler_dropped_requests_total counter
+			cortex_query_scheduler_dropped_requests_total{reason="cancelled",user="test"} 1
+		`), "cortex_query_scheduler_dropped_requests_total")
+	})
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -445,7 +453,8 @@ func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 }
 
 func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -472,6 +481,13 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_dropped_requests_total Total number of queued requests that the query-scheduler removed without sending them to a querier, because their context was cancelled.
+			# TYPE cortex_query_scheduler_dropped_requests_total counter
+			cortex_query_scheduler_dropped_requests_total{reason="frontend_disconnected",user="test"} 1
+		`), "cortex_query_scheduler_dropped_requests_total")
+	})
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -768,7 +784,8 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 }
 
 func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
@@ -805,11 +822,22 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 		require.Equal(t, int32(http.StatusInternalServerError), httpResp.Code)
 		return true
 	})
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 1
+			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+			# TYPE cortex_query_scheduler_querier_request_failures_total counter
+			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
+		`), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
+	})
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
@@ -858,6 +886,16 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 
 		require.Equal(t, expected, grpcResp)
 		return true
+	})
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 1
+			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+			# TYPE cortex_query_scheduler_querier_request_failures_total counter
+			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
+		`), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
 	})
 
 	verifyQueryComponentUtilizationLeft(t, scheduler)
@@ -1024,6 +1062,19 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
+
+	// No query-frontend listens on "frontend-12345".
+	// The error forward to the query-frontend fails.
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 1
+			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+			# TYPE cortex_query_scheduler_querier_request_failures_total counter
+			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
+		`), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
+	})
 
 	require.Eventually(t, func() bool {
 		// the queue is empty, queueMaxWait reports 0
