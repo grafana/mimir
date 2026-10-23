@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
@@ -25,9 +26,19 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		labelAdapters(model.MetricNameLabel, "test_2"),
 	}
 
+	// The test partitions turned ACTIVE two hours ago (preparePartitionsRing).
+	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
+	beforeActive := time.Now().Add(-3 * time.Hour).UnixMilli()
+	withinGracePeriod := time.Now().Add(-2*time.Hour + 5*time.Minute).UnixMilli()
+	writeShardSmaller := prepareDefaultLimits()
+	writeShardSmaller.IngestionPartitionsTenantShardSize = 4
+	writeShardSmaller.IngestionPartitionsTenantWriteShardSize = 2
+
 	for name, tc := range map[string]struct {
 		cfg        prepConfig
 		wantHashed bool
+		// startMs is the window's start, 0 by default.
+		startMs int64
 	}{
 		"classic replication, three zones": {
 			cfg: prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
@@ -41,6 +52,25 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		},
 		"ingest storage, several partitions": {
 			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			wantHashed: true,
+		},
+		"ingest storage, several partitions that changed inside the window": {
+			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:    beforeActive,
+			wantHashed: true,
+		},
+		"ingest storage, several partitions that changed within the creation grace period before the window": {
+			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:    withinGracePeriod,
+			wantHashed: true,
+		},
+		"ingest storage, several partitions active since before the window": {
+			cfg:     prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs: sinceActive,
+		},
+		"ingest storage, several partitions, written to fewer partitions than read": {
+			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: writeShardSmaller},
+			startMs:    sinceActive,
 			wantHashed: true,
 		},
 		"classic replication, three zones, two ingesters each": {
@@ -65,18 +95,22 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
+					// The mock ingesters count every series whatever the window.
+					start, end := tc.startMs, max(tc.startMs, 100000)+100000
+					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: start, EndTimestampMs: end})
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
 					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
 
-					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, GroupBy: "status"})
+					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: start, EndTimestampMs: end, GroupBy: "status"})
 					require.NoError(t, err)
 					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
 
+					_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: start, EndTimestampMs: end, StepMs: 100000})
 					if tc.wantHashed {
-						_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, StepMs: 100000})
 						require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
+					} else {
+						require.NoError(t, err, "counts that add up carry buckets")
 					}
 				})
 			}
