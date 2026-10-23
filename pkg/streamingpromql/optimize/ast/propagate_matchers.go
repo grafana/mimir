@@ -102,9 +102,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	case !hasVectorSelectorsL && !hasVectorSelectorsR:
 		return nil, nil
 	case !hasVectorSelectorsL:
-		return restrictToMatchingLabels(vssR, e.VectorMatching), matchersR
+		return restrictToResultLabels(vssR, e, false), matchersR
 	case !hasVectorSelectorsR:
-		return restrictToMatchingLabels(vssL, e.VectorMatching), matchersL
+		return restrictToResultLabels(vssL, e, true), matchersL
 	}
 
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
@@ -139,25 +139,47 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	vss := restrictToMatchingLabels(append(vssL, vssR...), e.VectorMatching)
+	vss := append(restrictToResultLabels(vssL, e, true), restrictToResultLabels(vssR, e, false)...)
 	matchers, _ := combineMatchers(newMatchersL, newMatchersR, stringSet{}, false)
 	return vss, matchers
 }
 
-// restrictToMatchingLabels limits which matchers from outside a binary expression can later be
-// propagated into the vector selectors on either side of it. With on() or ignoring(), only the
-// matching labels are guaranteed to have the same value on both sides and in the result. Labels
-// on the other side do not affect the result (e.g. the "one" side of `a * on() group_left() b`),
-// so filtering that side on an outer matcher would drop series that should match.
-func restrictToMatchingLabels(vss []*enrichedVectorSelector, matching *parser.VectorMatching) []*enrichedVectorSelector {
-	if matching == nil || (!matching.On && len(matching.MatchingLabels) == 0) {
+// restrictToResultLabels limits which matchers from outside a binary expression can later be
+// propagated into the vector selectors on one side of it, to the labels whose values on that side
+// are kept in the result.
+func restrictToResultLabels(vss []*enrichedVectorSelector, e *parser.BinaryExpr, lhs bool) []*enrichedVectorSelector {
+	labelsSet, include := keptLabels(e, lhs)
+	if !include && len(labelsSet) == 0 {
 		return vss
 	}
-	matchingLabelsSet := newStringSet(matching.MatchingLabels)
 	for _, vs := range vss {
-		restrictPropagatableLabels(vs, matchingLabelsSet, matching.On)
+		restrictPropagatableLabels(vs, labelsSet, include)
 	}
 	return vss
+}
+
+// keptLabels returns which labels of the series on one side of a binary expression keep their
+// values in its result: the labels in the returned set if include is true, or all labels not in
+// the set otherwise. lhs is true for the left-hand side.
+func keptLabels(e *parser.BinaryExpr, lhs bool) (stringSet, bool) {
+	matching := e.VectorMatching
+	if matching == nil {
+		return nil, false
+	}
+	if (lhs && matching.Card == parser.CardManyToOne) || (!lhs && matching.Card == parser.CardOneToMany) {
+		// The "many" side of group_left() or group_right() keeps all of its labels in the result,
+		// except the included labels, which are taken from the "one" side.
+		return newStringSet(matching.Include), false
+	}
+	if lhs && (e.Op == parser.LAND || e.Op == parser.LUNLESS) {
+		// `and` and `unless` return the left-hand side series unchanged.
+		return nil, false
+	}
+	// Otherwise, with on() or ignoring(), only the matching labels are guaranteed to have the same
+	// value on this side and in the result. Other labels on this side do not affect the result
+	// (e.g. the "one" side of `a * on() group_left() b`), so filtering this side on an outer
+	// matcher would drop series that should match.
+	return newStringSet(matching.MatchingLabels), matching.On
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional

@@ -156,13 +156,28 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	// Propagation should work inside unsupported Call args when the Call is nested in a BinaryExpr.
 	`scalar(up{foo="bar"} * down) / left`: `scalar(up{foo="bar"} * down{foo="bar"}) / left`,
 	`sort(up{foo="bar"} * down) / left`:   `sort(up{foo="bar"} * down{foo="bar"}) / left`,
-	// Matchers from outside a binary expression with on() or ignoring() should only propagate into it on the matching labels,
-	// as other labels on the "one" side do not affect the result (here threshold has no foo label but still matches).
-	`up{foo="bar"} + up * on() group_left() threshold`:                `up{foo="bar"} + up * on() group_left() threshold`,
-	`up * on() group_left() threshold + up{foo="bar"}`:                `up * on() group_left() threshold + up{foo="bar"}`,
-	`up{foo="bar"} + sort(up) * on() group_left() threshold`:          `up{foo="bar"} + sort(up) * on() group_left() threshold`,
-	`up{foo="bar"} + up * on(foo) group_left() down`:                  `up{foo="bar"} + up{foo="bar"} * on(foo) group_left() down{foo="bar"}`,
-	`up{foo="bar", baz="fob"} + up * ignoring(foo) group_left() down`: `up{foo="bar", baz="fob"} + up{baz="fob"} * ignoring(foo) group_left() down{baz="fob"}`,
+	// Matchers from outside a binary expression with on() or ignoring() should only propagate into it on the labels whose values are kept in the result:
+	// the matching labels on the "one" side (here threshold has no foo label but still matches), and all labels except the included ones on the "many" side.
+	`up{foo="bar"} + up * on() group_left() threshold`:                 `up{foo="bar"} + up{foo="bar"} * on() group_left() threshold`,
+	`up * on() group_left() threshold + up{foo="bar"}`:                 `up{foo="bar"} * on() group_left() threshold + up{foo="bar"}`,
+	`up{foo="bar"} + sort(up) * on() group_left() threshold`:           `up{foo="bar"} + sort(up) * on() group_left() threshold`,
+	`up{foo="bar"} + up * on(foo) group_left() down`:                   `up{foo="bar"} + up{foo="bar"} * on(foo) group_left() down{foo="bar"}`,
+	`up{foo="bar"} + up * on(baz) group_left() down`:                   `up{foo="bar"} + up{foo="bar"} * on(baz) group_left() down`,
+	`up{foo="bar"} + down * on(baz) group_right() up`:                  `up{foo="bar"} + down * on(baz) group_right() up{foo="bar"}`,
+	`up{foo="bar"} + up * on(baz) group_left(foo) down`:                `up{foo="bar"} + up * on(baz) group_left(foo) down`,
+	`up{foo="bar"} + up * on(baz) down`:                                `up{foo="bar"} + up * on(baz) down`,
+	`up{foo="bar", baz="fob"} + up * ignoring(foo) group_left() down`:  `up{foo="bar", baz="fob"} + up{foo="bar", baz="fob"} * ignoring(foo) group_left() down{baz="fob"}`,
+	`up{foo="bar", baz="fob"} + down * ignoring(foo) group_right() up`: `up{foo="bar", baz="fob"} + down{baz="fob"} * ignoring(foo) group_right() up{foo="bar", baz="fob"}`,
+	// `and` and `unless` keep all labels of the left-hand side, so only their right-hand side is limited to the matching labels.
+	`up{foo="bar"} + (up and on() threshold)`:                   `up{foo="bar"} + (up{foo="bar"} and on() threshold)`,
+	`up{foo="bar"} + (up and on(baz) down)`:                     `up{foo="bar"} + (up{foo="bar"} and on(baz) down)`,
+	`up{foo="bar", baz="fob"} + (up and ignoring(foo) down)`:    `up{foo="bar", baz="fob"} + (up{foo="bar", baz="fob"} and ignoring(foo) down{baz="fob"})`,
+	`up{foo="bar"} + (up unless on() threshold)`:                `up{foo="bar"} + (up{foo="bar"} unless on() threshold)`,
+	`up{foo="bar", baz="fob"} + (up unless ignoring(foo) down)`: `up{foo="bar", baz="fob"} + (up{foo="bar", baz="fob"} unless ignoring(foo) down{baz="fob"})`,
+	// Without on() or ignoring(), `and` and `unless` match on all labels, so matchers propagate into both sides.
+	`up{foo="bar"} + (up and down)`:    `up{foo="bar"} + (up{foo="bar"} and down{foo="bar"})`,
+	`(up{foo="bar"} and down) + left`:  `(up{foo="bar"} and down{foo="bar"}) + left{foo="bar"}`,
+	`up{foo="bar"} + (up unless down)`: `up{foo="bar"} + (up{foo="bar"} unless down{foo="bar"})`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
