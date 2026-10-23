@@ -46,7 +46,7 @@
         'development/**/dev.dockerfile',
       ],
       matchStrings: [
-        'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+        'go install\\s+(?<depName>[^@\\s]+)@(?<currentValue>v[^\\s]+)',
       ],
       datasourceTemplate: 'go',
     },
@@ -75,15 +75,15 @@
     },
     {
       customType: 'regex',
-      description: 'Update helm_version in helm-ci.yml to track the alpine/helm tag in mimir-build-image/Dockerfile',
+      description: 'Update helm_version in helm-ci.yml to track Helm releases',
       managerFilePatterns: [
         '.github/workflows/helm-ci.yml',
       ],
       matchStrings: [
-        'helm_version:\\s+v(?<currentValue>[\\d.]+)',
+        'helm_version:\\s+(?<currentValue>v[\\d.]+)',
       ],
-      depNameTemplate: 'alpine/helm',
-      datasourceTemplate: 'docker',
+      depNameTemplate: 'helm/helm',
+      datasourceTemplate: 'github-releases',
     }
   ],
   baseBranchPatterns: [
