@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -56,14 +55,6 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 // optimization rather than silently returning wrong results.
 func canSkipHistogramBucketsBelow(node planning.Node, skipHistogramBuckets bool) bool {
 	switch n := node.(type) {
-	case *core.Subquery:
-		// We need the buckets for correct counter reset detection.
-		return false
-
-	case *rangevectorsplitting.SplitFunctionCall:
-		// We need the buckets for counter reset detection at the boundary between splits.
-		return false
-
 	case *core.FunctionCall:
 		switch n.Function {
 		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
@@ -102,6 +93,8 @@ func canSkipHistogramBucketsBelow(node planning.Node, skipHistogramBuckets bool)
 		return skipHistogramBuckets
 
 	default:
+		// Notably, subqueries and split function calls need the buckets for counter reset detection,
+		// including at the boundary between splits.
 		return false
 	}
 }
@@ -113,19 +106,35 @@ func canSkipHistogramBucketsBelow(node planning.Node, skipHistogramBuckets bool)
 // they always return an empty result.
 func isHistogramStatsSafeFunction(f functions.Function) bool {
 	switch f {
-	case functions.FUNCTION_RATE, functions.FUNCTION_INCREASE, functions.FUNCTION_IRATE, functions.FUNCTION_DELTA, functions.FUNCTION_IDELTA:
+	case functions.FUNCTION_RATE,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_IDELTA:
 		// Counter reset detection, where needed, happens in HistogramStatsIterator, which still sees the buckets.
 		return true
-	case functions.FUNCTION_SUM_OVER_TIME, functions.FUNCTION_AVG_OVER_TIME, functions.FUNCTION_FIRST_OVER_TIME, functions.FUNCTION_LAST_OVER_TIME,
-		functions.FUNCTION_COUNT_OVER_TIME, functions.FUNCTION_PRESENT_OVER_TIME, functions.FUNCTION_ABSENT_OVER_TIME,
-		functions.FUNCTION_TS_OF_FIRST_OVER_TIME, functions.FUNCTION_TS_OF_LAST_OVER_TIME:
+	case functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME:
+		// These functions combine histograms using only their count and sum, pass them through, or only look at timestamps.
 		return true
-	case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_SORT_BY_LABEL, functions.FUNCTION_SORT_BY_LABEL_DESC:
+	case functions.FUNCTION_LABEL_REPLACE,
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC:
+		// These functions only change labels or order, and pass the sample values through unchanged.
 		return true
 	case functions.FUNCTION_INFO:
 		// info only adds labels from the info series, and passes the sample values through unchanged.
 		return true
-	case functions.FUNCTION_SHARDING_CONCAT, functions.FUNCTION_SHARDING_AVG:
+	case functions.FUNCTION_SHARDING_CONCAT,
+		functions.FUNCTION_SHARDING_AVG:
 		// Query sharding inserts these functions, which pass their input through unchanged.
 		return true
 	default:
