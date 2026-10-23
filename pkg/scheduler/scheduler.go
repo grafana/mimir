@@ -88,6 +88,9 @@ type Scheduler struct {
 	maxQueueLength           *queue.MaxQueueLengthGauge
 	discardedRequests        *prometheus.CounterVec
 	cancelledRequests        *prometheus.CounterVec
+	droppedRequests          *prometheus.CounterVec
+	querierRequestFailures   *prometheus.CounterVec
+	frontendErrorForwards    *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
@@ -166,6 +169,18 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_cancelled_requests_total",
 		Help: "Total number of query requests that were cancelled after enqueuing.",
 	}, []string{"user"})
+	s.droppedRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_dropped_requests_total",
+		Help: "Total number of queued requests that the query-scheduler removed without sending them to a querier, because their context was cancelled.",
+	}, []string{"user", "reason"})
+	s.querierRequestFailures = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_querier_request_failures_total",
+		Help: "Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.",
+	}, []string{"user"})
+	s.frontendErrorForwards = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_frontend_error_forwards_total",
+		Help: "Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.",
+	}, []string{"outcome"})
 	s.discardedRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_discarded_requests_total",
 		Help: "Total number of query requests discarded.",
@@ -530,6 +545,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		*/
 
 		if schedulerReq.Ctx.Err() != nil {
+			reason := "cancelled"
+			if errors.Is(context.Cause(schedulerReq.Ctx), errFrontendDisconnected) {
+				reason = "frontend_disconnected"
+			}
+			s.droppedRequests.WithLabelValues(schedulerReq.UserID, reason).Inc()
 			// remove from pending requests
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
 			s.queue.MarkRequestCompleted(schedulerReq)
@@ -636,6 +656,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		// then error out this upstream request _and_ stream.
 
 		if err != nil {
+			s.querierRequestFailures.WithLabelValues(req.UserID).Inc()
 			s.forwardErrorToFrontend(req.Ctx, req, err)
 		}
 		return err
@@ -656,6 +677,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 	)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+		s.frontendErrorForwards.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -663,6 +685,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 	conn, err := grpc.DialContext(ctx, req.FrontendAddr, opts...)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+		s.frontendErrorForwards.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -685,12 +708,14 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 
 		if err != nil {
 			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 	} else { // Protobuf request, so send a streaming response.
 		stream, err := client.QueryResultStream(userCtx)
 		if err != nil {
 			level.Warn(logger).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 
@@ -706,14 +731,18 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 
 		if err := stream.Send(&msg); err != nil {
 			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 
 		if _, err = stream.CloseAndRecv(); err != nil {
 			level.Warn(logger).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 	}
+
+	s.frontendErrorForwards.WithLabelValues("success").Inc()
 }
 
 func (s *Scheduler) isRunning() bool {
@@ -775,6 +804,8 @@ func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
 	}
 	s.discardedRequests.DeleteLabelValues(user)
 	s.cancelledRequests.DeleteLabelValues(user)
+	s.droppedRequests.DeletePartialMatch(prometheus.Labels{"user": user})
+	s.querierRequestFailures.DeleteLabelValues(user)
 }
 
 func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
