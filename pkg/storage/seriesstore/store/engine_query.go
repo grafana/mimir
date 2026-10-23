@@ -244,7 +244,11 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 		}
 		return out
 	}
-	var headMetas, compacted []ChunkMeta
+	var headMetas, compacted, blockMetas []ChunkMeta
+	// In-order chunks ending before the head's min time are a block's in Prometheus, which doesn't merge them with the
+	// out-of-order head: a query's head spans the hours its samples were backdated over, and had every chunk of a series
+	// decoded and re-encoded.
+	headMin, _, _ := e.headTimes()
 	// A selector with a metric name that comes in again finds its series in the shard's candidates.
 	var (
 		cached     *cachedSelector
@@ -299,15 +303,23 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			// Compacted out-of-order chunks are in blocks: Prometheus doesn't merge them with the
 			// head's chunks, and returns them after, so the head's copy of a conflicting duplicate
 			// comes first.
-			headMetas, compacted = headMetas[:0], compacted[:0]
+			headMetas, compacted, blockMetas = headMetas[:0], compacted[:0], blockMetas[:0]
 			for _, meta := range metas {
-				if meta.OutOfOrder && uint64(meta.Ref) < watermark {
+				switch {
+				case meta.OutOfOrder && uint64(meta.Ref) < watermark:
 					compacted = append(compacted, meta)
-				} else {
+				case !meta.OutOfOrder && meta.MaxTime < headMin:
+					blockMetas = append(blockMetas, meta)
+				default:
 					headMetas = append(headMetas, meta)
 				}
 			}
-			scratch = queryRawChunks(series, headMetas, coldChunks, disk, start, end, scratch[:0], &candidatesBuffer)
+			scratch = scratch[:0]
+			if len(blockMetas) > 0 {
+				// Blocks' chunks come before the head's.
+				scratch = queryRawChunks(nil, blockMetas, nil, disk, start, end, scratch, &candidatesBuffer)
+			}
+			scratch = queryRawChunks(series, headMetas, coldChunks, disk, start, end, scratch, &candidatesBuffer)
 			for _, meta := range compacted {
 				if meta.MinTime <= end && meta.MaxTime >= start {
 					scratch = append(scratch, chunks.Chunk{MinTime: meta.MinTime, MaxTime: meta.MaxTime, Encoding: int32(meta.Encoding), Data: disk.Read(meta.Ref, meta.Len)})

@@ -423,6 +423,66 @@ func BenchmarkEngineSelectOutOfOrder(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineSelectBackdated selects chunks of series with samples backdated over the hours their head was
+// compacted from, which their out-of-order head spans: Prometheus merges it with the in-order chunks still in its head
+// only.
+func BenchmarkEngineSelectBackdated(b *testing.B) {
+	const (
+		series, hours = 2000, 12
+		samples       = hours * 3_600_000 / benchInterval
+	)
+	heads := map[string]headUnderTest{}
+	for _, name := range benchEngines {
+		opts := differentialOptions{oooWindowMs: 2 * hours * 3_600_000}
+		if name == "prometheus" {
+			heads[name] = openPrometheus(b, b.TempDir(), opts, nil)
+		} else {
+			heads[name] = openEngine(b, b.TempDir(), opts, nil)
+		}
+		head := heads[name]
+		b.Cleanup(func() { _ = head.Close() })
+		for sample := range samples {
+			app := head.Appender(context.Background())
+			for n := range series {
+				_, err := app.Append(0, benchLabels(n), int64(sample)*benchInterval, float64(sample))
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+			if sample%(3_600_000/benchInterval) == 0 {
+				require.NoError(b, head.Compact(context.Background()))
+			}
+		}
+		// A few samples of each series backdated over its hours, after their last out-of-order compaction.
+		app := head.Appender(context.Background())
+		for n := range series {
+			for late := range 3 {
+				_, err := app.Append(0, benchLabels(n), int64((n*7+late*1999)%samples)*benchInterval+benchInterval/2, 1)
+				require.NoError(b, err)
+			}
+		}
+		require.NoError(b, app.Commit())
+	}
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
+	for _, name := range benchEngines {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				q, err := heads[name].ChunkQuerier(0, samples*benchInterval)
+				require.NoError(b, err)
+				set := q.Select(context.Background(), true, nil, matcher)
+				for set.Next() {
+					it := set.At().Iterator(nil)
+					for it.Next() {
+						_ = it.At().Chunk.Bytes()
+					}
+				}
+				require.NoError(b, set.Err())
+				_ = q.Close()
+			}
+		})
+	}
+}
+
 // BenchmarkEngineExemplars selects a metric's exemplars from a tenant whose series have some, like the exemplars API.
 func BenchmarkEngineExemplars(b *testing.B) {
 	for _, name := range benchEngines {
