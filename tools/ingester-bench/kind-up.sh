@@ -18,8 +18,9 @@ set -euo pipefail
 cluster="${CLUSTER:-ingester-bench}"
 cd "$(git rev-parse --show-toplevel)"
 
-# CPU 0 and its SMT siblings: a whole physical core, as the static CPU manager's full-pcpus-only needs.
-reserved="$(cat /sys/devices/system/cpu/cpu0/topology/thread_siblings_list)"
+# CPU 0 and its SMT siblings: a whole physical core, as the static CPU manager's full-pcpus-only needs. RESERVED_CPUS
+# overrides it, as on a cloud machine that shows no SMT, where CPU 0 alone would leave the daemons a single CPU.
+reserved="${RESERVED_CPUS:-$(cat /sys/devices/system/cpu/cpu0/topology/thread_siblings_list)}"
 echo "reserving CPUs $reserved for the host's daemons"
 for unit in docker.service containerd.service; do
   sudo systemctl set-property "$unit" AllowedCPUs="$reserved"
