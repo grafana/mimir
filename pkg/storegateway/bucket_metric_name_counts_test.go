@@ -67,6 +67,26 @@ func TestBucketStore_MetricNameCounts(t *testing.T) {
 	require.ErrorContains(t, err, "max_names 1")
 	assert.Empty(t, srv.sent)
 
+	// A block whose index-header already shows more names than max_names is
+	// refused before its postings offset table is walked.
+	walked := 0
+	s.store.blockSet.forEach(func(b *bucketBlock) {
+		b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onLabelValuesOffsetsCalled: func(string) error {
+			walked++
+			return nil
+		}}
+	})
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	err = s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxNames: 1}, srv)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	require.ErrorContains(t, err, "holds at least 2 distinct metric names, more than max_names 1")
+	assert.Zero(t, walked, "no postings offset table is walked")
+	assert.Empty(t, srv.sent)
+	// Under the cap the table is walked as before.
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxNames: 2}, srv))
+	assert.Equal(t, 1, walked)
+
 	// An unknown block is an empty stream that still says nothing was counted.
 	srv = &mockMetricNameCountsServer{ctx: t.Context()}
 	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{unknown.String()}}, srv))
