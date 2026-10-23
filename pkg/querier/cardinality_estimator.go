@@ -54,6 +54,7 @@ type estimateIngesters interface {
 // estimateLimits are the per-tenant limits that decide which sources a
 // window reaches.
 type estimateLimits interface {
+	CardinalityEstimateEnabled(userID string) bool
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
@@ -80,7 +81,7 @@ const defaultHeadAlwaysHolds = time.Hour
 
 // NewCardinalityEstimator returns an estimator over blocks and, when
 // ingesters is not nil, the ingesters. limits may be nil only when
-// ingesters is.
+// ingesters is; then no per-tenant limit applies.
 func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits) *CardinalityEstimator {
 	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
 }
@@ -92,6 +93,12 @@ func (e *CardinalityEstimator) WithIngesterBlockRange(blockRange time.Duration) 
 		e.headAlwaysHolds = blockRange / 2
 	}
 	return e
+}
+
+// enabledFor reports whether tenantID may use the estimate. Without
+// per-tenant limits every tenant may.
+func (e *CardinalityEstimator) enabledFor(tenantID string) bool {
+	return e.limits == nil || e.limits.CardinalityEstimateEnabled(tenantID)
 }
 
 // Estimate answers req for tenantID. With Snap, a window inside one block

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -179,4 +180,29 @@ func TestBlocksStoreQueryable_SeriesCounts_MaxDedupSeries(t *testing.T) {
 	res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"up": {4}}, res.Counts, "four distinct hashes fit the limit exactly")
+}
+
+// estimateDisabled is ingestersWithinLimit with the endpoint disabled for
+// every tenant.
+type estimateDisabled struct{ ingestersWithinLimit }
+
+func (estimateDisabled) CardinalityEstimateEnabled(string) bool { return false }
+
+func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
+	finder := &blocksFinderMock{}
+	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		return nil, errors.New("no store-gateway may be asked for a disabled tenant")
+	}}
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{map[BlocksStoreClient][][]ulid.ULID{gateway: nil}}}}}}
+	ing := &ingestersMock{}
+	h := CardinalityEstimateHandler(NewCardinalityEstimator(q, ing, estimateDisabled{ingestersWithinLimit(13 * time.Hour)}), CardinalityEstimateConfig{}, false)
+	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?start=0&end=86400", nil)
+	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "cardinality estimate is disabled for the tenant: user-1")
+	finder.AssertNotCalled(t, "GetBlocks", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	assert.Nil(t, ing.gotSeriesCounts, "no ingester may be asked for a disabled tenant")
 }
