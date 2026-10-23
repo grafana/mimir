@@ -6,6 +6,7 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
     $._config.bucketIndexConfig +
     $._config.rulerStorageConfig +
@@ -16,7 +17,6 @@
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
     $.ruler_storage_caching_config +
-    $.mimirActivityTrackerArgs +
     {
       target: 'ruler',
 

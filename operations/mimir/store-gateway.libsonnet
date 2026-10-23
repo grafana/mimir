@@ -18,10 +18,10 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
     $._config.bucketIndexConfig +
     $._config.queryBlocksStorageConfig +
-    $.mimirActivityTrackerArgs +
     {
       target: 'store-gateway',
 

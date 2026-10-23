@@ -36,6 +36,11 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
+    // Path to file that currently executing queries are written to that is
+    // preserved between pod restarts. This allows operators to debug what
+    // queries were running when a process crashed.
+    activity_tracker_path: '/active-query-tracker/activity.log',
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
@@ -165,11 +170,6 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
-    // Active query tracker stores currently executing queries in a file that
-    // survives pod restarts. Useful for debugging crashes. This configuration
-    // setting is temporary to help with migration in Grafana Cloud.
-    active_query_tracker_enabled: true,
-
     // Common configuration parameters
     commonConfig:: if !$._config.trace_request_headers then {} else {
       'server.trace-request-headers': true,
@@ -219,6 +219,10 @@
     ),
 
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
+
+    activityTrackerConfig: {
+      'activity-tracker.filepath': $._config.activity_tracker_path,
+    },
 
     blocksStorageConfig: {
       [

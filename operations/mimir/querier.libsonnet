@@ -7,6 +7,7 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
     $._config.bucketIndexConfig +
     $._config.queryConfig +
@@ -16,7 +17,6 @@
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
-    $.mimirActivityTrackerArgs +
     {
       target: 'querier',
 
