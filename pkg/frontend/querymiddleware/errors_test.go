@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 func TestQueryMiddleware_Errors(t *testing.T) {
@@ -44,4 +47,10 @@ func TestQueryMiddleware_Errors(t *testing.T) {
 			assert.Equal(t, testData.expectedErrorMsg, testData.err.Error())
 		})
 	}
+}
+
+func TestNewQueryLimitedError_RetryAfter(t *testing.T) {
+	minWait, ok := apierror.RetryAfter(newQueryLimitedError(5*time.Minute, "tenant-a", ""))
+	require.True(t, ok)
+	require.Equal(t, 5*time.Minute, minWait)
 }

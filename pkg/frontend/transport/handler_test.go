@@ -384,7 +384,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistencyLevel: "",
 		},
 		{
-			name: "downstream returns a too-many-requests apierror, Retry-After header set",
+			name: "downstream returns a too-many-requests apierror marked for retry, Retry-After header set",
 			cfg: HandlerConfig{
 				QueryStatsEnabled: true,
 				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
@@ -392,7 +392,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			request: func() *http.Request {
 				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
 			},
-			downstreamErr:      apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			downstreamErr:      apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
 			expectedStatusCode: 429,
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
@@ -431,6 +431,122 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistencyLevel: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.NotEmpty(t, headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns a too-many-requests apierror not marked for retry, no Retry-After header",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			expectedStatusCode: 429,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Empty(t, headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns a timeout apierror, no Retry-After header",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      apierror.New(apierror.TypeTimeout, "query timed out"),
+			expectedStatusCode: 503,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Empty(t, headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns an unavailable apierror not marked for retry, no Retry-After header",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      apierror.New(apierror.TypeUnavailable, "unavailable"),
+			expectedStatusCode: 503,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Empty(t, headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns an apierror with an exact retry wait, Retry-After header is that wait rounded up",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			},
+			request: func() *http.Request {
+				req := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				// The exact wait does not depend on the retry attempt.
+				req.Header.Set("Retry-Attempt", "3")
+				return req
+			},
+			downstreamErr:      apierror.New(apierror.TypeTooManyRequests, "query limited").WithRetryAfter(90*time.Second + 500*time.Millisecond),
+			expectedStatusCode: 429,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Equal(t, "91", headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns a successful response with a 503 status code, no Retry-After header",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamResponse: &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader("unavailable")),
+			},
+			expectedStatusCode: 503,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Empty(t, headers.Get("Retry-After"))
 			},
 		},
 		{
