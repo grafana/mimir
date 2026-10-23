@@ -166,6 +166,15 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 	if err != nil {
 		return MetricNameCountsResult{}, err
 	}
+	if err := res.setCoverage(parts, cov); err != nil {
+		return MetricNameCountsResult{}, err
+	}
+	return res, nil
+}
+
+// setCoverage records which of the blocks in parts were counted. When no
+// block was counted at all there is nothing to bound, and the request fails.
+func (r *MetricNameCountsResult) setCoverage(parts []estimatePart, cov estimateCoverage) error {
 	var all bucketindex.Blocks
 	for _, p := range parts {
 		all = append(all, p.blocks...)
@@ -175,17 +184,17 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 		missing[id] = true
 	}
 	if len(all) > 0 && len(missing) == len(all) {
-		return MetricNameCountsResult{}, errNothingCounted(len(all), cov)
+		return errNothingCounted(len(all), cov)
 	}
 	for _, b := range all {
 		if !missing[b.ID] {
-			res.Blocks = append(res.Blocks, b.ID)
+			r.Blocks = append(r.Blocks, b.ID)
 		}
 	}
-	res.MissingBlocks = cov.Missing
-	res.StoreGateways = cov.StoreGateways
-	res.Retries = cov.Retries
-	return res, nil
+	r.MissingBlocks = cov.Missing
+	r.StoreGateways = cov.StoreGateways
+	r.Retries = cov.Retries
+	return nil
 }
 
 // checkMetricNameCountsBlocks returns nil if every block covers exactly
