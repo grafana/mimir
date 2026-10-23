@@ -730,6 +730,19 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+NATIVE_METADATA_GATES_PACKAGES := ./pkg/ingester/... ./pkg/mimirpb/... ./pkg/distributor/... ./pkg/storage/... ./pkg/blockbuilder/... ./tools/ingester-bench/...
+
+.PHONY: native-metadata-gates
+native-metadata-gates: ## Run the native metadata prototype's gates: the build, the tests on both ingester engines, and a short bench run.
+	go build ./...
+	go test -timeout 30m $(NATIVE_METADATA_GATES_PACKAGES)
+	# Only the ingester's tests run on the engine MIMIR_TEST_TSDB_ENGINE names.
+	MIMIR_TEST_TSDB_ENGINE=seriesstore go test -timeout 30m ./pkg/ingester/...
+	$(eval NATIVE_METADATA_SMOKE_DIR := $(shell mktemp -d))
+	go run ./tools/ingester-bench -config=tools/ingester-bench/native-metadata-smoke.yaml -series=20000 -backfill=15m -warmup=2m -duration=2m -cpu-profile-seconds=10 -out=$(NATIVE_METADATA_SMOKE_DIR)
+	# Every read compared matches, and some are.
+	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0' $(NATIVE_METADATA_SMOKE_DIR)/report.json
+
 %.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
 %.pb.go.expdiff: %.pb.go
 	@echo "Regenerating $@"
