@@ -110,17 +110,12 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
-	var newMatchersL []*labels.Matcher
-	if e.Op == parser.LUNLESS {
-		// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
-		// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
-		newMatchersL = make([]*labels.Matcher, 0)
-	} else if e.VectorMatching.FillValues.RHS != nil {
-		// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
-		// produces output. RHS matchers must not narrow the LHS.
-		newMatchersL = make([]*labels.Matcher, 0)
-	} else {
-		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
+	// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
+	// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
+	// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
+	// produces output. RHS matchers must not narrow the LHS.
+	if e.Op != parser.LUNLESS && e.VectorMatching.FillValues.RHS == nil {
+		newMatchersL := mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
 			if newLabelMatchers, changed := combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.include); changed {
 				vsL.vs.LabelMatchers = newLabelMatchers
@@ -128,12 +123,10 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	var newMatchersR []*labels.Matcher
-	if e.VectorMatching.FillValues.LHS != nil || e.VectorMatching.FillValues.RHS != nil {
-		// Prometheus validates every right-side match group when any fill modifier is active.
-		newMatchersR = make([]*labels.Matcher, 0)
-	} else {
-		newMatchersR = mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
+	// Prometheus validates every right-side match group when any fill modifier is active, so LHS matchers must not
+	// narrow the RHS.
+	if e.VectorMatching.FillValues.LHS == nil && e.VectorMatching.FillValues.RHS == nil {
+		newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsR := range vssR {
 			if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
 				vsR.vs.LabelMatchers = newLabelMatchers
