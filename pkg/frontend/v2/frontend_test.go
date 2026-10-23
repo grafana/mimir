@@ -863,8 +863,11 @@ func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 	defer resp.Close()
 
 	msg, err := resp.Next(ctx)
-	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), err)
+	require.Equal(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests").WithRetryAfter(0), err)
 	require.Nil(t, msg)
+	minWait, ok := apierror.RetryAfter(err)
+	require.True(t, ok)
+	require.Zero(t, minWait)
 
 	require.Equal(t, int64(1), schedulerEnqueueAttempts.Load(), "should not retry on 'too many outstanding requests' error")
 }

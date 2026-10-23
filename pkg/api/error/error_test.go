@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/grafana/regexp"
@@ -189,6 +190,48 @@ func TestTypeForError(t *testing.T) {
 		t.Run(name+" (wrapped)", func(t *testing.T) {
 			err := fmt.Errorf("something went wrong one level down: %w", testCase.err)
 			require.Equal(t, testCase.expected, TypeForError(err, fallback))
+		})
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	testCases := map[string]struct {
+		err             error
+		expectedOK      bool
+		expectedMinWait time.Duration
+	}{
+		"not an APIError": {
+			err: errors.New("something bad"),
+		},
+		"APIError without a retry mark": {
+			err: New(TypeTooManyRequests, "too many requests"),
+		},
+		"APIError marked for the server backoff": {
+			err:        New(TypeTooManyRequests, "too many requests").WithRetryAfter(0),
+			expectedOK: true,
+		},
+		"APIError marked with an exact wait": {
+			err:             New(TypeTooManyRequests, "too many requests").WithRetryAfter(time.Minute),
+			expectedOK:      true,
+			expectedMinWait: time.Minute,
+		},
+		"wrapped APIError marked with an exact wait": {
+			err:             fmt.Errorf("one level down: %w", New(TypeTooManyRequests, "too many requests").WithRetryAfter(time.Minute)),
+			expectedOK:      true,
+			expectedMinWait: time.Minute,
+		},
+		"AddDetails keeps the retry mark": {
+			err:             AddDetails(New(TypeTooManyRequests, "too many requests").WithRetryAfter(time.Minute), "details"),
+			expectedOK:      true,
+			expectedMinWait: time.Minute,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			minWait, ok := RetryAfter(testCase.err)
+			require.Equal(t, testCase.expectedOK, ok)
+			require.Equal(t, testCase.expectedMinWait, minWait)
 		})
 	}
 }

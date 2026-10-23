@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -103,6 +104,9 @@ func typeForCode(code codes.Code, err error, fallback Type) Type {
 type APIError struct {
 	Type    Type
 	Message string
+
+	retryAfter    time.Duration
+	hasRetryAfter bool
 }
 
 func (e *APIError) Error() string {
@@ -182,6 +186,25 @@ func New(typ Type, msg string) *APIError {
 // Newf creates a new apiError with a formatted message
 func Newf(typ Type, tmpl string, args ...interface{}) *APIError {
 	return New(typ, fmt.Sprintf(tmpl, args...))
+}
+
+// WithRetryAfter marks e as an error that a client can retry, and returns e.
+// A minWait of 0 lets the server calculate the wait from its backoff config.
+// A minWait above 0 is the exact wait.
+func (e *APIError) WithRetryAfter(minWait time.Duration) *APIError {
+	e.retryAfter = minWait
+	e.hasRetryAfter = true
+	return e
+}
+
+// RetryAfter returns the wait that WithRetryAfter set on the APIError in err.
+// ok is false if err holds no APIError, or if WithRetryAfter was not called on it.
+func RetryAfter(err error) (minWait time.Duration, ok bool) {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return 0, false
+	}
+	return apiErr.retryAfter, apiErr.hasRetryAfter
 }
 
 // IsAPIError returns true if the error provided is an apiError.

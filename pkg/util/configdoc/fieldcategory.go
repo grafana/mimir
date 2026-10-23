@@ -74,6 +74,11 @@ var categoryOverrides = map[string]Category{
 	// main.go global flags
 	"config.file":       Basic,
 	"config.expand-env": Basic,
+
+	// Defined in pkg/util/retryafter.Config, shared with the distributor's stable flags.
+	"query-frontend.retry-after-header.enabled":     Experimental,
+	"query-frontend.retry-after-header.min-backoff": Experimental,
+	"query-frontend.retry-after-header.max-backoff": Experimental,
 }
 
 func AddCategoryOverrides(o map[string]Category) {

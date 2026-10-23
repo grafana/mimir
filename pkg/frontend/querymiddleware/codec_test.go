@@ -1211,6 +1211,42 @@ func TestCodec_DecodeResponse_Errors(t *testing.T) {
 	}
 }
 
+func TestCodec_DecodeResponse_RetryAfterMark(t *testing.T) {
+	scenarios := map[string]struct {
+		response     func() *http.Response
+		expectedMark bool
+	}{
+		"too many requests - no content type": {
+			response: func() *http.Response {
+				return stringErrorResponse(http.StatusTooManyRequests, "too many outstanding requests")
+			},
+			expectedMark: true,
+		},
+		"service unavailable - no content type": {
+			response: func() *http.Response { return stringErrorResponse(http.StatusServiceUnavailable, "something failed") },
+		},
+		"too many requests - JSON content type": {
+			response: func() *http.Response { return jsonErrorResponse(t, apierror.TypeTooManyRequests, "something failed") },
+		},
+	}
+
+	for name, testCase := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			codec := newTestCodec()
+
+			_, err := codec.DecodeMetricsQueryResponse(t.Context(), testCase.response(), nil, testutil.NewTestingLogger(t))
+			require.True(t, apierror.IsAPIError(err))
+			_, marked := apierror.RetryAfter(err)
+			require.Equal(t, testCase.expectedMark, marked, "metrics query response")
+
+			_, err = codec.DecodeLabelsSeriesQueryResponse(t.Context(), testCase.response(), &PrometheusLabelNamesQueryRequest{}, testutil.NewTestingLogger(t))
+			require.True(t, apierror.IsAPIError(err))
+			_, marked = apierror.RetryAfter(err)
+			require.Equal(t, testCase.expectedMark, marked, "labels and series query response")
+		})
+	}
+}
+
 func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	for _, tc := range []struct {
 		name            string

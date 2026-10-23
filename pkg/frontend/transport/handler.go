@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
@@ -103,6 +105,7 @@ type HandlerConfig struct {
 	MaxBodySize                    int64                  `yaml:"max_body_size" category:"advanced"`
 	QueryStatsEnabled              bool                   `yaml:"query_stats_enabled" category:"advanced"`
 	ActiveSeriesWriteTimeout       time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
+	RetryAfterHeader               retryafter.Config      `yaml:"retry_after_header" category:"experimental"`
 
 	// MaxInflightMetricsEnabled is injected internally from the query-frontend config.
 	MaxInflightMetricsEnabled bool `yaml:"-"`
@@ -114,6 +117,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
+	cfg.RetryAfterHeader.RegisterFlagsWithPrefix("query-frontend.retry-after-header.", f, false, "429 errors other than limited queries")
 }
 
 // Validate the HandlerConfig.
@@ -127,7 +131,7 @@ func (cfg *HandlerConfig) Validate() error {
 	if len(rejected) > 0 {
 		return fmt.Errorf("-query-frontend.log-query-request-headers must not contain headers that carry credentials or session material: %s", strings.Join(rejected, ", "))
 	}
-	return nil
+	return cfg.RetryAfterHeader.Validate()
 }
 
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
@@ -308,7 +312,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
+		writeError(w, r, apierror.New(apierror.TypeBadData, err.Error()), f.cfg.RetryAfterHeader)
 		return
 	}
 
@@ -317,7 +321,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = http.NewResponseController(w).SetWriteDeadline(deadline)
 		if err != nil {
 			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
-			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
+			writeError(w, r, apierror.New(apierror.TypeInternal, err.Error()), f.cfg.RetryAfterHeader)
 			return
 		}
 		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
@@ -331,7 +335,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
-		statusCode := writeError(w, err)
+		statusCode := writeError(w, r, err, f.cfg.RetryAfterHeader)
 		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
 	}
@@ -361,6 +365,12 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) > 0 {
 		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+	}
+
+	// A raw response holds no APIError, so no source can mark it for retry.
+	// Of the raw responses, only a 429 gets the header.
+	if f.cfg.RetryAfterHeader.Enabled && resp.StatusCode == http.StatusTooManyRequests {
+		hs.Set("Retry-After", f.cfg.RetryAfterHeader.Seconds(r.Header.Get("Retry-Attempt")))
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -727,7 +737,7 @@ func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
 }
 
 // writeError writes the error response to http.ResponseWriter, and returns the response HTTP status code.
-func writeError(w http.ResponseWriter, err error) int {
+func writeError(w http.ResponseWriter, r *http.Request, err error, retryCfg retryafter.Config) int {
 	switch {
 	case errors.Is(err, context.Canceled):
 		err = errCanceled
@@ -754,6 +764,13 @@ func writeError(w http.ResponseWriter, err error) int {
 	// If we've been able to get the HTTP response from the error, then we send
 	// it with the right status code and response body content.
 	if resFound {
+		if minWait, ok := apierror.RetryAfter(err); ok && retryCfg.Enabled {
+			if minWait > 0 {
+				w.Header().Set("Retry-After", strconv.FormatInt(int64(math.Ceil(minWait.Seconds())), 10))
+			} else {
+				w.Header().Set("Retry-After", retryCfg.Seconds(r.Header.Get("Retry-Attempt")))
+			}
+		}
 		_ = httpgrpc.WriteResponse(w, res)
 		return int(res.Code)
 	}

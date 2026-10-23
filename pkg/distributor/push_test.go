@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -59,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promtest"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -66,7 +66,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -74,7 +74,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 func TestHandler_remoteWriteWithMalformedRequest(t *testing.T) {
 	req := createMalformedRW1Request(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -145,7 +145,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -154,7 +154,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
 	}, nil, log.NewNopLogger())
@@ -263,7 +263,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, false, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, false, validation.MockDefaultOverrides(), retryafter.Config{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -365,7 +365,7 @@ func TestHandler_EnsureSkipLabelCountValidationBehaviour(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
 			limits := validation.MockDefaultOverrides()
-			handler := Handler(100000, nil, nil, false, tc.allowSkipLabelCountValidation, limits, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, nil, false, tc.allowSkipLabelCountValidation, limits, retryafter.Config{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkipLabelCountValidationHeader {
 				tc.req.Header.Set(SkipLabelCountValidationHeader, "true")
 			}
@@ -484,7 +484,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			limits := validation.NewOverrides(*defaults, nil)
 
 			var gotReqEncoded *Request
-			handler := Handler(100000, nil, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+			handler := Handler(100000, nil, nil, true, false, limits, retryafter.Config{}, func(_ context.Context, pushReq *Request) error {
 				gotReqEncoded = pushReq
 				return nil
 			}, nil, log.NewNopLogger())
@@ -652,7 +652,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, pushFunc, nil, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -712,7 +712,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
@@ -802,7 +802,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
@@ -827,126 +827,39 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 }
 
+// TestHandler_HandleRetryAfterHeader tests addErrorHeaders' gating of the Retry-After header
+// (status code and Enabled). The backoff calculation itself is tested in
+// package retryafter.
 func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	testCases := []struct {
-		name          string
-		responseCode  int
-		retryAttempt  string
-		retryCfg      RetryConfig
-		expectRetry   bool
-		minRetryAfter int
-		maxRetryAfter int
+		name         string
+		responseCode int
+		retryCfg     retryafter.Config
+		expectRetry  bool
 	}{
 		{
 			name:         "Request canceled, HTTP 499, no Retry-After",
 			responseCode: http.StatusRequestTimeout,
-			retryAttempt: "1",
-			retryCfg:     RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			retryCfg:     retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			expectRetry:  false,
 		},
 		{
-			name:         "Generic error, HTTP 500, no Retry-After",
+			name:         "Generic error, HTTP 500, disabled, no Retry-After",
 			responseCode: http.StatusInternalServerError,
-			retryCfg:     RetryConfig{Enabled: false, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			retryCfg:     retryafter.Config{Enabled: false, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			expectRetry:  false,
 		},
 		{
-			name:          "Generic error, HTTP 500, Retry-After with no Retry-Attempt set, default Retry-Attempt to 1",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 8 * time.Second},
-			minRetryAfter: 5,
-			maxRetryAfter: 7,
+			name:         "Generic error, HTTP 500, enabled, sets Retry-After",
+			responseCode: http.StatusInternalServerError,
+			retryCfg:     retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			expectRetry:  true,
 		},
 		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is not an integer, default Retry-Attempt to 1",
-			responseCode:  http.StatusInternalServerError,
-			retryAttempt:  "not-an-integer",
-			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
-			minRetryAfter: 3,
-			maxRetryAfter: 4,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is float, default Retry-Attempt to 1",
-			responseCode:  http.StatusInternalServerError,
-			retryAttempt:  "3.50",
-			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
-			minRetryAfter: 2,
-			maxRetryAfter: 3,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt a list of integers, default Retry-Attempt to 1",
-			responseCode:  http.StatusInternalServerError,
-			retryAttempt:  "[1, 2, 3]",
-			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 1 * time.Second, MaxBackoff: 64 * time.Second},
-			minRetryAfter: 1,
-			maxRetryAfter: 3,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
-			responseCode:  http.StatusInternalServerError,
-			retryAttempt:  "-1",
-			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 4 * time.Second, MaxBackoff: 16 * time.Second},
-			minRetryAfter: 4,
-			maxRetryAfter: 6,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with valid Retry-Attempts set to 2",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryAttempt:  "2",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
-			minRetryAfter: 4 - 0.5*4,
-			maxRetryAfter: 4 + 0.5*4,
-		},
-		{
-			name:          "Generic error, HTTP 429, Retry-After with valid Retry-Attempts set to 3",
-			responseCode:  http.StatusTooManyRequests,
-			expectRetry:   true,
-			retryAttempt:  "3",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
-			minRetryAfter: 8 - 0.5*8,
-			maxRetryAfter: 8 + 0.5*8,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxBackoff",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryAttempt:  "8",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
-			minRetryAfter: 8 * 0.5,
-			maxRetryAfter: 8,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a very high value (MaxInt64)",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryAttempt:  "9223372036854775807",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
-			minRetryAfter: 4,
-			maxRetryAfter: 8,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a too high value fails to parse the value (MaxInt64+1)",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryAttempt:  "9223372036854775808",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
-			minRetryAfter: 2,
-			maxRetryAfter: 4,
-		},
-		{
-			name:          "Generic error, HTTP 500, Retry-After with MinBackoff and MaxBackoff set to <1s",
-			responseCode:  http.StatusInternalServerError,
-			expectRetry:   true,
-			retryAttempt:  "3",
-			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Millisecond, MaxBackoff: 8 * time.Millisecond},
-			minRetryAfter: 0,
-			maxRetryAfter: 0,
+			name:         "HTTP 429, enabled, sets Retry-After",
+			responseCode: http.StatusTooManyRequests,
+			retryCfg:     retryafter.Config{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			expectRetry:  true,
 		},
 	}
 
@@ -955,10 +868,6 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}})
 
-			if tc.retryAttempt != "" {
-				req.Header.Add("Retry-Attempt", tc.retryAttempt)
-			}
-
 			addErrorHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
 
 			retryAfter := recorder.Header().Get("Retry-After")
@@ -966,10 +875,6 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 				assert.Empty(t, retryAfter)
 			} else {
 				assert.NotEmpty(t, retryAfter)
-				retryAfterInt, err := strconv.Atoi(retryAfter)
-				assert.NoError(t, err)
-				assert.GreaterOrEqual(t, retryAfterInt, tc.minRetryAfter)
-				assert.LessOrEqual(t, retryAfterInt, tc.maxRetryAfter)
 			}
 		})
 	}
@@ -1184,7 +1089,7 @@ func TestHandler_ServerTiming(t *testing.T) {
 				false,
 				false,
 				overrides,
-				RetryConfig{},
+				retryafter.Config{},
 				// Just outerMaybeDelayMiddleware and not wrapPushWithMiddlewares
 				d.outerMaybeDelayMiddleware(dummyPushFunc),
 				nil,
@@ -1200,63 +1105,6 @@ func TestHandler_ServerTiming(t *testing.T) {
 			} else {
 				require.Empty(t, serverTiming)
 			}
-		})
-	}
-}
-
-func TestRetryConfig_Validate(t *testing.T) {
-	tests := map[string]struct {
-		cfg         RetryConfig
-		expectedErr error
-	}{
-		"should pass with default config": {
-			cfg: func() RetryConfig {
-				cfg := RetryConfig{}
-				flagext.DefaultValues(&cfg)
-				return cfg
-			}(),
-			expectedErr: nil,
-		},
-		"should pass with min and max backoff equal to 1s": {
-			cfg: RetryConfig{
-				MinBackoff: 1 * time.Second,
-				MaxBackoff: 1 * time.Second,
-			},
-			expectedErr: nil,
-		},
-		"should fail if min backoff is 0": {
-			cfg: RetryConfig{
-				MinBackoff: 0,
-				MaxBackoff: 3 * time.Second,
-			},
-			expectedErr: errNonPositiveMinBackoffDuration,
-		},
-		"should fail if min backoff is negative": {
-			cfg: RetryConfig{
-				MinBackoff: -1 * time.Second,
-				MaxBackoff: 5 * time.Second,
-			},
-			expectedErr: errNonPositiveMinBackoffDuration,
-		},
-		"should fail if max backoff is 0": {
-			cfg: RetryConfig{
-				MinBackoff: 3 * time.Second,
-				MaxBackoff: 0,
-			},
-			expectedErr: errNonPositiveMaxBackoffDuration,
-		},
-		"should fail if max backoff is negative": {
-			cfg: RetryConfig{
-				MinBackoff: 3 * time.Second,
-				MaxBackoff: -1,
-			},
-			expectedErr: errNonPositiveMaxBackoffDuration,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
 		})
 	}
 }
@@ -1364,7 +1212,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="push",use
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
 			reg := prometheus.NewRegistry()
-			handler := Handler(MiB, nil, nil, false, false, distr.limits, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
+			handler := Handler(MiB, nil, nil, false, false, distr.limits, retryafter.Config{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1410,7 +1258,7 @@ func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			req := httptest.NewRequest("POST", "/api/v1/push/influx/write", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
-			handler := InfluxHandler(MiB, distr.RequestBufferPool, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
+			handler := InfluxHandler(MiB, distr.RequestBufferPool, nil, retryafter.Config{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1549,7 +1397,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 			reg := prometheus.NewRegistry()
 			handler := OTLPHandler(
 				MiB, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
-				nil, nil, RetryConfig{}, nil,
+				nil, nil, retryafter.Config{}, nil,
 				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger(),
 			)
 
@@ -1596,7 +1444,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	}
 	h := OTLPHandler(
 		200, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
-		nil, nil, RetryConfig{}, nil,
+		nil, nil, retryafter.Config{}, nil,
 		push, newPushMetrics(reg), reg, log.NewNopLogger(),
 	)
 	srv.HTTP.Handle("/otlp", h)
@@ -1922,7 +1770,7 @@ func TestHandler_CompressionRatioMetric(t *testing.T) {
 		assert.Equal(t, len(protobuf), pushReq.UncompressedBodySize(), "UncompressedBodySize should match uncompressed protobuf size")
 		return err
 	}
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, pushMetrics, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), retryafter.Config{}, pushFunc, pushMetrics, log.NewNopLogger())
 
 	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(compressedBody))
 	require.NoError(t, err)
@@ -1969,7 +1817,7 @@ func TestOTLPHandler_CompressionRatioMetric(t *testing.T) {
 	}
 	handler := OTLPHandler(
 		100000, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
-		nil, nil, RetryConfig{}, nil,
+		nil, nil, retryafter.Config{}, nil,
 		pushFunc, pushMetrics, reg, log.NewNopLogger(),
 	)
 
