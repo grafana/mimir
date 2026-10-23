@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//go:build !native_metadata_ablation
+
 package store
 
 import (
@@ -18,27 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 )
-
-// metadataRecord is a record of one sample at t for each of labels, all with the same metadata of their own.
-func metadataRecord(t *testing.T, at int64, m mimirpb.SeriesMetadata, lbls ...promlabels.Labels) *RW2Record {
-	req := &mimirpb.WriteRequest{}
-	for _, l := range lbls {
-		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:         mimirpb.FromLabelsToLabelAdapters(l),
-			Samples:        []mimirpb.Sample{{TimestampMs: at, Value: 1}},
-			SeriesMetadata: m,
-		}})
-	}
-	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
-	require.NoError(t, err)
-	require.Len(t, records, 1)
-	record, err := ReadRW2(records[0].Value, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
-	require.NoError(t, err)
-	t.Cleanup(record.Release)
-	return record
-}
 
 func TestEngineKeepsSeriesMetricMetadataOnEveryPath(t *testing.T) {
 	e, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 4, SecondaryHashFunction: secondaryHash})

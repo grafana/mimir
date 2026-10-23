@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -21,7 +21,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
-// The specification is Prometheus's #19563, ported to the engine's ingest routes. What differs, on purpose:
+// The specification is Prometheus's #19563, ported to the engine's ingest routes. The tests here hold in every build;
+// the default build's model test is metadata_test.go's, the ablation's is metadata_ablation_test.go's. What the
+// default build does differently, on purpose:
 //   - A series' versions aren't capped at five, which truncates the TSDB's: its changes are limited per window,
 //     which coalesces the ones over the limit (Coalesced), and its older runs are capped far higher (Truncated).
 //   - Head garbage collection drops the older runs that end before the head's min time; the TSDB keeps a series'
@@ -91,6 +93,25 @@ var metadataRoutes = map[string]metadataRoute{
 	},
 }
 
+// metadataRecord is a record of one sample at t for each of labels, all with the same metadata of their own.
+func metadataRecord(t *testing.T, at int64, m mimirpb.SeriesMetadata, lbls ...promlabels.Labels) *RW2Record {
+	req := &mimirpb.WriteRequest{}
+	for _, l := range lbls {
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:         mimirpb.FromLabelsToLabelAdapters(l),
+			Samples:        []mimirpb.Sample{{TimestampMs: at, Value: 1}},
+			SeriesMetadata: m,
+		}})
+	}
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	record, err := ReadRW2(records[0].Value, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+	require.NoError(t, err)
+	t.Cleanup(record.Release)
+	return record
+}
+
 // appendedMetadata is m as the ingester gives the appender it.
 func appendedMetadata(m mimirpb.SeriesMetadata) metadata.Metadata {
 	if m.IsEmpty() {
@@ -125,55 +146,10 @@ func versionsOf(t *testing.T, e *Engine, matchers ...*promlabels.Matcher) map[st
 	return out
 }
 
-// Every route records the series' versions as the model merges observations into them, in order and out of order.
-func TestMetricMetadataVersionsOnEveryRouteLikeTheModel(t *testing.T) {
-	for route, appendTo := range metadataRoutes {
-		for seed := range int64(5) {
-			t.Run(fmt.Sprintf("%s/%d", route, seed), func(t *testing.T) {
-				r := rand.New(rand.NewSource(seed))
-				var series []promlabels.Labels
-				for n := range 3 {
-					series = append(series, promlabels.FromStrings(model.MetricNameLabel, "requests_total", "pod", fmt.Sprint(n)))
-				}
-				const created = int64(10_000_000)
-				e := metadataEngine(t, created, series...)
-				values := []mimirpb.SeriesMetadata{
-					{Type: mimirpb.COUNTER, Help: "Requests."},
-					{Type: mimirpb.COUNTER, Help: "Requests served."},
-					{Type: mimirpb.COUNTER, Help: "Requests served.", Unit: "requests"},
-				}
-				models := make([]metadataModel, len(series))
-				used := map[int64]bool{created: true}
-				now := created
-				for range 40 {
-					// Unique times, mostly in order, some up to a minute out of order.
-					var at int64
-					for at == 0 || used[at] {
-						if r.Intn(4) == 0 {
-							at = now - int64(r.Intn(60))*1_000 - 500
-						} else {
-							now += 1_000
-							at = now
-						}
-					}
-					used[at] = true
-					i := r.Intn(len(series))
-					v := r.Intn(len(values))
-					appendTo(t, e, at, values[v], series[i])
-					models[i].observe(at, uint32(v+1))
-				}
-				got := versionsOf(t, e, promlabels.MustNewMatcher(promlabels.MatchEqual, model.MetricNameLabel, "requests_total"))
-				for i, s := range series {
-					var expected []MetricMetadataVersion
-					for _, run := range models[i] {
-						m := values[run.id-1]
-						expected = append(expected, MetricMetadataVersion{EffectiveFrom: run.from, Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: m.Help, Unit: m.Unit}})
-					}
-					require.Equal(t, expected, got[s.String()], "series %d", i)
-				}
-			})
-		}
-	}
+// A series' metadata takes 8 bytes of it in every build, so that the ablation's series are laid out as the default
+// build's.
+func TestSeriesMetadataTakesEightBytes(t *testing.T) {
+	require.EqualValues(t, 8, unsafe.Sizeof(seriesMetadata{}))
 }
 
 // What #19563 keeps of a sample's metadata, on every route: an empty type is unknown, an empty value is none,

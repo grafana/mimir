@@ -309,7 +309,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						} else if !result.noop {
 							inOrderMin, inOrderMax = min(inOrderMin, sample.TimestampMs), max(inOrderMax, sample.TimestampMs)
 							if metadataID != 0 {
-								e.observeMetadataLocked(t, &entry.series, metadataID, sample.TimestampMs)
+								e.observeMetadataLocked(t, &entry.series, memo, metadataID, sample.TimestampMs)
 							}
 						}
 						accepted = accepted[:0]
@@ -329,7 +329,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						}
 						// A quiet zero, which goes in as 0, carries no metadata.
 						if metadataID != 0 && (inOrder || ooo) && math.Float64bits(sample.Value) != value.QuietZeroNaN {
-							e.observeMetadataLocked(t, &entry.series, metadataID, sample.TimestampMs)
+							e.observeMetadataLocked(t, &entry.series, memo, metadataID, sample.TimestampMs)
 						}
 					}
 					if ingested > oldIngested {

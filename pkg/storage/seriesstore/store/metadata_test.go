@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//go:build !native_metadata_ablation
+
 package store
 
 import (
@@ -11,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/common/model"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/stretchr/testify/require"
 
@@ -252,4 +255,55 @@ func TestShardMetadataCapsASeriesRuns(t *testing.T) {
 	require.Equal(t, held[b]+1, d.entry(b).refs.Load())
 	m.drop(&series)
 	require.NotContains(t, m.truncated, series.ref)
+}
+
+// Every route records the series' versions as the model merges observations into them, in order and out of order.
+func TestMetricMetadataVersionsOnEveryRouteLikeTheModel(t *testing.T) {
+	for route, appendTo := range metadataRoutes {
+		for seed := range int64(5) {
+			t.Run(fmt.Sprintf("%s/%d", route, seed), func(t *testing.T) {
+				r := rand.New(rand.NewSource(seed))
+				var series []promlabels.Labels
+				for n := range 3 {
+					series = append(series, promlabels.FromStrings(model.MetricNameLabel, "requests_total", "pod", fmt.Sprint(n)))
+				}
+				const created = int64(10_000_000)
+				e := metadataEngine(t, created, series...)
+				values := []mimirpb.SeriesMetadata{
+					{Type: mimirpb.COUNTER, Help: "Requests."},
+					{Type: mimirpb.COUNTER, Help: "Requests served."},
+					{Type: mimirpb.COUNTER, Help: "Requests served.", Unit: "requests"},
+				}
+				models := make([]metadataModel, len(series))
+				used := map[int64]bool{created: true}
+				now := created
+				for range 40 {
+					// Unique times, mostly in order, some up to a minute out of order.
+					var at int64
+					for at == 0 || used[at] {
+						if r.Intn(4) == 0 {
+							at = now - int64(r.Intn(60))*1_000 - 500
+						} else {
+							now += 1_000
+							at = now
+						}
+					}
+					used[at] = true
+					i := r.Intn(len(series))
+					v := r.Intn(len(values))
+					appendTo(t, e, at, values[v], series[i])
+					models[i].observe(at, uint32(v+1))
+				}
+				got := versionsOf(t, e, promlabels.MustNewMatcher(promlabels.MatchEqual, model.MetricNameLabel, "requests_total"))
+				for i, s := range series {
+					var expected []MetricMetadataVersion
+					for _, run := range models[i] {
+						m := values[run.id-1]
+						expected = append(expected, MetricMetadataVersion{EffectiveFrom: run.from, Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: m.Help, Unit: m.Unit}})
+					}
+					require.Equal(t, expected, got[s.String()], "series %d", i)
+				}
+			})
+		}
+	}
 }

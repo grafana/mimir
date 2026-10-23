@@ -808,7 +808,7 @@ func (a *engineAppender) Commit() error {
 			}
 			// Only a sample that went in records its metadata.
 			if sample.metadata != 0 && (inOrder || ooo) {
-				a.e.observeMetadataLocked(t, &entry.series, sample.metadata, sample.t)
+				a.e.observeMetadataLocked(t, &entry.series, a.metadata, sample.metadata, sample.t)
 			}
 		}
 		state.Unlock()
