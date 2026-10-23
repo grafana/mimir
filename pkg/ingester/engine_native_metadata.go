@@ -60,7 +60,7 @@ func (e seriesstoreEngine) nativeMetricMetadata(ctx context.Context, matcherSets
 		for _, v := range s.Versions {
 			versions = append(versions, nativeMetricMetadataVersion{EffectiveFrom: v.EffectiveFrom, Metadata: v.Metadata})
 		}
-		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Coalesced: s.Coalesced})
+		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Truncated: s.Truncated, Coalesced: s.Coalesced})
 	}
 	return result, nil
 }
