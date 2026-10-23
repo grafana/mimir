@@ -174,6 +174,16 @@ func (i HealthStats) AnyErr() error {
 	return nil
 }
 
+// ChunkDataError reports invalid data in an opened chunk segment. Errors opening
+// the segment files are not classified as invalid chunk data.
+type ChunkDataError struct {
+	err error
+}
+
+func (e ChunkDataError) Error() string { return e.err.Error() }
+
+func (e ChunkDataError) Unwrap() error { return e.err }
+
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
@@ -221,6 +231,9 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 	// Per series.
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
 		lastLset = lset
 
 		id := p.At()
@@ -261,7 +274,12 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 			if checkChunkData {
 				err := verifyChunks(cr, c)
 				if err != nil {
-					return stats, errors.Wrapf(err, "verify chunk %d of series %d", i, id)
+					segmentIndex, _ := chunks.BlockChunkRef(c.Ref).Unpack()
+					segmentPath := filepath.Join(chunkDir, fmt.Sprintf("%06d", segmentIndex+1))
+					if _, accessErr := os.Stat(segmentPath); accessErr != nil {
+						return stats, errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+					}
+					return stats, ChunkDataError{err: errors.Wrapf(err, "verify chunk %d of series %d", i, id)}
 				}
 			}
 
