@@ -56,6 +56,10 @@ type PostingsOffsetsTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
+	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name, from
+	// the sampled offsets held in memory, without reading the table. It is exact for 0 or 1 value.
+	LabelValuesCountLowerBound(name string) int
+
 	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
 	// A lower value indicates postings are sampled more frequently.
 	PostingsOffsetsInMemSampling() int
@@ -340,6 +344,21 @@ func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+// LabelValuesCountLowerBound implements PostingsOffsetsTable. The sampled offsets keep the first of every
+// SparseSampleFactor values and the last value, so k samples, k >= 2, stand for at least
+// (k-2)*SparseSampleFactor + 2 values; downsampling a sparse index-header to a larger factor keeps that bound.
+func (t *PostingsOffsetsTableV2) LabelValuesCountLowerBound(name string) int {
+	e, ok := t.SparsePostingsOffsets[name]
+	if !ok {
+		return 0
+	}
+	k := len(e.SparseTableOffsets)
+	if k <= 1 {
+		return k
+	}
+	return (k-2)*max(1, t.SparseSampleFactor) + 2
 }
 
 func (t *PostingsOffsetsTableV2) PostingsOffsetsInMemSampling() int {
