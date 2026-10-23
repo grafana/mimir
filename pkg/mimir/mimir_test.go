@@ -512,6 +512,16 @@ func TestConfigValidation(t *testing.T) {
 			expectedError: nil,
 		},
 		{
+			name: "should fail if cardinality estimates trust compacted blocks before the store-gateways load them",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.Querier.CardinalityEstimate.TrustCompactedBlocksAfter = time.Hour
+				cfg.BlocksStorage.BucketStore.IgnoreBlocksWithin = 3 * time.Hour
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "S3: should fail if bucket name is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
 				cfg := newDefaultConfig()

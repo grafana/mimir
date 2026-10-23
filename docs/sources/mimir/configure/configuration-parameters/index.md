@@ -2148,8 +2148,10 @@ cardinality_estimate:
   # was compacted, such as late out-of-order samples, is not counted until it is
   # compacted too. With ingest storage, a compacted block can miss a partition
   # whose block-builder lags, and the count misses that partition's series
-  # without being marked as a lower bound. 0 disables it, so windows inside
-  # -querier.query-ingesters-within are always counted from the ingesters.
+  # without being marked as a lower bound. It must not be shorter than
+  # -blocks-storage.bucket-store.ignore-blocks-within. 0 disables it, so windows
+  # inside -querier.query-ingesters-within are always counted from the
+  # ingesters.
   # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
   [trust_compacted_blocks_after: <duration> | default = 0s]
 
