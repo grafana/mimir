@@ -56,6 +56,7 @@ type estimateIngesters interface {
 type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
 	CardinalityEstimateMaxIndexBytes(userID string) int64
+	CardinalityEstimateMaxMemoryBytes(userID string) uint64
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
@@ -112,11 +113,12 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
 	}
 	// The groups and hashes held in the querier count against the tenant's
-	// memory limit for a query.
+	// memory limit for an estimate, or for a query when that is lower.
 	if e.limits != nil {
 		if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
 			rejected := e.blocks.metrics.estimateMemoryRejectedOrDiscard()
-			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID), rejected, "cardinality estimate"))
+			limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
 		}
 	}
 	// Pick the sources the way a query does: the ingesters for anything
@@ -162,6 +164,16 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		return e.perBucket(ctx, tenantID, req)
 	}
 	return res, err
+}
+
+// estimateMemoryLimit is the memory an estimate may hold in the querier:
+// the estimate's own limit, or the per-query limit when that is set and
+// lower. 0 for either means it doesn't apply.
+func estimateMemoryLimit(estimate, query uint64) uint64 {
+	if query > 0 && (estimate == 0 || query < estimate) {
+		return query
+	}
+	return estimate
 }
 
 // maxPerBucketEstimates caps the buckets perBucket answers one by one, since
