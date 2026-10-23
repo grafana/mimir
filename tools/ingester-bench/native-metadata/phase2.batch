@@ -1,0 +1,48 @@
+# The native metadata prototype's Phase 2 runs (plan 2.6), for run-batch.sh, with the threshold profile. Decide with
+#
+#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
+#
+# and report the memo-off variant and the diagnostic, which don't decide anything, with
+#
+#   go run ./tools/ingester-bench -analyze=$RESULTS \
+#     -pairs=phase2-seriesstore:nomemo-seriesstore-metadata,phase1-seriesstore:phase2-seriesstore
+#
+# Run it from a checkout of this file's commit: the builds are only the ingesters' Mimir, and the bench is the
+# checkout's. Each pair runs twice in each order, after three A/A runs per engine for the noise. Pairs read nothing
+# (-query-scale=0), so that the window's CPU is the ingestion's; the parity runs read, MetricsMetadata included, for the
+# exit gate's mismatches. The ablation's pair joins once 2.4's build is there.
+#
+# threshold.json is 2.0's threshold profile: every series with metadata, a metric's shared by its series, no churn of
+# it, and help of a stated length (median 50, p90 110, p99 250 characters), which no sample measured. Its records are
+# made of what 6000 records of three cortex-dev-01 partitions were (2026-10-23): 28.7 series each, 1.89 series per
+# family, 2.99 metric family entries. Its series per request, series per target and partitions per tenant were tuned to
+# reproduce them, at the bench's 1.65M series: 28.2, 1.94 and 3.48, within the agreed 10%, 10% and 25%.
+
+build phase2 629ca0a64c
+build nomemo 629ca0a64c tags=native_metadata_nomemo
+# The end of Phase 1, for the diagnostic of what Phase 2 costs seriesstore with the switch off.
+build phase1 fb759c4952
+
+run aa-prometheus-1 phase2 prometheus phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run aa-seriesstore-1 phase2 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run aa-prometheus-2 phase2 prometheus phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run aa-seriesstore-2 phase2 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run aa-prometheus-3 phase2 prometheus phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run aa-seriesstore-3 phase2 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+
+run tsdb-1 phase2 prometheus phase2 prometheus metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run seriesstore-1 phase2 seriesstore phase2 seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run parity-1 phase2 prometheus phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json
+run tsdb-2 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run seriesstore-2 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run parity-2 phase2 seriesstore phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json
+run memo-1 phase2 seriesstore nomemo seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run tsdb-3 phase2 prometheus phase2 prometheus metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run seriesstore-3 phase2 seriesstore phase2 seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run parity-3 phase2 prometheus phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json
+run tsdb-4 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run seriesstore-4 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run parity-4 phase2 seriesstore phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json
+run memo-2 nomemo seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run diagnostic-1 phase1 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0

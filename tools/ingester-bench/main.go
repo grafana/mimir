@@ -522,7 +522,7 @@ func run(parent context.Context, cfg config) (err error) {
 
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
-		ReplayCPU: replayCPUs, Counters: counted, Driver: driverCPU, Steal: steal, EndMemory: endMemory, Composition: f.Composition(),
+		ReplayCPU: replayCPUs, Counters: counted, Driver: driverCPU, Steal: steal, EndMemory: endMemory, Composition: f.Composition(), CompositionTarget: profile.Series.Composition,
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
 		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
 	}

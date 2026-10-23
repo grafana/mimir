@@ -65,6 +65,15 @@ type SeriesProfile struct {
 	MetadataChurnPerHour float64     `json:"metadata_churn_per_hour"`
 	// Series per request, which is what a tenant's records are cut from.
 	SeriesPerRequest int `json:"series_per_request"`
+	// Slots of a metric that one target's scrape writes together, at one time, a classic histogram's buckets, sum and
+	// count being one slot; and the partitions a tenant's requests are split over, by series, with each family's
+	// metadata in one of them. A profile that sets SeriesPerTarget also mixes the targets of a tenant's second in an
+	// order of their hashes, as remote write's shards do. Each is 1 when not set.
+	SeriesPerTarget     int `json:"series_per_target"`
+	PartitionsPerTenant int `json:"partitions_per_tenant"`
+	// What the records should be made of, as a sample of real partitions' records is: runs whose records aren't don't
+	// count.
+	Composition *Composition `json:"composition,omitempty"`
 }
 
 type QueriesProfile struct {

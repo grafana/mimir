@@ -61,7 +61,10 @@ type metricModel struct {
 	slots      int
 	// Series of each slot: a classic histogram's buckets, sum and count, or the one series of the others.
 	seriesPerSlot int
-	intervalMs    int64
+	// Slots that one target's scrape writes together, and the second of the interval its first target is scraped in.
+	slotsPerTarget int
+	phaseSeconds   int64
+	intervalMs     int64
 	// The hash of the run's seed, the tenant and the metric, which the hashes of its series start from.
 	base uint64
 	// Per-second rate of counters and scale of gauges.
@@ -137,7 +140,7 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 	}
 	for k := range metrics {
 		size := max(1, int(math.Round(weights[k]/sum*float64(series))))
-		m := &metricModel{tenant: t, name: fmt.Sprintf("metric_%d", k), seriesPerSlot: 1}
+		m := &metricModel{tenant: t, name: fmt.Sprintf("metric_%d", k), seriesPerSlot: 1, slotsPerTarget: max(1, p.SeriesPerTarget)}
 		m.base = seededHash(w.seed, t.id, m.name)
 		switch x := r.Float64(); {
 		case x < p.NativeHistogramShare:
@@ -158,6 +161,11 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 		}
 		seconds, _ := strconv.Atoi(pick(r, intervals))
 		m.intervalMs = int64(max(1, seconds)) * 1000
+		if p.SeriesPerTarget > 0 {
+			// Its targets start at a second of their own, as scrapers spread targets over the interval: otherwise
+			// the first seconds have the first targets of every metric.
+			m.phaseSeconds = int64(m.base % uint64(m.intervalMs/1000))
+		}
 		m.scale = math.Exp(r.Float64()*12 - 4)
 		w.chooseLabels(r, t, m)
 		m.metadata = w.metadataOf(m)
@@ -287,24 +295,32 @@ func (w *world) generationStart(m *metricModel, slot int, generation int64) int6
 	return generation*w.lifetimeMs - phase
 }
 
-// scrapeOffsetMs is when in each interval the slot is scraped: slots spread over the seconds of the interval.
+// target is the slot's target, whose scrape writes it with the target's other slots.
+func (m *metricModel) target(slot int) int { return slot / m.slotsPerTarget }
+
+// scrapeOffsetMs is when in each interval the slot's target is scraped: targets spread over the seconds of the interval.
 func (m *metricModel) scrapeOffsetMs(slot int) int64 {
+	target := m.target(slot)
 	seconds := m.intervalMs / 1000
-	return int64(slot)%seconds*1000 + int64(m.hash64(slot, 2)%1000)
+	return (int64(target)+m.phaseSeconds)%seconds*1000 + int64(m.hash64(target, 2)%1000)
 }
 
-// slotsAt calls f for the slots of the metric scraped in the second [s, s+1000), at their scrape time.
+// slotsAt calls f for the slots of the metric scraped in the second [s, s+1000), at their scrape time, a target's
+// one after another.
 func (m *metricModel) slotsAt(s int64, f func(slot int, t int64)) {
 	seconds := m.intervalMs / 1000
 	second := (s / 1000) % seconds
 	base := s - s%m.intervalMs
-	for slot := int(second); slot < m.slots; slot += int(seconds) {
-		t := base + m.scrapeOffsetMs(slot)
+	for target := int((second - m.phaseSeconds + seconds) % seconds); target*m.slotsPerTarget < m.slots; target += int(seconds) {
+		first := target * m.slotsPerTarget
+		t := base + m.scrapeOffsetMs(first)
 		if t < s {
 			t += m.intervalMs
 		}
 		if t >= s && t < s+1000 {
-			f(slot, t)
+			for slot := first; slot < min(first+m.slotsPerTarget, m.slots); slot++ {
+				f(slot, t)
+			}
 		}
 	}
 }

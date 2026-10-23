@@ -62,11 +62,64 @@ func TestFeedWritesSeriesAndFamilyMetadata(t *testing.T) {
 	second := time.Now().UnixMilli() / 1000 * 1000
 	require.NoError(t, f.produceSecond(context.Background(), second, true))
 
-	consumer, err := kgo.NewClient(kgo.SeedBrokers(f.address()), kgo.ConsumeTopics(topic), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
+	withData, standIns := 0, 0
+	consumeRecords(t, f, func(_ *kgo.Record, req *mimirpb.WriteRequest) {
+		require.LessOrEqual(t, len(req.Timeseries)-len(req.Metadata), p.SeriesPerRequest)
+		families := map[string]bool{}
+		for _, m := range req.Metadata {
+			families[m.MetricFamilyName] = true
+		}
+		for _, ts := range req.Timeseries {
+			if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+				standIns++
+				continue
+			}
+			withData++
+			require.False(t, ts.SeriesMetadata.IsEmpty())
+		}
+		require.NotEmpty(t, families)
+	})
+	require.Positive(t, withData)
+	require.Positive(t, standIns)
+}
+
+// The feed splits each request over the tenant's partitions as a distributor does: by series, and each family's
+// metadata by family.
+func TestFeedSplitsRequestsOverTheTenantsPartitions(t *testing.T) {
+	p := defaultProfile().Series
+	p.MetadataShare, p.SeriesPerRequest, p.SeriesPerTarget, p.PartitionsPerTenant = 1, 100, 4, 3
+	w := newWorld(p, 2_000, 1)
+	f, err := newFeed(w, "", 0)
+	require.NoError(t, err)
+	t.Cleanup(f.close)
+	second := time.Now().UnixMilli() / 1000 * 1000
+	require.NoError(t, f.produceSecond(context.Background(), second, true))
+
+	withData := 0
+	consumeRecords(t, f, func(record *kgo.Record, req *mimirpb.WriteRequest) {
+		tenant := string(record.Key)
+		partitions := map[uint32]bool{}
+		for _, ts := range req.Timeseries {
+			if len(ts.Samples) > 0 || len(ts.Histograms) > 0 {
+				withData++
+				partitions[mimirpb.ShardByAllLabelAdapters(tenant, ts.Labels)%3] = true
+			}
+		}
+		for _, m := range req.Metadata {
+			partitions[mimirpb.ShardByMetricName(tenant, m.MetricFamilyName)%3] = true
+		}
+		require.Len(t, partitions, 1, "a record's series and families are one partition's")
+		require.LessOrEqual(t, len(req.Timeseries)-len(req.Metadata), p.SeriesPerRequest)
+	})
+	require.Positive(t, withData)
+}
+
+// consumeRecords calls f with each record the feed produced, and the request it holds.
+func consumeRecords(t *testing.T, feed *feed, f func(*kgo.Record, *mimirpb.WriteRequest)) {
+	consumer, err := kgo.NewClient(kgo.SeedBrokers(feed.address()), kgo.ConsumeTopics(topic), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
 	require.NoError(t, err)
 	t.Cleanup(consumer.Close)
-	withData, standIns := 0, 0
-	for consumed := int64(0); consumed <= f.lastOffset.Load(); {
+	for consumed := int64(0); consumed <= feed.lastOffset.Load(); {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		fetches := consumer.PollFetches(ctx)
 		cancel()
@@ -75,22 +128,25 @@ func TestFeedWritesSeriesAndFamilyMetadata(t *testing.T) {
 			consumed++
 			var req mimirpb.PreallocWriteRequest
 			require.NoError(t, ingest.DeserializeRecordContent(record.Value, &req, ingest.ParseRecordVersion(record)))
-			require.LessOrEqual(t, len(req.Timeseries)-len(req.Metadata), p.SeriesPerRequest)
-			families := map[string]bool{}
-			for _, m := range req.Metadata {
-				families[m.MetricFamilyName] = true
-			}
-			for _, ts := range req.Timeseries {
-				if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
-					standIns++
-					continue
-				}
-				withData++
-				require.False(t, ts.SeriesMetadata.IsEmpty())
-			}
-			require.NotEmpty(t, families)
+			f(record, &req.WriteRequest)
 		})
 	}
-	require.Positive(t, withData)
-	require.Positive(t, standIns)
+}
+
+// The threshold profile's records are made of what its sample of real partitions' records is, at the bench's size.
+func TestThresholdProfileHasItsComposition(t *testing.T) {
+	profile, err := loadProfile("native-metadata/threshold.json")
+	require.NoError(t, err)
+	require.NotNil(t, profile.Series.Composition)
+	f, err := newFeed(newWorld(profile.Series, 1_650_000, 1), "", 0)
+	require.NoError(t, err)
+	t.Cleanup(f.close)
+	// A third of the profile's scrape interval, whose seconds are alike.
+	start := time.Now().UnixMilli()/60_000*60_000 - 3_600_000
+	require.NoError(t, f.produceSeconds(context.Background(), start, start+20_000))
+
+	report := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+	report.Composition, report.CompositionTarget = f.Composition(), profile.Series.Composition
+	require.Greater(t, report.Composition.Records, 200)
+	require.Empty(t, analyzeRun("run", report).Discard)
 }
