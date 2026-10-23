@@ -21,7 +21,7 @@ func validateIntegrationLimit(k string, _ float64) error {
 
 // allowedIntegrationNames is a list of all the integrations that can be rate limited.
 var allowedIntegrationNames = []string{
-	"webhook", "email", "pagerduty", "opsgenie", "wechat", "slack", "victorops", "pushover", "sns", "webex", "telegram", "discord", "msteams", "msteamsv2",
+	"webhook", "email", "pagerduty", "opsgenie", "wechat", "slack", "victorops", "pushover", "sns", "webex", "telegram", "discord", "msteams", "msteamsv2", "jira",
 }
 
 // NotificationRateLimitMap returns a map that can be used as a flag for setting notification rate limits.

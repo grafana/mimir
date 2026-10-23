@@ -3,6 +3,9 @@
 package usagetracker
 
 import (
+	"fmt"
+
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,14 +45,23 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 
 	t.shardCleanupDuration.Collect(metrics)
 
+	collectMetric := func(desc *prometheus.Desc, valueType prometheus.ValueType, value float64, tenantID string) {
+		metric, err := prometheus.NewConstMetric(desc, valueType, value, tenantID)
+		if err != nil {
+			level.Error(t.logger).Log("msg", "failed to collect usage-tracker metric", "tenant", fmt.Sprintf("%q", tenantID), "metric", desc.String(), "err", err)
+			metric = prometheus.NewInvalidMetric(desc, err)
+		}
+		metrics <- metric
+	}
+
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 	for _, tenantID := range t.sortedTenants {
 		tenant := t.tenants[tenantID]
-		metrics <- prometheus.MustNewConstMetric(activeSeriesMetricDesc, prometheus.GaugeValue, float64(tenant.series.Load()), tenantID)
+		collectMetric(activeSeriesMetricDesc, prometheus.GaugeValue, float64(tenant.series.Load()), tenantID)
 		if t.enableVerboseSeriesMetrics {
-			metrics <- prometheus.MustNewConstMetric(seriesCreatedTotalDesc, prometheus.CounterValue, float64(tenant.seriesCreated.Load()), tenantID)
-			metrics <- prometheus.MustNewConstMetric(seriesRemovedTotalDesc, prometheus.CounterValue, float64(tenant.seriesRemoved.Load()), tenantID)
+			collectMetric(seriesCreatedTotalDesc, prometheus.CounterValue, float64(tenant.seriesCreated.Load()), tenantID)
+			collectMetric(seriesRemovedTotalDesc, prometheus.CounterValue, float64(tenant.seriesRemoved.Load()), tenantID)
 		}
 	}
 }

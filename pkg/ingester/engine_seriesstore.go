@@ -439,6 +439,11 @@ func (h seriesstoreHead) Sync() error {
 	return h.FsyncWLSegments()
 }
 
+// LabelValuesBytes returns nil: the engine doesn't track the bytes of label values.
+func (h seriesstoreHead) LabelValuesBytes() map[string]uint64 {
+	return nil
+}
+
 // ValidateSeriesstoreEngine refuses configurations the seriesstore engine can't serve as the
 // Prometheus TSDB would. It only runs in ingesters that select the engine.
 func ValidateSeriesstoreEngine(tsdbCfg mimir_tsdb.TSDBConfig, ingesterCfg Config, ingestCfg ingest.Config) error {

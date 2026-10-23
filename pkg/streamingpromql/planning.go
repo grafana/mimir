@@ -141,12 +141,8 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
 	}
 
-	if opts.EnableScalarCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
-		return nil, errors.New("cannot enable scalar common subexpression elimination without common subexpression elimination")
-	}
-
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.EnableScalarCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -296,7 +292,7 @@ func (p *QueryPlanner) ensureSubqueryStepsPopulated(expr parser.Expr) {
 	})
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, explain []types.ExplainValue, observer PlanningObserver) (*planning.QueryPlan, error) {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
@@ -320,6 +316,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
 		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
+		Explain:                  explain,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)

@@ -427,7 +427,7 @@ func (g *histogramGrouper) saveFloatsToGroup(fPoints []promql.FPoint, le string,
 	}
 
 	upperBound, err := strconv.ParseFloat(le, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(upperBound) {
 		// The le label was invalid. Record it:
 		g.annotations.Add(annotations.NewBadBucketLabelWarning(
 			g.getMetricNameForSeries(group.lastInputSeriesIdx),

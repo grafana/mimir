@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
@@ -1868,6 +1869,14 @@ func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, c
 			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
 			require.NoError(t, err)
 			startAndWaitHealthy(t, ingester, r)
+
+			// Tests using this helper expect owned series state to change only through their own actions
+			// (pushes, ownedTokenRanges, recomputeOwnedSeries). Stop the background owned series service so
+			// that a ticker-driven recompute, based on the real ring, cannot change owned series or pending
+			// non-owned refs during the test.
+			if ingester.ownedSeriesService != nil {
+				require.NoError(t, services.StopAndAwaitTerminated(t.Context(), ingester.ownedSeriesService))
+			}
 
 			ingesters = append(ingesters, ingester)
 		}

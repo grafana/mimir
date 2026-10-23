@@ -225,7 +225,7 @@ func TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			plan, err := planner.NewQueryPlan(t.Context(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(24*time.Hour)),
-				streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+				streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.TrimIndent(tc.expectedPlan), plan.String())
@@ -317,7 +317,7 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			plan, err := planner.NewQueryPlan(t.Context(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
-				streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+				streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.TrimIndent(tc.expectedPlan), plan.String())

@@ -186,6 +186,23 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
 		},
+		"positive max derived token partitions passes validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = 128
+			},
+		},
+		"negative max derived token partitions fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = -1
+			},
+			expectedError: "-ingester.partition-ring.max-derived-token-partitions must be between 0 and 2147483647, got -1",
+		},
+		"max derived token partitions above math.MaxInt32 fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterPartitionRing.MaxDerivedTokenPartitions = math.MaxInt32 + 1
+			},
+			expectedError: "-ingester.partition-ring.max-derived-token-partitions must be between 0 and 2147483647, got 2147483648",
+		},
 	}
 
 	for name, tc := range tests {
@@ -8245,11 +8262,11 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 		l := labels.FromStrings("n", "v")
 		for i := 0; i < numFullChunks; i++ {
-			// Not using db.Appender() as it checks for compaction.
-			app := head.Appender(context.Background())
-			_, err := app.Append(0, l, int64(i)*chunkRange+1, 9.99)
+			// Not using db.AppenderV2() as it checks for compaction.
+			app := head.AppenderV2(context.Background())
+			_, err := app.Append(0, l, 0, int64(i)*chunkRange+1, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
-			_, err = app.Append(0, l, int64(i+1)*chunkRange, 9.99)
+			_, err = app.Append(0, l, 0, int64(i+1)*chunkRange, 9.99, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 		}
@@ -9147,7 +9164,7 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	require.NoError(t, err)
 
 	meta, err := ing.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
-		Metric: "test_metric_total",
+		Metric: "test_metric_total", //nolint:staticcheck // We want to intentionally access a deprecated field
 		Limit:  1, LimitPerMetric: 1,
 	})
 	require.NoError(t, err)
@@ -12383,8 +12400,8 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	headMinTime := int64((10 * time.Hour) / time.Millisecond)
-	app := db.Appender(t.Context())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	app := db.AppenderV2(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, headMinTime, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -12545,6 +12562,58 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
 }
 
+// TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
+// store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
+func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.FloatChunkEncoding = "xor2"
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
+	})
+
+	cfg := defaultIngesterTestConfig(t)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(t.Context(), "user1")
+
+	const (
+		metricName       = "testmetric_xor2_created_timestamp"
+		createdTimestamp = int64(500)
+		ts               = int64(1000)
+	)
+	req := mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		nil, nil, mimirpb.API,
+	)
+	req.Timeseries[0].CreatedTimestamp = createdTimestamp
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	chunks := queryChunksForMetric(ctx, t, i, metricName)
+	require.Len(t, chunks, 1)
+	require.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+
+	chk, err := chunkenc.FromData(chunkenc.EncXOR2, chunks[0].Data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	expectedSamples := []struct {
+		t int64
+		v float64
+	}{{t: createdTimestamp, v: 0}, {t: ts, v: 42}}
+	for _, expected := range expectedSamples {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		actualT, actualV := it.At()
+		assert.Equal(t, expected.t, actualT)
+		assert.Equal(t, expected.v, actualV)
+		assert.Zero(t, it.AtST(), "sample at %d has a start timestamp", actualT)
+	}
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
+}
+
 // TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
 // in both directions. Both directions already worked; this guards the normalisation in
 // applyTSDBSettings() that clearing the limit depends on.
@@ -12590,7 +12659,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 			))
 			require.NoError(t, err)
 
-			chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_xor2_before")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
 
@@ -12607,7 +12676,157 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 			))
 			require.NoError(t, err)
 
-			chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
+		})
+	}
+}
+
+func TestIngesterHistogramSTEncoding(t *testing.T) {
+	tests := map[string]struct {
+		encoding               string
+		expectedChunkEnc       chunkenc.Encoding
+		expectedClientEnc      chunk.Encoding
+		expectedFloatChunkEnc  chunkenc.Encoding
+		expectedFloatClientEnc chunk.Encoding
+	}{
+		"histogram": {
+			encoding:               "histogram",
+			expectedChunkEnc:       chunkenc.EncHistogram,
+			expectedClientEnc:      chunk.PrometheusHistogramChunk,
+			expectedFloatChunkEnc:  chunkenc.EncFloatHistogram,
+			expectedFloatClientEnc: chunk.PrometheusFloatHistogramChunk,
+		},
+		"histogram_st": {
+			encoding:               "histogram_st",
+			expectedChunkEnc:       chunkenc.EncHistogramST,
+			expectedClientEnc:      chunk.PrometheusHistogramSTChunk,
+			expectedFloatChunkEnc:  chunkenc.EncFloatHistogramST,
+			expectedFloatClientEnc: chunk.PrometheusFloatHistogramSTChunk,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := defaultLimitsTestConfig()
+			limits.HistogramChunkEncoding = testData.encoding
+
+			override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				*defaults = limits
+			})
+
+			cfg := defaultIngesterTestConfig(t)
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), "user1")
+
+			const ts = int64(1000)
+			h := util_test.GenerateTestHistogram(1)
+			fh := util_test.GenerateTestFloatHistogram(1)
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{
+					{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
+					{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
+				},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedClientEnc), chunks[0].Encoding)
+			verifyHistogramChunkSample(t, testData.expectedChunkEnc, chunks[0].Data, ts, h.ToFloat(nil))
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_float_histogram")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedFloatClientEnc), chunks[0].Encoding)
+			verifyHistogramChunkSample(t, testData.expectedFloatChunkEnc, chunks[0].Data, ts, fh)
+		})
+	}
+}
+
+// TestIngesterHistogramSTEncodingRuntimeToggle covers changing the histogram_chunk_encoding limit at runtime,
+// in both directions. It takes effect once the tenant's TSDB is reopened.
+func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
+	tests := map[string]struct {
+		initialLimit   string
+		updatedLimit   string
+		expectedBefore chunk.Encoding
+		expectedAfter  chunk.Encoding
+	}{
+		"enabling HistogramST": {
+			initialLimit: "", updatedLimit: "histogram_st",
+			expectedBefore: chunk.PrometheusHistogramChunk, expectedAfter: chunk.PrometheusHistogramSTChunk,
+		},
+		"clearing the limit falls back to Histogram": {
+			initialLimit: "histogram_st", updatedLimit: "",
+			expectedBefore: chunk.PrometheusHistogramSTChunk, expectedAfter: chunk.PrometheusHistogramChunk,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			userID := "user1"
+			tenantOverride := new(TenantLimitsMock)
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{HistogramChunkEncoding: testData.initialLimit, NativeHistogramsIngestionEnabled: true})
+
+			override := validation.NewOverrides(defaultLimitsTestConfig(), tenantOverride)
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+			dataDir := t.TempDir()
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, dataDir, "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_before"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram_before")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
+
+			// Change the limit at runtime.
+			tenantOverride.ExpectedCalls = nil
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{HistogramChunkEncoding: testData.updatedLimit, NativeHistogramsIngestionEnabled: true})
+			<-time.After(1500 * time.Millisecond)
+
+			// A new series always starts a fresh chunk, but it keeps the encoding the open TSDB was seeded with.
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_histogram_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
+
+			// Restarting the ingester reopens the tenant's TSDB, which uses the updated setting.
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+			i, r, err = prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, r, dataDir, "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after_reopen"}}},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3000, util_test.GenerateTestHistogram(1))},
+				nil,
+			))
+			require.NoError(t, err)
+
+			chunks = queryChunksForMetric(ctx, t, i, "testmetric_histogram_after_reopen")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
 		})
@@ -12616,10 +12835,10 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 
 func queryXOR2Chunks(ctx context.Context, t *testing.T, i *Ingester) []client.Chunk {
 	t.Helper()
-	return queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2")
+	return queryChunksForMetric(ctx, t, i, "testmetric_xor2")
 }
 
-func queryXOR2ChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
+func queryChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
 	t.Helper()
 	queryReq := &client.QueryRequest{
 		StartTimestampMs:         math.MinInt64,
@@ -12647,6 +12866,27 @@ func verifyChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expecte
 	actualTs, actualVal := it.At()
 	assert.Equal(t, expectedTs, actualTs)
 	assert.Equal(t, expectedVal, actualVal)
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
+}
+
+func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedTs int64, expected *histogram.FloatHistogram) {
+	t.Helper()
+	chk, err := chunkenc.FromData(enc, data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	expectedValType := chunkenc.ValFloatHistogram
+	if enc == chunkenc.EncHistogram || enc == chunkenc.EncHistogramST {
+		expectedValType = chunkenc.ValHistogram
+	}
+	require.Equal(t, expectedValType, it.Next())
+	// Integer histograms are read as float histograms too, so both kinds compare against a float histogram.
+	actualTs, actual := it.AtFloatHistogram(nil)
+	assert.Equal(t, expectedTs, actualTs)
+	// Equals() ignores the counter reset hint, which the chunk encoding sets independently of the pushed sample.
+	assert.True(t, expected.Equals(actual), "expected %s, got %s", expected, actual)
+	// The push path does not pass start timestamps to the TSDB yet.
+	assert.Zero(t, it.AtST())
 	assert.Equal(t, chunkenc.ValNone, it.Next())
 	assert.NoError(t, it.Err())
 }

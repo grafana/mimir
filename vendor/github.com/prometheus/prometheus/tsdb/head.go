@@ -28,6 +28,7 @@ import (
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
 	"time"
+	"unique"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2140,6 +2141,12 @@ func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
 }
 
+// LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
+// values currently held in the head.
+func (h *Head) LabelValuesBytes() map[string]uint64 {
+	return h.postings.LabelValuesBytes()
+}
+
 // NumStaleSeries returns the number of stale series in the head.
 func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
@@ -3057,8 +3064,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -3071,6 +3077,7 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
+	meta unique.Handle[metadata.Metadata]
 
 	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
 	// A rolled-back exemplar may conservatively delay eviction until this time.

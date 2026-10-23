@@ -82,6 +82,9 @@ type engineHead interface {
 	Ownership(owned ring.TokenRanges) (ownedCount int, nonOwned []storage.SeriesRef)
 	// ShardSeries returns the series in shard shardIndex of shardCount, by ref.
 	ShardSeries(shardIndex, shardCount uint64) index.Postings
+	// LabelValuesBytes returns the bytes of each label name's distinct values, or nil if the engine doesn't track
+	// them.
+	LabelValuesBytes() map[string]uint64
 
 	// Sync makes what was appended so far durable, before the ingester commits its Kafka offset.
 	Sync() error

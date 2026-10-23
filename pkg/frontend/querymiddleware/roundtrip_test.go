@@ -593,6 +593,58 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 	}
 }
 
+func TestTripperware_ShouldRetryFailedRequestsUpToMaxRetries(t *testing.T) {
+	const maxRetries = 5
+
+	tests := map[string]string{
+		"cardinality label names": cardinalityLabelNamesPathSuffix,
+		"active series":           cardinalityActiveSeriesPathSuffix + "?selector=%7Bjob%3D%22test%22%7D",
+		"label names":             labelNamesPathSuffix,
+		"series":                  seriesPathSuffix,
+	}
+
+	for testName, path := range tests {
+		t.Run(testName, func(t *testing.T) {
+			downstreamErr := errors.New("downstream failed")
+			downstreamCalls := 0
+			downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				downstreamCalls++
+				return nil, downstreamErr
+			})
+
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{}
+			tw, err := NewTripperware(
+				Config{MaxRetries: maxRetries},
+				log.NewNopLogger(),
+				limits,
+				newMockQueryLimitsProvider(&limits),
+				newTestCodec(),
+				nil,
+				nil,
+				engine,
+				engineOpts,
+				nil,
+				false,
+				nil,
+				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
+			)
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(t.Context(), "user-1")
+			req := httptest.NewRequest("GET", path, http.NoBody).WithContext(ctx)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			require.ErrorIs(t, err, downstreamErr)
+			require.Nil(t, resp)
+			require.Equal(t, maxRetries, downstreamCalls)
+		})
+	}
+}
+
 // TestMiddlewaresConsistency ensures that we don't forget to add a middleware to a given type of request
 // (e.g. range query, remote read, ...) when a new middleware is added. By default, it expects that a middleware
 // is added to each type of request, and then it allows to define exceptions when we intentionally don't
@@ -602,6 +654,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 	cfg.UseMQEForSharding = false
+	cfg.UseMQEForSplittingAndCachingResults = false
 	cfg.RewriteQueriesHistogram = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.

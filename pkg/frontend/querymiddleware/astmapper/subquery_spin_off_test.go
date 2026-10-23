@@ -16,12 +16,14 @@ import (
 
 func TestSubquerySpinOffMapper(t *testing.T) {
 	for _, tt := range []struct {
-		name                      string
-		in                        string
-		out                       string
-		spinOffSimpleSubqueries   bool
-		expectedSubqueries        int
-		expectedDownstreamQueries int
+		name                            string
+		in                              string
+		out                             string
+		spinOffSimpleSubqueries         bool
+		rvsSubqueriesEnabled            bool
+		expectedSubqueries              int
+		expectedDownstreamQueries       int
+		expectedSkippedSubqueriesForRVS int
 	}{
 		{
 			name:                      "subquery too simple",
@@ -284,10 +286,55 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedSubqueries:        1,
 			expectedDownstreamQueries: 1,
 		},
+		{
+			name:                            "prioritize rvs when enabled",
+			in:                              `avg_over_time((foo * bar)[3d:1m])`,
+			out:                             `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:1m])"}`,
+			rvsSubqueriesEnabled:            true,
+			expectedDownstreamQueries:       1,
+			expectedSkippedSubqueriesForRVS: 1,
+		},
+		{
+			name:                 "rvs unsupported function still spins off",
+			in:                   `quantile_over_time(0.9, sum(foo)[6h:5m])`,
+			out:                  `quantile_over_time(0.9, __subquery_spinoff__{__query__="sum(foo)",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			rvsSubqueriesEnabled: true,
+			expectedSubqueries:   1,
+		},
+		{
+			name:                            "rvs supported branch stays downstream while sibling spins off",
+			in:                              `avg_over_time(sum(foo)[6h:5m]) + quantile_over_time(0.9, sum(bar)[6h:5m])`,
+			out:                             `__downstream_query__{__query__="avg_over_time(sum(foo)[6h:5m])"} + quantile_over_time(0.9, __subquery_spinoff__{__query__="sum(bar)",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			rvsSubqueriesEnabled:            true,
+			expectedSubqueries:              1,
+			expectedDownstreamQueries:       1,
+			expectedSkippedSubqueriesForRVS: 1,
+		},
+		{
+			name:                            "rvs supported outer function preserves nested subquery downstream",
+			in:                              `avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m])`,
+			out:                             `__downstream_query__{__query__="avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m])"}`,
+			rvsSubqueriesEnabled:            true,
+			expectedDownstreamQueries:       1,
+			expectedSkippedSubqueriesForRVS: 1,
+		},
+		{
+			name:                 "rvs supported inner function does not prevent outer spin-off",
+			in:                   `stddev_over_time(sum_over_time(foo[6h:5m])[6h:5m])`,
+			out:                  `stddev_over_time(__subquery_spinoff__{__query__="sum_over_time(foo[6h:5m])",__range__="6h0m0s",__step__="5m0s"}[6h])`,
+			rvsSubqueriesEnabled: true,
+			expectedSubqueries:   1,
+		},
+		{
+			name:                 "constant subquery stays unchanged with RVS enabled",
+			in:                   `avg_over_time(vector(1)[6h:5m])`,
+			out:                  `avg_over_time(vector(1)[6h:5m])`,
+			rvsSubqueriesEnabled: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
-			mapper := NewSubquerySpinOffMapper(NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats, tt.spinOffSimpleSubqueries)
+			mapper := NewSubquerySpinOffMapper(NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, tt.rvsSubqueriesEnabled, log.NewNopLogger(), stats, tt.spinOffSimpleSubqueries)
 			ctx := context.Background()
 			parser := promqlext.NewPromQLParser()
 			expr, err := parser.ParseExpr(tt.in)
@@ -300,6 +347,7 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			require.Equal(t, out.String(), mapped.String())
 			assert.Equal(t, tt.expectedSubqueries, stats.SpunOffSubqueries())
 			assert.Equal(t, tt.expectedDownstreamQueries, stats.DownstreamQueries())
+			assert.Equal(t, tt.expectedSkippedSubqueriesForRVS, stats.SkippedSubqueriesForRVS())
 		})
 	}
 }

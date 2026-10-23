@@ -25,6 +25,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -227,6 +228,10 @@ func getBucketSparseHeaderBytes(
 	}
 	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
+	// If the BucketReader implementation passed here is a (wrapped) CachingBucket,
+	// we do not want to look up or store the sparse header with the cache.
+	ctx = bucketcache.WithSkipCacheLookup(ctx)
+	ctx = bucketcache.WithSkipCacheStore(ctx)
 	reader, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
 	if err != nil {
 		return nil, err

@@ -31,11 +31,11 @@ var Tan = FloatTransformationDropHistogramsFunc(math.Tan)
 var Tanh = FloatTransformationDropHistogramsFunc(math.Tanh)
 
 var Deg = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
-	return f * 180 / math.Pi
+	return f * (180 / math.Pi)
 })
 
 var Rad = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
-	return f * math.Pi / 180
+	return f * (math.Pi / 180)
 })
 
 var Sgn = FloatTransformationDropHistogramsFunc(func(f float64) float64 {

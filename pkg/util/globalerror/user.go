@@ -25,6 +25,7 @@ const (
 	SeriesInvalidLabelValue               ID = "label-value-invalid"
 	SeriesLabelNameTooLong                ID = "label-name-too-long"
 	SeriesLabelValueTooLong               ID = "label-value-too-long"
+	SeriesBlockedLabelValueBytes          ID = "label-value-bytes-blocked-label"
 	SeriesWithDuplicateLabelNames         ID = "duplicate-label-names"
 	SeriesLabelsNotSorted                 ID = "labels-not-sorted"
 	SampleTooFarInFuture                  ID = "too-far-in-future"

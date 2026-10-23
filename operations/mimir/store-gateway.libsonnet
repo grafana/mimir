@@ -20,6 +20,7 @@
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryBlocksStorageConfig +
+    $.mimirActivityTrackerArgs +
     {
       target: 'store-gateway',
 
@@ -97,6 +98,7 @@
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.store_gateway_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset:

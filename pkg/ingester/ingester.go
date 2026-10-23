@@ -288,6 +288,10 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 		return err
 	}
 
+	if err := cfg.IngesterPartitionRing.Validate(); err != nil {
+		return err
+	}
+
 	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
 		return err
 	}
