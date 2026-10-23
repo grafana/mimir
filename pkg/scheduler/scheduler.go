@@ -181,6 +181,8 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_frontend_error_forwards_total",
 		Help: "Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.",
 	}, []string{"outcome"})
+	s.frontendErrorForwards.WithLabelValues("success")
+	s.frontendErrorForwards.WithLabelValues("failure")
 	s.discardedRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_discarded_requests_total",
 		Help: "Total number of query requests discarded.",
