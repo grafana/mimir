@@ -109,6 +109,9 @@ message SeriesCountsResponse {
   // The oldest time counted, the start of the oldest local block or of the head that overlaps the window. Samples
   // before it are no longer on this ingester. 0 when nothing overlaps the window.
   int64 min_time_ms = 6;
+  // Set when the out-of-order head holds samples in the window. Those are not read, so a series whose only
+  // samples in the window are out of order is not counted until they are compacted into a local block.
+  bool out_of_order_not_counted = 7;
 }
 
 message LabelValuesCardinalityRequest {

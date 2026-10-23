@@ -33,8 +33,10 @@ import (
 //
 // The in-order head and the ingester's compacted local blocks that overlap
 // the window are counted; a series in several of them counts once.
-// Out-of-order samples still in the out-of-order head are not counted. The
-// response's min_time_ms is the oldest time the ingester holds. Experimental.
+// Out-of-order samples still in the out-of-order head are not counted, and
+// the response says so with out_of_order_not_counted when that head holds
+// samples in the window. The response's min_time_ms is the oldest time the
+// ingester holds. Experimental.
 func (i *Ingester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	resp, err := i.seriesCounts(ctx, req)
 	if err == nil {
@@ -86,6 +88,10 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 	head := db.Head()
 	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime()}
+	// The walk reads in-order chunks only. The out-of-order head's time range
+	// is not lowered when it is compacted, so this can also flag a window
+	// whose out-of-order samples are already in a local block.
+	resp.OutOfOrderNotCounted = head.MinOOOTime() < req.EndTimestampMs && head.MaxOOOTime() >= req.StartTimestampMs
 
 	sources, err := countSources(db, req.StartTimestampMs, req.EndTimestampMs)
 	if err != nil {

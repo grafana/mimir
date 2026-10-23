@@ -221,3 +221,33 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	require.NoError(t, err, "without a tenant limit an unbounded request is walked")
 	assert.Equal(t, int64(3), resp.SeriesCounted)
 }
+
+func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
+	const minute = int64(time.Minute / time.Millisecond)
+	limits := defaultLimitsTestConfig()
+	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	a := labels.FromStrings(model.MetricNameLabel, "a")
+	_, err = i.Push(ctx, mockWriteRequest(t, a, 1, 60*minute))
+	require.NoError(t, err)
+	before, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 120 * minute})
+	require.NoError(t, err)
+	assert.False(t, before.OutOfOrderNotCounted, "no out-of-order sample yet")
+
+	// Out of order is per series: a's sample at 30m is older than its 60m one.
+	_, err = i.Push(ctx, mockWriteRequest(t, a, 1, 30*minute))
+	require.NoError(t, err)
+
+	resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 20 * minute, EndTimestampMs: 40 * minute})
+	require.NoError(t, err)
+	assert.True(t, resp.OutOfOrderNotCounted, "the out-of-order head holds a sample at 30m")
+	assert.Empty(t, resp.Groups, "a's only sample in the window is out of order, so it is not counted")
+
+	resp, err = i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 50 * minute, EndTimestampMs: 120 * minute})
+	require.NoError(t, err)
+	assert.False(t, resp.OutOfOrderNotCounted, "no out-of-order sample in the window")
+}
