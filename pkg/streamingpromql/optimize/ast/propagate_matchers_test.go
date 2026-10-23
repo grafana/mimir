@@ -62,7 +62,7 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`left / ignoring(foo) up{foo!="bar2"} + on(foo) down`:                      `left / ignoring(foo) up{foo!="bar2"} + on(foo) down`,
 	`left + ignoring(foo) up{foo!="bar2"} / on(foo) down`:                      `left + ignoring(foo) up{foo!="bar2"} / on(foo) down{foo!="bar2"}`,
 	`up and vector(3) / down{foo=~"bar"}`:                                      `up{foo=~"bar"} and vector(3) / down{foo=~"bar"}`,
-	`up and vector(3) / ignoring(foo) down{foo=~"bar"}`:                        `up{foo=~"bar"} and vector(3) / ignoring(foo) down{foo=~"bar"}`,
+	`up and vector(3) / ignoring(foo) down{foo=~"bar"}`:                        `up and vector(3) / ignoring(foo) down{foo=~"bar"}`,
 	`(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`:                      `(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`,
 	`up and vector(3) or down{foo=~"bar"}`:                                     `up and vector(3) or down{foo=~"bar"}`,
 	`up{foo="bar"} or down`:                                                    `up{foo="bar"} or down`,
@@ -178,6 +178,11 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`up{foo="bar"} + (up and down)`:    `up{foo="bar"} + (up{foo="bar"} and down{foo="bar"})`,
 	`(up{foo="bar"} and down) + left`:  `(up{foo="bar"} and down{foo="bar"}) + left{foo="bar"}`,
 	`up{foo="bar"} + (up unless down)`: `up{foo="bar"} + (up{foo="bar"} unless down{foo="bar"})`,
+	// Matchers from one side of a binary expression should only propagate outwards if they also hold for its result, including when the other side has no vector selectors.
+	`up{foo="bar"} + ignoring(foo) sort(up) * on() group_left() threshold{baz!~"fob.*"}`: `up{foo="bar"} + ignoring(foo) sort(up) * on() group_left() threshold{baz!~"fob.*"}`,
+	`up + (sort(up) unless down{foo="bar"})`:                                             `up + (sort(up) unless down{foo="bar"})`,
+	`sort(up) * on(foo) group_left() down{foo="bar"} + left`:                             `sort(up) * on(foo) group_left() down{foo="bar"} + left{foo="bar"}`,
+	`up{foo="bar"} * on(baz) group_left() sort(down) + left`:                             `up{foo="bar"} * on(baz) group_left() sort(down) + left{foo="bar"}`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
@@ -200,6 +205,8 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	// fill preserves both sides because every series can produce output.
 	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
 	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
+	// fill_right synthesises the RHS for unmatched LHS series, so RHS matchers do not hold for the result and must not propagate outwards.
+	`up + (sort(up) + fill_right(0) down{foo="bar"})`: `up + (sort(up) + fill_right(0) down{foo="bar"})`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
