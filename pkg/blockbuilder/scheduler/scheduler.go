@@ -331,7 +331,7 @@ func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.
 		// The scheduler can't auto-recover from that; the safest option is to restart and reconcile partition state.
 		// A partition with end-offset=0 has never held records, so it's fine.
 		if ps.startOffsetEmpty(clusterID) && o.Offset != 0 {
-			err = fmt.Errorf("cluster %d partition %d never observed start offset but has end offset %d", clusterID, o.Partition, o.Offset)
+			err = fmt.Errorf("partition %d never observed start offset but has end offset %d", clusterID, o.Partition, o.Offset)
 			return
 		}
 		ps.updateEndOffset(clusterID, o.Offset)

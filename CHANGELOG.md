@@ -99,7 +99,7 @@
 * [BUGFIX] Block-builder-scheduler: Fail startup instead of silently switching to normal operation without assigning any jobs when probing the initial consumption offsets fails. #16028
 * [BUGFIX] Block-builder-scheduler: Publish `cortex_blockbuilder_scheduler_partition_committed_offset` when committed offsets are loaded during startup, instead of waiting for the observation period and first periodic flush to complete. #16838
 * [BUGFIX] Block-builder: Fix silent data loss for jobs spanning exactly one record. #16493
-* [BUGFIX] Block-builder-scheduler: Fix silent data loss when observing partition, that didn't exist during startup. The scheduler now fails and restarts, so the startup process reconciled the partition state. #16941
+* [BUGFIX] Block-builder-scheduler: Fix silent data loss when observing a partition that didn't exist during startup. The scheduler now stops explicitly: the restart process reconciles the partition state. #16941
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the cardinality `label_names` and `label_values` endpoints when the merged response exceeds `-querier.label-names-and-values-results-max-size-bytes`. #16452
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the active series endpoint's framed response format when a single series' JSON exceeds the maximum frame size. #16452
 * [BUGFIX] Query-frontend: Fix subquery spin-off dropping the final step of the subquery range when the subquery range is not an integer multiple of the subquery step, causing results to differ slightly from the query engine's native subquery evaluation. #16504
