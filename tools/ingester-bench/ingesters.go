@@ -86,6 +86,8 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-blocks-storage.backend=filesystem",
 		"-blocks-storage.filesystem.dir=" + filepath.Join(cfg.dir, "bucket"),
 		"-blocks-storage.tsdb.dir=" + filepath.Join(cfg.dir, "tsdb"),
+		// Each ingester's own: started by the bench, both run in its directory.
+		"-activity-tracker.filepath=" + filepath.Join(cfg.dir, "metrics-activity.log"),
 		"-blocks-storage.tsdb.retention-period=" + cfg.retention.String(),
 		// Neither ships nor flushes: the bench measures ingestion and reads.
 		"-blocks-storage.tsdb.ship-interval=0",
