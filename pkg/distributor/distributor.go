@@ -1869,34 +1869,47 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		if d.usageTrackerClient.CanTrackAsync(limitsKey) {
-			// User is far from limit.
-			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
-
-			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
-
-			if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
-				level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-			}
-
-			return next(ctx, pushReq)
+		var (
+			trackedAsync          bool
+			rejectedHashes        []uint64
+			rejectingCompartments []int32
+		)
+		if d.compartmentRouter == nil {
+			trackedAsync, rejectedHashes, err = d.trackTenantSeries(ctx, limitsKey, seriesHashes)
+		} else {
+			groups := groupSeriesHashesByReadCompartment(d.compartmentRouter, userID, metadata, req.Timeseries, seriesHashes)
+			trackedAsync, rejectedHashes, rejectingCompartments, err = d.trackReadCompartmentSeries(ctx, groups)
 		}
-
-		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
-		var discardedSamples int
+		if trackedAsync {
+			// User is far from limit.
+			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+			return next(ctx, pushReq)
+		}
+
+		// User is close to limit, the series were tracked synchronously.
+		var (
+			discardedSamples       int
+			activeSeriesLimitedErr error
+		)
 		if len(rejectedHashes) > 0 {
 			discardedSamples = filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
+
+			if d.compartmentRouter != nil {
+				activeSeriesLimitedErr = newActiveSeriesLimitedInReadCompartmentsError(totalTimeseries, len(rejectedHashes), rejectingCompartments, d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			} else {
+				activeSeriesLimitedErr = newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			}
 		}
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+			return activeSeriesLimitedErr
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1914,16 +1927,77 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
-		}
-
-		return nil
+		return activeSeriesLimitedErr
 	})
 }
 
+// trackTenantSeries tracks seriesHashes for limitsKey. When the usage-tracker client allows
+// asynchronous tracking, it does not wait for the result and returns trackedAsync true. Otherwise it
+// returns the rejected hashes.
+func (d *Distributor) trackTenantSeries(ctx context.Context, limitsKey string, seriesHashes []uint64) (trackedAsync bool, rejectedHashes []uint64, err error) {
+	if d.usageTrackerClient.CanTrackAsync(limitsKey) {
+		d.trackSeriesAsync(ctx, limitsKey, seriesHashes)
+		return true, nil, nil
+	}
+	rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
+	return false, rejectedHashes, err
+}
+
+// trackReadCompartmentSeries tracks the series of each read compartment in groups. When the
+// usage-tracker client allows asynchronous tracking for all read compartments, it does not wait for
+// the results and returns trackedAsync true. Otherwise it tracks the read compartments concurrently,
+// so they can share a sync batch. Then it returns the rejected hashes and the read compartments that
+// rejected them.
+func (d *Distributor) trackReadCompartmentSeries(ctx context.Context, groups []readCompartmentSeries) (trackedAsync bool, rejectedHashes []uint64, rejectingCompartments []int32, err error) {
+	canTrackAsync := true
+	for _, group := range groups {
+		if !d.usageTrackerClient.CanTrackAsync(group.usageTrackerUserID) {
+			canTrackAsync = false
+			break
+		}
+	}
+	if canTrackAsync {
+		for _, group := range groups {
+			d.trackSeriesAsync(ctx, group.usageTrackerUserID, group.seriesHashes)
+		}
+		return true, nil, nil, nil
+	}
+
+	type trackResult struct {
+		rejected []uint64
+	}
+	results := make([]trackResult, len(groups))
+	err = concurrency.ForEachJob(ctx, len(groups), len(groups), func(ctx context.Context, idx int) error {
+		rejected, err := d.usageTrackerClient.TrackSeries(ctx, groups[idx].usageTrackerUserID, groups[idx].seriesHashes)
+		if err != nil {
+			return err
+		}
+		results[idx].rejected = rejected
+		return nil
+	})
+	if err != nil {
+		return false, nil, nil, err
+	}
+
+	for idx, group := range groups {
+		if len(results[idx].rejected) == 0 {
+			continue
+		}
+		rejectedHashes = append(rejectedHashes, results[idx].rejected...)
+		rejectingCompartments = append(rejectingCompartments, group.compartment)
+	}
+	return false, rejectedHashes, rejectingCompartments, nil
+}
+
+// trackSeriesAsync tracks seriesHashes for usageTrackerUserID. It does not wait for the result.
+func (d *Distributor) trackSeriesAsync(ctx context.Context, usageTrackerUserID string, seriesHashes []uint64) {
+	if err := d.usageTrackerClient.TrackSeriesAsync(ctx, usageTrackerUserID, seriesHashes); err != nil {
+		level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", usageTrackerUserID, "series", len(seriesHashes))
+	}
+}
+
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
-	userID = tenant.TrimMetadata(userID)
+	userID = compartments.BaseTenantID(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 

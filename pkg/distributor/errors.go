@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
@@ -55,6 +57,11 @@ var (
 
 	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
 		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
+
+	activeSeriesLimitedInReadCompartmentsMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit in the read compartments %s. %d series were rejected from this request of a total of %d",
 		validation.MaxActiveSeriesPerUserFlag,
 	)
 )
@@ -190,15 +197,33 @@ func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThi
 	}
 }
 
+func newActiveSeriesLimitedInReadCompartmentsError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest int, rejectingReadCompartments []int32, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		rejectingReadCompartments:     rejectingReadCompartments,
+		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
+	}
+}
+
 type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
 	limit                         int
+	rejectingReadCompartments     []int32
 	httpStatusCode                int
 	rejectedSamples               int64
 }
 
 func (e activeSeriesLimitedError) Error() string {
+	if len(e.rejectingReadCompartments) > 0 {
+		readCompartments := make([]string, len(e.rejectingReadCompartments))
+		for i, compartment := range e.rejectingReadCompartments {
+			readCompartments[i] = strconv.Itoa(int(compartment))
+		}
+		return fmt.Sprintf(activeSeriesLimitedInReadCompartmentsMsgFormat, strings.Join(readCompartments, ","), e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+	}
 	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
 }
 

@@ -3,6 +3,8 @@
 package distributor
 
 import (
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -67,4 +69,58 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 		}
 	}
 	return filtered, initialMetadataIndex
+}
+
+// readCompartmentSeries holds the series hashes of a write request that belong to one read
+// compartment, along with the usage-tracker user ID for that compartment.
+type readCompartmentSeries struct {
+	compartment        int32
+	usageTrackerUserID string
+	seriesHashes       []uint64
+}
+
+// groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
+// timeseries. The returned groups are ordered by ascending compartment ID and share one backing
+// array for the hashes.
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
+	numCompartments := router.NumCompartments()
+
+	// Find the read compartment of each series. At first, offsets holds the number of series of each
+	// compartment.
+	offsets := make([]int, numCompartments)
+	seriesCompartments := make([]int, len(timeseries))
+	for i, ts := range timeseries {
+		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		compartment := router.CompartmentForMetric(userID, metricName)
+		seriesCompartments[i] = compartment
+		offsets[compartment]++
+	}
+
+	// Reserve one contiguous slice of the shared hashes array for each non-empty compartment, in
+	// ascending compartment order. Then offsets[compartment] is the first free slot of that slice.
+	hashes := make([]uint64, len(seriesHashes))
+	groups := make([]readCompartmentSeries, 0, numCompartments)
+	start := 0
+	for compartment, count := range offsets {
+		offsets[compartment] = start
+		if count > 0 {
+			end := start + count
+			groups = append(groups, readCompartmentSeries{
+				compartment:        int32(compartment),
+				usageTrackerUserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
+				seriesHashes:       hashes[start:end:end],
+			})
+			start = end
+		}
+	}
+
+	// Write each series hash into the next free slot of its compartment. Within a compartment the
+	// hashes keep the order of the original request.
+	for i, hash := range seriesHashes {
+		compartment := seriesCompartments[i]
+		hashes[offsets[compartment]] = hash
+		offsets[compartment]++
+	}
+
+	return groups
 }
