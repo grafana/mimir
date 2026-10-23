@@ -203,18 +203,18 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.Empty(t, rejected)
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(2), requestPartitionForTests(t, req))
 	})
 
 	t.Run("should track series to usage-trackers running in the preferred zone if available (series are sharded to 1 partition)", func(t *testing.T) {
@@ -265,14 +265,14 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.Empty(t, rejected)
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 	})
 
 	t.Run("should fallback to the other zone if a usage-tracker instance in the preferred zone is failing", func(t *testing.T) {
@@ -284,7 +284,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		instances := map[string]*usageTrackerMock{
 			"usage-tracker-zone-a-1": newUsageTrackerMockWithSuccessfulResponse(),
 			"usage-tracker-zone-a-2": newUsageTrackerMockWithSuccessfulResponse(),
-			"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
 			"usage-tracker-zone-b-2": newUsageTrackerMockWithSuccessfulResponse(),
 		}
 
@@ -325,23 +325,23 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.Empty(t, rejected)
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(2), requestPartitionForTests(t, req))
 
 		// Fallback.
 		req = instances["usage-tracker-zone-a-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 	})
 
 	for _, returnRejectedSeries := range []bool{true, false} {
@@ -375,8 +375,8 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 				"usage-tracker-zone-a-2": newUsageTrackerMockWithSuccessfulResponse(),
 
 				// Return rejected series only from zone-b to ensure the response is picked up from this zone.
-				"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series2Partition1}}, nil),
-				"usage-tracker-zone-b-2": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series4Partition2, series5Partition2}}, nil),
+				"usage-tracker-zone-b-1": newUsageTrackerMockWithRejectedSeries(1, userID, series2Partition1),
+				"usage-tracker-zone-b-2": newUsageTrackerMockWithRejectedSeries(2, userID, series4Partition2, series5Partition2),
 			}
 
 			clientCfg := createTestClientConfig()
@@ -407,18 +407,18 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			}
 
 			// Should have tracked series only to usage-tracker replicas in the preferred zone.
-			instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 0)
-			instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-			instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-			instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+			instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+			instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+			instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+			instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 
 			req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-			require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-			require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+			require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+			require.Equal(t, int32(1), requestPartitionForTests(t, req))
 
 			req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
-			require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-			require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+			require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, requestSeriesForTests(t, req))
+			require.Equal(t, int32(2), requestPartitionForTests(t, req))
 		})
 	}
 
@@ -448,7 +448,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		// Mock the usage-tracker server.
 		instances := map[string]*usageTrackerMock{
 			// Return rejected series only from this instance, to ensure the response comes from here.
-			"usage-tracker-zone-a-1": newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: []uint64{series2Partition1}}, nil),
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithRejectedSeries(1, userID, series2Partition1),
 
 			"usage-tracker-zone-a-2": newUsageTrackerMockWithSuccessfulResponse(),
 			"usage-tracker-zone-b-1": newUsageTrackerMockWithSlowSuccessfulResponse(clientCfg.RequestsHedgingDelay * 2),
@@ -475,23 +475,23 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.ElementsMatch(t, []uint64{series2Partition1}, rejected)
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeries", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(2), requestPartitionForTests(t, req))
 
 		// Hedged request.
 		req = instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
-		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
+		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, requestSeriesForTests(t, req))
+		require.Equal(t, int32(1), requestPartitionForTests(t, req))
 	})
 
 	t.Run("should be a no-op if there are no series to track", func(t *testing.T) {
@@ -538,10 +538,10 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		// Mock the usage-tracker server with failing instances.
 		instances := map[string]*usageTrackerMock{
-			"usage-tracker-zone-a-1": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
-			"usage-tracker-zone-a-2": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
-			"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
-			"usage-tracker-zone-b-2": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
 		}
 
 		clientCfg := createTestClientConfig()
@@ -583,8 +583,8 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.Empty(t, rejected)
 
 		// All instances should have been called despite failing.
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 	})
 }
 
@@ -613,21 +613,39 @@ type usageTrackerMock struct {
 }
 
 func newUsageTrackerMockWithSuccessfulResponse() *usageTrackerMock {
-	return newUsageTrackerMockWithResponse(&usagetrackerpb.TrackSeriesResponse{}, nil)
+	return newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil)
+}
+
+// newUsageTrackerMockWithRejectedSeries returns a mock that rejects the input series of the given user in the given partition.
+func newUsageTrackerMockWithRejectedSeries(partition int32, userID string, rejected ...uint64) *usageTrackerMock {
+	return newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{
+		Rejections: []*usagetrackerpb.TrackSeriesBatchRejection{{
+			Partition: partition,
+			Users:     []*usagetrackerpb.TrackSeriesBatchRejectionUser{{UserID: userID, RejectedSeriesHashes: rejected}},
+		}},
+	}, nil)
+}
+
+// requestPartitionForTests returns the partition of a single-partition batch request.
+func requestPartitionForTests(t *testing.T, req any) int32 {
+	batch := req.(*usagetrackerpb.TrackSeriesBatchRequest)
+	require.Len(t, batch.Partitions, 1)
+	return batch.Partitions[0].Partition
+}
+
+// requestSeriesForTests returns the series hashes of a single-partition, single-user batch request.
+func requestSeriesForTests(t *testing.T, req any) []uint64 {
+	batch := req.(*usagetrackerpb.TrackSeriesBatchRequest)
+	require.Len(t, batch.Partitions, 1)
+	require.Len(t, batch.Partitions[0].Users, 1)
+	return batch.Partitions[0].Users[0].SeriesHashes
 }
 
 func newUsageTrackerMockWithSlowSuccessfulResponse(delay time.Duration) *usageTrackerMock {
 	m := &usageTrackerMock{}
-	m.On("TrackSeries", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+	m.On("TrackSeriesBatch", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		time.Sleep(delay)
-	}).Return(&usagetrackerpb.TrackSeriesResponse{}, nil)
-
-	return m
-}
-
-func newUsageTrackerMockWithResponse(res *usagetrackerpb.TrackSeriesResponse, err error) *usageTrackerMock {
-	m := &usageTrackerMock{}
-	m.On("TrackSeries", mock.Anything, mock.Anything).Return(res, err)
+	}).Return(&usagetrackerpb.TrackSeriesBatchResponse{}, nil)
 
 	return m
 }
@@ -635,20 +653,8 @@ func newUsageTrackerMockWithResponse(res *usagetrackerpb.TrackSeriesResponse, er
 func newUsageTrackerMockWithBatchResponse(res *usagetrackerpb.TrackSeriesBatchResponse, err error) *usageTrackerMock {
 	m := &usageTrackerMock{}
 	m.On("TrackSeriesBatch", mock.Anything, mock.Anything).Return(res, err)
-	// Also set up TrackSeries for backward compatibility
-	m.On("TrackSeries", mock.Anything, mock.Anything).Return(&usagetrackerpb.TrackSeriesResponse{}, nil)
 
 	return m
-}
-
-func (m *usageTrackerMock) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest, _ ...grpc.CallOption) (*usagetrackerpb.TrackSeriesResponse, error) {
-	args := m.Called(ctx, req)
-
-	if args.Get(0) != nil {
-		return args.Get(0).(*usagetrackerpb.TrackSeriesResponse), args.Error(1)
-	}
-
-	return nil, args.Error(1)
 }
 
 func (m *usageTrackerMock) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest, _ ...grpc.CallOption) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
@@ -814,7 +820,6 @@ func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 // newUsageTrackerMockWithUsersCloseToLimit creates a mock that returns a specific list of users close to limit.
 func newUsageTrackerMockWithUsersCloseToLimit(userIDs []string) *usageTrackerMock {
 	m := &usageTrackerMock{}
-	m.On("TrackSeries", mock.Anything, mock.Anything).Return(&usagetrackerpb.TrackSeriesResponse{}, nil)
 
 	// Clone and sort the user IDs since CanTrackAsync expects a sorted list for binary search
 	sortedUserIDs := slices.Clone(userIDs)
@@ -1335,7 +1340,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		clientCfg.SyncBatchDelay = 1_000 * time.Hour // Disable timed flushing - we flush manually.
 		clientCfg.ClientFactory = newClientFactory(instances)
 
@@ -1420,7 +1424,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		clientCfg.SyncBatchDelay = 50 * time.Millisecond // Real linger window.
 		clientCfg.ClientFactory = newClientFactory(instances)
 
@@ -1464,7 +1467,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		clientCfg.SyncBatchDelay = 1_000 * time.Hour // Disable timed flushing; only the size threshold should flush.
 		clientCfg.MaxBatchSeries = 3
 		clientCfg.ClientFactory = newClientFactory(instances)
@@ -1513,7 +1515,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 				clientCfg := createTestClientConfig()
 				clientCfg.PreferAvailabilityZone = "zone-b"
-				clientCfg.UseSyncBatchedTracking = true
 				clientCfg.SyncBatchDelay = 50 * time.Millisecond
 				clientCfg.IgnoreErrors = ignoreErrors
 				clientCfg.ClientFactory = newClientFactory(instances)
@@ -1555,7 +1556,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		clientCfg.SyncBatchDelay = 1_000 * time.Hour // Never flush, so the wait outlives the context.
 		clientCfg.ClientFactory = newClientFactory(instances)
 
@@ -1609,7 +1609,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		// Default mode: no per-partition timers; only the global flusher (started in running()) flushes.
 		clientCfg.SyncBatchDelay = 50 * time.Millisecond
 		clientCfg.ClientFactory = newClientFactory(instances)
@@ -1650,7 +1649,6 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseSyncBatchedTracking = true
 		clientCfg.SyncBatchIndependentPartitionTimeouts = true // No global flusher; per-partition AfterFunc drives the flush.
 		clientCfg.SyncBatchDelay = 50 * time.Millisecond
 		clientCfg.ClientFactory = newClientFactory(instances)

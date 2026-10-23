@@ -32,7 +32,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20261014094829-7a896efbf053
+	github.com/grafana/dskit v0.0.0-20261021210157-9647c44d36b0
 	github.com/grafana/e2e v0.1.2-0.20260918025020-cfcdc6861c9c
 	github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
@@ -196,7 +196,7 @@ require (
 	github.com/grafana/otel-profiling-go v0.7.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
-	github.com/hashicorp/consul/api v1.34.5 // indirect
+	github.com/hashicorp/consul/api/v2 v2.0.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
@@ -229,7 +229,7 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mdlayher/socket v0.7.0 // indirect
+	github.com/mdlayher/socket v0.8.0 // indirect
 	github.com/mdlayher/vsock v1.3.0 // indirect
 	github.com/miekg/dns v1.1.73 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
@@ -347,7 +347,9 @@ replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-
 // go.yaml.in/yaml/v3
 // + https://github.com/go-yaml/yaml/pull/691
 // + https://github.com/go-yaml/yaml/pull/876
-replace go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261002173312-a1d5f0fedb1c
+// + https://github.com/grafana/go-yaml/pull/1
+// + https://github.com/grafana/go-yaml/pull/2
+replace go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71

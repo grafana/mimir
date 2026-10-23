@@ -68,11 +68,10 @@ type Config struct {
 	MaxBatchSeries          int           `yaml:"max_batch_series" category:"advanced"`
 	TrackSeriesBatchTimeout time.Duration `yaml:"track_series_batch_timeout" category:"advanced"`
 
-	// UseSyncBatchedTracking makes the synchronous TrackSeries transparently batch calls per partition,
-	// lingering for up to SyncBatchDelay so that calls from multiple concurrent callers are sent together
-	// in a single TrackSeriesBatch RPC. The caller still blocks and still receives its own rejected series.
-	UseSyncBatchedTracking bool          `yaml:"use_sync_batched_tracking" category:"experimental"`
-	SyncBatchDelay         time.Duration `yaml:"sync_batch_delay" category:"advanced"`
+	// SyncBatchDelay is how long the synchronous TrackSeries lingers per partition, so that calls from
+	// multiple concurrent callers are sent together in a single TrackSeriesBatch RPC. The caller still
+	// blocks and still receives its own rejected series.
+	SyncBatchDelay time.Duration `yaml:"sync_batch_delay" category:"advanced"`
 
 	// SyncBatchIndependentPartitionTimeouts makes each partition's synchronous batch linger on its own
 	// timer instead of flushing all partitions together on a shared timer. Flushing together coalesces
@@ -116,8 +115,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxBatchSeries, prefix+"max-batch-series", 1_000_000, "Maximum number of series to track in a single batch. If 0, no maximum is used.")
 	f.DurationVar(&cfg.TrackSeriesBatchTimeout, prefix+"track-series-batch-timeout", 2*time.Second, "Timeout for tracking series in a batch.")
 
-	f.BoolVar(&cfg.UseSyncBatchedTracking, prefix+"use-sync-batched-tracking", false, "Use synchronous batched tracking for series. If enabled, synchronous TrackSeries calls linger for up to -sync-batch-delay per partition and are sent together in a single batch request to reduce RPC traffic, while still returning the rejected series to each caller.")
-	f.DurationVar(&cfg.SyncBatchDelay, prefix+"sync-batch-delay", 50*time.Millisecond, "How long to accumulate a synchronous batch per partition before sending the request, when -use-sync-batched-tracking is enabled.")
+	f.DurationVar(&cfg.SyncBatchDelay, prefix+"sync-batch-delay", 50*time.Millisecond, "How long to accumulate a synchronous batch per partition before sending the request.")
 	f.BoolVar(&cfg.SyncBatchIndependentPartitionTimeouts, prefix+"sync-batch-independent-partition-timeouts", false, "When enabled, each partition lingers independently for -sync-batch-delay from its first pending request instead of all partitions flushing together on a shared timer. Flushing together coalesces network packets and reduces usage-tracker CPU; independent timeouts avoid aligning the whole write pipeline.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
@@ -263,7 +261,7 @@ func (c *UsageTrackerClient) running(ctx context.Context) error {
 	// usage-tracker server's netpoller can use fewer CPU resources by coalescing multiple socket reads.
 	// In independent mode, each partition arms its own linger timer in trackSeries instead, so no
 	// global flusher runs.
-	if c.cfg.UseSyncBatchedTracking && !c.cfg.SyncBatchIndependentPartitionTimeouts {
+	if !c.cfg.SyncBatchIndependentPartitionTimeouts {
 		go c.syncBatcher.flusher()
 	}
 
@@ -301,9 +299,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 			Go:            c.trackSeriesWorkersPool.Go,
 		}
 
-		startTime  = time.Now()
-		rejectedMx sync.Mutex
-		rejected   []uint64
+		startTime = time.Now()
 	)
 
 	defer func() {
@@ -325,59 +321,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	if c.cfg.UseSyncBatchedTracking {
-		return c.trackSeriesSyncBatched(ctx, userID, series, keys, partitionBatchRing, batchOptions)
-	}
-
-	err := ring.DoBatchWithOptions(ctx, trackerop.TrackSeriesOp, partitionBatchRing, keys,
-		func(partition ring.InstanceDesc, indexes []int) error {
-			// The partition ID is stored in the ring.InstanceDesc.Id.
-			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-			if err != nil {
-				return err
-			}
-
-			// Build the list of series hashes that belong to this partition.
-			partitionSeries := make([]uint64, len(indexes))
-			for i, idx := range indexes {
-				partitionSeries[i] = series[idx]
-			}
-
-			// Track the series for this partition.
-			partitionRejected, err := c.trackSeriesPerPartition(ctx, userID, int32(partitionID), partitionSeries)
-			if err != nil {
-				return errors.Wrapf(err, "partition %d", partitionID)
-			}
-
-			if len(partitionRejected) > 0 {
-				rejectedMx.Lock()
-				rejected = append(rejected, partitionRejected...)
-				rejectedMx.Unlock()
-			}
-
-			return nil
-		}, batchOptions,
-	)
-
-	if err != nil {
-		if c.cfg.IgnoreErrors {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	if c.cfg.IgnoreRejectedSeries {
-		// If the client is configured to ignore rejected series, we return an empty slice.
-		return nil, nil
-	}
-
-	// It should never happen that a response arrives at this point, but better to protect
-	// from bugs that could cause panics.
-	rejectedMx.Lock()
-	rejectedCopy := rejected
-	rejectedMx.Unlock()
-
-	return rejectedCopy, nil
+	return c.trackSeriesSyncBatched(ctx, userID, series, keys, partitionBatchRing, batchOptions)
 }
 
 // trackSeriesSyncBatched implements the synchronous, batched variant of TrackSeries. It shards the
@@ -447,67 +391,6 @@ func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID 
 	}
 
 	return rejected, nil
-}
-
-func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
-	// Get the usage-tracker instances for the input partition.
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackerop.TrackSeriesOp)
-	if err != nil {
-		return nil, err
-	}
-
-	// Prepare the request.
-	req := &usagetrackerpb.TrackSeriesRequest{
-		UserID:       userID,
-		Partition:    partitionID,
-		SeriesHashes: series,
-	}
-
-	cfg := ring.DoUntilQuorumConfig{
-		Logger: spanlogger.FromContext(ctx, log.With(c.logger, "component", "usage-tracker-client", "op", "track-series-per-partition", "partition", partitionID)),
-
-		MinimizeRequests: true,
-		HedgingDelay:     c.cfg.RequestsHedgingDelay,
-
-		// Give precedence to the client's zone.
-		ZoneSorter: c.sortZones,
-
-		// No error is a terminal error, and a failing request should be retried on another usage-tracker
-		// replica for the same partition (if available).
-		IsTerminalError: func(_ error) bool { return false },
-	}
-
-	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]uint64, error) {
-		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
-		if err != nil {
-			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
-		}
-
-		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
-		trackerRes, err := trackerClient.TrackSeries(ctx, req)
-		if err != nil {
-			return nil, errors.Wrapf(err, "usage-tracker instance %s (%s)", instance.Id, instance.Addr)
-		}
-
-		return trackerRes.RejectedSeriesHashes, nil
-	}, func(_ []uint64) {
-		// No cleanup.
-	})
-
-	if err != nil {
-		if c.cfg.IgnoreErrors {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if len(res) == 0 {
-		if c.cfg.IgnoreErrors {
-			return nil, nil
-		}
-		return nil, errors.Errorf("unexpected no responses from usage-tracker for partition %d", partitionID)
-	}
-
-	return res[0], nil
 }
 
 // TrackSeriesAsync tracks series asynchronously. It will batch the series by partition and user
