@@ -126,6 +126,7 @@
 * [BUGFIX] Usage-tracker: Reuse the buffers that snapshotting clones each tenant shard into. They were never reused, so every snapshot allocated the clone under the shard lock and blocked series tracking for the duration. #16882
 * [BUGFIX] Distributor: Fix the OTLP request size limit error, which labeled the size of a compressed request as uncompressed when the compressed request was already larger than `-distributor.max-otlp-request-size`. #16877
 * [BUGFIX] MQE: Fix `histogram_count()`, `histogram_sum()` and `histogram_avg()` returning wrong results when they wrap an `==` or `!=` comparison of native histograms, `changes()` or `count_values()`. Native histograms with the same count and sum but different buckets were treated as equal. #16913
+* [BUGFIX] Query-frontend: Fix nested retries of cardinality active series requests. When the downstream failed each time, the query-frontend made up to the square of `-query-frontend.max-retries-per-request` attempts, for example 25 in place of 5. #16972
 
 ### Mixin
 
