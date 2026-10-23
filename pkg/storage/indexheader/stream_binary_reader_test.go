@@ -463,3 +463,49 @@ func (b *trackedBucket) Attributes(ctx context.Context, name string) (objstore.O
 	b.attributesWasCalled = true
 	return b.InstrumentedBucketReader.Attributes(ctx, name)
 }
+
+func TestStreamBinaryReader_LabelValuesCountLowerBound(t *testing.T) {
+	ctx := context.Background()
+	for _, values := range []int{1, 2, 3, 31, 32, 33, 64, 65, 100, 1000} {
+		tmpDir := t.TempDir()
+		ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+		require.NoError(t, err)
+		bkt := objstore.WithNoopInstr(ubkt)
+		// Two series without the label, since a block needs at least three.
+		lbls := []labels.Labels{labels.FromStrings("b", "x"), labels.FromStrings("b", "y")}
+		for i := 0; i < values; i++ {
+			lbls = append(lbls, labels.FromStrings("a", fmt.Sprintf("%04d", i)))
+		}
+		blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
+		require.NoError(t, err)
+		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+		require.NoError(t, err)
+
+		check := func(r *StreamBinaryReader, rate int, how string) {
+			got, err := r.LabelValuesCountLowerBound(ctx, "a")
+			require.NoError(t, err)
+			assert.LessOrEqual(t, got, values, "%d values, rate %d, %s: a lower bound", values, rate, how)
+			assert.GreaterOrEqual(t, got, values-2*rate, "%d values, rate %d, %s: within two samples", values, rate, how)
+			if values <= 1 || rate == 1 {
+				assert.Equal(t, values, got, "%d values, rate %d, %s: exact", values, rate, how)
+			}
+			missing, err := r.LabelValuesCountLowerBound(ctx, "missing")
+			require.NoError(t, err)
+			assert.Zero(t, missing)
+		}
+		for _, rate := range []int{1, 3, 32} {
+			dir := filepath.Join(tmpDir, fmt.Sprintf("rate-%d", rate))
+			r, err := NewStreamBinaryReader(ctx, blockID, bkt, dir, testIndexHeaderV1Config(), rate, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(t, err)
+			check(r, rate, "built from the index-header")
+			require.NoError(t, r.Close())
+		}
+		// A sparse index-header written at rate 1 and loaded at rate 32 is downsampled.
+		dir := filepath.Join(tmpDir, "rate-1")
+		r, err := NewStreamBinaryReader(ctx, blockID, bkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+		require.NoError(t, err)
+		check(r, 32, "downsampled from rate 1")
+		require.NoError(t, r.Close())
+		require.NoError(t, ubkt.Close())
+	}
+}
