@@ -168,8 +168,16 @@ func (l Labels) Iter() Iter {
 
 // Next returns the next label, or ok false after the last.
 func (it *Iter) Next() (name, value string, ok bool) {
-	if len(it.rest) == 0 {
+	rest := it.rest
+	if len(rest) == 0 {
 		return "", "", false
+	}
+	// Almost every name id and value length fits in one varint byte: this runs for every label a query returns and for
+	// every series ingest compares.
+	if id, size := rest[0], rest[1]; id < 0x80 && size < 0x80 {
+		value = rest[2 : 2+int(size)]
+		it.rest = rest[2+int(size):]
+		return it.names.Name(uint32(id)), value, true
 	}
 	id := takeVarintString(&it.rest)
 	size := takeVarintString(&it.rest)
