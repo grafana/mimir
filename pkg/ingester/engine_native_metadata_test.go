@@ -21,18 +21,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// The Prometheus TSDB stores each series' metadata from records, with the sequential and the parallel pusher, and
-// serves it through the engine.
-func TestPrometheusEngineServesNativeMetricMetadata(t *testing.T) {
-	skipIfSeriesstore(t, "it doesn't keep native metric metadata yet")
-	for _, concurrency := range []int{0, 8} {
+// Each engine stores each series' metadata from records, with the sequential and the parallel pusher, and serves it
+// through the engine.
+func TestEnginesServeNativeMetricMetadata(t *testing.T) {
+	skipIfSeriesstore(t, "it runs both engines itself")
+	for _, test := range []struct {
+		engine      string
+		concurrency int
+	}{{mimir_tsdb.EnginePrometheus, 0}, {mimir_tsdb.EnginePrometheus, 8}, {mimir_tsdb.EngineSeriesstore, 0}} {
 		for _, enabled := range []bool{false, true} {
-			t.Run(fmt.Sprintf("concurrency=%d enabled=%t", concurrency, enabled), func(t *testing.T) {
+			engine, concurrency := test.engine, test.concurrency
+			t.Run(fmt.Sprintf("engine=%s concurrency=%d enabled=%t", engine, concurrency, enabled), func(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.NativeMetricMetadataEnabled = enabled
 				cfg := defaultIngesterTestConfig(t)
 				cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
-				cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EnginePrometheus
+				cfg.BlocksStorageConfig.TSDB.Engine = engine
 				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = concurrency
 				if concurrency > 0 {
 					cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = 150
@@ -68,8 +72,14 @@ func TestPrometheusEngineServesNativeMetricMetadata(t *testing.T) {
 				db := ingester.getTSDB("tenant")
 				require.NotNil(t, db.nativeMetadata)
 				result, err := db.nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 5)
-				if !enabled {
+				if !enabled && engine == mimir_tsdb.EnginePrometheus {
 					require.ErrorIs(t, err, tsdb.ErrNativeMetadataDisabled)
+					return
+				}
+				if !enabled {
+					// The seriesstore engine keeps none while it's off, whatever the switch was when it opened.
+					require.NoError(t, err)
+					require.Empty(t, result.Series)
 					return
 				}
 				require.NoError(t, err)

@@ -111,11 +111,44 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
 	}, func() float64 { return float64(engine.NumSeries()) })
+	registerSeriesstoreMetricMetadata(reg, engine)
 	compactions := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
 	})
 	return seriesstoreEngine{Engine: engine, blockDuration: opts.MinBlockDuration, compactions: compactions}, nil
+}
+
+// registerSeriesstoreMetricMetadata registers the engine's native metric metadata metrics on the tenant's registry:
+// the Prometheus TSDB's, by the same names, which the ingester's TSDB metrics collect for both engines, and what only
+// the engine's keeping of it has.
+func registerSeriesstoreMetricMetadata(reg prometheus.Registerer, engine *store.Engine) {
+	stats := func(of func(store.MetricMetadataStats) float64) func() float64 {
+		return func() float64 { return of(engine.MetricMetadataStats()) }
+	}
+	for _, gauge := range []struct {
+		name, help string
+		of         func(store.MetricMetadataStats) float64
+	}{
+		{"prometheus_tsdb_head_native_metric_metadata_series", "Number of head series with native metric metadata.", func(s store.MetricMetadataStats) float64 { return float64(s.Series) }},
+		{"prometheus_tsdb_head_native_metric_metadata_versions", "Number of native metric metadata versions in the head.", func(s store.MetricMetadataStats) float64 { return float64(s.Versions) }},
+		{"seriesstore_native_metric_metadata_dictionary_values", "Number of distinct native metric metadata values the engine keeps.", func(s store.MetricMetadataStats) float64 { return float64(s.Values) }},
+		{"seriesstore_native_metric_metadata_dictionary_bytes", "Bytes of the type, unit and help of the native metric metadata values the engine keeps.", func(s store.MetricMetadataStats) float64 { return float64(s.ValueBytes) }},
+		{"seriesstore_series_entry_capacity", "Number of series entries the engine's name groups have room for.", func(s store.MetricMetadataStats) float64 { return float64(s.EntryCapacity) }},
+	} {
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{Name: gauge.name, Help: gauge.help}, stats(gauge.of))
+	}
+	for _, counter := range []struct {
+		name, help string
+		of         func(store.MetricMetadataStats) float64
+	}{
+		{"prometheus_tsdb_head_native_metric_metadata_oversized_total", "Total number of appended samples whose native metric metadata exceeded the size limit and was skipped.", func(s store.MetricMetadataStats) float64 { return float64(s.Oversized) }},
+		{"seriesstore_native_metric_metadata_clamped_total", "Total number of native metric metadata runs whose start was clamped to their shard's base.", func(s store.MetricMetadataStats) float64 { return float64(s.Clamped) }},
+		{"seriesstore_native_metric_metadata_memo_hits_total", "Total number of native metric metadata values found in a batch's memo.", func(s store.MetricMetadataStats) float64 { return float64(s.MemoHits) }},
+		{"seriesstore_native_metric_metadata_memo_misses_total", "Total number of native metric metadata values a batch's memo didn't have yet.", func(s store.MetricMetadataStats) float64 { return float64(s.MemoMisses) }},
+	} {
+		promauto.With(reg).NewCounterFunc(prometheus.CounterOpts{Name: counter.name, Help: counter.help}, stats(counter.of))
+	}
 }
 
 // countingSeriesCallback counts the series the engine creates and removes, like the TSDB head's metrics.
@@ -138,6 +171,8 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 // rest of the batch with the engine's Prometheus-style appender: new series, histograms, exemplars, created
 // timestamps and staleness markers.
 func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
+	// The appender gets the series' metadata with their samples when it's kept, and the store's own paths this way.
+	e.Engine.SetNativeMetricMetadata(batch.NativeMetricMetadata)
 	if batch.Record != nil {
 		return e.ingestRecord(ctx, batch, sink)
 	}

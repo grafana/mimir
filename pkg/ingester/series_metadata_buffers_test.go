@@ -137,7 +137,7 @@ func TestIngesterRetainsNoRecordBuffers(t *testing.T) {
 					return
 				}
 				require.Nil(t, fault)
-				requireIntactMetadata(t, ingester, test.engine == mimir_tsdb.EnginePrometheus)
+				requireIntactMetadata(t, ingester, true)
 			})
 		}
 	})

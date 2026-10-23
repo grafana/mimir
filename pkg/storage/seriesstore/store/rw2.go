@@ -29,11 +29,13 @@ type rw2Series struct {
 	moreData bool
 }
 
-// rw2Metadata is a series' metadata.
+// rw2Metadata is a series' metadata, with the symbol references of its help and unit, which identify it within the
+// record.
 type rw2Metadata struct {
-	series     int32
-	metricType mimirpb.MetricMetadata_MetricType
-	help, unit string
+	series           int32
+	metricType       mimirpb.MetricMetadata_MetricType
+	help, unit       string
+	helpRef, unitRef uint32
 }
 
 // rw2Source is the series of a remote write 2.0 record, read without decoding it into a request: the labels are
@@ -222,6 +224,16 @@ func (s *rw2Source) observeTimestamp(message []byte, timestampField uint64) erro
 	return nil
 }
 
+// metricMetadataID implements floatSource: a record's series with the same metadata have the same symbol references.
+func (s *rw2Source) metricMetadataID(index int, memo *metadataMemo) uint32 {
+	at := s.series[index].metadata
+	if at < 0 {
+		return 0
+	}
+	m := &s.metadata[at]
+	return memo.byRefs([3]uint32{uint32(m.metricType), m.helpRef, m.unitRef}, mimirpb.SeriesMetadata{Type: m.metricType, Help: m.help, Unit: m.unit})
+}
+
 func (s *rw2Source) readMetadata(message []byte) (rw2Metadata, error) {
 	var metadata rw2Metadata
 	for len(message) > 0 {
@@ -243,9 +255,9 @@ func (s *rw2Source) readMetadata(message []byte) (rw2Metadata, error) {
 				return metadata, errMalformedRW2
 			}
 			if field == 3 {
-				metadata.help = symbol
+				metadata.help, metadata.helpRef = symbol, uint32(number)
 			} else {
-				metadata.unit = symbol
+				metadata.unit, metadata.unitRef = symbol, uint32(number)
 			}
 		}
 	}

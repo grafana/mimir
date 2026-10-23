@@ -476,7 +476,7 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock, 
 			}
 			_, gone := pending.keys[frozenKey{tenantID, entry.labels}]
 			if gone {
-				t.uncount(entry, &builder)
+				t.release(entry, &builder)
 				if ref := entry.series.ref; ref != 0 {
 					t.byRef.delete(ref)
 					removed[ref] = struct{}{}

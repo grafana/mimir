@@ -105,6 +105,24 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_failed_total counter
 			cortex_ingester_tsdb_checkpoint_creations_failed_total 1784358
 
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_clamped_total Total number of native metric metadata runs whose start was clamped to their shard's base.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_clamped_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_clamped_total 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes Bytes of the type, unit and help of the native metric metadata values the seriesstore engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes gauge
+			cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_dictionary_values Number of distinct native metric metadata values the seriesstore engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_dictionary_values gauge
+			cortex_ingester_seriesstore_native_metric_metadata_dictionary_values 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total Total number of native metric metadata values found in a batch's memo.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total Total number of native metric metadata values a batch's memo didn't have yet.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_series_entry_capacity Number of series entries the seriesstore engine's name groups have room for.
+			# TYPE cortex_ingester_seriesstore_series_entry_capacity gauge
+			cortex_ingester_seriesstore_series_entry_capacity 0
 			# HELP cortex_ingester_tsdb_checkpoint_creations_total Total number of TSDB checkpoint creations attempted.
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489
@@ -353,6 +371,24 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_failed_total counter
 			cortex_ingester_tsdb_checkpoint_creations_failed_total 1784358
 
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_clamped_total Total number of native metric metadata runs whose start was clamped to their shard's base.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_clamped_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_clamped_total 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes Bytes of the type, unit and help of the native metric metadata values the seriesstore engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes gauge
+			cortex_ingester_seriesstore_native_metric_metadata_dictionary_bytes 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_dictionary_values Number of distinct native metric metadata values the seriesstore engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_dictionary_values gauge
+			cortex_ingester_seriesstore_native_metric_metadata_dictionary_values 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total Total number of native metric metadata values found in a batch's memo.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_memo_hits_total 0
+			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total Total number of native metric metadata values a batch's memo didn't have yet.
+			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total counter
+			cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_series_entry_capacity Number of series entries the seriesstore engine's name groups have room for.
+			# TYPE cortex_ingester_seriesstore_series_entry_capacity gauge
+			cortex_ingester_seriesstore_series_entry_capacity 0
 			# HELP cortex_ingester_tsdb_checkpoint_creations_total Total number of TSDB checkpoint creations attempted.
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489

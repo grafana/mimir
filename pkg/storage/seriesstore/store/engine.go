@@ -120,6 +120,14 @@ type Engine struct {
 	// The checkpoint Open restored the head from, nil when there was none.
 	checkpoint []byte
 	closed     atomic.Bool
+
+	// Whether the ingester has the tenant's series' own metric metadata kept, which it sets for each batch.
+	nativeMetadata atomic.Bool
+	// The values of the series' metadata, the series' runs being their shards', and what wasn't kept as it came.
+	metricMetadata      *metricMetadataDictionary
+	metricMetadataStats metricMetadataStats
+	// The oldest time a series' metadata was first observed at since the engine opened, math.MaxInt64 before.
+	metadataObservedFrom atomic.Int64
 }
 
 // A nop callback, for engines opened without one.
@@ -150,6 +158,8 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		e.compactionJitterMs = rand.Int64N(chunkRangeMs / 4)
 	}
 	e.oooCompactedRange = math.MinInt64
+	e.metricMetadata = newMetricMetadataDictionary()
+	e.metadataObservedFrom.Store(math.MaxInt64)
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)
 	e.windowMax.Store(math.MinInt64)
@@ -908,8 +918,10 @@ func (e *Engine) headGC() {
 			entry.series.inHead = false
 		}
 		e.freezeLeaving(shard, t, leaving, deleted, &builder)
+		e.trimMetadataLocked(t, mint, headMaxt)
 		shard.Unlock()
 	}
+	e.metricMetadata.reclaim()
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
 	}
@@ -1229,7 +1241,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
 				keep := pruneRetained(&entry.series, kept, index) || e.createdLocked(shard, entry.series.ref)
 				if !keep {
-					t.uncount(entry, &builder)
+					t.release(entry, &builder)
 				}
 				if !keep && entry.series.ref != 0 {
 					t.byRef.delete(entry.series.ref)

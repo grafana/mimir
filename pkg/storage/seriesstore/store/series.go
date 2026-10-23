@@ -69,6 +69,9 @@ type Series struct {
 	chunksTailEnd int32
 	// When an owned series recompute first found it non-owned, in Unix seconds, or 0.
 	nonOwnedSinceS uint32
+	// The series' current native metric metadata: its value's id in the engine's dictionary, or 0 for none, and the
+	// start of its run, as an offset from its shard's base. Its older runs, if any, are its shard's.
+	metadataID, metadataStart uint32
 	// Whether the last request's samples ended with a native histogram, as Mimir's active series
 	// tracker records it.
 	nativeHistogram bool

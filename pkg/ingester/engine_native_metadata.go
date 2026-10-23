@@ -28,8 +28,8 @@ type nativeMetadataResult struct {
 	Series []nativeMetadataSeries
 	// Limited reports whether more series matched than the limit let through.
 	Limited bool
-	// CoverageStart is when the metadata starts: the later of the head's min time and its max time when the engine
-	// opened, since neither engine persists native metadata.
+	// CoverageStart is when the metadata starts: the later of the head's min time and, as neither engine persists native
+	// metadata, its max time when the TSDB opened, or the first observation since the seriesstore engine did.
 	CoverageStart int64
 }
 
@@ -59,6 +59,22 @@ func (e prometheusEngine) nativeMetricMetadata(ctx context.Context, matcherSets 
 	return result, nil
 }
 
-func (e seriesstoreEngine) nativeMetricMetadata(context.Context, [][]*labels.Matcher, int) (nativeMetadataResult, error) {
-	return nativeMetadataResult{}, tsdb.ErrNativeMetadataDisabled
+func (e seriesstoreEngine) nativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) (nativeMetadataResult, error) {
+	series, limited, err := e.NativeMetricMetadata(ctx, matcherSets, limit)
+	if err != nil {
+		return nativeMetadataResult{}, err
+	}
+	result := nativeMetadataResult{
+		Series:        make([]nativeMetadataSeries, 0, len(series)),
+		Limited:       limited,
+		CoverageStart: e.NativeMetricMetadataCoverageStart(),
+	}
+	for _, s := range series {
+		versions := make([]tsdb.NativeMetricMetadataVersion, 0, len(s.Versions))
+		for _, v := range s.Versions {
+			versions = append(versions, tsdb.NativeMetricMetadataVersion{EffectiveFrom: v.EffectiveFrom, Metadata: v.Metadata})
+		}
+		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions})
+	}
+	return result, nil
 }

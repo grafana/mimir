@@ -56,6 +56,8 @@ type pendingSample struct {
 	kind     sampleKind
 	h        *histogram.Histogram
 	fh       *histogram.FloatHistogram
+	// The id of the series' own metric metadata the sample came with, which the appender's memo holds, or 0.
+	metadata uint32
 }
 
 type pendingExemplar struct {
@@ -84,6 +86,8 @@ type engineAppender struct {
 	order []int32
 	// The series the appender created, which stay until it commits or rolls back.
 	created []uint64
+	// The ids of the metric metadata the samples came with, once one did.
+	metadata *metadataMemo
 }
 
 // appendBuffers are an appender's buffers, which appenders reuse: the ingester opens one per
@@ -381,6 +385,15 @@ func (a *engineAppender) Append(ref storage.SeriesRef, lset promlabels.Labels, _
 	} else {
 		ref, err = a.appendFloat(ref, lset, t, v, opts.RejectOutOfOrder)
 	}
+	if err == nil && !stale && !opts.Metadata.IsEmpty() && (h != nil || fh != nil || math.Float64bits(v) != value.QuietZeroNaN) {
+		// The sample just pushed: a quiet zero, like a staleness marker, carries no metadata.
+		if kept, ok := keptMetricMetadata(opts.Metadata, &a.e.metricMetadataStats); ok {
+			if a.metadata == nil {
+				a.metadata = a.e.newMetadataMemo()
+			}
+			a.samples[len(a.samples)-1].metadata = a.metadata.byValue(kept)
+		}
+	}
 	// Like the TSDB, a staleness marker takes no exemplars.
 	if err != nil || stale || len(opts.Exemplars) == 0 {
 		return ref, err
@@ -456,6 +469,10 @@ func (a *engineAppender) pendingKind(ref uint64) sampleKind {
 
 // release gives the appender's buffers back for the next appender.
 func (a *engineAppender) release() {
+	if a.metadata != nil {
+		a.metadata.release()
+		a.metadata = nil
+	}
 	const maxKept = 1 << 16
 	if cap(a.samples) > maxKept {
 		return
@@ -788,6 +805,10 @@ func (a *engineAppender) Commit() error {
 			}
 			if ooo {
 				oooMin, oooMax = min(oooMin, sample.t), max(oooMax, sample.t)
+			}
+			// Only a sample that went in records its metadata.
+			if sample.metadata != 0 && (inOrder || ooo) {
+				a.e.observeMetadataLocked(t, &entry.series, sample.metadata, sample.t)
 			}
 		}
 		state.Unlock()
