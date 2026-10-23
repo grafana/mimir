@@ -409,7 +409,7 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
-	verifyDroppedRequests(t, reg, "cancelled")
+	verifyDroppedRequests(t, reg, "frontend_cancelled")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -1001,9 +1001,9 @@ func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
-	scheduler.droppedRequests.WithLabelValues("test", "cancelled").Inc()
+	scheduler.droppedRequests.WithLabelValues("test", "frontend_cancelled").Inc()
 	scheduler.droppedRequests.WithLabelValues("test", "frontend_disconnected").Inc()
-	scheduler.droppedRequests.WithLabelValues("another", "cancelled").Inc()
+	scheduler.droppedRequests.WithLabelValues("another", "frontend_cancelled").Inc()
 	scheduler.querierRequestFailures.WithLabelValues("test").Inc()
 	scheduler.querierRequestFailures.WithLabelValues("another").Inc()
 
@@ -1012,7 +1012,7 @@ func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_scheduler_dropped_requests_total Total number of queued requests that the query-scheduler removed without sending them to a querier, because their context was cancelled.
 		# TYPE cortex_query_scheduler_dropped_requests_total counter
-		cortex_query_scheduler_dropped_requests_total{reason="cancelled",user="another"} 1
+		cortex_query_scheduler_dropped_requests_total{reason="frontend_cancelled",user="another"} 1
 		# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
 		# TYPE cortex_query_scheduler_querier_request_failures_total counter
 		cortex_query_scheduler_querier_request_failures_total{user="another"} 1
