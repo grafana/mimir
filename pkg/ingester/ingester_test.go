@@ -12565,6 +12565,7 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 // TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
 // store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
 func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
+	skipIfSeriesstore(t, "it doesn't have the XOR2 chunk encoding")
 	limits := defaultLimitsTestConfig()
 	limits.FloatChunkEncoding = "xor2"
 	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
@@ -12684,6 +12685,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 }
 
 func TestIngesterHistogramSTEncoding(t *testing.T) {
+	skipIfSeriesstore(t, "it doesn't have the histogram chunk encodings with start timestamps")
 	tests := map[string]struct {
 		encoding               string
 		expectedChunkEnc       chunkenc.Encoding
@@ -12752,6 +12754,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 // TestIngesterHistogramSTEncodingRuntimeToggle covers changing the histogram_chunk_encoding limit at runtime,
 // in both directions. It takes effect once the tenant's TSDB is reopened.
 func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
+	skipIfSeriesstore(t, "it doesn't have the histogram chunk encodings with start timestamps")
 	tests := map[string]struct {
 		initialLimit   string
 		updatedLimit   string
