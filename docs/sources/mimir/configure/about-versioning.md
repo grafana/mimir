@@ -280,7 +280,7 @@ The following features are currently experimental:
     - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
-  - Including a `Retry-After` header on HTTP 429 and 503 responses: all flags beginning with `-query-frontend.retry-after-header`
+  - Including a `Retry-After` header on HTTP 429 responses: all flags beginning with `-query-frontend.retry-after-header`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`

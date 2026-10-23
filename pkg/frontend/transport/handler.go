@@ -117,7 +117,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
-	cfg.RetryAfterHeader.RegisterFlagsWithPrefix("query-frontend.retry-after-header.", f, false, "429 and 503 errors")
+	cfg.RetryAfterHeader.RegisterFlagsWithPrefix("query-frontend.retry-after-header.", f, false, "429 errors other than limited queries")
 }
 
 // Validate the HandlerConfig.
