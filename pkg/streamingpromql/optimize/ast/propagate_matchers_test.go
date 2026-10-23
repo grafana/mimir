@@ -156,6 +156,13 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	// Propagation should work inside unsupported Call args when the Call is nested in a BinaryExpr.
 	`scalar(up{foo="bar"} * down) / left`: `scalar(up{foo="bar"} * down{foo="bar"}) / left`,
 	`sort(up{foo="bar"} * down) / left`:   `sort(up{foo="bar"} * down{foo="bar"}) / left`,
+	// Matchers from outside a binary expression with on() or ignoring() should only propagate into it on the matching labels,
+	// as other labels on the "one" side do not affect the result (here threshold has no foo label but still matches).
+	`up{foo="bar"} + up * on() group_left() threshold`:                `up{foo="bar"} + up * on() group_left() threshold`,
+	`up * on() group_left() threshold + up{foo="bar"}`:                `up * on() group_left() threshold + up{foo="bar"}`,
+	`up{foo="bar"} + sort(up) * on() group_left() threshold`:          `up{foo="bar"} + sort(up) * on() group_left() threshold`,
+	`up{foo="bar"} + up * on(foo) group_left() down`:                  `up{foo="bar"} + up{foo="bar"} * on(foo) group_left() down{foo="bar"}`,
+	`up{foo="bar", baz="fob"} + up * ignoring(foo) group_left() down`: `up{foo="bar", baz="fob"} + up{baz="fob"} * ignoring(foo) group_left() down{baz="fob"}`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
@@ -237,6 +244,7 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
+			threshold 0+9x<num samples>
 	`, testCasesPropagateMatchersWithData)
 }
 
