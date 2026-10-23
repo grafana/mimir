@@ -1731,6 +1731,59 @@ func TestEngineOutOfOrderHistogramSharesNoMemoryWithWhatWasAppended(t *testing.T
 	require.Equal(t, []histogram.Span{{Offset: 0, Length: 3}}, h.PositiveSpans)
 }
 
+func TestEngineBackdatedSampleDoesNotMergeTheChunksTheHeadWasCompactedFrom(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 24 * 3_600_000}, nil)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	lset := promlabels.FromStrings("__name__", "metric", "job", "a")
+	for ts := int64(0); ts <= 6*3_600_000; ts += 15_000 {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, lset, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, e.Compact(context.Background()))
+	headMin := e.MinTime()
+	require.Greater(t, headMin, int64(3_600_000))
+
+	type queried struct {
+		minTime, maxTime int64
+		data             string
+	}
+	query := func() []queried {
+		q, err := e.ChunkQuerier(0, 7*3_600_000)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "a"))
+		require.True(t, set.Next())
+		var out []queried
+		it := set.At().Iterator(nil)
+		for it.Next() {
+			out = append(out, queried{it.At().MinTime, it.At().MaxTime, string(it.At().Chunk.Bytes())})
+		}
+		require.NoError(t, it.Err())
+		require.False(t, set.Next())
+		return out
+	}
+	var compacted []queried
+	for _, chunk := range query() {
+		if chunk.maxTime < headMin {
+			compacted = append(compacted, chunk)
+		}
+	}
+	require.NotEmpty(t, compacted)
+
+	const late = 1_800_000 + 7_500
+	app := e.Appender(context.Background())
+	_, err := app.Append(0, lset, late, -1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	after := query()
+	require.Equal(t, compacted, after[:len(compacted)])
+	// Overlapping none of the head's chunks, the late sample is a chunk of its own.
+	require.Equal(t, [2]int64{late, late}, [2]int64{after[len(compacted)].minTime, after[len(compacted)].maxTime})
+}
+
 type engineActiveRefs struct {
 	e        *Engine
 	cutoffMs int64
