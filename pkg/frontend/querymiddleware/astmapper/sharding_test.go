@@ -647,6 +647,22 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 0,
 		},
 		{
+			in:                       `topk(5, histogram_quantile(0.9, rate(foo_bucket[1m])))`,
+			out:                      `topk(5, histogram_quantile(0.9, rate(foo_bucket[1m])))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			in:                       `bottomk(5, sort_desc(foo))`,
+			out:                      `bottomk(5, sort_desc(foo))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			// Only the inner sum() is sharded, because histogram_quantile() isn't shardable.
+			in:                       `topk(5, histogram_quantile(0.9, sum by (le) (rate(foo_bucket[1m]))))`,
+			out:                      `topk(5, histogram_quantile(0.9, sum by (le) (` + concatShards(t, shardCount, `sum by (le) (rate(foo_bucket{__query_shard__="x_of_y"}[1m]))`) + `)))`,
+			expectedShardableQueries: 1,
+		},
+		{
 			in: `
 				topk(
 					scalar(count(foo)),

@@ -404,6 +404,16 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `topk(scalar(count(metric_counter{group_1="0"})), metric_counter)`,
 			ExpectedShardedQueries: 0,
 		},
+		// Many series give the same histogram_quantile() result, and topk() picks any of the tied
+		// series, so we use a non-shardable function that keeps the distinct values of metric_counter.
+		"topk() of non-shardable function": {
+			Query:                  `topk(2, sort_desc(metric_counter))`,
+			ExpectedShardedQueries: 0,
+		},
+		"topk() of non-shardable function of sum()": {
+			Query:                  `topk(2, sort_desc(sum by (group_1) (metric_counter)))`,
+			ExpectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
 		// topk() ignores native histograms, so the native histogram series must not change the result.
 		"topk() on floats and native histograms": {
 			Query:                  `topk(2, {__name__=~"metric_counter|metric_native_histogram"})`,
