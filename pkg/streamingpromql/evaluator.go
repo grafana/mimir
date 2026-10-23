@@ -53,7 +53,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 
 	// Identifies the user query this evaluation belongs to. In a querier this comes from the
 	// query-scheduler request; in the query-frontend it comes from the HTTP transport handler.
-	// Read here rather than in the deferred function below, which runs after ctx is reassigned.
 	rootQueryID := rootqueryid.IDFromContext(ctx)
 
 	// Wrapped in a closure so that err is read when the evaluation finishes,
