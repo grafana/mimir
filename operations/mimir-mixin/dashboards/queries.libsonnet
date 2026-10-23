@@ -168,7 +168,6 @@ local filename = 'mimir-queries.json';
             Requests that the query-scheduler dropped from its queue, and requests that failed on a querier.
             Querier failures that the query-scheduler could not report to the query-frontend show as "Error not delivered".
             The panel leaves out an error forward with the no_waiter outcome, because no query-frontend waited for it.
-            If the query-scheduler is not deployed, this panel shows "No data."
           |||
         ),
       )
