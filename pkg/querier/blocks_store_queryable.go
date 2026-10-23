@@ -173,7 +173,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"result"}),
 		estimateMemoryRejected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_memory_rejections_total",
-			Help: "Cardinality estimates refused because the groups and hashes they held in the querier passed the tenant's max estimated memory consumption per query.",
+			Help: "Cardinality estimates refused because the groups and hashes they held in the querier passed the tenant's cardinality estimate memory limit, or its max estimated memory consumption per query when that is lower.",
 		}),
 	}
 
