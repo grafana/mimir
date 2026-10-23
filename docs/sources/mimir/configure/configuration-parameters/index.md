@@ -5276,6 +5276,14 @@ blocked_requests:
 # CLI flag: -querier.cardinality-estimate-max-index-bytes
 [cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
 
+# (experimental) Maximum memory, in bytes, that the groups, label-set hashes and
+# sketches of one cardinality estimate may hold in the querier while it merges
+# the store-gateways' and ingesters' answers. An estimate over it fails with
+# 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
+# applies instead. 0 means only that per-query limit applies.
+# CLI flag: -querier.cardinality-estimate-max-memory-bytes
+[cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
+
 # (experimental)
 cost_attribution_labels_structured:
   - # Source label name to read from the incoming series.
