@@ -12879,6 +12879,17 @@
             },
             {
               "kind": "field",
+              "name": "seriesstore_compaction_jitter_enabled",
+              "required": false,
+              "desc": "Whether the seriesstore engine delays each tenant's head compactions by a random time, up to a quarter of a block range, so tenants don't compact at once. Disable it to compact on time, for example in benchmarks.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.tsdb.seriesstore-compaction-jitter-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "retention_period",
               "required": false,
               "desc": "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.",
@@ -13215,6 +13226,17 @@
               "fieldDefaultValue": 15,
               "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
               "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_compaction_interval_jitter_enabled",
+              "required": false,
+              "desc": "Whether the first head compaction check is delayed by a random time, so ingesters don't compact at once. Disable it to compact on time, for example in benchmarks.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.tsdb.head-compaction-interval-jitter-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {

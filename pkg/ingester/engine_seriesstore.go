@@ -79,7 +79,7 @@ func idleEvictionMs() int64 {
 // tests.
 var testNoCompactionJitter bool
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints, jitter bool) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -98,7 +98,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
 		MaxExemplars:            opts.MaxExemplars,
 		TimelyCompaction:        opts.TimelyCompaction,
-		JitterCompaction:        !testNoCompactionJitter,
+		JitterCompaction:        jitter,
 		IdleEvictionMs:          idleEvictionMs(),
 		Checkpoints:             checkpoints,
 		SeriesLifecycleCallback: callback,

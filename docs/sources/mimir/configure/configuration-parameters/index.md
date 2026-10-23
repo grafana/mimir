@@ -6501,6 +6501,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.seriesstore-snapshot-interval
   [seriesstore_snapshot_interval: <duration> | default = 15m]
 
+  # (experimental) Whether the seriesstore engine delays each tenant's head
+  # compactions by a random time, up to a quarter of a block range, so tenants
+  # don't compact at once. Disable it to compact on time, for example in
+  # benchmarks.
+  # CLI flag: -blocks-storage.tsdb.seriesstore-compaction-jitter-enabled
+  [seriesstore_compaction_jitter_enabled: <boolean> | default = true]
+
   # TSDB blocks retention before a block is removed. If shipping is enabled, the
   # retention will be relative to the time when the block was uploaded to
   # storage. If shipping is disabled then it's relative to the creation time of
@@ -6686,6 +6693,12 @@ tsdb:
   # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
   [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
+  # (experimental) Whether the first head compaction check is delayed by a
+  # random time, so ingesters don't compact at once. Disable it to compact on
+  # time, for example in benchmarks.
+  # CLI flag: -blocks-storage.tsdb.head-compaction-interval-jitter-enabled
+  [head_compaction_interval_jitter_enabled: <boolean> | default = true]
 
   # (experimental) Allows head compaction to happen when the min block range can
   # no longer be appended, without requiring 1.5x the chunk range worth of data

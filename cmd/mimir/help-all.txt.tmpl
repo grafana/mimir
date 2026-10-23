@@ -875,6 +875,8 @@ Usage of ./cmd/mimir/mimir:
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
+  -blocks-storage.tsdb.head-compaction-interval-jitter-enabled
+    	[experimental] Whether the first head compaction check is delayed by a random time, so ingesters don't compact at once. Disable it to compact on time, for example in benchmarks. (default true)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
@@ -915,6 +917,8 @@ Usage of ./cmd/mimir/mimir:
     	TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks. (default 13h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 367001600)
+  -blocks-storage.tsdb.seriesstore-compaction-jitter-enabled
+    	[experimental] Whether the seriesstore engine delays each tenant's head compactions by a random time, up to a quarter of a block range, so tenants don't compact at once. Disable it to compact on time, for example in benchmarks. (default true)
   -blocks-storage.tsdb.seriesstore-snapshot-interval duration
     	[experimental] How often the seriesstore engine snapshots each tenant's head while ingesting, paced to use little CPU and disk. After an unclean shutdown, the ingester replays Kafka from the oldest snapshot instead of from the retention period. 0 disables the snapshots. (default 15m0s)
   -blocks-storage.tsdb.shared-postings-for-matchers-cache
