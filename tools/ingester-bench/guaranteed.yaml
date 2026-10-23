@@ -1,0 +1,6 @@
+# The configuration of the ingesters of job.yaml with GUARANTEED=1, over kubernetes.yaml: the read path's CPU
+# utilization limit is the ingester's 10 CPUs, which are its own. A run is only valid if neither ingester rejected a
+# read for it, as the busier one would shed reads the other answers.
+common:
+  args:
+    ingester.read-path-cpu-utilization-limit: "10"

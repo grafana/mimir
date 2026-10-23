@@ -11,7 +11,8 @@
 # ingester's image is the configuration's, or the bench's with the tree's Mimir. PROFILE, a profile file, is put in a
 # ConfigMap for the run; NODE_SELECTOR (key=value) places it, and STORAGE_CLASS is the class of its volumes (default the
 # cluster's). The cluster's nodes should have the kubelet's static CPU manager policy, so that the containers' CPUs are
-# their own.
+# their own. GUARANTEED=1 makes the pod's QoS Guaranteed, which every container's requests being its limits, in whole
+# CPUs, takes: the ingesters then have 10 CPUs and 32Gi each, and guaranteed.yaml's read path limit.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the image to}"
@@ -28,7 +29,8 @@ k() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
 # The configuration, merged, for the driver: before building, so that a wrong one fails the run right away.
 metadata="$(mktemp)"
 mkdir -p "$metadata.config"
-go run ./tools/ingester-bench -config="$dir/kubernetes.yaml${CONFIG:+,$CONFIG}" -print-config > "$metadata.config/config.json"
+base="$dir/kubernetes.yaml${GUARANTEED:+,$dir/guaranteed.yaml}"
+go run ./tools/ingester-bench -config="$base${CONFIG:+,$CONFIG}" -print-config > "$metadata.config/config.json"
 
 echo "building $IMAGE_REPO:$revision"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$dir/mimir" -ldflags "-X github.com/grafana/mimir/pkg/util/version.Revision=$revision" ./cmd/mimir
@@ -42,9 +44,9 @@ if [[ -n "${PROFILE:-}" ]]; then
   k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 fi
 # The job of job.yaml, with the images, the configuration, the profile, a node selector and the extra flags.
-python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "${STORAGE_CLASS:-}" "$@" > "$metadata.yaml" <<'PY'
+python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "${STORAGE_CLASS:-}" "${GUARANTEED:-}" "$@" > "$metadata.yaml" <<'PY'
 import json, sys
-path, name, namespace, image, config, profile, selector, storage, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9:]
+path, name, namespace, image, config, profile, selector, storage, guaranteed, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9], sys.argv[10:]
 config = json.load(open(config))
 images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in 'ab'}
 s = open(path).read().replace('image: IMAGE_A', 'image: ' + images['a']).replace('image: IMAGE_B', 'image: ' + images['b'])
@@ -58,6 +60,14 @@ if profile:
     s = s.replace('            # - -profile=/profile/profile.json\n', f'            - -profile=/profile/{file}\n')
     s = s.replace('            # - { name: profile, mountPath: /profile }\n', '            - { name: profile, mountPath: /profile }\n')
     s = s.replace('        # - { name: profile, configMap: { name: ingester-bench-profile } }\n', f'        - {{ name: profile, configMap: {{ name: {name}-profile }} }}\n')
+if guaranteed:
+    # Every container counts for the QoS, the init container too, and with SMT the static CPU manager only gives
+    # containers even CPU counts.
+    s = s.replace('          args: [-install=/shared/ingester-bench]\n', '          args: [-install=/shared/ingester-bench]\n          resources:\n            requests: { cpu: "2", memory: 1Gi }\n            limits: { cpu: "2", memory: 1Gi }\n')
+    s = s.replace('            - { name: GOMAXPROCS, value: "9" }\n', '            - { name: GOMAXPROCS, value: "10" }\n')
+    s = s.replace('            requests: { cpu: "4", memory: 24Gi }\n            limits: { memory: 32Gi }\n', '            requests: { cpu: "10", memory: 32Gi }\n            limits: { cpu: "10", memory: 32Gi }\n')
+    if s.count('cpu: "10", memory: 32Gi }') != 4 or 'memory: 1Gi }' not in s:
+        sys.exit('job.yaml changed: GUARANTEED no longer applies to it')
 if selector:
     key, value = selector.split('=', 1)
     s = s.replace('      shareProcessNamespace: true\n', f'      shareProcessNamespace: true\n      nodeSelector: {{ {key}: {value} }}\n')

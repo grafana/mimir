@@ -87,6 +87,10 @@ type Report struct {
 	Tenants     int                  `json:"tenants"`
 	SamplesPerS float64              `json:"samples_per_second"`
 	Replay      [2]float64           `json:"replay_seconds"`
+	ReplayCPU   [2]ReplayCPU         `json:"replay_cpu"`
+	Counters    [2]Counters          `json:"counters"`
+	Driver      DriverCPU            `json:"driver_cpu"`
+	Steal       StealShare           `json:"steal_share"`
 	WindowS     float64              `json:"window_seconds"`
 	Resources   [2]Resources         `json:"resources"`
 	APIs        map[string]APIReport `json:"apis"`
@@ -242,6 +246,8 @@ func (r Report) print(w io.Writer) {
 		f    func(float64) string
 	}{
 		{"replay", r.Replay[0], r.Replay[1], func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
+		{"replay CPU per sample", r.ReplayCPU[0].CPUSecondsPerSample * 1e6, r.ReplayCPU[1].CPUSecondsPerSample * 1e6, func(v float64) string { return fmt.Sprintf("%.3f µs", v) }},
+		{"replay measured", r.ReplayCPU[0].Coverage, r.ReplayCPU[1].Coverage, func(v float64) string { return fmt.Sprintf("%.0f%%", v*100) }},
 		{"CPU", a.CPUCores, b.CPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
 		{"GC CPU", a.GCCPUCores, b.GCCPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
 		{"allocated", a.AllocBytesPerS, b.AllocBytesPerS, mib},
@@ -302,9 +308,31 @@ func (r Report) print(w io.Writer) {
 			fmt.Fprintf(w, "  %.1f/%.1f %s\n", read.Ms[0], read.Ms[1], read.Request[:min(len(read.Request), 400)])
 		}
 	}
+	fmt.Fprintf(w, "\nbench CPU %.2f cores in the replay, %.2f in the window; steal %s in the replay, %s in the window\n",
+		r.Driver.ReplayCores, r.Driver.WindowCores, share(r.Steal.Replay), share(r.Steal.Window))
+	for i, c := range r.Counters {
+		var changed []string
+		for name, end := range c.WindowEnd {
+			if ready := c.Ready[name]; end != ready {
+				changed = append(changed, fmt.Sprintf("%s %.0f→%.0f", name, ready, end))
+			}
+		}
+		sort.Strings(changed)
+		if len(changed) > 0 {
+			fmt.Fprintf(w, "counters of %c that changed after ready: %s\n", 'A'+i, strings.Join(changed, ", "))
+		}
+	}
 	if len(r.Mismatches) > 0 {
 		fmt.Fprintf(w, "\n%d mismatch examples, first:\n%s\n", len(r.Mismatches), strings.Join(r.Mismatches[:min(3, len(r.Mismatches))], "\n"))
 	}
+}
+
+// share is a share in percent, or "-" when it's unknown.
+func share(v float64) string {
+	if v < 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.2f%%", v*100)
 }
 
 func writeJSON(path string, v any) error {

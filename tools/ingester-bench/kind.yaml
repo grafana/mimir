@@ -1,0 +1,19 @@
+# The one-node kind cluster that kind-up.sh creates on a host of its own, such as a temporary droplet with dedicated
+# CPUs. The kubelet's static CPU manager gives the containers of a Guaranteed pod (run-in-kubernetes.sh with
+# GUARANTEED=1) whole physical cores of their own, and keeps the reserved core, which kind-up.sh fills in, for the
+# host's and the node's daemons. Images come from the local registry kind-up.sh runs, at localhost:5001.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        cpuManagerPolicy: static
+        cpuManagerPolicyOptions:
+          full-pcpus-only: "true"
+        reservedSystemCPUs: "RESERVED_CPUS"

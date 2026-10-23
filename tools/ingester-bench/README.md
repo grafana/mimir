@@ -68,6 +68,22 @@ For CPU numbers you can trust, run it on nodes whose kubelet has the static CPU 
 
 A run takes the backfill, the replay, the warmup and the window: about 1h20m with a 13h backfill and the defaults.
 
+### On a host of its own
+
+For CPU numbers to compare runs by, run it in a [kind](https://kind.sigs.k8s.io/) cluster on a host of its own, such
+as a temporary cloud machine with dedicated CPUs:
+
+1. [`kind-up.sh`](kind-up.sh) keeps the host's daemons, a local registry and the node's kubelet and containerd on CPU
+   0's physical core, and creates the cluster of [`kind.yaml`](kind.yaml), whose kubelet gives the other cores out
+   whole.
+2. `run-in-kubernetes.sh` with `GUARANTEED=1` and `IMAGE_REPO=localhost:5001/ingester-bench`, from the host, makes the
+   pod Guaranteed: every container's requests are its limits, in even CPU counts, the ingesters' 10 CPUs and 32Gi each
+   with `GOMAXPROCS=10`, and [`guaranteed.yaml`](guaranteed.yaml) sets their read path limit to their CPUs.
+3. [`check-isolation.sh`](check-isolation.sh), once the pod runs, checks that the containers' CPUs don't overlap, and
+   says how to check that one's load doesn't slow the others.
+
+A run is valid only with no steal and no reads rejected by the read path's limit, which the report has.
+
 ## Configuration
 
 `-config` takes YAML files, comma separated. Each applies over [`defaults.yaml`](defaults.yaml) and the files before it.
@@ -112,7 +128,14 @@ Each run's directory (`-out`) has:
   - resources and read latency (p50, p99) in the window;
   - per-API counts of reads sent, compared, mismatched, matched after retry and failed;
   - the slowest reads, mismatch examples and the run's settings.
-- `report.json`, the same data.
+- `report.json`, the same data, and:
+  - `replay_cpu`: each ingester's CPU seconds per sample over the replay from where the backfill's first scrape
+    interval ends to `/ready`, once every series exists, which the bench snapshots as the ingester gets there, and
+    the share of those samples it measured: a short backfill is mostly replayed before the bench first sees the
+    ingester;
+  - `counters`: compactions, checkpoints, truncations, head snapshots and the read path's rejections, at `/ready` and at
+    the window's start and end;
+  - `driver_cpu`, the bench's own CPU in the replay and the window, and `steal_share`, the host's, from `/proc/stat`.
 - `cpu-{a,b}.pb.gz`, `heap-{a,b}.pb.gz` and `allocs-{a,b}.pb.gz`, for `go tool pprof`.
 - `slow.log`, the reads slower than 5s.
 
