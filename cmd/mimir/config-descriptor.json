@@ -6067,6 +6067,28 @@
         },
         {
           "kind": "field",
+          "name": "native_metric_metadata_max_changes_per_series",
+          "required": false,
+          "desc": "How many changes of a series' own metric metadata the seriesstore engine keeps per change window, in sample time. Past them, the window's changes coalesce into one range, which has the latest of their values. 0 keeps them all.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10,
+          "fieldFlag": "ingester.native-metric-metadata-max-changes-per-series",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_metric_metadata_change_window",
+          "required": false,
+          "desc": "The window, in sample time, that -ingester.native-metric-metadata-max-changes-per-series counts the changes of a series' own metric metadata in.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3600000000000,
+          "fieldFlag": "ingester.native-metric-metadata-change-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

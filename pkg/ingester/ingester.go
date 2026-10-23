@@ -66,6 +66,8 @@ const (
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
 	perMetricMetadataLimit = "per_metric_metadata_limit"
+	// The changes of a series' own metric metadata over the change limit, which the seriesstore engine coalesces.
+	perSeriesMetadataChangeLimit = "per_series_metadata_change_limit"
 
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute

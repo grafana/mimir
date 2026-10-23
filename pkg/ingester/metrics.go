@@ -96,6 +96,7 @@ type ingesterMetrics struct {
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
 	discardedMetadataPerMetricMetadataLimit *prometheus.CounterVec
+	discardedMetadataPerSeriesChangeLimit   *prometheus.CounterVec
 
 	// Shutdown marker for ingester scale down
 	shutdownMarker prometheus.Gauge
@@ -440,6 +441,7 @@ func newIngesterMetrics(
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
+		discardedMetadataPerSeriesChangeLimit:   validation.DiscardedMetadataCounter(r, perSeriesMetadataChangeLimit),
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
@@ -481,6 +483,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+	m.discardedMetadataPerSeriesChangeLimit.DeleteLabelValues(userID)
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)

@@ -4771,6 +4771,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-metric-metadata-enabled
 [native_metric_metadata_enabled: <boolean> | default = false]
 
+# (experimental) How many changes of a series' own metric metadata the
+# seriesstore engine keeps per change window, in sample time. Past them, the
+# window's changes coalesce into one range, which has the latest of their
+# values. 0 keeps them all.
+# CLI flag: -ingester.native-metric-metadata-max-changes-per-series
+[native_metric_metadata_max_changes_per_series: <int> | default = 10]
+
+# (experimental) The window, in sample time, that
+# -ingester.native-metric-metadata-max-changes-per-series counts the changes of
+# a series' own metric metadata in.
+# CLI flag: -ingester.native-metric-metadata-change-window
+[native_metric_metadata_change_window: <duration> | default = 1h]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

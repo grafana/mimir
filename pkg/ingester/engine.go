@@ -112,7 +112,8 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
 		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
 		jitter := i.cfg.BlocksStorageConfig.TSDB.SeriesstoreCompactionJitterEnabled && !testNoCompactionJitter
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter)
+		coalesced := i.metrics.discardedMetadataPerSeriesChangeLimit.WithLabelValues(userID)
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter, coalesced.Inc)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

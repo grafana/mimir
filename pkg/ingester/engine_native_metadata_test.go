@@ -5,10 +5,13 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -97,4 +100,47 @@ func TestEnginesServeNativeMetricMetadata(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The seriesstore engine coalesces a series' changes over the change limit, reports them as coalesced, and counts
+// them as discarded metadata.
+func TestSeriesstoreCoalescesMetricMetadataChangesOverTheLimit(t *testing.T) {
+	skipIfSeriesstore(t, "it runs the seriesstore engine itself")
+	limits := defaultLimitsTestConfig()
+	limits.NativeMetricMetadataEnabled = true
+	limits.NativeMetricMetadataMaxChangesPerSeries = 1
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	reg := prometheus.NewPedanticRegistry()
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.NewOverrides(limits, nil), nil, reg, nil)
+
+	// Three changes a minute apart, in one window.
+	base := time.Now().Truncate(time.Hour).Add(-2 * time.Hour).UnixMilli()
+	write, last := compatProducer(t, cfg.IngestStorageConfig.KafkaConfig)
+	for step, help := range []string{"a", "b", "c", "d"} {
+		ts := compatSeries("requests_total", mimirpb.Sample{TimestampMs: base + int64(step)*60_000, Value: 1})
+		ts.SeriesMetadata = mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: help}
+		write("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{ts}})
+	}
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, ingester.ingestReader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(last())))
+
+	result, err := ingester.getTSDB("tenant").nativeMetadata.nativeMetricMetadata(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}, 0)
+	require.NoError(t, err)
+	require.Len(t, result.Series, 1)
+	require.True(t, result.Series[0].Coalesced)
+	var helps []string
+	for _, v := range result.Series[0].Versions {
+		helps = append(helps, v.Metadata.Help)
+	}
+	require.Equal(t, []string{"a", "b", "d"}, helps)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
+		# TYPE cortex_discarded_metadata_total counter
+		cortex_discarded_metadata_total{reason="per_series_metadata_change_limit",user="tenant"} 1
+	`), "cortex_discarded_metadata_total"))
 }

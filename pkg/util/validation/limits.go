@@ -261,7 +261,9 @@ type Limits struct {
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 
 	// Native metadata.
-	NativeMetricMetadataEnabled bool `yaml:"native_metric_metadata_enabled" json:"native_metric_metadata_enabled" category:"experimental"`
+	NativeMetricMetadataEnabled             bool           `yaml:"native_metric_metadata_enabled" json:"native_metric_metadata_enabled" category:"experimental"`
+	NativeMetricMetadataMaxChangesPerSeries int            `yaml:"native_metric_metadata_max_changes_per_series" json:"native_metric_metadata_max_changes_per_series" category:"experimental"`
+	NativeMetricMetadataChangeWindow        model.Duration `yaml:"native_metric_metadata_change_window" json:"native_metric_metadata_change_window" category:"experimental"`
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
@@ -491,6 +493,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.IntVar(&l.NativeMetricMetadataMaxChangesPerSeries, "ingester.native-metric-metadata-max-changes-per-series", 10, "How many changes of a series' own metric metadata the seriesstore engine keeps per change window, in sample time. Past them, the window's changes coalesce into one range, which has the latest of their values. 0 keeps them all.")
+	_ = l.NativeMetricMetadataChangeWindow.Set("1h")
+	f.Var(&l.NativeMetricMetadataChangeWindow, "ingester.native-metric-metadata-change-window", "The window, in sample time, that -ingester.native-metric-metadata-max-changes-per-series counts the changes of a series' own metric metadata in.")
 	f.BoolVar(&l.NativeMetricMetadataEnabled, "ingester.native-metric-metadata-enabled", false, "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.")
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
@@ -1535,6 +1540,13 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 // NativeMetricMetadataEnabled returns whether the ingester stores the tenant's per-series metric metadata.
 func (o *Overrides) NativeMetricMetadataEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeMetricMetadataEnabled
+}
+
+// NativeMetricMetadataChangeLimit returns how many changes of a series' own metric metadata the seriesstore engine
+// keeps per window, and the window.
+func (o *Overrides) NativeMetricMetadataChangeLimit(userID string) (int, time.Duration) {
+	limits := o.getOverridesForUser(userID)
+	return limits.NativeMetricMetadataMaxChangesPerSeries, time.Duration(limits.NativeMetricMetadataChangeWindow)
 }
 
 // NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester.
