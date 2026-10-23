@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -39,22 +40,27 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 	limits.MaxGlobalExemplarsPerUser = 100
 	overrides := validation.NewOverrides(limits, nil)
 
-	start := func(engine string, kafkaAddress ...string) (*Ingester, client.IngesterClient, ingest.KafkaConfig) {
+	start := func(engine string, kafkaAddress ...string) (*Ingester, *prometheus.Registry, ingest.KafkaConfig) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
 		cfg.BlocksStorageConfig.TSDB.Engine = engine
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, nil, kafkaAddress...)
-		return ingester, nil, cfg.IngestStorageConfig.KafkaConfig
+		reg := prometheus.NewPedanticRegistry()
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, nil, kafkaAddress...)
+		return ingester, reg, cfg.IngestStorageConfig.KafkaConfig
 	}
-	prometheusIngester, _, kafkaCfg := start(mimir_tsdb.EnginePrometheus)
-	seriesstoreIngester, _, _ := start(mimir_tsdb.EngineSeriesstore, kafkaCfg.Address[0])
+	prometheusIngester, prometheusReg, kafkaCfg := start(mimir_tsdb.EnginePrometheus)
+	seriesstoreIngester, seriesstoreReg, _ := start(mimir_tsdb.EngineSeriesstore, kafkaCfg.Address[0])
 
 	// Two tenants, 40 float series a minute apart over 3h (every tenth also 30 minutes out of
-	// order), histograms, exemplars, and a label value with a newline.
+	// order), histograms, exemplars, a label value with a newline, and series with created timestamps.
 	now := time.Now().Truncate(time.Minute)
 	base := now.Add(-3 * time.Hour).UnixMilli()
 	write, last := compatProducer(t, kafkaCfg)
 	random := rand.New(rand.NewPCG(3, 4))
+	// A tenant whose first sample is a created timestamp's zero sample, which starts its head.
+	firstCreated := compatSeries("created_total", mimirpb.Sample{TimestampMs: base + 60_000, Value: 1})
+	firstCreated.CreatedTimestamp = base + 30_000
+	write("tenant-c", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{firstCreated}})
 	for _, tenant := range []string{"tenant-a", "tenant-b"} {
 		for minute := int64(0); minute < 180; minute += 10 {
 			var series []mimirpb.PreallocTimeseries
@@ -83,6 +89,23 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 			series = append(series, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "latency"}}, Histograms: histograms,
 			}})
+			// Created timestamps before the series' first sample, equal to a sample, out of order, and further behind
+			// the head than the out-of-order window. Only the first gets a zero sample.
+			if created, ok := map[int64]int64{0: base - 30_000, 60: base + 60*60_000, 90: base + 65*60_000, 150: base + 20*60_000}[minute]; ok {
+				var floats []mimirpb.Sample
+				var createdHistograms []mimirpb.Histogram
+				for step := range int64(10) {
+					floats = append(floats, mimirpb.Sample{TimestampMs: base + (minute+step)*60_000, Value: float64(minute + step)})
+					createdHistograms = append(createdHistograms, mimirpb.FromHistogramToHistogramProto(base+(minute+step)*60_000, test.GenerateTestHistogram(int(minute+step))))
+				}
+				floatSeries := compatSeries("created_total", floats...)
+				floatSeries.CreatedTimestamp = created
+				histogramSeries := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "latency_created"}}, Histograms: createdHistograms,
+					CreatedTimestamp: created,
+				}}
+				series = append(series, floatSeries, histogramSeries)
+			}
 			write(tenant, &mimirpb.WriteRequest{Timeseries: series})
 		}
 	}
@@ -111,9 +134,31 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 		{parityMatcher(client.EQUAL, model.MetricNameLabel, "requests_total"), parityMatcher(client.NOT_EQUAL, "job", "job-0"), parityMatcher(client.EQUAL, "__query_shard__", "2_of_3")},
 		{parityMatcher(client.REGEX_MATCH, "message", "first.second")},
 		{parityMatcher(client.EQUAL, model.MetricNameLabel, "latency")},
+		{parityMatcher(client.REGEX_MATCH, model.MetricNameLabel, "created_total|latency_created")},
 	}
+	// Both engines ingest and discard the same samples, zero samples included.
+	sampleCounts := func(reg *prometheus.Registry) map[string]float64 {
+		families, err := reg.Gather()
+		require.NoError(t, err)
+		counts := map[string]float64{}
+		for _, family := range families {
+			if family.GetName() != "cortex_ingester_ingested_samples_total" && family.GetName() != "cortex_discarded_samples_total" {
+				continue
+			}
+			for _, metric := range family.GetMetric() {
+				key := family.GetName()
+				for _, label := range metric.GetLabel() {
+					key += fmt.Sprintf(" %s=%s", label.GetName(), label.GetValue())
+				}
+				counts[key] = metric.GetCounter().GetValue()
+			}
+		}
+		return counts
+	}
+	require.Equal(t, sampleCounts(prometheusReg), sampleCounts(seriesstoreReg))
+
 	compare := func(stage string) {
-		for _, tenant := range []string{"tenant-a", "tenant-b"} {
+		for _, tenant := range []string{"tenant-a", "tenant-b", "tenant-c"} {
 			ctx := parityContext(tenant, offset)
 			for _, window := range windows {
 				for _, matchers := range matcherSets {
