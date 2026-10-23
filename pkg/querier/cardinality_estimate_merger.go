@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/axiomhq/hyperloglog"
 
@@ -97,6 +98,13 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		return nil
 	}
 	if m.dedup {
+		// A source asked for hashes sends a sketch or hashes and never
+		// counts. Counts come from a source that doesn't know the hashes
+		// field, such as an older version during a rolling update; taking
+		// them as an empty hash set would count the group as 0.
+		if len(hashes) == 0 && len(counts) > 0 {
+			return fmt.Errorf("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", source, value, sourceKind(source))
+		}
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
 		if set == nil {
@@ -166,4 +174,13 @@ func (m *estimateMerger) finish(res *CardinalityEstimateResult) error {
 	res.HashBytes += m.hashBytes
 	res.SketchBytes += m.sketchBytes
 	return nil
+}
+
+// sourceKind is the kind of source named by source, such as "store-gateway"
+// for "store-gateway 1.2.3.4".
+func sourceKind(source string) string {
+	if kind, _, ok := strings.Cut(source, " "); ok {
+		return kind
+	}
+	return source
 }
