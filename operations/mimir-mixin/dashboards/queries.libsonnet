@@ -151,6 +151,26 @@ local filename = 'mimir-queries.json';
         $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
+      .addPanel(
+        $.timeseriesPanel('Dropped and failed requests') +
+        $.queryPanel(
+          [
+            'sum by(reason) (rate(cortex_query_scheduler_dropped_requests_total{$read_path_matcher}[$__rate_interval]))',
+            'sum(rate(cortex_query_scheduler_querier_request_failures_total{$read_path_matcher}[$__rate_interval]))',
+            'sum by(outcome) (rate(cortex_query_scheduler_frontend_error_forwards_total{$read_path_matcher, outcome=~"unavailable|other"}[$__rate_interval]))',
+          ],
+          ['Dropped: {{reason}}', 'Querier failure', 'Error not delivered: {{outcome}}'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          'Dropped and failed requests',
+          |||
+            Requests that the query-scheduler dropped from its queue, and requests that failed on a querier.
+            Querier failures that the query-scheduler could not report to the query-frontend show as "Error not delivered".
+            The panel leaves out an error forward with the no_waiter outcome, because no query-frontend waited for it.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Query-frontend – query splitting and results cache')
