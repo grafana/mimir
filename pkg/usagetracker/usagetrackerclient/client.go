@@ -56,14 +56,11 @@ type Config struct {
 	UsersCloseToLimitPollInterval        time.Duration `yaml:"users_close_to_limit_poll_interval" category:"advanced"`
 	UsersCloseToLimitCacheStartupRetries int           `yaml:"users_close_to_limit_cache_startup_retries" category:"advanced"`
 
-	MaxTimeToWaitForAsyncTrackingResponseAfterIngestion time.Duration `yaml:"max_time_to_wait_for_async_tracking_response_after_ingestion" category:"advanced"`
-
 	// MinSeriesLimitForAsyncTracking is the minimum series limit for a user to be eligible for async tracking.
 	// Users with a series limit below this threshold will always be tracked synchronously.
 	// Set to 0 to disable this check (all users eligible for async tracking based on proximity to limit).
 	MinSeriesLimitForAsyncTracking int `yaml:"min_series_limit_for_async_tracking" category:"advanced"`
 
-	UseBatchedTracking      bool          `yaml:"use_batched_tracking" category:"experimental"`
 	BatchDelay              time.Duration `yaml:"batch_delay" category:"advanced"`
 	MaxBatchSeries          int           `yaml:"max_batch_series" category:"advanced"`
 	TrackSeriesBatchTimeout time.Duration `yaml:"track_series_batch_timeout" category:"advanced"`
@@ -107,10 +104,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.UsersCloseToLimitPollInterval, prefix+"users-close-to-limit-poll-interval", time.Second, "Interval to poll usage-tracker instances for the list of users close to their series limit. This list is used to determine whether to track series synchronously or asynchronously.")
 	f.IntVar(&cfg.UsersCloseToLimitCacheStartupRetries, prefix+"users-close-to-limit-cache-startup-retries", 3, "Number of retries to populate the users close to limit cache at startup. If all retries fail, the client will start with an empty cache.")
 
-	f.DurationVar(&cfg.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion, prefix+"max-time-to-wait-for-async-tracking-response-after-ingestion", 250*time.Millisecond, "Maximum time to wait for an asynchronous tracking response after ingestion request is completed.")
 	f.IntVar(&cfg.MinSeriesLimitForAsyncTracking, prefix+"min-series-limit-for-async-tracking", 0, "Minimum series limit for a user to be eligible for async tracking. Users with a series limit below this threshold will always be tracked synchronously. Set to 0 to disable this check.")
 
-	f.BoolVar(&cfg.UseBatchedTracking, prefix+"use-batched-tracking", false, "Use batched tracking for series. If enabled, the client will track series in batches to reduce RPC traffic.")
 	f.DurationVar(&cfg.BatchDelay, prefix+"batch-delay", 750*time.Millisecond, "How long to accumulate a batch before sending the request.")
 	f.IntVar(&cfg.MaxBatchSeries, prefix+"max-batch-series", 1_000_000, "Maximum number of series to track in a single batch. If 0, no maximum is used.")
 	f.DurationVar(&cfg.TrackSeriesBatchTimeout, prefix+"track-series-batch-timeout", 2*time.Second, "Timeout for tracking series in a batch.")
@@ -253,9 +248,7 @@ func (c *UsageTrackerClient) starting(ctx context.Context) error {
 
 // running implements services.RunningFn.
 func (c *UsageTrackerClient) running(ctx context.Context) error {
-	if c.cfg.UseBatchedTracking {
-		go c.batcher.flusher()
-	}
+	go c.batcher.flusher()
 
 	// In the default (synchronized) mode, a single flusher signals all partitions together so the
 	// usage-tracker server's netpoller can use fewer CPU resources by coalescing multiple socket reads.
