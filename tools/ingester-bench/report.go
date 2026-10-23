@@ -82,15 +82,20 @@ func (s *sampler) snapshot(into *[2]map[string]float64) {
 
 // Report is what a bench run measured, per ingester (A and B) where it applies.
 type Report struct {
-	Ingesters   [2]string            `json:"ingesters"`
-	Series      int                  `json:"series"`
-	Tenants     int                  `json:"tenants"`
-	SamplesPerS float64              `json:"samples_per_second"`
-	Replay      [2]float64           `json:"replay_seconds"`
-	ReplayCPU   [2]ReplayCPU         `json:"replay_cpu"`
-	Counters    [2]Counters          `json:"counters"`
-	Driver      DriverCPU            `json:"driver_cpu"`
-	Steal       StealShare           `json:"steal_share"`
+	Ingesters   [2]string    `json:"ingesters"`
+	Series      int          `json:"series"`
+	Tenants     int          `json:"tenants"`
+	SamplesPerS float64      `json:"samples_per_second"`
+	Replay      [2]float64   `json:"replay_seconds"`
+	ReplayCPU   [2]ReplayCPU `json:"replay_cpu"`
+	Counters    [2]Counters  `json:"counters"`
+	Driver      DriverCPU    `json:"driver_cpu"`
+	Steal       StealShare   `json:"steal_share"`
+	// What each ingester's memory holds at the window's end, after two collections: its live heap and its engine's
+	// accounting of its series and their native metric metadata.
+	EndMemory [2]map[string]float64 `json:"end_memory"`
+	// What a sample of the run's records was made of.
+	Composition Composition          `json:"composition"`
 	WindowS     float64              `json:"window_seconds"`
 	Resources   [2]Resources         `json:"resources"`
 	APIs        map[string]APIReport `json:"apis"`
@@ -248,6 +253,7 @@ func (r Report) print(w io.Writer) {
 		{"replay", r.Replay[0], r.Replay[1], func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
 		{"replay CPU per sample", r.ReplayCPU[0].CPUSecondsPerSample * 1e6, r.ReplayCPU[1].CPUSecondsPerSample * 1e6, func(v float64) string { return fmt.Sprintf("%.3f µs", v) }},
 		{"replay measured", r.ReplayCPU[0].Coverage, r.ReplayCPU[1].Coverage, func(v float64) string { return fmt.Sprintf("%.0f%%", v*100) }},
+		{"heap live at end", r.EndMemory[0][liveHeapMetric], r.EndMemory[1][liveHeapMetric], gib},
 		{"CPU", a.CPUCores, b.CPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
 		{"GC CPU", a.GCCPUCores, b.GCCPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
 		{"allocated", a.AllocBytesPerS, b.AllocBytesPerS, mib},
@@ -307,6 +313,9 @@ func (r Report) print(w io.Writer) {
 		for _, read := range x.Slowest[1][:min(3, len(x.Slowest[1]))] {
 			fmt.Fprintf(w, "  %.1f/%.1f %s\n", read.Ms[0], read.Ms[1], read.Request[:min(len(read.Request), 400)])
 		}
+	}
+	if c := r.Composition; c.Records > 0 {
+		fmt.Fprintf(w, "\nrecords sampled %d: %.0f series each, %.1f series per metadata value, %.1f stand-ins\n", c.Records, c.SeriesPerRecord, c.SeriesPerValue, c.StandInsPerRecord)
 	}
 	fmt.Fprintf(w, "\nbench CPU %.2f cores in the replay, %.2f in the window; steal %s in the replay, %s in the window\n",
 		r.Driver.ReplayCores, r.Driver.WindowCores, share(r.Steal.Replay), share(r.Steal.Window))

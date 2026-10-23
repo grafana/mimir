@@ -110,6 +110,10 @@ func main() {
 	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
 	analyzePath := flag.String("analyze", "", "Compare the runs of this results directory, writing its analysis.json, instead of running a bench: every A/A, and -pairs.")
 	pairs := flag.String("pairs", "", "With -analyze, the comparisons, as baseline:target ingester names, comma separated.")
+	compositionPath := flag.String("composition", "", "Print the composition of the records of this kafkatool dump, of today's record format, instead of running a bench.")
+	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
+	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore ingester names; ablation is optional.")
+	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
 	}
@@ -123,6 +127,30 @@ func main() {
 	}
 	if *burnCPUs > 0 {
 		burn(*burnCPUs)
+	}
+	if *decidePath != "" {
+		pairs, err := parsePhase2Pairs(*arms)
+		if err != nil {
+			log.Fatal(err)
+		}
+		d, err := decidePhase2(*decidePath, pairs, *fullMetadata)
+		if err != nil {
+			log.Fatal(err)
+		}
+		d.print(os.Stdout)
+		if err := writeDecision(*decidePath, d); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if *compositionPath != "" {
+		composition, err := compositionOfDump(*compositionPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		data, _ := json.MarshalIndent(composition, "", "  ")
+		fmt.Println(string(data))
+		return
 	}
 	if *analyzePath != "" {
 		comparisons, err := parseComparisons(*pairs)
@@ -457,15 +485,31 @@ func run(parent context.Context, cfg config) (err error) {
 		}
 	}
 	rec.phase("window", windowStart, time.Now())
-	for i, ing := range ingesters {
-		for _, kind := range []string{"heap", "allocs"} {
-			if err := ing.profile(kind, filepath.Join(cfg.out, fmt.Sprintf("%s-%c.pb.gz", kind, 'a'+i)), 0); err != nil {
-				log.Printf("%s %s profile: %v", ing.name, kind, err)
-			}
-		}
-	}
-	profileWG.Wait()
+	// The memory at the window's end, without reads: after two collections on both ingesters at once, so that what
+	// pools keep is gone, the heap profile of the second, and the live heap and the engines' accounting after it.
 	stopReads(nil)
+	var endMemory [2]map[string]float64
+	var memoryWG sync.WaitGroup
+	for i, ing := range ingesters {
+		memoryWG.Add(1)
+		go func() {
+			defer memoryWG.Done()
+			path := filepath.Join(cfg.out, fmt.Sprintf("heap-%c.pb.gz", 'a'+i))
+			for range 2 {
+				if err := ing.profile("heap?gc=1", path, 0); err != nil {
+					log.Printf("%s heap profile: %v", ing.name, err)
+				}
+			}
+			if m, err := ing.metrics(); err == nil {
+				endMemory[i] = accounting(m)
+			}
+			if err := ing.profile("allocs", filepath.Join(cfg.out, fmt.Sprintf("allocs-%c.pb.gz", 'a'+i)), 0); err != nil {
+				log.Printf("%s allocs profile: %v", ing.name, err)
+			}
+		}()
+	}
+	memoryWG.Wait()
+	profileWG.Wait()
 	log.Printf("waiting for the retries of the reads that differed")
 	retriesStart := time.Now()
 	d.pending.Wait()
@@ -478,7 +522,7 @@ func run(parent context.Context, cfg config) (err error) {
 
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
-		ReplayCPU: replayCPUs, Counters: counted, Driver: driverCPU, Steal: steal,
+		ReplayCPU: replayCPUs, Counters: counted, Driver: driverCPU, Steal: steal, EndMemory: endMemory, Composition: f.Composition(),
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
 		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
 	}

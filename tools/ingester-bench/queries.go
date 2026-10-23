@@ -29,6 +29,8 @@ type request struct {
 	exemplars      *client.ExemplarQueryRequest
 	cardinality    *client.LabelValuesCardinalityRequest
 	userStats      *client.UserStatsRequest
+	// The metric families' metadata.
+	metricsMetadata *client.MetricsMetadataRequest
 }
 
 func (r *request) String() string {
@@ -214,6 +216,11 @@ func (g *queryGen) next(r *rand.Rand, rpc string) *request {
 	req := &request{api: rpc, tenant: t.id}
 	if rpc == "UserStats" {
 		req.userStats = &client.UserStatsRequest{}
+		return req
+	}
+	if rpc == "MetricsMetadata" {
+		// All of the tenant's, as the queriers' /api/v1/metadata reads it without a metric.
+		req.metricsMetadata = &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1}
 		return req
 	}
 	s := g.shape(r, rpc)

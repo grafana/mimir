@@ -55,6 +55,16 @@ type SeriesProfile struct {
 	// scrapes also written up to that far back, as devices that buffer their samples or a delayed pipeline do.
 	BackdatedSeriesShare float64 `json:"backdated_series_share"`
 	BackdatedShare       float64 `json:"backdated_share"`
+	// The series' own metric metadata, as Remote Write 2.0 and OTLP send it: the share of the metrics whose series
+	// send it, the length of its help, whether each series' help is its own rather than its metric's, and the share of
+	// the metrics whose help changes every hour. Requests also carry their metric families' metadata then, as
+	// distributors write it.
+	MetadataShare        float64     `json:"metadata_share"`
+	HelpLength           Percentiles `json:"help_length"`
+	UniqueHelp           bool        `json:"unique_help"`
+	MetadataChurnPerHour float64     `json:"metadata_churn_per_hour"`
+	// Series per request, which is what a tenant's records are cut from.
+	SeriesPerRequest int `json:"series_per_request"`
 }
 
 type QueriesProfile struct {
@@ -264,6 +274,7 @@ func defaultProfile() Profile {
 				"QueryExemplars":          0.07,
 				"LabelValuesCardinality":  0.005,
 				"UserStats":               0.005,
+				"MetricsMetadata":         0.05,
 			},
 			Classes: defaultClasses(),
 		},

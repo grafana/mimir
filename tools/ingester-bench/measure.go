@@ -57,6 +57,20 @@ func spin() {
 	}
 }
 
+const liveHeapMetric = "go_gc_heap_live_bytes"
+
+// accounting picks what EndMemory keeps out of an ingester's metrics: its live heap, its series in memory, and its
+// engine's accounting of their native metric metadata.
+func accounting(m map[string]float64) map[string]float64 {
+	out := map[string]float64{}
+	for name, v := range m {
+		if name == liveHeapMetric || name == "cortex_ingester_memory_series" || strings.Contains(name, "native_metric_metadata") || name == "cortex_ingester_seriesstore_series_entry_capacity" {
+			out[name] = v
+		}
+	}
+	return out
+}
+
 // firstIntervalMs is the longest scrape interval of the world's metrics: every series has a sample in the first one.
 func (w *world) firstIntervalMs() int64 {
 	var longest int64 = 1000

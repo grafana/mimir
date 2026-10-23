@@ -29,13 +29,18 @@ type analyzedRun struct {
 	Started int64       `json:"started"`
 	Names   [2]string   `json:"names"`
 	Stats   [2]runStats `json:"stats"`
-	Discard []string    `json:"discard,omitempty"`
+	// Each ingester's memory at the window's end, and the reads that differed after their retries.
+	Memory     [2]map[string]float64 `json:"memory"`
+	Mismatches int                   `json:"mismatches"`
+	Discard    []string              `json:"discard,omitempty"`
 }
 
 type runStats struct {
 	ReplayCPUPerSample float64 `json:"replay_cpu_seconds_per_sample"`
 	WindowCPUPerSample float64 `json:"window_cpu_seconds_per_sample"`
 	LiveHeap           float64 `json:"heap_live_avg_bytes"`
+	// After two collections at the window's end, with reads paused.
+	LiveHeapEnd float64 `json:"heap_live_end_bytes"`
 }
 
 // statistics are what comparisons compare, the primary first.
@@ -46,6 +51,7 @@ var statistics = []struct {
 	{"replay CPU per sample", func(s runStats) float64 { return s.ReplayCPUPerSample }},
 	{"window CPU per sample", func(s runStats) float64 { return s.WindowCPUPerSample }},
 	{"heap live avg", func(s runStats) float64 { return s.LiveHeap }},
+	{"heap live at end", func(s runStats) float64 { return s.LiveHeapEnd }},
 }
 
 // comparison is a target build and engine against a baseline, by ingester name; an A/A has the same name twice.
@@ -64,6 +70,8 @@ type estimate struct {
 	High float64 `json:"high"`
 	// Whether the interval is stratified by order, which takes two runs of each.
 	Stratified bool `json:"stratified"`
+	// The mean's standard error and degrees of freedom, NaN with fewer than two runs.
+	se, df float64
 }
 
 func (e estimate) MarshalJSON() ([]byte, error) {
@@ -130,10 +138,13 @@ func analyzeResults(results string, comparisons []comparison) (analysis, error) 
 
 // analyzeRun takes a run's statistics from its report, and checks it against the run hygiene.
 func analyzeRun(dir string, report Report) analyzedRun {
-	run := analyzedRun{Dir: dir, Started: report.Started}
+	run := analyzedRun{Dir: dir, Started: report.Started, Memory: report.EndMemory}
+	for _, api := range report.APIs {
+		run.Mismatches += api.Mismatch
+	}
 	for i := range 2 {
 		run.Names[i] = strings.TrimPrefix(report.Ingesters[i], string(rune('A'+i))+" ")
-		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, LiveHeap: report.Resources[i].HeapLiveAvg}
+		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric]}
 		if report.SamplesPerS > 0 {
 			run.Stats[i].WindowCPUPerSample = report.Resources[i].CPUCores / report.SamplesPerS
 		}
@@ -175,9 +186,14 @@ func changedCounters(before, after map[string]float64) []string {
 	return changed
 }
 
-// engineOf is the engine of an ingester named <build>-<engine>, as run-batch.sh names them.
+// engineOf is the engine of an ingester named <build>-<engine>[-metadata], as run-batch.sh names them.
 func engineOf(name string) string {
-	return name[strings.LastIndex(name, "-")+1:]
+	for _, part := range strings.Split(name, "-") {
+		if part == "prometheus" || part == "seriesstore" {
+			return part
+		}
+	}
+	return name
 }
 
 // compareRuns estimates the comparison's differences over the runs that count.
@@ -212,7 +228,7 @@ func compareRuns(runs []analyzedRun, c comparison) comparisonResult {
 // pairedEstimate is the mean of the per-run deltas, by order, with its 95% t-interval: stratified by order, as the
 // mean of the two orders' means, when both have two runs or more, and over all runs otherwise.
 func pairedEstimate(deltas [2][]float64) estimate {
-	e := estimate{Orders: [2]int{len(deltas[0]), len(deltas[1])}, Low: math.NaN(), High: math.NaN()}
+	e := estimate{Orders: [2]int{len(deltas[0]), len(deltas[1])}, Low: math.NaN(), High: math.NaN(), se: math.NaN(), df: math.NaN()}
 	all := append(append([]float64(nil), deltas[0]...), deltas[1]...)
 	if len(all) == 0 {
 		e.Mean = math.NaN()
@@ -230,17 +246,19 @@ func pairedEstimate(deltas [2][]float64) estimate {
 		}
 		e.Stratified = true
 		if variance == 0 {
-			e.Low, e.High = e.Mean, e.Mean
+			e.Low, e.High, e.se, e.df = e.Mean, e.Mean, 0, math.Inf(1)
 			return e
 		}
-		half := tQuantile(0.975, variance*variance/df) * math.Sqrt(variance)
+		e.se, e.df = math.Sqrt(variance), variance*variance/df
+		half := tQuantile(0.975, e.df) * e.se
 		e.Low, e.High = e.Mean-half, e.Mean+half
 		return e
 	}
 	m, v := meanVariance(all)
 	e.Mean = m
 	if len(all) >= 2 {
-		half := tQuantile(0.975, float64(len(all)-1)) * math.Sqrt(v/float64(len(all)))
+		e.se, e.df = math.Sqrt(v/float64(len(all))), float64(len(all)-1)
+		half := tQuantile(0.975, e.df) * e.se
 		e.Low, e.High = m-half, m+half
 	}
 	return e
