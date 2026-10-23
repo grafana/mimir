@@ -173,8 +173,16 @@ func hasShardMatcher(matchers []*labels.Matcher) bool {
 func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogram bool, list func(visit func([]mimirpb.LabelAdapter, int) error) error) error {
 	resp := &client.ActiveSeriesResponse{}
 	currentSize := 0
+	// The metrics are cut from arrays, which appending never moves: a response lists thousands, each its own allocation
+	// otherwise.
+	var metrics []mimirpb.Metric
 	err := list(func(lbls []mimirpb.LabelAdapter, buckets int) error {
-		m := &mimirpb.Metric{Labels: lbls}
+		if len(metrics) == cap(metrics) {
+			// Doubling from small, so a few series don't pay for a large array.
+			metrics = make([]mimirpb.Metric, 0, min(512, max(16, 2*cap(metrics))))
+		}
+		metrics = append(metrics, mimirpb.Metric{Labels: lbls})
+		m := &metrics[len(metrics)-1]
 		mSize := m.Size()
 		if isNativeHistogram {
 			mSize += 8 // 8 bytes for the bucket count.
