@@ -549,7 +549,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		*/
 
 		if schedulerReq.Ctx.Err() != nil {
-			reason := "cancelled"
+			reason := "frontend_cancelled"
 			if errors.Is(context.Cause(schedulerReq.Ctx), errFrontendDisconnected) {
 				reason = "frontend_disconnected"
 			}
