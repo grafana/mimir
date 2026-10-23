@@ -65,6 +65,19 @@ type TSDBMetrics struct {
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
 
+	nativeMetricMetadataSeries    *prometheus.Desc
+	nativeMetricMetadataVersions  *prometheus.Desc
+	nativeMetricMetadataEvictions *prometheus.Desc
+	nativeMetricMetadataOversized *prometheus.Desc
+
+	// The seriesstore engine's keeping of native metric metadata, over all tenants.
+	seriesstoreMetadataValues     *prometheus.Desc
+	seriesstoreMetadataBytes      *prometheus.Desc
+	seriesstoreEntryCapacity      *prometheus.Desc
+	seriesstoreMetadataClamped    *prometheus.Desc
+	seriesstoreMetadataMemoHits   *prometheus.Desc
+	seriesstoreMetadataMemoMisses *prometheus.Desc
+
 	tsdbWalReplayUnknownRefsTotal *prometheus.Desc
 	tsdbWblReplayUnknownRefsTotal *prometheus.Desc
 
@@ -254,6 +267,48 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
 
+		nativeMetricMetadataSeries: prometheus.NewDesc(
+			"tsdb_head_native_metric_metadata_series",
+			"Number of head series with native metric metadata.",
+			[]string{"user"}, nil),
+		nativeMetricMetadataVersions: prometheus.NewDesc(
+			"tsdb_head_native_metric_metadata_versions",
+			"Number of native metric metadata versions in the head.",
+			[]string{"user"}, nil),
+		nativeMetricMetadataEvictions: prometheus.NewDesc(
+			"tsdb_head_native_metric_metadata_version_evictions_total",
+			"Total number of native metric metadata versions evicted by the per-series limit.",
+			[]string{"user"}, nil),
+		nativeMetricMetadataOversized: prometheus.NewDesc(
+			"tsdb_head_native_metric_metadata_oversized_total",
+			"Total number of appended samples whose native metric metadata exceeded the size limit and was skipped.",
+			[]string{"user"}, nil),
+
+		seriesstoreMetadataValues: prometheus.NewDesc(
+			"seriesstore_native_metric_metadata_dictionary_values",
+			"Number of distinct native metric metadata values the seriesstore engine keeps.",
+			nil, nil),
+		seriesstoreMetadataBytes: prometheus.NewDesc(
+			"seriesstore_native_metric_metadata_dictionary_bytes",
+			"Bytes of the type, unit and help of the native metric metadata values the seriesstore engine keeps.",
+			nil, nil),
+		seriesstoreEntryCapacity: prometheus.NewDesc(
+			"seriesstore_series_entry_capacity",
+			"Number of series entries the seriesstore engine's name groups have room for.",
+			nil, nil),
+		seriesstoreMetadataClamped: prometheus.NewDesc(
+			"seriesstore_native_metric_metadata_clamped_total",
+			"Total number of native metric metadata runs whose start was clamped to their shard's base.",
+			nil, nil),
+		seriesstoreMetadataMemoHits: prometheus.NewDesc(
+			"seriesstore_native_metric_metadata_memo_hits_total",
+			"Total number of native metric metadata values found in a batch's memo.",
+			nil, nil),
+		seriesstoreMetadataMemoMisses: prometheus.NewDesc(
+			"seriesstore_native_metric_metadata_memo_misses_total",
+			"Total number of native metric metadata values a batch's memo didn't have yet.",
+			nil, nil),
+
 		tsdbWalReplayUnknownRefsTotal: prometheus.NewDesc(
 			"tsdb_wal_replay_unknown_refs_total",
 			"Total number of unknown series references encountered during WAL replay.",
@@ -327,6 +382,16 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.memSeries
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
+	out <- sm.nativeMetricMetadataSeries
+	out <- sm.nativeMetricMetadataVersions
+	out <- sm.nativeMetricMetadataEvictions
+	out <- sm.nativeMetricMetadataOversized
+	out <- sm.seriesstoreMetadataValues
+	out <- sm.seriesstoreMetadataBytes
+	out <- sm.seriesstoreEntryCapacity
+	out <- sm.seriesstoreMetadataClamped
+	out <- sm.seriesstoreMetadataMemoHits
+	out <- sm.seriesstoreMetadataMemoMisses
 
 	out <- sm.tsdbWalReplayUnknownRefsTotal
 	out <- sm.tsdbWblReplayUnknownRefsTotal
@@ -380,6 +445,16 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGauges(out, sm.memSeries, "prometheus_tsdb_head_series")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeMetricMetadataSeries, "prometheus_tsdb_head_native_metric_metadata_series")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeMetricMetadataVersions, "prometheus_tsdb_head_native_metric_metadata_versions")
+	data.SendSumOfCountersPerTenant(out, sm.nativeMetricMetadataEvictions, "prometheus_tsdb_head_native_metric_metadata_version_evictions_total")
+	data.SendSumOfCountersPerTenant(out, sm.nativeMetricMetadataOversized, "prometheus_tsdb_head_native_metric_metadata_oversized_total")
+	data.SendSumOfGauges(out, sm.seriesstoreMetadataValues, "seriesstore_native_metric_metadata_dictionary_values")
+	data.SendSumOfGauges(out, sm.seriesstoreMetadataBytes, "seriesstore_native_metric_metadata_dictionary_bytes")
+	data.SendSumOfGauges(out, sm.seriesstoreEntryCapacity, "seriesstore_series_entry_capacity")
+	data.SendSumOfCounters(out, sm.seriesstoreMetadataClamped, "seriesstore_native_metric_metadata_clamped_total")
+	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoHits, "seriesstore_native_metric_metadata_memo_hits_total")
+	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoMisses, "seriesstore_native_metric_metadata_memo_misses_total")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWalReplayUnknownRefsTotal, "prometheus_tsdb_wal_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")

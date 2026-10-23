@@ -73,6 +73,8 @@ type floatSource interface {
 	// pairs appends the series' label pairs to into, and returns its metric name.
 	pairs(index int, into [][2]string) ([][2]string, string)
 	samples(index int) []mimirpb.Sample
+	// metricMetadataID is the id of the series' own metric metadata through memo, or 0 without any it keeps.
+	metricMetadataID(index int, memo *metadataMemo) uint32
 }
 
 // adapterSource is the series of a decoded request.
@@ -110,6 +112,10 @@ func sameLabels(l labels.Labels, series *floatSeries, keys []byte, pairs [][2]st
 	return l.EqPairs(pairs[series.pairsAt:series.pairsTo])
 }
 
+func (s adapterSource) metricMetadataID(index int, memo *metadataMemo) uint32 {
+	return memo.byContent(s[index].SeriesMetadata)
+}
+
 func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
@@ -120,7 +126,13 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 		minValidTime = appendableMinValidTime(maxTime, minValid)
 		oooWindow    = e.oooWindow.Load()
 		appender     = &engineAppender{e: e, headMaxt: headMaxt, minValidTime: minValidTime, oooWindow: oooWindow}
+		// The ids of the batch's metadata values, while the series' own metadata is kept.
+		memo *metadataMemo
 	)
+	if e.nativeMetadata.Load() {
+		memo = e.newMetadataMemo()
+		defer memo.release()
+	}
 
 	// Group the series by their store shard, which the labels' hash decides, before taking any lock.
 	shards := len(e.store.shards)
@@ -391,6 +403,10 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						accepted = append(accepted, sample)
 					}
 					ingested += len(accepted)
+					var metadataID uint32
+					if memo != nil && len(accepted) > 0 {
+						metadataID = source.metricMetadataID(prep.index, memo)
+					}
 					if len(accepted) == 1 && acceptedInOrder {
 						// The usual scrape: one in-order float, which the series' state still allows, so it is
 						// appended without checking it again.
@@ -400,6 +416,9 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 							stop, err = true, appendErr
 						} else if !result.noop {
 							inOrderMin, inOrderMax = min(inOrderMin, sample.TimestampMs), max(inOrderMax, sample.TimestampMs)
+							if metadataID != 0 {
+								e.observeMetadataLocked(t, &entry.series, metadataID, sample.TimestampMs)
+							}
 						}
 						accepted = accepted[:0]
 					}
@@ -415,6 +434,10 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						}
 						if ooo {
 							oooMin, oooMax = min(oooMin, sample.TimestampMs), max(oooMax, sample.TimestampMs)
+						}
+						// A quiet zero, which goes in as 0, carries no metadata.
+						if metadataID != 0 && (inOrder || ooo) && math.Float64bits(sample.Value) != value.QuietZeroNaN {
+							e.observeMetadataLocked(t, &entry.series, metadataID, sample.TimestampMs)
 						}
 					}
 					if ingested > oldIngested {
