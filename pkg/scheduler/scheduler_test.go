@@ -218,10 +218,12 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 
 	verifyNoPendingRequestsLeft(t, scheduler)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+		# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome. The no_waiter outcome means that the query-frontend no longer waited for the query.
 		# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
-		cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="no_waiter"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="other"} 0
 		cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="unavailable"} 0
 	`), "cortex_query_scheduler_dropped_requests_total", "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total"))
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
@@ -817,7 +819,7 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 		require.Equal(t, int32(http.StatusInternalServerError), httpResp.Code)
 		return true
 	})
-	verifyErrorForwardMetrics(t, reg, 1, 0)
+	verifyErrorForwardMetrics(t, reg, "success")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -873,7 +875,7 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 		require.Equal(t, expected, grpcResp)
 		return true
 	})
-	verifyErrorForwardMetrics(t, reg, 1, 0)
+	verifyErrorForwardMetrics(t, reg, "success")
 
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
@@ -903,8 +905,93 @@ func TestSchedulerForwardsErrorToFrontend_FrontendUnreachable(t *testing.T) {
 	// The error forward to the query-frontend fails.
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
-	verifyErrorForwardMetrics(t, reg, 0, 1)
+	verifyErrorForwardMetrics(t, reg, "unavailable")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerForwardsErrorToFrontend_FrontendNoLongerWaits(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+	frontendAddress := newRejectingFrontend(t, status.Error(codes.FailedPrecondition, "query 100 not found, cancelled or response already received"))
+
+	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue the query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	// The query-frontend rejects the error, because it no longer waits for the query.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	verifyErrorForwardMetrics(t, reg, "no_waiter")
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestFrontendErrorForwardOutcome(t *testing.T) {
+	frontendCancelled, cancelFrontendCancelled := context.WithCancelCause(t.Context())
+	cancelFrontendCancelled(cancellation.NewError(errors.New("frontend cancelled query")))
+	frontendDisconnected, cancelFrontendDisconnected := context.WithCancelCause(t.Context())
+	cancelFrontendDisconnected(errFrontendDisconnected)
+
+	tests := map[string]struct {
+		ctx      context.Context
+		err      error
+		expected string
+	}{
+		"query-frontend no longer has the query": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.FailedPrecondition, "query 1 not found, cancelled or response already received"),
+			expected: "no_waiter",
+		},
+		"query-frontend cancelled the query": {
+			ctx:      frontendCancelled,
+			err:      status.Error(codes.Canceled, "context canceled"),
+			expected: "no_waiter",
+		},
+		"query-frontend disconnected": {
+			ctx:      frontendDisconnected,
+			err:      status.Error(codes.Canceled, "context canceled"),
+			expected: "other",
+		},
+		"cancelled with a live request context": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.Canceled, "context canceled: stream closed"),
+			expected: "other",
+		},
+		"query-frontend unreachable": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.Unavailable, "connection refused"),
+			expected: "unavailable",
+		},
+		"deadline exceeded": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.DeadlineExceeded, "context deadline exceeded"),
+			expected: "other",
+		},
+		"status lost at send": {
+			ctx:      t.Context(),
+			err:      io.EOF,
+			expected: "other",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, frontendErrorForwardOutcome(tc.ctx, tc.err))
+		})
+	}
 }
 
 func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
@@ -1174,18 +1261,23 @@ func verifyDroppedRequests(t *testing.T, reg prometheus.Gatherer, reason string)
 	})
 }
 
-// verifyErrorForwardMetrics expects exactly one querier request failure.
-func verifyErrorForwardMetrics(t *testing.T, reg prometheus.Gatherer, successes, failures int) {
+// verifyErrorForwardMetrics expects exactly one querier request failure, forwarded with the given outcome.
+func verifyErrorForwardMetrics(t *testing.T, reg prometheus.Gatherer, outcome string) {
+	expected := map[string]int{"no_waiter": 0, "other": 0, "success": 0, "unavailable": 0}
+	expected[outcome] = 1
+
 	test.Poll(t, time.Second, nil, func() interface{} {
 		return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome. The no_waiter outcome means that the query-frontend no longer waited for the query.
 			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
-			cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="no_waiter"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="other"} %d
 			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="unavailable"} %d
 			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
 			# TYPE cortex_query_scheduler_querier_request_failures_total counter
 			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
-		`, failures, successes)), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
+		`, expected["no_waiter"], expected["other"], expected["success"], expected["unavailable"])), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
 	})
 }
 
@@ -1293,4 +1385,35 @@ func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*fr
 	defer f.mu.Unlock()
 
 	return f.httpResponses[queryID], f.grpcResponses[queryID]
+}
+
+// rejectingFrontend replies to every query result stream with an error.
+type rejectingFrontend struct {
+	frontendv2pb.UnimplementedFrontendForQuerierServer
+	replyErr error
+}
+
+func newRejectingFrontend(t *testing.T, replyErr error) string {
+	server := grpc.NewServer()
+	frontendv2pb.RegisterFrontendForQuerierServer(server, &rejectingFrontend{replyErr: replyErr})
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		_ = server.Serve(l)
+	}()
+
+	t.Cleanup(server.Stop)
+
+	return l.Addr().String()
+}
+
+func (f *rejectingFrontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	// Read the first message before the reply, as the query-frontend does.
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+
+	return f.replyErr
 }
