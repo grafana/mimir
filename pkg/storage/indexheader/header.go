@@ -66,6 +66,10 @@ type Reader interface {
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
+
+	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name,
+	// from what the index-header holds in memory, without reading the postings offset table.
+	LabelValuesCountLowerBound(ctx context.Context, name string) (int, error)
 }
 
 type Config struct {
