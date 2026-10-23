@@ -113,6 +113,11 @@ type BucketStore struct {
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
 
+	// countGate limits the cardinality estimate count requests running at once, apart from queryGate.
+	countGate gate.Gate
+	// countBlockConcurrency is how many blocks one count request reads at once.
+	countBlockConcurrency int
+
 	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one
 	// cardinality estimate may read, which bounds every SeriesCounts call.
 	cardinalityEstimateMaxIndexBytes func() int64
@@ -195,6 +200,14 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
+// WithCountGate sets the gate limiting the cardinality estimate count requests running at once, instead
+// of a gate.NewNoop().
+func WithCountGate(countGate gate.Gate) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.countGate = countGate
+	}
+}
+
 // WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on the index bytes
 // one cardinality estimate may read.
 func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
@@ -238,6 +251,8 @@ func NewBucketStore(
 		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
 		lazyLoadingGate:             gate.NewNoop(),
+		countGate:                   gate.NewNoop(),
+		countBlockConcurrency:       max(1, bucketStoreConfig.CardinalityEstimateBlockConcurrency),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
