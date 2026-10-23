@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -19,10 +22,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type ingestersMock struct {
@@ -58,6 +63,8 @@ func (l ingestersWithinLimit) QueryIngestersWithin(string) time.Duration { retur
 func (ingestersWithinLimit) CardinalityEstimateEnabled(string) bool { return true }
 
 func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return 0 }
+
+func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
 
 // indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
 // estimate.
@@ -515,4 +522,65 @@ func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
 			assert.Equal(t, tc.want/2, ing.gotSeriesCounts.MaxIndexBytes, "the ingesters' share")
 		})
 	}
+}
+
+// estimateMemoryLimits is ingestersWithinLimit with both memory limits.
+type estimateMemoryLimits struct {
+	ingestersWithinLimit
+	estimate, query uint64
+}
+
+func (l estimateMemoryLimits) CardinalityEstimateMaxMemoryBytes(string) uint64 { return l.estimate }
+
+func (l estimateMemoryLimits) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return l.query }
+
+func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	// 100 hashes held cost 2,400 bytes plus the group.
+	hashes := make([]uint64, 100)
+	for i := range hashes {
+		hashes[i] = uint64(i + 1)
+	}
+	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
+	}}}
+
+	for name, tc := range map[string]struct {
+		estimate, query uint64
+		refused         bool
+	}{
+		"the estimate's limit applies with no query limit":        {estimate: 1000, refused: true},
+		"the estimate's limit applies when the query's is higher": {estimate: 1000, query: 1 << 20, refused: true},
+		"a lower query limit applies":                             {estimate: 1 << 20, query: 1000, refused: true},
+		"under both":                                              {estimate: 1 << 20, query: 1 << 20},
+		"neither":                                                 {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
+			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder}}, queryStoreAfter: 12 * time.Hour, metrics: newBlocksStoreQueryableMetrics(compartments.Config{}, reg)}
+			e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query})
+			e.now = func() time.Time { return now }
+			_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+			want := 0
+			if tc.refused {
+				require.ErrorContains(t, err, "the groups and hashes this estimate holds in the querier")
+				assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+				want = 1
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, float64(want), testutil.ToFloat64(q.metrics.estimateMemoryRejected))
+		})
+	}
+
+	t.Run("the default limits bound an estimate", func(t *testing.T) {
+		var defaults validation.Limits
+		flagext.DefaultValues(&defaults)
+		assert.Equal(t, uint64(256<<20), defaults.CardinalityEstimateMaxMemoryBytes, "sized for the design's 10M held hashes at 24 bytes each")
+		assert.Zero(t, defaults.MaxEstimatedMemoryConsumptionPerQuery)
+		assert.Equal(t, uint64(256<<20), estimateMemoryLimit(defaults.CardinalityEstimateMaxMemoryBytes, defaults.MaxEstimatedMemoryConsumptionPerQuery))
+	})
 }
