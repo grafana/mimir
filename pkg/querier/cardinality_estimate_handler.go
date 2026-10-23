@@ -108,8 +108,9 @@ type estimateCheck struct {
 // or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
 // It takes start, end, an optional match[] selector, group_by (default
 // __name__), step for per-bucket counts, max_index_bytes to cap the index
-// bytes the request reads (over it the request fails with 422 and nothing is
-// counted), sketch_above to send an HLL sketch instead of hashes for a group
+// bytes the request reads, at most the tenant's
+// -querier.cardinality-estimate-max-index-bytes and that limit when unset
+// (over it the request fails with 422 and nothing is counted), sketch_above to send an HLL sketch instead of hashes for a group
 // with more series than that when deduplicating across block ranges
 // (default 10000, 0 for always exact), min_count to drop groups below a
 // count, limit to keep the largest groups, and snap=true to widen a window

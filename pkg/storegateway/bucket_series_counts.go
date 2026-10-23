@@ -303,6 +303,10 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// The tenant's limit also bounds a call that sets no max_index_bytes, or a larger one, whoever sends it.
+	if s.cardinalityEstimateMaxIndexBytes != nil {
+		c.maxIndexBytes = cardinality.BoundMaxIndexBytes(c.maxIndexBytes, s.cardinalityEstimateMaxIndexBytes())
+	}
 	// A __query_shard__ matcher, as query sharding sends to Series, counts only
 	// the series whose label-set hash falls in that shard. Shards share no
 	// series, so their counts add up and their hashes union to the total.

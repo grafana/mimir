@@ -113,6 +113,10 @@ type BucketStore struct {
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
 
+	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one
+	// cardinality estimate may read, which bounds every SeriesCounts call.
+	cardinalityEstimateMaxIndexBytes func() int64
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -188,6 +192,14 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.queryGate = queryGate
+	}
+}
+
+// WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on the index bytes
+// one cardinality estimate may read.
+func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.cardinalityEstimateMaxIndexBytes = limit
 	}
 }
 
