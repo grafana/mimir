@@ -506,6 +506,12 @@ type metadataMemo struct {
 	stats      *metricMetadataStats
 	refs       map[[3]uint32]uint32
 	content    map[metadata.Metadata]uint32
+	// The last value byRefs found, which a record's next series, of the same family, likely has too.
+	lastRefs  [3]uint32
+	lastRefID uint32
+	lastSet   bool
+	// Without the record memo, the ids looked up by content for each series, each with a reference.
+	uncached []uint32
 }
 
 func (e *Engine) newMetadataMemo() *metadataMemo {
@@ -514,8 +520,23 @@ func (e *Engine) newMetadataMemo() *metadataMemo {
 
 // byRefs is the id of a record's metadata value, by its type and symbol references.
 func (m *metadataMemo) byRefs(key [3]uint32, value mimirpb.SeriesMetadata) uint32 {
+	if !recordMemo {
+		kept, ok := metricMetadataOf(value, m.stats)
+		if !ok {
+			return 0
+		}
+		m.stats.memoMisses.Add(1)
+		id := m.dictionary.intern(kept)
+		m.uncached = append(m.uncached, id)
+		return id
+	}
+	if m.lastSet && key == m.lastRefs {
+		m.stats.memoHits.Add(1)
+		return m.lastRefID
+	}
 	if id, ok := m.refs[key]; ok {
 		m.stats.memoHits.Add(1)
+		m.lastRefs, m.lastRefID = key, id
 		return id
 	}
 	m.stats.memoMisses.Add(1)
@@ -527,6 +548,7 @@ func (m *metadataMemo) byRefs(key [3]uint32, value mimirpb.SeriesMetadata) uint3
 		id = m.dictionary.intern(kept)
 	}
 	m.refs[key] = id
+	m.lastRefs, m.lastRefID, m.lastSet = key, id, true
 	return id
 }
 
@@ -563,8 +585,13 @@ func (m *metadataMemo) release() {
 	for _, id := range m.content {
 		m.dictionary.release(id)
 	}
+	for _, id := range m.uncached {
+		m.dictionary.release(id)
+	}
 	clear(m.refs)
 	clear(m.content)
+	m.lastSet = false
+	m.uncached = m.uncached[:0]
 }
 
 // SetNativeMetricMetadata sets whether the series' own metric metadata is kept, from the next batch on.
