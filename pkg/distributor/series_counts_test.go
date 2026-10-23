@@ -217,3 +217,11 @@ func combineSeriesCounts(res SeriesCountsResult) map[string]int64 {
 	}
 	return out
 }
+
+func TestMaxOverZones_OutOfOrderNotCounted(t *testing.T) {
+	out := maxOverZones(map[string][]*client.SeriesCountsResponse{
+		"zone-a": {{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}}},
+		"zone-b": {{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, OutOfOrderNotCounted: true}},
+	})
+	assert.True(t, out.OutOfOrderNotCounted, "any zone's out-of-order samples may be the ones not counted")
+}
