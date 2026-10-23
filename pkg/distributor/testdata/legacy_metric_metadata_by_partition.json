@@ -1,0 +1,98 @@
+{
+  "exemplars=false": {
+    "mimirpb": {
+      "0": {
+        "requests_total": [
+          "COUNTER|Requests served.|requests",
+          "COUNTER|Requests.|requests"
+        ]
+      },
+      "1": {
+        "exemplars_total": [
+          "GAUGE|With exemplars.|"
+        ]
+      },
+      "2": {
+        "latency_seconds": [
+          "HISTOGRAM|Latency.|seconds"
+        ]
+      },
+      "3": {
+        "no_series": [
+          "GAUGE|No series of its own.|"
+        ]
+      }
+    },
+    "seriesstore": {
+      "0": {
+        "requests_total": [
+          "COUNTER|Requests served.|requests",
+          "COUNTER|Requests.|requests"
+        ]
+      },
+      "1": {
+        "exemplars_total": [
+          "GAUGE|With exemplars.|"
+        ]
+      },
+      "2": {
+        "latency_seconds": [
+          "HISTOGRAM|Latency.|seconds"
+        ]
+      },
+      "3": {
+        "no_series": [
+          "GAUGE|No series of its own.|"
+        ]
+      }
+    }
+  },
+  "exemplars=true": {
+    "mimirpb": {
+      "0": {
+        "requests_total": [
+          "COUNTER|Requests served.|requests",
+          "COUNTER|Requests.|requests"
+        ]
+      },
+      "1": {
+        "exemplars_total": [
+          "GAUGE|With exemplars.|"
+        ]
+      },
+      "2": {
+        "latency_seconds": [
+          "HISTOGRAM|Latency.|seconds"
+        ]
+      },
+      "3": {
+        "no_series": [
+          "GAUGE|No series of its own.|"
+        ]
+      }
+    },
+    "seriesstore": {
+      "0": {
+        "requests_total": [
+          "COUNTER|Requests served.|requests",
+          "COUNTER|Requests.|requests"
+        ]
+      },
+      "1": {
+        "exemplars_total": [
+          "GAUGE|With exemplars.|"
+        ]
+      },
+      "2": {
+        "latency_seconds": [
+          "HISTOGRAM|Latency.|seconds"
+        ]
+      },
+      "3": {
+        "no_series": [
+          "GAUGE|No series of its own.|"
+        ]
+      }
+    }
+  }
+}
