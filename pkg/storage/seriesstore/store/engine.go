@@ -116,7 +116,7 @@ type Engine struct {
 	// Whether the ingester has the tenant's series' own metric metadata kept, which it sets for each batch.
 	nativeMetadata atomic.Bool
 	// The values of the series' metadata, the series' runs being their shards', and what wasn't kept as it came.
-	metricMetadata      *metricMetadataDictionary
+	metricMetadata      *metricMetadataValues
 	metricMetadataStats metricMetadataStats
 	// The oldest time a series' metadata was first observed at since the engine opened, math.MaxInt64 before.
 	metadataObservedFrom atomic.Int64
@@ -148,7 +148,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
 	// A restored head may hold out-of-order data that was never compacted.
 	e.oooDirty.Store(true)
-	e.metricMetadata = newMetricMetadataDictionary()
+	e.metricMetadata = newMetricMetadataValues()
 	e.metricMetadataStats.onCoalesced = opts.OnMetricMetadataCoalesced
 	e.metadataObservedFrom.Store(math.MaxInt64)
 	// No commit has seen the head's times yet.
