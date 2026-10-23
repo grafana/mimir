@@ -4764,6 +4764,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
+# (experimental) Store each series' metric metadata (type, unit and help) in the
+# ingester's memory, as versions over time, in addition to the metric families'
+# metadata. It applies when the tenant's TSDB opens.
+# CLI flag: -ingester.native-metric-metadata-enabled
+[native_metric_metadata_enabled: <boolean> | default = false]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

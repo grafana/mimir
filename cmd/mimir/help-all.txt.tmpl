@@ -1953,6 +1953,8 @@ Usage of ./cmd/mimir/mimir:
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
+  -ingester.native-metric-metadata-enabled
+    	[experimental] Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. It applies when the tenant's TSDB opens.
   -ingester.out-of-order-blocks-external-label-enabled
     	Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration

@@ -207,6 +207,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
 		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
 		EnableHistogramSTEncoding:            i.limits.HistogramSTEncodingEnabled(userID),
+		EnableNativeMetadata:                 i.limits.NativeMetricMetadataEnabled(userID),
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
@@ -239,6 +240,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
+
+	if engine, ok := db.(nativeMetadataEngine); ok {
+		userDB.nativeMetadata = engine
+	}
 
 	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
 	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {
