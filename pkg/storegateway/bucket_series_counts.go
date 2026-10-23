@@ -6,9 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -36,15 +34,21 @@ import (
 // 2^11 registers, a standard error of about 2.3%.
 const SeriesCountsSketchPrecision = cardinality.SketchPrecision
 
-// countBlockConcurrency is how many blocks one count request reads at once.
-// HEADCOUNT_BLOCK_CONCURRENCY overrides it; 1 reads blocks one after another,
-// as the prototype did before 2026-10-12.
-var countBlockConcurrency = func() int {
-	if n, err := strconv.Atoi(os.Getenv("HEADCOUNT_BLOCK_CONCURRENCY")); err == nil && n > 0 {
-		return n
+// startCount waits for a slot on the count gate, which cardinality estimate count requests take instead of
+// the query gate. It returns the function that frees the slot. A store-gateway too busy to start the
+// request in time answers Unavailable, so the querier asks another one for the same blocks.
+func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
+	if err := s.countGate.Start(ctx); err != nil {
+		if errors.Is(err, errGateTimeout) {
+			return nil, status.Error(codes.Unavailable, "too many cardinality estimate count requests running: "+err.Error())
+		}
+		if ctx.Err() != nil {
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
-	return 16
-}()
+	return s.countGate.Done, nil
+}
 
 // maxSeriesCountsBuckets caps step_ms so a request can't ask for a huge
 // count slice per group.
@@ -315,6 +319,11 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	c.matchers = matchers
+	done, err := s.startCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	want := make(map[ulid.ULID]bool, len(req.BlockIds))
 	for _, id := range req.BlockIds {
 		parsed, err := ulid.Parse(id)
@@ -357,7 +366,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		s.recordSeriesStats(st)
 	}()
 	pg, pctx := errgroup.WithContext(ctx)
-	pg.SetLimit(countBlockConcurrency)
+	pg.SetLimit(s.countBlockConcurrency)
 	for i := range blocks {
 		o := &blocks[i]
 		pg.Go(func() error {
@@ -415,7 +424,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	resp := &storegatewaypb.SeriesCountsResponse{}
 	var mtx sync.Mutex
 	sg, sctx := errgroup.WithContext(ctx)
-	sg.SetLimit(countBlockConcurrency)
+	sg.SetLimit(s.countBlockConcurrency)
 	for _, o := range blocks {
 		if o.groupOffsets != nil {
 			resp.BlocksFromPostings++

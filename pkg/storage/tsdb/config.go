@@ -109,6 +109,8 @@ var (
 	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
+	errInvalidCardinalityEstimateMaxConcurrent      = errors.New("invalid store-gateway cardinality estimate max concurrent, must not be negative")
+	errInvalidCardinalityEstimateBlockConcurrency   = errors.New("invalid store-gateway cardinality estimate block concurrency, must be positive")
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
@@ -435,6 +437,10 @@ type BucketStoreConfig struct {
 	BucketIndex                            BucketIndexConfig           `yaml:"bucket_index"`
 	IgnoreBlocksWithin                     time.Duration               `yaml:"ignore_blocks_within" category:"advanced"`
 
+	// Cardinality estimate count RPCs.
+	CardinalityEstimateMaxConcurrent    int `yaml:"cardinality_estimate_max_concurrent" category:"experimental"`
+	CardinalityEstimateBlockConcurrency int `yaml:"cardinality_estimate_block_concurrency" category:"experimental"`
+
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
@@ -480,6 +486,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.IgnoreDeletionMarksWhileQueryingDelay, ignoreDeletionMarksWhileQueryingDelayFlag, 50*time.Minute, "Duration after which blocks marked for deletion will still be queried. "+
 		"This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
+	f.IntVar(&cfg.CardinalityEstimateMaxConcurrent, "blocks-storage.bucket-store.cardinality-estimate-max-concurrent", 8, "Maximum number of cardinality estimate count requests (SeriesCounts and MetricNameCounts) a store-gateway runs at once, across all tenants. Further requests wait for their turn for up to -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then retried on another store-gateway. These requests don't take a slot of -blocks-storage.bucket-store.max-concurrent. 0 means no limit.")
+	f.IntVar(&cfg.CardinalityEstimateBlockConcurrency, "blocks-storage.bucket-store.cardinality-estimate-block-concurrency", 16, "Number of blocks one cardinality estimate count request reads at once.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytesChunks, "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks", 0, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks")
@@ -491,6 +499,12 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.CardinalityEstimateMaxConcurrent < 0 {
+		return errInvalidCardinalityEstimateMaxConcurrent
+	}
+	if cfg.CardinalityEstimateBlockConcurrency <= 0 {
+		return errInvalidCardinalityEstimateBlockConcurrency
 	}
 	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
 		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have

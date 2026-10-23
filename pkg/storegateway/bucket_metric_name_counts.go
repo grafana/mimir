@@ -41,6 +41,11 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	if req.MaxNames < 0 {
 		return status.Error(codes.InvalidArgument, "max_names can't be negative")
 	}
+	done, err := s.startCount(ctx)
+	if err != nil {
+		return err
+	}
+	defer done()
 
 	// Take an index reader for each block inside the lock, which keeps the block open, and do the
 	// index-header walk outside it so block removal is not held up by a long header read.
@@ -65,7 +70,7 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	blockIDs := make([]string, 0, len(blocks))
 	var mtx sync.Mutex
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(countBlockConcurrency)
+	g.SetLimit(s.countBlockConcurrency)
 	for _, o := range blocks {
 		g.Go(func() error {
 			// Each block is read into its own map, then added under the lock.
