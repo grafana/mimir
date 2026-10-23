@@ -1,0 +1,18 @@
+{
+  "prometheus": [
+    "exemplars_total|GAUGE|With exemplars.|",
+    "latency_seconds|HISTOGRAM|Latency.|seconds",
+    "no_series|GAUGE|No series of its own.|",
+    "requests_total|COUNTER|Requests served.|requests",
+    "requests_total|COUNTER|Requests.|requests",
+    "stripped_total|COUNTER|Stripped of its exemplars.|"
+  ],
+  "seriesstore": [
+    "exemplars_total|GAUGE|With exemplars.|",
+    "latency_seconds|HISTOGRAM|Latency.|seconds",
+    "no_series|GAUGE|No series of its own.|",
+    "requests_total|COUNTER|Requests served.|requests",
+    "requests_total|COUNTER|Requests.|requests",
+    "stripped_total|COUNTER|Stripped of its exemplars.|"
+  ]
+}
