@@ -130,6 +130,7 @@
 * [BUGFIX] MQE: `rate()`, `increase()`, `delta()`, `idelta()` and the `+` and `-` operators now fail with an error instead of crashing the querier or ruler when they have to reduce the resolution of a native histogram with an invalid bucket layout, such as the negative span offsets described in #16343. #16952
 * [BUGFIX] Querier: `histogram_quantile()`, `histogram_quantiles()` and `histogram_fraction()` now ignore classic histogram buckets with `le="NaN"` and return a warning. Previously, such buckets were included in the calculation. #16952
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
+* [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
 
 ### Mixin
 
