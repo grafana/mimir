@@ -1,0 +1,9 @@
+# The native metadata prototype's smoke run, which `make native-metadata-gates` runs: the Prometheus TSDB against the
+# seriesstore engine, both of the tree.
+a:
+  name: prometheus
+b:
+  name: seriesstore
+  args:
+    blocks-storage.tsdb.engine: seriesstore
+    blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"
