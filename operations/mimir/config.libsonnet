@@ -105,9 +105,6 @@
     // Computed from compactor replicas by default, but can also be specified as percentage, for example "25%".
     cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
 
-    // Enable use of bucket index by querier, ruler and store-gateway.
-    bucket_index_enabled: true,
-
     store_gateway_replication_factor: 3,
 
     // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
@@ -229,6 +226,11 @@
       else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
       else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
       ]: $._config.blocks_storage_bucket_name,
+    },
+
+    bucketIndexConfig:: {
+      // Bucket index is updated by compactor on each cleanup cycle.
+      'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
     },
 
     queryBlocksStorageConfig:: {
@@ -384,10 +386,16 @@
     // Configmaps mounted to all components. Maps config map name to mount point.
     configmaps: {
       [$._config.overrides_configmap]: $._config.overrides_configmap_mountpoint,
+    } + {
+      [name]: extraOverridesConfigmapMountpoint(name)
+      for name in std.objectFields($.extra_overrides_configs)
     },
 
     // Paths to runtime config files. Paths are passed to -runtime-config.files in specified order.
-    runtime_config_files: ['%s/overrides.yaml' % $._config.overrides_configmap_mountpoint],
+    runtime_config_files: ['%s/overrides.yaml' % $._config.overrides_configmap_mountpoint] + [
+      '%s/overrides.yaml' % extraOverridesConfigmapMountpoint(name)
+      for name in std.objectFields($.extra_overrides_configs)
+    ],
 
     overrides: {
       extra_small_user:: {
@@ -595,6 +603,31 @@
 
   local configMap = $.core.v1.configMap,
 
+  local extraOverridesConfigmapMountpoint(name) = '%s-%s' % [$._config.overrides_configmap_mountpoint, name],
+
+  local clashingExtraOverridesConfigmapErrors = [
+    'tenant "configmap" field "%s" clashes with configmaps (mounted at "%s", not "%s"): use another name'
+    % [name, $._config.configmaps[name], extraOverridesConfigmapMountpoint(name)]
+    for name in std.objectFields($.extra_overrides_configs)
+    if $._config.configmaps[name] != extraOverridesConfigmapMountpoint(name)
+  ],
+
+  // The hidden "configmap" field of a tenant sets its config map (default: overrides_configmap).
+  // A list of names puts the tenant in more than one config map, for migrations.
+  local overridesConfigmaps(tenantOverrides) =
+    if !std.isObject(tenantOverrides) || !std.objectHasAll(tenantOverrides, 'configmap') then [$._config.overrides_configmap]
+    else if std.isArray(tenantOverrides.configmap) then tenantOverrides.configmap
+    else [tenantOverrides.configmap],
+
+  overrides_by_configmap:: {
+    [name]: {
+      [tenant]: $._config.overrides[tenant]
+      for tenant in std.objectFields($._config.overrides)
+      if std.member(overridesConfigmaps($._config.overrides[tenant]), name)
+    }
+    for name in std.set([$._config.overrides_configmap] + std.flattenArrays([overridesConfigmaps($._config.overrides[tenant]) for tenant in std.objectFields($._config.overrides)]))
+  },
+
   overrides_config:
     configMap.new($._config.overrides_configmap) +
     configMap.withData({
@@ -602,13 +635,25 @@
         {
           // Recursively remove fields whose value has been explicitly set to "null". This technique allow us
           // us to easily remove fields using jsonnet overrides.
-          overrides: $.util.removeNulls($._config.overrides),
+          overrides: $.util.removeNulls($.overrides_by_configmap[$._config.overrides_configmap]),
         }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
         + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
     }),
+
+  extra_overrides_configs: {
+    [name]:
+      configMap.new(name) +
+      configMap.withData({
+        'overrides.yaml': $.util.manifestYaml({ overrides: $.util.removeNulls($.overrides_by_configmap[name]) }),
+      })
+    for name in std.objectFields($.overrides_by_configmap)
+    if name != $._config.overrides_configmap
+  } + {
+    assert clashingExtraOverridesConfigmapErrors == [] : std.join('\n', clashingExtraOverridesConfigmapErrors),
+  },
 
   // This removed the CPU limit from the config.  NB won't show up in subset
   // diffs, but ks apply will do the right thing.
@@ -712,12 +757,6 @@
       } else {}
     ),
 
-  bucket_index_config:: if $._config.bucket_index_enabled then {
-    // Bucket index is updated by compactor on each cleanup cycle.
-    'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
-  } else {
-    'blocks-storage.bucket-store.bucket-index.enabled': false,
-  },
 
   base_range_vector_splitting_config:: {
     'querier.mimir-query-engine.range-vector-splitting.enabled': true,

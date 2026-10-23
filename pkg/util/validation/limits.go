@@ -26,6 +26,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -44,6 +45,7 @@ const (
 	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
+	LabelValueBytesMetricThresholdFlag          = "ingester.label-value-bytes-metric-threshold"
 	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
@@ -56,6 +58,7 @@ const (
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                     = "validation.max-length-label-value"
 	LabelValueLengthOverLimitStrategyFlag       = "validation.label-value-length-over-limit-strategy"
+	BlockedLabelNamesForLabelValueBytesFlag     = "validation.blocked-label-names-for-label-value-bytes"
 	MaxMetadataLengthFlag                       = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag               = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
@@ -95,6 +98,7 @@ var (
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
+	errInvalidHistogramChunkEncoding               = fmt.Errorf("invalid histogram chunk encoding (supported values: %s)", strings.Join(HistogramChunkEncodingValues, ", "))
 )
 
 const (
@@ -125,6 +129,37 @@ func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
 		return enc
 	}
 	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
+
+// DefaultHistogramChunkEncodingValue is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit used
+// when the limit is unset, or holds a value this version does not support. It selects the EncHistogram and
+// EncFloatHistogram chunk encodings.
+const DefaultHistogramChunkEncodingValue = "histogram"
+
+// HistogramChunkEncodingST is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit that selects the
+// start-timestamp-capable EncHistogramST and EncFloatHistogramST chunk encodings.
+const HistogramChunkEncodingST = "histogram_st"
+
+// histogramChunkEncodings maps every value the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts to
+// whether it selects the start-timestamp-capable histogram chunk encodings.
+var histogramChunkEncodings = map[string]bool{
+	DefaultHistogramChunkEncodingValue: false,
+	HistogramChunkEncodingST:           true,
+}
+
+// HistogramChunkEncodingValues holds the values the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var HistogramChunkEncodingValues = slices.Sorted(maps.Keys(histogramChunkEncodings))
+
+// ParseHistogramSTEncodingEnabled returns whether the given value of the
+// -blocks-storage.tsdb.histogram-chunk-encoding limit selects the start-timestamp-capable histogram chunk
+// encodings. A value the limit does not accept, the empty string included, selects the encodings of
+// DefaultHistogramChunkEncodingValue.
+func ParseHistogramSTEncodingEnabled(value string) bool {
+	if enabled, ok := histogramChunkEncodings[value]; ok {
+		return enabled
+	}
+	return histogramChunkEncodings[DefaultHistogramChunkEncodingValue]
 }
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -191,6 +226,7 @@ type Limits struct {
 	MaxLabelNameLength                  int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                 int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
 	LabelValueLengthOverLimitStrategy   LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	BlockedLabelNamesForLabelValueBytes flagext.StringSliceCSV            `yaml:"blocked_label_names_for_label_value_bytes" json:"blocked_label_names_for_label_value_bytes" category:"experimental"`
 	MaxLabelNamesPerSeries              int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries          int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                   int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -210,6 +246,8 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	// Label values
+	LabelValueBytesMetricThreshold int `yaml:"label_value_bytes_metric_threshold" json:"label_value_bytes_metric_threshold" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -224,6 +262,9 @@ type Limits struct {
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
+
+	// Histogram chunk encoding. Resolved when a tenant TSDB opens.
+	HistogramChunkEncoding string `yaml:"histogram_chunk_encoding" json:"histogram_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -408,6 +449,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
+	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+LabelValueBytesMetricThresholdFlag+" have exceeded the threshold. Series carrying a value for one of these label names are rejected.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -438,6 +480,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.LabelValueBytesMetricThreshold, LabelValueBytesMetricThresholdFlag, 0, fmt.Sprintf("The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -%s. Only values longer than %d bytes are counted, and each distinct value is counted once. 0 to disable.", BlockedLabelNamesForLabelValueBytesFlag, index.LabelValueBytesMinLength))
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -447,6 +490,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
+	f.StringVar(&l.HistogramChunkEncoding, "blocks-storage.tsdb.histogram-chunk-encoding", DefaultHistogramChunkEncodingValue, fmt.Sprintf("Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: %s.", strings.Join(HistogramChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -766,6 +810,9 @@ func (l *Limits) Validate() error {
 	if !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
 	}
+	if l.HistogramChunkEncoding != "" && !slices.Contains(HistogramChunkEncodingValues, l.HistogramChunkEncoding) {
+		return errInvalidHistogramChunkEncoding
+	}
 
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
 		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
@@ -814,7 +861,24 @@ func (l *Limits) Validate() error {
 		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
 	}
 
+	l.BlockedLabelNamesForLabelValueBytes = normalizeBlockedLabelNames(l.BlockedLabelNamesForLabelValueBytes)
+
 	return nil
+}
+
+// normalizeBlockedLabelNames drops empty and duplicate label names, and __name__.
+func normalizeBlockedLabelNames(names flagext.StringSliceCSV) flagext.StringSliceCSV {
+	if len(names) == 0 {
+		return names
+	}
+	normalized := make(flagext.StringSliceCSV, 0, len(names))
+	for _, name := range names {
+		if name == "" || name == model.MetricNameLabel || slices.Contains(normalized, name) {
+			continue
+		}
+		normalized = append(normalized, name)
+	}
+	return normalized
 }
 
 // ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
@@ -996,6 +1060,12 @@ func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueL
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
 }
 
+// BlockedLabelNamesForLabelValueBytes returns the label names for which series are rejected
+// because their distinct label value bytes have exceeded the limit.
+func (o *Overrides) BlockedLabelNamesForLabelValueBytes(userID string) []string {
+	return o.getOverridesForUser(userID).BlockedLabelNamesForLabelValueBytes
+}
+
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
 func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelNamesPerSeries
@@ -1068,6 +1138,12 @@ func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
+}
+
+// LabelValueBytesMetricThreshold returns the total size in bytes of the distinct values of a
+// single label name, per tenant, across the cluster, at which ingesters start reporting the label name.
+func (o *Overrides) LabelValueBytesMetricThreshold(userID string) int {
+	return o.getOverridesForUser(userID).LabelValueBytesMetricThreshold
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
@@ -1460,6 +1536,12 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 // FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
 	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+}
+
+// HistogramSTEncodingEnabled returns whether new integer and float histogram chunks for this tenant use the
+// start-timestamp-capable encodings (EncHistogramST and EncFloatHistogramST).
+func (o *Overrides) HistogramSTEncodingEnabled(userID string) bool {
+	return ParseHistogramSTEncodingEnabled(o.getOverridesForUser(userID).HistogramChunkEncoding)
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the

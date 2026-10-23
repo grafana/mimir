@@ -518,6 +518,22 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 1,
 		},
 		{
+			in:                       `sum(histogram_avg(foo))`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(histogram_avg(foo{__query_shard__="x_of_y"}))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `max_over_time(histogram_avg(foo)[5m:1m])`,
+			out:                      concatShards(t, shardCount, `max_over_time(histogram_avg(foo{__query_shard__="x_of_y"})[5m:1m])`),
+			expectedShardableQueries: 1,
+		},
+		{
+			// Sharding a per-series function without an aggregation brings no benefit.
+			in:                       `histogram_avg(foo)`,
+			out:                      `histogram_avg(foo)`,
+			expectedShardableQueries: 0,
+		},
+		{
 			in:                       `sum(foo </ 2.5)`,
 			out:                      `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"} </ 2.5)`) + `)`,
 			expectedShardableQueries: 1,

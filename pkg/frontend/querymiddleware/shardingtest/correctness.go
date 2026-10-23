@@ -591,6 +591,27 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			ExpectedShardedQueries: 1,
 		},
+		`histogram_avg`: {
+			Query:                  `histogram_avg(metric_native_histogram)`,
+			ExpectedShardedQueries: 0,
+		},
+		`histogram_avg on sum of metrics`: {
+			Query:                  `histogram_avg(sum(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum of histogram_avg`: {
+			Query:                  `sum(histogram_avg(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`histogram_avg in subquery`: {
+			Query:                  `max_over_time(histogram_avg(metric_native_histogram)[5m:1m])`,
+			ExpectedShardedQueries: 1,
+		},
+		// histogram_avg() ignores float samples, so the float series must not change the result.
+		`sum by of histogram_avg with float series`: {
+			Query:                  `sum by (group_1) (histogram_avg({__name__!=""}))`,
+			ExpectedShardedQueries: 1,
+		},
 	}
 
 	series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
@@ -791,6 +812,7 @@ func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTe
 		{fn: "ts_of_max_over_time", rangeQuery: true},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_avg"},
 		{fn: "histogram_count"},
 		{fn: "histogram_sum"},
 		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},

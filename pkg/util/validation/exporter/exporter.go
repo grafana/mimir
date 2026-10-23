@@ -72,13 +72,15 @@ const (
 	alertmanagerMaxAlertsCount                 = "alertmanager_max_alerts_count"
 	alertmanagerMaxAlertsSizeBytes             = "alertmanager_max_alerts_size_bytes"
 	floatChunkEncoding                         = "float_chunk_encoding"
+	histogramChunkEncoding                     = "histogram_chunk_encoding"
 )
 
 // stringLimitMetricGetters maps limits that are stored as strings (and therefore
 // cannot be exported via reflection) to a getter returning a stable numeric value.
 // These metrics are still gated by the -overrides-exporter.enabled-metrics flag.
 var stringLimitMetricGetters = map[string]func(*validation.Limits) float64{
-	floatChunkEncoding: floatChunkEncodingMetricValue,
+	floatChunkEncoding:     floatChunkEncodingMetricValue,
+	histogramChunkEncoding: histogramChunkEncodingMetricValue,
 }
 
 // floatChunkEncodingMetricValue maps the per-tenant float_chunk_encoding limit to a
@@ -89,6 +91,16 @@ func floatChunkEncodingMetricValue(limits *validation.Limits) float64 {
 		return float64(chunk.PrometheusXor2Chunk)
 	}
 	return float64(chunk.PrometheusXorChunk)
+}
+
+// histogramChunkEncodingMetricValue maps the per-tenant histogram_chunk_encoding limit to a
+// stable numeric value. The values match the integer histogram storage chunk encoding
+// constants, which are hardcoded for backward compatibility, making them a safe metric contract.
+func histogramChunkEncodingMetricValue(limits *validation.Limits) float64 {
+	if validation.ParseHistogramSTEncodingEnabled(limits.HistogramChunkEncoding) {
+		return float64(chunk.PrometheusHistogramSTChunk)
+	}
+	return float64(chunk.PrometheusHistogramChunk)
 }
 
 // Config holds the configuration for an overrides-exporter
@@ -148,6 +160,7 @@ type OverridesExporter struct {
 	defaultsDescription       *prometheus.Desc
 	blockedQueryRuleExpiresAt *prometheus.Desc
 	limitedQueryRuleExpiresAt *prometheus.Desc
+	blockedLabelNames         *prometheus.Desc
 	logger                    log.Logger
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
@@ -191,6 +204,12 @@ func NewOverridesExporter(
 			"cortex_limited_query_rule_expires_at",
 			"Unix timestamp of the earliest expires_at among a tenant's limited-query (rate-limit) rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
 			[]string{"user", "id"},
+			nil,
+		),
+		blockedLabelNames: prometheus.NewDesc(
+			"cortex_limits_blocked_label_names_for_label_value_bytes",
+			"Set to 1 for each label name blocked for a tenant by blocked_label_names_for_label_value_bytes.",
+			[]string{"user", "label_name"},
 			nil,
 		),
 		exportedMetrics: setupExportedMetrics(enabledMetrics, config.ExtraMetrics),
@@ -360,6 +379,7 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- oe.overrideDescription
 	ch <- oe.blockedQueryRuleExpiresAt
 	ch <- oe.limitedQueryRuleExpiresAt
+	ch <- oe.blockedLabelNames
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
@@ -421,6 +441,12 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 	for key, expiresAt := range limitedExpiry {
 		ch <- prometheus.MustNewConstMetric(oe.limitedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
+	}
+
+	for tenant, limits := range allLimits {
+		for _, name := range limits.BlockedLabelNamesForLabelValueBytes {
+			ch <- prometheus.MustNewConstMetric(oe.blockedLabelNames, prometheus.GaugeValue, 1, tenant, name)
+		}
 	}
 }
 

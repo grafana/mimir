@@ -719,6 +719,13 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.tls-min-version
 [tls_min_version: <string> | default = ""]
 
+# Comma-separated list of TLS curve/group preferences for key exchange. Allowed
+# values: CurveP256, CurveP384, CurveP521, X25519, X25519MLKEM768,
+# SecP256r1MLKEM768, SecP384r1MLKEM1024. If blank, the default Go curve
+# preferences are used.
+# CLI flag: -server.tls-curve-preferences
+[tls_curve_preferences: <string> | default = ""]
+
 http_tls_config:
   # Server TLS certificate. This configuration parameter is YAML only.
   [cert: <string> | default = ""]
@@ -776,6 +783,13 @@ grpc_tls_config:
 # (advanced) Register the intrumentation handlers (/metrics etc).
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
+
+# Cache successful /metrics responses for this duration. Zero disables caching.
+# Cached metrics may lag behind live values by up to this duration; consider
+# scrape intervals and alerts. Only applies when
+# -server.register-instrumentation is true.
+# CLI flag: -server.metrics-cache-duration
+[metrics_cache_duration: <duration> | default = 0s]
 
 # If set to true, gRPC statuses will be reported in instrumentation labels with
 # their string representations. Otherwise, they will be reported as "error".
@@ -4619,6 +4633,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.label-value-length-over-limit-strategy
 [label_value_length_over_limit_strategy: <string> | default = "error"]
 
+# (experimental) Label names for which the distinct label value bytes tracked by
+# -ingester.label-value-bytes-metric-threshold have exceeded the threshold.
+# Series carrying a value for one of these label names are rejected.
+# CLI flag: -validation.blocked-label-names-for-label-value-bytes
+[blocked_label_names_for_label_value_bytes: <string> | default = ""]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -4697,6 +4717,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
 
+# (experimental) The total size, in bytes, of the distinct values of a single
+# label name held in memory per tenant, across the cluster before replication,
+# at which ingesters start reporting the label name through the
+# cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject
+# series for label names over the threshold: to block a label name, add it to
+# -validation.blocked-label-names-for-label-value-bytes. Only values longer than
+# 128 bytes are counted, and each distinct value is counted once. 0 to disable.
+# CLI flag: -ingester.label-value-bytes-metric-threshold
+[label_value_bytes_metric_threshold: <int> | default = 0]
+
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
@@ -4739,6 +4769,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # overlapping chunks. Supported values are: xor, xor2.
 # CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
+
+# (experimental) Encoding used for integer and float native histogram chunks
+# written for this tenant by the ingester and block-builder. Supported values
+# are: histogram, histogram_st.
+# CLI flag: -blocks-storage.tsdb.histogram-chunk-encoding
+[histogram_chunk_encoding: <string> | default = "histogram"]
 
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
