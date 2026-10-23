@@ -24,8 +24,15 @@ import (
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
-// EngineAppender is the appender Mimir's ingester pushes through: a Prometheus storage.Appender
-// with GetRef.
+// EngineAppenderV2 is the appender Mimir's ingester pushes through: a Prometheus storage.AppenderV2
+// with GetRef and AppendExemplars.
+type EngineAppenderV2 interface {
+	storage.AppenderV2
+	storage.GetRef
+	storage.ExemplarAppenderV2
+}
+
+// EngineAppender is a Prometheus storage.Appender with GetRef, which tests compare with the TSDB's.
 type EngineAppender interface {
 	storage.Appender
 	storage.GetRef
@@ -67,7 +74,6 @@ type engineAppender struct {
 	headMaxt     int64
 	minValidTime int64
 	oooWindow    int64
-	options      *storage.AppendOptions
 	samples      []pendingSample
 	exemplars    []pendingExemplar
 	// What each series last got from this appender, to type its staleness markers; built at the
@@ -90,8 +96,17 @@ type appendBuffers struct {
 
 var appendBufferPool = sync.Pool{New: func() any { return &appendBuffers{} }}
 
-// Appender returns an appender for the head, like the TSDB's.
+// AppenderV2 returns an appender for the head, like the TSDB's.
+func (e *Engine) AppenderV2(context.Context) EngineAppenderV2 {
+	return e.appender()
+}
+
+// Appender returns a V1 appender for the head, like the TSDB's.
 func (e *Engine) Appender(context.Context) EngineAppender {
+	return &engineAppenderV1{engineAppender: e.appender()}
+}
+
+func (e *Engine) appender() *engineAppender {
 	buffers := appendBufferPool.Get().(*appendBuffers)
 	a := &engineAppender{e: e, samples: buffers.samples[:0], exemplars: buffers.exemplars[:0], order: buffers.order[:0]}
 	if minTime, _, _ := e.headTimes(); minTime != math.MaxInt64 {
@@ -113,10 +128,6 @@ func (a *engineAppender) startAt(t int64) {
 		a.e.initTime(t)
 		a.start()
 	}
-}
-
-func (a *engineAppender) SetOptions(opts *storage.AppendOptions) {
-	a.options = opts
 }
 
 // GetRef returns the series' reference, and labels Append can take without copying them.
@@ -359,7 +370,27 @@ func outOfOrderOrError(t, headMaxt, minValidTime, oooWindow int64) (bool, error)
 	return false, storage.ErrOutOfOrderSample
 }
 
-func (a *engineAppender) Append(ref storage.SeriesRef, lset promlabels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+// Append appends a float sample, or a histogram one when h or fh is set, and the exemplars in opts. The engine keeps
+// no start times, so it ignores st, as the TSDB does without start time storage.
+func (a *engineAppender) Append(ref storage.SeriesRef, lset promlabels.Labels, _, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
+	var err error
+	stale := value.IsStaleNaN(v)
+	if h != nil || fh != nil {
+		ref, err = a.appendHistogram(ref, lset, t, h, fh, opts.RejectOutOfOrder)
+		stale = h != nil && value.IsStaleNaN(h.Sum) || fh != nil && value.IsStaleNaN(fh.Sum)
+	} else {
+		ref, err = a.appendFloat(ref, lset, t, v, opts.RejectOutOfOrder)
+	}
+	// Like the TSDB, a staleness marker takes no exemplars.
+	if err != nil || stale || len(opts.Exemplars) == 0 {
+		return ref, err
+	}
+	return a.AppendExemplars(ref, lset, opts.Exemplars)
+}
+
+// appendFloat appends a float sample. With rejectOOO, an out-of-order sample is refused with
+// storage.ErrOutOfOrderSample, even one that's also too old, as by the TSDB's AppenderV2.
+func (a *engineAppender) appendFloat(ref storage.SeriesRef, lset promlabels.Labels, t int64, v float64, rejectOOO bool) (storage.SeriesRef, error) {
 	a.startAt(t)
 	// Fail fast without an out-of-order window, before looking the series up.
 	if a.oooWindow == 0 && t < a.minValidTime {
@@ -386,16 +417,16 @@ func (a *engineAppender) Append(ref storage.SeriesRef, lset promlabels.Labels, t
 		if stale {
 			switch a.pendingKind(id) {
 			case sampleHistogram:
-				return a.AppendHistogram(storage.SeriesRef(id), lset, t, &histogram.Histogram{Sum: v}, nil)
+				return a.appendHistogram(storage.SeriesRef(id), lset, t, &histogram.Histogram{Sum: v}, nil, rejectOOO)
 			case sampleFloatHistogram:
-				return a.AppendHistogram(storage.SeriesRef(id), lset, t, nil, &histogram.FloatHistogram{Sum: v})
+				return a.appendHistogram(storage.SeriesRef(id), lset, t, nil, &histogram.FloatHistogram{Sum: v}, rejectOOO)
 			}
 		}
 		if location, found = a.e.withSeriesAt(id, check); !found {
 			return 0, fmt.Errorf("series %d disappeared while appending", id)
 		}
 	}
-	if err == nil && isOOO && a.options != nil && a.options.DiscardOutOfOrder {
+	if isOOO && rejectOOO {
 		return 0, storage.ErrOutOfOrderSample
 	}
 	if err != nil {
@@ -435,7 +466,7 @@ func (a *engineAppender) release() {
 	a.samples, a.exemplars, a.order, a.types = nil, nil, nil, nil
 }
 
-func (a *engineAppender) AppendSTZeroSample(ref storage.SeriesRef, lset promlabels.Labels, t, st int64) (storage.SeriesRef, error) {
+func (a *engineAppenderV1) AppendSTZeroSample(ref storage.SeriesRef, lset promlabels.Labels, t, st int64) (storage.SeriesRef, error) {
 	if st >= t {
 		return 0, storage.ErrSTNewerThanSample
 	}
@@ -459,7 +490,8 @@ func (a *engineAppender) AppendSTZeroSample(ref storage.SeriesRef, lset promlabe
 	return storage.SeriesRef(id), nil
 }
 
-func (a *engineAppender) AppendHistogram(ref storage.SeriesRef, lset promlabels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+// appendHistogram appends a histogram sample, h or fh, refusing an out-of-order one with rejectOOO as appendFloat does.
+func (a *engineAppender) appendHistogram(ref storage.SeriesRef, lset promlabels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, rejectOOO bool) (storage.SeriesRef, error) {
 	a.startAt(t)
 	if a.oooWindow == 0 && t < a.minValidTime {
 		return 0, storage.ErrOutOfBounds
@@ -481,9 +513,13 @@ func (a *engineAppender) AppendHistogram(ref storage.SeriesRef, lset promlabels.
 	if h == nil && fh == nil {
 		return storage.SeriesRef(id), nil
 	}
+	var isOOO bool
 	location, _ := a.e.withSeriesAt(id, func(series *Series) {
-		_, err = appendableHistogram(lastOf(series), t, h, fh, a.headMaxt, a.minValidTime, a.oooWindow)
+		isOOO, err = appendableHistogram(lastOf(series), t, h, fh, a.headMaxt, a.minValidTime, a.oooWindow)
 	})
+	if isOOO && rejectOOO {
+		return 0, storage.ErrOutOfOrderSample
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -495,7 +531,7 @@ func (a *engineAppender) AppendHistogram(ref storage.SeriesRef, lset promlabels.
 	return storage.SeriesRef(id), nil
 }
 
-func (a *engineAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset promlabels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *engineAppenderV1) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset promlabels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if st >= t {
 		return 0, storage.ErrSTNewerThanSample
 	}
@@ -543,41 +579,92 @@ func (a *engineAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset
 	return storage.SeriesRef(id), nil
 }
 
-func (a *engineAppender) AppendExemplar(ref storage.SeriesRef, lset promlabels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	capacity := a.e.maxExemplars.Load()
-	if capacity <= 0 {
-		return 0, nil
-	}
-	a.startAt(e.Ts)
+// AppendExemplars appends the series' exemplars, reporting the ones it refuses in a storage.AppendPartialError, like
+// the TSDB's AppenderV2.
+func (a *engineAppender) AppendExemplars(ref storage.SeriesRef, lset promlabels.Labels, es []exemplar.Exemplar) (storage.SeriesRef, error) {
 	id := uint64(ref)
 	if id == 0 || !a.e.exists(id) {
 		found, ok := a.e.refOf(lset, lset.Hash(), &a.pairs)
 		if !ok {
-			return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
+			return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
 		}
 		id = found
 	}
+	if len(es) == 0 || a.e.maxExemplars.Load() <= 0 {
+		return storage.SeriesRef(id), nil
+	}
+	var errs []storage.ExemplarError
+	for i, e := range es {
+		if err := a.appendExemplar(id, e); err != nil {
+			errs = append(errs, storage.ExemplarError{Index: i, Err: err})
+		}
+	}
+	if len(errs) > 0 {
+		return storage.SeriesRef(id), &storage.AppendPartialError{ExemplarErrors: errs}
+	}
+	return storage.SeriesRef(id), nil
+}
+
+// appendExemplar checks e against the series' newest stored exemplar, like Prometheus's ValidateExemplar, and keeps
+// it for Commit.
+func (a *engineAppender) appendExemplar(id uint64, e exemplar.Exemplar) error {
 	e.Labels = e.Labels.WithoutEmpty()
 	stored := toStoreExemplar(e)
 	hash, ok := a.e.hashOf(id)
 	if !ok {
-		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
+		return fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d: %w", id, storage.ErrNotFound)
 	}
-	// Checked against the series' newest stored exemplar, like Prometheus's ValidateExemplar.
 	a.e.store.exemplarsLock.Lock()
 	tenantExemplars := a.e.tenantExemplars()
 	rejection := exemplars.Validate(tenantExemplars.Capacity(), tenantExemplars.Newest(hash), &stored, a.e.oooWindow.Load())
 	a.e.store.exemplarsLock.Unlock()
 	switch rejection {
 	case exemplars.LabelLength:
-		return 0, storage.ErrExemplarLabelLength
+		return storage.ErrExemplarLabelLength
 	case exemplars.OutOfOrder:
-		return 0, storage.ErrOutOfOrderExemplar
+		return storage.ErrOutOfOrderExemplar
 	case exemplars.Disabled:
-		return 0, nil
+		return nil
 	}
 	a.exemplars = append(a.exemplars, pendingExemplar{ref: id, exemplar: e})
-	return storage.SeriesRef(id), nil
+	return nil
+}
+
+// engineAppenderV1 is the V1 storage.Appender over an engineAppender.
+type engineAppenderV1 struct {
+	*engineAppender
+	options *storage.AppendOptions
+}
+
+// SetOptions takes the appender's options. With DiscardOutOfOrder, an out-of-order float sample is refused even when
+// it's also too old, as by AppenderV2.
+func (a *engineAppenderV1) SetOptions(opts *storage.AppendOptions) {
+	a.options = opts
+}
+
+func (a *engineAppenderV1) Append(ref storage.SeriesRef, lset promlabels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return a.appendFloat(ref, lset, t, v, a.options != nil && a.options.DiscardOutOfOrder)
+}
+
+func (a *engineAppenderV1) AppendHistogram(ref storage.SeriesRef, lset promlabels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return a.appendHistogram(ref, lset, t, h, fh, false)
+}
+
+func (a *engineAppenderV1) AppendExemplar(ref storage.SeriesRef, lset promlabels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if a.e.maxExemplars.Load() <= 0 {
+		return 0, nil
+	}
+	// Like the TSDB's V1 appender, an exemplar starts the head when no sample has.
+	a.startAt(e.Ts)
+	id, err := a.AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+	var partialErr *storage.AppendPartialError
+	if errors.As(err, &partialErr) {
+		err = partialErr.ExemplarErrors[0].Err
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // hashOf is the label hash of the series ref, which keys its exemplars.
@@ -605,7 +692,7 @@ func toStoreExemplar(e exemplar.Exemplar) exemplars.Exemplar {
 }
 
 // UpdateMetadata keeps nothing: the ingester keeps metadata itself.
-func (a *engineAppender) UpdateMetadata(ref storage.SeriesRef, _ promlabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (a *engineAppenderV1) UpdateMetadata(ref storage.SeriesRef, _ promlabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	return ref, nil
 }
 

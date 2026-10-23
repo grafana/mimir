@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
@@ -96,15 +97,17 @@ type ingestOutcome struct {
 	CommitDuration time.Duration
 }
 
-// extendedAppender is a Prometheus appender with GetRef, which the Prometheus engine checks before appending.
+// extendedAppender is a Prometheus AppenderV2 with GetRef, which the Prometheus engine checks before appending, and
+// AppendExemplars.
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
+	storage.ExemplarAppenderV2
 }
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.Appender(ctx).(extendedAppender), batch, sink)
+	return ingestThroughAppender(e.AppenderV2(ctx).(extendedAppender), batch, sink)
 }
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
@@ -132,7 +135,11 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
+		exemplars       = make([]exemplar.Exemplar, 1)
 	)
+	appOptions := storage.AppendV2Options{}
+	// Zero samples for created timestamps must never go into the out-of-order head.
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
 
 	count := len(batch.Series)
 	if useSubset {
@@ -188,16 +195,16 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!batch.NativeHistograms || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err == nil {
 					outcome.Samples++
-				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
 					// samples. Thus we ignore if zero sample would cause duplicate.
@@ -210,7 +217,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					outcome.Samples++
 					continue
 				}
@@ -219,7 +226,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					outcome.Samples++
 					continue
 				}
@@ -258,16 +265,17 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 				}
 
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 					if ref != 0 {
-						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					} else {
 						// Copy the label set because both TSDB and the active series tracker may retain it.
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					}
 					if err == nil {
 						outcome.Samples++
-					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						// See the created timestamp of the floats above.
 						sink.Error(si, err, ts.CreatedTimestamp)
 					}
@@ -276,7 +284,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						outcome.Samples++
 						continue
 					}
@@ -285,7 +293,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						outcome.Samples++
 						continue
 					}
@@ -312,7 +320,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 		}
 
 		if len(ts.Exemplars) > 0 && batch.Exemplars {
-			// app.AppendExemplar currently doesn't create the series, it must
+			// app.AppendExemplars doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
 				for ei := range ts.Exemplars {
@@ -328,14 +336,20 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 						continue
 					}
 
-					e := exemplar.Exemplar{
+					exemplars[0] = exemplar.Exemplar{
 						Value:  ex.Value,
 						Ts:     ex.TimestampMs,
 						HasTs:  true,
 						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
 					}
 
-					if _, err := app.AppendExemplar(ref, labels.EmptyLabels(), e); err != nil {
+					// One at a time, so that each failure is reported for its own exemplar.
+					if _, err := app.AppendExemplars(ref, labels.EmptyLabels(), exemplars); err != nil {
+						// The sink tells the errors apart with errors.Is, which can't see through the partial error.
+						var partialErr *storage.AppendPartialError
+						if errors.As(err, &partialErr) && len(partialErr.ExemplarErrors) == 1 {
+							err = partialErr.ExemplarErrors[0].Err
+						}
 						sink.ExemplarFailed(si, ei, err)
 						continue
 					}

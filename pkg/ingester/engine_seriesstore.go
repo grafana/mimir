@@ -179,7 +179,7 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 func (e seriesstoreEngine) ingestThroughAppender(ctx context.Context, batch ingestBatch, sink ingestSink, indices []int, outcome ingestOutcome) (ingestOutcome, error) {
 	// The series the appender ingests are marked ingested once it has, for the active series.
 	marker := &ingestedMarker{ingestSink: sink}
-	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, marker, indices)
+	rest, err := ingestSubsetThroughAppender(e.Engine.AppenderV2(ctx), batch, marker, indices)
 	e.Engine.MarkIngested(marker.series, batch.IngestedAt.UnixMilli(), batch.OTLP)
 	outcome.Samples += rest.Samples
 	outcome.Exemplars += rest.Exemplars

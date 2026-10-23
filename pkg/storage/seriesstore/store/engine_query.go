@@ -1743,7 +1743,8 @@ var (
 	_ storage.Querier         = (*engineQuerier)(nil)
 	_ storage.Searcher        = (*engineQuerier)(nil)
 	_ storage.ExemplarQuerier = engineExemplarQuerier{}
-	_ EngineAppender          = (*engineAppender)(nil)
+	_ EngineAppenderV2        = (*engineAppender)(nil)
+	_ EngineAppender          = (*engineAppenderV1)(nil)
 )
 
 // idMatcher is a matcher with its label name's id, which the scan of many series' labels reads the value of without
