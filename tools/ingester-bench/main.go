@@ -110,8 +110,21 @@ func main() {
 	printConfig := flag.Bool("print-config", false, "Print the configuration of -config, merged, as JSON, instead of running a bench.")
 	installPath := flag.String("install", "", "Copy the bench's binary to this path, for containers of other images to run, instead of running a bench.")
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
+	printCPUSet := flag.Bool("cpuset", false, "Print the CPUs this container may run on, for check-isolation.sh, instead of running a bench.")
+	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
+	}
+	if *printCPUSet {
+		data, err := os.ReadFile("/sys/fs/cgroup/cpuset.cpus.effective")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Print(string(data))
+		return
+	}
+	if *burnCPUs > 0 {
+		burn(*burnCPUs)
 	}
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
@@ -230,7 +243,14 @@ func run(parent context.Context, cfg config) (err error) {
 	log.Printf("%d series in %d tenants at %s; backfilling %s", w.totalSeries(), len(w.tenants), f.address(), cfg.backfill)
 	backfillStart := time.Now()
 	rec := newRecorder(5*time.Second, 10*time.Second)
-	if err := f.produceSeconds(ctx, dataStart, now); err != nil {
+	// Where the backfill's first scrape interval ends, which every series has a sample in: the replay from there on
+	// is the unchanged path's.
+	firstIntervalEnd := min(now, dataStart+w.firstIntervalMs())
+	if err := f.produceSeconds(ctx, dataStart, firstIntervalEnd); err != nil {
+		return err
+	}
+	firstIntervalOffset, firstIntervalSamples := f.lastOffset.Load(), f.samples.Load()
+	if err := f.produceSeconds(ctx, firstIntervalEnd, now); err != nil {
 		return err
 	}
 	// The seconds that passed while backfilling, as fast as well.
@@ -242,6 +262,7 @@ func run(parent context.Context, cfg config) (err error) {
 		caughtUp = target
 	}
 	log.Printf("backfilled %d samples in %s, %s", f.samples.Load(), time.Since(backfillStart).Round(time.Second), f)
+	replayedPastFirstInterval := f.samples.Load() - firstIntervalSamples
 	rec.phase("backfill", backfillStart, time.Now())
 
 	feedCtx, stopFeed := context.WithCancelCause(ctx)
@@ -293,6 +314,9 @@ func run(parent context.Context, cfg config) (err error) {
 	recordWG.Add(1)
 	go func() { defer recordWG.Done(); rec.sample(recordCtx, ingesters, f, 5*time.Second) }()
 	var replay [2]float64
+	var replayCPUs [2]ReplayCPU
+	var counted [2]Counters
+	replayInterval := startCPUInterval()
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	for i, ing := range ingesters {
@@ -300,17 +324,40 @@ func run(parent context.Context, cfg config) (err error) {
 		go func() {
 			defer wg.Done()
 			start := time.Now()
+			measureCtx, stopMeasuring := context.WithCancel(ctx)
+			type snapshot struct {
+				cpu, samples float64
+				ok           bool
+			}
+			measured := make(chan snapshot, 1)
+			go func() {
+				cpu, samples, ok := measureReplay(measureCtx, ing, firstIntervalOffset)
+				measured <- snapshot{cpu, samples, ok}
+			}()
 			errs[i] = ing.waitReady(ctx, nil)
+			stopMeasuring()
 			replay[i] = time.Since(start).Seconds()
 			rec.phase("replay "+ing.name[:1], start, time.Now())
 			if errs[i] != nil {
 				errs[i] = fmt.Errorf("%s: %w\n%s", ing.name, errs[i], ing.logTail())
 				return
 			}
-			log.Printf("%s replayed the backfill in %.0fs", ing.name, replay[i])
+			ready, err := ing.metrics()
+			if err != nil {
+				errs[i] = fmt.Errorf("%s: metrics at ready: %w", ing.name, err)
+				return
+			}
+			first := <-measured
+			replayCPUs[i] = replayCPU(first.cpu, first.samples, first.ok, ready, replayedPastFirstInterval)
+			counted[i].Ready = counters(ready)
+			log.Printf("%s replayed the backfill in %.0fs, %.3g CPU seconds per sample past the first interval over %.0f%% of it",
+				ing.name, replay[i], replayCPUs[i].CPUSecondsPerSample, replayCPUs[i].Coverage*100)
 		}()
 	}
 	wg.Wait()
+	var driverCPU DriverCPU
+	var steal StealShare
+	driverCPU.ReplayCores, steal.Replay = replayInterval.end()
 	for _, err := range errs {
 		if err != nil {
 			return err
@@ -360,6 +407,12 @@ func run(parent context.Context, cfg config) (err error) {
 		return ctx.Err()
 	}
 	rec.phase("warmup", warmupStart, time.Now())
+	for i, ing := range ingesters {
+		if m, err := ing.metrics(); err == nil {
+			counted[i].WindowStart = counters(m)
+		}
+	}
+	windowInterval := startCPUInterval()
 	d.resetLatencies()
 	d.measuring.Store(true)
 	log.Printf("measuring with reads for %s", cfg.duration)
@@ -368,6 +421,12 @@ func run(parent context.Context, cfg config) (err error) {
 		return err
 	}
 	d.measuring.Store(false)
+	driverCPU.WindowCores, steal.Window = windowInterval.end()
+	for i, ing := range ingesters {
+		if m, err := ing.metrics(); err == nil {
+			counted[i].WindowEnd = counters(m)
+		}
+	}
 	stopReads(nil)
 	log.Printf("waiting for the retries of the reads that differed")
 	retriesStart := time.Now()
@@ -390,6 +449,7 @@ func run(parent context.Context, cfg config) (err error) {
 
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
+		ReplayCPU: replayCPUs, Counters: counted, Driver: driverCPU, Steal: steal,
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
 		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(), SlowerInB: d.slowerInBReads(),
 	}

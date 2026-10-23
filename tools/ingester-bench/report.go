@@ -87,6 +87,10 @@ type Report struct {
 	Tenants     int          `json:"tenants"`
 	SamplesPerS float64      `json:"samples_per_second"`
 	Replay      [2]float64   `json:"replay_seconds"`
+	ReplayCPU   [2]ReplayCPU `json:"replay_cpu"`
+	Counters    [2]Counters  `json:"counters"`
+	Driver      DriverCPU    `json:"driver_cpu"`
+	Steal       StealShare   `json:"steal_share"`
 	WindowS     float64      `json:"window_seconds"`
 	Resources   [2]Resources `json:"resources"`
 	// The measurement ingest window's, without reads, when the run had one.
@@ -241,6 +245,8 @@ func (r Report) print(w io.Writer) {
 	fmt.Fprintf(w, "\n%d series in %d tenants, %.0f samples/s, %.0fs query window, %.0fs ingest window\n", r.Series, r.Tenants, r.SamplesPerS, r.WindowS, r.IngestWindowS)
 	fmt.Fprintf(w, "A = %s, B = %s\n\nquery window:\n", r.Ingesters[0], r.Ingesters[1])
 	printResources(w, &r.Replay, r.Resources)
+	fmt.Fprintf(w, "replay CPU per sample past the first interval, A/B: %.3f/%.3f µs, measured over %.0f%%/%.0f%% of it\n\n",
+		r.ReplayCPU[0].CPUSecondsPerSample*1e6, r.ReplayCPU[1].CPUSecondsPerSample*1e6, r.ReplayCPU[0].Coverage*100, r.ReplayCPU[1].Coverage*100)
 	if r.IngestResources != nil {
 		fmt.Fprintln(w, "ingest window, without reads:")
 		printResources(w, nil, *r.IngestResources)
@@ -273,6 +279,20 @@ func (r Report) print(w io.Writer) {
 		fmt.Fprintf(w, "\nslowest %s reads of B (A/B ms):\n", api)
 		for _, read := range x.Slowest[1][:min(3, len(x.Slowest[1]))] {
 			fmt.Fprintf(w, "  %.1f/%.1f %s\n", read.Ms[0], read.Ms[1], read.Request[:min(len(read.Request), 400)])
+		}
+	}
+	fmt.Fprintf(w, "\nbench CPU %.2f cores in the replay, %.2f in the window; steal %s in the replay, %s in the window\n",
+		r.Driver.ReplayCores, r.Driver.WindowCores, share(r.Steal.Replay), share(r.Steal.Window))
+	for i, c := range r.Counters {
+		var changed []string
+		for name, end := range c.WindowEnd {
+			if ready := c.Ready[name]; end != ready {
+				changed = append(changed, fmt.Sprintf("%s %.0f→%.0f", name, ready, end))
+			}
+		}
+		sort.Strings(changed)
+		if len(changed) > 0 {
+			fmt.Fprintf(w, "counters of %c that changed after ready: %s\n", 'A'+i, strings.Join(changed, ", "))
 		}
 	}
 	if len(r.Mismatches) > 0 {
@@ -335,6 +355,14 @@ func printResources(w io.Writer, replay *[2]float64, res [2]Resources) {
 	}
 	tw.Flush()
 	fmt.Fprintln(w)
+}
+
+// share is a share in percent, or "-" when it's unknown.
+func share(v float64) string {
+	if v < 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.2f%%", v*100)
 }
 
 func writeJSON(path string, v any) error {
