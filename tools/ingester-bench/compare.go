@@ -104,6 +104,11 @@ func fetch(ctx context.Context, c client.IngesterClient, req *request) ([]any, e
 		if resp, err = c.UserStats(ctx, req.userStats); err == nil {
 			out = append(out, resp)
 		}
+	case req.metricsMetadata != nil:
+		var resp *client.MetricsMetadataResponse
+		if resp, err = c.MetricsMetadata(ctx, req.metricsMetadata); err == nil {
+			out = append(out, resp)
+		}
 	}
 	return out, err
 }
@@ -201,6 +206,12 @@ func normalize(req *request, responses []any, explain map[uint64]string) ([]uint
 		case *client.UserStatsResponse:
 			if err = add(strconv.FormatUint(r.NumSeries, 10)); err != nil {
 				return nil, err
+			}
+		case *client.MetricsMetadataResponse:
+			for _, m := range r.Metadata {
+				if err = add(m.MetricFamilyName, m.Type.String(), m.Help, m.Unit); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

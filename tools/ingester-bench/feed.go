@@ -6,8 +6,10 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -22,7 +24,7 @@ import (
 
 const (
 	topic = "ingest"
-	// Series per write request, like a remote write client's batches.
+	// Series per write request, like a remote write client's batches, unless the profile says otherwise.
 	requestSeries = 2000
 	// Largest record, as the distributor's.
 	maxRecordBytes = 15 << 20
@@ -34,6 +36,12 @@ type feed struct {
 	world   *world
 	cluster *kfake.Cluster
 	client  *kgo.Client
+	// Series per write request.
+	requestSeries int
+	// What a sample of the records produced is made of, one in compositionSample.
+	compositionMu sync.Mutex
+	composition   compositionCounter
+	produceCount  atomic.Uint64
 	// Last produced offset, and when each second of samples was all produced.
 	lastOffset atomic.Int64
 	producedMu sync.Mutex
@@ -91,7 +99,10 @@ func newFeed(w *world, dataDir string, port int) (*feed, error) {
 		cluster.Close()
 		return nil, err
 	}
-	f := &feed{world: w, cluster: cluster, client: client}
+	f := &feed{world: w, cluster: cluster, client: client, requestSeries: requestSeries}
+	if w.profile.SeriesPerRequest > 0 {
+		f.requestSeries = w.profile.SeriesPerRequest
+	}
 	f.lastOffset.Store(-1)
 	f.lateThreshold = uint64(w.profile.LateShare * math.MaxUint64)
 	f.backdatedThreshold = uint64(w.profile.BackdatedShare * math.MaxUint64)
@@ -149,16 +160,46 @@ func (f *feed) live(ctx context.Context, from int64) error {
 	}
 }
 
+// compositionSample is how many of the records produced one is decoded of, for the run's composition.
+const compositionSample = 64
+
+func (f *feed) sampleComposition(content []byte) {
+	var req mimirpb.PreallocWriteRequest
+	if err := ingest.DeserializeRecordContent(content, &req, 2); err != nil {
+		f.fail(fmt.Errorf("decode a record produced: %w", err))
+		return
+	}
+	f.compositionMu.Lock()
+	f.composition.add(&req.WriteRequest)
+	f.compositionMu.Unlock()
+}
+
+// Composition is what a sample of the records produced so far is made of.
+func (f *feed) Composition() Composition {
+	f.compositionMu.Lock()
+	defer f.compositionMu.Unlock()
+	return f.composition.composition()
+}
+
 // produceSecond produces the second's samples, and with wait, waits for all produced so far to be acknowledged, to
 // know the offset the second ends at.
 func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 	w := f.world
-	produce := func(tenant string, series []mimirpb.PreallocTimeseries) {
+	produce := func(tenant string, series []mimirpb.PreallocTimeseries, families map[string]*mimirpb.MetricMetadata) {
 		req := &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API}
+		// The metric families' metadata of the series, as a distributor writes it, which records carry as stand-ins.
+		for _, name := range slices.Sorted(maps.Keys(families)) {
+			req.Metadata = append(req.Metadata, families[name])
+		}
 		records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords(topic, 0, tenant, req, maxRecordBytes)
 		if err != nil {
 			f.fail(err)
 			return
+		}
+		for _, record := range records {
+			if f.produceCount.Add(1)%compositionSample == 0 {
+				f.sampleComposition(record.Value)
+			}
 		}
 		for _, record := range records {
 			f.pending.Add(1)
@@ -188,25 +229,33 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 			defer workers.Done()
 			for t := range tenants {
 				var batch []mimirpb.PreallocTimeseries
+				families := map[string]*mimirpb.MetricMetadata{}
+				// The metric of the series added, whose family's metadata the request carries.
+				var current *metricModel
 				samples := 0
 				add := func(ts *mimirpb.TimeSeries) {
 					samples += len(ts.Samples) + len(ts.Histograms)
 					batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
-					if len(batch) >= requestSeries {
-						produce(t.id, batch)
-						batch = nil
+					if m := ts.SeriesMetadata; current != nil && !m.IsEmpty() && families[current.name] == nil {
+						families[current.name] = &mimirpb.MetricMetadata{MetricFamilyName: current.name, Type: m.Type, Help: m.Help, Unit: m.Unit}
+					}
+					if len(batch) >= f.requestSeries {
+						produce(t.id, batch, families)
+						batch, families = nil, map[string]*mimirpb.MetricMetadata{}
 					}
 				}
 				for _, m := range t.metrics {
+					current = m
 					m.slotsAt(s, func(slot int, at int64) {
 						f.scrape(m, slot, at, add)
 					})
 				}
+				current = nil
 				for _, ts := range f.late.due(t.id, s+1000) {
 					add(ts)
 				}
 				if len(batch) > 0 {
-					produce(t.id, batch)
+					produce(t.id, batch, families)
 				}
 				count.Add(int64(samples))
 			}
@@ -302,6 +351,14 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 func (f *feed) emitScrape(m *metricModel, slot int, t, start int64, labels [][]mimirpb.LabelAdapter, exemplars bool, emit func(*mimirpb.TimeSeries)) {
 	w := f.world
 	value := m.sample(slot, t, start)
+	if metadata := w.seriesMetadata(m, slot, t); !metadata.IsEmpty() {
+		// Each series of the scrape sends it.
+		inner := emit
+		emit = func(ts *mimirpb.TimeSeries) {
+			ts.SeriesMetadata = metadata
+			inner(ts)
+		}
+	}
 	switch m.kind {
 	case kindNativeHistogram:
 		emit(&mimirpb.TimeSeries{Labels: labels[0], Histograms: []mimirpb.Histogram{m.nativeHistogram(slot, t, start, w.profile.NativeBuckets)}})

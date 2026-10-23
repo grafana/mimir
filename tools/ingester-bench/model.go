@@ -66,6 +66,8 @@ type metricModel struct {
 	base uint64
 	// Per-second rate of counters and scale of gauges.
 	scale float64
+	// The metadata its series send of their own, if any.
+	metadata *metricMetadata
 }
 
 type labelDef struct {
@@ -158,6 +160,7 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 		m.intervalMs = int64(max(1, seconds)) * 1000
 		m.scale = math.Exp(r.Float64()*12 - 4)
 		w.chooseLabels(r, t, m)
+		m.metadata = w.metadataOf(m)
 		t.metrics = append(t.metrics, m)
 	}
 	return t

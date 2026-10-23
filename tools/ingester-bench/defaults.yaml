@@ -35,6 +35,8 @@ common:
     ingester.early-compaction-non-owned-series-enabled: "true"
     # Active and owned series.
     ingester.active-series-metrics-enabled: "true"
+    # For go_gc_heap_live_bytes, which the report reads at the window's end.
+    enable-go-runtime-metrics: "true"
     ingester.active-series-metrics-idle-timeout: 20m
     ingester.track-ingester-owned-series: "true"
     ingester.use-ingester-owned-series-for-limits: "true"

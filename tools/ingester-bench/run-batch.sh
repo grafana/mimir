@@ -9,12 +9,14 @@
 #
 # A batch file has a line per build and per run, and # comments:
 #
-#   build <build> <commit>
-#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [bench flags...]
+#   build <build> <commit> [tags=<build tags>]
+#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [profile=<file>] [bench flags...]
 #
-# Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, which
+# Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, with
+# -metadata when they keep the series' own metadata, which
 # -analyze compares them by, and run with the run hygiene's flags: no compaction jitter and no head snapshots. With
-# burn, ingester A's container also keeps that many CPUs busy, for the isolation check. check-isolation.sh's output
+# burn, ingester A's container also keeps that many CPUs busy, for the isolation check. With metadata, the ingesters
+# named keep the series' own metric metadata; profile is the run's series and reads profile. check-isolation.sh's output
 # for each run goes next to the batch's log in RESULTS. PHASE_MINUTES (default 5) is when, past an even UTC hour, each
 # run starts, which a run waits for. Run it on the host of kind-up.sh.
 set -euo pipefail
@@ -37,13 +39,13 @@ say() { echo "$(date -u +%H:%M:%S) $*" | tee -a "$log"; }
 # image builds a commit's Mimir into an image of the bench's layout and prints it, by digest.
 declare -A images=()
 image() {
-  local commit tag src ctx
+  local commit tag src ctx tags=${2:-}
   commit="$(git rev-parse --verify "$1^{commit}")"
-  tag="mimir-${commit:0:10}"
+  tag="mimir-${commit:0:10}${tags:+-${tags//,/-}}"
   src="$work/src-${commit:0:10}" ctx="$work/ctx-${commit:0:10}"
   git worktree add --quiet --detach "$src" "$commit"
   mkdir -p "$ctx"
-  (cd "$src" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$ctx/mimir" \
+  (cd "$src" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$ctx/mimir" ${tags:+-tags "$tags"} \
     -ldflags "-X github.com/grafana/mimir/pkg/util/version.Revision=${commit:0:10}" ./cmd/mimir)
   git worktree remove --force "$src"
   # The Dockerfile copies a bench too, which the job's ingesters don't run: they run the one the job installs.
@@ -56,7 +58,7 @@ image() {
 
 # config writes a run's configuration of its two ingesters.
 config() {
-  local path=$1 build_a=$2 engine_a=$3 build_b=$4 engine_b=$5 id build engine
+  local path=$1 build_a=$2 engine_a=$3 build_b=$4 engine_b=$5 metadata=$6 id build engine
   {
     echo "common:"
     echo "  args:"
@@ -66,12 +68,19 @@ config() {
     for id in a b; do
       if [[ $id == a ]]; then build=$build_a engine=$engine_a; else build=$build_b engine=$engine_b; fi
       echo "$id:"
-      echo "  name: $build-$engine"
+      if [[ $metadata == *$id* ]]; then
+        echo "  name: $build-$engine-metadata"
+      else
+        echo "  name: $build-$engine"
+      fi
       echo "  image: ${images[$build]}"
       echo "  args:"
       echo "    blocks-storage.tsdb.engine: $engine"
       if [[ $engine == seriesstore ]]; then
         echo '    blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"'
+      fi
+      if [[ $metadata == *$id* ]]; then
+        echo '    ingester.native-metric-metadata-enabled: "true"'
       fi
     done
   } > "$path"
@@ -113,9 +122,16 @@ while read -r kind rest <&3; do
   case "$kind" in
     "" | "#"*) continue ;;
     build)
-      read -r build commit _ <<< "$rest"
-      say "building $build at $commit"
-      images[$build]="$(image "$commit")"
+      read -r build commit options <<< "$rest"
+      tags=''
+      for option in $options; do
+        case "$option" in
+          tags=*) tags="${option#tags=}" ;;
+          *) say "build $build: unknown option $option"; exit 1 ;;
+        esac
+      done
+      say "building $build at $commit${tags:+ with tags $tags}"
+      images[$build]="$(image "$commit" "$tags")"
       say "$build is ${images[$build]}"
       ;;
     run)
@@ -124,23 +140,25 @@ while read -r kind rest <&3; do
       for build in "$build_a" "$build_b"; do
         [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
       done
-      burn='' flags=()
+      burn='' metadata='' profile='' flags=()
       for option in $options; do
         case "$option" in
           burn=*) burn="${option#burn=}" ;;
+          metadata=*) metadata="${option#metadata=}" ;;
+          profile=*) profile="$(realpath "${option#profile=}")" ;;
           *) flags+=("$option") ;;
         esac
       done
-      config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b"
+      config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata"
       name="bench-$run"
       wait_for_phase
-      say "run $run: A $build_a-$engine_a, B $build_b-$engine_b${burn:+, burning $burn CPUs of A}"
+      say "run $run: A $build_a-$engine_a, B $build_b-$engine_b${metadata:+, metadata on $metadata}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
       pids=()
       isolation "$name" & pids+=($!)
       if [[ -n "$burn" ]]; then
         burner "$name" "$burn" & pids+=($!)
       fi
-      if NAME="$name" CONFIG="$work/$run.yaml" GUARANTEED=1 "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
+      if NAME="$name" CONFIG="$work/$run.yaml" PROFILE="$profile" GUARANTEED=1 "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
         say "run $run: done"
       else
         say "run $run: failed, see the log"
