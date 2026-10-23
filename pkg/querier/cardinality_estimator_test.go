@@ -55,6 +55,8 @@ type ingestersWithinLimit time.Duration
 
 func (l ingestersWithinLimit) QueryIngestersWithin(string) time.Duration { return time.Duration(l) }
 
+func (ingestersWithinLimit) CardinalityEstimateEnabled(string) bool { return true }
+
 func (ingestersWithinLimit) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return 0 }
 
 // memoryLimit is ingestersWithinLimit with a memory limit per query.
