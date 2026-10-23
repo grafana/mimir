@@ -1,0 +1,23 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+# The gateway must not render upstream blocks for disabled components, otherwise NGINX fails to start.
+distributor:
+  enabled: false
+  service:
+    trafficDistribution: PreferClose
+
+ruler:
+  enabled: false
+
+query_frontend:
+  enabled: false
+
+compactor:
+  enabled: false
+
+# Reduce scope:
+minio:
+  enabled: false
+rollout_operator:
+  enabled: false
