@@ -102,9 +102,11 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	case !hasVectorSelectorsL && !hasVectorSelectorsR:
 		return nil, nil
 	case !hasVectorSelectorsL:
-		return restrictToResultLabels(vssR, e, false), matchersR
+		keptR := keptLabels(e, false)
+		return restrictToResultLabels(vssR, keptR), mapper.resultMatchers(matchersR, e, false, keptR)
 	case !hasVectorSelectorsR:
-		return restrictToResultLabels(vssL, e, true), matchersL
+		keptL := keptLabels(e, true)
+		return restrictToResultLabels(vssL, keptL), mapper.resultMatchers(matchersL, e, true, keptL)
 	}
 
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
@@ -139,7 +141,8 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	vss := append(restrictToResultLabels(vssL, e, true), restrictToResultLabels(vssR, e, false)...)
+	keptL, keptR := keptLabels(e, true), keptLabels(e, false)
+	vss := append(restrictToResultLabels(vssL, keptL), restrictToResultLabels(vssR, keptR)...)
 	matchers, _ := combineMatchers(newMatchersL, newMatchersR, stringSet{}, false)
 	return vss, matchers
 }
@@ -147,39 +150,63 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 // restrictToResultLabels limits which matchers from outside a binary expression can later be
 // propagated into the vector selectors on one side of it, to the labels whose values on that side
 // are kept in the result.
-func restrictToResultLabels(vss []*enrichedVectorSelector, e *parser.BinaryExpr, lhs bool) []*enrichedVectorSelector {
-	labelsSet, include := keptLabels(e, lhs)
-	if !include && len(labelsSet) == 0 {
+func restrictToResultLabels(vss []*enrichedVectorSelector, kept keptLabelSet) []*enrichedVectorSelector {
+	if !kept.include && len(kept.labels) == 0 {
 		return vss
 	}
 	for _, vs := range vss {
-		restrictPropagatableLabels(vs, labelsSet, include)
+		restrictPropagatableLabels(vs, kept.labels, kept.include)
 	}
 	return vss
 }
 
+// resultMatchers returns the matchers from one side of a binary expression that also hold for its
+// result, so that they can be propagated outwards. lhs is true for the left-hand side, and kept is
+// the result of keptLabels for that side.
+func (mapper *propagateMatchers) resultMatchers(matchers []*labels.Matcher, e *parser.BinaryExpr, lhs bool, kept keptLabelSet) []*labels.Matcher {
+	if matching := e.VectorMatching; matching != nil {
+		if lhs && matching.FillValues.LHS != nil {
+			// fill_left synthesises the LHS for unmatched RHS series, which LHS matchers say nothing about.
+			return nil
+		}
+		if !lhs && (matching.FillValues.RHS != nil || e.Op == parser.LUNLESS) {
+			// fill_right synthesises the RHS for unmatched LHS series, and `unless` only returns LHS
+			// series without a match, so RHS matchers say nothing about the result.
+			return nil
+		}
+	}
+	return mapper.getMatchersToPropagate(matchers, kept.labels, kept.include)
+}
+
+// keptLabelSet describes which labels of the series on one side of a binary expression keep their
+// values in its result: the labels in labels if include is true, or all labels not in labels
+// otherwise.
+type keptLabelSet struct {
+	labels  stringSet
+	include bool
+}
+
 // keptLabels returns which labels of the series on one side of a binary expression keep their
-// values in its result: the labels in the returned set if include is true, or all labels not in
-// the set otherwise. lhs is true for the left-hand side.
-func keptLabels(e *parser.BinaryExpr, lhs bool) (stringSet, bool) {
+// values in its result. lhs is true for the left-hand side.
+func keptLabels(e *parser.BinaryExpr, lhs bool) keptLabelSet {
 	matching := e.VectorMatching
 	if matching == nil {
-		return nil, false
+		return keptLabelSet{}
 	}
 	if (lhs && matching.Card == parser.CardManyToOne) || (!lhs && matching.Card == parser.CardOneToMany) {
 		// The "many" side of group_left() or group_right() keeps all of its labels in the result,
 		// except the included labels, which are taken from the "one" side.
-		return newStringSet(matching.Include), false
+		return keptLabelSet{labels: newStringSet(matching.Include)}
 	}
 	if lhs && (e.Op == parser.LAND || e.Op == parser.LUNLESS) {
 		// `and` and `unless` return the left-hand side series unchanged.
-		return nil, false
+		return keptLabelSet{}
 	}
 	// Otherwise, with on() or ignoring(), only the matching labels are guaranteed to have the same
 	// value on this side and in the result. Other labels on this side do not affect the result
 	// (e.g. the "one" side of `a * on() group_left() b`), so filtering this side on an outer
 	// matcher would drop series that should match.
-	return newStringSet(matching.MatchingLabels), matching.On
+	return keptLabelSet{labels: newStringSet(matching.MatchingLabels), include: matching.On}
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
