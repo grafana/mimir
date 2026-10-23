@@ -164,7 +164,9 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`up{foo="bar"} + up * on(foo) group_left() down`:                   `up{foo="bar"} + up{foo="bar"} * on(foo) group_left() down{foo="bar"}`,
 	`up{foo="bar"} + up * on(baz) group_left() down`:                   `up{foo="bar"} + up{foo="bar"} * on(baz) group_left() down`,
 	`up{foo="bar"} + down * on(baz) group_right() up`:                  `up{foo="bar"} + down * on(baz) group_right() up{foo="bar"}`,
-	`up{foo="bar"} + up * on(baz) group_left(foo) down`:                `up{foo="bar"} + up * on(baz) group_left(foo) down`,
+	`up{foo="bar"} + up * on(baz) group_left(foo) down`:                `up{foo="bar"} + up * on(baz) group_left(foo) down{foo="bar"}`,
+	`up{boo="far"} + up * on(baz) group_left(foo) down`:                `up{boo="far"} + up{boo="far"} * on(baz) group_left(foo) down`,
+	`left{foo="bar"} + up * ignoring(foo) group_left(foo) down`:        `left{foo="bar"} + up * ignoring(foo) group_left(foo) down{foo="bar"}`,
 	`up{foo="bar"} + up * on(baz) down`:                                `up{foo="bar"} + up * on(baz) down`,
 	`up{foo="bar", baz="fob"} + up * ignoring(foo) group_left() down`:  `up{foo="bar", baz="fob"} + up{foo="bar", baz="fob"} * ignoring(foo) group_left() down{baz="fob"}`,
 	`up{foo="bar", baz="fob"} + down * ignoring(foo) group_right() up`: `up{foo="bar", baz="fob"} + down{baz="fob"} * ignoring(foo) group_right() up{foo="bar", baz="fob"}`,
@@ -183,6 +185,16 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`up + (sort(up) unless down{foo="bar"})`:                                             `up + (sort(up) unless down{foo="bar"})`,
 	`sort(up) * on(foo) group_left() down{foo="bar"} + left`:                             `sort(up) * on(foo) group_left() down{foo="bar"} + left{foo="bar"}`,
 	`up{foo="bar"} * on(baz) group_left() sort(down) + left`:                             `up{foo="bar"} * on(baz) group_left() sort(down) + left{foo="bar"}`,
+	// Matchers from the side of a binary expression whose labels are kept in its result also propagate outwards.
+	`up{foo="bar"} * on(baz) group_left() down + left`:    `up{foo="bar"} * on(baz) group_left() down + left{foo="bar"}`,
+	`left + down * on(baz) group_right() up{foo="bar"}`:   `left{foo="bar"} + down * on(baz) group_right() up{foo="bar"}`,
+	`up{foo="bar"} * on(baz) group_left(foo) down + left`: `up{foo="bar"} * on(baz) group_left(foo) down + left`,
+	`up * on(baz) group_left(boo) down{boo="far"} + left`: `up * on(baz) group_left(boo) down{boo="far"} + left{boo="far"}`,
+	`up * on(baz) group_left(boo) down{faf="bob"} + left`: `up * on(baz) group_left(boo) down{faf="bob"} + left`,
+	`(up{foo="bar"} and on(baz) down) + left`:             `(up{foo="bar"} and on(baz) down) + left{foo="bar"}`,
+	`(up{foo="bar"} unless on(baz) down) + left`:          `(up{foo="bar"} unless on(baz) down) + left{foo="bar"}`,
+	`(up unless on(baz) down{foo="bar"}) + left`:          `(up unless on(baz) down{foo="bar"}) + left`,
+	`(up{foo="bar"} * on(baz) down) + left`:               `(up{foo="bar"} * on(baz) down) + left`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
@@ -207,6 +219,8 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
 	// fill_right synthesises the RHS for unmatched LHS series, so RHS matchers do not hold for the result and must not propagate outwards.
 	`up + (sort(up) + fill_right(0) down{foo="bar"})`: `up + (sort(up) + fill_right(0) down{foo="bar"})`,
+	// fill_right keeps the LHS labels of every result series, so LHS matchers still propagate outwards.
+	`(up{foo="bar"} + fill_right(0) down) + left`: `(up{foo="bar"} + fill_right(0) down) + left{foo="bar"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.

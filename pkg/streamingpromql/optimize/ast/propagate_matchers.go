@@ -143,7 +143,7 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	}
 	keptL, keptR := keptLabels(e, true), keptLabels(e, false)
 	vss := append(restrictToResultLabels(vssL, keptL), restrictToResultLabels(vssR, keptR)...)
-	matchers, _ := combineMatchers(newMatchersL, newMatchersR, stringSet{}, false)
+	matchers, _ := combineMatchers(mapper.resultMatchers(matchersL, e, true, keptL), mapper.resultMatchers(matchersR, e, false, keptR), stringSet{}, false)
 	return vss, matchers
 }
 
@@ -206,7 +206,15 @@ func keptLabels(e *parser.BinaryExpr, lhs bool) keptLabelSet {
 	// value on this side and in the result. Other labels on this side do not affect the result
 	// (e.g. the "one" side of `a * on() group_left() b`), so filtering this side on an outer
 	// matcher would drop series that should match.
-	return keptLabelSet{labels: newStringSet(matching.MatchingLabels), include: matching.On}
+	matchingLabelsSet := newStringSet(matching.MatchingLabels)
+	if len(matching.Include) > 0 {
+		// The "one" side of group_left() or group_right() also sets the included labels in the result.
+		if matching.On {
+			return keptLabelSet{labels: matchingLabelsSet.Union(newStringSet(matching.Include)), include: true}
+		}
+		return keptLabelSet{labels: matchingLabelsSet.Difference(newStringSet(matching.Include))}
+	}
+	return keptLabelSet{labels: matchingLabelsSet, include: matching.On}
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
