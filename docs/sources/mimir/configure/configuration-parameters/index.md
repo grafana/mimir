@@ -2153,7 +2153,6 @@ cardinality_estimate:
   # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
   [trust_compacted_blocks_after: <duration> | default = 0s]
 
-
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -5256,6 +5255,12 @@ blocked_requests:
 # cardinality API request.
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_analysis_max_results: <int> | default = 500]
+
+# (experimental) Enables the experimental /api/v1/cardinality/estimate endpoint
+# for the tenant. The endpoint must also be enabled on the querier with
+# -querier.cardinality-estimate.enabled.
+# CLI flag: -querier.cardinality-estimate-enabled
+[cardinality_estimate_enabled: <boolean> | default = false]
 
 # (advanced) Maximum size of an active series or active native histogram series
 # request result shard in bytes. 0 to disable.

@@ -6898,6 +6898,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_estimate_enabled",
+          "required": false,
+          "desc": "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant. The endpoint must also be enabled on the querier with -querier.cardinality-estimate.enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.cardinality-estimate-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
           "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
