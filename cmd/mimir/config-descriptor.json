@@ -6931,6 +6931,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_estimate_max_memory_bytes",
+          "required": false,
+          "desc": "Maximum memory, in bytes, that the groups, label-set hashes and sketches of one cardinality estimate may hold in the querier while it merges the store-gateways' and ingesters' answers. An estimate over it fails with 422. When -querier.max-estimated-memory-consumption-per-query is lower, that applies instead. 0 means only that per-query limit applies.",
+          "fieldValue": null,
+          "fieldDefaultValue": 268435456,
+          "fieldFlag": "querier.cardinality-estimate-max-memory-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cost_attribution_labels_structured",
           "required": false,
           "desc": "",
