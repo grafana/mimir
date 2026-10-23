@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -259,6 +260,16 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := outcome.Samples
 
+		// The series' metadata goes with each of its samples, as AppenderV2 takes it, but not with zero samples.
+		sampleOptions := appOptions
+		if batch.NativeMetricMetadata && !ts.SeriesMetadata.IsEmpty() {
+			sampleOptions.Metadata = metadata.Metadata{
+				Type: mimirpb.MetricMetadataMetricTypeToMetricType(ts.SeriesMetadata.Type),
+				Unit: ts.SeriesMetadata.Unit,
+				Help: ts.SeriesMetadata.Help,
+			}
+		}
+
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
@@ -297,7 +308,7 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, sampleOptions); err == nil {
 					outcome.Samples++
 					continue
 				}
@@ -306,7 +317,7 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, sampleOptions); err == nil {
 					outcome.Samples++
 					continue
 				}
@@ -369,7 +380,7 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, sampleOptions); err == nil {
 						outcome.Samples++
 						continue
 					}
@@ -378,7 +389,7 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if ref, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, sampleOptions); err == nil {
 						outcome.Samples++
 						continue
 					}

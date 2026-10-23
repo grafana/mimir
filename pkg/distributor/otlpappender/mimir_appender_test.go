@@ -71,7 +71,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -114,7 +115,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 							{TimestampMs: 3000, Value: 52.0},
@@ -163,7 +165,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -179,7 +182,8 @@ func TestMimirAppender(t *testing.T) {
 				},
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "cheese"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "cheese"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 3000, Value: 52.0},
 						},
@@ -222,7 +226,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -238,7 +243,8 @@ func TestMimirAppender(t *testing.T) {
 				},
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 3000, Value: 52.0},
 						},
@@ -256,7 +262,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseriesNoCT: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 							{TimestampMs: 3000, Value: 52.0},
@@ -305,7 +312,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: defaultIntervalForStartTimestamps + 2000, Value: 42.0},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
@@ -354,7 +362,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: defaultIntervalForStartTimestamps - 2000, Value: 42.0},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
@@ -397,7 +406,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.HISTOGRAM, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Histograms: []mimirpb.Histogram{
 							mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
 						},
@@ -440,7 +450,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -507,7 +518,8 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: mimirpb.FromLabelsToLabelAdapters(collidingLabels1),
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         mimirpb.FromLabelsToLabelAdapters(collidingLabels1),
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 1000, Value: 42.0},
 							{TimestampMs: 3000, Value: 46.0},
@@ -517,7 +529,8 @@ func TestMimirAppender(t *testing.T) {
 				},
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: mimirpb.FromLabelsToLabelAdapters(collidingLabels2),
+						SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "help!", Unit: "bytes"},
+						Labels:         mimirpb.FromLabelsToLabelAdapters(collidingLabels2),
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 44.0},
 							{TimestampMs: 4000, Value: 48.0},

@@ -82,28 +82,32 @@ func TestLegacyMetricMetadataFromRecords(t *testing.T) {
 // legacyMetadataRecordFixture is a partition's request with what decides which metric families' metadata the
 // ingester keeps: series named like their family, two of them, conflicting metadata of a family, an exemplar-only
 // series, a series without data named like its family, as the distributor leaves one it strips of its exemplars, a
-// family without series, and a classic histogram, whose series aren't named like their family.
+// family without series, and a classic histogram, whose series aren't named like their family. Every series also
+// carries metadata of its own.
 func legacyMetadataRecordFixture(now int64) *mimirpb.WriteRequest {
-	series := func(name string, extra ...string) mimirpb.PreallocTimeseries {
+	series := func(name string, metadata mimirpb.SeriesMetadata, extra ...string) mimirpb.PreallocTimeseries {
 		labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: name}}
 		for i := 0; i < len(extra); i += 2 {
 			labels = append(labels, mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]})
 		}
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  labels,
-			Samples: []mimirpb.Sample{{TimestampMs: now, Value: 1}},
+			Labels:         labels,
+			Samples:        []mimirpb.Sample{{TimestampMs: now, Value: 1}},
+			SeriesMetadata: metadata,
 		}}
 	}
+	requests := mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Requests.", Unit: "requests"}
+	latency := mimirpb.SeriesMetadata{Type: mimirpb.HISTOGRAM, Help: "Latency.", Unit: "seconds"}
 	timeseries := []mimirpb.PreallocTimeseries{
-		series("requests_total", "pod", "pod-0"),
-		series("requests_total", "pod", "pod-1"),
-		series("latency_seconds_bucket", "le", "+Inf"),
-		series("latency_seconds_count"),
+		series("requests_total", requests, "pod", "pod-0"),
+		series("requests_total", requests, "pod", "pod-1"),
+		series("latency_seconds_bucket", latency, "le", "+Inf"),
+		series("latency_seconds_count", latency),
 	}
-	exemplarOnly := series("exemplars_total", "pod", "pod-0")
+	exemplarOnly := series("exemplars_total", mimirpb.SeriesMetadata{Type: mimirpb.GAUGE, Help: "With exemplars."}, "pod", "pod-0")
 	exemplarOnly.Samples = nil
 	exemplarOnly.Exemplars = []mimirpb.Exemplar{{TimestampMs: now, Value: 1, Labels: []mimirpb.LabelAdapter{{Name: "trace_id", Value: "abc"}}}}
-	withoutData := series("stripped_total", "pod", "pod-0")
+	withoutData := series("stripped_total", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Stripped of its exemplars."}, "pod", "pod-0")
 	withoutData.Samples = nil
 	timeseries = append(timeseries, exemplarOnly, withoutData)
 

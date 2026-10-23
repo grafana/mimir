@@ -162,6 +162,8 @@ type ingestBatch struct {
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
 	NativeHistograms bool
 	Exemplars        bool
+	// NativeMetricMetadata gives the engine each series' own metric metadata to store.
+	NativeMetricMetadata bool
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time

@@ -65,12 +65,13 @@ func TestDistributor_Push_ShouldSupportCompartments(t *testing.T) {
 		metricsByTopic[topic] = metricNamesFromRecords(t, records)
 	}
 
-	// All 4 metrics are present exactly once across all compartment topics.
+	// All 4 metrics are present exactly once across all compartment topics, and metric_a's and metric_b's metadata
+	// once each, as extra series without data.
 	var allMetrics []string
 	for _, metrics := range metricsByTopic {
 		allMetrics = append(allMetrics, metrics...)
 	}
-	assert.ElementsMatch(t, []string{"metric_a", "metric_b", "metric_c", "metric_d"}, allMetrics)
+	assert.ElementsMatch(t, []string{"metric_a", "metric_a", "metric_b", "metric_b", "metric_c", "metric_d"}, allMetrics)
 
 	// Each metric (and its metadata) landed in the topic the router assigns it to.
 	for _, metricName := range []string{"metric_a", "metric_b", "metric_c", "metric_d"} {

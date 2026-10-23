@@ -63,6 +63,9 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
 		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
+		if !opts.Metadata.IsEmpty() {
+			c.series[idx.idx].SeriesMetadata = mimirpb.SeriesMetadata{Type: metricTypeToMimirType(opts.Metadata.Type), Help: opts.Metadata.Help, Unit: opts.Metadata.Unit}
+		}
 	}
 
 	switch {
