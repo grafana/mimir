@@ -582,7 +582,7 @@ func TestQueueReservation_TooManyRequestsIsFinal(t *testing.T) {
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
-	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 2))
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests").WithRetryAfter(0), doGroupRequests(t, f, ctx, 2))
 	// The failed reservation fails each sub-request of the evaluation.
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 2})
 
