@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"container/heap"
 	"context"
 	"fmt"
@@ -185,37 +186,30 @@ func (f *feed) Composition() Composition {
 // know the offset the second ends at.
 func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 	w := f.world
+	partitions, mixTargets := max(1, w.profile.PartitionsPerTenant), w.profile.SeriesPerTarget > 0
 	produce := func(tenant string, series []mimirpb.PreallocTimeseries, families map[string]*mimirpb.MetricMetadata) {
-		req := &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API}
-		// The metric families' metadata of the series, as a distributor writes it, which records carry as stand-ins.
-		for _, name := range slices.Sorted(maps.Keys(families)) {
-			req.Metadata = append(req.Metadata, families[name])
-		}
-		records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords(topic, 0, tenant, req, maxRecordBytes)
-		if err != nil {
-			f.fail(err)
-			return
-		}
-		for _, record := range records {
-			if f.produceCount.Add(1)%compositionSample == 0 {
-				f.sampleComposition(record.Value)
+		// The request's part for each partition, as a distributor splits it: by series, and the metric families'
+		// metadata of the series, which records carry as stand-ins, by family. The ingesters read one partition, so
+		// every part goes to it.
+		parts := []*mimirpb.WriteRequest{{Timeseries: series, Source: mimirpb.API}}
+		if partitions > 1 {
+			parts = make([]*mimirpb.WriteRequest, partitions)
+			for i := range parts {
+				parts[i] = &mimirpb.WriteRequest{Source: mimirpb.API}
+			}
+			for _, ts := range series {
+				part := parts[mimirpb.ShardByAllLabelAdapters(tenant, ts.Labels)%uint32(partitions)]
+				part.Timeseries = append(part.Timeseries, ts)
 			}
 		}
-		for _, record := range records {
-			f.pending.Add(1)
-			f.client.Produce(ctx, record, func(r *kgo.Record, err error) {
-				defer f.pending.Done()
-				if err != nil {
-					f.fail(err)
-					return
-				}
-				for {
-					last := f.lastOffset.Load()
-					if r.Offset <= last || f.lastOffset.CompareAndSwap(last, r.Offset) {
-						break
-					}
-				}
-			})
+		for _, name := range slices.Sorted(maps.Keys(families)) {
+			part := parts[mimirpb.ShardByMetricName(tenant, name)%uint32(len(parts))]
+			part.Metadata = append(part.Metadata, families[name])
+		}
+		for _, req := range parts {
+			if len(req.Timeseries) > 0 || len(req.Metadata) > 0 {
+				f.produceRequest(ctx, tenant, req)
+			}
 		}
 	}
 	// Tenants are independent: each tenant's series are generated and produced in order by one goroutine, and the
@@ -244,11 +238,24 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 						batch, families = nil, map[string]*mimirpb.MetricMetadata{}
 					}
 				}
+				var scrapes []slotScrape
 				for _, m := range t.metrics {
-					current = m
 					m.slotsAt(s, func(slot int, at int64) {
-						f.scrape(m, slot, at, add)
+						scrapes = append(scrapes, slotScrape{metric: m, slot: slot, at: at})
 					})
+				}
+				if mixTargets {
+					// Remote write's shards mix the targets of a second: they come in an order of their hashes, each
+					// target's slots together.
+					for i := range scrapes {
+						sc := &scrapes[i]
+						sc.order = sc.metric.hash64(sc.metric.target(sc.slot), uint64(s))
+					}
+					slices.SortStableFunc(scrapes, func(a, b slotScrape) int { return cmp.Compare(a.order, b.order) })
+				}
+				for _, sc := range scrapes {
+					current = sc.metric
+					f.scrape(sc.metric, sc.slot, sc.at, add)
 				}
 				current = nil
 				for _, ts := range f.late.due(t.id, s+1000) {
@@ -271,6 +278,44 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 		return f.failure()
 	}
 	return f.acknowledged(s)
+}
+
+// slotScrape is a slot's scrape in a second, and its place in the second's order.
+type slotScrape struct {
+	metric *metricModel
+	slot   int
+	at     int64
+	order  uint64
+}
+
+// produceRequest produces the tenant's request as records, as a distributor writes them.
+func (f *feed) produceRequest(ctx context.Context, tenant string, req *mimirpb.WriteRequest) {
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords(topic, 0, tenant, req, maxRecordBytes)
+	if err != nil {
+		f.fail(err)
+		return
+	}
+	for _, record := range records {
+		if f.produceCount.Add(1)%compositionSample == 0 {
+			f.sampleComposition(record.Value)
+		}
+	}
+	for _, record := range records {
+		f.pending.Add(1)
+		f.client.Produce(ctx, record, func(r *kgo.Record, err error) {
+			defer f.pending.Done()
+			if err != nil {
+				f.fail(err)
+				return
+			}
+			for {
+				last := f.lastOffset.Load()
+				if r.Offset <= last || f.lastOffset.CompareAndSwap(last, r.Offset) {
+					break
+				}
+			}
+		})
+	}
 }
 
 // acknowledged waits for every record produced so far, and records that they end second s.
