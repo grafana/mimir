@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -338,6 +339,37 @@ func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"head_whole":true`)
 	assert.Contains(t, rec.Body.String(), `"lower_bound":false`)
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+// An ingester whose out-of-order head holds samples in the window can't count
+// the series whose only samples there are out of order, so the answer is a
+// lower bound and must not be cached.
+func TestCardinalityEstimateHandler_OutOfOrderNotCounted(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	for _, ooo := range []bool{false, true} {
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, MinTimeMs: 98 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 98 * hour, OutOfOrderNotCounted: ooo},
+		}}}
+		e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return time.UnixMilli(100 * hour) }
+		h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", e, CardinalityEstimateConfig{}, false)
+
+		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d", 99*3600, 100*3600), nil)
+		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var out estimateResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+		assert.Equal(t, ooo, out.OutOfOrderNotCounted)
+		assert.Equal(t, ooo, out.LowerBound)
+		if ooo {
+			assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+		} else {
+			assert.Empty(t, rec.Header().Get("Cache-Control"))
+		}
+	}
 }
 
 func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
