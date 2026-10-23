@@ -667,6 +667,10 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRequest, requestErr error) {
 	logger := log.With(s.log, req.LogFields()...)
+	outcome := "failure"
+	defer func() {
+		s.frontendErrorForwards.WithLabelValues(outcome).Inc()
+	}()
 
 	opts, err := s.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
@@ -679,7 +683,6 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 	)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-		s.frontendErrorForwards.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -687,7 +690,6 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 	conn, err := grpc.DialContext(ctx, req.FrontendAddr, opts...)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-		s.frontendErrorForwards.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -710,14 +712,12 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 
 		if err != nil {
 			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 	} else { // Protobuf request, so send a streaming response.
 		stream, err := client.QueryResultStream(userCtx)
 		if err != nil {
 			level.Warn(logger).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 
@@ -733,18 +733,16 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 
 		if err := stream.Send(&msg); err != nil {
 			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 
 		if _, err = stream.CloseAndRecv(); err != nil {
 			level.Warn(logger).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-			s.frontendErrorForwards.WithLabelValues("failure").Inc()
 			return
 		}
 	}
 
-	s.frontendErrorForwards.WithLabelValues("success").Inc()
+	outcome = "success"
 }
 
 func (s *Scheduler) isRunning() bool {
