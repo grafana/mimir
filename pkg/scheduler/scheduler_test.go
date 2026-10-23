@@ -187,7 +187,8 @@ func queueConsume(
 }
 
 func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -216,6 +217,12 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	}
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+		# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 0
+	`), "cortex_query_scheduler_dropped_requests_total", "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total"))
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -869,6 +876,31 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 	verifyErrorForwardMetrics(t, reg, 1, 0)
 
 	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, _, _ := setupScheduler(t, reg)
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
+	scheduler.droppedRequests.WithLabelValues("test", "cancelled").Inc()
+	scheduler.droppedRequests.WithLabelValues("test", "frontend_disconnected").Inc()
+	scheduler.droppedRequests.WithLabelValues("another", "cancelled").Inc()
+	scheduler.querierRequestFailures.WithLabelValues("test").Inc()
+	scheduler.querierRequestFailures.WithLabelValues("another").Inc()
+
+	scheduler.cleanupMetricsForInactiveUser("test")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_dropped_requests_total Total number of queued requests that the query-scheduler removed without sending them to a querier, because their context was cancelled.
+		# TYPE cortex_query_scheduler_dropped_requests_total counter
+		cortex_query_scheduler_dropped_requests_total{reason="cancelled",user="another"} 1
+		# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+		# TYPE cortex_query_scheduler_querier_request_failures_total counter
+		cortex_query_scheduler_querier_request_failures_total{user="another"} 1
+	`), "cortex_query_scheduler_dropped_requests_total", "cortex_query_scheduler_querier_request_failures_total"))
 }
 
 func TestSchedulerQueueMetrics(t *testing.T) {
