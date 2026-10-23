@@ -26,22 +26,33 @@ func TestPercentilesInterpolate(t *testing.T) {
 }
 
 func TestWorldScrapesEverySlotOncePerInterval(t *testing.T) {
-	w := newWorld(defaultProfile().Series, 20_000, 1)
-	require.InDelta(t, 20_000, w.totalSeries(), 2_000)
-	for _, tenant := range w.tenants[:5] {
-		for _, m := range tenant.metrics[:min(3, len(tenant.metrics))] {
-			scraped := map[int]int{}
-			start := int64(1_700_000_000_000)
-			for s := start; s < start+m.intervalMs; s += 1000 {
-				m.slotsAt(s, func(slot int, at int64) {
-					require.GreaterOrEqual(t, at, s)
-					require.Less(t, at, s+1000)
-					scraped[slot]++
-				})
-			}
-			require.Len(t, scraped, m.slots, "%s %s", tenant.id, m.name)
-			for slot, n := range scraped {
-				require.Equal(t, 1, n, "slot %d", slot)
+	for _, slotsPerTarget := range []int{0, 5} {
+		p := defaultProfile().Series
+		p.SeriesPerTarget = slotsPerTarget
+		w := newWorld(p, 20_000, 1)
+		require.InDelta(t, 20_000, w.totalSeries(), 2_000)
+		for _, tenant := range w.tenants[:5] {
+			for _, m := range tenant.metrics[:min(3, len(tenant.metrics))] {
+				scraped := map[int]int{}
+				// A target's slots are scraped at one time.
+				targets := map[int]int64{}
+				start := int64(1_700_000_000_000)
+				for s := start; s < start+m.intervalMs; s += 1000 {
+					m.slotsAt(s, func(slot int, at int64) {
+						require.GreaterOrEqual(t, at, s)
+						require.Less(t, at, s+1000)
+						scraped[slot]++
+						if first, ok := targets[m.target(slot)]; ok {
+							require.Equal(t, first, at, "slot %d", slot)
+						}
+						targets[m.target(slot)] = at
+					})
+				}
+				require.Len(t, scraped, m.slots, "%s %s", tenant.id, m.name)
+				for slot, n := range scraped {
+					require.Equal(t, 1, n, "slot %d", slot)
+				}
+				require.Len(t, targets, (m.slots+max(1, slotsPerTarget)-1)/max(1, slotsPerTarget))
 			}
 		}
 	}

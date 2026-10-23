@@ -20,6 +20,10 @@ const (
 	// A replay measured over less of the backfill says too little of it.
 	minReplayCoverage = 0.9
 	readRejections    = "cortex_ingester_utilization_limited_read_requests_total"
+	// How far a run's records may be from the profile's composition, relative to it: stand-ins per record vary most
+	// between partitions.
+	compositionTolerance         = 0.1
+	standInsCompositionTolerance = 0.25
 )
 
 // analyzedRun is what the analysis takes from a run's report: each ingester's name without its A or B, its
@@ -168,6 +172,20 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	if engineOf(run.Names[0]) == engineOf(run.Names[1]) {
 		for _, name := range changedCounters(report.Counters[0].Ready, report.Counters[1].Ready) {
 			discard("A's and B's %s differ at ready", name)
+		}
+	}
+	if target, c := report.CompositionTarget, report.Composition; target != nil {
+		for _, s := range []struct {
+			name                        string
+			achieved, target, tolerance float64
+		}{
+			{"series per record", c.SeriesPerRecord, target.SeriesPerRecord, compositionTolerance},
+			{"series per metadata value", c.SeriesPerValue, target.SeriesPerValue, compositionTolerance},
+			{"stand-ins per record", c.StandInsPerRecord, target.StandInsPerRecord, standInsCompositionTolerance},
+		} {
+			if !(math.Abs(s.achieved/s.target-1) <= s.tolerance) {
+				discard("the records' %s is %.3g, not within %.0f%% of the profile's %.3g", s.name, s.achieved, s.tolerance*100, s.target)
+			}
 		}
 	}
 	return run

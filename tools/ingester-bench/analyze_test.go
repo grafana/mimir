@@ -74,7 +74,14 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	compacted.Counters[1].WindowEnd = map[string]float64{"cortex_ingester_tsdb_compactions_total": 2}
 	different := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
 	different.Counters[1] = Counters{Ready: map[string]float64{"cortex_ingester_tsdb_compactions_total": 2}, WindowEnd: map[string]float64{"cortex_ingester_tsdb_compactions_total": 2}}
-	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different} {
+	// Stand-ins per record may be a quarter off the profile's, the others a tenth.
+	target := &Composition{SeriesPerRecord: 30, SeriesPerValue: 2, StandInsPerRecord: 3}
+	composed := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+	composed.Composition, composed.CompositionTarget = Composition{Records: 100, SeriesPerRecord: 32, SeriesPerValue: 1.9, StandInsPerRecord: 3.6}, target
+	require.Empty(t, analyzeRun("run", composed).Discard)
+	miscomposed := composed
+	miscomposed.Composition.SeriesPerValue = 2.3
+	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed} {
 		require.Len(t, analyzeRun("run", report).Discard, 1, name)
 	}
 

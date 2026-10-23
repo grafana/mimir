@@ -97,8 +97,12 @@ CPUs busy, for the isolation check.
 baseline, relative to it, of each statistic: the replay's CPU per sample, the window's CPU per ingested sample, and the
 live heap. The interval is a 95% paired t-interval, stratified by which ingester the baseline was, with two runs of
 each order or more. A run doesn't count with more than 1% steal, a replay measured over less than 90% of it, reads
-rejected by the read path's limit, compactions, checkpoints, truncations or head snapshots after `/ready`, or, between
-ingesters of the same engine, different counts of them at `/ready`.
+rejected by the read path's limit, compactions, checkpoints, truncations or head snapshots after `/ready`, between
+ingesters of the same engine, different counts of them at `/ready`, or, with a profile that has a `composition`,
+records whose series per record or series per metadata value are more than 10% off it, or stand-ins per record more
+than 25%. [`native-metadata/phase2.batch`](native-metadata/phase2.batch) runs Phase 2's pairs with such a profile,
+[`native-metadata/threshold.json`](native-metadata/threshold.json), whose `series_per_request`, `series_per_target` and
+`partitions_per_tenant` make its records what a sample of real partitions' records was.
 
 ## Configuration
 

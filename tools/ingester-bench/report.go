@@ -94,12 +94,13 @@ type Report struct {
 	// What each ingester's memory holds at the window's end, after two collections: its live heap and its engine's
 	// accounting of its series and their native metric metadata.
 	EndMemory [2]map[string]float64 `json:"end_memory"`
-	// What a sample of the run's records was made of.
-	Composition Composition          `json:"composition"`
-	WindowS     float64              `json:"window_seconds"`
-	Resources   [2]Resources         `json:"resources"`
-	APIs        map[string]APIReport `json:"apis"`
-	Mismatches  []string             `json:"mismatch_examples,omitempty"`
+	// What a sample of the run's records was made of, and what the profile says they should be.
+	Composition       Composition          `json:"composition"`
+	CompositionTarget *Composition         `json:"composition_target,omitempty"`
+	WindowS           float64              `json:"window_seconds"`
+	Resources         [2]Resources         `json:"resources"`
+	APIs              map[string]APIReport `json:"apis"`
+	Mismatches        []string             `json:"mismatch_examples,omitempty"`
 	// What the run was, when each of its phases was, and what it recorded over time.
 	Config    map[string]string `json:"config"`
 	Started   int64             `json:"started"`
@@ -316,6 +317,9 @@ func (r Report) print(w io.Writer) {
 	}
 	if c := r.Composition; c.Records > 0 {
 		fmt.Fprintf(w, "\nrecords sampled %d: %.0f series each, %.1f series per metadata value, %.1f stand-ins\n", c.Records, c.SeriesPerRecord, c.SeriesPerValue, c.StandInsPerRecord)
+		if t := r.CompositionTarget; t != nil {
+			fmt.Fprintf(w, "  the profile's: %.0f series each, %.1f series per metadata value, %.1f stand-ins\n", t.SeriesPerRecord, t.SeriesPerValue, t.StandInsPerRecord)
+		}
 	}
 	fmt.Fprintf(w, "\nbench CPU %.2f cores in the replay, %.2f in the window; steal %s in the replay, %s in the window\n",
 		r.Driver.ReplayCores, r.Driver.WindowCores, share(r.Steal.Replay), share(r.Steal.Window))
