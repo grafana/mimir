@@ -157,6 +157,7 @@
 ### Jsonnet
 
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
+* [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
