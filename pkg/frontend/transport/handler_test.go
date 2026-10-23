@@ -77,7 +77,7 @@ func TestWriteError(t *testing.T) {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			require.Equal(t, test.status, writeError(w, r, test.err, retryafter.Config{}, retryafter.DefaultShouldRetry))
+			require.Equal(t, test.status, writeError(w, r, test.err, retryafter.Config{}))
 			require.Equal(t, test.status, w.Result().StatusCode)
 		})
 	}
@@ -90,49 +90,49 @@ func TestWriteError_RetryAfterHeader(t *testing.T) {
 		name        string
 		err         error
 		retryCfg    retryafter.Config
-		shouldRetry retryafter.ShouldRetryFunc
 		expectRetry bool
 	}{
 		{
-			name:        "429 with header enabled sets Retry-After",
-			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			name:        "429 marked for retry with header enabled sets Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: true,
 		},
 		{
-			name:        "429 with header disabled omits Retry-After",
-			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			name:        "429 marked for retry with header disabled omits Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
 			retryCfg:    retryafter.Config{},
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 		{
-			name:        "503 with header enabled sets Retry-After",
-			err:         apierror.New(apierror.TypeUnavailable, "unavailable"),
+			name:        "429 not marked for retry with header enabled omits Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
-			expectRetry: true,
+			expectRetry: false,
 		},
 		{
-			name:        "unknown error (500) with header enabled omits Retry-After under the default policy",
+			name:        "503 not marked for retry with header enabled omits Retry-After",
+			err:         apierror.New(apierror.TypeUnavailable, "unavailable"),
+			retryCfg:    retryCfg,
+			expectRetry: false,
+		},
+		{
+			name:        "unknown error (500) with header enabled omits Retry-After",
 			err:         errors.New("unknown"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 		{
 			name:        "400 with header enabled omits Retry-After",
 			err:         apierror.New(apierror.TypeBadData, "bad request"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			writeError(w, r, test.err, test.retryCfg, test.shouldRetry)
+			writeError(w, r, test.err, test.retryCfg)
 
 			retryAfter := w.Header().Get("Retry-After")
 			if test.expectRetry {
@@ -403,6 +403,35 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistencyLevel: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.NotEmpty(t, headers.Get("Retry-After"))
+			},
+		},
+		{
+			name: "downstream returns a too-many-requests apierror marked for retry, Retry-After header grows with the Retry-Attempt header",
+			cfg: HandlerConfig{
+				QueryStatsEnabled: true,
+				RetryAfterHeader:  retryafter.Config{Enabled: true, MinBackoff: time.Second, MaxBackoff: 100 * time.Second},
+			},
+			request: func() *http.Request {
+				req := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				req.Header.Set("Retry-Attempt", "5")
+				return req
+			},
+			downstreamErr:      apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
+			expectedStatusCode: 429,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:              8,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				seconds, err := strconv.Atoi(headers.Get("Retry-After"))
+				require.NoError(t, err)
+				// Attempt 5 gives 16s with 50% jitter.
+				// Attempt 1 gives 1s.
+				assert.GreaterOrEqual(t, seconds, 8)
+				assert.LessOrEqual(t, seconds, 24)
 			},
 		},
 		{

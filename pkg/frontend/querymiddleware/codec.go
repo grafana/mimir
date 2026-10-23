@@ -948,7 +948,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 		case http.StatusServiceUnavailable:
 			return nil, apierror.New(apierror.TypeUnavailable, string(buf))
 		case http.StatusTooManyRequests:
-			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf))
+			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf)).WithRetryAfter(0)
 		case http.StatusRequestEntityTooLarge:
 			return nil, apierror.New(apierror.TypeTooLargeEntry, string(buf))
 		default:
@@ -1009,7 +1009,7 @@ func (c Codec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Resp
 		case http.StatusServiceUnavailable:
 			return nil, apierror.New(apierror.TypeUnavailable, string(buf))
 		case http.StatusTooManyRequests:
-			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf))
+			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf)).WithRetryAfter(0)
 		case http.StatusRequestEntityTooLarge:
 			return nil, apierror.New(apierror.TypeTooLargeEntry, string(buf))
 		default:

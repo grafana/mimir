@@ -186,21 +186,3 @@ func TestConfig_Seconds(t *testing.T) {
 		})
 	}
 }
-
-func TestStatusCodeSet(t *testing.T) {
-	shouldRetry := StatusCodeSet(429, 503)
-	assert.False(t, shouldRetry(200))
-	assert.False(t, shouldRetry(400))
-	assert.False(t, shouldRetry(500))
-	assert.True(t, shouldRetry(429))
-	assert.True(t, shouldRetry(503))
-}
-
-func TestDefaultShouldRetry(t *testing.T) {
-	assert.False(t, DefaultShouldRetry(200))
-	assert.False(t, DefaultShouldRetry(400))
-	assert.False(t, DefaultShouldRetry(408))
-	assert.False(t, DefaultShouldRetry(500))
-	assert.True(t, DefaultShouldRetry(429))
-	assert.True(t, DefaultShouldRetry(503))
-}

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -311,7 +312,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeError(w, r, apierror.New(apierror.TypeBadData, err.Error()), f.cfg.RetryAfterHeader, retryafter.DefaultShouldRetry)
+		writeError(w, r, apierror.New(apierror.TypeBadData, err.Error()), f.cfg.RetryAfterHeader)
 		return
 	}
 
@@ -320,7 +321,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = http.NewResponseController(w).SetWriteDeadline(deadline)
 		if err != nil {
 			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
-			writeError(w, r, apierror.New(apierror.TypeInternal, err.Error()), f.cfg.RetryAfterHeader, retryafter.DefaultShouldRetry)
+			writeError(w, r, apierror.New(apierror.TypeInternal, err.Error()), f.cfg.RetryAfterHeader)
 			return
 		}
 		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
@@ -334,7 +335,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
-		statusCode := writeError(w, r, err, f.cfg.RetryAfterHeader, retryafter.DefaultShouldRetry)
+		statusCode := writeError(w, r, err, f.cfg.RetryAfterHeader)
 		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
 	}
@@ -366,7 +367,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
 	}
 
-	if f.cfg.RetryAfterHeader.Enabled && retryafter.DefaultShouldRetry(resp.StatusCode) {
+	// A raw response holds no APIError, so no source can mark it for retry.
+	// Of the raw responses, only a 429 gets the header.
+	if f.cfg.RetryAfterHeader.Enabled && resp.StatusCode == http.StatusTooManyRequests {
 		hs.Set("Retry-After", f.cfg.RetryAfterHeader.Seconds(r.Header.Get("Retry-Attempt")))
 	}
 
@@ -734,7 +737,7 @@ func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
 }
 
 // writeError writes the error response to http.ResponseWriter, and returns the response HTTP status code.
-func writeError(w http.ResponseWriter, r *http.Request, err error, retryCfg retryafter.Config, shouldRetry retryafter.ShouldRetryFunc) int {
+func writeError(w http.ResponseWriter, r *http.Request, err error, retryCfg retryafter.Config) int {
 	switch {
 	case errors.Is(err, context.Canceled):
 		err = errCanceled
@@ -761,10 +764,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error, retryCfg retr
 	// If we've been able to get the HTTP response from the error, then we send
 	// it with the right status code and response body content.
 	if resFound {
-		// Set before WriteResponse: a more specific Retry-After in res.Headers (e.g. from an
-		// apierror with an exact wait time) then overrides this value.
-		if retryCfg.Enabled && shouldRetry(int(res.Code)) {
-			w.Header().Set("Retry-After", retryCfg.Seconds(r.Header.Get("Retry-Attempt")))
+		if minWait, ok := apierror.RetryAfter(err); ok && retryCfg.Enabled {
+			if minWait > 0 {
+				w.Header().Set("Retry-After", strconv.FormatInt(int64(math.Ceil(minWait.Seconds())), 10))
+			} else {
+				w.Header().Set("Retry-After", retryCfg.Seconds(r.Header.Get("Retry-Attempt")))
+			}
 		}
 		_ = httpgrpc.WriteResponse(w, res)
 		return int(res.Code)
