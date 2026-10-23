@@ -76,13 +76,13 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 
 // enrichedVectorSelector is a struct to hold additional information about vector selectors,
 // mainly the set of labels that are allowed to propagate inwards and outwards (same set used
-// for both), and whether that set is for including or excluding, which are used only for aggregate
-// expressions and the expressions that contain them.
+// for both), and whether that set is for including or excluding, which are used only when the
+// selector is inside an aggregation or a binary operation with on() or ignoring().
 type enrichedVectorSelector struct {
-	vs          *parser.VectorSelector
-	labelsSet   stringSet
-	include     bool
-	containsAgg bool
+	vs         *parser.VectorSelector
+	labelsSet  stringSet
+	include    bool
+	restricted bool
 }
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
@@ -155,7 +155,7 @@ func restrictToMatchingLabels(vss []*enrichedVectorSelector, matching *parser.Ve
 	}
 	matchingLabelsSet := newStringSet(matching.MatchingLabels)
 	for _, vs := range vss {
-		updateVectorSelectorWithAggregationInfo(vs, matchingLabelsSet, matching.On)
+		restrictPropagatableLabels(vs, matchingLabelsSet, matching.On)
 	}
 	return vss
 }
@@ -216,30 +216,33 @@ func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *pars
 	}
 	groupingSet := newStringSet(e.Grouping)
 	for _, vs := range vss {
-		updateVectorSelectorWithAggregationInfo(vs, groupingSet, include)
+		restrictPropagatableLabels(vs, groupingSet, include)
 	}
 	newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, include)
 	return vss, newMatchers
 }
 
-func updateVectorSelectorWithAggregationInfo(vs *enrichedVectorSelector, groupingSet stringSet, include bool) {
-	if vs.containsAgg {
+// restrictPropagatableLabels narrows the labels that may propagate into or out of vs to those in
+// allowed (include) or not in allowed (!include), combined with any earlier restriction from an
+// inner aggregation or binary operation.
+func restrictPropagatableLabels(vs *enrichedVectorSelector, allowed stringSet, include bool) {
+	if vs.restricted {
 		switch {
 		case vs.include && include:
-			vs.labelsSet = vs.labelsSet.Intersection(groupingSet)
+			vs.labelsSet = vs.labelsSet.Intersection(allowed)
 		case !vs.include && !include:
-			vs.labelsSet = vs.labelsSet.Union(groupingSet)
+			vs.labelsSet = vs.labelsSet.Union(allowed)
 		case vs.include && !include:
-			vs.labelsSet = vs.labelsSet.Difference(groupingSet)
+			vs.labelsSet = vs.labelsSet.Difference(allowed)
 		case !vs.include && include:
-			vs.labelsSet = groupingSet.Difference(vs.labelsSet)
+			vs.labelsSet = allowed.Difference(vs.labelsSet)
 			vs.include = true
 		}
 		return
 	}
-	vs.labelsSet = groupingSet
+	vs.labelsSet = allowed
 	vs.include = include
-	vs.containsAgg = true
+	vs.restricted = true
 }
 
 // VectorSelectorArgumentIndex returns the index of the argument that contains the vector selector,
