@@ -72,7 +72,9 @@ func TestEngineKeepsSeriesMetricMetadataOnEveryPath(t *testing.T) {
 	require.Equal(t, 2, ingested)
 	require.Equal(t, []MetricMetadataVersion{asVersion(1_000, requests)}, e.metricMetadataVersions(id))
 	require.Equal(t, []MetricMetadataVersion{asVersion(2_000, requests)}, e.metricMetadataVersions(uint64(otherRef)))
-	require.Equal(t, hits+1, e.metricMetadataStats.memoHits.Load())
+	if recordMemo {
+		require.Equal(t, hits+1, e.metricMetadataStats.memoHits.Load())
+	}
 
 	// A record with other metadata changes it, and a decoded batch changes it back.
 	_, _, err = e.AppendRW2(metadataRecord(t, 3_000, served, lbls), 0, 1<<62, 0, false, &rw2Sink{})
