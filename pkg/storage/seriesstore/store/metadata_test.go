@@ -116,7 +116,7 @@ func TestShardMetadataObservationsLikeAModel(t *testing.T) {
 						at -= int64(r.Intn(10)) * 1000
 					}
 					id := values[r.Intn(len(values))]
-					m.observe(&series[i], id, at, 0)
+					m.observe(&series[i], id, at, 0, metadataLimits{})
 					models[i].observe(at, id)
 				}
 				for i := range series {
@@ -157,10 +157,10 @@ func TestShardMetadataClampsObservationsBeforeTheBase(t *testing.T) {
 	m := newShardMetadata(d, stats)
 	id := d.intern(metadata.Metadata{Type: model.MetricTypeGauge})
 	series := Series{ref: 1}
-	m.observe(&series, id, chunkRangeMs, 0)
+	m.observe(&series, id, chunkRangeMs, 0, metadataLimits{})
 	require.Equal(t, chunkRangeMs/2, m.base)
 	other := Series{ref: 2}
-	m.observe(&other, id, 0, 0)
+	m.observe(&other, id, 0, 0, metadataLimits{})
 	require.Equal(t, chunkRangeMs/2, m.start(&other))
 	require.EqualValues(t, 1, stats.clamped.Load())
 }
@@ -175,4 +175,48 @@ func TestMetricMetadataOf(t *testing.T) {
 	_, ok = metricMetadataOf(mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: strings.Repeat("h", maxMetricMetadataBytes)}, stats)
 	require.False(t, ok)
 	require.EqualValues(t, 1, stats.oversized.Load())
+}
+
+func TestShardMetadataCoalescesChangesOverTheLimit(t *testing.T) {
+	d := newMetricMetadataDictionary()
+	stats := &metricMetadataStats{}
+	coalesced := 0
+	stats.onCoalesced = func() { coalesced++ }
+	m := newShardMetadata(d, stats)
+	values := map[string]uint32{}
+	for _, help := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		values[help] = d.intern(metadata.Metadata{Type: model.MetricTypeGauge, Help: help})
+	}
+	const minute = int64(60_000)
+	limits := metadataLimits{maxChanges: 2, windowMs: 60 * minute}
+	series := Series{ref: 1}
+	for _, o := range []struct {
+		at   int64
+		help string
+	}{
+		{10, "a"}, {20, "b"}, {25, "c"},
+		// Over the limit: from here to the window's end, the latest value by time.
+		{30, "d"}, {40, "e"}, {35, "f"},
+		// The next window closes the coalesced range with its latest value, and counts afresh.
+		{70, "g"},
+	} {
+		m.observe(&series, values[o.help], o.at*minute, 0, limits)
+	}
+	require.Equal(t, []metadataRun{
+		{from: 10 * minute, id: values["a"]},
+		{from: 20 * minute, id: values["b"]},
+		{from: 25 * minute, id: values["c"]},
+		{from: 30 * minute, id: values["e"] | metadataCoalesced},
+		{from: 60 * minute, id: values["e"]},
+		{from: 70 * minute, id: values["g"]},
+	}, m.runsOf(&series, nil))
+	require.Equal(t, 1, coalesced)
+	require.EqualValues(t, 1, stats.coalesced.Load())
+	require.Equal(t, "e", d.value(values["e"]|metadataCoalesced).Help)
+
+	// Every run holds a reference, and the interned ones one more: d and f went with the coalesced range.
+	m.drop(&series)
+	for help, id := range values {
+		require.EqualValues(t, 1, d.entry(id).refs.Load(), help)
+	}
 }

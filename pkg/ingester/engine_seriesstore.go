@@ -78,7 +78,7 @@ func idleEvictionMs(activeIdleTimeout time.Duration) int64 {
 	return (activeIdleTimeout + seriesstoreIdleEvictionMargin).Milliseconds()
 }
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool, activeIdleTimeout time.Duration) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool, activeIdleTimeout time.Duration, onCoalesced func()) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -101,6 +101,8 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		Checkpoints:             checkpoints,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
+		// The changes of the series' metadata over the change limit, which the engine coalesces, are discarded metadata.
+		OnMetricMetadataCoalesced: onCoalesced,
 	})
 	if err != nil {
 		return nil, err
@@ -171,6 +173,7 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 func (e seriesstoreEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
 	// The appender gets the series' metadata with their samples when it's kept, and the store's own paths this way.
 	e.Engine.SetNativeMetricMetadata(batch.NativeMetricMetadata)
+	e.Engine.SetMetricMetadataChangeLimit(batch.NativeMetricMetadataMaxChanges, batch.NativeMetricMetadataWindowMs)
 	if batch.Record != nil {
 		return e.ingestRecord(ctx, batch)
 	}

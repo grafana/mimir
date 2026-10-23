@@ -59,7 +59,12 @@ func newMetricMetadataDictionary() *metricMetadataDictionary {
 	return d
 }
 
+// metadataCoalesced marks a run's id as a coalesced run's: the changes over the change limit in a window, which the run
+// stands for, with the latest of their values. The dictionary takes such ids as their value's.
+const metadataCoalesced = uint32(1) << 31
+
 func (d *metricMetadataDictionary) entry(id uint32) *metricMetadataValue {
+	id &^= metadataCoalesced
 	pages := *d.pages.Load()
 	return &pages[id/metricMetadataPageSize][id%metricMetadataPageSize]
 }
@@ -77,6 +82,9 @@ func (d *metricMetadataDictionary) intern(m metadata.Metadata) uint32 {
 		id, d.free = d.free[n-1], d.free[:n-1]
 	} else {
 		id = d.next
+		if id == metadataCoalesced {
+			panic("native metric metadata dictionary has no ids left")
+		}
 		d.next++
 		if pages := *d.pages.Load(); int(id/metricMetadataPageSize) >= len(pages) {
 			grown := append(slices.Clip(pages), &metricMetadataPage{})
@@ -138,6 +146,28 @@ type metricMetadataStats struct {
 	clamped atomic.Uint64
 	// Lookups of a value by a batch's memo, and the ones it didn't have yet.
 	memoHits, memoMisses atomic.Uint64
+	// The changes over the change limit: each coalesced range, and each out-of-order change absorbed for it.
+	coalesced atomic.Uint64
+	// Called with each, once set at the engine's open.
+	onCoalesced func()
+}
+
+func (s *metricMetadataStats) coalesce() {
+	s.coalesced.Add(1)
+	if s.onCoalesced != nil {
+		s.onCoalesced()
+	}
+}
+
+// metadataLimits are how many changes of its metadata a series may have in a window of sample time, of the size of the
+// window; past them, the changes coalesce until the window ends. No changes, or no window, is no limit.
+type metadataLimits struct {
+	maxChanges int
+	windowMs   int64
+}
+
+func (l metadataLimits) windowOf(t int64) int64 {
+	return t - ((t%l.windowMs)+l.windowMs)%l.windowMs
 }
 
 // shardMetadata is a shard's part of an engine's native metric metadata, guarded by the shard's lock.
@@ -152,8 +182,17 @@ type shardMetadata struct {
 	base    int64
 	baseSet bool
 	older   map[uint64][]metadataRun
+	// The changes of the series that changed, as the change limit counts them.
+	changes map[uint64]metadataChanges
 	// The series with a value, and the older runs of all of them.
 	series, runs int
+}
+
+// metadataChanges are a series' changes in the window it last changed in, and when the series' current run is a
+// coalesced one, the end of its window and when its latest value was observed.
+type metadataChanges struct {
+	window, coalescedEnd, latestAt int64
+	count                          int
 }
 
 // metadataRun is a value from a time until the next run's start, or for the current run, on.
@@ -163,7 +202,7 @@ type metadataRun struct {
 }
 
 func newShardMetadata(dictionary *metricMetadataDictionary, stats *metricMetadataStats) *shardMetadata {
-	return &shardMetadata{dictionary: dictionary, stats: stats, older: map[uint64][]metadataRun{}}
+	return &shardMetadata{dictionary: dictionary, stats: stats, older: map[uint64][]metadataRun{}, changes: map[uint64]metadataChanges{}}
 }
 
 // metadataBaseMargin is how far before the first observation a shard's base is: samples down to the out-of-order
@@ -198,8 +237,9 @@ func (m *shardMetadata) offset(t, oooWindowMs int64) uint32 {
 
 // observe records that series has the value id from t on: the id of a value the caller holds a reference to, which
 // the series takes another one of if it keeps it. Equal neighbouring runs merge, the last of observations at the same
-// time wins, and an observation older than the series' current run is put among its older runs.
-func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64) {
+// time wins, and an observation older than the series' current run is put among its older runs. A change over the
+// limits' coalesces with the window's later ones.
+func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64, limits metadataLimits) {
 	if series.metadataID == 0 {
 		m.dictionary.acquire(id)
 		series.metadataID, series.metadataStart = id, m.offset(t, oooWindowMs)
@@ -211,7 +251,20 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64)
 		// The usual observation: the series' value, as it has been.
 		return
 	}
+	if series.metadataID&metadataCoalesced != 0 {
+		if m.absorb(series, id, t, start, oooWindowMs) {
+			return
+		}
+		start = m.start(series)
+		if t >= start && series.metadataID == id {
+			return
+		}
+	}
 	if t > start {
+		if !m.charge(series.ref, t, limits) {
+			m.coalesceFrom(series, id, t, oooWindowMs, limits)
+			return
+		}
 		m.dictionary.acquire(id)
 		m.older[series.ref] = append(m.older[series.ref], metadataRun{from: start, id: series.metadataID})
 		m.runs++
@@ -232,12 +285,19 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64)
 	switch {
 	case found && runs[at].id == id:
 		return
+	case found && runs[at].id&metadataCoalesced != 0 || !found && at > 0 && runs[at-1].id&metadataCoalesced != 0:
+		// Into a coalesced run, which stands for whatever changed in its range.
+		return
+	case !found && at > 0 && runs[at-1].id == id:
+		// Within a run of the same value.
+		return
+	case !m.charge(series.ref, t, limits):
+		// An out-of-order change over the limit, which has no coalesced run to go in, is absorbed.
+		m.stats.coalesce()
+		return
 	case found:
 		m.dictionary.release(runs[at].id)
 		runs[at].id = id
-	case at > 0 && runs[at-1].id == id:
-		// Within a run of the same value.
-		return
 	default:
 		runs = slices.Insert(runs, at, metadataRun{from: t, id: id})
 	}
@@ -265,6 +325,68 @@ func (m *shardMetadata) setRuns(series *Series, runs []metadataRun, oooWindowMs 
 	} else {
 		delete(m.older, series.ref)
 	}
+}
+
+// absorb takes an observation into the series' coalesced current run, which started at start: one in its window is
+// absorbed, the latest by time being its value. One after its window closes it: the series goes on from the window's
+// end with that value, as a run of its own, and absorb returns false for the caller to go on with the observation.
+func (m *shardMetadata) absorb(series *Series, id uint32, t, start, oooWindowMs int64) bool {
+	c := m.changes[series.ref]
+	if t >= c.coalescedEnd {
+		m.older[series.ref] = append(m.older[series.ref], metadataRun{from: start, id: series.metadataID})
+		m.runs++
+		latest := series.metadataID &^ metadataCoalesced
+		m.dictionary.acquire(latest)
+		series.metadataID, series.metadataStart = latest, m.offset(c.coalescedEnd, oooWindowMs)
+		m.changes[series.ref] = metadataChanges{window: c.coalescedEnd}
+		return false
+	}
+	if t < start {
+		return false
+	}
+	if t >= c.latestAt {
+		if latest := series.metadataID &^ metadataCoalesced; latest != id {
+			m.dictionary.acquire(id)
+			m.dictionary.release(latest)
+			series.metadataID = id | metadataCoalesced
+		}
+		c.latestAt = t
+		m.changes[series.ref] = c
+	}
+	return true
+}
+
+// charge counts a change of the series at t against the limits, and reports whether it's within them. A change in an
+// older window than the series' last one, which an out-of-order observation makes, isn't counted.
+func (m *shardMetadata) charge(ref uint64, t int64, limits metadataLimits) bool {
+	if limits.maxChanges <= 0 || limits.windowMs <= 0 {
+		return true
+	}
+	window := limits.windowOf(t)
+	c, ok := m.changes[ref]
+	switch {
+	case ok && window < c.window:
+		return true
+	case !ok || window > c.window:
+		c = metadataChanges{window: window}
+	}
+	if c.count >= limits.maxChanges {
+		return false
+	}
+	c.count++
+	m.changes[ref] = c
+	return true
+}
+
+// coalesceFrom starts the series' coalesced run at t, with the value id, to the end of t's window.
+func (m *shardMetadata) coalesceFrom(series *Series, id uint32, t, oooWindowMs int64, limits metadataLimits) {
+	m.dictionary.acquire(id)
+	m.older[series.ref] = append(m.older[series.ref], metadataRun{from: m.start(series), id: series.metadataID})
+	m.runs++
+	series.metadataID, series.metadataStart = id|metadataCoalesced, m.offset(t, oooWindowMs)
+	window := limits.windowOf(t)
+	m.changes[series.ref] = metadataChanges{window: window, coalescedEnd: window + limits.windowMs, latestAt: t, count: limits.maxChanges}
+	m.stats.coalesce()
 }
 
 // runsOf are series' runs, oldest first, which refer to values the caller resolves under the shard's lock.
@@ -312,6 +434,7 @@ func (m *shardMetadata) drop(series *Series) {
 	}
 	m.runs -= len(m.older[series.ref])
 	delete(m.older, series.ref)
+	delete(m.changes, series.ref)
 	m.dictionary.release(series.metadataID)
 	series.metadataID, series.metadataStart = 0, 0
 	m.series--
@@ -416,6 +539,13 @@ func (e *Engine) SetNativeMetricMetadata(enabled bool) {
 	e.nativeMetadata.Store(enabled)
 }
 
+// SetMetricMetadataChangeLimit sets how many changes of its metadata a series may have in a window of sample time of
+// windowMs: past them, the changes coalesce into one range until the window ends. 0 for either is no limit.
+func (e *Engine) SetMetricMetadataChangeLimit(maxChanges int, windowMs int64) {
+	e.metadataMaxChanges.Store(int64(maxChanges))
+	e.metadataChangeWindowMs.Store(windowMs)
+}
+
 // shardMetadataLocked is the shard's part of the engine's native metric metadata, for a caller holding its lock.
 func (e *Engine) shardMetadataLocked(t *tenant) *shardMetadata {
 	if t.nativeMetadata == nil {
@@ -432,7 +562,8 @@ func (e *Engine) observeMetadataLocked(t *tenant, series *Series, id uint32, tim
 			observed = e.metadataObservedFrom.Load()
 		}
 	}
-	e.shardMetadataLocked(t).observe(series, id, timestamp, e.oooWindow.Load())
+	limits := metadataLimits{maxChanges: int(e.metadataMaxChanges.Load()), windowMs: e.metadataChangeWindowMs.Load()}
+	e.shardMetadataLocked(t).observe(series, id, timestamp, e.oooWindow.Load(), limits)
 }
 
 // metadataRebaseAfter is how far past its shard's base a series' run may start before the shard is rebased: half the
@@ -488,16 +619,20 @@ func (e *Engine) metricMetadataVersions(ref uint64) []MetricMetadataVersion {
 	if !ok {
 		return nil
 	}
-	return e.versionsLocked(t.nativeMetadata, &entry.series, nil)
+	versions, _ := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
+	return versions
 }
 
-// versionsLocked appends series' versions, which the caller resolves under the shard's lock, to into.
-func (e *Engine) versionsLocked(m *shardMetadata, series *Series, into []MetricMetadataVersion) []MetricMetadataVersion {
+// versionsLocked appends series' versions, which the caller resolves under the shard's lock, to into, and reports
+// whether any of them is a coalesced one.
+func (e *Engine) versionsLocked(m *shardMetadata, series *Series, into []MetricMetadataVersion) ([]MetricMetadataVersion, bool) {
 	var runs [8]metadataRun
+	coalesced := false
 	for _, run := range m.runsOf(series, runs[:0]) {
 		into = append(into, MetricMetadataVersion{EffectiveFrom: run.from, Metadata: e.metricMetadata.value(run.id)})
+		coalesced = coalesced || run.id&metadataCoalesced != 0
 	}
-	return into
+	return into, coalesced
 }
 
 // NativeMetricMetadataSeries is a head series' native metric metadata.
@@ -505,6 +640,8 @@ type NativeMetricMetadataSeries struct {
 	Labels promlabels.Labels
 	// The versions, oldest first.
 	Versions []MetricMetadataVersion
+	// Whether a version stands for the changes over the change limit in its window, with the latest of their values.
+	Coalesced bool
 }
 
 // NativeMetricMetadata returns the native metric metadata of the head series that match any of matcherSets, in label
@@ -544,7 +681,8 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 					}
 					heap.Pop(selected)
 				}
-				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: e.versionsLocked(t.nativeMetadata, &entry.series, nil)})
+				versions, coalesced := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
+				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: versions, coalesced: coalesced})
 				return true
 			})
 		}
@@ -556,7 +694,7 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 	out := make([]NativeMetricMetadataSeries, 0, len(selected.series))
 	var builder promlabels.ScratchBuilder
 	for _, s := range selected.series {
-		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions})
+		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, Coalesced: s.coalesced})
 	}
 	return out, limited, nil
 }
@@ -568,8 +706,9 @@ func (e *Engine) NativeMetricMetadataCoverageStart() int64 {
 }
 
 type selectedMetadata struct {
-	labels   labels.Labels
-	versions []MetricMetadataVersion
+	labels    labels.Labels
+	versions  []MetricMetadataVersion
+	coalesced bool
 }
 
 // metadataSelection is a max-heap of series by labels.
@@ -595,8 +734,9 @@ type MetricMetadataStats struct {
 	Values, ValueBytes int64
 	// The entries the series' groups have room for, which every series' inline metadata is paid in.
 	EntryCapacity int64
-	// The values too big to keep, the runs whose start clamped to their shard's base, and the batches' memo lookups.
-	Oversized, Clamped, MemoHits, MemoMisses uint64
+	// The values too big to keep, the runs whose start clamped to their shard's base, the batches' memo lookups, and
+	// the changes over the change limit.
+	Oversized, Clamped, MemoHits, MemoMisses, Coalesced uint64
 }
 
 // MetricMetadataStats returns the engine's native metric metadata as its metrics report it.
@@ -608,6 +748,7 @@ func (e *Engine) MetricMetadataStats() MetricMetadataStats {
 		Clamped:    e.metricMetadataStats.clamped.Load(),
 		MemoHits:   e.metricMetadataStats.memoHits.Load(),
 		MemoMisses: e.metricMetadataStats.memoMisses.Load(),
+		Coalesced:  e.metricMetadataStats.coalesced.Load(),
 	}
 	for index, state := range e.store.shards {
 		state.RLock()

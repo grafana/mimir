@@ -138,7 +138,8 @@ var testNoNativeActive bool
 func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
 		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout)
+		coalesced := i.metrics.discardedMetadataPerSeriesChangeLimit.WithLabelValues(userID)
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout, coalesced.Inc)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }
@@ -162,8 +163,11 @@ type ingestBatch struct {
 	// Histograms are ingested only if NativeHistograms is set, and exemplars only if Exemplars is.
 	NativeHistograms bool
 	Exemplars        bool
-	// NativeMetricMetadata gives the engine each series' own metric metadata to store.
-	NativeMetricMetadata bool
+	// NativeMetricMetadata gives the engine each series' own metric metadata to store, and for the seriesstore engine,
+	// how many changes of it a series may have per window of sample time.
+	NativeMetricMetadata           bool
+	NativeMetricMetadataMaxChanges int
+	NativeMetricMetadataWindowMs   int64
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time

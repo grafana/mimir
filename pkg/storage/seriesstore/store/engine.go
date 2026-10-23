@@ -60,6 +60,8 @@ type EngineOptions struct {
 	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
 	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
 	SecondaryHashFunction func(promlabels.Labels) uint32
+	// Called for each change of a series' metadata over the change limit that the engine coalesces, if set.
+	OnMetricMetadataCoalesced func()
 }
 
 // Engine is one tenant's series behind the per-tenant TSDB interface Mimir's ingester uses:
@@ -118,6 +120,8 @@ type Engine struct {
 	metricMetadataStats metricMetadataStats
 	// The oldest time a series' metadata was first observed at since the engine opened, math.MaxInt64 before.
 	metadataObservedFrom atomic.Int64
+	// The change limit of the series' metadata, which the ingester sets for each batch.
+	metadataMaxChanges, metadataChangeWindowMs atomic.Int64
 }
 
 // A nop callback, for engines opened without one.
@@ -145,6 +149,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	// A restored head may hold out-of-order data that was never compacted.
 	e.oooDirty.Store(true)
 	e.metricMetadata = newMetricMetadataDictionary()
+	e.metricMetadataStats.onCoalesced = opts.OnMetricMetadataCoalesced
 	e.metadataObservedFrom.Store(math.MaxInt64)
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)

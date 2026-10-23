@@ -407,6 +407,7 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 	if i.limits.PastGracePeriod(userID) > 0 {
 		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	}
+	maxChanges, changeWindow := i.limits.NativeMetricMetadataChangeLimit(userID)
 	outcome, ingestErr := db.db.Ingest(&ingestContext{
 		Context:                          ctx,
 		i:                                i,
@@ -426,16 +427,18 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		maxTimestampMs:                   maxTimestampMs,
 		minTimestampMs:                   minTimestampMs,
 	}, ingestBatch{
-		Series:               req.series(),
-		Record:               req.record,
-		Decoded:              req.decodedSubset,
-		MinTimestampMs:       minTimestampMs,
-		MaxTimestampMs:       maxTimestampMs,
-		NativeHistograms:     nativeHistogramsIngestionEnabled,
-		Exemplars:            i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
-		NativeMetricMetadata: i.limits.NativeMetricMetadataEnabled(userID),
-		IngestedAt:           startAppend,
-		OTLP:                 req.source() == mimirpb.OTLP,
+		Series:                         req.series(),
+		Record:                         req.record,
+		Decoded:                        req.decodedSubset,
+		MinTimestampMs:                 minTimestampMs,
+		MaxTimestampMs:                 maxTimestampMs,
+		NativeHistograms:               nativeHistogramsIngestionEnabled,
+		Exemplars:                      i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
+		NativeMetricMetadata:           i.limits.NativeMetricMetadataEnabled(userID),
+		NativeMetricMetadataMaxChanges: maxChanges,
+		NativeMetricMetadataWindowMs:   changeWindow.Milliseconds(),
+		IngestedAt:                     startAppend,
+		OTLP:                           req.source() == mimirpb.OTLP,
 	})
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars
