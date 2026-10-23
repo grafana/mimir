@@ -77,7 +77,7 @@ func TestWriteError(t *testing.T) {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			require.Equal(t, test.status, writeError(w, r, test.err, retryafter.Config{}, retryafter.DefaultShouldRetry))
+			require.Equal(t, test.status, writeError(w, r, test.err, retryafter.Config{}))
 			require.Equal(t, test.status, w.Result().StatusCode)
 		})
 	}
@@ -90,49 +90,49 @@ func TestWriteError_RetryAfterHeader(t *testing.T) {
 		name        string
 		err         error
 		retryCfg    retryafter.Config
-		shouldRetry retryafter.ShouldRetryFunc
 		expectRetry bool
 	}{
 		{
-			name:        "429 with header enabled sets Retry-After",
-			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			name:        "429 marked for retry with header enabled sets Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: true,
 		},
 		{
-			name:        "429 with header disabled omits Retry-After",
-			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
+			name:        "429 marked for retry with header disabled omits Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests").WithRetryAfter(0),
 			retryCfg:    retryafter.Config{},
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 		{
-			name:        "503 with header enabled sets Retry-After",
-			err:         apierror.New(apierror.TypeUnavailable, "unavailable"),
+			name:        "429 not marked for retry with header enabled omits Retry-After",
+			err:         apierror.New(apierror.TypeTooManyRequests, "too many requests"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
-			expectRetry: true,
+			expectRetry: false,
 		},
 		{
-			name:        "unknown error (500) with header enabled omits Retry-After under the default policy",
+			name:        "503 not marked for retry with header enabled omits Retry-After",
+			err:         apierror.New(apierror.TypeUnavailable, "unavailable"),
+			retryCfg:    retryCfg,
+			expectRetry: false,
+		},
+		{
+			name:        "unknown error (500) with header enabled omits Retry-After",
 			err:         errors.New("unknown"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 		{
 			name:        "400 with header enabled omits Retry-After",
 			err:         apierror.New(apierror.TypeBadData, "bad request"),
 			retryCfg:    retryCfg,
-			shouldRetry: retryafter.DefaultShouldRetry,
 			expectRetry: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			writeError(w, r, test.err, test.retryCfg, test.shouldRetry)
+			writeError(w, r, test.err, test.retryCfg)
 
 			retryAfter := w.Header().Get("Retry-After")
 			if test.expectRetry {

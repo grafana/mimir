@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand" // #nosec G404 -- nosemgrep: used only for retry backoff jitter, not security-sensitive
-	"net/http"
 	"strconv"
 	"time"
 )
@@ -55,25 +54,6 @@ func (cfg *Config) Validate() error {
 	}
 	return nil
 }
-
-// ShouldRetryFunc reports whether a response with the given HTTP status code should carry a Retry-After header.
-type ShouldRetryFunc func(statusCode int) bool
-
-// StatusCodeSet returns a ShouldRetryFunc that matches exactly the given status codes.
-func StatusCodeSet(codes ...int) ShouldRetryFunc {
-	set := make(map[int]struct{}, len(codes))
-	for _, code := range codes {
-		set[code] = struct{}{}
-	}
-	return func(statusCode int) bool {
-		_, ok := set[statusCode]
-		return ok
-	}
-}
-
-// DefaultShouldRetry is the default retry policy: 429 (Too Many Requests) and 503 (Service Unavailable).
-// Callers with different needs (e.g. treating all 5xx as retryable) should build their own ShouldRetryFunc.
-var DefaultShouldRetry = StatusCodeSet(http.StatusTooManyRequests, http.StatusServiceUnavailable)
 
 // Seconds calculates the Retry-After value, in whole seconds, given the value of the request's
 // Retry-Attempt header. The result is MinBackoff*2^(RetryAttempt-1), clamped to MaxBackoff, with

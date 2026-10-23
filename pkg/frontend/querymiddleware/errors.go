@@ -41,5 +41,5 @@ func newQueryLimitedError(allowedFrequency time.Duration, tenantID string, admin
 	return apierror.New(
 		apierror.TypeTooManyRequests, globalerror.QueryLimited.Message(
 			fmt.Sprintf("the query has been limited by the cluster administrator, and is being run more frequently than the allowed frequency %s against tenant %s%s", allowedFrequency, tenantID, reason),
-		))
+		)).WithRetryAfter(allowedFrequency)
 }

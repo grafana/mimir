@@ -769,7 +769,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 					return nil, nil
 				}
 
-				return nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
+				return nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests").WithRetryAfter(0)
 			}
 
 			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.
