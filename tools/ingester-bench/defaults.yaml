@@ -1,0 +1,57 @@
+# The configuration every run starts from, which -config files override: the flags of both ingesters, as a
+# multi-tenant cell runs them, on top of the ones the bench sets for its own needs (ports, ring, Kafka, data
+# directories, retention, the tenants' runtime configuration).
+#
+#   common:      # Both ingesters.
+#     args:      # Flags, without their dash: a value replaces the flag's, null removes it.
+#       some-flag: value
+#   a:           # Ingester A, over common.
+#     name:      # In the report.
+#     binary:    # The Mimir binary, when the bench starts it (default built from the working tree), or in the image.
+#     image:     # The image of its container with run-in-kubernetes.sh (default the bench's, with the tree's Mimir).
+#     args: {}
+#   b: {}        # Ingester B, likewise.
+common:
+  args:
+    # The TSDB's caches and planning.
+    blocks-storage.tsdb.head-postings-for-matchers-cache-force: "true"
+    blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation: "true"
+    blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes: "26214400"
+    blocks-storage.tsdb.head-postings-for-matchers-cache-ttl: 10m
+    blocks-storage.tsdb.block-postings-for-matchers-cache-force: "true"
+    blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes: "26214400"
+    blocks-storage.tsdb.block-postings-for-matchers-cache-ttl: 10m
+    blocks-storage.tsdb.shared-postings-for-matchers-cache: "true"
+    blocks-storage.tsdb.index-lookup-planning.enabled: "true"
+    blocks-storage.tsdb.index-lookup-planning.comparison-portion: "0.01"
+    blocks-storage.tsdb.float-chunk-encoding: xor2
+    blocks-storage.tsdb.head-chunks-write-buffer-size-bytes: "1048576"
+    blocks-storage.tsdb.series-hash-cache-max-size-bytes: "367001600"
+    # Timely and early head compactions.
+    blocks-storage.tsdb.head-compaction-interval: 15m
+    blocks-storage.tsdb.timely-head-compaction-enabled: "true"
+    blocks-storage.tsdb.early-head-compaction-min-in-memory-series: "2400000"
+    blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage: "15"
+    ingester.early-compaction-non-owned-series-enabled: "true"
+    # Active and owned series.
+    ingester.active-series-metrics-enabled: "true"
+    ingester.active-series-metrics-idle-timeout: 20m
+    ingester.track-ingester-owned-series: "true"
+    ingester.use-ingester-owned-series-for-limits: "true"
+    # Circuit breakers and error sampling.
+    ingester.error-sample-rate: "10"
+    ingester.push-circuit-breaker.enabled: "true"
+    ingester.push-circuit-breaker.failure-threshold-percentage: "20"
+    ingester.push-circuit-breaker.initial-delay: 60s
+    ingester.push-circuit-breaker.request-timeout: 2s
+    ingester.read-circuit-breaker.enabled: "true"
+    ingester.read-circuit-breaker.failure-threshold-percentage: "20"
+    ingester.read-circuit-breaker.request-timeout: 30s
+    # Metadata and cost attribution.
+    ingester.max-global-metadata-per-metric: "10"
+    ingester.max-global-metadata-per-user: "30000"
+    cost-attribution.registry-path: /usage-metrics
+    validation.max-active-series-additional-custom-trackers: "200"
+    # Cells instrument a share of the records for reference leaks too, -instrument-reference-leaks.percentage=5 with
+    # a before-reuse period of 2m, but with it out-of-order native histograms differed between the ingesters, whichever
+    # they were.
