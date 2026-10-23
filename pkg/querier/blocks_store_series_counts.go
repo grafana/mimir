@@ -37,6 +37,10 @@ type CardinalityEstimateRequest struct {
 	// counting one series-hash shard, as query sharding does for Series.
 	// 0 or 1 sends one call.
 	Shards int
+	// StreamNames has an answer from the index-headers come back as an open
+	// name table, in the result's names, instead of in Counts, so the caller
+	// can merge it without holding it. The caller must close it.
+	StreamNames bool
 }
 
 // CardinalityEstimateResult holds one count per bucket for each group.
@@ -83,6 +87,9 @@ type CardinalityEstimateResult struct {
 	Estimated map[string]bool
 	// HashBytes and SketchBytes are the dedup payload the store-gateways sent.
 	HashBytes, SketchBytes int64
+	// names, when set, holds the counts instead of Counts: see
+	// CardinalityEstimateRequest.StreamNames.
+	names *nameTable
 }
 
 // SeriesCounts counts the matching series with a chunk in the window, from
@@ -293,6 +300,16 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 	}
 	byName := req.GroupBy == "" || req.GroupBy == labels.MetricName
 	if byName && len(req.Matchers) == 0 && req.Step == 0 && len(blocks) > 0 && checkMetricNameCountsBlocks(blocks, req.MinT, req.MaxT) == nil {
+		if req.StreamNames {
+			names, mc, err := q.openNameTable(ctx, tenantID, parts)
+			if err != nil {
+				return CardinalityEstimateResult{}, err
+			}
+			return CardinalityEstimateResult{
+				Read: readIndexHeader, Snapped: snapped, names: names, Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
+				LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+			}, nil
+		}
 		mc, err := q.metricNameCounts(ctx, tenantID, parts)
 		if err != nil {
 			return CardinalityEstimateResult{}, err
