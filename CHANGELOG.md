@@ -143,6 +143,7 @@
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
 * [ENHANCEMENT] Alerts, Dashboards: Vendor rollout-operator's alerts and dashboard mixin. Adds the `MimirKubernetesAPIClientRateLimited` and `MimirKubernetesAPIClientApproachingRateLimit` alerts and a corresponding "Kubernetes API client rate limiting" dashboard row. #16382
 * [ENHANCEMENT] Dashboards: Support collapsing the compactor standalone-mode panels by default with the `compactor_standalone_summary_collapsed` flag. #16482
+* [ENHANCEMENT] Dashboards: Add the "Dropped and failed requests" panel to the Query-scheduler row of the `Mimir / Queries` dashboard. #16974
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
 * [BUGFIX] Alerts: `MimirMemberlistBridgeZoneUnavailable` fired for every zone whenever kube-state-metrics stopped exporting the memberlist-bridge Pod series, because it compared a Deployment-object series against Pod-object series with `unless`. It now compares the Deployment's ready replica count against its spec replica count, so both operands come from one object and a missing export suppresses the alert instead of firing it. #16774
 * [BUGFIX] Alerts: Support `keda_scaler_detail_errors_total` in `MimirAutoscalerKedaFailing`, with a fallback to `keda_scaler_errors` for older KEDA versions. #16739
