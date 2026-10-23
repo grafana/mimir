@@ -6898,6 +6898,17 @@
         },
         {
           "kind": "field",
+          "name": "active_series_results_max_size_bytes",
+          "required": false,
+          "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 419430400,
+          "fieldFlag": "querier.active-series-results-max-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_estimate_enabled",
           "required": false,
           "desc": "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant. The endpoint must also be enabled on the querier with -querier.cardinality-estimate.enabled.",
@@ -6909,14 +6920,14 @@
         },
         {
           "kind": "field",
-          "name": "active_series_results_max_size_bytes",
+          "name": "cardinality_estimate_max_index_bytes",
           "required": false,
-          "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
+          "desc": "Maximum index bytes, postings plus series entries, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier splits it across the calls it sends, and each store-gateway and ingester also applies it to the calls it receives. 0 means no limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 419430400,
-          "fieldFlag": "querier.active-series-results-max-size-bytes",
+          "fieldDefaultValue": 2147483648,
+          "fieldFlag": "querier.cardinality-estimate-max-index-bytes",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

@@ -185,3 +185,39 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		assert.Contains(t, st.Message(), "walk 4 series in 2 head and local blocks")
 	})
 }
+
+func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.CardinalityEstimateMaxIndexBytes = 1000
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, pod := range []string{"1", "2", "3"} {
+		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+
+	// Three series at 512 bytes each are over the tenant's 1000 bytes,
+	// whether the request asks for no bound or a larger one.
+	for _, asked := range []int64{0, 1 << 20} {
+		_, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, MaxIndexBytes: asked})
+		require.Error(t, err, "max_index_bytes %d", asked)
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.ResourceExhausted, st.Code())
+		assert.Contains(t, st.Message(), "more than max_index_bytes 1000")
+	}
+
+	limits.CardinalityEstimateMaxIndexBytes = 0
+	i2, r2, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i2, r2)
+	for _, pod := range []string{"1", "2", "3"} {
+		_, err := i2.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+	resp, err := i2.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000})
+	require.NoError(t, err, "without a tenant limit an unbounded request is walked")
+	assert.Equal(t, int64(3), resp.SeriesCounted)
+}
