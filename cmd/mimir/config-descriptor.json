@@ -13650,6 +13650,17 @@
             },
             {
               "kind": "field",
+              "name": "head_compaction_interval_jitter_enabled",
+              "required": false,
+              "desc": "Whether the first head compaction check is delayed by a random time, so ingesters don't compact at once. Disable it to compact on time, for example in benchmarks.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.tsdb.head-compaction-interval-jitter-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "timely_head_compaction_enabled",
               "required": false,
               "desc": "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.",

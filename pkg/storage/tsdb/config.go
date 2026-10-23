@@ -264,8 +264,7 @@ type TSDBConfig struct {
 	EarlyHeadCompactionMinInMemorySeries                     int64 `yaml:"early_head_compaction_min_in_memory_series" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int   `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
 
-	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
-	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
+	HeadCompactionIntervalJitterEnabled bool `yaml:"head_compaction_interval_jitter_enabled" category:"experimental"`
 
 	// HeadCompactionIntervalWhileStarting setting is hardcoded, but allowed to overwrite it in tests.
 	HeadCompactionIntervalWhileStarting time.Duration `yaml:"-"`
@@ -342,6 +341,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", tsdb.DefaultPostingsForMatchersCacheForce, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
 	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
+	f.BoolVar(&cfg.HeadCompactionIntervalJitterEnabled, "blocks-storage.tsdb.head-compaction-interval-jitter-enabled", true, "Whether the first head compaction check is delayed by a random time, so ingesters don't compact at once. Disable it to compact on time, for example in benchmarks.")
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.IndexLookupPlanning.Enabled, "blocks-storage.tsdb.index-lookup-planning.enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
@@ -352,7 +352,6 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.OffsetCatalogue.Enabled, "blocks-storage.tsdb.offset-catalogue.enabled", false, "Controls the maintaining of kafka offset catalogue per block.")
 	f.IntVar(&cfg.OffsetCatalogue.SyncConcurrency, "blocks-storage.tsdb.offset-catalogue.sync-concurrency", 10, "Maximum number of tenants concurrently syncing offset catalogue to disk.")
 
-	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
 }
 

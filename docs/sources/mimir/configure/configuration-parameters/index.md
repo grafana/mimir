@@ -6833,6 +6833,12 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
   [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
 
+  # (experimental) Whether the first head compaction check is delayed by a
+  # random time, so ingesters don't compact at once. Disable it to compact on
+  # time, for example in benchmarks.
+  # CLI flag: -blocks-storage.tsdb.head-compaction-interval-jitter-enabled
+  [head_compaction_interval_jitter_enabled: <boolean> | default = true]
+
   # (experimental) Allows head compaction to happen when the min block range can
   # no longer be appended, without requiring 1.5x the chunk range worth of data
   # in the head.
