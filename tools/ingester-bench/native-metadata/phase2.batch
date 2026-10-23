@@ -1,7 +1,7 @@
 # The native metadata prototype's Phase 2 runs (plan 2.6), for run-batch.sh, with the threshold profile. Decide with
 #
 #   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
-#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
 #
 # and report the memo-off variant and the diagnostic, which don't decide anything, with
 #
@@ -11,7 +11,8 @@
 # Run it from a checkout of this file's commit: the builds are only the ingesters' Mimir, and the bench is the
 # checkout's. Each pair runs twice in each order, after three A/A runs per engine for the noise. Pairs read nothing
 # (-query-scale=0), so that the window's CPU is the ingestion's; the parity runs read, MetricsMetadata included, for the
-# exit gate's mismatches. The ablation's pair joins once 2.4's build is there.
+# exit gate's mismatches. Every Phase 2 build is of one commit, so that the ablation's and the memo-off variant's
+# ingesters differ from arm 3's only by their build tags.
 #
 # threshold.json is 2.0's threshold profile: every series with metadata, a metric's shared by its series, no churn of
 # it, and help of a stated length (median 50, p90 110, p99 250 characters), which no sample measured. Its records are
@@ -19,8 +20,10 @@
 # family, 2.99 metric family entries. Its series per request, series per target and partitions per tenant were tuned to
 # reproduce them, at the bench's 1.65M series: 28.2, 1.94 and 3.48, within the agreed 10%, 10% and 25%.
 
-build phase2 629ca0a64c
-build nomemo 629ca0a64c tags=native_metadata_nomemo
+build phase2 46d1da3b79
+build nomemo 46d1da3b79 tags=native_metadata_nomemo
+# #19563's choices in seriesstore (plan 2.4), off against on within the build.
+build ablation 46d1da3b79 tags=native_metadata_ablation
 # The end of Phase 1, for the diagnostic of what Phase 2 costs seriesstore with the switch off.
 build phase1 fb759c4952
 
@@ -37,12 +40,16 @@ run parity-1 phase2 prometheus phase2 seriesstore profile=tools/ingester-bench/n
 run tsdb-2 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run seriesstore-2 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run parity-2 phase2 seriesstore phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json
+run ablation-2 ablation seriesstore ablation seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run memo-1 phase2 seriesstore nomemo seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run ablation-1 ablation seriesstore ablation seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run tsdb-3 phase2 prometheus phase2 prometheus metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run seriesstore-3 phase2 seriesstore phase2 seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run parity-3 phase2 prometheus phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json
+run ablation-3 ablation seriesstore ablation seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run tsdb-4 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run seriesstore-4 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run parity-4 phase2 seriesstore phase2 prometheus profile=tools/ingester-bench/native-metadata/threshold.json
 run memo-2 nomemo seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
+run ablation-4 ablation seriesstore ablation seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
 run diagnostic-1 phase1 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json -query-scale=0
