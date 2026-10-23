@@ -878,6 +878,35 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
+func TestSchedulerForwardsErrorToFrontend_FrontendUnreachable(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+
+	// No query-frontend listens on "frontend-12345".
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue the query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	// The error forward to the query-frontend fails.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	verifyErrorForwardMetrics(t, reg, 0, 1)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
 func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	scheduler, _, _ := setupScheduler(t, reg)
@@ -1064,10 +1093,6 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
-
-	// No query-frontend listens on "frontend-12345".
-	// The error forward to the query-frontend fails.
-	verifyErrorForwardMetrics(t, reg, 0, 1)
 
 	require.Eventually(t, func() bool {
 		// the queue is empty, queueMaxWait reports 0
