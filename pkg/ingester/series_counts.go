@@ -27,7 +27,9 @@ import (
 // and have a chunk in its window, grouped by one label, from the series'
 // chunk metas. No sample is read. The matching postings are resolved first
 // and priced at mimir_tsdb.EstimatedSeriesP99Size per series, so a request
-// over max_index_bytes is refused before any series is walked.
+// over max_index_bytes, bounded by the tenant's
+// -querier.cardinality-estimate-max-index-bytes, is refused before any
+// series is walked.
 //
 // The in-order head and the ingester's compacted local blocks that overlap
 // the window are counted; a series in several of them counts once.
@@ -65,6 +67,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if req.MaxIndexBytes < 0 {
 		return nil, status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
 	}
+	// The tenant's limit also bounds a call that sets no max_index_bytes,
+	// or a larger one, whoever sends it.
+	maxIndexBytes := cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID))
 	matchers, err := client.FromLabelMatchers(req.Matchers)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -118,9 +123,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 		total += len(src.refs)
 	}
-	if req.MaxIndexBytes > 0 {
-		if priced := int64(total) * mimir_tsdb.EstimatedSeriesP99Size; priced > req.MaxIndexBytes {
-			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", total, len(sources), priced, mimir_tsdb.EstimatedSeriesP99Size, req.MaxIndexBytes))
+	if maxIndexBytes > 0 {
+		if priced := int64(total) * mimir_tsdb.EstimatedSeriesP99Size; priced > maxIndexBytes {
+			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", total, len(sources), priced, mimir_tsdb.EstimatedSeriesP99Size, maxIndexBytes))
 		}
 	}
 

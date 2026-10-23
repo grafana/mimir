@@ -220,6 +220,17 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		assert.Contains(t, err.Error(), "then 4 series at an estimated")
 	})
 
+	t.Run("the tenant's limit bounds a request without max_index_bytes or with a larger one", func(t *testing.T) {
+		store.cardinalityEstimateMaxIndexBytes = func() int64 { return 100 }
+		defer func() { store.cardinalityEstimateMaxIndexBytes = nil }()
+		for _, asked := range []int64{0, 1 << 20} {
+			_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxIndexBytes: asked})
+			require.Error(t, err, "max_index_bytes %d", asked)
+			assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+			assert.Contains(t, err.Error(), "more than max_index_bytes 100")
+		}
+	})
+
 	t.Run("max_index_bytes above the plan is exact", func(t *testing.T) {
 		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1 << 20})
 		require.NoError(t, err)
