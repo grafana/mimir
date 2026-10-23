@@ -282,8 +282,16 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.Equal(t, readFullIndex, out.Read)
 	assert.Equal(t, 3, out.Groups)
-	assert.Equal(t, int64(7), out.Series)
+	assert.Equal(t, int64(7), out.Total)
 	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts)
+	// The field names are the API contract's: total, and the window counted.
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	assert.JSONEq(t, `7`, string(raw["total"]))
+	assert.JSONEq(t, `{"start":0,"end":86400000}`, string(raw["window"]))
+	for _, old := range []string{"series", "min_time", "max_time", "snapped"} {
+		assert.NotContains(t, raw, old)
+	}
 	assert.Equal(t, sourceBlocks, out.Source)
 	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
 	assert.False(t, out.LowerBound)
