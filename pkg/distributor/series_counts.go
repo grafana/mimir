@@ -5,10 +5,13 @@ package distributor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"time"
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -34,16 +37,18 @@ var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts
 // SeriesCounts asks the ingesters to count series per value of one label
 // over a window, from their heads' chunk metas. It takes the same
 // replication sets as a query. Counts are kept only when one ingester per
-// zone is asked: then it takes the largest zone's count per group and
-// bucket, since a zone that answered in full holds every series once.
-// Otherwise it asks for hashes and the caller unions them. Several
-// ingesters of a zone, or several partitions under ingest storage, are not
-// known to hold disjoint series: after the tenant's partitions or the ring
-// change inside the lookback, a series written before stays in the old
-// owner's head while its new samples go to the new one. Per-bucket counts,
+// zone is asked for each replication set: then it takes the largest zone's
+// count per group and bucket, since a zone that answered in full holds
+// every series once, and under ingest storage the caller adds up the
+// partitions, as long as they have been stable since before the window
+// (seriesCountsReplicationSets). Otherwise it asks for hashes and the
+// caller unions them. Several ingesters of a zone, or partitions whose
+// state changed inside the window, are not known to hold disjoint series:
+// a series written before the change stays in the old owner's head while
+// its new samples go to the new one. Per-bucket counts,
 // which hashes don't carry, are refused then with ErrSeriesCountsNeedOneIngesterPerZone.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
+	replicationSets, partitionsStable, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -52,7 +57,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	}
 
 	out := SeriesCountsResult{Hashed: req.Hashes}
-	if !d.seriesCountsAddUp(replicationSets) && !req.Hashes {
+	if !d.seriesCountsAddUp(replicationSets, partitionsStable) && !req.Hashes {
 		if req.StepMs > 0 {
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
@@ -119,23 +124,99 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 }
 
 // seriesCountsAddUp reports whether the counts of the ingesters in sets
-// give each series once: there is one replication set, and either it has a
-// single instance or it is zone-aware with one instance per zone and every
-// zone holds a full copy. Under ingest storage each zone of a partition
-// does; with classic replication only when there are no more zones than
-// the replication factor.
-func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet) bool {
-	if len(sets) != 1 {
+// give each series once. Every set must have a single instance, or be
+// zone-aware with one instance per zone and every zone a full copy: under
+// ingest storage each zone of a partition is; with classic replication only
+// when there are no more zones than the replication factor. Classic
+// replication must also have one set. Under ingest storage there is one set
+// per partition, and their counts add up only when partitionsStable says no
+// series is in two of them over the window.
+func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet, partitionsStable bool) bool {
+	if len(sets) == 0 {
 		return false
 	}
-	rs := sets[0]
-	if len(rs.Instances) == 1 {
-		return true
-	}
-	if !zoneAware(rs) || rs.ZoneCount() != len(rs.Instances) {
+	if len(sets) > 1 && (!d.cfg.IngestStorageConfig.Enabled || !partitionsStable) {
 		return false
 	}
-	return d.cfg.IngestStorageConfig.Enabled || rs.ZoneCount() <= d.ingestersRing.ReplicationFactor()
+	for _, rs := range sets {
+		if len(rs.Instances) == 1 {
+			continue
+		}
+		if !zoneAware(rs) || rs.ZoneCount() != len(rs.Instances) {
+			return false
+		}
+		if !d.cfg.IngestStorageConfig.Enabled && rs.ZoneCount() > d.ingestersRing.ReplicationFactor() {
+			return false
+		}
+	}
+	return true
+}
+
+// partitionChangeSettleTime is how long after a partition's state change
+// distributors may still write to the partitions they wrote to before,
+// until the change has reached them through the ring.
+const partitionChangeSettleTime = time.Minute
+
+// seriesCountsReplicationSets returns the replication sets a query over
+// matchers asks, as getIngesterReplicationSetsForQuery does, and under
+// ingest storage whether the partitions' counts add up over a window that
+// starts at startMs. They do when the tenant's partitions took every sample
+// of the window that the ingesters still hold, each series in the one
+// partition its labels map to, so no series is in two partitions' heads or
+// local blocks with a sample in the window: every partition asked has been
+// ACTIVE since before the window, allowing for samples written ahead of
+// time (the creation grace period) and for the change to reach every
+// distributor, and the tenant writes to the partitions it is read from. The
+// partitions are checked on the same subrings the sets come from. The start
+// is not clamped to the ingesters' lookback: they drop a local block by its
+// end, so they can hold samples from before it. A change of the tenant's
+// partition shard size inside the window is not in the ring and is not
+// detected.
+func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, error) {
+	if !d.cfg.IngestStorageConfig.Enabled {
+		sets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
+		return sets, false, err
+	}
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	shardSize, lookbackPeriod := d.partitionShardForQuery(userID)
+	now := time.Now()
+
+	// A tenant read from a shard of partitions but written to fewer of them
+	// may be moving series between them, which the ring doesn't record. A
+	// read of every partition (shard size 0) covers any write shard.
+	stable := shardSize <= 0 || max(0, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)) == shardSize
+	changedBefore := startMs - (d.limits.CreationGracePeriod(userID) + partitionChangeSettleTime).Milliseconds()
+
+	compartmentIDs := []int{0}
+	if d.cfg.Compartments.Enabled {
+		compartmentIDs = d.compartmentRouter.CompartmentsForMatchers(userID, matchers)
+	}
+	var sets []ring.ReplicationSet
+	for _, c := range compartmentIDs {
+		r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
+		if err == nil {
+			for _, p := range r.PartitionRing().Partitions() {
+				// The state timestamp is in seconds.
+				if !p.IsActive() || p.GetStateTimestamp()*1000 >= changedBefore {
+					stable = false
+				}
+			}
+			var cs []ring.ReplicationSet
+			if cs, err = r.GetReplicationSetsForOperation(readNoExtend); err == nil {
+				sets = append(sets, cs...)
+			}
+		}
+		if err != nil {
+			if d.cfg.Compartments.Enabled {
+				return nil, false, fmt.Errorf("read compartment %d: %w", c, err)
+			}
+			return nil, false, err
+		}
+	}
+	return sets, stable, nil
 }
 
 type seriesCountsAnswer struct {
