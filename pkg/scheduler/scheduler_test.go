@@ -826,6 +826,7 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 		return testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
 			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 0
 			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 1
 			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
 			# TYPE cortex_query_scheduler_querier_request_failures_total counter
@@ -891,6 +892,7 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 		return testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
 			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 0
 			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 1
 			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
 			# TYPE cortex_query_scheduler_querier_request_failures_total counter
@@ -1070,6 +1072,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
 			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
 			cortex_query_scheduler_frontend_error_forwards_total{outcome="failure"} 1
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 0
 			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
 			# TYPE cortex_query_scheduler_querier_request_failures_total counter
 			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
