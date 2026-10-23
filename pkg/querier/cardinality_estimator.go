@@ -201,7 +201,9 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		sub := *req
 		sub.MinT = req.MinT + int64(i)*req.Step
 		sub.MaxT = sub.MinT + req.Step
-		sub.Step, sub.Snap = 0, false
+		// A bucket's counts are read from its result, so its name table
+		// must come back in Counts, not as an open stream.
+		sub.Step, sub.Snap, sub.StreamNames = 0, false, false
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
