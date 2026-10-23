@@ -75,6 +75,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
 			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
+			legacyMetadataFromStandInsOnly:  req.legacyMetadataFromStandInsOnly,
 			TimeseriesRW2:                   make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
 		}
 
@@ -255,6 +256,7 @@ func newPartialWriteRequest(req *WriteRequest) *WriteRequest {
 		skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
 		skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 		skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
+		legacyMetadataFromStandInsOnly:  req.legacyMetadataFromStandInsOnly,
 	}
 }
 

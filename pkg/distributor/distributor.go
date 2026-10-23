@@ -1676,6 +1676,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				}
 			}
 
+			if !ts.SeriesMetadata.IsEmpty() {
+				cleanSeriesMetadata(cfg.metadata, ts.TimeSeries)
+			}
+
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}

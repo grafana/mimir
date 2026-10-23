@@ -424,15 +424,16 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		minTimestampMs:                   minTimestampMs,
 	}
 	outcome, ingestErr := db.db.Ingest(ctx, ingestBatch{
-		Series:           req.series(),
-		Record:           req.record,
-		Decoded:          req.decodedSubset,
-		MinTimestampMs:   minTimestampMs,
-		MaxTimestampMs:   sink.maxTimestampMs,
-		NativeHistograms: nativeHistogramsIngestionEnabled,
-		Exemplars:        i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
-		IngestedAt:       startAppend,
-		OTLP:             req.source() == mimirpb.OTLP,
+		Series:               req.series(),
+		Record:               req.record,
+		Decoded:              req.decodedSubset,
+		MinTimestampMs:       minTimestampMs,
+		MaxTimestampMs:       sink.maxTimestampMs,
+		NativeHistograms:     nativeHistogramsIngestionEnabled,
+		Exemplars:            i.limits.MaxGlobalExemplarsPerUser(userID) > 0,
+		NativeMetricMetadata: i.limits.NativeMetricMetadataEnabled(userID),
+		IngestedAt:           startAppend,
+		OTLP:                 req.source() == mimirpb.OTLP,
 	}, sink)
 	stats.succeededSamplesCount += outcome.Samples
 	stats.succeededExemplarsCount += outcome.Exemplars

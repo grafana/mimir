@@ -71,8 +71,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// The below cases are careful to exercise two paths:
 				// 1. series_one metadata and series_one series shard to different partitions
 				// 2. series_two metadata and series_two series shard to the same partition
-				// The result is that after splitting the request among partitions, we may see an extra "carrier" series for series_one metadata
-				// but since both series_two objects land on the same shard, they are opportunistically combined.
+				// Either way, each metric family's metadata goes to its partition as an extra "carrier" series without data.
 				{MetricFamilyName: "series_one", Type: mimirpb.COUNTER, Help: "Series one description"},
 				{MetricFamilyName: "series_two", Type: mimirpb.COUNTER, Help: "Series two description"},
 			},
@@ -93,7 +92,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			shardSize: 0,
 			expectedSeriesByPartition: map[int32][]string{
 				0: {"series_four", "series_one", "series_three"},
-				1: {"series_two"},
+				// Series two metadata is sharded to partition 1, as is series two.
+				1: {"series_two", "series_two"},
 				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
 				2: {"series_five", "series_one"},
 			},
@@ -101,7 +101,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		"should shard series across the number of configured partitions when shuffle sharding is enabled": {
 			shardSize: 2,
 			expectedSeriesByPartition: map[int32][]string{
-				1: {"series_one", "series_three", "series_two"},
+				// Series two metadata is sharded to partition 1, as is series two.
+				1: {"series_one", "series_three", "series_two", "series_two"},
 				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
 				2: {"series_five", "series_four", "series_one"},
 			},
@@ -110,8 +111,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			shardSize:      0,
 			writeShardSize: 1,
 			expectedSeriesByPartition: map[int32][]string{
-				// With writeShardSize=1, all series go to the single partition in the write shard.
-				2: {"series_five", "series_four", "series_one", "series_three", "series_two"},
+				// With writeShardSize=1, all series and both metric families' metadata go to the single partition in the write shard.
+				2: {"series_five", "series_four", "series_one", "series_one", "series_three", "series_two", "series_two"},
 			},
 		},
 		"should return gRPC error if writing to 1 out of N partitions fail with a non-retryable error": {

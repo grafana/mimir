@@ -495,11 +495,15 @@ type MarshalerWithSize interface {
 	MarshalWithSize(size int) ([]byte, error)
 }
 
-func metadataSetFromSettings(skipDeduplicateMetadata bool) metadataSet {
+func metadataSetFromSettings(skipDeduplicateMetadata, fromStandInsOnly bool) metadataSet {
 	if skipDeduplicateMetadata {
-		return newPassthroughMetadataSet()
+		set := newPassthroughMetadataSet()
+		set.fromStandInsOnly = fromStandInsOnly
+		return set
 	}
-	return newDedupingMetadataSet()
+	set := newDedupingMetadataSet()
+	set.fromStandInsOnly = fromStandInsOnly
+	return set
 }
 
 // metadataSet is the collection of metadata within a request.
@@ -508,6 +512,9 @@ type metadataSet interface {
 	add(family string, mm MetricMetadata)
 	len() int
 	slice() []*MetricMetadata
+	// standInsOnly reports whether metric families get metadata only from RW2 series without data, which stand in for
+	// them, and not from series with data, which keep theirs.
+	standInsOnly() bool
 }
 
 var _ metadataSet = dedupingMetadataSet{}
@@ -516,7 +523,8 @@ var _ metadataSet = &passthroughMetadataSet{}
 // dedupingMetadataSet is a metadataSet that only stores one metadata per metric family.
 // Only the first metadata seen for a given family is kept.
 type dedupingMetadataSet struct {
-	deduplicated map[string]*orderAwareMetricMetadata
+	deduplicated     map[string]*orderAwareMetricMetadata
+	fromStandInsOnly bool
 }
 
 func newDedupingMetadataSet() dedupingMetadataSet {
@@ -535,6 +543,10 @@ func (m dedupingMetadataSet) add(family string, mm MetricMetadata) {
 	m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: mm, order: m.len()}
 }
 
+func (m dedupingMetadataSet) standInsOnly() bool {
+	return m.fromStandInsOnly
+}
+
 func (m dedupingMetadataSet) len() int {
 	return len(m.deduplicated)
 }
@@ -548,7 +560,8 @@ func (m dedupingMetadataSet) slice() []*MetricMetadata {
 }
 
 type passthroughMetadataSet struct {
-	metadata []*MetricMetadata
+	metadata         []*MetricMetadata
+	fromStandInsOnly bool
 }
 
 func newPassthroughMetadataSet() *passthroughMetadataSet {
@@ -559,6 +572,10 @@ func newPassthroughMetadataSet() *passthroughMetadataSet {
 
 func (m *passthroughMetadataSet) add(family string, mm MetricMetadata) {
 	m.metadata = append(m.metadata, &mm)
+}
+
+func (m *passthroughMetadataSet) standInsOnly() bool {
+	return m.fromStandInsOnly
 }
 
 func (m *passthroughMetadataSet) len() int {

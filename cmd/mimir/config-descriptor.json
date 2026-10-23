@@ -6058,7 +6058,7 @@
           "kind": "field",
           "name": "native_metric_metadata_enabled",
           "required": false,
-          "desc": "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. It applies when the tenant's TSDB opens.",
+          "desc": "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.native-metric-metadata-enabled",

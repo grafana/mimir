@@ -81,6 +81,8 @@ func ReuseRW2(req *WriteRequest) {
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
 // It might retain references in the RW1 request. It's not safe to free the RW1 request until the RW2 request is no longer used.
+// Series with data carry their own metadata, and the request's metric family metadata goes in series without data,
+// which stand in for the families.
 func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbols, offset uint32) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
@@ -96,33 +98,28 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		skipUnmarshalingExemplars:       rw1.skipUnmarshalingExemplars,
 		skipNormalizeMetadataMetricName: rw1.skipNormalizeMetadataMetricName,
 		skipDeduplicateMetadata:         rw1.skipDeduplicateMetadata,
+		legacyMetadataFromStandInsOnly:  rw1.legacyMetadataFromStandInsOnly,
 	}
 
 	symbols := symbolsTableFromPool()
 	defer reuseSymbolsTable(symbols)
 	symbols.ConfigureCommonSymbols(offset, commonSymbols)
 
-	// If our request has both metadata and timeseries, we can try to match.
-	var metadataMap map[string]int // Metric name -> index of the first metadata, in the Metadata slice.
-	var matchedMetadataMask []bool
-	if len(rw1.Metadata) > 0 && len(rw1.Timeseries) > 0 {
-		metadataMap = make(map[string]int, len(rw1.Metadata))
-		matchedMetadataMask = make([]bool, len(rw1.Metadata))
-		// Very rarely, a request might send multiple conflicting metadatas for the same metric.
-		// For example, in Prometheus this can happen on the border of a metric churning,
-		// if new and old versions of the same metadata are scraped from different processes and end up in the same batch.
-		//
-		// The Prometheus behavior for RW1.0 is to store *both* metadatas and not take any preference.
-		// So, we only pick the first metadata matching a name as a candidate to be matched.
-		// Any other metadata for the same name will be picked up later.
+	// Very rarely, a request might send multiple conflicting metadatas for the same metric.
+	// For example, in Prometheus this can happen on the border of a metric churning,
+	// if new and old versions of the same metadata are scraped from different processes and end up in the same batch.
+	//
+	// The Prometheus behavior for RW1.0 is to store *both* metadatas and not take any preference, so each goes in a
+	// series of its own. Only repeats of a metric's first metadata are skipped, to save on some space.
+	var duplicateMetadataMask []bool
+	if len(rw1.Metadata) > 1 {
+		firstMetadata := make(map[string]int, len(rw1.Metadata)) // Metric name -> index of its first metadata.
+		duplicateMetadataMask = make([]bool, len(rw1.Metadata))
 		for i := range rw1.Metadata {
-			if seenIdx, ok := metadataMap[rw1.Metadata[i].MetricFamilyName]; !ok {
-				metadataMap[rw1.Metadata[i].MetricFamilyName] = i
-			} else {
-				// If we see a duplicate metadata, skip sending it to save on some space.
-				if rw1.Metadata[i].Equal(rw1.Metadata[seenIdx]) {
-					matchedMetadataMask[i] = true
-				}
+			if seenIdx, ok := firstMetadata[rw1.Metadata[i].MetricFamilyName]; !ok {
+				firstMetadata[rw1.Metadata[i].MetricFamilyName] = i
+			} else if rw1.Metadata[i].Equal(rw1.Metadata[seenIdx]) {
+				duplicateMetadataMask[i] = true
 			}
 		}
 	}
@@ -134,7 +131,6 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 	}
 
 	for _, ts := range rw1.Timeseries {
-		metricName := ""
 		const stringsPerLabel = 2
 		expLabelsCount := len(ts.Labels) * stringsPerLabel
 		refs := labelsRefsSliceFromPool()
@@ -143,17 +139,17 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 
 		for i := range ts.Labels {
-			if ts.Labels[i].Name == model.MetricNameLabel {
-				metricName = ts.Labels[i].Value
-			}
 			refs = append(refs, symbols.Symbolize(ts.Labels[i].Name), symbols.Symbolize(ts.Labels[i].Value))
 		}
 
+		// Only series with data carry their own metadata: decoders take a series without data for a metric
+		// family's.
 		var metadata MetadataRW2
-		if len(metadataMap) > 0 {
-			if rw1MetadataIdx, ok := metadataMap[metricName]; ok {
-				metadata = FromMetricMetadataToMetadataRW2(rw1.Metadata[rw1MetadataIdx], symbols)
-				matchedMetadataMask[rw1MetadataIdx] = true
+		if !ts.SeriesMetadata.IsEmpty() && (len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0) {
+			metadata = MetadataRW2{
+				Type:    MetadataRW2_MetricType(ts.SeriesMetadata.Type),
+				HelpRef: symbols.Symbolize(ts.SeriesMetadata.Help),
+				UnitRef: symbols.Symbolize(ts.SeriesMetadata.Unit),
 			}
 		}
 
@@ -167,10 +163,9 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		})
 	}
 
-	// If there are extra metadata not associated with any timeseries, we fabricate an empty timeseries to carry it.
+	// Each metric family's metadata goes in an empty timeseries of the family's name.
 	for i := range rw1.Metadata {
-		// If we are matching metadata to series, and we already matched this metadata, we can skip it.
-		if matchedMetadataMask != nil && matchedMetadataMask[i] {
+		if duplicateMetadataMask != nil && duplicateMetadataMask[i] {
 			continue
 		}
 

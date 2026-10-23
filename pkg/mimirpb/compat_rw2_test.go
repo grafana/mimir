@@ -108,6 +108,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									},
 								},
 							},
+							SeriesMetadata: SeriesMetadata{Type: COUNTER, Help: "test_metric_help", Unit: "test_metric_unit"},
 						},
 					},
 				},
@@ -126,6 +127,46 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+	})
+
+	t.Run("series with data keep their own metadata", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		series := func(name string, metricType MetadataRW2_MetricType) TimeSeriesRW2 {
+			return TimeSeriesRW2{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol(name)},
+				Metadata:   MetadataRW2{Type: metricType, HelpRef: syms.GetSymbol(name + " help"), UnitRef: syms.GetSymbol("seconds")},
+			}
+		}
+		withSamples := series("with_samples", METRIC_TYPE_COUNTER)
+		withSamples.Samples = []Sample{{Value: 1, TimestampMs: 1000}}
+		exemplarOnly := series("exemplar_only", METRIC_TYPE_GAUGE)
+		exemplarOnly.Exemplars = []ExemplarRW2{{Value: 1, Timestamp: 1000}}
+		standIn := series("stand_in", METRIC_TYPE_SUMMARY)
+		writeRequest := &WriteRequest{TimeseriesRW2: []TimeSeriesRW2{withSamples, exemplarOnly, standIn}}
+		writeRequest.SymbolsRW2 = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		for _, standInsOnly := range []bool{false, true} {
+			// Exemplars that aren't decoded still make a series one with data.
+			received := PreallocWriteRequest{UnmarshalFromRW2: true, SkipUnmarshalingExemplars: true, LegacyMetadataFromStandInsOnly: standInsOnly}
+			require.NoError(t, received.Unmarshal(data))
+			require.Len(t, received.Timeseries, 3)
+			require.Equal(t, SeriesMetadata{Type: COUNTER, Help: "with_samples help", Unit: "seconds"}, received.Timeseries[0].SeriesMetadata)
+			require.Equal(t, SeriesMetadata{Type: GAUGE, Help: "exemplar_only help", Unit: "seconds"}, received.Timeseries[1].SeriesMetadata)
+			require.True(t, received.Timeseries[2].SeriesMetadata.IsEmpty())
+			// The metric families' metadata has all three, as clients send it, or only the series without data's, as
+			// records carry it.
+			var families []string
+			for _, metadata := range received.Metadata {
+				families = append(families, metadata.MetricFamilyName)
+			}
+			if standInsOnly {
+				require.Equal(t, []string{"stand_in"}, families)
+			} else {
+				require.ElementsMatch(t, []string{"with_samples", "exemplar_only", "stand_in"}, families)
+			}
+		}
 	})
 
 	t.Run("zero timeseries does not panic", func(t *testing.T) {
@@ -514,6 +555,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									},
 								},
 							},
+							SeriesMetadata: SeriesMetadata{Type: COUNTER, Help: "test_metric_help", Unit: "test_metric_unit"},
 						},
 					},
 				},
@@ -615,6 +657,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									},
 								},
 							},
+							SeriesMetadata: SeriesMetadata{Type: COUNTER, Help: "test_metric_help", Unit: "test_metric_unit"},
 						},
 					},
 				},

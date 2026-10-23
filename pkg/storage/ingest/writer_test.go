@@ -1275,6 +1275,31 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		return req
 	}
 
+	// What the test request decodes to from RW2: the series, then a series without data for each metric family's
+	// metadata, and the metadata.
+	expectedV2 := func() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+		var timeseries []mimirpb.PreallocTimeseries
+		for _, name := range []string{"series_1", "series_2", "series_3"} {
+			timeseries = append(timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", name)),
+				Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+				Exemplars: []mimirpb.Exemplar{},
+			}})
+		}
+		for _, name := range []string{"series_1", "series_2", "series_3"} {
+			timeseries = append(timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", name)),
+				Samples:   []mimirpb.Sample{},
+				Exemplars: []mimirpb.Exemplar{},
+			}})
+		}
+		return timeseries, []*mimirpb.MetricMetadata{
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+		}
+	}
+
 	testReqV2 := func(t *testing.T) *mimirpb.WriteRequest {
 		t.Helper()
 		rw1 := testReq(t)
@@ -1316,47 +1341,8 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		actual.ClearTimeseriesUnmarshalData()
 		assert.Equal(t, mimirpb.RULE, actual.Source)
 		assert.Equal(t, true, actual.SkipLabelValidation)
-		expMetadata := []*mimirpb.MetricMetadata{
-			{
-				Type:             mimirpb.COUNTER,
-				MetricFamilyName: "series_1",
-				Help:             "This is the first test metric.",
-			},
-			{
-				Type:             mimirpb.COUNTER,
-				MetricFamilyName: "series_2",
-				Help:             "This is the second test metric.",
-			},
-			{
-				Type:             mimirpb.COUNTER,
-				MetricFamilyName: "series_3",
-				Help:             "This is the third test metric.",
-			},
-		}
+		expTimeseries, expMetadata := expectedV2()
 		assert.ElementsMatch(t, expMetadata, actual.Metadata)
-		expTimeseries := []mimirpb.PreallocTimeseries{
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-					Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars: []mimirpb.Exemplar{},
-				},
-			},
-		}
 		assert.Equal(t, expTimeseries, actual.Timeseries)
 	})
 
@@ -1411,7 +1397,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), limit, splitRequestVersionTwo)
 		require.NoError(t, err)
-		require.Len(t, records, 3)
+		require.Greater(t, len(records), 1)
 
 		// Assert each record, and decode all partial WriteRequests.
 		partials := make([]*mimirpb.WriteRequest, 0, len(records))
@@ -1433,66 +1419,18 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			partials = append(partials, &actual.WriteRequest)
 		}
 
-		assert.Equal(t, []*mimirpb.WriteRequest{
-			{
-				Source:              mimirpb.RULE,
-				SkipLabelValidation: true,
-				Timeseries: []mimirpb.PreallocTimeseries{
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
-				},
-				Metadata: []*mimirpb.MetricMetadata{
-					{
-						MetricFamilyName: "series_1",
-						Type:             mimirpb.COUNTER,
-						Help:             "This is the first test metric.",
-					},
-				},
-			}, {
-				Source:              mimirpb.RULE,
-				SkipLabelValidation: true,
-				Timeseries: []mimirpb.PreallocTimeseries{
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
-				},
-				Metadata: []*mimirpb.MetricMetadata{
-					{
-						MetricFamilyName: "series_2",
-						Type:             mimirpb.COUNTER,
-						Help:             "This is the second test metric.",
-					},
-				},
-			}, {
-				Source:              mimirpb.RULE,
-				SkipLabelValidation: true,
-				Timeseries: []mimirpb.PreallocTimeseries{
-					{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-							Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars: []mimirpb.Exemplar{},
-						},
-					},
-				},
-				Metadata: []*mimirpb.MetricMetadata{
-					{
-						MetricFamilyName: "series_3",
-						Type:             mimirpb.COUNTER,
-						Help:             "This is the third test metric.",
-					},
-				},
-			},
-		}, partials)
+		// Together, the records carry what one record would.
+		expTimeseries, expMetadata := expectedV2()
+		var timeseries []mimirpb.PreallocTimeseries
+		var metadata []*mimirpb.MetricMetadata
+		for _, partial := range partials {
+			assert.Equal(t, mimirpb.RULE, partial.Source)
+			assert.True(t, partial.SkipLabelValidation)
+			timeseries = append(timeseries, partial.Timeseries...)
+			metadata = append(metadata, partial.Metadata...)
+		}
+		assert.Equal(t, expTimeseries, timeseries)
+		assert.ElementsMatch(t, expMetadata, metadata)
 	})
 
 	t.Run("should return multiple records, larger than the limit, if the Timeseries and Metadata entries in the WriteRequest are bigger than limit", func(t *testing.T) {

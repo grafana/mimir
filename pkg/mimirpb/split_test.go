@@ -529,6 +529,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"skipUnmarshalingExemplars",
 		"skipNormalizeMetadataMetricName",
 		"skipDeduplicateMetadata",
+		"legacyMetadataFromStandInsOnly",
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",

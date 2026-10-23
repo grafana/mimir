@@ -715,17 +715,7 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 	}
 
 	maxMetadataValueLength := cfg.maxMetadataLength
-
-	if len(metadata.Help) > maxMetadataValueLength {
-		newlen := 0
-		for idx := range metadata.Help {
-			if idx > maxMetadataValueLength {
-				break
-			}
-			newlen = idx // idx is the index of the next character, making it the length of what comes before
-		}
-		metadata.Help = metadata.Help[:newlen]
-	}
+	metadata.Help = truncateHelp(metadata.Help, maxMetadataValueLength)
 
 	var err error
 	if len(metadata.GetMetricFamilyName()) > maxMetadataValueLength {
@@ -737,6 +727,31 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 	}
 
 	return err
+}
+
+// cleanSeriesMetadata applies the metric metadata limits to a series' own metadata: its help is truncated, and a unit
+// that's too long drops the metadata, though not the series. The drop isn't counted: the metric family's metadata,
+// which the same metadata is folded into, counts it once per family.
+func cleanSeriesMetadata(cfg metadataValidationConfig, ts *mimirpb.TimeSeries) {
+	ts.SeriesMetadata.Help = truncateHelp(ts.SeriesMetadata.Help, cfg.maxMetadataLength)
+	if len(ts.SeriesMetadata.Unit) > cfg.maxMetadataLength {
+		ts.SeriesMetadata = mimirpb.SeriesMetadata{}
+	}
+}
+
+// truncateHelp truncates help to at most maxLength bytes, at a character boundary.
+func truncateHelp(help string, maxLength int) string {
+	if len(help) <= maxLength {
+		return help
+	}
+	newlen := 0
+	for idx := range help {
+		if idx > maxLength {
+			break
+		}
+		newlen = idx // idx is the index of the next character, making it the length of what comes before
+	}
+	return help[:newlen]
 }
 
 func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {

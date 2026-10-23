@@ -983,6 +983,27 @@ func TestValidateMetadata(t *testing.T) {
 	`), "cortex_discarded_metadata_total"))
 }
 
+func TestCleanSeriesMetadata(t *testing.T) {
+	cfg := metadataValidationConfig{maxMetadataLength: 22}
+
+	for _, c := range []struct {
+		desc string
+		in   mimirpb.SeriesMetadata
+		out  mimirpb.SeriesMetadata
+	}{
+		{"valid", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "seconds"}, mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "seconds"}},
+		{"help truncated", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Number of goroutines that currently exist.", Unit: "seconds"}, mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Number of goroutines t", Unit: "seconds"}},
+		{"unit too long", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a unit that is far too long"}, mimirpb.SeriesMetadata{}},
+	} {
+		t.Run(c.desc, func(t *testing.T) {
+			ts := &mimirpb.TimeSeries{Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1}}, SeriesMetadata: c.in}
+			cleanSeriesMetadata(cfg, ts)
+			require.Equal(t, c.out, ts.SeriesMetadata)
+			require.Len(t, ts.Samples, 1)
+		})
+	}
+}
+
 func TestValidateLabelDuplication(t *testing.T) {
 	ts := time.Now()
 	var cfg labelValidationConfig

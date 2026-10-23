@@ -4766,7 +4766,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Store each series' metric metadata (type, unit and help) in the
 # ingester's memory, as versions over time, in addition to the metric families'
-# metadata. It applies when the tenant's TSDB opens.
+# metadata. Turning it on takes effect when the tenant's TSDB next opens;
+# turning it off stops storing new metadata right away.
 # CLI flag: -ingester.native-metric-metadata-enabled
 [native_metric_metadata_enabled: <boolean> | default = false]
 

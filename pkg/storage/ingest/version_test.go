@@ -206,13 +206,9 @@ func TestDeserializeRecordContent(t *testing.T) {
 			},
 		}
 		require.Equal(t, expHistograms, wr.Timeseries[0].Histograms)
-		expMetadata := []*mimirpb.MetricMetadata{{
-			Type:             mimirpb.COUNTER,
-			MetricFamilyName: "test_metric_total",
-			Help:             "Help for test_metric_total",
-			Unit:             "seconds",
-		}}
-		require.Equal(t, expMetadata, wr.Metadata)
+		// A series with data keeps its metadata as its own: records carry metric families' in series without data.
+		require.Equal(t, mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Help for test_metric_total", Unit: "seconds"}, wr.Timeseries[0].SeriesMetadata)
+		require.Empty(t, wr.Metadata)
 	})
 
 	t.Run("v2 skips metadata normalization", func(t *testing.T) {
@@ -344,17 +340,18 @@ func TestRecordSerializer(t *testing.T) {
 		err = DeserializeRecordContent(record.Value, resultReq, 2)
 		require.NoError(t, err)
 
-		require.Len(t, resultReq.Timeseries, 3)
+		require.Len(t, resultReq.Timeseries, 5)
 		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
 
 		// The only way to carry a metadata in RW2.0 is attached to a timeseries.
-		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
-		expMetadataSeries := []mimirpb.PreallocTimeseries{
-			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
+		// Each metric family's metadata goes in an extra timeseries without data, which stands in for the family.
+		var expMetadataSeries []mimirpb.PreallocTimeseries
+		for _, name := range []string{"series_1", "series_2", "series_3"} {
+			expMetadataSeries = append(expMetadataSeries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, name)),
 				Samples:   []mimirpb.Sample{},
 				Exemplars: []mimirpb.Exemplar{},
-			}},
+			}})
 		}
 		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:])
 

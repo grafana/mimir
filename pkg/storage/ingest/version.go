@@ -200,6 +200,8 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 	wr.RW2CommonSymbols = V2CommonSymbols.GetSlice()
 	wr.SkipNormalizeMetadataMetricName = true
 	wr.SkipDeduplicateMetadata = true
+	// Records carry the metric families' metadata in series without data, and each series with data its own.
+	wr.LegacyMetadataFromStandInsOnly = true
 	return mimirpb.Unmarshal(content, wr)
 }
 

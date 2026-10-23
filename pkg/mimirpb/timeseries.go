@@ -71,6 +71,10 @@ type PreallocWriteRequest struct {
 	// Some applications, like RW1->RW2 translation, might choose to disable it.
 	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
 	SkipDeduplicateMetadata bool
+	// LegacyMetadataFromStandInsOnly takes metric families' metadata only from RW2 series without data, as records
+	// carry it, and leaves series with data their own metadata only.
+	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
+	LegacyMetadataFromStandInsOnly bool
 }
 
 // Unmarshal implements proto.Message.
@@ -81,6 +85,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
 	p.skipDeduplicateMetadata = p.SkipDeduplicateMetadata
+	p.legacyMetadataFromStandInsOnly = p.LegacyMetadataFromStandInsOnly
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
@@ -613,6 +618,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	// Copy scalar properties.
 	dstTs.CreatedTimestamp = srcTs.CreatedTimestamp
 	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
+	dstTs.SeriesMetadata = SeriesMetadata{Type: srcTs.SeriesMetadata.Type, Help: strings.Clone(srcTs.SeriesMetadata.Help), Unit: strings.Clone(srcTs.SeriesMetadata.Unit)}
 
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {

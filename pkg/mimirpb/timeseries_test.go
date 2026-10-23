@@ -328,6 +328,7 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 			},
 			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
+			SeriesMetadata:            SeriesMetadata{Type: COUNTER, Help: "help", Unit: "seconds"},
 		},
 	}
 

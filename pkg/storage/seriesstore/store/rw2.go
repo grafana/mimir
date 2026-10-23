@@ -25,6 +25,8 @@ type rw2Series struct {
 	// Whether the series has more than floats, which only decoding it reads: histograms, exemplars or a created
 	// timestamp.
 	other bool
+	// Whether the series has histograms or exemplars, which make it one with data like floats do.
+	moreData bool
 }
 
 // rw2Metadata is a series' metadata.
@@ -182,13 +184,13 @@ func (s *rw2Source) readSeries(body []byte) error {
 			s.metadata = append(s.metadata, metadata)
 		case field == 3 && wire == 2:
 			// A histogram, whose timestamp is its field 15.
-			series.other = true
+			series.other, series.moreData = true, true
 			if err := s.observeTimestamp(value, 15); err != nil {
 				return err
 			}
 		case field == 4 && wire == 2:
 			// An exemplar, whose timestamp is its field 3.
-			series.other = true
+			series.other, series.moreData = true, true
 			if err := s.observeTimestamp(value, 3); err != nil {
 				return err
 			}
@@ -330,8 +332,8 @@ func (r *RW2Record) Complete() bool { return !r.source.partial }
 // MinTimestamp is the oldest timestamp of the record's samples, histograms and exemplars, math.MaxInt64 without any.
 func (r *RW2Record) MinTimestamp() int64 { return r.source.minTimestamp }
 
-// Metadata is the metadata of the record's series, as decoding it without deduplicating nor normalizing the metric
-// names gives: one for each series with any, in order.
+// Metadata is the metric families' metadata of the record, as decoding it without deduplicating nor normalizing the
+// metric names gives: one for each series without data with any, in order. Series with data carry their own.
 func (r *RW2Record) Metadata() []*mimirpb.MetricMetadata {
 	source := r.source
 	if len(source.metadata) == 0 {
@@ -340,6 +342,9 @@ func (r *RW2Record) Metadata() []*mimirpb.MetricMetadata {
 	var pairs [][2]string
 	out := make([]*mimirpb.MetricMetadata, 0, len(source.metadata))
 	for _, metadata := range source.metadata {
+		if series := &source.series[metadata.series]; series.samplesTo > series.samplesAt || series.moreData {
+			continue
+		}
 		var name string
 		pairs, name = source.pairs(int(metadata.series), pairs[:0])
 		if name == "" || metadata.help == "" && metadata.unit == "" && metadata.metricType == 0 {

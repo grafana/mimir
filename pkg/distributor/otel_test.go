@@ -964,6 +964,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
 				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+				SeriesMetadata:   mimirpb.SeriesMetadata{Type: mimirpb.GAUGE},
 			},
 		},
 		{
@@ -988,6 +989,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
 				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 				CreatedTimestamp: 0,
+				SeriesMetadata:   mimirpb.SeriesMetadata{Type: mimirpb.GAUGE},
 			},
 		},
 	}
