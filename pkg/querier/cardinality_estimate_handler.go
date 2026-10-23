@@ -69,9 +69,14 @@ type estimateResponse struct {
 	// CoverageGap is set when part of the window is held by no block and
 	// by no ingester; the counts are then a lower bound.
 	CoverageGap bool `json:"coverage_gap,omitempty"`
+	// OutOfOrderNotCounted is set when an ingester's out-of-order head holds
+	// samples in the window, which are not counted until they are compacted;
+	// the counts are then a lower bound.
+	OutOfOrderNotCounted bool `json:"out_of_order_not_counted,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
-	// store-gateway, which MissingBlocks lists, or when the window starts
-	// before what the ingesters hold, which HeadMinTime says.
+	// store-gateway, which MissingBlocks lists, when the window starts
+	// before what the ingesters hold, which HeadMinTime says, or when
+	// OutOfOrderNotCounted is set.
 	LowerBound    bool     `json:"lower_bound"`
 	MissingBlocks []string `json:"missing_blocks,omitempty"`
 	Retries       int      `json:"retries,omitempty"`
@@ -177,7 +182,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		elapsed := time.Since(start)
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, OutOfOrderNotCounted: res.OutOfOrderNotCounted, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, BlocksFromPostings: res.BlocksFromPostings,
