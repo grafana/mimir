@@ -37,7 +37,7 @@ type nativeMetadataResult struct {
 type nativeMetadataSeries struct {
 	Labels   labels.Labels
 	Versions []tsdb.NativeMetricMetadataVersion
-	// Truncated reports that the TSDB's cap on versions per series has evicted older ones.
+	// Truncated reports that the engine's cap on versions per series has evicted older ones.
 	Truncated bool
 	// Coalesced reports that changes over the seriesstore engine's limit were merged into one range.
 	Coalesced bool
@@ -74,7 +74,7 @@ func (e seriesstoreEngine) nativeMetricMetadata(ctx context.Context, matcherSets
 		for _, v := range s.Versions {
 			versions = append(versions, tsdb.NativeMetricMetadataVersion{EffectiveFrom: v.EffectiveFrom, Metadata: v.Metadata})
 		}
-		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Coalesced: s.Coalesced})
+		result.Series = append(result.Series, nativeMetadataSeries{Labels: s.Labels, Versions: versions, Truncated: s.Truncated, Coalesced: s.Coalesced})
 	}
 	return result, nil
 }

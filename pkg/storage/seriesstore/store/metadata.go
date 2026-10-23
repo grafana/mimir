@@ -24,6 +24,11 @@ import (
 // does: a bigger value isn't kept, and is counted.
 const maxMetricMetadataBytes = 8 << 10
 
+// maxMetadataRunsPerSeries bounds a series' older runs, whatever the change limit lets through, such as out-of-order
+// changes: past it, the oldest go, the series is truncated, as the Prometheus TSDB's version cap truncates it, and the
+// evictions are counted.
+const maxMetadataRunsPerSeries = 64
+
 // metricMetadataDictionary holds an engine's distinct metric metadata values, each once, by id: series refer to the
 // values they have and had by their ids, and a value with no references left goes at the next compaction. Values are
 // copied in, so they refer to nothing of the requests or records they came from.
@@ -148,6 +153,8 @@ type metricMetadataStats struct {
 	memoHits, memoMisses atomic.Uint64
 	// The changes over the change limit: each coalesced range, and each out-of-order change absorbed for it.
 	coalesced atomic.Uint64
+	// The older runs evicted past maxMetadataRunsPerSeries.
+	evictions atomic.Uint64
 	// Called with each, once set at the engine's open.
 	onCoalesced func()
 }
@@ -184,6 +191,8 @@ type shardMetadata struct {
 	older   map[uint64][]metadataRun
 	// The changes of the series that changed, as the change limit counts them.
 	changes map[uint64]metadataChanges
+	// The series whose older runs went past maxMetadataRunsPerSeries, until they leave memory.
+	truncated map[uint64]struct{}
 	// The series with a value, and the older runs of all of them.
 	series, runs int
 }
@@ -202,7 +211,7 @@ type metadataRun struct {
 }
 
 func newShardMetadata(dictionary *metricMetadataDictionary, stats *metricMetadataStats) *shardMetadata {
-	return &shardMetadata{dictionary: dictionary, stats: stats, older: map[uint64][]metadataRun{}, changes: map[uint64]metadataChanges{}}
+	return &shardMetadata{dictionary: dictionary, stats: stats, older: map[uint64][]metadataRun{}, changes: map[uint64]metadataChanges{}, truncated: map[uint64]struct{}{}}
 }
 
 // metadataBaseMargin is how far before the first observation a shard's base is: samples down to the out-of-order
@@ -269,6 +278,7 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64,
 		m.older[series.ref] = append(m.older[series.ref], metadataRun{from: start, id: series.metadataID})
 		m.runs++
 		series.metadataID, series.metadataStart = id, m.offset(t, oooWindowMs)
+		m.capRuns(series.ref)
 		return
 	}
 	// At or before the current run's start: the series' runs as change points, with the observation put among them.
@@ -322,9 +332,29 @@ func (m *shardMetadata) setRuns(series *Series, runs []metadataRun, oooWindowMs 
 	if older := runs[:len(runs)-1]; len(older) > 0 {
 		m.older[series.ref] = slices.Clip(older)
 		m.runs += len(older)
+		m.capRuns(series.ref)
 	} else {
 		delete(m.older, series.ref)
 	}
+}
+
+// capRuns evicts the series' oldest runs past maxMetadataRunsPerSeries.
+func (m *shardMetadata) capRuns(ref uint64) {
+	older := m.older[ref]
+	evict := len(older) - maxMetadataRunsPerSeries
+	if evict <= 0 {
+		return
+	}
+	for _, run := range older[:evict] {
+		m.dictionary.release(run.id)
+	}
+	// In place: a series past the cap that keeps changing would otherwise copy its runs on every change.
+	kept := copy(older, older[evict:])
+	clear(older[kept:])
+	m.older[ref] = older[:kept]
+	m.runs -= evict
+	m.truncated[ref] = struct{}{}
+	m.stats.evictions.Add(uint64(evict))
 }
 
 // absorb takes an observation into the series' coalesced current run, which started at start: one in its window is
@@ -339,6 +369,7 @@ func (m *shardMetadata) absorb(series *Series, id uint32, t, start, oooWindowMs 
 		m.dictionary.acquire(latest)
 		series.metadataID, series.metadataStart = latest, m.offset(c.coalescedEnd, oooWindowMs)
 		m.changes[series.ref] = metadataChanges{window: c.coalescedEnd}
+		m.capRuns(series.ref)
 		return false
 	}
 	if t < start {
@@ -384,6 +415,7 @@ func (m *shardMetadata) coalesceFrom(series *Series, id uint32, t, oooWindowMs i
 	m.older[series.ref] = append(m.older[series.ref], metadataRun{from: m.start(series), id: series.metadataID})
 	m.runs++
 	series.metadataID, series.metadataStart = id|metadataCoalesced, m.offset(t, oooWindowMs)
+	m.capRuns(series.ref)
 	window := limits.windowOf(t)
 	m.changes[series.ref] = metadataChanges{window: window, coalescedEnd: window + limits.windowMs, latestAt: t, count: limits.maxChanges}
 	m.stats.coalesce()
@@ -435,6 +467,7 @@ func (m *shardMetadata) drop(series *Series) {
 	m.runs -= len(m.older[series.ref])
 	delete(m.older, series.ref)
 	delete(m.changes, series.ref)
+	delete(m.truncated, series.ref)
 	m.dictionary.release(series.metadataID)
 	series.metadataID, series.metadataStart = 0, 0
 	m.series--
@@ -619,20 +652,21 @@ func (e *Engine) metricMetadataVersions(ref uint64) []MetricMetadataVersion {
 	if !ok {
 		return nil
 	}
-	versions, _ := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
+	versions, _, _ := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
 	return versions
 }
 
 // versionsLocked appends series' versions, which the caller resolves under the shard's lock, to into, and reports
-// whether any of them is a coalesced one.
-func (e *Engine) versionsLocked(m *shardMetadata, series *Series, into []MetricMetadataVersion) ([]MetricMetadataVersion, bool) {
+// whether any of them is a coalesced one, and whether the series is truncated.
+func (e *Engine) versionsLocked(m *shardMetadata, series *Series, into []MetricMetadataVersion) ([]MetricMetadataVersion, bool, bool) {
 	var runs [8]metadataRun
 	coalesced := false
 	for _, run := range m.runsOf(series, runs[:0]) {
 		into = append(into, MetricMetadataVersion{EffectiveFrom: run.from, Metadata: e.metricMetadata.value(run.id)})
 		coalesced = coalesced || run.id&metadataCoalesced != 0
 	}
-	return into, coalesced
+	_, truncated := m.truncated[series.ref]
+	return into, coalesced, truncated
 }
 
 // NativeMetricMetadataSeries is a head series' native metric metadata.
@@ -642,6 +676,8 @@ type NativeMetricMetadataSeries struct {
 	Versions []MetricMetadataVersion
 	// Whether a version stands for the changes over the change limit in its window, with the latest of their values.
 	Coalesced bool
+	// Whether older versions went past the cap on them.
+	Truncated bool
 }
 
 // NativeMetricMetadata returns the native metric metadata of the head series that match any of matcherSets, in label
@@ -681,8 +717,8 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 					}
 					heap.Pop(selected)
 				}
-				versions, coalesced := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
-				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: versions, coalesced: coalesced})
+				versions, coalesced, truncated := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
+				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: versions, coalesced: coalesced, truncated: truncated})
 				return true
 			})
 		}
@@ -694,7 +730,7 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 	out := make([]NativeMetricMetadataSeries, 0, len(selected.series))
 	var builder promlabels.ScratchBuilder
 	for _, s := range selected.series {
-		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, Coalesced: s.coalesced})
+		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, Coalesced: s.coalesced, Truncated: s.truncated})
 	}
 	return out, limited, nil
 }
@@ -706,9 +742,9 @@ func (e *Engine) NativeMetricMetadataCoverageStart() int64 {
 }
 
 type selectedMetadata struct {
-	labels    labels.Labels
-	versions  []MetricMetadataVersion
-	coalesced bool
+	labels               labels.Labels
+	versions             []MetricMetadataVersion
+	coalesced, truncated bool
 }
 
 // metadataSelection is a max-heap of series by labels.
@@ -735,8 +771,8 @@ type MetricMetadataStats struct {
 	// The entries the series' groups have room for, which every series' inline metadata is paid in.
 	EntryCapacity int64
 	// The values too big to keep, the runs whose start clamped to their shard's base, the batches' memo lookups, and
-	// the changes over the change limit.
-	Oversized, Clamped, MemoHits, MemoMisses, Coalesced uint64
+	// the changes over the change limit, and the older runs evicted past the cap on them.
+	Oversized, Clamped, MemoHits, MemoMisses, Coalesced, Evictions uint64
 }
 
 // MetricMetadataStats returns the engine's native metric metadata as its metrics report it.
@@ -749,6 +785,7 @@ func (e *Engine) MetricMetadataStats() MetricMetadataStats {
 		MemoHits:   e.metricMetadataStats.memoHits.Load(),
 		MemoMisses: e.metricMetadataStats.memoMisses.Load(),
 		Coalesced:  e.metricMetadataStats.coalesced.Load(),
+		Evictions:  e.metricMetadataStats.evictions.Load(),
 	}
 	for index, state := range e.store.shards {
 		state.RLock()

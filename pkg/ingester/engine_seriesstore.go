@@ -145,6 +145,7 @@ func registerSeriesstoreMetricMetadata(reg prometheus.Registerer, engine *store.
 		of         func(store.MetricMetadataStats) float64
 	}{
 		{"prometheus_tsdb_head_native_metric_metadata_oversized_total", "Total number of appended samples whose native metric metadata exceeded the size limit and was skipped.", func(s store.MetricMetadataStats) float64 { return float64(s.Oversized) }},
+		{"prometheus_tsdb_head_native_metric_metadata_version_evictions_total", "Total number of native metric metadata versions evicted by the per-series limit.", func(s store.MetricMetadataStats) float64 { return float64(s.Evictions) }},
 		{"seriesstore_native_metric_metadata_clamped_total", "Total number of native metric metadata runs whose start was clamped to their shard's base.", func(s store.MetricMetadataStats) float64 { return float64(s.Clamped) }},
 		{"seriesstore_native_metric_metadata_memo_hits_total", "Total number of native metric metadata values found in a batch's memo.", func(s store.MetricMetadataStats) float64 { return float64(s.MemoHits) }},
 		{"seriesstore_native_metric_metadata_memo_misses_total", "Total number of native metric metadata values a batch's memo didn't have yet.", func(s store.MetricMetadataStats) float64 { return float64(s.MemoMisses) }},

@@ -220,3 +220,36 @@ func TestShardMetadataCoalescesChangesOverTheLimit(t *testing.T) {
 		require.EqualValues(t, 1, d.entry(id).refs.Load(), help)
 	}
 }
+
+func TestShardMetadataCapsASeriesRuns(t *testing.T) {
+	d := newMetricMetadataDictionary()
+	stats := &metricMetadataStats{}
+	m := newShardMetadata(d, stats)
+	a := d.intern(metadata.Metadata{Type: model.MetricTypeGauge, Help: "a"})
+	b := d.intern(metadata.Metadata{Type: model.MetricTypeGauge, Help: "b"})
+	series := Series{ref: 1}
+	// Without a change limit, out-of-order changes or not, a series keeps at most maxMetadataRunsPerSeries older runs.
+	const observations = maxMetadataRunsPerSeries + 6
+	for n := range observations {
+		id := a
+		if n%2 == 1 {
+			id = b
+		}
+		m.observe(&series, id, int64(n)*1_000, 0, metadataLimits{})
+	}
+	runs := m.runsOf(&series, nil)
+	require.Len(t, runs, maxMetadataRunsPerSeries+1)
+	require.Equal(t, int64(observations-1-maxMetadataRunsPerSeries)*1_000, runs[0].from)
+	require.EqualValues(t, observations-1-maxMetadataRunsPerSeries, stats.evictions.Load())
+	require.Contains(t, m.truncated, series.ref)
+	require.Equal(t, maxMetadataRunsPerSeries, m.runs)
+	// The runs left hold a reference each, and the interned ones one more.
+	held := map[uint32]int64{}
+	for _, run := range runs {
+		held[run.id]++
+	}
+	require.Equal(t, held[a]+1, d.entry(a).refs.Load())
+	require.Equal(t, held[b]+1, d.entry(b).refs.Load())
+	m.drop(&series)
+	require.NotContains(t, m.truncated, series.ref)
+}
