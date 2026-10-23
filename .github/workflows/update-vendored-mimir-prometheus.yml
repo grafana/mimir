@@ -203,7 +203,8 @@ jobs:
           if ! deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "./$tool"); then
             not_synced "could not check the sync tool's dependencies, see the [workflow run]($RUN_URL)"
           fi
-          if grep -qv '^github.com/grafana/mimir/' <<<"$deps"; then
+          # Dots escaped so that only Mimir's own path matches. Blank lines are ignored, as they name no package.
+          if grep -qvE '^(github\.com/grafana/mimir/|$)' <<<"$deps"; then
             not_synced "the sync tool depends on packages outside the standard library and Mimir, see the [workflow run]($RUN_URL)"
           fi
 
