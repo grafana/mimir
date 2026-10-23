@@ -327,8 +327,11 @@ type Limits struct {
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
-	CardinalityEstimateEnabled                    bool `yaml:"cardinality_estimate_enabled" json:"cardinality_estimate_enabled" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
+
+	// Cardinality estimate
+	CardinalityEstimateEnabled       bool  `yaml:"cardinality_estimate_enabled" json:"cardinality_estimate_enabled" category:"experimental"`
+	CardinalityEstimateMaxIndexBytes int64 `yaml:"cardinality_estimate_max_index_bytes" json:"cardinality_estimate_max_index_bytes" category:"experimental"`
 
 	// Cost attribution.
 	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
@@ -524,6 +527,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
 	f.BoolVar(&l.CardinalityEstimateEnabled, "querier.cardinality-estimate-enabled", false, "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant. The endpoint must also be enabled on the querier with -querier.cardinality-estimate.enabled.")
+	f.Int64Var(&l.CardinalityEstimateMaxIndexBytes, "querier.cardinality-estimate-max-index-bytes", 2<<30, "Maximum index bytes, postings plus series entries, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier splits it across the calls it sends, and each store-gateway and ingester also applies it to the calls it receives. 0 means no limit.")
 
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -997,6 +1001,11 @@ func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {
 // CardinalityEstimateEnabled returns whether the cardinality estimate endpoint is enabled for the tenant.
 func (o *Overrides) CardinalityEstimateEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).CardinalityEstimateEnabled
+}
+
+// CardinalityEstimateMaxIndexBytes returns the most index bytes one cardinality estimate may read for the tenant.
+func (o *Overrides) CardinalityEstimateMaxIndexBytes(userID string) int64 {
+	return o.getOverridesForUser(userID).CardinalityEstimateMaxIndexBytes
 }
 
 // LabelValuesMaxCardinalityLabelNamesPerRequest returns the maximum number of label names per cardinality request.

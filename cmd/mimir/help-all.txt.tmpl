@@ -2431,6 +2431,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of series that can be requested in a single cardinality API request. (default 500)
   -querier.cardinality-estimate-enabled
     	[experimental] Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant. The endpoint must also be enabled on the querier with -querier.cardinality-estimate.enabled.
+  -querier.cardinality-estimate-max-index-bytes int
+    	[experimental] Maximum index bytes, postings plus series entries, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier splits it across the calls it sends, and each store-gateway and ingester also applies it to the calls it receives. 0 means no limit. (default 2147483648)
   -querier.cardinality-estimate.compare-enabled
     	[experimental] If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.
   -querier.cardinality-estimate.enabled

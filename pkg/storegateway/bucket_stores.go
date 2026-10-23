@@ -646,6 +646,9 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
+		WithCardinalityEstimateMaxIndexBytes(func() int64 {
+			return u.limits.CardinalityEstimateMaxIndexBytes(userID)
+		}),
 	}
 
 	bs, err := NewBucketStore(

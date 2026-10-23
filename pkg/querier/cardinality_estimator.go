@@ -55,6 +55,7 @@ type estimateIngesters interface {
 // window reaches.
 type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
+	CardinalityEstimateMaxIndexBytes(userID string) int64
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
@@ -102,8 +103,14 @@ func (e *CardinalityEstimator) enabledFor(tenantID string) bool {
 }
 
 // Estimate answers req for tenantID. With Snap, a window inside one block
-// range is widened to it and req is updated.
+// range is widened to it and req is updated, and so is its MaxIndexBytes
+// once the tenant's limit is applied.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+	// The tenant's limit bounds a request that sets no max_index_bytes and
+	// cuts one that asks for more, before it is split across the sources.
+	if e.limits != nil {
+		req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
+	}
 	// The groups and hashes held in the querier count against the tenant's
 	// memory limit for a query.
 	if e.limits != nil {

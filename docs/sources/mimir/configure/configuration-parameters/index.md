@@ -5256,16 +5256,25 @@ blocked_requests:
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_analysis_max_results: <int> | default = 500]
 
+# (advanced) Maximum size of an active series or active native histogram series
+# request result shard in bytes. 0 to disable.
+# CLI flag: -querier.active-series-results-max-size-bytes
+[active_series_results_max_size_bytes: <int> | default = 419430400]
+
 # (experimental) Enables the experimental /api/v1/cardinality/estimate endpoint
 # for the tenant. The endpoint must also be enabled on the querier with
 # -querier.cardinality-estimate.enabled.
 # CLI flag: -querier.cardinality-estimate-enabled
 [cardinality_estimate_enabled: <boolean> | default = false]
 
-# (advanced) Maximum size of an active series or active native histogram series
-# request result shard in bytes. 0 to disable.
-# CLI flag: -querier.active-series-results-max-size-bytes
-[active_series_results_max_size_bytes: <int> | default = 419430400]
+# (experimental) Maximum index bytes, postings plus series entries, that one
+# cardinality estimate may read across the store-gateways and ingesters it asks.
+# A request that sets no max_index_bytes gets this limit, and a larger
+# max_index_bytes is cut to it. The querier splits it across the calls it sends,
+# and each store-gateway and ingester also applies it to the calls it receives.
+# 0 means no limit.
+# CLI flag: -querier.cardinality-estimate-max-index-bytes
+[cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
 
 # (experimental)
 cost_attribution_labels_structured:

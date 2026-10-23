@@ -57,6 +57,17 @@ func (l ingestersWithinLimit) QueryIngestersWithin(string) time.Duration { retur
 
 func (ingestersWithinLimit) CardinalityEstimateEnabled(string) bool { return true }
 
+func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return 0 }
+
+// indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
+// estimate.
+type indexBytesLimit struct {
+	ingestersWithinLimit
+	bytes int64
+}
+
+func (l indexBytesLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return l.bytes }
+
 func (ingestersWithinLimit) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 { return 0 }
 
 // memoryLimit is ingestersWithinLimit with a memory limit per query.
@@ -463,4 +474,45 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	require.Len(t, got, 3)
 	assert.Equal(t, int64(0), got[1].StepMs)
 	assert.Equal(t, int64(0), got[2].StepMs)
+}
+
+func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1 := ulid.MustNew(1, nil)
+	day := bucketindex.Blocks{{ID: b1, MinTime: 52 * hour, MaxTime: 76 * hour}}
+
+	for name, tc := range map[string]struct {
+		asked, limit, want int64
+	}{
+		"a request without max_index_bytes gets the tenant's limit": {asked: 0, limit: 1000, want: 1000},
+		"a larger request is cut to the tenant's limit":             {asked: 5000, limit: 1000, want: 1000},
+		"a smaller request is kept":                                 {asked: 600, limit: 1000, want: 600},
+		"without a tenant limit the request is unbounded":           {asked: 0, limit: 0, want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+			var got *storegatewaypb.SeriesCountsRequest
+			gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}}, queryStoreAfter: 12 * time.Hour}
+			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+				{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 87 * hour},
+			}}}
+			e := NewCardinalityEstimator(q, ing, indexBytesLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
+			e.now = func() time.Time { return now }
+
+			// The window reaches both sources, which share the bound evenly.
+			req := &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: tc.asked}
+			_, err := e.Estimate(context.Background(), "user-1", req)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, req.MaxIndexBytes)
+			require.NotNil(t, got)
+			require.NotNil(t, ing.gotSeriesCounts)
+			assert.Equal(t, tc.want/2, got.MaxIndexBytes, "the store-gateway's share")
+			assert.Equal(t, tc.want/2, ing.gotSeriesCounts.MaxIndexBytes, "the ingesters' share")
+		})
+	}
 }
