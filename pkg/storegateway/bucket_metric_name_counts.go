@@ -27,7 +27,8 @@ const metricNameCountsBatch = 10_000
 // series count over the requested blocks this store holds, from their index-headers, and streams the table in
 // batches, each message naming the blocks that were counted. Summing is exact only if the blocks share no
 // series, which the caller has to ensure. With max_names set, more distinct names than that is refused with
-// ResourceExhausted before anything is sent.
+// ResourceExhausted before anything is sent: before any postings offset table is walked when the sampled
+// offsets the index-header holds in memory already show one block over it, and after the walk otherwise.
 func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequest, srv storegatewaypb.StoreGateway_MetricNameCountsServer) error {
 	ctx := srv.Context()
 	want := make(map[ulid.ULID]bool, len(req.BlockIds))
@@ -65,6 +66,20 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 		}
 	}()
 	slices.SortFunc(blocks, func(x, y openBlock) int { return x.b.meta.ULID.Compare(y.b.meta.ULID) })
+
+	// Refuse before walking any postings offset table when one block alone is known to hold more names than
+	// max_names: the distinct names over the blocks are at least as many as any one block holds.
+	if req.MaxNames > 0 {
+		for _, o := range blocks {
+			n, err := o.b.indexHeaderReader.LabelValuesCountLowerBound(ctx, labels.MetricName)
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
+			}
+			if int64(n) > req.MaxNames {
+				return status.Errorf(codes.ResourceExhausted, "block %s holds at least %d distinct metric names, more than max_names %d", o.b.meta.ULID, n, req.MaxNames)
+			}
+		}
+	}
 
 	counts := map[string]int64{}
 	blockIDs := make([]string, 0, len(blocks))
