@@ -135,19 +135,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
 		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
 		// that have been inactive for longer than the lookback period.
-		shardSize := 0
-		if d.cfg.ShuffleShardingEnabled {
-			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
-		}
-
-		// Cap the inactive-partition lookback at query-ingesters-within:
-		//   - past that window, a partition's data isn't queried from ingesters, and its owners may be
-		//     gone; an ownerless partition would otherwise fail the query.
-		//   - 0 means unbounded, so it only tightens the bound when set and below the lookback period.
-		lookbackPeriod := d.cfg.IngestersLookbackPeriod
-		if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
-			lookbackPeriod = queryIngestersWithin
-		}
+		shardSize, lookbackPeriod := d.partitionShardForQuery(userID)
 
 		now := time.Now()
 
@@ -200,6 +188,24 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+// partitionShardForQuery returns the shard size and lookback period of the partition subring a read for
+// userID queries under ingest storage.
+func (d *Distributor) partitionShardForQuery(userID string) (shardSize int, lookbackPeriod time.Duration) {
+	if d.cfg.ShuffleShardingEnabled {
+		shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
+	}
+
+	// Cap the inactive-partition lookback at query-ingesters-within:
+	//   - past that window, a partition's data isn't queried from ingesters, and its owners may be
+	//     gone; an ownerless partition would otherwise fail the query.
+	//   - 0 means unbounded, so it only tightens the bound when set and below the lookback period.
+	lookbackPeriod = d.cfg.IngestersLookbackPeriod
+	if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
+		lookbackPeriod = queryIngestersWithin
+	}
+	return shardSize, lookbackPeriod
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
