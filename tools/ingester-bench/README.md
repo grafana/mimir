@@ -84,6 +84,22 @@ as a temporary cloud machine with dedicated CPUs:
 
 A run is valid only with no steal and no reads rejected by the read path's limit, which the report has.
 
+### Batches and their analysis
+
+[`run-batch.sh`](run-batch.sh) runs a batch file's runs one after another on that host, such as
+[`native-metadata/baselines.batch`](native-metadata/baselines.batch). It builds each commit's Mimir into an image of its
+own once, names each ingester `<build>-<engine>`, and runs them without compaction jitter or head snapshots. Every run
+starts at the same phase of the 2h block cycle, so a batch takes 2h per run. A run with `burn=<CPUs>` keeps ingester A's
+CPUs busy, for the isolation check.
+
+`-analyze=<results>` compares the runs of a results directory, and writes its `analysis.json`: every A/A, and the
+`-pairs` given as `baseline:target` ingester names. For each comparison, it gives the target's difference from the
+baseline, relative to it, of each statistic: the replay's CPU per sample, the window's CPU per ingested sample, and the
+live heap. The interval is a 95% paired t-interval, stratified by which ingester the baseline was, with two runs of
+each order or more. A run doesn't count with more than 1% steal, a replay measured over less than 90% of it, reads
+rejected by the read path's limit, compactions, checkpoints, truncations or head snapshots after `/ready`, or, between
+ingesters of the same engine, different counts of them at `/ready`.
+
 ## Configuration
 
 `-config` takes YAML files, comma separated. Each applies over [`defaults.yaml`](defaults.yaml) and the files before it.

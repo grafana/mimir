@@ -1,0 +1,26 @@
+# The native metadata prototype's baselines (plan 1.9), with native metadata off, for run-batch.sh. Analyse them with
+#
+#   go run ./tools/ingester-bench -analyze=$RESULTS \
+#     -pairs=shipped-prometheus:shipped-seriesstore,port-prometheus:shipped-prometheus,port-seriesstore:shipped-seriesstore
+#
+# Each comparison runs in both orders, so that a container's position can't pass for a difference, and the A/A runs
+# give each engine's noise. The isolation check is the A/A with ingester A's CPUs kept busy, against the idle ones.
+
+# AppenderV2 on both engines, before anything of #19563.
+build port 5da58232f3
+# The end of Phase 1, with the switch off by default.
+build shipped fb759c4952
+
+run aa-prometheus-1 shipped prometheus shipped prometheus
+run isolation-burn shipped prometheus shipped prometheus burn=10
+run shipped-prometheus-1 port prometheus shipped prometheus
+run aa-seriesstore-1 shipped seriesstore shipped seriesstore
+run shipped-seriesstore-1 port seriesstore shipped seriesstore
+run engines-1 shipped prometheus shipped seriesstore
+run aa-prometheus-2 shipped prometheus shipped prometheus
+run shipped-prometheus-2 shipped prometheus port prometheus
+run aa-seriesstore-2 shipped seriesstore shipped seriesstore
+run shipped-seriesstore-2 shipped seriesstore port seriesstore
+run engines-2 shipped seriesstore shipped prometheus
+run aa-prometheus-3 shipped prometheus shipped prometheus
+run aa-seriesstore-3 shipped seriesstore shipped seriesstore

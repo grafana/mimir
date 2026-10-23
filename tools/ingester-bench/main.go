@@ -108,6 +108,8 @@ func main() {
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	printCPUSet := flag.Bool("cpuset", false, "Print the CPUs this container may run on, for check-isolation.sh, instead of running a bench.")
 	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
+	analyzePath := flag.String("analyze", "", "Compare the runs of this results directory, writing its analysis.json, instead of running a bench: every A/A, and -pairs.")
+	pairs := flag.String("pairs", "", "With -analyze, the comparisons, as baseline:target ingester names, comma separated.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
 	}
@@ -121,6 +123,21 @@ func main() {
 	}
 	if *burnCPUs > 0 {
 		burn(*burnCPUs)
+	}
+	if *analyzePath != "" {
+		comparisons, err := parseComparisons(*pairs)
+		if err != nil {
+			log.Fatal(err)
+		}
+		a, err := analyzeResults(*analyzePath, comparisons)
+		if err != nil {
+			log.Fatal(err)
+		}
+		a.print(os.Stdout)
+		if err := writeJSON(filepath.Join(*analyzePath, "analysis.json"), a); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	if *execSpecPath != "" {
 		log.Fatal(execMain(*execSpecPath))
