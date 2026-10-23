@@ -105,9 +105,6 @@
     // Computed from compactor replicas by default, but can also be specified as percentage, for example "25%".
     cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
 
-    // Enable use of bucket index by querier, ruler and store-gateway.
-    bucket_index_enabled: true,
-
     store_gateway_replication_factor: 3,
 
     // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
@@ -229,6 +226,11 @@
       else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
       else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
       ]: $._config.blocks_storage_bucket_name,
+    },
+
+    bucketIndexConfig:: {
+      // Bucket index is updated by compactor on each cleanup cycle.
+      'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
     },
 
     queryBlocksStorageConfig:: {
@@ -755,12 +757,6 @@
       } else {}
     ),
 
-  bucket_index_config:: if $._config.bucket_index_enabled then {
-    // Bucket index is updated by compactor on each cleanup cycle.
-    'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
-  } else {
-    'blocks-storage.bucket-store.bucket-index.enabled': false,
-  },
 
   base_range_vector_splitting_config:: {
     'querier.mimir-query-engine.range-vector-splitting.enabled': true,
