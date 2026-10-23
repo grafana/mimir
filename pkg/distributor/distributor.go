@@ -1875,13 +1875,8 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
-			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-				}
-			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
-				pushReq.AddCleanup(cleanup)
+			if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
+				level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 			}
 
 			return next(ctx, pushReq)
@@ -1925,44 +1920,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		return nil
 	})
-}
-
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
-	done := make(chan struct{}, 1)
-	t0 := time.Now()
-	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
-	go func() {
-		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
-		if err != nil {
-			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-		}
-		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", limitsKey, "rejected", len(rejected))
-			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
-		}
-	}()
-
-	// Add a cleanup function that will wait for the async tracking to complete.
-	return func() {
-		defer cancelAsyncTracking(nil)
-
-		tCleanup := time.Now()
-		select {
-		case <-done:
-			// No need to wait.
-			return
-		default:
-		}
-
-		select {
-		case <-done:
-			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-			cancelAsyncTracking(errors.New("async tracking call took too long"))
-		}
-	}
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {

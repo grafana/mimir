@@ -857,7 +857,6 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseBatchedTracking = true
 		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing - we'll flush manually.
 
 		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -948,7 +947,6 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseBatchedTracking = true
 		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing - we'll flush manually.
 
 		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -1053,7 +1051,6 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseBatchedTracking = true
 		clientCfg.MaxBatchSeries = 5             // Set a low threshold to trigger flush
 		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing
 
@@ -1203,7 +1200,6 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
-		clientCfg.UseBatchedTracking = true
 		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing - we'll flush manually.
 
 		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
