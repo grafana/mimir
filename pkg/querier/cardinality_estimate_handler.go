@@ -109,10 +109,12 @@ type estimateCheck struct {
 // request by loading chunks, as a PromQL count would, and reports whether
 // the two agree and what each cost.
 //
-// Errors: 400 when the request can't be answered as asked, 422 when a limit
-// refused it, 500 otherwise. With label-based access control enabled, the
-// request's enforced selector is added to the matchers; a policy with more
-// than one selector is refused, as the other cardinality endpoints do.
+// Errors: 400 when the endpoint is disabled for the tenant
+// (-querier.cardinality-estimate-enabled) or the request can't be answered
+// as asked, 422 when a limit refused it, 500 otherwise. With label-based
+// access control enabled, the request's enforced selector is added to the
+// matchers; a policy with more than one selector is refused, as the other
+// cardinality endpoints do.
 // Experimental.
 func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	q := e.blocks
@@ -120,6 +122,10 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !e.enabledFor(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r)
