@@ -33,13 +33,21 @@ type estimateGroup struct {
 	Estimated bool `json:"estimated,omitempty"`
 }
 
+// estimateWindow is the window actually counted, [Start, End) in
+// milliseconds, after any snap.
+type estimateWindow struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+	// Snapped is set when snap=true widened the window asked for to the
+	// block range holding it.
+	Snapped bool `json:"snapped,omitempty"`
+}
+
 type estimateResponse struct {
-	MinTime int64  `json:"min_time"`
-	MaxTime int64  `json:"max_time"`
-	Snapped bool   `json:"snapped,omitempty"`
-	StepMS  int64  `json:"step_ms,omitempty"`
-	GroupBy string `json:"group_by"`
-	Read    string `json:"read"`
+	Window  estimateWindow `json:"window"`
+	StepMS  int64          `json:"step_ms,omitempty"`
+	GroupBy string         `json:"group_by"`
+	Read    string         `json:"read"`
 	// Source says where the counts come from: "blocks" for the
 	// store-gateways, "head" for the ingesters, "blocks+head" for both.
 	Source string `json:"source"`
@@ -64,12 +72,14 @@ type estimateResponse struct {
 	Retries       int      `json:"retries,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count
 	// don't set it, since the caller asked for them to be left out.
-	HasMore              bool            `json:"has_more"`
-	Dedup                bool            `json:"dedup"`
-	Blocks               int             `json:"blocks"`
-	StoreGateways        int             `json:"store_gateways"`
-	Groups               int             `json:"groups"`
-	Series               int64           `json:"series"`
+	HasMore       bool `json:"has_more"`
+	Dedup         bool `json:"dedup"`
+	Blocks        int  `json:"blocks"`
+	StoreGateways int  `json:"store_gateways"`
+	Groups        int  `json:"groups"`
+	// Total is the sum of every group's count, including the groups that
+	// min_count or limit left out of the table.
+	Total                int64           `json:"total"`
 	SeriesCounted        int64           `json:"series_counted"`
 	PostingsFetchedBytes int64           `json:"postings_fetched_bytes"`
 	SeriesFetchedBytes   int64           `json:"series_fetched_bytes"`
@@ -156,7 +166,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(elapsed.Seconds())
 		}
 		out := estimateResponse{
-			MinTime: req.MinT, MaxTime: req.MaxT, Snapped: res.Snapped, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
+			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
@@ -170,7 +180,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			if req.Step > 0 {
 				g.Counts = counts
 			}
-			out.Series += g.Count
+			out.Total += g.Count
 			if g.Count < opts.minCount {
 				continue
 			}
