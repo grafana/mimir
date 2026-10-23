@@ -136,6 +136,50 @@ func TestAppendRW2AppendsWhatDecodingDoes(t *testing.T) {
 	require.Equal(t, 500, ingested)
 }
 
+// Float series with metadata of their own, and the stand-ins for their metric families' metadata, keep a record
+// wholly on the fast path: it's complete, none of its series has more than floats to decode, and the stand-ins are
+// neither appended nor left over.
+func TestAppendRW2KeepsSeriesWithMetadataOnTheFastPath(t *testing.T) {
+	const count = 2000
+	engine := rw2Engine(t, count)
+	req := &mimirpb.WriteRequest{}
+	families := map[string]bool{}
+	for n := range count {
+		lbls := rw2Labels(n)
+		name := lbls.Get("__name__")
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:         mimirpb.FromLabelsToLabelAdapters(lbls),
+			Samples:        []mimirpb.Sample{{TimestampMs: 1000, Value: float64(n)}},
+			SeriesMetadata: mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Help of " + name + ".", Unit: "seconds"},
+		}})
+		if !families[name] {
+			families[name] = true
+			req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: name, Type: mimirpb.COUNTER, Help: "Help of " + name + ".", Unit: "seconds"})
+		}
+	}
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+
+	record, err := ReadRW2(records[0].Value, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+	require.NoError(t, err)
+	defer record.Release()
+	require.True(t, record.Complete())
+	standIns := 0
+	for _, series := range record.source.series {
+		require.False(t, series.other)
+		if series.samplesTo == series.samplesAt {
+			standIns++
+		}
+	}
+	require.Equal(t, len(families), standIns)
+	require.Len(t, record.source.metadata, count+len(families))
+	leftover, ingested, err := engine.AppendRW2(record, 0, 1<<62, 0, false, &rw2Sink{})
+	require.NoError(t, err)
+	require.Empty(t, leftover)
+	require.Equal(t, count, ingested)
+}
+
 func TestAppendRW2RejectsMalformedRecords(t *testing.T) {
 	content := rw2Records(t, 0, 10, 10, 1000)[0]
 	for _, cut := range []int{1, len(content) / 2, len(content) - 1} {
