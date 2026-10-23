@@ -188,13 +188,17 @@ func (c InstrumentRefLeaksConfig) maybeStartFreeingInstrumentedBuffers() {
 
 var startFreeingInstrumentedBuffers = sync.OnceFunc(func() {
 	unmapQueue = make(chan unmapTask, 1000)
-	go func() {
-		for t := range unmapQueue {
-			time.Sleep(time.Until(t.at))
-			t.tracker.unmap(t.buf)
-		}
-	}()
+	go freeInstrumentedBuffers()
 })
+
+// freeInstrumentedBuffers unmaps the freed instrumented buffers once their before-reuse period is over. It runs for
+// the life of the process, from the first registration of a codec that has such a period.
+func freeInstrumentedBuffers() {
+	for t := range unmapQueue {
+		time.Sleep(time.Until(t.at))
+		t.tracker.unmap(t.buf)
+	}
+}
 
 func (t *refLeaksTracker) unmap(buf []byte) {
 	newInflight := t.inflightInstrumentedBytes.Sub(uint64(len(buf)))
