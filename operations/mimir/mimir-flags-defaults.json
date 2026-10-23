@@ -901,6 +901,8 @@
   "blocks-storage.bucket-store.bucket-index.idle-timeout": 3600000000000,
   "blocks-storage.bucket-store.bucket-index.max-stale-period": 3600000000000,
   "blocks-storage.bucket-store.ignore-blocks-within": 36000000000000,
+  "blocks-storage.bucket-store.cardinality-estimate-max-concurrent": 8,
+  "blocks-storage.bucket-store.cardinality-estimate-block-concurrency": 16,
   "blocks-storage.bucket-store.series-hash-cache-max-size-bytes": 1073741824,
   "blocks-storage.bucket-store.partitioner-max-gap-bytes": 524288,
   "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks": 0,

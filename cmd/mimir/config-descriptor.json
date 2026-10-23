@@ -12857,6 +12857,28 @@
             },
             {
               "kind": "field",
+              "name": "cardinality_estimate_max_concurrent",
+              "required": false,
+              "desc": "Maximum number of cardinality estimate count requests (SeriesCounts and MetricNameCounts) a store-gateway runs at once, across all tenants. Further requests wait for their turn for up to -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then retried on another store-gateway. These requests don't take a slot of -blocks-storage.bucket-store.max-concurrent. 0 means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 8,
+              "fieldFlag": "blocks-storage.bucket-store.cardinality-estimate-max-concurrent",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cardinality_estimate_block_concurrency",
+              "required": false,
+              "desc": "Number of blocks one cardinality estimate count request reads at once.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16,
+              "fieldFlag": "blocks-storage.bucket-store.cardinality-estimate-block-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",

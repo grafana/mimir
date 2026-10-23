@@ -6528,6 +6528,20 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
 
+  # (experimental) Maximum number of cardinality estimate count requests
+  # (SeriesCounts and MetricNameCounts) a store-gateway runs at once, across all
+  # tenants. Further requests wait for their turn for up to
+  # -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then
+  # retried on another store-gateway. These requests don't take a slot of
+  # -blocks-storage.bucket-store.max-concurrent. 0 means no limit.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-max-concurrent
+  [cardinality_estimate_max_concurrent: <int> | default = 8]
+
+  # (experimental) Number of blocks one cardinality estimate count request reads
+  # at once.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-block-concurrency
+  [cardinality_estimate_block_concurrency: <int> | default = 16]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.

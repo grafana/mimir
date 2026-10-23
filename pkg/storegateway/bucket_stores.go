@@ -74,6 +74,7 @@ type BucketStores struct {
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
+	countGate gate.Gate
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
@@ -134,6 +135,15 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
+	// The cardinality estimate count requests have their own limit, so they don't take query slots.
+	countGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "cardinality_estimate"}, gateReg)
+	countGate := gate.NewNoop()
+	if n := cfg.BucketStore.CardinalityEstimateMaxConcurrent; n > 0 {
+		countGate = gate.NewBlocking(n)
+		countGate = gate.NewInstrumented(countGateReg, n, countGate)
+		countGate = timeoutGate{delegate: countGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
+	}
+
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
 	lazyLoadingGate := gate.NewNoop()
@@ -161,6 +171,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
+		countGate:          countGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners: newGapBasedPartitioners(
 			maxGapBytesChunks,
@@ -645,6 +656,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
+		WithCountGate(u.countGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 		WithCardinalityEstimateMaxIndexBytes(func() int64 {
 			return u.limits.CardinalityEstimateMaxIndexBytes(userID)
