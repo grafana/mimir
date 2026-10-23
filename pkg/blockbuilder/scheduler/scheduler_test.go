@@ -1385,7 +1385,7 @@ func TestUpdateSchedule_PartitionAddedWhileRunning(t *testing.T) {
 		produceResult := cli.ProduceSync(ctx, &kgo.Record{Timestamp: time.Now(), Value: []byte("value"), Topic: "ingest", Partition: 1})
 		require.NoError(t, produceResult.FirstErr())
 
-		require.ErrorContains(t, sched.updateSchedule(ctx), "partition 1 never observed start offset")
+		require.ErrorIs(t, sched.updateSchedule(ctx), errPartitionNotInitialized)
 
 		ps := sched.getPartitionState("ingest", 1)
 		require.True(t, ps.startOffsetEmpty(0), "the partition's start offset must not be seeded from its end offset")
@@ -1422,8 +1422,8 @@ func TestUpdateSchedule_MultiCluster_PartitionAddedWhileRunning(t *testing.T) {
 	produceRecords(ctx, t, clients[1], 1, 3)
 
 	err = sched.updateSchedule(ctx)
+	require.ErrorIs(t, err, errPartitionNotInitialized)
 	require.ErrorContains(t, err, "write compartment 1")
-	require.ErrorContains(t, err, "partition 1 never observed start offset")
 
 	ps := sched.getPartitionState("ingest", 1)
 	require.False(t, ps.startOffsetEmpty(0))
@@ -1442,7 +1442,8 @@ func TestUpdateSchedule_StartupProbeFailed(t *testing.T) {
 		0: {{partition: 0, start: 0, resume: 0, end: 3}},
 	})
 
-	require.ErrorContains(t, sched.updateSchedule(ctx), "partition 0 never observed start offset")
+	require.ErrorIs(t, sched.updateSchedule(ctx), errPartitionNotInitialized)
+
 	require.True(t, sched.getPartitionState("ingest", 0).startOffsetEmpty(0))
 }
 

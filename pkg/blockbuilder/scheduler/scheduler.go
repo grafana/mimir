@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -25,6 +26,8 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
+
+var errPartitionNotInitialized = errors.New("partition not initialized")
 
 type BlockBuilderScheduler struct {
 	services.Service
@@ -166,6 +169,11 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			}
 
 			if err := s.updateSchedule(ctx); err != nil {
+				if errors.Is(err, errPartitionNotInitialized) {
+					// Uninitialized partition is not a failure, but an edge-case.
+					level.Warn(s.logger).Log("msg", "uninitialized partition found: will restart to reconcile scheduler internal states", "err", err)
+					return modules.ErrStopProcess
+				}
 				return err
 			}
 			s.onScheduleUpdated()
@@ -331,7 +339,7 @@ func (s *BlockBuilderScheduler) recordEndOffsets(clusterID int, endOffsets kadm.
 		// The scheduler can't auto-recover from that; the safest option is to restart and reconcile partition state.
 		// A partition with end-offset=0 has never held records, so it's fine.
 		if ps.startOffsetEmpty(clusterID) && o.Offset != 0 {
-			err = fmt.Errorf("partition %d never observed start offset but has end offset %d", clusterID, o.Partition, o.Offset)
+			err = fmt.Errorf("partition %d never observed start offset but has end offset %d: %w", o.Partition, o.Offset, errPartitionNotInitialized)
 			return
 		}
 		ps.updateEndOffset(clusterID, o.Offset)
