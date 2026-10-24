@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"sync"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -48,9 +50,14 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 	}
 	stats.Series = len(selected)
 
-	seriesInBatch := make([]client.QueryStreamSeries, 0, min(batching.SeriesBatchSize, len(selected)+1))
+	scratch := takeStreamScratch()
+	defer scratch.give()
+	seriesInBatch := scratch.series[:0]
 	// The labels of a batch, reused once it is sent, which encodes it.
-	var adapters []mimirpb.LabelAdapter
+	adapters := scratch.adapters[:0]
+	defer func() {
+		scratch.series, scratch.adapters = held(scratch.series, seriesInBatch), held(scratch.adapters, adapters)
+	}()
 	for index := range selected {
 		start := len(adapters)
 		adapters = selected[index].AppendLabels(adapters)
@@ -59,6 +66,7 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 			if err := send(&client.QueryStreamResponse{StreamingSeries: seriesInBatch}); err != nil {
 				return stats, err
 			}
+			scratch.series, scratch.adapters = held(scratch.series, seriesInBatch), held(scratch.adapters, adapters)
 			seriesInBatch, adapters = seriesInBatch[:0], adapters[:0]
 		}
 	}
@@ -68,20 +76,24 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 	}
 
 	var (
-		chunksInBatch  = make([]client.QueryStreamSeriesChunks, 0, min(batching.ChunksBatchSize, uint64(len(selected))))
+		chunksInBatch  = scratch.chunks[:0]
 		batchSizeBytes = 0
-		// The chunks of a batch share an array, which is cut after the batch is sent.
-		arena []client.Chunk
+		// The chunks of a batch share an array, which the next batch takes from the start once the batch is sent.
+		arena = scratch.arena[:0]
 		// The chunks not yet in an arena: a request for a few series doesn't allocate room for 256.
 		remaining = 0
 	)
+	defer func() {
+		scratch.chunks, scratch.arena = held(scratch.chunks, chunksInBatch), held(scratch.arena, arena)
+	}()
 	for index := range selected {
 		remaining += len(selected[index].Chunks)
 	}
 	for index := range selected {
 		list := selected[index].Chunks
 		if cap(arena)-len(arena) < len(list) {
-			arena = make([]client.Chunk, 0, min(max(len(list), 256), remaining))
+			// The chunks of the batch not sent yet are in the array they were put in.
+			arena = make([]client.Chunk, 0, min(max(len(list), 256, 2*cap(arena)), remaining))
 		}
 		remaining -= len(list)
 		start := len(arena)
@@ -102,9 +114,13 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 			if err := send(&client.QueryStreamResponse{StreamingSeriesChunks: chunksInBatch}); err != nil {
 				return stats, err
 			}
+			scratch.chunks, scratch.arena = held(scratch.chunks, chunksInBatch), held(scratch.arena, arena)
 			chunksInBatch = chunksInBatch[:0]
 			batchSizeBytes = 0
 			stats.Batches++
+			// The batch is encoded: only the series' own chunks are still needed, at the start of the array.
+			arena = arena[:copy(arena, arena[start:])]
+			seriesChunks.Chunks = arena[:len(arena):len(arena)]
 		}
 		chunksInBatch = append(chunksInBatch, seriesChunks)
 		batchSizeBytes += msgSize
@@ -117,6 +133,50 @@ func (q streamingChunkQuerier) QueryStream(_ context.Context, hints *storage.Sel
 		stats.Batches++
 	}
 	return stats, nil
+}
+
+// streamScratch holds the slices a response is built in, kept between responses: growing them for each of the many
+// small ones was a tenth of what an ingester allocated.
+type streamScratch struct {
+	series   []client.QueryStreamSeries
+	adapters []mimirpb.LabelAdapter
+	chunks   []client.QueryStreamSeriesChunks
+	arena    []client.Chunk
+}
+
+var streamScratches sync.Pool
+
+// maxKeptStreamScratch is how many elements a kept slice holds at most: a large response's are left to the collector.
+const maxKeptStreamScratch = 64 << 10
+
+func takeStreamScratch() *streamScratch {
+	if scratch, ok := streamScratches.Get().(*streamScratch); ok {
+		return scratch
+	}
+	return &streamScratch{}
+}
+
+// held is the slice a response keeps of kept, which used is cut from or grown out of: as long as all the elements the
+// response wrote, which give clears. A slice is reused from its start for each batch.
+func held[T any](kept, used []T) []T {
+	if unsafe.SliceData(kept) == unsafe.SliceData(used) && len(kept) > len(used) {
+		return kept
+	}
+	return used
+}
+
+// give keeps the slices for another response. What they hold is cleared first: they point into the store's labels and
+// the query's chunk buffers, of one tenant, which the buffers are reused for another's. Past it, they are empty.
+func (s *streamScratch) give() {
+	if cap(s.series) > maxKeptStreamScratch || cap(s.adapters) > maxKeptStreamScratch || cap(s.chunks) > maxKeptStreamScratch || cap(s.arena) > maxKeptStreamScratch {
+		return
+	}
+	clear(s.series)
+	clear(s.adapters)
+	clear(s.chunks)
+	clear(s.arena)
+	s.series, s.adapters, s.chunks, s.arena = s.series[:0], s.adapters[:0], s.chunks[:0], s.arena[:0]
+	streamScratches.Put(s)
 }
 
 // clientChunk is a chunk of the store as a response sends it, with how many samples it has.

@@ -389,6 +389,12 @@ func TestIngester_SeriesstoreStreamsTheSameResponseAsTheGenericPath(t *testing.T
 	require.Equal(t, batches, stats.Batches)
 	require.Greater(t, len(generic.messages), 3)
 	require.Equal(t, generic.messages, viaEngine.messages)
+
+	// Again, with the slices the first response kept.
+	again := &recordingStream{ctx: ctx}
+	_, err = streaming.QueryStream(ctx, hints, matchers, streamBatching{SeriesBatchSize: queryStreamBatchSize, ChunksBatchSize: chunksBatchSize, ChunksBatchMessageBytes: queryStreamBatchMessageSize}, func(response *client.QueryStreamResponse) error { return client.SendQueryStream(again, response) })
+	require.NoError(t, err)
+	require.Equal(t, generic.messages, again.messages)
 }
 
 func streamTestHistogram(base int) *histogram.Histogram {
