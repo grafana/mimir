@@ -39,6 +39,9 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		wantHashed bool
 		// startMs is the window's start, 0 by default.
 		startMs int64
+		// shardSizeSinceMs is since when the ingesters have seen the
+		// tenant's shard size unchanged, beforeActive by default.
+		shardSizeSinceMs *int64
 	}{
 		"classic replication, three zones": {
 			cfg: prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
@@ -64,9 +67,24 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 			startMs:    withinGracePeriod,
 			wantHashed: true,
 		},
+		// Three series don't fill four partitions, and an ingester that
+		// holds nothing answers without a shard size, as one with no TSDB
+		// for the tenant does: it can't count a series twice.
 		"ingest storage, several partitions active since before the window": {
 			cfg:     prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
 			startMs: sinceActive,
+		},
+		"ingest storage, several partitions active since before the window, shard size changed inside it": {
+			cfg:              prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:          sinceActive,
+			shardSizeSinceMs: &sinceActive,
+			wantHashed:       true,
+		},
+		"ingest storage, several partitions active since before the window, shard size not known": {
+			cfg:              prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:          sinceActive,
+			shardSizeSinceMs: new(int64),
+			wantHashed:       true,
 		},
 		"ingest storage, several partitions, written to fewer partitions than read": {
 			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: writeShardSmaller},
@@ -87,7 +105,13 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimize), func(t *testing.T) {
 					cfg := tc.cfg
 					cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
-					ds, _, _, _ := prepare(t, cfg)
+					ds, ingesters, _, _ := prepare(t, cfg)
+					for _, ing := range ingesters {
+						ing.seriesCountsShardSizeUnchangedSinceMs = beforeActive
+						if tc.shardSizeSinceMs != nil {
+							ing.seriesCountsShardSizeUnchangedSinceMs = *tc.shardSizeSinceMs
+						}
+					}
 					ctx := user.InjectOrgID(context.Background(), "series-counts")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 					for _, lbls := range fixtures {
