@@ -468,12 +468,12 @@ func BenchmarkDeduplicateFilter_FindDuplicatesInSplitAndMergeBucket(b *testing.B
 	}{
 		// Many days, most of them fully compacted.
 		{days: 45, ingesters: 10, shards: 8, recentDays: 3},
-		{days: 1170, ingesters: 10, shards: 8, recentDays: 3},
-		{days: 12420, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 545, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 1095, ingesters: 10, shards: 8, recentDays: 3},
 		// Many blocks within the most recent days, which are still being compacted.
 		{days: 2, ingesters: 22, shards: 64, recentDays: 2},
+		{days: 2, ingesters: 147, shards: 64, recentDays: 2},
 		{days: 2, ingesters: 355, shards: 64, recentDays: 2},
-		{days: 2, ingesters: 4105, shards: 64, recentDays: 2},
 	} {
 		input := splitAndMergeBucketMetas(tc.days, tc.ingesters, tc.shards, tc.recentDays)
 
