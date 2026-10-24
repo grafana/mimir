@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"reflect"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
@@ -98,6 +100,16 @@ func (l *runtimeConfigTenantLimits) AllByUserID() map[string]*validation.Limits 
 // runtimeConfigLoader loads and validates the per-tenant limits
 type runtimeConfigLoader struct {
 	validate func(limits *validation.Limits) error
+
+	// previousTenants holds each tenant's raw overrides and decoded limits from the last
+	// successful loadFromMap, so that reloads only decode the tenants that changed.
+	// It's not guarded by a lock because the runtime config manager calls the loader sequentially.
+	previousTenants map[string]loadedTenantLimits
+}
+
+type loadedTenantLimits struct {
+	raw    any
+	limits *validation.Limits
 }
 
 func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
@@ -124,17 +136,84 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 }
 
 func (l *runtimeConfigLoader) loadFromMap(m map[string]interface{}) (interface{}, error) {
-	overrides := &runtimeConfigValues{}
+	rawTenants, _ := m["overrides"].(map[string]any)
 
+	// Decoding is by far the most expensive part of a reload, and the file is usually regenerated
+	// with only a few tenants changing, so tenants whose raw overrides are unchanged reuse their limits.
+	var reused map[string]*validation.Limits
+	if len(l.previousTenants) > 0 && rawTenants != nil {
+		changed := make(map[string]any, len(rawTenants))
+		reused = make(map[string]*validation.Limits, len(rawTenants))
+		for tenantID, raw := range rawTenants {
+			if prev, ok := l.previousTenants[tenantID]; ok && rawConfigEqual(prev.raw, raw) {
+				reused[tenantID] = prev.limits
+				continue
+			}
+			changed[tenantID] = raw
+		}
+
+		m = maps.Clone(m)
+		m["overrides"] = changed
+	}
+
+	overrides := &runtimeConfigValues{}
 	if err := validation.DecodeLimitsMap(m, overrides); err != nil {
 		return nil, err
 	}
 
+	// Reused limits were validated when first loaded.
 	if err := l.validateAll(overrides); err != nil {
 		return nil, err
 	}
 
+	if len(reused) > 0 {
+		if overrides.TenantLimits == nil {
+			overrides.TenantLimits = make(map[string]*validation.Limits, len(reused))
+		}
+		maps.Copy(overrides.TenantLimits, reused)
+	}
+
+	l.previousTenants = make(map[string]loadedTenantLimits, len(rawTenants))
+	for tenantID, raw := range rawTenants {
+		l.previousTenants[tenantID] = loadedTenantLimits{raw: raw, limits: overrides.TenantLimits[tenantID]}
+	}
+
 	return overrides, nil
+}
+
+// rawConfigEqual reports whether two values decoded from a runtime config file are equal.
+// It handles the types produced by YAML and JSON decoding without reflection, which
+// is much cheaper than decoding the limits again.
+func rawConfigEqual(a, b any) bool {
+	switch a := a.(type) {
+	case map[string]any:
+		b, ok := b.(map[string]any)
+		if !ok || len(a) != len(b) {
+			return false
+		}
+		for k, av := range a {
+			bv, ok := b[k]
+			if !ok || !rawConfigEqual(av, bv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		b, ok := b.([]any)
+		if !ok || len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if !rawConfigEqual(a[i], b[i]) {
+				return false
+			}
+		}
+		return true
+	case nil, string, bool, int, int64, uint64, float64:
+		return a == b
+	default:
+		return reflect.DeepEqual(a, b)
+	}
 }
 
 func (l *runtimeConfigLoader) validateAll(overrides *runtimeConfigValues) error {
