@@ -699,6 +699,8 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 	baseConfig := func() KafkaConfig {
 		return KafkaConfig{
 			Backend:                                KafkaBackendWarpstream,
+			ProducerMaxBatchSizeBytes:              producerBatchMaxBytes,
+			ProducerMaxRequestSizeBytes:            defaultProducerMaxRequestSizeBytes,
 			Address:                                []string{"a:9092", "b:9092"},
 			Topic:                                  "ingest",
 			ClientID:                               "client-1",
@@ -788,4 +790,46 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 		_, err := cfg.ToWarpstreamClientOptions()
 		require.Error(t, err)
 	})
+}
+
+func TestKafkaConfig_ProducerSizeLimits(t *testing.T) {
+	tests := []struct {
+		name                   string
+		record, batch, request int
+		backend                string
+		expectedErr            error
+	}{
+		{name: "defaults", record: maxProducerRecordDataBytesLimit, batch: producerBatchMaxBytes, request: defaultProducerMaxRequestSizeBytes},
+		{name: "sub-megabyte broker", record: 900000, batch: 950000, request: 1000000},
+		{name: "minimum positive record", record: 1, batch: 16385, request: 32769},
+		{name: "zero record", record: 0, batch: 950000, request: 1000000, expectedErr: ErrInvalidProducerMaxRecordSizeBytes},
+		{name: "record exceeds absolute ceiling", record: maxProducerRecordDataBytesLimit + 1, batch: producerBatchMaxBytes, request: defaultProducerMaxRequestSizeBytes, expectedErr: ErrInvalidProducerMaxRecordSizeBytes},
+		{name: "insufficient record framing", record: 950000 - 16383, batch: 950000, request: 1000000, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "insufficient request framing", record: 900000, batch: 950000, request: 950000 + 16383, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "zero batch", record: 900000, batch: 0, request: 1000000, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "negative request", record: 900000, batch: 950000, request: -1, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "request exceeds franz-go ceiling", record: 900000, batch: 950000, request: 1<<30 + 1, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "batch integer overflow", record: 900000, batch: int(^uint(0) >> 1), request: 1000000, expectedErr: ErrInvalidProducerSizeLimits},
+		{name: "warpstream defaults", backend: KafkaBackendWarpstream, record: maxProducerRecordDataBytesLimit, batch: producerBatchMaxBytes, request: defaultProducerMaxRequestSizeBytes},
+		{name: "warpstream cannot bound requests", backend: KafkaBackendWarpstream, record: 900000, batch: 950000, request: 1000000, expectedErr: ErrUnsupportedWarpstreamRequestSize},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := createTestKafkaConfig("localhost:9092", "test")
+			cfg.ProducerMaxRecordSizeBytes = tt.record
+			cfg.ProducerMaxBatchSizeBytes = tt.batch
+			cfg.ProducerMaxRequestSizeBytes = tt.request
+			if tt.backend != "" {
+				cfg.Backend = tt.backend
+			}
+			require.ErrorIs(t, cfg.Validate(), tt.expectedErr)
+		})
+	}
+}
+
+func TestKafkaConfig_ProducerSizeDefaults(t *testing.T) {
+	cfg := createTestKafkaConfig("localhost:9092", "test")
+	require.Equal(t, 15983616, cfg.ProducerMaxRecordSizeBytes)
+	require.Equal(t, 16000000, cfg.ProducerMaxBatchSizeBytes)
+	require.Equal(t, 104857600, cfg.ProducerMaxRequestSizeBytes)
 }

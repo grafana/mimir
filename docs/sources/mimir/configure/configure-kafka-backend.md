@@ -38,6 +38,32 @@ Additionally, you can use these recommended configuration options when running M
 
 Refer to Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) for detailed descriptions of all available configuration options.
 
+## Producer size limits
+
+Kafka-compatible backends can impose different limits on individual record batches and complete Produce requests.
+Mimir exposes three separate settings:
+
+- `-ingest-storage.kafka.producer-max-record-size-bytes`: the target size of each record's data before Kafka framing. Mimir splits larger write requests between timeseries and metadata items. An individual item cannot be split and can exceed this target.
+- `-ingest-storage.kafka.producer-max-batch-size-bytes`: the maximum uncompressed record batch size for one topic-partition. The default is `16000000` bytes.
+- `-ingest-storage.kafka.producer-max-request-size-bytes`: the maximum complete Produce request size, including batches from multiple partitions. The default is `104857600` bytes. This setting applies to the `kafka` backend; the `warpstream` backend requires its default value.
+
+Reserve at least `16384` bytes between the record data and batch limits, and between the batch and request limits.
+Set the request limit below the backend's maximum request size. Reducing only the record size does not bound a request that combines multiple records and partitions.
+These are size controls, not limits on bytes per second, buffering or retry duration.
+
+For example, a Kafka-compatible backend with a request size limit near 1 MB can use:
+
+```yaml
+ingest_storage:
+  kafka:
+    producer_max_record_size_bytes: 900000
+    producer_max_batch_size_bytes: 950000
+    producer_max_request_size_bytes: 1000000
+```
+
+Configure authentication, TLS and a supported compression codec separately for your backend.
+A timeseries or metadata item that cannot fit in a Kafka batch is rejected as a permanent write error. Lower limits can therefore reject individual large items that fit with the defaults.
+
 ## Different Kafka backend implementations
 
 Some Kafka-compatible implementations have different behavior for the Kafka API.
