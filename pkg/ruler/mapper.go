@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -21,11 +23,196 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/spf13/afero"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
+
+type ruleRegistry struct {
+	prefix      string
+	rules       map[string]map[string]rulespb.RuleGroupList // tenant -> rule file name -> groups
+	validations map[string]map[string]ruleValidation        // tenant -> rule file name -> last validation
+	mtx         sync.RWMutex
+	logger      log.Logger
+}
+
+type ruleValidation struct {
+	scheme model.ValidationScheme
+	errs   []error
+}
+
+func newRuleRegistry(prefix string, logger log.Logger) *ruleRegistry {
+	return &ruleRegistry{
+		prefix:      prefix,
+		rules:       map[string]map[string]rulespb.RuleGroupList{},
+		validations: map[string]map[string]ruleValidation{},
+		mtx:         sync.RWMutex{},
+		logger:      logger,
+	}
+}
+
+func (r *ruleRegistry) cleanupUser(userID string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	delete(r.rules, userID)
+	delete(r.validations, userID)
+}
+
+func (r *ruleRegistry) cleanup() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	clear(r.rules)
+	clear(r.validations)
+}
+
+func (r *ruleRegistry) users() ([]string, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	result := make([]string, 0, len(r.rules))
+	for userID := range r.rules {
+		if len(r.rules[userID]) > 0 {
+			result = append(result, userID)
+		}
+	}
+	return result, nil
+}
+
+func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.RuleGroupList) (bool, []string, error) {
+	logger := log.With(r.logger, "user", user)
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// getLocalRules gets the namespace from the file name of each group.
+	// So the registry uses the same file names as the mapper.
+	path := filepath.Join(r.prefix, user)
+	if _, ok := r.rules[user]; !ok {
+		r.rules[user] = make(map[string]rulespb.RuleGroupList)
+	}
+
+	anyUpdated := false
+	var filenames []string
+
+	for filename, groups := range ruleConfigs {
+		encodedFileName := url.PathEscape(filename)
+		fullFileName := filepath.Join(path, encodedFileName)
+		filenames = append(filenames, fullFileName)
+
+		// Equal compares in order.
+		// The sort makes a new order of the same groups count as no change.
+		slices.SortFunc(groups, func(a, b *rulespb.RuleGroupDesc) int {
+			return strings.Compare(b.Name, a.Name)
+		})
+
+		if !groups.Equal(r.rules[user][fullFileName]) {
+			level.Info(logger).Log("msg", "updating rule namespace", "file", fullFileName)
+			cloneLabelStrings(groups)
+			anyUpdated = true
+			r.rules[user][fullFileName] = groups
+			delete(r.validations[user], fullFileName)
+		}
+	}
+
+	// and clean up any that shouldn't exist TODO
+	existingFiles := make([]string, 0, len(r.rules[user]))
+	for key := range r.rules[user] {
+		existingFiles = append(existingFiles, key)
+	}
+
+	for _, existingFile := range existingFiles {
+		name := filepath.Base(existingFile)
+		decodedNamespace, err := url.PathUnescape(name)
+		if err != nil {
+			level.Warn(logger).Log("msg", "unable to remove rule file from registry", "file", existingFile, "err", err)
+			continue
+		}
+
+		ruleGroups := ruleConfigs[decodedNamespace]
+
+		if ruleGroups == nil {
+			delete(r.rules[user], existingFile)
+			delete(r.validations[user], existingFile)
+			anyUpdated = true
+		}
+	}
+
+	return anyUpdated, filenames, nil
+}
+
+// cloneLabelStrings copies the label and annotation strings of groups.
+// Unmarshal makes these strings point into the buffer that it reads the groups from.
+// The registry keeps the groups.
+// Without a copy, it also keeps each buffer.
+// The groups belong to this sync.
+// So the copy can replace the strings in place.
+func cloneLabelStrings(groups rulespb.RuleGroupList) {
+	clone := func(ls []mimirpb.LabelAdapter) {
+		for i := range ls {
+			ls[i].Name, ls[i].Value = strings.Clone(ls[i].Name), strings.Clone(ls[i].Value)
+		}
+	}
+	for _, g := range groups {
+		clone(g.Labels)
+		for _, r := range g.Rules {
+			clone(r.Labels)
+			clone(r.Annotations)
+		}
+	}
+}
+
+func (r *ruleRegistry) get(user string, identifier string) *rulefmt.RuleGroups {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	userRegistry := r.rules[user]
+	if userRegistry == nil {
+		return nil
+	}
+	groups := userRegistry[identifier]
+	if groups == nil {
+		return nil
+	}
+
+	fmtGroups := make([]rulefmt.RuleGroup, 0, len(groups))
+	for _, group := range groups {
+		fmtGroup := rulespb.FromProto(group)
+		// tenant.NormalizeTenantIDs sorts and deduplicates SourceTenants in place.
+		// The registry keeps its protos, so each load needs its own copy.
+		fmtGroup.SourceTenants = slices.Clone(fmtGroup.SourceTenants)
+		fmtGroups = append(fmtGroups, fmtGroup)
+	}
+
+	return &rulefmt.RuleGroups{Groups: fmtGroups}
+}
+
+// validation returns the stored validation result of a namespace, if that validation used scheme.
+func (r *ruleRegistry) validation(user string, identifier string, scheme model.ValidationScheme) ([]error, bool) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	v, ok := r.validations[user][identifier]
+	return v.errs, ok && v.scheme == scheme
+}
+
+// storeValidation keeps the validation result of a namespace until MapRules changes or removes the namespace.
+// syncRulesToManager does not run concurrently for the same user.
+// So the namespace cannot change between the validation and this store.
+func (r *ruleRegistry) storeValidation(user string, identifier string, scheme model.ValidationScheme, errs []error) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if _, ok := r.rules[user][identifier]; !ok {
+		return
+	}
+	if r.validations[user] == nil {
+		r.validations[user] = map[string]ruleValidation{}
+	}
+	r.validations[user][identifier] = ruleValidation{scheme: scheme, errs: errs}
+}
 
 // mapper is designed to enusre the provided rule sets are identical
 // to the on-disk rules tracked by the prometheus manager
@@ -179,6 +366,84 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	return true, nil
 }
+
+// registryLoader is a GroupLoader implementation that reads groups from a ruleRegistry.
+type registryLoader struct {
+	registry *ruleRegistry
+	user     string
+	parser   parser.Parser
+}
+
+func newRegistryLoader(registry *ruleRegistry, user string) registryLoader {
+	return registryLoader{
+		registry: registry,
+		user:     user,
+		parser:   promqlext.NewPromQLParser(),
+	}
+}
+
+func (r registryLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	rgs := r.registry.get(r.user, identifier)
+	if rgs == nil {
+		return nil, []error{fmt.Errorf("%s: rule file not found in registry", identifier)}
+	}
+	// LoadGroups loads every namespace of the user when one namespace changes.
+	// So validate a namespace only once after each change.
+	errs, ok := r.registry.validation(r.user, identifier, nameValidationScheme)
+	if !ok {
+		errs = validateRuleGroups(identifier, rgs, nameValidationScheme, r.parser)
+		r.registry.storeValidation(r.user, identifier, nameValidationScheme, errs)
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return rgs, nil
+}
+
+// validateRuleGroups copies the checks of rulefmt.RuleGroups.Validate.
+// That method needs the YAML nodes of a parsed file, and the registry has none.
+// Compare it with vendor/github.com/prometheus/prometheus/model/rulefmt/rulefmt.go after each Prometheus update.
+func validateRuleGroups(identifier string, rgs *rulefmt.RuleGroups, scheme model.ValidationScheme, p parser.Parser) []error {
+	if err := namevalidationutil.CheckNameValidationScheme(scheme); err != nil {
+		return []error{fmt.Errorf("%s: %w", identifier, err)}
+	}
+
+	var errs []error
+	names := map[string]struct{}{}
+	for _, g := range rgs.Groups {
+		if g.Name == "" {
+			errs = append(errs, fmt.Errorf("%s: Groupname must not be empty", identifier))
+		}
+		if _, ok := names[g.Name]; ok {
+			errs = append(errs, fmt.Errorf("%s: groupname: \"%s\" is repeated in the same file", identifier, g.Name))
+		}
+		names[g.Name] = struct{}{}
+
+		for k, v := range g.Labels {
+			if !scheme.IsValidLabelName(k) || k == model.MetricNameLabel {
+				errs = append(errs, fmt.Errorf("%s: invalid label name: %s", identifier, k))
+			}
+			if !model.LabelValue(v).IsValid() {
+				errs = append(errs, fmt.Errorf("%s: invalid label value: %s", identifier, v))
+			}
+		}
+
+		for i, r := range g.Rules {
+			ruleName := r.Alert
+			if ruleName == "" {
+				ruleName = r.Record
+			}
+			for _, err := range r.Validate(rulefmt.RuleNode{}, scheme, p) {
+				// The empty node gives some errors the position 0:0.
+				// Unwrap drops that position.
+				errs = append(errs, fmt.Errorf("%s: group %q, rule %d, %q: %w", identifier, g.Name, i+1, ruleName, errors.Unwrap(&err)))
+			}
+		}
+	}
+	return errs
+}
+
+func (r registryLoader) Parse(query string) (parser.Expr, error) { return r.parser.ParseExpr(query) }
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
 type FSLoader struct {

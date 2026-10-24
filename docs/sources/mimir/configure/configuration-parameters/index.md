@@ -2905,6 +2905,12 @@ ruler_client:
 # CLI flag: -ruler.rule-path
 [rule_path: <string> | default = "./data-ruler/"]
 
+# (experimental) Pass rule groups to the Prometheus rule managers as protos,
+# without YAML rule files. This avoids a YAML encode on every rule sync and a
+# YAML parse on every rule change.
+# CLI flag: -ruler.rule-registry-enabled
+[rule_registry_enabled: <boolean> | default = false]
+
 # (deprecated) Deprecated, use
 # limits.ruler_alertmanager_client_config.alertmanager_url instead.
 [alertmanager_url: <string> | default = ""]

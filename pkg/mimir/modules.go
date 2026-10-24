@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
-	"github.com/spf13/afero"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -1407,7 +1406,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Overrides,
 		)
 	}
-	rulesFS := afero.NewMemMapFs()
+	ruleFiles := ruler.NewRuleFileStore(t.Cfg.Ruler, util_log.Logger)
 	var pusher ruler.Pusher = t.Distributor
 	if t.Cfg.rulerRemoteWritesEnabled() {
 		pusher = t.RulerDistributorClient
@@ -1417,7 +1416,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		pusher,
 		embeddedQueryable,
 		queryFunc,
-		rulesFS,
+		ruleFiles,
 		concurrencyController,
 		t.Overrides,
 		t.Registerer,
@@ -1434,7 +1433,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, ruleFiles)
 	if err != nil {
 		return nil, err
 	}

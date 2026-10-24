@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -263,9 +262,9 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	rulesFS := afero.NewMemMapFs()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, rulesFS, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, rulesFS)
+	ruleFileStore := NewRuleFileStore(cfg, options.logger)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, ruleFileStore, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits, ruleFileStore)
 	require.NoError(t, err)
 
 	return manager

@@ -115,6 +115,8 @@ type Config struct {
 	PollInterval time.Duration `yaml:"poll_interval" category:"advanced"`
 	// Path to store rule files for prom manager.
 	RulePath string `yaml:"rule_path"`
+	// Pass rule groups to the prom manager as protos instead of YAML rule files.
+	RuleRegistryEnabled bool `yaml:"rule_registry_enabled" category:"experimental"`
 
 	// URL of the Alertmanager to send notifications to.
 	DeprecatedAlertmanagerURL string `yaml:"alertmanager_url" category:"deprecated" doc:"description=Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead."`
@@ -229,6 +231,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
+	f.BoolVar(&cfg.RuleRegistryEnabled, "ruler.rule-registry-enabled", false, "Pass rule groups to the Prometheus rule managers as protos, without YAML rule files. This avoids a YAML encode on every rule sync and a YAML parse on every rule change.")
 	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", true, "Enable the ruler config API.")
 	f.DurationVar(&cfg.OutageTolerance, "ruler.for-outage-tolerance", time.Hour, `Max time to tolerate outage for restoring "for" state of alert.`)
 	f.DurationVar(&cfg.ForGracePeriod, "ruler.for-grace-period", 2*time.Minute, `This grace period controls which alerts the ruler restores after a restart. `+
