@@ -59,7 +59,7 @@ services:
     volumes:
       - ./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml
       - ./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml
-      - ../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir
+      - ../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards
 
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).

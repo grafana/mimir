@@ -322,7 +322,7 @@ std.manifestYamlDoc({
       ],
       volumes: [
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
-        './config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml',
+        './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
       ],
       ports: ['3000:3000'],
