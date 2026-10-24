@@ -155,10 +155,10 @@ func TestCardinalityEstimateHandler_MinCountAndStreamedCounts(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts, "a is below min_count")
+	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Groups, "a is below min_count")
 	assert.Equal(t, int64(7), out.Total, "the total still counts every group")
-	assert.Equal(t, 3, out.Groups)
-	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"counts":`), "the streamed body is one JSON object")
+	assert.Equal(t, 3, out.GroupCount)
+	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"groups":`), "the streamed body is one JSON object")
 }
 
 func TestBlocksStoreQueryable_SeriesCounts_MaxDedupSeries(t *testing.T) {

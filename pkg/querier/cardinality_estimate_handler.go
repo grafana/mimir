@@ -81,7 +81,7 @@ type estimateResponse struct {
 	Dedup         bool `json:"dedup"`
 	Blocks        int  `json:"blocks"`
 	StoreGateways int  `json:"store_gateways"`
-	Groups        int  `json:"groups"`
+	GroupCount    int  `json:"group_count"`
 	// Total is the sum of every group's count, including the groups that
 	// min_count or limit left out of the table.
 	Total                int64           `json:"total"`
@@ -94,7 +94,7 @@ type estimateResponse struct {
 	HashBytes            int64           `json:"hash_bytes"`
 	SketchBytes          int64           `json:"sketch_bytes"`
 	ElapsedMS            float64         `json:"elapsed_ms"`
-	Counts               []estimateGroup `json:"counts"`
+	Groups               []estimateGroup `json:"groups"`
 	Compare              *estimateCheck  `json:"compare,omitempty"`
 }
 
@@ -179,11 +179,11 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
-			Groups: len(res.Counts), SeriesCounted: res.SeriesCounted,
+			GroupCount: len(res.Counts), SeriesCounted: res.SeriesCounted,
 			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, BlocksFromPostings: res.BlocksFromPostings,
 			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
-			Counts:    make([]estimateGroup, 0, len(res.Counts)),
+			Groups:    make([]estimateGroup, 0, len(res.Counts)),
 		}
 		if res.names != nil {
 			defer res.names.close()
@@ -218,12 +218,12 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			if g.Count < opts.minCount {
 				continue
 			}
-			out.Counts = append(out.Counts, g)
+			out.Groups = append(out.Groups, g)
 		}
 		if opts.compare {
 			out.Compare = compareWithChunks(r.Context(), q, req, res)
 		}
-		slices.SortFunc(out.Counts, func(a, b estimateGroup) int {
+		slices.SortFunc(out.Groups, func(a, b estimateGroup) int {
 			if a.Count != b.Count {
 				if a.Count > b.Count {
 					return -1
@@ -232,8 +232,8 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			}
 			return strings.Compare(a.Value, b.Value)
 		})
-		if limit > 0 && limit < len(out.Counts) {
-			out.Counts = out.Counts[:limit]
+		if limit > 0 && limit < len(out.Groups) {
+			out.Groups = out.Groups[:limit]
 			out.HasMore = true
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -277,7 +277,7 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 	if opts.limit > 0 {
 		top := &topGroups{n: opts.limit, tracker: t.tracker}
 		if err := t.merge(ctx, func(name string, count int64) error {
-			out.Groups++
+			out.GroupCount++
 			out.Total += count
 			if count < opts.minCount {
 				return nil
@@ -286,7 +286,7 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 		}); err != nil {
 			return false, err
 		}
-		out.Counts, out.HasMore = top.sorted()
+		out.Groups, out.HasMore = top.sorted()
 		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
 		w.Header().Set("Content-Type", "application/json")
 		setEstimateCacheControl(w, out)
@@ -303,7 +303,7 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 		return writeNameTableHead(w, out)
 	}
 	mergeErr := t.merge(ctx, func(name string, count int64) error {
-		out.Groups++
+		out.GroupCount++
 		out.Total += count
 		if count < opts.minCount {
 			return nil
@@ -350,28 +350,28 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 		_, err := fmt.Fprintf(w, `],"error":%s}`+"\n", msg)
 		return true, errors.Join(mergeErr, err)
 	}
-	_, err = fmt.Fprintf(w, `],"groups":%d,"total":%d,"has_more":false}`+"\n", out.Groups, out.Total)
+	_, err = fmt.Fprintf(w, `],"group_count":%d,"total":%d,"has_more":false}`+"\n", out.GroupCount, out.Total)
 	return true, err
 }
 
-// writeNameTableHead writes the response up to the start of its counts
+// writeNameTableHead writes the response up to the start of its groups
 // array, leaving out the fields known only once the table is merged.
 func writeNameTableHead(w io.Writer, out *estimateResponse) error {
 	head, err := json.Marshal(struct {
 		*estimateResponse
-		Counts  []estimateGroup `json:"counts,omitempty"`
-		Total   *int64          `json:"total,omitempty"`
-		Groups  *int            `json:"groups,omitempty"`
-		HasMore *bool           `json:"has_more,omitempty"`
+		Groups     []estimateGroup `json:"groups,omitempty"`
+		Total      *int64          `json:"total,omitempty"`
+		GroupCount *int            `json:"group_count,omitempty"`
+		HasMore    *bool           `json:"has_more,omitempty"`
 	}{estimateResponse: out})
 	if err != nil {
 		return err
 	}
-	// head ends with "}", which the counts array replaces.
+	// head ends with "}", which the groups array replaces.
 	if _, err := w.Write(head[:len(head)-1]); err != nil {
 		return err
 	}
-	_, err = io.WriteString(w, `,"counts":[`)
+	_, err = io.WriteString(w, `,"groups":[`)
 	return err
 }
 
@@ -401,26 +401,26 @@ func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *Cardina
 func writeEstimateResponse(w io.Writer, out *estimateResponse) error {
 	head, err := json.Marshal(struct {
 		*estimateResponse
-		Counts []estimateGroup `json:"counts,omitempty"`
+		Groups []estimateGroup `json:"groups,omitempty"`
 	}{estimateResponse: out})
 	if err != nil {
 		return err
 	}
 	bw := bufio.NewWriter(w)
-	// head ends with "}", which the counts array replaces.
+	// head ends with "}", which the groups array replaces.
 	if _, err := bw.Write(head[:len(head)-1]); err != nil {
 		return err
 	}
-	if _, err := bw.WriteString(`,"counts":[`); err != nil {
+	if _, err := bw.WriteString(`,"groups":[`); err != nil {
 		return err
 	}
-	for i := range out.Counts {
+	for i := range out.Groups {
 		if i > 0 {
 			if err := bw.WriteByte(','); err != nil {
 				return err
 			}
 		}
-		b, err := json.Marshal(&out.Counts[i])
+		b, err := json.Marshal(&out.Groups[i])
 		if err != nil {
 			return err
 		}
