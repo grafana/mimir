@@ -41,14 +41,17 @@ var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts
 // count per group and bucket, since a zone that answered in full holds
 // every series once, and under ingest storage the caller adds up the
 // partitions, as long as they have been stable since before the window
-// (seriesCountsReplicationSets). Otherwise it asks for hashes and the
-// caller unions them. Several ingesters of a zone, or partitions whose
-// state changed inside the window, are not known to hold disjoint series:
-// a series written before the change stays in the old owner's head while
-// its new samples go to the new one. Per-bucket counts,
-// which hashes don't carry, are refused then with ErrSeriesCountsNeedOneIngesterPerZone.
+// (seriesCountsReplicationSets) and every ingester that counted something
+// has seen the tenant's shard size unchanged since then. Otherwise it asks
+// for hashes and the caller unions them; when only the ingesters' answers
+// show the change, that is a second request. Several ingesters of a zone,
+// or partitions whose state or shard changed inside the window, are not
+// known to hold disjoint series: a series written before the change stays
+// in the old owner's head while its new samples go to the new one.
+// Per-bucket counts, which hashes don't carry, are refused then with
+// ErrSeriesCountsNeedOneIngesterPerZone.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
-	replicationSets, partitionsStable, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
+	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -56,21 +59,26 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		replicationSets[0].MaxErrors = 0
 	}
 
-	out := SeriesCountsResult{Hashed: req.Hashes}
+	hashed := req.Hashes
 	if !d.seriesCountsAddUp(replicationSets, partitionsStable) && !req.Hashes {
 		if req.StepMs > 0 {
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
-		withHashes := *req
-		withHashes.Hashes = true
-		req = &withHashes
-		out.Hashed = true
+		hashed = true
 	}
+	// Counts added up across partitions also need every partition's shard
+	// size unchanged over the window, which only the ingesters know.
+	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
 
 	// Split max_index_bytes across the ingesters that will be asked: one
 	// zone's instances per replication set when zone-aware, every instance
 	// otherwise. With hedging or a failed zone more may be asked, each with
 	// the same share.
+	shared := *req
+	shared.Hashes = hashed
+	if checkShardSize {
+		shared.ShardSizeUnchangedBeforeMs = changedBefore
+	}
 	if req.MaxIndexBytes > 0 {
 		calls := 0
 		for _, rs := range replicationSets {
@@ -81,15 +89,46 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 			}
 		}
 		if calls > 1 {
-			split := *req
-			split.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
-			req = &split
+			shared.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
 		}
 	}
 
+	perSet, err := d.seriesCountsFanOut(ctx, replicationSets, &shared)
+	if err != nil {
+		return SeriesCountsResult{}, err
+	}
+	if checkShardSize && !shardSizeUnchanged(perSet, changedBefore) {
+		if req.StepMs > 0 {
+			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
+		}
+		hashed = true
+		shared.Hashes = true
+		shared.ShardSizeUnchangedBeforeMs = 0
+		if perSet, err = d.seriesCountsFanOut(ctx, replicationSets, &shared); err != nil {
+			return SeriesCountsResult{}, err
+		}
+	}
+
+	out := SeriesCountsResult{Hashed: hashed}
+	for i, answers := range perSet {
+		if out.Hashed || !zoneAware(replicationSets[i]) {
+			// Hashes union to the same count however many replicas sent
+			// them, and without zones counts are kept only for a single
+			// ingester.
+			for _, a := range answers {
+				out.Responses = append(out.Responses, a.resp)
+			}
+			continue
+		}
+		out.Responses = append(out.Responses, maxOverZones(answersByZone(answers)))
+	}
+	return out, nil
+}
+
+func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) ([][]seriesCountsAnswer, error) {
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
-	err = concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
+	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
 		answers, err := ring.DoUntilQuorum[seriesCountsAnswer](ctx, replicationSets[idx], quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (seriesCountsAnswer, error) {
 			poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 			if err != nil {
@@ -104,23 +143,26 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		perSet[idx] = answers
 		return err
 	})
-	if err != nil {
-		return SeriesCountsResult{}, err
-	}
+	return perSet, err
+}
 
-	for i, answers := range perSet {
-		if out.Hashed || !zoneAware(replicationSets[i]) {
-			// Hashes union to the same count however many replicas sent
-			// them, and without zones counts are kept only for a single
-			// ingester.
-			for _, a := range answers {
-				out.Responses = append(out.Responses, a.resp)
+// shardSizeUnchanged reports whether every ingester that counted something
+// has seen the tenant's shard size unchanged since before changedBefore.
+// An ingester that refused to count says so with shard_size_changed. One
+// with no TSDB for the tenant answers no groups and can't count a series
+// twice; one too old to know the field answers 0.
+func shardSizeUnchanged(perSet [][]seriesCountsAnswer, changedBefore int64) bool {
+	for _, answers := range perSet {
+		for _, a := range answers {
+			if a.resp.ShardSizeChanged {
+				return false
 			}
-			continue
+			if since := a.resp.ShardSizeUnchangedSinceMs; len(a.resp.Groups) > 0 && (since == 0 || since >= changedBefore) {
+				return false
+			}
 		}
-		out.Responses = append(out.Responses, maxOverZones(answersByZone(answers)))
 	}
-	return out, nil
+	return true
 }
 
 // seriesCountsAddUp reports whether the counts of the ingesters in sets
@@ -170,16 +212,17 @@ const partitionChangeSettleTime = time.Minute
 // partitions are checked on the same subrings the sets come from. The start
 // is not clamped to the ingesters' lookback: they drop a local block by its
 // end, so they can hold samples from before it. A change of the tenant's
-// partition shard size inside the window is not in the ring and is not
-// detected.
-func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, error) {
+// partition shard size is not in the ring: the returned time is what the
+// state timestamps are checked against, and SeriesCounts checks the
+// ingesters' shard size against it too.
+func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, int64, error) {
 	if !d.cfg.IngestStorageConfig.Enabled {
 		sets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
-		return sets, false, err
+		return sets, false, 0, err
 	}
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	shardSize, lookbackPeriod := d.partitionShardForQuery(userID)
 	now := time.Now()
@@ -211,12 +254,12 @@ func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers 
 		}
 		if err != nil {
 			if d.cfg.Compartments.Enabled {
-				return nil, false, fmt.Errorf("read compartment %d: %w", c, err)
+				return nil, false, 0, fmt.Errorf("read compartment %d: %w", c, err)
 			}
-			return nil, false, err
+			return nil, false, 0, err
 		}
 	}
-	return sets, stable, nil
+	return sets, stable, changedBefore, nil
 }
 
 type seriesCountsAnswer struct {
