@@ -232,24 +232,31 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	a := labels.FromStrings(model.MetricNameLabel, "a")
+	b := labels.FromStrings(model.MetricNameLabel, "b")
 	_, err = i.Push(ctx, mockWriteRequest(t, a, 1, 60*minute))
 	require.NoError(t, err)
-	before, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 120 * minute})
+	_, err = i.Push(ctx, mockWriteRequest(t, b, 1, 60*minute))
 	require.NoError(t, err)
-	assert.False(t, before.OutOfOrderNotCounted, "no out-of-order sample yet")
-
-	// Out of order is per series: a's sample at 30m is older than its 60m one.
+	// Out of order is per series: these are older than a's and b's 60m samples.
 	_, err = i.Push(ctx, mockWriteRequest(t, a, 1, 30*minute))
 	require.NoError(t, err)
-
-	resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 20 * minute, EndTimestampMs: 40 * minute})
+	_, err = i.Push(ctx, mockWriteRequest(t, b, 1, 10*minute))
 	require.NoError(t, err)
-	assert.True(t, resp.OutOfOrderNotCounted, "the out-of-order head holds a sample at 30m")
-	assert.Empty(t, resp.Groups, "a's only sample in the window is out of order, so it is not counted")
+	require.Equal(t, 10*minute, i.getTSDB("test").Head().MinOOOTime())
 
-	resp, err = i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 50 * minute, EndTimestampMs: 120 * minute})
-	require.NoError(t, err)
-	assert.False(t, resp.OutOfOrderNotCounted, "no out-of-order sample in the window")
+	counts := func(t *testing.T, start, end, step int64) map[string][]int64 {
+		resp, err := i.SeriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: start, EndTimestampMs: end, StepMs: step})
+		require.NoError(t, err)
+		out := map[string][]int64{}
+		for _, g := range resp.Groups {
+			out[g.Value] = g.Counts
+		}
+		return out
+	}
+	assert.Equal(t, map[string][]int64{"a": {1}}, counts(t, 20*minute, 40*minute, 0), "a's only sample in the window is out of order")
+	assert.Equal(t, map[string][]int64{"b": {1}}, counts(t, 0, 20*minute, 0), "a window before the in-order head")
+	assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, counts(t, 0, 120*minute, 0), "in order and out of order, once each")
+	assert.Equal(t, map[string][]int64{"a": {0, 1, 1, 0}, "b": {1, 0, 1, 0}}, counts(t, 0, 120*minute, 30*minute), "per bucket")
 }
 
 func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {

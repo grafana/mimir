@@ -280,8 +280,7 @@ func answersByZone(answers []seriesCountsAnswer) map[string][]*ingester_client.S
 // every series of the replication set, but a write acknowledged by a quorum
 // may not have reached every zone yet, and a zone can only miss series, so
 // the largest count is the closest. The series counts and min_time_ms are
-// taken the same way; out_of_order_not_counted is set when any response
-// sets it.
+// taken the same way.
 func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *ingester_client.SeriesCountsResponse {
 	merged := map[string][]int64{}
 	out := &ingester_client.SeriesCountsResponse{}
@@ -306,7 +305,6 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 			}
 			out.HeadMinTimeMs = max(out.HeadMinTimeMs, r.HeadMinTimeMs)
 			out.HeadMaxTimeMs = max(out.HeadMaxTimeMs, r.HeadMaxTimeMs)
-			out.OutOfOrderNotCounted = out.OutOfOrderNotCounted || r.OutOfOrderNotCounted
 		}
 		for v, sum := range zone {
 			into := merged[v]
