@@ -77,10 +77,11 @@ message MetadataItem {
   repeated string value = 2;
 }
 
-// Scheduler interface exposed to Frontend. Frontend can enqueue and cancel requests.
+// Scheduler interface exposed to Frontend. Frontend can reserve queue slots, and enqueue and cancel requests.
 service SchedulerForFrontend {
-  // After calling this method, both Frontend and Scheduler enter a loop. Frontend will keep sending ENQUEUE and
-  // CANCEL requests, and scheduler is expected to process them. Scheduler returns one response for each request.
+  // After calling this method, both Frontend and Scheduler enter a loop. Frontend will keep sending ENQUEUE,
+  // RESERVE, and CANCEL requests, and scheduler is expected to process them.
+  // Scheduler returns one response for each request.
   //
   // Long-running loop is used to detect broken connection between frontend and scheduler. This is important for both
   // parties... if connection breaks, frontend can cancel (and possibly retry on different scheduler) all pending
@@ -92,6 +93,7 @@ enum FrontendToSchedulerType {
   INIT = 0;
   ENQUEUE = 1;
   CANCEL = 2;
+  RESERVE = 3;
 }
 
 message FrontendToScheduler {
@@ -100,11 +102,14 @@ message FrontendToScheduler {
   // Used by INIT message. Will be put into all requests passed to querier.
   string frontendAddress = 2;
 
-  // Used by ENQUEUE and CANCEL.
-  // Each frontend manages its own queryIDs. Different frontends may use same set of query IDs.
+  // Used by ENQUEUE and CANCEL. A CANCEL with queryID 0 and a non-empty reservationID aborts that
+  // reservation. Each frontend manages its own queryIDs. Different frontends may use same set of
+  // query IDs.
   uint64 queryID = 3;
 
-  // Following are used by ENQUEUE only.
+  // Following are used by ENQUEUE only, except userID. In a RESERVE, userID is the reservation's
+  // tenant. An ENQUEUE with a reservationID must set userID to the reservation's tenant, or the
+  // scheduler rejects it.
   string userID = 4;
   oneof payload {
     httpgrpc.HTTPRequest httpRequest = 5;
@@ -117,6 +122,38 @@ message FrontendToScheduler {
   // random UUID, so it is globally unique. An empty value means unknown, which is the case for
   // queries that did not come through the frontend's HTTP transport handler.
   string rootQueryID = 9;
+
+  // Used by RESERVE, by ENQUEUE, and (with queryID == 0) by CANCEL to abort a reservation. The
+  // frontend sets reservationID to a new random UUID for each reservation. It must not be empty,
+  // and the frontend must not reuse it on the same frontendAddress, because a late abort closes the
+  // reservation that has that ID. The reservation ID is not the root query ID, because one root
+  // query can run several reservations at once.
+  //
+  // The frontend sends RESERVE only on a stream whose INIT reply set queueReservationSupported.
+  // The scheduler rejects a RESERVE whose reservationID is already open. The scheduler can ignore
+  // an abort that arrives before the RESERVE reply. The reservation timeout then releases the slots.
+  //
+  // An ENQUEUE with a non-empty reservationID is one sub-request of that reservation. It uses one
+  // reserved slot, so it cannot fail on the per-tenant limit. Any stream of the frontend that
+  // opened the reservation can send it, and each one gets its own reply. The scheduler rejects it
+  // with ERROR when its userID is not the reservation's tenant, when the reservation is unknown or
+  // closed, or when the reservation already holds totalSubRequests sub-requests.
+  //
+  // A reservation closes when all its totalSubRequests sub-requests are inserted. It closes early
+  // on an abort, a reservation timeout, a failed sub-request, or the end of the frontend's last
+  // stream to this scheduler. An early close releases the unused slots, and it does not cancel the
+  // inserted sub-requests. But when the frontend's last stream to this scheduler ends, the
+  // scheduler cancels all requests of that frontend, as it does for ENQUEUE. A CANCEL per query
+  // that arrives before the scheduler inserts the sub-request has no effect.
+  //
+  // While the scheduler shuts down, it replies SHUTTING_DOWN to the next message on each stream,
+  // does not process that message, and ends the stream. So an abort or a CANCEL has no effect
+  // then, and the end of the frontend's last stream cancels its queued sub-requests.
+  string reservationID = 10;
+
+  // Used by RESERVE only: the total number of sub-requests the frontend is about to send for this
+  // reservation, each in its own ENQUEUE.
+  uint64 totalSubRequests = 11;
 }
 
 enum SchedulerToFrontendStatus {
@@ -129,6 +166,11 @@ enum SchedulerToFrontendStatus {
 message SchedulerToFrontend {
   SchedulerToFrontendStatus status = 1;
   string error = 2;
+
+  // Set on the response to INIT. When false or absent, the scheduler does not support
+  // RESERVE or an ENQUEUE with a reservationID, and the frontend must not send them to this
+  // scheduler.
+  bool queueReservationSupported = 3;
 }
 
 message NotifyQuerierShutdownRequest {

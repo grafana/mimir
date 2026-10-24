@@ -22109,7 +22109,7 @@
           "kind": "field",
           "name": "max_outstanding_requests_per_tenant",
           "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.",
+          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the reserved queue slots also count against this limit.",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
@@ -22146,6 +22146,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.max-queue-length-metric-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_enabled",
+          "required": false,
+          "desc": "Enable queue reservation: the query-frontend reserves queue slots for all sub-requests of a parent query before it sends them. A query is then either shed entirely before any sub-request is dispatched, or admitted with no tail sub-request rejected. Requires a query-frontend that also supports queue reservation; has no effect otherwise.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.queue-reservation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_timeout",
+          "required": false,
+          "desc": "Maximum time an open reservation waits for its next sub-requests before the query-scheduler releases its unused queue slots. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "query-scheduler.queue-reservation-timeout",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

@@ -284,6 +284,8 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
   - `-query-scheduler.max-queue-length-metric-enabled`
+  - `-query-scheduler.queue-reservation-enabled`
+  - `-query-scheduler.queue-reservation-timeout`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`

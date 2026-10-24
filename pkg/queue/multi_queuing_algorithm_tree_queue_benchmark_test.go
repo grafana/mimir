@@ -424,6 +424,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 						nil,
 						promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 						promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+						nil,
 					)
 					require.NoError(t, err)
 
@@ -506,4 +507,180 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		t.Logf("%s: %s", testCaseName, testCaseReports[testCaseName].TenantIDReportString())
 	}
 
+}
+
+// TestReservationAdmission_ParentQueryCompletionUnderSaturation compares two admission
+// strategies for parent queries of subRequestsPerParent items each, with real queue dynamics in
+// virtual time:
+//
+//   - per-sub-request: each item is admitted alone, as SubmitItemToEnqueue does. A parent whose
+//     tail is rejected is poisoned. The frontend then cancels its queued items, and a consumer
+//     skips a cancelled item at no cost, as QuerierLoop does. Items that ran before the rejection
+//     are wasted work.
+//     This simulation enqueues all items of a parent at one virtual instant, and a rejection needs
+//     a full queue of older items. So no item of a rejected parent runs first, and the simulation
+//     cannot show wasted work. A real frontend needs a round trip per item, so its items can run
+//     before the rejection.
+//   - reservation-based: a parent reserves all its slots first, then inserts its items.
+//
+// Parents arrive faster than the consumers can drain, so the queue saturates. The values below
+// are sizes for this simulation only. They are not production values.
+func TestReservationAdmission_ParentQueryCompletionUnderSaturation(t *testing.T) {
+	const (
+		maxTenantQueueSize   = 70
+		subRequestsPerParent = 16
+		totalParents         = 1000 / subRequestsPerParent // respects the file's totalRequests=1000 ceiling
+		consumers            = 4
+		serviceTime          = 10 * time.Millisecond
+		arrivalInterval      = 20 * time.Millisecond
+	)
+
+	type parentItem struct{ parent int }
+
+	type result struct {
+		completed, poisoned, rejected int
+	}
+
+	run := func(t *testing.T, reserved bool) result {
+		q, _ := newTestQueue(t, maxTenantQueueSize)
+
+		var (
+			mtx      sync.Mutex
+			accepted int
+			drained  int
+			poisoned = map[int]bool{}
+		)
+
+		ctx, stopConsumers := context.WithCancel(context.Background())
+		var consumersWG sync.WaitGroup
+		for c := 0; c < consumers; c++ {
+			conn := NewUnregisteredConsumerWorkerConn(ctx, fmt.Sprintf("consumer-%d", c))
+			require.NoError(t, q.AwaitRegisterConsumerWorkerConn(conn))
+			consumersWG.Add(1)
+			go func() {
+				defer consumersWG.Done()
+				defer q.SubmitUnregisterConsumerWorkerConn(conn)
+				idx := FirstTenant()
+				for {
+					item, next, err := q.AwaitItemForConsumer(NewConsumerWorkerDequeueRequest(conn, idx))
+					if err != nil {
+						return
+					}
+					idx = next
+					parent := item.(parentItem).parent
+					mtx.Lock()
+					cancelled := poisoned[parent]
+					mtx.Unlock()
+					if !cancelled {
+						time.Sleep(serviceTime)
+					}
+					mtx.Lock()
+					drained++
+					mtx.Unlock()
+				}
+			}()
+		}
+
+		var res result
+		for p := 0; p < totalParents; p++ {
+			admitted := 0
+			if reserved {
+				err := q.SubmitReserveSlots("tenant-a", subRequestsPerParent)
+				if err == nil {
+					for i := 0; i < subRequestsPerParent; i++ {
+						// A successful reservation admits every item. This assertion proves that
+						// reservation-based admission poisons no parent.
+						require.NoError(t, q.SubmitItemIntoSlot("tenant-a", parentItem{parent: p}, "", 0, func() {}))
+					}
+					admitted = subRequestsPerParent
+				} else {
+					require.ErrorIs(t, err, ErrTooManyRequests)
+				}
+			} else {
+				for i := 0; i < subRequestsPerParent; i++ {
+					err := q.SubmitItemToEnqueue("tenant-a", parentItem{parent: p}, "", 0, func() {})
+					if err != nil {
+						// The frontend cancels the rest of the parent after the first rejection.
+						require.ErrorIs(t, err, ErrTooManyRequests)
+						if admitted > 0 {
+							mtx.Lock()
+							poisoned[p] = true
+							mtx.Unlock()
+						}
+						break
+					}
+					admitted++
+				}
+			}
+
+			mtx.Lock()
+			accepted += admitted
+			mtx.Unlock()
+			switch {
+			case admitted == subRequestsPerParent:
+				res.completed++
+			case admitted > 0:
+				res.poisoned++
+			default:
+				res.rejected++
+			}
+			time.Sleep(arrivalInterval)
+		}
+
+		// Wait in virtual time until the consumers have drained every admitted item. One consumer
+		// alone drains the queue in accepted*serviceTime, plus one serviceTime for an item that is
+		// already running, so a longer wait means a stuck item.
+		mtx.Lock()
+		deadline := time.Now().Add(time.Duration(accepted+1) * serviceTime)
+		mtx.Unlock()
+		var done bool
+		for !done && !time.Now().After(deadline) {
+			time.Sleep(serviceTime)
+			mtx.Lock()
+			done = drained == accepted
+			mtx.Unlock()
+		}
+		stopConsumers()
+		consumersWG.Wait()
+		require.True(t, done, "the consumers did not drain every admitted item before the deadline")
+
+		return res
+	}
+
+	var perSubRequest, reservation result
+
+	// Each subtest has its own synctest bubble, because t.Run must not run inside a bubble.
+	t.Run("per-sub-request admission", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			res := run(t, false)
+			perSubRequest = res
+			t.Logf("per-sub-request admission: completed=%d poisoned=%d rejected=%d total=%d",
+				res.completed, res.poisoned, res.rejected, totalParents)
+
+			require.Equal(t, totalParents, res.completed+res.poisoned+res.rejected)
+			// The comparison means something only if the queue saturates mid-parent.
+			require.Positive(t, res.poisoned, "expected poisoned parents once the queue saturates")
+		})
+	})
+
+	t.Run("reservation-based admission", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			res := run(t, true)
+			reservation = res
+			t.Logf("reservation-based admission: completed=%d poisoned=%d rejected=%d total=%d",
+				res.completed, res.poisoned, res.rejected, totalParents)
+
+			// run asserts that every item of a successful reservation is admitted, so no parent
+			// is poisoned in this mode.
+			require.Equal(t, totalParents, res.completed+res.rejected)
+			require.Positive(t, res.rejected, "expected the queue to saturate, for a fair comparison")
+		})
+	})
+
+	// The items of a poisoned parent hold queue slots until a consumer skips them, so later parents
+	// meet a fuller queue. Reservation-based admission rejects such a parent before it holds a slot.
+	// A -run filter can skip one subtest, and then there is nothing to compare.
+	if perSubRequest.completed+perSubRequest.poisoned+perSubRequest.rejected > 0 && reservation.completed+reservation.rejected > 0 {
+		require.Greater(t, reservation.completed, perSubRequest.completed, "reservation-based admission must complete more parents")
+	}
 }
