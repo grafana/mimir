@@ -871,13 +871,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Requests/s",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Requests/s",
                         "legendLink": null
@@ -926,37 +926,37 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -1024,7 +1024,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__interval]))",
+                        "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__interval]))",
                         "format": "time_series",
                         "legendFormat": "Queue length",
                         "legendLink": null
@@ -1086,13 +1086,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
                      },
                      {
-                        "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A_classic"
@@ -1142,13 +1142,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
                      },
                      {
-                        "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A_classic"
@@ -1198,13 +1198,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average: {{ additional_queue_dimensions }}",
                         "refId": "C"
                      },
                      {
-                        "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average: {{ additional_queue_dimensions }}",
                         "refId": "C_classic"
@@ -1265,13 +1265,13 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                        "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                        "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "Total Connected Queriers",
                         "legendLink": null

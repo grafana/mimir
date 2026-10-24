@@ -2385,7 +2385,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "legendFormat": "Queue Length",
                         "legendLink": null
