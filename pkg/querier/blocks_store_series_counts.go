@@ -61,12 +61,8 @@ type CardinalityEstimateResult struct {
 	// HeadMinTime, when set, is the time from which every ingester still
 	// holds data, after the window's start, so the counts are a lower bound.
 	HeadMinTime int64
-	// OutOfOrderNotCounted is set when an ingester's out-of-order head holds
-	// samples in the window, which the count doesn't read; the counts are
-	// then a lower bound.
-	OutOfOrderNotCounted bool
-	Snapped              bool
-	Counts               map[string][]int64
+	Snapped     bool
+	Counts      map[string][]int64
 	// Dedup is set when the blocks may share series, so the counts come
 	// from a union of label-set hashes rather than a sum.
 	Dedup  bool
