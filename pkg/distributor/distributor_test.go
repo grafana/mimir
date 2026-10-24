@@ -7779,7 +7779,22 @@ func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.L
 
 // SeriesCounts counts the mock's series per value of the request's group_by
 // label. The mock keeps no chunks, so every series counts in the window.
-func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest, _ ...grpc.CallOption) (*client.SeriesCountsResponse, error) {
+func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest, _ ...grpc.CallOption) (client.Ingester_SeriesCountsClient, error) {
+	resp, err := i.seriesCounts(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	// Two messages when there are groups, as the ingester streams them.
+	msgs := []*client.SeriesCountsResponse{resp}
+	if len(resp.Groups) > 1 {
+		first := *resp
+		first.Groups = resp.Groups[:1]
+		msgs = []*client.SeriesCountsResponse{&first, {Groups: resp.Groups[1:]}}
+	}
+	return &seriesCountsStream{results: msgs}, nil
+}
+
+func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	i.trackCall("SeriesCounts", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
@@ -7833,6 +7848,21 @@ func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCount
 		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Hashes: h})
 	}
 	return resp, nil
+}
+
+type seriesCountsStream struct {
+	grpc.ClientStream
+	i       int
+	results []*client.SeriesCountsResponse
+}
+
+func (s *seriesCountsStream) Recv() (*client.SeriesCountsResponse, error) {
+	if s.i >= len(s.results) {
+		return nil, io.EOF
+	}
+	r := s.results[s.i]
+	s.i++
+	return r, nil
 }
 
 type labelValuesCardinalityStream struct {

@@ -134,7 +134,11 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			if err != nil {
 				return seriesCountsAnswer{}, err
 			}
-			resp, err := poolClient.(ingester_client.IngesterClient).SeriesCounts(ctx, req)
+			stream, err := poolClient.(ingester_client.IngesterClient).SeriesCounts(ctx, req)
+			if err != nil {
+				return seriesCountsAnswer{}, err
+			}
+			resp, err := ingester_client.ReceiveSeriesCountsResponse(stream)
 			if err != nil {
 				return seriesCountsAnswer{}, err
 			}

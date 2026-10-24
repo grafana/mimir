@@ -38,7 +38,21 @@ import (
 // ownedSeries service has seen the tenant's shard size unchanged. A request
 // with shard_size_unchanged_before_ms is answered with shard_size_changed and
 // nothing counted when that time is not before it, or not known. Experimental.
-func (i *Ingester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
+func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.Ingester_SeriesCountsServer) error {
+	resp, err := i.seriesCountsWithStatus(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	return client.SendSeriesCountsResponse(stream, resp, seriesCountsMessageSize)
+}
+
+// seriesCountsMessageSize is about how large each message of a streamed
+// SeriesCounts answer is.
+const seriesCountsMessageSize = queryStreamBatchMessageSize
+
+// seriesCountsWithStatus answers a SeriesCounts request as one response, the
+// errors carrying their gRPC status.
+func (i *Ingester) seriesCountsWithStatus(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	resp, err := i.seriesCounts(ctx, req)
 	if err == nil {
 		return resp, nil
