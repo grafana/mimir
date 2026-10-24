@@ -43,7 +43,7 @@ type cardinalityEstimate struct {
 		Value  string  `json:"value"`
 		Count  int64   `json:"count"`
 		Counts []int64 `json:"counts"`
-	} `json:"counts"`
+	} `json:"groups"`
 }
 
 // TestCardinalityEstimate checks the cardinality estimate route against a

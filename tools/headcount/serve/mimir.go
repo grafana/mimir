@@ -256,7 +256,7 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 			Count     int    `json:"count"`
 			Counts    []int  `json:"counts"`
 			Estimated bool   `json:"estimated"`
-		} `json:"counts"`
+		} `json:"groups"`
 	}
 	res := mimirSeriesCounts{}
 	if res.Latency, res.Err = m.getRoute("estimate", minT, maxT, params, &parsed); res.Err != "" {
