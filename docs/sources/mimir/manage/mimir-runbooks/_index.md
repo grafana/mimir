@@ -4105,3 +4105,14 @@ but the queue length or latency is high, it indicates that the query-scheduler i
 
 In this case if the scheduler is not resource-constrained,
 you can use CPU profiles to see where the scheduler's query dispatch process is spending its time.
+
+### err-mimir-cardinality-analysis-streaming-merge-max-received-bytes
+
+A label names cardinality request exceeded its total received-byte budget and returned HTTP 413.
+The budget counts uncompressed protobuf messages from all ingesters, including duplicate values, replicas, retries, and compatibility fallback.
+It limits processing work separately from the in-memory distinct-result limit; it is not a strict heap or network-byte bound.
+In-flight messages can exceed the budget before cancellation takes effect.
+
+Narrow the label selector to reduce the data scanned. If the request is expected for the tenant, increase the per-tenant
+`cardinality_analysis_streaming_merge_max_received_bytes` limit (`-querier.cardinality-analysis-streaming-merge-max-received-bytes`),
+after checking querier CPU, memory, request duration, and the streaming retry counter. The default is 1GiB; zero disables the budget.

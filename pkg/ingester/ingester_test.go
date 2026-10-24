@@ -5450,6 +5450,55 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 	}
 }
 
+func TestIngester_LabelNamesAndValues_SortValuesAndMessageSize(t *testing.T) {
+	const valuesCount = 2000
+	var series []util_test.Series
+	for v := range valuesCount {
+		// Push in descending order so the head's insertion order isn't sorted.
+		series = append(series, util_test.Series{
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric", "id", fmt.Sprintf("%032d", valuesCount-v)),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		})
+	}
+
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	t.Run("sorted, requested message size", func(t *testing.T) {
+		s := mockLabelNamesAndValuesServer{context: ctx}
+		require.NoError(t, i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{SortValues: true, TargetMessageSizeBytes: 1}, &s))
+
+		// 2000 values of 32 bytes are ~64KiB, so the 16KiB minimum gives at least 4 messages.
+		require.GreaterOrEqual(t, len(s.SentResponses), 4)
+		var ids []string
+		for _, resp := range s.SentResponses {
+			require.True(t, resp.ValuesSorted)
+			size := 0
+			for _, item := range resp.Items {
+				size += len(item.LabelName)
+				for _, v := range item.Values {
+					size += len(v)
+				}
+				if item.LabelName == "id" {
+					ids = append(ids, item.Values...)
+				}
+			}
+			// A message overshoots the target by at most one value or label name.
+			require.Less(t, size, labelNamesAndValuesMinRequestedSizeBytes+64)
+		}
+		require.Len(t, ids, valuesCount)
+		require.True(t, slices.IsSorted(ids))
+	})
+
+	t.Run("default", func(t *testing.T) {
+		s := mockLabelNamesAndValuesServer{context: ctx}
+		require.NoError(t, i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, &s))
+		require.Len(t, s.SentResponses, 1)
+		require.False(t, s.SentResponses[0].ValuesSorted)
+	})
+}
+
 func TestIngester_LabelValuesCardinality(t *testing.T) {
 	series := []util_test.Series{
 		{

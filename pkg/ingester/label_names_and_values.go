@@ -52,10 +52,13 @@ type labelValueCountResult struct {
 
 // labelNamesAndValues streams the messages with the labels and values of the labels matching the `matchers` param.
 // Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
+// Label names are always sent in ascending order. If sortValues is true, the values of each label are sent
+// in ascending order too, and every message has ValuesSorted set.
 func labelNamesAndValues(
 	index tsdb.IndexReader,
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
+	sortValues bool,
 	stream client.Ingester_LabelNamesAndValuesServer,
 	filter func(name, value string) (bool, error),
 ) error {
@@ -66,7 +69,7 @@ func labelNamesAndValues(
 		return err
 	}
 
-	response := client.LabelNamesAndValuesResponse{}
+	response := client.LabelNamesAndValuesResponse{ValuesSorted: sortValues}
 	responseSizeBytes := 0
 	for _, labelName := range labelNames {
 		if err := ctx.Err(); err != nil {
@@ -83,11 +86,17 @@ func labelNamesAndValues(
 			response.Items = response.Items[:0]
 			responseSizeBytes = len(labelName)
 		}
-		values, err := index.LabelValues(ctx, labelName, nil, matchers...)
+		var values []string
+		if sortValues {
+			values, err = index.SortedLabelValues(ctx, labelName, nil, matchers...)
+		} else {
+			values, err = index.LabelValues(ctx, labelName, nil, matchers...)
+		}
 		if err != nil {
 			return err
 		}
 
+		// Filtering keeps the order, so sorted values stay sorted.
 		filteredValues := values[:0]
 		for _, val := range values {
 			if ok, err := filter(labelName, val); err != nil {
@@ -131,7 +140,7 @@ func labelNamesAndValues(
 		}
 	}
 	// send the last message if there is some data that was not sent.
-	if response.Size() > 0 {
+	if len(response.Items) > 0 {
 		return client.SendLabelNamesAndValuesResponse(stream, &response)
 	}
 	return nil
