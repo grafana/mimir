@@ -292,7 +292,7 @@ func TestRepeatedSelectorTimes(t *testing.T) {
 		matched := 0
 		for round := range 6 {
 			start := time.Now()
-			series, buffers, err := engine.selectRaw(0, 2000, compiled)
+			series, buffers, _, _, err := engine.selectRaw(0, 2000, compiled, nil)
 			require.NoError(t, err)
 			d := time.Since(start)
 			giveQueryBuffers(buffers)

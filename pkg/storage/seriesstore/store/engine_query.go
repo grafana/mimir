@@ -68,7 +68,9 @@ func storeMatchers(matchers []*promlabels.Matcher) []LabelMatcher {
 // TSDB's. Out-of-order samples are always merged into the chunks they overlap, so the ordered and
 // unordered queriers are the same.
 func (e *Engine) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return &engineChunkQuerier{e: e, mint: mint, maxt: maxt, epoch: e.store.reads.enter()}, nil
+	q := &engineChunkQuerier{e: e, mint: mint, maxt: maxt, epoch: e.store.reads.enter()}
+	q.buffers, q.selections, q.slabs = q.firstBuffers[:0], q.firstSelection[:0], q.firstSlab[:0]
+	return q, nil
 }
 
 func (e *Engine) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -81,20 +83,51 @@ type engineChunkQuerier struct {
 	// The data buffers of the chunks it selected, given back when it is closed.
 	mu      sync.Mutex
 	buffers [][]byte
+	// The series it selected for streamed responses and their chunk lists' slabs, given back when it is closed.
+	selections [][]rawSeries
+	slabs      [][]chunks.Chunk
+	// What a querier of one selection holds, without a list of each.
+	firstBuffers   [2][]byte
+	firstSelection [1][]rawSeries
+	firstSlab      [1][]chunks.Chunk
+	// Room for its first selection, if small.
+	room      selectRoom
+	roomTaken bool
 	// The epoch of the store's read guard it reads in: the chunk files it returns chunks of stay mapped until it is
 	// closed.
 	epoch  uint64
 	closed bool
 }
 
+// selectRoom is a querier's room for what a small query selects, its series and their chunk lists: a query of a few
+// series takes nothing from the pools, which cost it more than they saved.
+type selectRoom struct {
+	series [2]rawSeries
+	chunks [8]chunks.Chunk
+}
+
+// takeRoom returns the querier's room the first time only: what it holds stays in use until the querier is closed.
+// With mu held.
+func (q *engineChunkQuerier) takeRoom() *selectRoom {
+	if q.roomTaken {
+		return nil
+	}
+	q.roomTaken = true
+	return &q.room
+}
+
 // Close gives back the buffers of the chunks the querier selected, which callers are done with, and lets the chunk
 // files it read from go.
 func (q *engineChunkQuerier) Close() error {
 	q.mu.Lock()
-	buffers, closed := q.buffers, q.closed
-	q.buffers, q.closed = nil, true
+	buffers, selections, slabs, closed := q.buffers, q.selections, q.slabs, q.closed
+	q.buffers, q.selections, q.slabs, q.closed = nil, nil, nil, true
 	q.mu.Unlock()
 	giveQueryBuffers(buffers)
+	giveChunkSlabs(slabs)
+	for _, selected := range selections {
+		giveSelection(selected)
+	}
 	if !closed {
 		q.e.store.reads.leave(q.epoch)
 	}
@@ -120,19 +153,26 @@ func (q *engineChunkQuerier) Select(_ context.Context, _ bool, hints *storage.Se
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	selected, buffers, err := q.e.selectRaw(start, end, compiled)
+	q.mu.Lock()
+	room := q.takeRoom()
+	q.mu.Unlock()
+	selected, buffers, slabs, pooled, err := q.e.selectRaw(start, end, compiled, room)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
 	q.mu.Lock()
 	q.buffers = append(q.buffers, buffers...)
+	q.slabs = append(q.slabs, slabs...)
+	if pooled {
+		q.selections = append(q.selections, selected)
+	}
 	q.mu.Unlock()
 	return &engineChunkSeriesSet{series: selected, index: -1}
 }
 
 // StreamedSeries is a selected series as a query response sends it.
 type StreamedSeries struct {
-	labels labels.Labels
+	stored labels.Labels
 	// The chunks, in the encoding the store keeps them in. Their data stays valid until the querier is closed.
 	Chunks []chunks.Chunk
 }
@@ -141,7 +181,7 @@ type StreamedSeries struct {
 // ingester builds them a batch of series at a time, where adapters for all the series of a large response, many
 // responses at once, were gigabytes.
 func (s *StreamedSeries) AppendLabels(dst []mimirpb.LabelAdapter) []mimirpb.LabelAdapter {
-	it := s.labels.Iter()
+	it := s.stored.Iter()
 	for name, value, ok := it.Next(); ok; name, value, ok = it.Next() {
 		dst = append(dst, mimirpb.LabelAdapter{Name: name, Value: value})
 	}
@@ -149,7 +189,8 @@ func (s *StreamedSeries) AppendLabels(dst []mimirpb.LabelAdapter) []mimirpb.Labe
 }
 
 // SelectStreamed is Select for a response that streams the series: it returns them in label order with their labels as
-// adapters and their chunks as the store has them, without a series set and chunk iterators in between.
+// adapters and their chunks as the store has them, without a series set and chunk iterators in between. The slice is
+// reused once the querier is closed.
 func (q *engineChunkQuerier) SelectStreamed(hints *storage.SelectHints, matchers ...*promlabels.Matcher) ([]StreamedSeries, error) {
 	start, end := q.mint, q.maxt
 	if hints != nil {
@@ -159,28 +200,27 @@ func (q *engineChunkQuerier) SelectStreamed(hints *storage.SelectHints, matchers
 	if err != nil {
 		return nil, err
 	}
-	selected, buffers, err := q.e.selectRaw(start, end, compiled)
+	q.mu.Lock()
+	room := q.takeRoom()
+	q.mu.Unlock()
+	selected, buffers, slabs, pooled, err := q.e.selectRaw(start, end, compiled, room)
 	if err != nil {
 		return nil, err
 	}
 	q.mu.Lock()
 	q.buffers = append(q.buffers, buffers...)
-	q.mu.Unlock()
-	out := make([]StreamedSeries, len(selected))
-	for index := range selected {
-		out[index] = StreamedSeries{labels: selected[index].stored, Chunks: selected[index].chunks}
+	q.slabs = append(q.slabs, slabs...)
+	if pooled {
+		q.selections = append(q.selections, selected)
 	}
-	return out, nil
+	q.mu.Unlock()
+	return selected, nil
 }
 
-// rawSeries is a selected series: its labels, and its chunks with their own copy of the data.
-type rawSeries struct {
-	stored labels.Labels
-	chunks []chunks.Chunk
-}
+// rawSeries is a selected series: its labels, and its chunks with their own copy of the data. It is the streamed
+// series, which a streamed response is then without a copy of them all.
+type rawSeries = StreamedSeries
 
-// selectRaw returns the series matching compiled with chunks in [start, end], sorted by labels,
-// with the same chunks the store's QueryStream returns.
 // perShard is the store's perShardIndexed for the engine's tenant, which it finds by what it remembers of where it is
 // rather than by hashing its id in every shard of every query.
 func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
@@ -193,7 +233,12 @@ func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapp
 	}
 }
 
-func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawSeries, [][]byte, error) {
+// selectRaw returns the series matching compiled with chunks in [start, end], sorted by labels,
+// with the same chunks the store's QueryStream returns.
+//
+// The series and their chunk lists go in room first, when there is one, then in what is taken from the pools: pooled
+// says the series are in a pooled slice, which the caller gives back.
+func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *selectRoom) (selected []rawSeries, buffers [][]byte, slabs [][]chunks.Chunk, pooled bool, err error) {
 	var coldLabels, coldShard []compiledMatcher
 	for _, matcher := range compiled {
 		if matcher.kind == kindShard {
@@ -206,14 +251,39 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 	// What a cold block remembers its candidates by.
 	coldKey := selectorKey(coldLabels)
 	var (
-		selected []rawSeries
-		metas    []ChunkMeta
-		scratch  []chunks.Chunk
-		data     []byte
+		metas   []ChunkMeta
+		scratch []chunks.Chunk
+		data    []byte
 		// The chunks' data buffers, which the caller gives back once it is done with the chunks.
-		buffers          [][]byte
 		candidatesBuffer []chunks.Candidate
+		// The series' chunk lists, cut from slabs that are given back with the buffers.
+		slab       []chunks.Chunk
+		slabPooled bool
 	)
+	if room != nil {
+		selected, slab = room.series[:0], room.chunks[:0]
+	} else {
+		selected, pooled = takeSelection(), true
+	}
+	add := func(series rawSeries) {
+		if !pooled && len(selected) == cap(selected) {
+			selected, pooled = append(takeSelection(), selected...), true
+		}
+		selected = append(selected, series)
+	}
+	cut := func(raw []chunks.Chunk) []chunks.Chunk {
+		if cap(slab)-len(slab) < len(raw) {
+			slab, slabPooled = takeChunkSlab(len(raw)), true
+			slabs = append(slabs, slab)
+		}
+		out := append(slab[len(slab):len(slab):len(slab)+len(raw)], raw...)
+		slab = slab[:len(slab)+len(raw)]
+		if slabPooled {
+			// What the slab holds is what is cleared when it is given back.
+			slabs[len(slabs)-1] = slab
+		}
+		return out
+	}
 	// The chunks' data in memory is copied out while the shard is locked, into one buffer per shard: the chunk files'
 	// stay mapped until the querier is closed, so only the open chunks, which appends change, and the out-of-order
 	// ones merged for the query are.
@@ -225,16 +295,15 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			}
 		}
 		if size == 0 {
-			return slices.Clone(raw)
+			return cut(raw)
 		}
 		if cap(data)-len(data) < size {
 			// Doubling from small, so a query of a few series doesn't pay for a large buffer.
 			data = takeQueryBuffer(max(size, min(2*cap(data), 1<<20), 4<<10))
 			buffers = append(buffers, data)
 		}
-		out := make([]chunks.Chunk, len(raw))
+		out := cut(raw)
 		for index := range raw {
-			out[index] = raw[index]
 			if disk.Holds(raw[index].Data) {
 				continue
 			}
@@ -335,19 +404,19 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			}
 			scratch = seriesChunks(series, coldChunks, metas)
 			if len(scratch) > 0 {
-				selected = append(selected, rawSeries{entry.labels, copyOut(scratch, disk)})
+				add(rawSeries{entry.labels, copyOut(scratch, disk)})
 			}
 			return true
 		})
 		for stored, candidate := range coldSeries {
 			scratch = seriesChunks(nil, candidate.chunks, nil)
 			if len(scratch) > 0 {
-				selected = append(selected, rawSeries{stored, copyOut(scratch, disk)})
+				add(rawSeries{stored, copyOut(scratch, disk)})
 			}
 		}
 	})
 	sortByLabels(selected)
-	return selected, buffers, nil
+	return selected, buffers, slabs, pooled, nil
 }
 
 // sortByLabels sorts series in Prometheus's label order. A query's series are mostly one metric's, sharing most of
@@ -538,6 +607,35 @@ func giveQueryBuffers(buffers [][]byte) {
 	}
 }
 
+// The slabs a query's series' chunk lists are cut from are kept between queries, like the data buffers: a list for each
+// series was a few percent of what an ingester allocated.
+const chunkSlab = 4096
+
+var chunkSlabs sync.Pool
+
+// takeChunkSlab returns an empty slab that holds n chunks, which giveChunkSlabs may get back.
+func takeChunkSlab(n int) []chunks.Chunk {
+	if n <= chunkSlab {
+		if slab, ok := chunkSlabs.Get().(*[]chunks.Chunk); ok {
+			return (*slab)[:0]
+		}
+		n = chunkSlab
+	}
+	return make([]chunks.Chunk, 0, n)
+}
+
+// giveChunkSlabs keeps the slabs of a query that is done with its chunks, cleared: they point into the buffers, which
+// another tenant's query takes. Only what a slab holds is: a kept slab is empty past it.
+func giveChunkSlabs(slabs [][]chunks.Chunk) {
+	for _, slab := range slabs {
+		if cap(slab) == chunkSlab {
+			clear(slab)
+			slab = slab[:0]
+			chunkSlabs.Put(&slab)
+		}
+	}
+}
+
 type engineChunkSeriesSet struct {
 	series  []rawSeries
 	index   int
@@ -553,7 +651,7 @@ func (s *engineChunkSeriesSet) Next() bool {
 	}
 	raw := &s.series[s.index]
 	s.slab.remaining = len(s.series) - s.index
-	s.current = engineChunkSeries{stored: raw.stored, chunks: raw.chunks, builder: &s.builder, slab: &s.slab}
+	s.current = engineChunkSeries{stored: raw.stored, chunks: raw.Chunks, builder: &s.builder, slab: &s.slab}
 	return true
 }
 
@@ -780,12 +878,14 @@ func takeSelection() []rawSeries {
 	return nil
 }
 
-// giveSelection keeps selected for another lookup, unless it is large.
+// giveSelection keeps selected for another lookup, unless it is large. Only what it holds is cleared: past it, a slice
+// that was only appended to and compacted is empty, and clearing a large one's capacity after each small lookup took
+// longer than the lookup.
 func giveSelection(selected []rawSeries) {
 	if cap(selected) > 1<<16 {
 		return
 	}
-	clear(selected[:cap(selected)])
+	clear(selected)
 	selected = selected[:0]
 	selections.Put(&selected)
 }
