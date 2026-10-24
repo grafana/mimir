@@ -162,3 +162,7 @@ runtime_config:
 server:
   log_level: info
   trace_request_headers: true
+
+# Do not send anonymous usage reports from a dev environment, like microservices mode.
+usage_stats:
+  enabled: false
