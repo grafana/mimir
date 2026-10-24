@@ -1842,3 +1842,53 @@ func TestEngineIndexLabelValueActiveAsByItsPostings(t *testing.T) {
 	}
 	check("absent", "x")
 }
+
+// Prometheus compacts an idle series' out-of-order head to a block before the series leaves the head: its in-order and
+// out-of-order chunks are in different blocks, returned as they are, not merged.
+func TestEngineDoesNotMergeTheChunksOfAnEvictedSeries(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, OutOfOrderTimeWindowMs: 24 * 3_600_000, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	idle := promlabels.FromStrings("__name__", "metric", "job", "idle")
+	live := promlabels.FromStrings("__name__", "metric", "job", "live")
+	appendSample := func(lset promlabels.Labels, ts int64) {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, lset, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	for ts := int64(0); ts <= 3_600_000; ts += 15_000 {
+		appendSample(idle, ts)
+	}
+	for ts := int64(7_500); ts <= 3_600_000; ts += 60_000 {
+		appendSample(idle, ts)
+	}
+	for ts := int64(0); ts <= 4*3_600_000; ts += 15_000 {
+		appendSample(live, ts)
+	}
+	require.NoError(t, e.Compact(context.Background()))
+	require.Equal(t, uint64(1), e.NumSeries())
+
+	q, err := e.ChunkQuerier(0, 5*3_600_000)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "idle"))
+	require.True(t, set.Next())
+	var bounds [][2]int64
+	samples := 0
+	it := set.At().Iterator(nil)
+	for it.Next() {
+		bounds = append(bounds, [2]int64{it.At().MinTime, it.At().MaxTime})
+		samples += it.At().Chunk.NumSamples()
+	}
+	require.NoError(t, it.Err())
+	require.False(t, set.Next())
+	require.Equal(t, 241+60, samples)
+	overlapping := false
+	for i := range bounds {
+		for j := range i {
+			overlapping = overlapping || bounds[i][0] <= bounds[j][1] && bounds[j][0] <= bounds[i][1]
+		}
+	}
+	require.True(t, overlapping, "chunks %v", bounds)
+}

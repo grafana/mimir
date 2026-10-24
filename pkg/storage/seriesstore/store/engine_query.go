@@ -265,6 +265,39 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 	e.perShard(func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
 		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, shard)
+		// A series' cold chunks are told apart like its chunks in memory: Prometheus's head keeps an idle series that the
+		// engine evicts, with its in-order chunks until the head is truncated past them and its out-of-order ones until
+		// the out-of-order head is compacted. Merged whatever they were, every query of a series that left decoded and
+		// re-encoded its chunks.
+		seriesChunks := func(series *Series, cold, metas []ChunkMeta) []chunks.Chunk {
+			headMetas, compacted, blockMetas = headMetas[:0], compacted[:0], blockMetas[:0]
+			for _, list := range [2][]ChunkMeta{cold, metas} {
+				for _, meta := range list {
+					switch {
+					// Compacted out-of-order chunks are in blocks: Prometheus doesn't merge them with the head's chunks,
+					// and returns them after, so the head's copy of a conflicting duplicate comes first.
+					case meta.OutOfOrder && uint64(meta.Ref) < watermark:
+						compacted = append(compacted, meta)
+					case !meta.OutOfOrder && meta.MaxTime < headMin:
+						blockMetas = append(blockMetas, meta)
+					default:
+						headMetas = append(headMetas, meta)
+					}
+				}
+			}
+			scratch = scratch[:0]
+			if len(blockMetas) > 0 {
+				// Blocks' chunks come before the head's.
+				scratch = queryRawChunks(nil, blockMetas, nil, disk, start, end, scratch, &candidatesBuffer)
+			}
+			scratch = queryRawChunks(series, headMetas, nil, disk, start, end, scratch, &candidatesBuffer)
+			for _, meta := range compacted {
+				if meta.MinTime <= end && meta.MaxTime >= start {
+					scratch = append(scratch, chunks.Chunk{MinTime: meta.MinTime, MaxTime: meta.MaxTime, Encoding: int32(meta.Encoding), Data: disk.Read(meta.Ref, meta.Len)})
+				}
+			}
+			return scratch
+		}
 		matchHead := func(visit func(entry *seriesEntry) bool) {
 			if cached != nil {
 				t.series.matchingCached(cached, shard, cachedName, coldShard, coldLabels, cachedRest, visit)
@@ -300,38 +333,14 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher) ([]rawS
 			if !overlaps && !hasCold {
 				return true
 			}
-			// Compacted out-of-order chunks are in blocks: Prometheus doesn't merge them with the
-			// head's chunks, and returns them after, so the head's copy of a conflicting duplicate
-			// comes first.
-			headMetas, compacted, blockMetas = headMetas[:0], compacted[:0], blockMetas[:0]
-			for _, meta := range metas {
-				switch {
-				case meta.OutOfOrder && uint64(meta.Ref) < watermark:
-					compacted = append(compacted, meta)
-				case !meta.OutOfOrder && meta.MaxTime < headMin:
-					blockMetas = append(blockMetas, meta)
-				default:
-					headMetas = append(headMetas, meta)
-				}
-			}
-			scratch = scratch[:0]
-			if len(blockMetas) > 0 {
-				// Blocks' chunks come before the head's.
-				scratch = queryRawChunks(nil, blockMetas, nil, disk, start, end, scratch, &candidatesBuffer)
-			}
-			scratch = queryRawChunks(series, headMetas, coldChunks, disk, start, end, scratch, &candidatesBuffer)
-			for _, meta := range compacted {
-				if meta.MinTime <= end && meta.MaxTime >= start {
-					scratch = append(scratch, chunks.Chunk{MinTime: meta.MinTime, MaxTime: meta.MaxTime, Encoding: int32(meta.Encoding), Data: disk.Read(meta.Ref, meta.Len)})
-				}
-			}
+			scratch = seriesChunks(series, coldChunks, metas)
 			if len(scratch) > 0 {
 				selected = append(selected, rawSeries{entry.labels, copyOut(scratch, disk)})
 			}
 			return true
 		})
 		for stored, candidate := range coldSeries {
-			scratch = queryRawChunks(nil, nil, candidate.chunks, disk, start, end, scratch[:0], &candidatesBuffer)
+			scratch = seriesChunks(nil, candidate.chunks, nil)
 			if len(scratch) > 0 {
 				selected = append(selected, rawSeries{stored, copyOut(scratch, disk)})
 			}
