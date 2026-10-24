@@ -332,6 +332,8 @@ func TestMimirServerShutdownWhileModuleIsStarting(t *testing.T) {
 
 	select {
 	case <-starting:
+	case err := <-errCh:
+		require.Fail(t, "Mimir stopped before the test module started", "error: %v", err)
 	case <-time.After(10 * time.Second):
 		require.Fail(t, "test module didn't reach starting state in time")
 	}
