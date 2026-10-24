@@ -34,6 +34,7 @@ spec:
 {{- end }}
     spec:
       restartPolicy: OnFailure
+      {{- /* TODO: "automountServiceAccountToken: false" cannot be added to an existing immutable JobSpec; we can add it with the next minio sub-chart version bump, as that bumps the Job name */}}
 {{- with .Values.minio.makeBucketJob.dnsConfig }}
       dnsConfig:
         {{- toYaml . | nindent 8 }}
