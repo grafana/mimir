@@ -122,6 +122,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
       addRows(rows)::
         self.addRowsIf(true, rows),
 
+      // addGridPanels replaces the legacy rows layout with panels placed using gridPos,
+      // for example the output of grafonnet's grid.makeGrid().
+      addGridPanels(panels):: self {
+        schemaVersion: 27,
+        rows:: [],
+        panels: std.mapWithIndex(function(i, p) p { id: i + 1 }, panels),
+      },
+
       addClusterSelectorTemplates(multi=true)::
         local d = self {
           tags: $._config.tags,
@@ -1227,6 +1235,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
     transparent: true,
     type: 'text',
   } + options,
+
+  // rowHelperText is the transparent markdown panel describing a row, shown on its left side.
+  rowHelperText(content)::
+    local text = (import 'grafonnet-latest/main.libsonnet').panel.text;
+    text.new('')
+    + text.options.withContent(content)
+    + text.options.withMode('markdown')
+    + text.panelOptions.withTransparent(true),
 
   alertListPanel(title, nameFilter='', labelsFilter=''):: {
     type: 'alertlist',
