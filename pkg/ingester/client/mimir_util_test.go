@@ -7,6 +7,8 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net"
 	"sync"
 	"testing"
@@ -87,4 +89,66 @@ func TestSendQueryStream(t *testing.T) {
 
 	// Wait until the assertions in the server mock have completed.
 	wg.Wait()
+}
+
+func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
+	listen := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return listen.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	want := &SeriesCountsResponse{SeriesWalked: 300, SeriesCounted: 200, HeadMinTimeMs: 1, HeadMaxTimeMs: 2, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
+	for g := range 100 {
+		hashes := make([]uint64, 40)
+		for h := range hashes {
+			hashes[h] = math.MaxUint64 - uint64(h)
+		}
+		want.Groups = append(want.Groups, &SeriesCountGroup{Value: fmt.Sprintf("metric_%d", g), Hashes: hashes})
+	}
+	var sent []int
+	serverMock := &IngesterServerMock{}
+	serverMock.On("SeriesCounts", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		stream := countingSeriesCountsServer{Ingester_SeriesCountsServer: args.Get(1).(Ingester_SeriesCountsServer), sent: &sent}
+		// About 400 bytes a group: ten groups to a message.
+		assert.NoError(t, SendSeriesCountsResponse(stream, want, 4000))
+	})
+	RegisterIngesterServer(server, serverMock)
+	go func() {
+		require.NoError(t, server.Serve(listen))
+	}()
+	t.Cleanup(server.Stop)
+
+	stream, err := NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
+	require.NoError(t, err)
+	got, err := ReceiveSeriesCountsResponse(stream)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Greater(t, len(sent), 5, "split into several messages")
+	for _, n := range sent {
+		assert.LessOrEqual(t, n, 4000)
+	}
+
+	// A response with no groups is still one message.
+	sent = nil
+	want = &SeriesCountsResponse{ShardSizeChanged: true}
+	stream, err = NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
+	require.NoError(t, err)
+	got, err = ReceiveSeriesCountsResponse(stream)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Len(t, sent, 1)
+}
+
+type countingSeriesCountsServer struct {
+	Ingester_SeriesCountsServer
+	sent *[]int
+}
+
+func (s countingSeriesCountsServer) Send(m *SeriesCountsResponse) error {
+	*s.sent = append(*s.sent, m.Size())
+	return s.Ingester_SeriesCountsServer.Send(m)
 }

@@ -43,6 +43,15 @@ func (s labelValuesCardinalityStream) Context() context.Context {
 	return s.ctx
 }
 
+type seriesCountsStream struct {
+	ctx context.Context
+	client.Ingester_SeriesCountsServer
+}
+
+func (s seriesCountsStream) Context() context.Context {
+	return s.ctx
+}
+
 type activeSeriesStream struct {
 	ctx context.Context
 	client.Ingester_ActiveSeriesServer
@@ -174,16 +183,18 @@ func (i *ProfilingWrapper) UserStats(ctx context.Context, request *client.UserSt
 	return i.ing.UserStats(ctx, request)
 }
 
-func (i *ProfilingWrapper) SeriesCounts(ctx context.Context, request *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
+func (i *ProfilingWrapper) SeriesCounts(request *client.SeriesCountsRequest, server client.Ingester_SeriesCountsServer) error {
+	ctx := server.Context()
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)
 		labels := pprof.Labels("userID", userID)
 		defer pprof.SetGoroutineLabels(ctx)
 		ctx = pprof.WithLabels(ctx, labels)
 		pprof.SetGoroutineLabels(ctx)
+		server = seriesCountsStream{ctx, server}
 	}
 
-	return i.ing.SeriesCounts(ctx, request)
+	return i.ing.SeriesCounts(request, server)
 }
 
 func (i *ProfilingWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
