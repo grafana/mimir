@@ -461,17 +461,23 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 }
 
 func BenchmarkDeduplicateFilter_FindDuplicatesInSplitAndMergeBucket(b *testing.B) {
-	const (
-		ingesters  = 10
-		shards     = 8
-		recentDays = 3
-	)
 	f := NewShardAwareDeduplicateFilter()
 
-	for _, days := range []int{125, 1250, 12500} {
-		input := splitAndMergeBucketMetas(days, ingesters, shards, recentDays)
+	for _, tc := range []struct {
+		days, ingesters, shards, recentDays int
+	}{
+		// Many days, most of them fully compacted.
+		{days: 45, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 1170, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 12420, ingesters: 10, shards: 8, recentDays: 3},
+		// Many blocks within the most recent days, which are still being compacted.
+		{days: 2, ingesters: 22, shards: 64, recentDays: 2},
+		{days: 2, ingesters: 355, shards: 64, recentDays: 2},
+		{days: 2, ingesters: 4105, shards: 64, recentDays: 2},
+	} {
+		input := splitAndMergeBucketMetas(tc.days, tc.ingesters, tc.shards, tc.recentDays)
 
-		b.Run(fmt.Sprintf("blocks-%d", len(input)), func(b *testing.B) {
+		b.Run(fmt.Sprintf("days-%d/shards-%d/blocks-%d", tc.days, tc.shards, len(input)), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				_, err := f.findDuplicates(b.Context(), input)
