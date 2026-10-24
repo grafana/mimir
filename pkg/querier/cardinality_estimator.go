@@ -237,7 +237,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup
 		out.HeadWhole = out.HeadWhole || res.HeadWhole
-		out.OutOfOrderNotCounted = out.OutOfOrderNotCounted || res.OutOfOrderNotCounted
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
 		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
 		out.Retries += res.Retries
@@ -360,7 +359,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
-		res.OutOfOrderNotCounted = res.OutOfOrderNotCounted || resp.OutOfOrderNotCounted
 		if resp.MinTimeMs > 0 {
 			ingestersMinT = max(ingestersMinT, resp.MinTimeMs)
 		}
@@ -381,9 +379,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if !blocksCover(covered, req.MinT, req.MaxT) {
 		res.LowerBound, res.CoverageGap = true, true
 		res.HeadMinTime = from
-	}
-	if res.OutOfOrderNotCounted {
-		res.LowerBound = true
 	}
 	return res, nil
 }
@@ -445,7 +440,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
-		res.OutOfOrderNotCounted = res.OutOfOrderNotCounted || resp.OutOfOrderNotCounted
 		// An ingester with nothing in the window reports 0. The others
 		// hold data back to min_time_ms, from their local blocks or head.
 		if resp.MinTimeMs > 0 {
@@ -458,9 +452,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if from := ingestersCoverFrom(headMinT, heldFrom); from > req.MinT {
 		res.LowerBound = true
 		res.HeadMinTime = from
-	}
-	if res.OutOfOrderNotCounted {
-		res.LowerBound = true
 	}
 	return res, nil
 }
