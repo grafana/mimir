@@ -141,7 +141,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/tmp/activity/distributor-8000 -memberlist.nodename=distributor -memberlist.bind-port=10000 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/tmp/activity/distributor-8000 -memberlist.nodename=distributor-1 -memberlist.bind-port=10000 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
     "depends_on":
       - "minio"
     "environment":
@@ -149,7 +149,7 @@
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=distributor"
+      - "JAEGER_TAGS=app=distributor-1"
     "hostname": "distributor-1"
     "image": "mimir"
     "ports":
@@ -165,7 +165,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/tmp/activity/distributor-8001 -memberlist.nodename=distributor -memberlist.bind-port=10001 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/tmp/activity/distributor-8001 -memberlist.nodename=distributor-2 -memberlist.bind-port=10001 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
     "depends_on":
       - "minio"
     "environment":
@@ -173,7 +173,7 @@
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=distributor"
+      - "JAEGER_TAGS=app=distributor-2"
     "hostname": "distributor-2"
     "image": "mimir"
     "ports":

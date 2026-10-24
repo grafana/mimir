@@ -69,6 +69,7 @@ std.manifestYamlDoc({
     'distributor-1': mimirService({
       name: 'distributor-1',
       target: 'distributor',
+      jaegerApp: 'distributor-1',
       httpPort: 8000,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
@@ -76,6 +77,7 @@ std.manifestYamlDoc({
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
+      jaegerApp: 'distributor-2',
       httpPort: 8001,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),

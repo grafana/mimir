@@ -19,7 +19,7 @@ services:
       - MINIO_ROOT_USER=mimir
       - MINIO_ROOT_PASSWORD=supersecret
     ports:
-      - 9100:9100
+      - 9100:9000
       - 9101:9101
     volumes:
       - .data-minio:/data:delegated
