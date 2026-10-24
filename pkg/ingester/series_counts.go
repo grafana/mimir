@@ -31,11 +31,9 @@ import (
 // -querier.cardinality-estimate-max-index-bytes, is refused before any
 // series is walked.
 //
-// The in-order head and the ingester's compacted local blocks that overlap
-// the window are counted; a series in several of them counts once.
-// Out-of-order samples still in the out-of-order head are not counted, and
-// the response says so with out_of_order_not_counted when that head holds
-// samples in the window. The response's min_time_ms is the oldest time the
+// The head, its out-of-order chunks included, and the ingester's compacted
+// local blocks that overlap the window are counted; a series in several of
+// them counts once. The response's min_time_ms is the oldest time the
 // ingester holds, and shard_size_unchanged_since_ms is since when the
 // ownedSeries service has seen the tenant's shard size unchanged. A request
 // with shard_size_unchanged_before_ms is answered with shard_size_changed and
@@ -95,11 +93,6 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.ShardSizeChanged = true
 		return resp, nil
 	}
-	// The walk reads in-order chunks only. The out-of-order head's time range
-	// is not lowered when it is compacted, so this can also flag a window
-	// whose out-of-order samples are already in a local block.
-	resp.OutOfOrderNotCounted = head.MinOOOTime() < req.EndTimestampMs && head.MaxOOOTime() >= req.StartTimestampMs
-
 	sources, err := countSources(db, req.StartTimestampMs, req.EndTimestampMs)
 	if err != nil {
 		return nil, err
@@ -150,10 +143,12 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		ranges []cardinality.ChunkRange
 	}
 	var (
-		byHash  map[uint64]*gathered
-		builder labels.ScratchBuilder
-		metas   []chunks.Meta
-		ranges  []cardinality.ChunkRange
+		byHash     map[uint64]*gathered
+		builder    labels.ScratchBuilder
+		metas      []chunks.Meta
+		ranges     []cardinality.ChunkRange
+		oooBuilder labels.ScratchBuilder
+		oooMetas   []chunks.Meta
 	)
 	if len(sources) > 1 {
 		byHash = map[uint64]*gathered{}
@@ -174,6 +169,17 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			}
 			resp.SeriesWalked++
 			ranges = ranges[:0]
+			if src.ooo != nil {
+				// The same head series' out-of-order chunks in the window.
+				// Their metas carry their real end, merged where they
+				// overlap.
+				if err := src.ooo.Series(ref, &oooBuilder, &oooMetas); err != nil && !errors.Is(err, storage.ErrNotFound) {
+					return nil, err
+				}
+				for _, m := range oooMetas {
+					ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: m.MaxTime})
+				}
+			}
 			for _, m := range metas {
 				maxT := m.MaxTime
 				if maxT == math.MaxInt64 {
@@ -247,8 +253,11 @@ type countSource struct {
 	minT   int64
 	idx    tsdb.IndexReader
 	chunkr tsdb.ChunkReader // head only, to find the open chunk's end
-	refs   []storage.SeriesRef
-	close  func()
+	// ooo reads the head's out-of-order chunks, head only, when the
+	// out-of-order head overlaps the window. Its refs are the head's.
+	ooo   tsdb.IndexReader
+	refs  []storage.SeriesRef
+	close func()
 }
 
 // countSourcesBetweenReadsHook, if set, runs after countSources opens the
@@ -278,7 +287,9 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 	// have, and the block holds it. A series in both counts once.
 	var headSrc *countSource
 	head := db.Head()
-	if head.NumSeries() > 0 && head.MaxTime() >= minT && head.MinTime() < maxT {
+	inOrder := head.MaxTime() >= minT && head.MinTime() < maxT
+	outOfOrder := head.MinOOOTime() < maxT && head.MaxOOOTime() >= minT
+	if head.NumSeries() > 0 && (inOrder || outOfOrder) {
 		// The window end is exclusive and the range head's is not.
 		rh := tsdb.NewRangeHead(head, minT, maxT-1)
 		chunkr, err := rh.Chunks()
@@ -291,6 +302,16 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			return out, err
 		}
 		headSrc = &countSource{minT: head.MinTime(), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
+		if outOfOrder {
+			// In-order chunks are left out: an in-order start of MaxInt64
+			// selects none, so only out-of-order chunks come back. Only
+			// chunk metas are read, not chunk data, so no out-of-order
+			// isolation is taken; a chunk already compacted into a local
+			// block is listed in both and the series counts once.
+			// min_time_ms stays the in-order head's start: the out-of-order
+			// head's start is not raised when it is compacted.
+			headSrc.ooo = tsdb.NewHeadAndOOOIndexReader(head, math.MaxInt64, minT, maxT-1, 0)
+		}
 		out = append(out, headSrc)
 	}
 	if countSourcesBetweenReadsHook != nil {
