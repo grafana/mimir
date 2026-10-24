@@ -41,10 +41,7 @@ spec:
       unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     name: cortex_querier_hpa_default
     type: prometheus
-    {{- if .Values.kedaAutoscaling.authentication.enabled }}
-    authenticationRef:
-        name: "keda-triggger-auth"
-    {{- end }}
+    {{- include "mimir.kedaAuthenticationRef" . }}
   - metadata:
       {{- if .Values.kedaAutoscaling.authentication.enabled }}
       authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
@@ -59,9 +56,6 @@ spec:
       unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
-    {{- if .Values.kedaAutoscaling.authentication.enabled }}
-    authenticationRef:
-        name: "keda-triggger-auth"
-    {{- end }}
+    {{- include "mimir.kedaAuthenticationRef" . }}
 {{- end }}
 {{- end }}

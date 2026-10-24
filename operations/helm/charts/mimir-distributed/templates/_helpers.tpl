@@ -398,6 +398,21 @@ KEDA Autoscaling Prometheus address
 {{- end -}}
 {{- end -}}
 
+{{/*
+KEDA trigger authenticationRef, indented for the triggers list. KEDA defaults the kind to TriggerAuthentication, so the chart omits it in that case.
+*/}}
+{{- define "mimir.kedaAuthenticationRef" -}}
+{{- with .Values.kedaAutoscaling.authentication }}
+{{- if .enabled }}
+    authenticationRef:
+        {{- if ne .kind "TriggerAuthentication" }}
+        kind: {{ .kind }}
+        {{- end }}
+        name: {{ .name | quote }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
 
 {{/*
 Cluster name that shows up in dashboard metrics
