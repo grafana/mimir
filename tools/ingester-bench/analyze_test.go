@@ -81,7 +81,18 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	require.Empty(t, analyzeRun("run", composed).Discard)
 	miscomposed := composed
 	miscomposed.Composition.SeriesPerValue = 2.3
-	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed} {
+	// The same engine's compactions may differ by 2% at ready, but not its head truncations.
+	counters := func(compactions, truncations float64) map[string]float64 {
+		return map[string]float64{"cortex_ingester_tsdb_compactions_total": compactions, "cortex_ingester_tsdb_head_truncations_total": truncations}
+	}
+	nearly := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+	nearly.Counters = [2]Counters{{Ready: counters(300, 100), WindowEnd: counters(300, 100)}, {Ready: counters(297, 100), WindowEnd: counters(297, 100)}}
+	require.Empty(t, analyzeRun("run", nearly).Discard)
+	farther := nearly
+	farther.Counters[1] = Counters{Ready: counters(290, 100), WindowEnd: counters(290, 100)}
+	truncated := nearly
+	truncated.Counters[1] = Counters{Ready: counters(300, 99), WindowEnd: counters(300, 99)}
+	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed, "compactions 3% apart": farther, "head truncations differ": truncated} {
 		require.Len(t, analyzeRun("run", report).Discard, 1, name)
 	}
 

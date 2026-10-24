@@ -20,6 +20,11 @@ const (
 	// A replay measured over less of the backfill says too little of it.
 	minReplayCoverage = 0.9
 	readRejections    = "cortex_ingester_utilization_limited_read_requests_total"
+	// Between ingesters of the same engine, their compactions at /ready may differ by this share of them: the count has
+	// the out-of-order compactions too, whose number follows how the replay's compaction checks fell, which differ with
+	// the ingesters' speeds. Their head truncations, checkpoints and WAL truncations must still match.
+	compactions               = "cortex_ingester_tsdb_compactions_total"
+	readyCompactionsTolerance = 0.02
 	// How far a run's records may be from the profile's composition, relative to it: stand-ins per record vary most
 	// between partitions.
 	compositionTolerance         = 0.1
@@ -171,6 +176,10 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	}
 	if engineOf(run.Names[0]) == engineOf(run.Names[1]) {
 		for _, name := range changedCounters(report.Counters[0].Ready, report.Counters[1].Ready) {
+			a, b := report.Counters[0].Ready[name], report.Counters[1].Ready[name]
+			if name == compactions && math.Abs(a-b) <= readyCompactionsTolerance*max(a, b) {
+				continue
+			}
 			discard("A's and B's %s differ at ready", name)
 		}
 	}
