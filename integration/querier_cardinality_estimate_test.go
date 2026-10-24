@@ -76,6 +76,11 @@ func TestCardinalityEstimate(t *testing.T) {
 			"-compactor.cleanup-interval":                       "1s",
 			// Partitions count as stable a minute after they turn ACTIVE.
 			"-validation.create-grace-period": "1s",
+			// Counts are added up across partitions only when the
+			// ingesters have seen the tenant's shard size unchanged since
+			// before the window, which the owned-series service tracks.
+			"-ingester.track-ingester-owned-series":  "true",
+			"-ingester.owned-series-update-interval": "1s",
 		},
 	)
 
@@ -222,9 +227,15 @@ func TestCardinalityEstimate(t *testing.T) {
 
 	t.Run("head only, partitions stable since before the window: counts added up", func(t *testing.T) {
 		// Stable once the creation grace period and the minute for the
-		// change to reach every distributor have passed.
+		// change to reach every distributor have passed, since both the
+		// partitions turned ACTIVE and the ingesters first saw the
+		// tenant's shard size, a second or so after the first push.
 		// Whole seconds, so the one-bucket step divides the window exactly.
-		start := partitionsActive.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
+		start := partitionsActive
+		if pushed.Add(5 * time.Second).After(start) {
+			start = pushed.Add(5 * time.Second)
+		}
+		start = start.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
 		if wait := time.Until(start); wait > 0 {
 			time.Sleep(wait)
 		}

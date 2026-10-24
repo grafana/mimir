@@ -7102,12 +7102,16 @@ type mockIngester struct {
 	queryDelay time.Duration
 	pushDelay  time.Duration
 	// calls is a map from a methodName to list the method's invocations; each invocation is a list of the call's arguments.
-	calls                         map[string][][]any
-	zone                          string
-	labelNamesStreamResponseDelay time.Duration
-	timeOut                       bool
-	tokens                        []uint32
-	id                            int
+	calls map[string][][]any
+	zone  string
+	// seriesCountsShardSizeUnchangedSinceMs is what SeriesCounts answers as
+	// shard_size_unchanged_since_ms, and checks a request's
+	// shard_size_unchanged_before_ms against, as the ingester does.
+	seriesCountsShardSizeUnchangedSinceMs int64
+	labelNamesStreamResponseDelay         time.Duration
+	timeOut                               bool
+	tokens                                []uint32
+	id                                    int
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -7799,7 +7803,15 @@ func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCount
 	}
 	counts := map[string]int64{}
 	hashes := map[string][]uint64{}
-	resp := &client.SeriesCountsResponse{}
+	if len(i.timeseries) == 0 {
+		// Like an ingester with no TSDB for the tenant.
+		return &client.SeriesCountsResponse{}, nil
+	}
+	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs}
+	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
+		resp.ShardSizeChanged = true
+		return resp, nil
+	}
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {
 			continue

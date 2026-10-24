@@ -36,7 +36,10 @@ import (
 // Out-of-order samples still in the out-of-order head are not counted, and
 // the response says so with out_of_order_not_counted when that head holds
 // samples in the window. The response's min_time_ms is the oldest time the
-// ingester holds. Experimental.
+// ingester holds, and shard_size_unchanged_since_ms is since when the
+// ownedSeries service has seen the tenant's shard size unchanged. A request
+// with shard_size_unchanged_before_ms is answered with shard_size_changed and
+// nothing counted when that time is not before it, or not known. Experimental.
 func (i *Ingester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	resp, err := i.seriesCounts(ctx, req)
 	if err == nil {
@@ -87,7 +90,11 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return &client.SeriesCountsResponse{}, nil
 	}
 	head := db.Head()
-	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime()}
+	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime(), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince()}
+	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
+		resp.ShardSizeChanged = true
+		return resp, nil
+	}
 	// The walk reads in-order chunks only. The out-of-order head's time range
 	// is not lowered when it is compacted, so this can also flag a window
 	// whose out-of-order samples are already in a local block.

@@ -87,6 +87,10 @@ message SeriesCountsRequest {
   // Fail with ResourceExhausted rather than walk the series when the matching series, priced at an estimated
   // series entry size, come to more than this many bytes. 0 means no limit.
   int64 max_index_bytes = 8;
+  // If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
+  // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
+  // up counts across partitions sets it, since a series can be in two partitions after the shard grows.
+  int64 shard_size_unchanged_before_ms = 9;
 }
 
 message SeriesCountGroup {
@@ -112,6 +116,11 @@ message SeriesCountsResponse {
   // Set when the out-of-order head holds samples in the window. Those are not read, so a series whose only
   // samples in the window are out of order is not counted until they are compacted into a local block.
   bool out_of_order_not_counted = 7;
+  // The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
+  // doesn't know: owned-series tracking is off, or it has not checked the tenant yet.
+  int64 shard_size_unchanged_since_ms = 8;
+  // Set when the request's shard_size_unchanged_before_ms was not met. Nothing is counted then.
+  bool shard_size_changed = 9;
 }
 
 message LabelValuesCardinalityRequest {
