@@ -292,6 +292,40 @@ func (l Labels) RangeIDs(visit func(id uint32, value string) bool) {
 	}
 }
 
+// AppendSortKey appends to dst a key of the labels that compares as bytes as the labels do: for each label, its name's
+// rank in ranks, big-endian in as few bytes as the ranks need, then its value and a zero byte. It is false, with dst as
+// it was, for a value with a zero byte, whose key would compare otherwise.
+func (l Labels) AppendSortKey(dst []byte, ranks []uint32) ([]byte, bool) {
+	// The shorter the keys, the fewer bytes a sort reads: a table of a few thousand names has 2-byte ranks.
+	width := max(1, (bits.Len(uint(len(ranks)))+7)/8)
+	start := len(dst)
+	s := string(l)
+	for i := 0; i < len(s); {
+		var name, size uint64
+		// Almost every name id and value length fits in one varint byte: this runs for every series a large query sorts.
+		if c, d := s[i], s[i+1]; c < 0x80 && d < 0x80 {
+			name, size, i = uint64(c), uint64(d), i+2
+		} else {
+			rest := s[i:]
+			name = takeVarintString(&rest)
+			size = takeVarintString(&rest)
+			i = len(s) - len(rest)
+		}
+		value := s[i : i+int(size)]
+		if strings.IndexByte(value, 0) >= 0 {
+			return dst[:start], false
+		}
+		rank := ranks[name]
+		for shift := 8 * (width - 1); shift >= 0; shift -= 8 {
+			dst = append(dst, byte(rank>>shift))
+		}
+		dst = append(dst, value...)
+		dst = append(dst, 0)
+		i += int(size)
+	}
+	return dst, true
+}
+
 // Lookup is ValueOf, and whether the series has the label.
 func (l Labels) Lookup(id uint32) (string, bool) {
 	// Walks by index rather than through takeVarintString: this runs for every candidate series of

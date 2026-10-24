@@ -249,3 +249,37 @@ func TestFromSortedAllocatesTheEncodedSize(t *testing.T) {
 	require.Less(t, result.AllocedBytesPerOp(), size+16)
 	require.Equal(t, [][2]string{{"__name__", "http_requests_total"}, {"cluster", "prod-us"}, {"job", "api"}, {"pod", "api-7-abcde"}}, encoded.Pairs())
 }
+
+// Sort keys compare as the labels do, with ranks of more than one byte and values that are prefixes of others'.
+func TestAppendSortKeyComparesAsTheLabels(t *testing.T) {
+	random := rand.New(rand.NewPCG(5, 6))
+	for n := range 300 {
+		FromSorted([][2]string{{fmt.Sprintf("sortkey_%03d", 299-n), "x"}})
+	}
+	values := []string{"", "a", "ab", "b", "\xff"}
+	var all []Labels
+	for range 400 {
+		var pairs [][2]string
+		for n := range 300 {
+			if random.IntN(60) == 0 {
+				pairs = append(pairs, [2]string{fmt.Sprintf("sortkey_%03d", n), values[random.IntN(len(values))]})
+			}
+		}
+		all = append(all, FromSorted(pairs))
+	}
+	ranks := TakeSnapshot().Ranks()
+	require.Greater(t, len(ranks), 256)
+	for _, x := range all {
+		for _, y := range all[:50] {
+			keyX, ok := x.AppendSortKey(nil, ranks)
+			require.True(t, ok)
+			keyY, ok := y.AppendSortKey(nil, ranks)
+			require.True(t, ok)
+			require.Equal(t, Compare(x, y) < 0, string(keyX) < string(keyY), "%s %s", x, y)
+			require.Equal(t, Compare(x, y) == 0, string(keyX) == string(keyY), "%s %s", x, y)
+		}
+	}
+	key, ok := FromSorted([][2]string{{"sortkey_000", "a\x00"}}).AppendSortKey([]byte("kept"), ranks)
+	require.False(t, ok)
+	require.Equal(t, "kept", string(key))
+}

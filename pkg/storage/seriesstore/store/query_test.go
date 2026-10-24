@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -487,7 +488,8 @@ func TestSortByLabelsOrdersAsCompareLabels(t *testing.T) {
 func TestSortKeysOrdersAsStrings(t *testing.T) {
 	random := rand.New(rand.NewPCG(3, 4))
 	for _, size := range []int{0, 1, 2, 15, 16, 17, 100, 5000} {
-		keys := make([]keyedSeries, size)
+		var buffer []byte
+		keys := make([]sortKey, size)
 		for i := range keys {
 			// Keys of a few letters with long shared prefixes, some prefixes of others, some equal.
 			prefix := "__name__\x00metric\x00label\x00"
@@ -495,13 +497,15 @@ func TestSortKeysOrdersAsStrings(t *testing.T) {
 			for range random.IntN(6) {
 				key += string(rune('a' + random.IntN(3)))
 			}
-			keys[i] = keyedSeries{key: key, series: rawSeries{stored: labels.Labels(strconv.Itoa(i))}}
+			start := len(buffer)
+			buffer = append(buffer, key...)
+			keys[i] = sortKey{start: uint32(start), end: uint32(len(buffer)), index: uint32(i)}
 		}
 		expected := slices.Clone(keys)
-		slices.SortStableFunc(expected, func(x, y keyedSeries) int { return strings.Compare(x.key, y.key) })
-		sortKeys(keys, 0)
+		slices.SortStableFunc(expected, func(x, y sortKey) int { return strings.Compare(x.key(string(buffer)), y.key(string(buffer))) })
+		sortKeys(string(buffer), keys, 0)
 		for i := range keys {
-			require.Equal(t, expected[i].key, keys[i].key, "%d keys, at %d", size, i)
+			require.Equal(t, expected[i].key(string(buffer)), keys[i].key(string(buffer)), "%d keys, at %d", size, i)
 		}
 	}
 }
@@ -510,7 +514,10 @@ func BenchmarkSortByLabels(b *testing.B) {
 	random := rand.New(rand.NewPCG(1, 2))
 	for _, size := range []int{20, 200, 2000, 20000} {
 		var selected []rawSeries
+		// The labels apart from each other, as a store's series are: reading them in a query is mostly cache misses.
+		var apart [][]byte
 		for n := range size {
+			apart = append(apart, make([]byte, 1024))
 			pairs := [][2]string{{"__name__", "metric"}}
 			for l := range 10 {
 				pairs = append(pairs, [2]string{fmt.Sprintf("label_%02d", l), fmt.Sprintf("value-%d-%d", l, n%(10<<l))})
@@ -520,6 +527,7 @@ func BenchmarkSortByLabels(b *testing.B) {
 		}
 		random.Shuffle(len(selected), func(i, j int) { selected[i], selected[j] = selected[j], selected[i] })
 		shuffled := slices.Clone(selected)
+		runtime.KeepAlive(apart)
 		for _, mode := range []string{"compare", "keys"} {
 			b.Run(fmt.Sprintf("%d/%s", size, mode), func(b *testing.B) {
 				snapshot := labels.TakeSnapshot()

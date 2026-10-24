@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"slices"
@@ -420,9 +419,9 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 }
 
 // sortByLabels sorts series in Prometheus's label order. A query's series are mostly one metric's, sharing most of
-// their labels, which comparing them decoded on every comparison: each is decoded once instead, into a key of its
-// names and values that compares as bytes in the same order, "name\x00value\x00" for each label. A label with a zero
-// byte would compare otherwise, so then the series are compared as they are. The keys' memory is kept between sorts.
+// their labels, which comparing them decoded on every comparison: each is decoded once instead, into a key that
+// compares as bytes in the same order (labels.AppendSortKey). A label with a zero byte would compare otherwise, so then
+// the series are compared as they are. The keys' memory is kept between sorts.
 func sortByLabels(selected []rawSeries) {
 	if len(selected) < 2 {
 		return
@@ -433,8 +432,6 @@ func sortByLabels(selected []rawSeries) {
 		slices.SortFunc(selected, compare)
 		return
 	}
-	// A key is each label's name rank, 4 bytes in order, and value then a zero byte: shorter than the names, and with
-	// no name to look up. A value with a zero byte would compare otherwise, so then the series are compared as they are.
 	size := 0
 	for index := range selected {
 		size += len(selected[index].stored)
@@ -448,58 +445,51 @@ func sortByLabels(selected []rawSeries) {
 	defer func() {
 		// Large sorts' memory isn't kept for the small ones.
 		if cap(scratch.buffer) <= 64<<20 {
-			clear(scratch.keys)
-			scratch.buffer, scratch.keys = scratch.buffer[:0], scratch.keys[:0]
+			clear(scratch.series)
+			scratch.buffer, scratch.keys, scratch.series = scratch.buffer[:0], scratch.keys[:0], scratch.series[:0]
 			sortScratch.Put(scratch)
 		}
 	}()
 	if cap(scratch.buffer) < size {
-		scratch.buffer = make([]byte, 0, size)
+		// Doubling: the sorts of a scratch are of all sizes, and one made just large enough was made again for most.
+		scratch.buffer = make([]byte, 0, max(size, 2*cap(scratch.buffer)))
 	}
 	buffer := scratch.buffer
 	keys := slices.Grow(scratch.keys, len(selected))[:len(selected)]
 	scratch.keys = keys
 	ranks := names.Ranks()
-	zero := false
 	for index := range selected {
 		start := len(buffer)
-		selected[index].stored.RangeIDs(func(id uint32, value string) bool {
-			if strings.IndexByte(value, 0) >= 0 {
-				zero = true
-				return false
-			}
-			buffer = binary.BigEndian.AppendUint32(buffer, ranks[id])
-			buffer = append(buffer, value...)
-			buffer = append(buffer, 0)
-			return true
-		})
-		if zero {
+		var ok bool
+		if buffer, ok = selected[index].stored.AppendSortKey(buffer, ranks); !ok {
 			slices.SortFunc(selected, compare)
 			return
 		}
-		// The buffer holds every key, so it is never reallocated under the keys taken from it.
-		keys[index] = keyedSeries{key: unsafe.String(unsafe.SliceData(buffer[start:]), len(buffer)-start), series: selected[index]}
+		keys[index] = sortKey{start: uint32(start), end: uint32(len(buffer)), index: uint32(index)}
 	}
-	sortKeys(keys, 0)
+	// The buffer holds every key, so it is never reallocated under the keys read from it.
+	sortKeys(unsafe.String(unsafe.SliceData(buffer), len(buffer)), keys, 0)
+	scratch.series = append(scratch.series[:0], selected...)
 	for index := range keys {
-		selected[index] = keys[index].series
+		selected[index] = scratch.series[keys[index].index]
 	}
 }
 
 // sortKeys sorts keys that share their first depth bytes, by the bytes from there: a three-way radix quicksort, which
 // reads the long prefixes a query's keys share, the metric's name and its labels' names, once for each partition rather
-// than once for each comparison.
-func sortKeys(keys []keyedSeries, depth int) {
+// than once for each comparison. The keys are where they are in buffer and the series they are of: without a pointer,
+// moving one has no write barrier.
+func sortKeys(buffer string, keys []sortKey, depth int) {
 	for len(keys) > 1 {
 		if len(keys) < 16 {
-			slices.SortFunc(keys, func(x, y keyedSeries) int { return strings.Compare(x.key[depth:], y.key[depth:]) })
+			slices.SortFunc(keys, func(x, y sortKey) int { return strings.Compare(x.key(buffer)[depth:], y.key(buffer)[depth:]) })
 			return
 		}
-		pivot := keyByte(keys[len(keys)/2].key, depth)
+		pivot := keyByte(keys[len(keys)/2].key(buffer), depth)
 		// keys[:lt] are below the pivot byte, keys[lt:gt] equal to it and keys[gt:] above.
 		lt, gt := 0, len(keys)
 		for i := 0; i < gt; {
-			switch c := keyByte(keys[i].key, depth); {
+			switch c := keyByte(keys[i].key(buffer), depth); {
 			case c < pivot:
 				keys[lt], keys[i] = keys[i], keys[lt]
 				lt++
@@ -511,8 +501,8 @@ func sortKeys(keys []keyedSeries, depth int) {
 				i++
 			}
 		}
-		sortKeys(keys[:lt], depth)
-		sortKeys(keys[gt:], depth)
+		sortKeys(buffer, keys[:lt], depth)
+		sortKeys(buffer, keys[gt:], depth)
 		if pivot < 0 {
 			// The keys that ended are equal.
 			return
@@ -521,17 +511,17 @@ func sortKeys(keys []keyedSeries, depth int) {
 		keys, depth = keys[lt:gt], depth+1
 		if all {
 			// All of them share the byte: they share as much as they share with the first, found in one pass.
-			depth = commonPrefix(keys, depth)
+			depth = commonPrefix(buffer, keys, depth)
 		}
 	}
 }
 
 // commonPrefix returns how many bytes the keys, which share their first depth, share.
-func commonPrefix(keys []keyedSeries, depth int) int {
-	first := keys[0].key
+func commonPrefix(buffer string, keys []sortKey, depth int) int {
+	first := keys[0].key(buffer)
 	common := len(first)
 	for _, k := range keys[1:] {
-		key := k.key
+		key := k.key(buffer)
 		n := min(common, len(key))
 		i := depth
 		for i+8 <= n && first[i:i+8] == key[i:i+8] {
@@ -555,14 +545,17 @@ func keyByte(key string, depth int) int {
 	return -1
 }
 
-type keyedSeries struct {
-	key    string
-	series rawSeries
+// sortKey is a series' key, buffer[start:end], and where the series is.
+type sortKey struct {
+	start, end, index uint32
 }
+
+func (k sortKey) key(buffer string) string { return buffer[k.start:k.end] }
 
 type labelSortScratch struct {
 	buffer []byte
-	keys   []keyedSeries
+	keys   []sortKey
+	series []rawSeries
 }
 
 var sortScratch sync.Pool
