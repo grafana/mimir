@@ -96,7 +96,7 @@ func fakeMimir(t *testing.T, s *server) *httptest.Server {
 		var out struct {
 			Read   string  `json:"read"`
 			Dedup  bool    `json:"dedup"`
-			Counts []group `json:"counts"`
+			Counts []group `json:"groups"`
 		}
 		truth := s.pop.TruthBy(matchers, groupBy, minT, maxT)
 		if limit, _ := strconv.Atoi(q.Get("max_index_bytes")); limit > 0 && sumCounts(truth)*512 > limit {

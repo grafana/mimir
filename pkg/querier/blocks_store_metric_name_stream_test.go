@@ -79,8 +79,8 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
 		assert.Equal(t, readIndexHeader, out.Read)
-		require.Len(t, out.Counts, 18)
-		for i, g := range out.Counts {
+		require.Len(t, out.Groups, 18)
+		for i, g := range out.Groups {
 			want := int64(1)
 			switch {
 			case i >= 12:
@@ -91,7 +91,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 			assert.Equal(t, estimateGroup{Value: fmt.Sprintf("n%03d", i), Count: want}, g)
 		}
 		assert.Equal(t, int64(36), out.Total)
-		assert.Equal(t, 18, out.Groups)
+		assert.Equal(t, 18, out.GroupCount)
 		assert.False(t, out.HasMore)
 		assert.Equal(t, 2, out.Blocks)
 		assert.Equal(t, 2, out.StoreGateways)
@@ -105,7 +105,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
-		assert.Equal(t, []estimateGroup{{Value: "n006", Count: 3}, {Value: "n007", Count: 3}, {Value: "n008", Count: 3}, {Value: "n009", Count: 3}}, out.Counts)
+		assert.Equal(t, []estimateGroup{{Value: "n006", Count: 3}, {Value: "n007", Count: 3}, {Value: "n008", Count: 3}, {Value: "n009", Count: 3}}, out.Groups)
 		assert.True(t, out.HasMore)
 		assert.Equal(t, int64(36), out.Total)
 		assert.LessOrEqual(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(2*batchBytes+5*(estimateGroupBytes+4)), "the batches and at most limit+1 groups")
@@ -117,10 +117,10 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
-		require.Len(t, out.Counts, 6)
-		assert.Equal(t, "n006", out.Counts[0].Value)
+		require.Len(t, out.Groups, 6)
+		assert.Equal(t, "n006", out.Groups[0].Value)
 		assert.Equal(t, int64(36), out.Total, "the total counts every group")
-		assert.Equal(t, 18, out.Groups)
+		assert.Equal(t, 18, out.GroupCount)
 	})
 
 	t.Run("a table past the buffer is streamed and not cached", func(t *testing.T) {
@@ -135,10 +135,10 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Equal(t, "true", res.Header.Get(worker.ResponseStreamingEnabledHeader))
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
-		require.Len(t, out.Counts, len(names))
-		assert.Equal(t, names[len(names)-1], out.Counts[len(names)-1].Value)
+		require.Len(t, out.Groups, len(names))
+		assert.Equal(t, names[len(names)-1], out.Groups[len(names)-1].Value)
 		assert.Equal(t, int64(len(names)), out.Total)
-		assert.Equal(t, len(names), out.Groups)
+		assert.Equal(t, len(names), out.GroupCount)
 		assert.LessOrEqual(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(10_000*(estimateGroupBytes+len(names[0]))))
 	})
 
@@ -150,7 +150,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
 		var out struct {
-			Counts []estimateGroup `json:"counts"`
+			Groups []estimateGroup `json:"groups"`
 			Error  string          `json:"error"`
 			Total  *int64          `json:"total"`
 		}
@@ -204,5 +204,5 @@ func TestCardinalityEstimateHandler_PerBucketNameTableIsNotStreamed(t *testing.T
 	assert.ElementsMatch(t, []estimateGroup{
 		{Value: "up", Count: 3, Counts: []int64{3, 2}},
 		{Value: "errors_total", Count: 3, Counts: []int64{3, 0}},
-	}, out.Counts)
+	}, out.Groups)
 }
