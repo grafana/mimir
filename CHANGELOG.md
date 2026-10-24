@@ -133,6 +133,7 @@
 * [BUGFIX] Querier: `histogram_quantile()`, `histogram_quantiles()` and `histogram_fraction()` now ignore classic histogram buckets with `le="NaN"` and return a warning. Previously, such buckets were included in the calculation. #16952
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
+* [BUGFIX] Ruler: Store a rule group listing in the cache synchronously, instead of asynchronously, when the listing was fetched with the cache lookup disabled (e.g. right after a rule group is created or updated through the config API). Previously, a periodic sync reading from the cache could race with the asynchronous write and observe a stale listing that didn't include the just-applied change, reverting the rule group in the ruler's in-memory manager until the next sync picked up the change. #16664
 
 ### Mixin
 
