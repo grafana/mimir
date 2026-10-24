@@ -133,6 +133,7 @@
 * [BUGFIX] Querier: `histogram_quantile()`, `histogram_quantiles()` and `histogram_fraction()` now ignore classic histogram buckets with `le="NaN"` and return a warning. Previously, such buckets were included in the calculation. #16952
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
+* [BUGFIX] MQE: Fix the experimental matcher propagation (`-querier.mimir-query-engine.enable-propagate-matchers`) returning empty or incomplete results for binary operations that contain another binary operation with `on()` or `ignoring()`, such as `foo{env="prod"} > bar * on() group_left() threshold`. Matchers now propagate into and out of each side of a binary operation only on labels whose values that side keeps in the result. #16956
 
 ### Mixin
 
