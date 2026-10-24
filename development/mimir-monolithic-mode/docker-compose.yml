@@ -134,7 +134,7 @@ services:
 
   otel-remote-write:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -150,7 +150,7 @@ services:
 
   otel-otlp:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-otlp-push
     volumes:
