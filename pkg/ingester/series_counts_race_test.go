@@ -58,7 +58,7 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 		i, ctx := setup(t)
 		require.NoError(t, i.getTSDB(userID).Compact())
 		require.Len(t, i.getTSDB(userID).Blocks(), 1)
-		resp, err := i.SeriesCounts(ctx, req)
+		resp, err := i.seriesCountsWithStatus(ctx, req)
 		require.NoError(t, err)
 		assert.Equal(t, want, countsOf(resp))
 	})
@@ -83,7 +83,7 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 		}
 		t.Cleanup(func() { countSourcesBetweenReadsHook = nil })
 
-		resp, err := i.SeriesCounts(ctx, req)
+		resp, err := i.seriesCountsWithStatus(ctx, req)
 		require.NoError(t, err)
 		require.NoError(t, <-done)
 		assert.Equal(t, want, countsOf(resp), "b{pod=1} lives only in the cut range")
