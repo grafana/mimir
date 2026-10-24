@@ -8,8 +8,10 @@
 #   go run ./tools/ingester-bench -analyze=$RESULTS \
 #     -pairs=phase2-seriesstore:nomemo-seriesstore-metadata,phase1-seriesstore:phase2-seriesstore
 #
-# Run it from a checkout of this file's commit: the builds are only the ingesters' Mimir, and the bench is the
-# checkout's. Each pair runs twice in each order, after three A/A runs per engine for the noise. Pairs read nothing
+# Run it with PHASE_MINUTES=110, from a checkout of this file's commit: the builds are only the ingesters' Mimir, and the
+# bench is the checkout's. A run then starts at 50 past an odd hour, and the next block boundary that compacts the head
+# is 70 minutes in, past every window: at 5 past an even hour, it's 55 minutes in, and a seriesstore ingester ready
+# minutes before a TSDB one, as in the parity runs, compacted in the window. Each pair runs twice in each order, after three A/A runs per engine for the noise. Pairs read nothing
 # (-query-scale=0), so that the window's CPU is the ingestion's; the parity runs read, MetricsMetadata included, for the
 # exit gate's mismatches. Every Phase 2 build is of one commit, so that the ablation's and the memo-off variant's
 # ingesters differ from arm 3's only by their build tags.
