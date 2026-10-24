@@ -49,13 +49,11 @@ type seriesstoreStoreOptions struct {
 
 func openSeriesstoreStore(dir, tenantID string, opts seriesstoreStoreOptions) (seriesstoreStore, error) {
 	engine, err := store.OpenEngine(dir, tenantID, store.EngineOptions{
-		Shards:                 opts.shards,
-		RetentionMs:            opts.retentionMs,
-		OutOfOrderTimeWindowMs: opts.outOfOrderTimeWindowMs,
-		MaxExemplars:           opts.maxExemplars,
-		TimelyCompaction:       opts.timelyCompaction,
-		// The readcaches of a zone own different partitions, but the same partition's two zones would compact together.
-		JitterCompaction:        true,
+		Shards:                  opts.shards,
+		RetentionMs:             opts.retentionMs,
+		OutOfOrderTimeWindowMs:  opts.outOfOrderTimeWindowMs,
+		MaxExemplars:            opts.maxExemplars,
+		TimelyCompaction:        opts.timelyCompaction,
 		IdleEvictionMs:          opts.idleEvictionMs,
 		Checkpoints:             true,
 		SeriesLifecycleCallback: opts.callback,
