@@ -281,9 +281,9 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.Equal(t, readFullIndex, out.Read)
-	assert.Equal(t, 3, out.Groups)
+	assert.Equal(t, 3, out.GroupCount)
 	assert.Equal(t, int64(7), out.Total)
-	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Counts)
+	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Groups)
 	// The field names are the API contract's: total, and the window counted.
 	var raw map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
