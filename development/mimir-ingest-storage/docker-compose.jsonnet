@@ -412,4 +412,6 @@ std.manifestYamlDoc({
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
-}, true)
+  // quote_keys=false quotes a key only when YAML needs quotes.
+  // The Renovate docker-compose manager reads only the docker-compose.yml lines that start with "image:".
+}, true, quote_keys=false)
