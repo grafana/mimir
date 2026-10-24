@@ -3247,6 +3247,84 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
 			`,
 		},
+		"should soft fail on the first failing exemplar of a series in request order": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: now.UnixMilli()}},
+								Exemplars: []mimirpb.Exemplar{
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
+									// Rejected by TSDB: the label set exceeds 128 runes.
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: strings.Repeat("a", 128)}}, Value: 2, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}, Value: 3, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrExemplarLabelLength, model.Time(now.UnixMilli()), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: strings.Repeat("a", 128)}}), userID), codes.InvalidArgument),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli())},
+					},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+					},
+				},
+			},
+			additionalMetrics: []string{
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 2
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
+			`,
+		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
@@ -4770,6 +4848,51 @@ func BenchmarkIngesterPush(b *testing.B) {
 						}
 					}
 				})
+			}
+		})
+	}
+}
+
+// BenchmarkIngesterPushExemplars measures pushes where every series has exemplars.
+func BenchmarkIngesterPushExemplars(b *testing.B) {
+	for _, perSeries := range []int{1, 4} {
+		b.Run(fmt.Sprintf("exemplars per series=%d", perSeries), func(b *testing.B) {
+			ctx := user.InjectOrgID(b.Context(), userID)
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = 1_000_000
+			overrides := validation.NewOverrides(limits, nil)
+			ingester, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, defaultIngesterTestConfig(b), overrides, nil, "", "", prometheus.NewRegistry(), nil)
+			require.NoError(b, err)
+			startAndWaitHealthy(b, ingester, r)
+
+			allLabels, _ := benchmarkData(1000)
+			req := &mimirpb.WriteRequest{Source: mimirpb.API}
+			for _, lbls := range allLabels {
+				exemplars := make([]mimirpb.Exemplar, perSeries)
+				for i := range exemplars {
+					exemplars[i] = mimirpb.Exemplar{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: fmt.Sprintf("trace-%d", i)}}, Value: float64(i)}
+				}
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    lbls,
+					Samples:   []mimirpb.Sample{{Value: 1}},
+					Exemplars: exemplars,
+				}})
+			}
+			startTime := util.TimeToMillis(time.Now())
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for iter := 0; iter < b.N; iter++ {
+				// Move samples and exemplars forward, so they're all accepted.
+				ts := startTime + int64(iter*perSeries)
+				for _, series := range req.Timeseries {
+					series.Samples[0].TimestampMs = ts
+					for i := range series.Exemplars {
+						series.Exemplars[i].TimestampMs = ts + int64(i)
+					}
+				}
+				// The no-op cleanup keeps the request, so it can be reused.
+				require.NoError(b, ingester.PushWithCleanup(ctx, req, func() {}))
 			}
 		})
 	}
