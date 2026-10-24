@@ -199,6 +199,7 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) bool {
 	shardSize := oss.ringStrategy.shardSizeForUser(userID)
 	localLimit := oss.getLocalSeriesLimit(userID, 0)
+	db.observeShardSize(shardSize, time.Now(), oss.logger)
 
 	reason := db.getAndClearReasonForRecomputeOwnedSeries() // Clear reason, so that other reasons can be set while we run update here.
 

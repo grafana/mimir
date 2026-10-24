@@ -251,3 +251,41 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, resp.OutOfOrderNotCounted, "no out-of-order sample in the window")
 }
+
+func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
+	i, r, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	_, err = i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a"), 1, 1000))
+	require.NoError(t, err)
+	req := func(before int64) *client.SeriesCountsRequest {
+		return &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, ShardSizeUnchangedBeforeMs: before}
+	}
+	now := time.Now()
+
+	// Owned-series tracking is off in this ingester, so the shard size is not known.
+	resp, err := i.SeriesCounts(ctx, req(0))
+	require.NoError(t, err)
+	require.Zero(t, resp.ShardSizeUnchangedSinceMs)
+	require.False(t, resp.ShardSizeChanged, "not asked")
+	require.Len(t, resp.Groups, 1)
+	resp, err = i.SeriesCounts(ctx, req(now.UnixMilli()))
+	require.NoError(t, err)
+	require.True(t, resp.ShardSizeChanged, "not known")
+	require.Empty(t, resp.Groups)
+
+	i.getTSDB("test").observeShardSize(1, now.Add(-2*time.Hour), i.logger)
+	resp, err = i.SeriesCounts(ctx, req(now.Add(-time.Hour).UnixMilli()))
+	require.NoError(t, err)
+	require.False(t, resp.ShardSizeChanged)
+	require.Equal(t, now.Add(-2*time.Hour).UnixMilli(), resp.ShardSizeUnchangedSinceMs)
+	require.Len(t, resp.Groups, 1)
+
+	resp, err = i.SeriesCounts(ctx, req(now.Add(-3*time.Hour).UnixMilli()))
+	require.NoError(t, err)
+	require.True(t, resp.ShardSizeChanged, "changed after the time asked")
+	require.Empty(t, resp.Groups)
+	require.Zero(t, resp.SeriesWalked, "nothing walked")
+}

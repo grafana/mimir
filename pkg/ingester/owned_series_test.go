@@ -451,11 +451,15 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
+				sinceBefore := c.db.shardSizeUnchangedSince()
+				require.NotZero(t, sinceBefore, "the first update saw the shard size")
+				time.Sleep(2 * time.Millisecond)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
+				require.Greater(t, c.db.shardSizeUnchangedSince(), sinceBefore, "the shard size changed")
 			},
 		},
 		"unchanged ring, shard size < ingesters, shard size up and down": {
