@@ -3,6 +3,11 @@ kubeVersionOverride: "1.32"
 
 gateway:
   enabledNonEnterprise: true
+  nginx:
+    config:
+      mainSnippet: |-
+        load_module /etc/nginx/modules/ndk_http_module.so;
+        load_module /etc/nginx/modules/ngx_http_lua_module.so;
   resources:
     requests:
       memory: 10Mi
