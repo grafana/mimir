@@ -96,45 +96,19 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('Query-frontend')
       .addPanel(
-        $.timeseriesPanel('Queue duration') +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue duration') +
-        $.ncLatencyPanel('cortex_query_frontend_queue_duration_seconds', '$read_path_matcher'),
-      )
-      .addPanel(
         $.timeseriesPanel('Retries') +
         $.ncLatencyPanel('cortex_query_frontend_retries', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
-      )
-      .addPanel(
-        $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
-        $.queryPanel(
-          'sum by(%s) (cortex_query_frontend_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
-          '{{%s}}' % $._config.per_instance_label
-        ) +
-        $.showAllTooltip,
-      )
-      .addPanel(
-        $.timeseriesPanel('Queue length (per user)') +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
-        $.queryPanel(
-          'sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0',
-          '{{user}}'
-        ) +
-        $.showAllTooltip +
-        { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
     )
     .addRow(
       $.row('Query-scheduler')
       .addPanel(
         $.timeseriesPanel('Queue duration') +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue duration') +
         $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
@@ -143,7 +117,6 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
