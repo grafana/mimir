@@ -37,8 +37,9 @@ service Ingester {
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {}
 
   // SeriesCounts counts the head's series that match the matchers and have a chunk in the window, grouped by one
-  // label, from the series' chunk metas without reading samples. Experimental.
-  rpc SeriesCounts(SeriesCountsRequest) returns (SeriesCountsResponse) {}
+  // label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
+  // every field, the next ones only more groups. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse) {}
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
