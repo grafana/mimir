@@ -40,7 +40,7 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  prometheusremotewrite:
+  prometheus_remote_write:
     endpoint: http://mimir-1:8001/api/v1/push
 
 extensions:
@@ -54,4 +54,4 @@ service:
     metrics:
       receivers: [otlp, prometheus]
       processors: [batch]
-      exporters: [debug, prometheusremotewrite]
+      exporters: [debug, prometheus_remote_write]

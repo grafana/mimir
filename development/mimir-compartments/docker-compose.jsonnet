@@ -322,7 +322,7 @@ std.manifestYamlDoc({
   // of 1. The host port is 29092 + write compartment ID.
   kafka_clusters:: {
     ['kafka-wc-%d' % wc]: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       hostname: 'kafka-wc-%d' % wc,
       environment: [
         'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is a random UUID.
@@ -366,7 +366,7 @@ std.manifestYamlDoc({
   // 8090 + write compartment ID.
   redpanda_console:: {
     ['redpanda-console-wc-%d' % wc]: {
-      image: 'docker.redpanda.com/redpandadata/console:latest',
+      image: 'docker.redpanda.com/redpandadata/console:v3.13.1',
       environment: [
         'KAFKA_BROKERS=kafka-wc-%d:9092' % wc,
       ],
@@ -379,13 +379,13 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.45-alpine',
     },
   },
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      image: 'grafana/grafana:13.1.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -403,7 +403,7 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.40.0',
+      image: 'grafana/agent:v0.44.8',
       command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '/etc/agent-config/grafana-agent.flow'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],

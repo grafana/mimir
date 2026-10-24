@@ -40,7 +40,7 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  otlphttp:
+  otlp_http:
     endpoint: http://mimir-1:8001/otlp
 
 extensions:
@@ -54,4 +54,4 @@ service:
     metrics:
       receivers: [otlp, prometheus]
       processors: [batch]
-      exporters: [debug, otlphttp]
+      exporters: [debug, otlp_http]
