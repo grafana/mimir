@@ -880,8 +880,14 @@ check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
-	cd development/mimir-microservices-mode && make check
+DEV_ENV_COMPOSE_CHECKS := $(patsubst development/%/docker-compose.jsonnet,check-development-%-docker-compose-yaml,$(wildcard development/*/docker-compose.jsonnet))
+
+.PHONY: check-development-docker-compose-yaml $(DEV_ENV_COMPOSE_CHECKS)
+check-development-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for each development environment with a docker-compose.jsonnet.
+check-development-docker-compose-yaml: $(DEV_ENV_COMPOSE_CHECKS)
+
+$(DEV_ENV_COMPOSE_CHECKS): check-development-%-docker-compose-yaml:
+	cd development/$* && $(MAKE) check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
