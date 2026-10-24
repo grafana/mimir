@@ -1099,6 +1099,69 @@ ha_tracker:
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
+otlp_grpc_server:
+  # (experimental) Address the OTLP gRPC receiver listens on. If empty, it
+  # listens on all interfaces.
+  # CLI flag: -distributor.otlp-grpc-server.listen-address
+  [listen_address: <string> | default = ""]
+
+  # (experimental) Port the OTLP gRPC receiver listens on. 0 disables the
+  # receiver. The standard OTLP gRPC port is 4317.
+  # CLI flag: -distributor.otlp-grpc-server.listen-port
+  [listen_port: <int> | default = 0]
+
+  # (experimental) OTLP gRPC receiver TLS server cert path. If empty, TLS is
+  # disabled.
+  # CLI flag: -distributor.otlp-grpc-server.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (experimental) OTLP gRPC receiver TLS server key path. Required when the
+  # cert path is set.
+  # CLI flag: -distributor.otlp-grpc-server.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (experimental) OTLP gRPC receiver TLS Client CA path. If set, clients must
+  # present a valid certificate (mutual TLS).
+  # CLI flag: -distributor.otlp-grpc-server.tls-client-ca-path
+  [tls_client_ca_path: <string> | default = ""]
+
+  # (experimental) The duration after which an idle connection should be closed.
+  # Default: infinity
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.max-connection-idle
+  [max_connection_idle: <duration> | default = 2562047h47m16.854775807s]
+
+  # (experimental) The duration for the maximum amount of time a connection may
+  # exist before it will be closed. Default: infinity
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.max-connection-age
+  [max_connection_age: <duration> | default = 2562047h47m16.854775807s]
+
+  # (experimental) An additive period after max-connection-age after which the
+  # connection will be forcibly closed. Default: infinity
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.max-connection-age-grace
+  [max_connection_age_grace: <duration> | default = 2562047h47m16.854775807s]
+
+  # (experimental) Duration after which a keepalive probe is sent in case of no
+  # activity over the connection. Default: 2h
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.time
+  [keepalive_time: <duration> | default = 2h]
+
+  # (experimental) After having pinged for keepalive check, the duration after
+  # which an idle connection should be closed. Default: 20s
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.timeout
+  [keepalive_timeout: <duration> | default = 20s]
+
+  # (experimental) Minimum amount of time a client should wait before sending a
+  # keepalive ping. If client sends keepalive ping more often, server will send
+  # GOAWAY and close the connection.
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.min-time-between-pings
+  [keepalive_min_time_between_pings: <duration> | default = 10s]
+
+  # (experimental) If true, server allows keepalive pings even when there are no
+  # active streams(RPCs). If false, and client sends ping when there are no
+  # active streams, server will send GOAWAY and close the connection.
+  # CLI flag: -distributor.otlp-grpc-server.keepalive.ping-without-stream-allowed
+  [keepalive_ping_without_stream_allowed: <boolean> | default = true]
+
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
 # be rejected.
@@ -5676,6 +5739,16 @@ ruler_alertmanager_client_config:
 # The ingestion and querying process is likely to change over time.
 # CLI flag: -distributor.otel-native-delta-ingestion
 [otel_native_delta_ingestion: <boolean> | default = false]
+
+# (experimental) Whether the OTLP gRPC receiver includes retry information
+# (google.rpc.RetryInfo) in RESOURCE_EXHAUSTED and UNAVAILABLE errors, based on
+# -distributor.retry-after-header.*. Only has an effect if the OTLP gRPC
+# receiver and -distributor.retry-after-header.enabled are enabled. When
+# disabled, rate limited requests are rejected with RESOURCE_EXHAUSTED and no
+# retry information, which OTLP clients treat as non-retryable: the data is
+# dropped instead of being retried.
+# CLI flag: -distributor.otlp-grpc-retry-info-enabled
+[otlp_grpc_retry_info_enabled: <boolean> | default = true]
 
 # (experimental) Translation strategy to apply in OTLP endpoint for metric and
 # label names. If unspecified (the default), the strategy is derived from
