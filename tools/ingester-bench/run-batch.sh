@@ -10,7 +10,8 @@
 # A batch file has a line per build and per run, and # comments:
 #
 #   build <build> <commit> [tags=<build tags>]
-#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [profile=<file>] [bench flags...]
+#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [profile=<file>] [phase=<minutes>]
+#     [bench flags...]
 #
 # Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, with
 # -metadata when they keep the series' own metadata, which
@@ -18,7 +19,7 @@
 # burn, ingester A's container also keeps that many CPUs busy, for the isolation check. With metadata, the ingesters
 # named keep the series' own metric metadata; profile is the run's series and reads profile. check-isolation.sh's output
 # for each run goes next to the batch's log in RESULTS. PHASE_MINUTES (default 5) is when, past an even UTC hour, each
-# run starts, which a run waits for. Run it on the host of kind-up.sh.
+# run starts, which a run waits for, and a run's phase its own. Run it on the host of kind-up.sh.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the images to}"
@@ -86,11 +87,11 @@ config() {
   } > "$path"
 }
 
-# wait_for_phase sleeps until the next time that's the batch's phase past an even UTC hour.
+# wait_for_phase sleeps until the next time that's $1 seconds past an even UTC hour.
 wait_for_phase() {
   local now wait
   now="$(date -u +%s)"
-  wait=$(((phase - now % 7200 + 7200) % 7200))
+  wait=$((($1 - now % 7200 + 7200) % 7200))
   say "waiting $((wait / 60))m for the phase"
   sleep "$wait"
 }
@@ -140,18 +141,19 @@ while read -r kind rest <&3; do
       for build in "$build_a" "$build_b"; do
         [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
       done
-      burn='' metadata='' profile='' flags=()
+      burn='' metadata='' profile='' run_phase=$phase flags=()
       for option in $options; do
         case "$option" in
           burn=*) burn="${option#burn=}" ;;
           metadata=*) metadata="${option#metadata=}" ;;
           profile=*) profile="$(realpath "${option#profile=}")" ;;
+          phase=*) run_phase=$((${option#phase=} * 60)) ;;
           *) flags+=("$option") ;;
         esac
       done
       config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata"
       name="bench-$run"
-      wait_for_phase
+      wait_for_phase "$run_phase"
       say "run $run: A $build_a-$engine_a, B $build_b-$engine_b${metadata:+, metadata on $metadata}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
       pids=()
       isolation "$name" & pids+=($!)
