@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -98,7 +99,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			// upload.
 			meta, err := block.ReadMetaFromDir(dir)
 			if err != nil {
-				report.Add("", "meta", dir, fmt.Errorf("failed to read meta.json: %w", err))
+				report.Add("", "meta", dir, "", fmt.Errorf("failed to read meta.json: %w", err))
 				if v.opts.failFast {
 					return errFailFast
 				}
@@ -124,7 +125,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 					if err := egCtx.Err(); err != nil {
 						return nil
 					}
-					report.Add(blockULID, check.Name(), dir, verr)
+					report.Add(blockULID, check.Name(), dir, getShardID(meta), verr)
 					if v.opts.failFast {
 						return errFailFast
 					}
@@ -139,7 +140,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	_ = eg.Wait() // errFailFast is a signal, not a reportable error
 
 	if err := ctx.Err(); err != nil {
-		report.Add("", "context", "", fmt.Errorf("verification aborted before all blocks were checked: %w", err))
+		report.Add("", "context", "", "", fmt.Errorf("verification aborted before all blocks were checked: %w", err))
 	}
 
 	// Only run batch checks if the context is still good, and if the report has
@@ -152,7 +153,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 				// Batch verifiers are expected to write their own reports, but failure
 				// to do so would cause verification to incorrectly pass. Instead, add
 				// a report item for the error summary.
-				report.Add("", bcheck.Name(), "", err)
+				report.Add("", bcheck.Name(), "", "", err)
 				if v.opts.failFast {
 					break
 				}
@@ -189,3 +190,23 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 // errFailFast is an internal sentinel used to short-circuit the errgroup in
 // fail-fast mode.
 var errFailFast = errors.New("verify: fail-fast triggered")
+
+// getShardID is a convenience function for getting the shard ID of a block
+// from the meta. Returns empty if none found.
+func getShardID(m *block.Meta) string {
+	for l, v := range m.Thanos.Labels {
+		switch l {
+		case block.CompactorShardIDExternalLabel:
+			if v == "" {
+				continue
+			}
+
+			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
+				// Swallow error here, meta errors should be caught by other verifiers
+				return ""
+			}
+			return v
+		}
+	}
+	return ""
+}

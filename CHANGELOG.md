@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [ENHANCEMENT] mimirtool backfill block verification modules are now shard-aware.
+
 ### Grafana Mimir
 
 * [CHANGE] Reject empty values for `-blocks-storage.tsdb.float-chunk-encoding` and the per-tenant `float_chunk_encoding` setting. Use `xor` or `xor2`, or omit the per-tenant setting to inherit the global value. #16718
