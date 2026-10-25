@@ -27,6 +27,8 @@ type rw2Series struct {
 	other bool
 	// Whether the series has histograms or exemplars, which make it one with data like floats do.
 	moreData bool
+	// The series' resource, 1-based into the source's, or 0 for none.
+	resource uint32
 }
 
 // rw2Metadata is a series' metadata, with the symbol references of its help and unit, which identify it within the
@@ -50,8 +52,10 @@ type rw2Source struct {
 	series   []rw2Series
 	metadata []rw2Metadata
 	bodies   [][]byte
-	content  []byte
-	source   mimirpb.WriteRequest_SourceEnum
+	// The encodings of the record's resource table's entries, which refer to content.
+	resources [][]byte
+	content   []byte
+	source    mimirpb.WriteRequest_SourceEnum
 	// Whether the record has fields of its own this doesn't read, which only decoding it does.
 	partial bool
 	// The oldest timestamp of the record's samples, histograms and exemplars.
@@ -97,7 +101,7 @@ func (s *rw2Source) samples(index int) []mimirpb.Sample {
 
 // read reads the record's symbols and series. Strings refer to content.
 func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
-	s.symbols, s.refs, s.floats, s.series, s.metadata, s.bodies = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0], s.metadata[:0], s.bodies[:0]
+	s.symbols, s.refs, s.floats, s.series, s.metadata, s.bodies, s.resources = s.symbols[:0], s.refs[:0], s.floats[:0], s.series[:0], s.metadata[:0], s.bodies[:0], s.resources[:0]
 	s.common, s.offset, s.content, s.source, s.partial, s.minTimestamp = common, offset, content, mimirpb.API, false, math.MaxInt64
 	// The series reference symbols, which a writer may put after them: they are read first.
 	rest := content
@@ -120,6 +124,8 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 			return errMalformedRW2
 		case field == 1000 || field == 1001:
 			// Validation the distributor did.
+		case field == 1002 && wire == 2:
+			s.resources = append(s.resources, body)
 		default:
 			s.partial = true
 		}
@@ -196,6 +202,13 @@ func (s *rw2Source) readSeries(body []byte) error {
 			if err := s.observeTimestamp(value, 3); err != nil {
 				return err
 			}
+		case field == 1000 && wire == 0:
+			// The table is read before the series.
+			ref, _ := binary.Uvarint(value)
+			if ref > uint64(len(s.resources)) {
+				return errMalformedRW2
+			}
+			series.resource = uint32(ref)
 		default:
 			series.other = true
 		}
@@ -321,6 +334,7 @@ func releaseRW2Source(source *rw2Source) {
 	// The strings refer to the content.
 	clear(source.symbols)
 	clear(source.metadata)
+	clear(source.resources)
 	source.common, source.content = nil, nil
 	rw2Sources.Put(source)
 }
