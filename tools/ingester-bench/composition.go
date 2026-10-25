@@ -35,18 +35,22 @@ type Composition struct {
 }
 
 // compositionCounter adds records up into a Composition. In today's records, series carry no metadata of their own:
-// a series' value is its family's, by its name without a classic histogram's suffixes, and each distinct family entry
-// is a stand-in the new writer would write. In the new writer's, a value is a series' own, and stand-ins are series
-// without data.
+// a series' value is its family's, as families tells it by the series' name, and each distinct family entry is a
+// stand-in the new writer would write. In the new writer's, a value is a series' own, and stand-ins are series without
+// data.
 type compositionCounter struct {
 	today                             bool
 	records, series, values, standIns int
-	// Of today's records, the help of each family, by family and help.
-	helps map[[2]string]int
+	// Of today's records, the help of each family, by family and help, and the families the records tell of.
+	helps    map[[2]string]int
+	families familyNames
 }
 
 func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 	c.records++
+	if c.today {
+		c.families.learn(req)
+	}
 	values := map[string]struct{}{}
 	entries := map[string]struct{}{}
 	for _, m := range req.Metadata {
@@ -63,7 +67,7 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 		}
 		c.series++
 		if c.today {
-			name := familyName(metricName(ts.Labels))
+			name := c.families.of(metricName(ts.Labels))
 			values[name] = struct{}{}
 			if m := ts.SeriesMetadata; !m.IsEmpty() {
 				// The family's entry the old writer copied onto the series named like it.
@@ -128,10 +132,55 @@ func metricName(labels []mimirpb.LabelAdapter) string {
 	return ""
 }
 
-// familyName is a series' metric family, as a classic histogram's or summary's series name it with a suffix.
-func familyName(name string) string {
-	for _, suffix := range []string{"_bucket", "_sum", "_count"} {
-		if base, ok := strings.CutSuffix(name, suffix); ok {
+// familyNames tells a series' metric family by its name, from what records tell of their families: their metadata,
+// and the series of classic histograms and summaries.
+type familyNames struct {
+	// The families with metadata, by name, and their types.
+	types map[string]mimirpb.MetricMetadata_MetricType
+	// The families with a classic histogram's buckets, and with a summary's quantiles.
+	histograms, summaries map[string]bool
+}
+
+func (f *familyNames) learn(req *mimirpb.WriteRequest) {
+	if f.types == nil {
+		f.types, f.histograms, f.summaries = map[string]mimirpb.MetricMetadata_MetricType{}, map[string]bool{}, map[string]bool{}
+	}
+	for _, m := range req.Metadata {
+		f.types[m.MetricFamilyName] = m.Type
+	}
+	for _, ts := range req.Timeseries {
+		name := metricName(ts.Labels)
+		if !ts.SeriesMetadata.IsEmpty() {
+			// The family's entry the old writer copied onto the series named like it.
+			f.types[name] = ts.SeriesMetadata.Type
+		}
+		for _, l := range ts.Labels {
+			switch base, bucket := strings.CutSuffix(name, "_bucket"); {
+			case l.Name == "le" && bucket:
+				f.histograms[base] = true
+			case l.Name == "quantile":
+				f.summaries[name] = true
+			}
+		}
+	}
+}
+
+// of is the family of the series named name: its own, when a family has its name, or that of the classic histogram
+// or summary whose series its suffix names it as, or else its own. Without them, a metric whose name only ends like
+// one of their series, such as a requests_count beside a requests, is a family of its own.
+func (f *familyNames) of(name string) string {
+	if _, ok := f.types[name]; ok {
+		return name
+	}
+	for _, suffix := range []string{"_bucket", "_sum", "_count", "_gsum", "_gcount"} {
+		base, ok := strings.CutSuffix(name, suffix)
+		if !ok {
+			continue
+		}
+		t, known := f.types[base]
+		histogram := known && (t == mimirpb.HISTOGRAM || t == mimirpb.GAUGEHISTOGRAM) || !known && f.histograms[base]
+		summary := known && t == mimirpb.SUMMARY || !known && f.summaries[base]
+		if histogram || summary && (suffix == "_sum" || suffix == "_count") {
 			return base
 		}
 	}
@@ -139,18 +188,28 @@ func familyName(name string) string {
 }
 
 // compositionOfDumps is the Composition of the records of kafkatool dumps, a JSON record per line, of today's format,
-// over them all.
+// over them all: it first learns their families from all of them, then counts them.
 func compositionOfDumps(paths []string) (Composition, error) {
 	counter := compositionCounter{today: true}
-	for _, path := range paths {
-		if err := counter.addDump(path); err != nil {
-			return Composition{}, fmt.Errorf("%s: %w", path, err)
+	for _, learning := range []bool{true, false} {
+		for _, path := range paths {
+			err := readDump(path, func(req *mimirpb.WriteRequest) {
+				if learning {
+					counter.families.learn(req)
+				} else {
+					counter.add(req)
+				}
+			})
+			if err != nil {
+				return Composition{}, fmt.Errorf("%s: %w", path, err)
+			}
 		}
 	}
 	return counter.composition(), nil
 }
 
-func (c *compositionCounter) addDump(path string) error {
+// readDump calls each with the request of each record of a kafkatool dump.
+func readDump(path string, each func(*mimirpb.WriteRequest)) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -167,7 +226,7 @@ func (c *compositionCounter) addDump(path string) error {
 		if err := ingest.DeserializeRecordContent(record.Value, &req, ingest.ParseRecordVersion(&record)); err != nil {
 			return fmt.Errorf("record at offset %d: %w", record.Offset, err)
 		}
-		c.add(&req.WriteRequest)
+		each(&req.WriteRequest)
 	}
 	return scanner.Err()
 }
