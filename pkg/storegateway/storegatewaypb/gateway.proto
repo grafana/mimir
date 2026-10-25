@@ -81,9 +81,9 @@ message SeriesCountsRequest {
   // across blocks that share series. Not allowed with step_ms.
   bool hashes = 7;
   reserved 8; // was max_series
-  // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes in the
-  // response. Checked before any series entry is read, from the matching postings times an estimated series size,
-  // and again while reading. 0 means no limit.
+  // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes plus
+  // postings_offsets_table_bytes in the response. Checked before any series entry is read, from the matching
+  // postings times an estimated series size, and again while reading. 0 means no limit.
   int64 max_index_bytes = 9;
   // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
   // hashes, so its payload is a fixed size. 0 means always hashes.
@@ -113,4 +113,8 @@ message SeriesCountsResponse {
   // Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
   // the window and the postings were the cheaper read.
   int64 blocks_from_postings = 8;
+  // Bytes of the group-by label's postings offsets table walked to count blocks from postings, priced from the
+  // index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
+  // bounds index_bytes plus these.
+  int64 postings_offsets_table_bytes = 9;
 }
