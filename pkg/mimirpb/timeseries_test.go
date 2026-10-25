@@ -787,6 +787,7 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 				},
 			},
 		},
+		SeriesMetadata: SeriesMetadata{Help: yoloString(labelNameBytes), Unit: yoloString(labelValueBytes)},
 	}
 
 	ts.MakeReferencesSafeToRetain()
@@ -805,4 +806,5 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 			require.Equal(t, origLabelValue, l.Value)
 		}
 	}
+	require.Equal(t, SeriesMetadata{Help: origLabelName, Unit: origLabelValue}, ts.SeriesMetadata)
 }

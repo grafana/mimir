@@ -818,4 +818,6 @@ func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
 		}
 	}
+	ts.SeriesMetadata.Help = strings.Clone(ts.SeriesMetadata.Help)
+	ts.SeriesMetadata.Unit = strings.Clone(ts.SeriesMetadata.Unit)
 }
