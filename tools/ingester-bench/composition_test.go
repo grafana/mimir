@@ -76,3 +76,46 @@ func TestCompositionOfAKafkatoolDump(t *testing.T) {
 	require.Equal(t, Composition{Records: 6, SeriesPerRecord: 2, SeriesPerValue: 1, StandInsPerRecord: 1, Families: 1,
 		HelpLength: Percentiles{"0": 9, "0.1": 9, "0.5": 9, "0.9": 9, "0.99": 9, "1": 9}}, composition)
 }
+
+// A series' family is the one its name and the records' metadata, buckets and quantiles tell of: a metric whose name
+// only ends like a histogram's or summary's series is a family of its own.
+func TestFamilyNamesFollowTheRecords(t *testing.T) {
+	var f familyNames
+	f.learn(&mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			compositionSeries("untyped_bucket", mimirpb.SeriesMetadata{}, "le", "1"),
+			compositionSeries("rpc", mimirpb.SeriesMetadata{}, "quantile", "0.5"),
+			compositionSeries("jobs", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Jobs."}),
+		},
+		Metadata: []*mimirpb.MetricMetadata{
+			{MetricFamilyName: "example", Type: mimirpb.GAUGE},
+			{MetricFamilyName: "example_count", Type: mimirpb.COUNTER},
+			{MetricFamilyName: "latency", Type: mimirpb.HISTOGRAM},
+			{MetricFamilyName: "sizes", Type: mimirpb.SUMMARY},
+		},
+	})
+	for name, family := range map[string]string{
+		// Families of their own, by their metadata, or for want of any that would make them part of another.
+		"example": "example", "example_count": "example_count", "jobs_count": "jobs_count", "requests_sum": "requests_sum",
+		// A histogram's and a summary's series, by their metadata.
+		"latency_bucket": "latency", "latency_sum": "latency", "latency_count": "latency", "sizes_sum": "sizes", "sizes_count": "sizes",
+		// A summary has no buckets.
+		"sizes_bucket": "sizes_bucket",
+		// Without metadata, by their buckets and quantiles.
+		"untyped_bucket": "untyped", "untyped_count": "untyped", "rpc_sum": "rpc", "rpc_count": "rpc", "rpc_bucket": "rpc_bucket",
+		// A family whose series carried its metadata.
+		"jobs": "jobs",
+	} {
+		require.Equal(t, family, f.of(name), name)
+	}
+}
+
+// Of today's records, a gauge and a counter named like a histogram's series are two families, so two values.
+func TestCompositionKeepsMetricsNamedLikeHistogramSeriesApart(t *testing.T) {
+	counter := compositionCounter{today: true}
+	counter.add(&mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("example", mimirpb.SeriesMetadata{}), compositionSeries("example_count", mimirpb.SeriesMetadata{})},
+		Metadata:   []*mimirpb.MetricMetadata{{MetricFamilyName: "example", Type: mimirpb.GAUGE}, {MetricFamilyName: "example_count", Type: mimirpb.COUNTER}},
+	})
+	require.Equal(t, 1.0, counter.composition().SeriesPerValue)
+}
