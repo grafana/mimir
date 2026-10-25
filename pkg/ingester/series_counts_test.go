@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -120,6 +122,29 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "max_index_bytes 1000")
+	})
+
+	t.Run("with no matchers the limit is checked from the series each source holds", func(t *testing.T) {
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 1000})
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.ResourceExhausted, st.Code())
+		assert.Contains(t, st.Message(), "would walk 3 series in 1 head and local blocks")
+		assert.Contains(t, st.Message(), "more than max_index_bytes 1000")
+	})
+
+	t.Run("a request is refused when its series cost more than max_index_bytes, and not at the limit", func(t *testing.T) {
+		// Three series at 512 bytes each.
+		for name, matchers := range map[string][]*client.LabelMatcher{"no matchers": nil, "a matcher": everySeries} {
+			resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3 * 512})
+			require.NoError(t, err, name)
+			assert.Equal(t, int64(3), resp.SeriesCounted, name)
+
+			_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3*512 - 1})
+			st, ok := status.FromError(err)
+			require.True(t, ok, name)
+			assert.Equal(t, codes.ResourceExhausted, st.Code(), name)
+		}
 	})
 
 	t.Run("an invalid request is InvalidArgument", func(t *testing.T) {
@@ -355,4 +380,59 @@ func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
 	require.True(t, resp.ShardSizeChanged, "changed after the time asked")
 	require.Empty(t, resp.Groups)
 	require.Zero(t, resp.SeriesWalked, "nothing walked")
+}
+
+func TestExpandPostingsUpTo(t *testing.T) {
+	refs := func(n int) []storage.SeriesRef {
+		out := make([]storage.SeriesRef, n)
+		for i := range out {
+			out[i] = storage.SeriesRef(i + 1)
+		}
+		return out
+	}
+
+	t.Run("holds every ref up to the limit", func(t *testing.T) {
+		got, exceeded, err := expandPostingsUpTo(context.Background(), index.NewListPostings(refs(10)), 10)
+		require.NoError(t, err)
+		assert.False(t, exceeded)
+		assert.Equal(t, refs(10), got)
+	})
+
+	t.Run("stops without holding the refs once the limit is passed", func(t *testing.T) {
+		counting := &countingPostings{Postings: index.NewListPostings(refs(1_000_000))}
+		got, exceeded, err := expandPostingsUpTo(context.Background(), counting, 10)
+		require.NoError(t, err)
+		assert.True(t, exceeded)
+		assert.Nil(t, got)
+		assert.Equal(t, 11, counting.next, "it reads one ref past the limit and no more")
+	})
+
+	t.Run("a limit of zero refuses the first ref and accepts none", func(t *testing.T) {
+		_, exceeded, err := expandPostingsUpTo(context.Background(), index.NewListPostings(refs(1)), 0)
+		require.NoError(t, err)
+		assert.True(t, exceeded)
+
+		got, exceeded, err := expandPostingsUpTo(context.Background(), index.EmptyPostings(), 0)
+		require.NoError(t, err)
+		assert.False(t, exceeded)
+		assert.Empty(t, got)
+	})
+
+	t.Run("stops when the context is cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, _, err := expandPostingsUpTo(ctx, index.NewListPostings(refs(1<<17)), math.MaxInt64)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// countingPostings counts how many refs were read from it.
+type countingPostings struct {
+	index.Postings
+	next int
+}
+
+func (p *countingPostings) Next() bool {
+	p.next++
+	return p.Postings.Next()
 }
