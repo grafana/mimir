@@ -142,8 +142,26 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 
 	// Resolve every source's postings first, so max_index_bytes is checked
-	// against the whole request before any series is walked.
-	total := 0
+	// against the whole request before any series is walked. The series are
+	// priced at mimir_tsdb.EstimatedSeriesP99Size each, so the limit allows
+	// maxSeries of them. With no matchers every series of a source matches,
+	// and the count is known without reading its postings. Otherwise the
+	// postings are expanded only up to what the limit allows, so a refused
+	// request holds at most maxSeries refs instead of every matching series.
+	maxSeries := int64(math.MaxInt64)
+	if maxIndexBytes > 0 {
+		maxSeries = maxIndexBytes / mimir_tsdb.EstimatedSeriesP99Size
+	}
+	if maxIndexBytes > 0 && len(matchers) == 0 {
+		var all int64
+		for _, src := range sources {
+			all += src.numSeries
+		}
+		if all > maxSeries {
+			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*mimir_tsdb.EstimatedSeriesP99Size, mimir_tsdb.EstimatedSeriesP99Size, maxIndexBytes))
+		}
+	}
+	var total int64
 	for _, src := range sources {
 		var postings index.Postings
 		if len(matchers) == 0 {
@@ -155,15 +173,15 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		if err != nil {
 			return nil, err
 		}
-		if src.refs, err = index.ExpandPostings(postings); err != nil {
+		refs, exceeded, err := expandPostingsUpTo(ctx, postings, maxSeries-total)
+		if err != nil {
 			return nil, err
 		}
-		total += len(src.refs)
-	}
-	if maxIndexBytes > 0 {
-		if priced := int64(total) * mimir_tsdb.EstimatedSeriesP99Size; priced > maxIndexBytes {
-			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", total, len(sources), priced, mimir_tsdb.EstimatedSeriesP99Size, maxIndexBytes))
+		if exceeded {
+			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), mimir_tsdb.EstimatedSeriesP99Size, maxIndexBytes))
 		}
+		src.refs = refs
+		total += int64(len(refs))
 	}
 
 	// One source is counted as it is walked. Several hold the same series
@@ -258,6 +276,24 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	return resp, nil
 }
 
+// expandPostingsUpTo returns the series refs of p, and stops without
+// returning them once more than max would be held, which it reports as
+// exceeded. So a request the limit refuses holds at most max refs.
+func expandPostingsUpTo(ctx context.Context, p index.Postings, max int64) (refs []storage.SeriesRef, exceeded bool, err error) {
+	for p.Next() {
+		if int64(len(refs)) >= max {
+			return nil, true, nil
+		}
+		refs = append(refs, p.At())
+		if len(refs)%(1<<16) == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, false, err
+			}
+		}
+	}
+	return refs, false, p.Err()
+}
+
 // countFromPostings sets resp's groups to one count per value of groupBy,
 // the length of its postings list in idx, and counts the series without the
 // label under the empty value. It reads postings only, no series, so idx
@@ -341,6 +377,9 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 // one of its compacted local blocks.
 type countSource struct {
 	minT int64
+	// numSeries is how many series the source holds, whatever the window: a
+	// request with no matchers walks all of them.
+	numSeries int64
 	// block is set for a local block, whose bounds are blockMinT and
 	// blockMaxT, both included.
 	block                bool
@@ -395,7 +434,7 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			_ = chunkr.Close()
 			return out, err
 		}
-		headSrc = &countSource{minT: head.MinTime(), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
+		headSrc = &countSource{minT: head.MinTime(), numSeries: int64(head.NumSeries()), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
 		if outOfOrder {
 			// In-order chunks are left out: an in-order start of MaxInt64
 			// selects none, so only out-of-order chunks come back. Only
@@ -420,7 +459,7 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			return out, err
 		}
 		// A block's max time is exclusive.
-		out = append(out, &countSource{minT: b.MinTime(), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
+		out = append(out, &countSource{minT: b.MinTime(), numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
 	}
 	return out, nil
 }
