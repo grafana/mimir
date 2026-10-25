@@ -77,7 +77,7 @@ func TestDecidePhase2(t *testing.T) {
 	require.Equal(t, "pass", d.Decision)
 	// Without an ablation, there's no credit to give.
 	require.Equal(t, "not evaluated", d.CPU.Credit)
-	require.Equal(t, "port the lessons back to the TSDB", d.Outcome)
+	require.Equal(t, "port seriesstore's choices to #19563; seriesstore keeps its own design", d.Outcome)
 	require.Equal(t, "met", d.ExitGate)
 	require.NoError(t, writeDecision(results, d))
 }
