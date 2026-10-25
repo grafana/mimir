@@ -70,6 +70,11 @@ type Reader interface {
 	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name,
 	// from what the index-header holds in memory, without reading the postings offset table.
 	LabelValuesCountLowerBound(ctx context.Context, name string) (int, error)
+
+	// LabelValuesOffsetsTableBytes returns about how many bytes of the postings offsets table LabelValuesOffsets
+	// reads for the label named name with no prefix, from what the index-header holds in memory, without reading
+	// the table. With index-header version 2 those are object-storage reads.
+	LabelValuesOffsetsTableBytes(ctx context.Context, name string) (int64, error)
 }
 
 type Config struct {

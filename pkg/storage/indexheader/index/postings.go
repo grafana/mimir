@@ -7,6 +7,7 @@ package index
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"math"
@@ -59,6 +60,10 @@ type PostingsOffsetsTable interface {
 	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name, from
 	// the sampled offsets held in memory, without reading the table. It is exact for 0 or 1 value.
 	LabelValuesCountLowerBound(name string) int
+
+	// LabelValuesOffsetsTableBytes returns about how many bytes of this table LabelValuesOffsets decodes for the
+	// label named name with no prefix, from the sampled offsets held in memory, without reading the table.
+	LabelValuesOffsetsTableBytes(name string) int64
 
 	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
 	// A lower value indicates postings are sampled more frequently.
@@ -359,6 +364,20 @@ func (t *PostingsOffsetsTableV2) LabelValuesCountLowerBound(name string) int {
 		return k
 	}
 	return (k-2)*max(1, t.SparseSampleFactor) + 2
+}
+
+// LabelValuesOffsetsTableBytes implements PostingsOffsetsTable. The label's entries run from its first sampled
+// offset to the end of its last value's entry, which is always sampled; that entry is priced at its largest
+// encoding. A remote table is fetched in streamencoding.ReadBufferSize reads, so the bytes fetched from object
+// storage can pass this by up to one read buffer.
+func (t *PostingsOffsetsTableV2) LabelValuesOffsetsTableBytes(name string) int64 {
+	e, ok := t.SparsePostingsOffsets[name]
+	if !ok || len(e.SparseTableOffsets) == 0 {
+		return 0
+	}
+	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
+	lastEntry := 1 + binary.MaxVarintLen64 + len(name) + binary.MaxVarintLen64 + len(last.Value) + binary.MaxVarintLen64
+	return int64(last.Offset - first.Offset + lastEntry)
 }
 
 func (t *PostingsOffsetsTableV2) PostingsOffsetsInMemSampling() int {
