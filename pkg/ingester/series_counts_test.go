@@ -84,6 +84,16 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		assert.Equal(t, int64(2), resp.SeriesWalked)
 	})
 
+	t.Run("buckets wider than the step look back from each bucket's end", func(t *testing.T) {
+		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{
+			StartTimestampMs: 0, EndTimestampMs: 2 * hour, StepMs: 30 * minute, WindowMs: hour, GroupBy: "pod",
+		})
+		require.NoError(t, err)
+		// Buckets [0, 1h), [30m, 90m) and [1h, 2h): pod 1 has samples at 10m, 20m and 70m, pod 2 at 70m and 80m.
+		assert.Equal(t, map[string][]int64{"1": {2, 1, 1}, "2": {0, 1, 1}}, countsOf(resp))
+		assert.Equal(t, hour, resp.WindowMs, "the window is echoed")
+	})
+
 	t.Run("hashes match the label-set hashes other sources send", func(t *testing.T) {
 		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, GroupBy: "pod"})
 		require.NoError(t, err)
@@ -110,9 +120,10 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("a tenant with no data is empty", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(user.InjectOrgID(context.Background(), "other"), &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: hour})
+		resp, err := i.seriesCountsWithStatus(user.InjectOrgID(context.Background(), "other"), &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: hour, StepMs: 30 * minute, WindowMs: hour})
 		require.NoError(t, err)
 		assert.Empty(t, resp.Groups)
+		assert.Equal(t, hour, resp.WindowMs, "the window is echoed with nothing counted")
 	})
 }
 
