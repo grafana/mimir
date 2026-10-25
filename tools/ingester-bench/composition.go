@@ -28,10 +28,11 @@ type Composition struct {
 	SeriesPerValue float64 `json:"series_per_value"`
 	// Metric families' metadata entries per record, which the TSDB's batches count as series.
 	StandInsPerRecord float64 `json:"stand_ins_per_record"`
-	// Of a kafkatool dump, the distinct metric families with a help, and the length of their helps, as a profile's
-	// help_length has it.
-	Families   int         `json:"families,omitempty"`
-	HelpLength Percentiles `json:"help_length,omitempty"`
+	// Of a kafkatool dump, the distinct metric families with a help, each tenant's its own, and the length of their
+	// helps, as a profile's help_length has it, and the families whose tenant's metadata gave them more than one type.
+	Families            int         `json:"families,omitempty"`
+	HelpLength          Percentiles `json:"help_length,omitempty"`
+	ConflictingFamilies int         `json:"conflicting_families,omitempty"`
 }
 
 // compositionCounter adds records up into a Composition. In today's records, series carry no metadata of their own:
@@ -41,21 +42,24 @@ type Composition struct {
 type compositionCounter struct {
 	today                             bool
 	records, series, values, standIns int
-	// Of today's records, the help of each family, by family and help, and the families the records tell of.
-	helps    map[[2]string]int
-	families familyNames
+	// Of today's records, the length of each family's help, by tenant, family and help, and each tenant's families as
+	// its records tell of them.
+	helps    map[[3]string]int
+	families map[string]*familyNames
 }
 
-func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
+// add counts the tenant's request.
+func (c *compositionCounter) add(tenant string, req *mimirpb.WriteRequest) {
 	c.records++
+	families := c.familiesOf(tenant)
 	if c.today {
-		c.families.learn(req)
+		families.learn(req)
 	}
 	values := map[string]struct{}{}
 	entries := map[string]struct{}{}
 	for _, m := range req.Metadata {
 		entries[fmt.Sprint(m.MetricFamilyName, m.Type, m.Help, m.Unit)] = struct{}{}
-		c.help(m.MetricFamilyName, m.Help)
+		c.help(tenant, m.MetricFamilyName, m.Help)
 	}
 	for _, ts := range req.Timeseries {
 		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 {
@@ -67,12 +71,12 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 		}
 		c.series++
 		if c.today {
-			name := c.families.of(metricName(ts.Labels))
+			name := families.of(metricName(ts.Labels))
 			values[name] = struct{}{}
 			if m := ts.SeriesMetadata; !m.IsEmpty() {
 				// The family's entry the old writer copied onto the series named like it.
 				entries[fmt.Sprint(name, m.Type, m.Help, m.Unit)] = struct{}{}
-				c.help(name, m.Help)
+				c.help(tenant, name, m.Help)
 			}
 			continue
 		}
@@ -86,25 +90,38 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 	}
 }
 
-// help counts a family's help, of today's records.
-func (c *compositionCounter) help(family, help string) {
+// familiesOf is the tenant's families: a tenant's metadata says nothing of another's metrics.
+func (c *compositionCounter) familiesOf(tenant string) *familyNames {
+	if c.families == nil {
+		c.families = map[string]*familyNames{}
+	}
+	f, ok := c.families[tenant]
+	if !ok {
+		f = &familyNames{}
+		c.families[tenant] = f
+	}
+	return f
+}
+
+// help counts a tenant's family's help, of today's records.
+func (c *compositionCounter) help(tenant, family, help string) {
 	if !c.today || help == "" {
 		return
 	}
 	if c.helps == nil {
-		c.helps = map[[2]string]int{}
+		c.helps = map[[3]string]int{}
 	}
-	c.helps[[2]string{family, help}] = len(help)
+	c.helps[[3]string{tenant, family, help}] = len(help)
 }
 
 func (c *compositionCounter) composition() Composition {
 	out := Composition{Records: c.records}
 	if len(c.helps) > 0 {
 		lengths := make([]int, 0, len(c.helps))
-		families := map[string]struct{}{}
+		families := map[[2]string]struct{}{}
 		for key, n := range c.helps {
 			lengths = append(lengths, n)
-			families[key[0]] = struct{}{}
+			families[[2]string{key[0], key[1]}] = struct{}{}
 		}
 		slices.Sort(lengths)
 		out.Families, out.HelpLength = len(families), Percentiles{}
@@ -112,6 +129,9 @@ func (c *compositionCounter) composition() Composition {
 			f, _ := strconv.ParseFloat(q, 64)
 			out.HelpLength[q] = float64(lengths[min(len(lengths)-1, int(f*float64(len(lengths))))])
 		}
+	}
+	for _, f := range c.families {
+		out.ConflictingFamilies += len(f.conflicts)
 	}
 	if c.records > 0 {
 		out.SeriesPerRecord = float64(c.series) / float64(c.records)
@@ -132,27 +152,30 @@ func metricName(labels []mimirpb.LabelAdapter) string {
 	return ""
 }
 
-// familyNames tells a series' metric family by its name, from what records tell of their families: their metadata,
-// and the series of classic histograms and summaries.
+// familyNames tells a series' metric family by its name, from what one tenant's records tell of its families: their
+// metadata, and the series of classic histograms and summaries.
 type familyNames struct {
 	// The families with metadata, by name, and their types.
 	types map[string]mimirpb.MetricMetadata_MetricType
+	// The families whose metadata gave them more than one type, which are taken as of none.
+	conflicts map[string]bool
 	// The families with a classic histogram's buckets, and with a summary's quantiles.
 	histograms, summaries map[string]bool
 }
 
 func (f *familyNames) learn(req *mimirpb.WriteRequest) {
 	if f.types == nil {
-		f.types, f.histograms, f.summaries = map[string]mimirpb.MetricMetadata_MetricType{}, map[string]bool{}, map[string]bool{}
+		f.types, f.conflicts = map[string]mimirpb.MetricMetadata_MetricType{}, map[string]bool{}
+		f.histograms, f.summaries = map[string]bool{}, map[string]bool{}
 	}
 	for _, m := range req.Metadata {
-		f.types[m.MetricFamilyName] = m.Type
+		f.typed(m.MetricFamilyName, m.Type)
 	}
 	for _, ts := range req.Timeseries {
 		name := metricName(ts.Labels)
 		if !ts.SeriesMetadata.IsEmpty() {
 			// The family's entry the old writer copied onto the series named like it.
-			f.types[name] = ts.SeriesMetadata.Type
+			f.typed(name, ts.SeriesMetadata.Type)
 		}
 		for _, l := range ts.Labels {
 			switch base, bucket := strings.CutSuffix(name, "_bucket"); {
@@ -163,6 +186,14 @@ func (f *familyNames) learn(req *mimirpb.WriteRequest) {
 			}
 		}
 	}
+}
+
+// typed records that the family's metadata gives it the type, which conflicts with another it gave it.
+func (f *familyNames) typed(family string, t mimirpb.MetricMetadata_MetricType) {
+	if known, ok := f.types[family]; ok && known != t {
+		f.conflicts[family] = true
+	}
+	f.types[family] = t
 }
 
 // of is the family of the series named name: its own, when a family has its name, or that of the classic histogram
@@ -178,6 +209,7 @@ func (f *familyNames) of(name string) string {
 			continue
 		}
 		t, known := f.types[base]
+		known = known && !f.conflicts[base]
 		histogram := known && (t == mimirpb.HISTOGRAM || t == mimirpb.GAUGEHISTOGRAM) || !known && f.histograms[base]
 		summary := known && t == mimirpb.SUMMARY || !known && f.summaries[base]
 		if histogram || summary && (suffix == "_sum" || suffix == "_count") {
@@ -193,11 +225,11 @@ func compositionOfDumps(paths []string) (Composition, error) {
 	counter := compositionCounter{today: true}
 	for _, learning := range []bool{true, false} {
 		for _, path := range paths {
-			err := readDump(path, func(req *mimirpb.WriteRequest) {
+			err := readDump(path, func(tenant string, req *mimirpb.WriteRequest) {
 				if learning {
-					counter.families.learn(req)
+					counter.familiesOf(tenant).learn(req)
 				} else {
-					counter.add(req)
+					counter.add(tenant, req)
 				}
 			})
 			if err != nil {
@@ -208,8 +240,8 @@ func compositionOfDumps(paths []string) (Composition, error) {
 	return counter.composition(), nil
 }
 
-// readDump calls each with the request of each record of a kafkatool dump.
-func readDump(path string, each func(*mimirpb.WriteRequest)) error {
+// readDump calls each with the tenant, the record's key, and the request of each record of a kafkatool dump.
+func readDump(path string, each func(string, *mimirpb.WriteRequest)) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -226,7 +258,7 @@ func readDump(path string, each func(*mimirpb.WriteRequest)) error {
 		if err := ingest.DeserializeRecordContent(record.Value, &req, ingest.ParseRecordVersion(&record)); err != nil {
 			return fmt.Errorf("record at offset %d: %w", record.Offset, err)
 		}
-		each(&req.WriteRequest)
+		each(string(record.Key), &req.WriteRequest)
 	}
 	return scanner.Err()
 }
