@@ -4,8 +4,8 @@
 // the native metadata prototype's samples of a cell's records. It fetches as Mimir's ingesters do: Fetch v13 requests
 // sent to the partition's leader, without fetch sessions or a consumer group, so it commits nothing. A partition's
 // sample is the records before the end offset it had when the sample started, and kafkafetch fails unless it has all
-// of them within the byte and time limits. With WarpStream, its client ID needs the ingesters' routing settings, such
-// as ws_pt=proxy-consume. SASL credentials come from the U and P environment variables, if set.
+// of them within the byte and time limits. Its client ID needs the ingesters' routing settings, which are what lets
+// the fetches reach the partitions. SASL credentials come from the U and P environment variables, if set.
 package main
 
 import (
