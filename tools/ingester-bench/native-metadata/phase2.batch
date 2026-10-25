@@ -29,10 +29,10 @@
 # family, 2.99 metric family entries. Its series per request, series per target and partitions per tenant were tuned to
 # reproduce them, at the bench's 1.65M series: 28.2, 1.94 and 3.48, within the agreed 10%, 10% and 25%.
 
-build phase2 46d1da3b79
-build nomemo 46d1da3b79 tags=native_metadata_nomemo
+build phase2 b871973255
+build nomemo b871973255 tags=native_metadata_nomemo
 # #19563's choices in seriesstore (plan 2.4), off against on within the build.
-build ablation 46d1da3b79 tags=native_metadata_ablation
+build ablation b871973255 tags=native_metadata_ablation
 # The end of Phase 1, for the diagnostic of what Phase 2 costs seriesstore with the switch off.
 build phase1 fb759c4952
 
