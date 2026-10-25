@@ -77,6 +77,8 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 	OTelLabelNameUnderscoreSanitization(string) bool
 	OTelLabelNamePreserveMultipleUnderscores(string) bool
+	NativeResourcesEnabled(id string) bool
+	NativeResourcesLimits(id string) (maxAttributes, maxValueLength int)
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -451,10 +453,11 @@ func newOTLPParser(
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+			nativeResources:                   limits.NativeResourcesEnabled(tenantID),
 		}
 		convSpan, convCtx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.convert")
 		defer convSpan.Finish()
-		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
+		metrics, metadata, resourceTable, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			convCtx,
 			otlpConverter,
 			otlpReq.Metrics(),
@@ -499,6 +502,7 @@ func newOTLPParser(
 		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
 		req.Metadata = metadata
+		req.ResourceTable = resourceTable
 		return uncompressedBodySize, nil
 	}
 }
@@ -710,6 +714,7 @@ type conversionOptions struct {
 	allowUTF8                         bool
 	underscoreSanitization            bool
 	preserveMultipleUnderscores       bool
+	nativeResources                   bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -718,7 +723,7 @@ func otelMetricsToSeriesAndMetadata(
 	md pmetric.Metrics,
 	opts conversionOptions,
 	logger log.Logger,
-) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
+) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceEntry, int, error) {
 	settings := prometheusremotewrite.Settings{
 		AddMetricSuffixes:                    opts.addSuffixes,
 		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
@@ -729,15 +734,17 @@ func otelMetricsToSeriesAndMetadata(
 		AllowUTF8:                            opts.allowUTF8,
 		LabelNameUnderscoreSanitization:      opts.underscoreSanitization,
 		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
+		EnableNativeResources:                opts.nativeResources,
+		TypedResourceAttributes:              opts.nativeResources,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
-	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
+	mimirTS, metadata, resourceTable := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
 	if len(mimirTS) == 0 && dropped > 0 {
-		return nil, nil, dropped, converter.Err()
+		return nil, nil, nil, dropped, converter.Err()
 	}
-	return mimirTS, metadata, dropped, nil
+	return mimirTS, metadata, resourceTable, dropped, nil
 }
 
 type otlpMimirConverter struct {
@@ -754,15 +761,14 @@ func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConve
 	}
 }
 
-func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings prometheusremotewrite.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings prometheusremotewrite.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceEntry) {
 	if c.err != nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	_, c.err = c.converter.FromMetrics(ctx, md, settings)
 
-	timeseries, metadata := c.appender.GetResult()
-	return timeseries, metadata
+	return c.appender.GetResult()
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {

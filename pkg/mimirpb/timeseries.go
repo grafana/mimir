@@ -619,6 +619,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	dstTs.CreatedTimestamp = srcTs.CreatedTimestamp
 	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
 	dstTs.SeriesMetadata = SeriesMetadata{Type: srcTs.SeriesMetadata.Type, Help: strings.Clone(srcTs.SeriesMetadata.Help), Unit: strings.Clone(srcTs.SeriesMetadata.Unit)}
+	dstTs.ResourceRef = srcTs.ResourceRef
 
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {
@@ -770,6 +771,7 @@ func copyHistogram(src Histogram) Histogram {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
+// The new request shares the resource table, which its series' resource refs index.
 func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
@@ -796,6 +798,7 @@ func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 		Metadata:            metadata,
 		Source:              m.Source,
 		SkipLabelValidation: m.SkipLabelValidation,
+		ResourceTable:       m.ResourceTable,
 	}
 }
 

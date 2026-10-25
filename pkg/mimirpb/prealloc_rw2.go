@@ -82,7 +82,8 @@ func ReuseRW2(req *WriteRequest) {
 // It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
 // It might retain references in the RW1 request. It's not safe to free the RW1 request until the RW2 request is no longer used.
 // Series with data carry their own metadata, and the request's metric family metadata goes in series without data,
-// which stand in for the families.
+// which stand in for the families. Series with data also carry their resource refs, into a table of only the resources
+// they refer to.
 func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbols, offset uint32) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
@@ -130,6 +131,13 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		rw2Timeseries = make([]TimeSeriesRW2, 0, expTimeseriesCount)
 	}
 
+	// The request's resource table may be shared with other requests split from the same one, and its series' refs
+	// index it, so the record gets a table of its own: resourceRefs maps a ref to the record's, or to 0 until it has one.
+	var resourceRefs []uint32
+	if len(rw1.ResourceTable) > 0 {
+		resourceRefs = make([]uint32, len(rw1.ResourceTable)+1)
+	}
+
 	for _, ts := range rw1.Timeseries {
 		const stringsPerLabel = 2
 		expLabelsCount := len(ts.Labels) * stringsPerLabel
@@ -144,12 +152,27 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 
 		// Only series with data carry their own metadata: decoders take a series without data for a metric
 		// family's.
-		var metadata MetadataRW2
-		if !ts.SeriesMetadata.IsEmpty() && (len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0) {
-			metadata = MetadataRW2{
-				Type:    MetadataRW2_MetricType(ts.SeriesMetadata.Type),
-				HelpRef: symbols.Symbolize(ts.SeriesMetadata.Help),
-				UnitRef: symbols.Symbolize(ts.SeriesMetadata.Unit),
+		var (
+			metadata    MetadataRW2
+			resourceRef uint32
+		)
+		if len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 {
+			if !ts.SeriesMetadata.IsEmpty() {
+				metadata = MetadataRW2{
+					Type:    MetadataRW2_MetricType(ts.SeriesMetadata.Type),
+					HelpRef: symbols.Symbolize(ts.SeriesMetadata.Help),
+					UnitRef: symbols.Symbolize(ts.SeriesMetadata.Unit),
+				}
+			}
+			if ts.ResourceRef != 0 {
+				if int(ts.ResourceRef) >= len(resourceRefs) {
+					return nil, fmt.Errorf("series resource ref %d is outside the request's table of %d resources", ts.ResourceRef, len(rw1.ResourceTable))
+				}
+				if resourceRefs[ts.ResourceRef] == 0 {
+					rw2.ResourceTable = append(rw2.ResourceTable, rw1.ResourceTable[ts.ResourceRef-1])
+					resourceRefs[ts.ResourceRef] = uint32(len(rw2.ResourceTable))
+				}
+				resourceRef = resourceRefs[ts.ResourceRef]
 			}
 		}
 
@@ -160,6 +183,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 			Exemplars:        FromExemplarsToExemplarsRW2(ts.Exemplars, symbols),
 			Metadata:         metadata,
 			CreatedTimestamp: ts.CreatedTimestamp,
+			ResourceRef:      resourceRef,
 		})
 	}
 

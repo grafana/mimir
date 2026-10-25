@@ -575,7 +575,7 @@ func TestMimirAppender(t *testing.T) {
 						}
 					}
 
-					series, metadata := appender.GetResult()
+					series, metadata, _ := appender.GetResult()
 					series = testutil.RemoveEmptyObjectFromSeries(series)
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)

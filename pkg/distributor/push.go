@@ -215,6 +215,15 @@ func handler(
 				req.SkipLabelCountValidation = false
 			}
 
+			// Only OTLP ingestion gives series resources: a client's Remote Write body can't. Decoding rejects refs
+			// outside the table, so without one there are none.
+			if len(req.ResourceTable) > 0 {
+				req.ResourceTable = nil
+				for _, ts := range req.Timeseries {
+					ts.ResourceRef = 0
+				}
+			}
+
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
 				rb.CleanUp()

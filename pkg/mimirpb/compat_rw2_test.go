@@ -47,6 +47,8 @@ func TestRW2TypesCompatible(t *testing.T) {
 	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
 	rootNode, _ = expectedTree.(*treeprint.Node)
 	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
+	// And a series' OTel resource is Mimir-specific, as a field number upstream doesn't use.
+	rootNode.Nodes[1].AddNode("+0 ResourceRef: uint32 protobuf:varint,1000")
 	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
 	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
 	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]

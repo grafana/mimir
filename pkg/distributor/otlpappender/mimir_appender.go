@@ -39,6 +39,12 @@ type MimirAppender struct {
 	// This is needed to not send metadata duplicates all the time.
 	// We could get rid of this if we switched to RW2 all the way through.
 	metricFamilies map[string]metadata.Metadata
+
+	// resourceTable has an entry per resource that series are appended with, which their ResourceRef refers to. The
+	// converter gives the series of each ResourceMetrics the same resource, so the last one's ref is kept.
+	resourceTable   []mimirpb.ResourceEntry
+	lastResource    *storage.ResourceContext
+	lastResourceRef uint32
 }
 
 func NewCombinedAppender() *MimirAppender {
@@ -51,9 +57,9 @@ func NewCombinedAppender() *MimirAppender {
 	}
 }
 
-// GetResult returns the created timeseries and metadata.
-func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
-	return c.series, c.metadata
+// GetResult returns the created timeseries and metadata, and the resource table their resource refs index.
+func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceEntry) {
+	return c.series, c.metadata, c.resourceTable
 }
 
 func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
@@ -65,6 +71,9 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
 		if !opts.Metadata.IsEmpty() {
 			c.series[idx.idx].SeriesMetadata = mimirpb.SeriesMetadata{Type: metricTypeToMimirType(opts.Metadata.Type), Help: opts.Metadata.Help, Unit: opts.Metadata.Unit}
+		}
+		if opts.Resource != nil && len(opts.Resource.Attributes) > 0 {
+			c.series[idx.idx].ResourceRef = c.resourceRef(opts.Resource)
 		}
 	}
 
@@ -80,6 +89,44 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 	c.appendMetadata(opts.MetricFamilyName, opts.Metadata)
 
 	return 0, nil
+}
+
+// resourceRef returns the ref of the resource table's entry for r, adding one if it's new.
+func (c *MimirAppender) resourceRef(r *storage.ResourceContext) uint32 {
+	if r == c.lastResource {
+		return c.lastResourceRef
+	}
+	// The converter copied the typed attributes for the request, so they can be kept.
+	entry := mimirpb.ResourceEntry{Attributes: make([]mimirpb.ResourceAttribute, len(r.Attributes))}
+	for i, a := range r.Attributes {
+		entry.Attributes[i] = mimirpb.ResourceAttribute{
+			Key:         a.Key,
+			Type:        resourceAttributeTypeToMimirType(a.Type),
+			StringValue: a.String,
+			BoolValue:   a.Bool,
+			IntValue:    a.Int,
+			DoubleValue: a.Double,
+			BytesValue:  a.Bytes,
+		}
+	}
+	c.resourceTable = append(c.resourceTable, entry)
+	c.lastResource, c.lastResourceRef = r, uint32(len(c.resourceTable))
+	return c.lastResourceRef
+}
+
+func resourceAttributeTypeToMimirType(t storage.ResourceAttributeType) mimirpb.ResourceAttribute_Type {
+	switch t {
+	case storage.ResourceAttributeBool:
+		return mimirpb.RESOURCE_ATTRIBUTE_BOOL
+	case storage.ResourceAttributeInt:
+		return mimirpb.RESOURCE_ATTRIBUTE_INT
+	case storage.ResourceAttributeDouble:
+		return mimirpb.RESOURCE_ATTRIBUTE_DOUBLE
+	case storage.ResourceAttributeBytes:
+		return mimirpb.RESOURCE_ATTRIBUTE_BYTES
+	default:
+		return mimirpb.RESOURCE_ATTRIBUTE_STRING
+	}
 }
 
 func (c *MimirAppender) Commit() error   { return nil }

@@ -619,7 +619,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				}
 			}
 			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+			mimirTS, _, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				md,
@@ -695,7 +695,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
 		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+		mimirTS, _, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
 			md,
@@ -906,7 +906,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+			mimirTS, _, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				tc.input,
@@ -998,7 +998,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+			mimirTS, _, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				tc.input,

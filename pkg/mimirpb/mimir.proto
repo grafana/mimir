@@ -41,6 +41,33 @@ message WriteRequest {
 
   // Skip label count validation.
   bool skip_label_count_validation = 1001;
+
+  // The OTel resources that series refer to by their resource_ref, in records only.
+  repeated ResourceEntry resource_table = 1002 [(gogoproto.nullable) = false];
+}
+
+// ResourceEntry is an OTel resource's attributes, in the request's order.
+message ResourceEntry {
+  repeated ResourceAttribute attributes = 1 [(gogoproto.nullable) = false];
+}
+
+// ResourceAttribute is an OTel resource attribute, with its value in the field its type names. Arrays and maps are
+// strings, in their OTLP string form (JSON).
+message ResourceAttribute {
+  enum Type {
+    RESOURCE_ATTRIBUTE_STRING = 0;
+    RESOURCE_ATTRIBUTE_BOOL = 1;
+    RESOURCE_ATTRIBUTE_INT = 2;
+    RESOURCE_ATTRIBUTE_DOUBLE = 3;
+    RESOURCE_ATTRIBUTE_BYTES = 4;
+  }
+  string key = 1;
+  Type type = 2;
+  string string_value = 3;
+  bool bool_value = 4;
+  int64 int_value = 5;
+  double double_value = 6;
+  bytes bytes_value = 7;
 }
 
 message WriteResponse {}
@@ -400,6 +427,9 @@ message TimeSeriesRW2 {
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
   int64 created_timestamp = 6;
+
+  // Mimir-specific: the series' OTel resource, 1-based into the request's resource_table, or 0 for none.
+  uint32 resource_ref = 1000;
 }
 
 message ExemplarRW2 {

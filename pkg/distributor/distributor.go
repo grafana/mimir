@@ -206,6 +206,7 @@ type Distributor struct {
 	sampleValidationMetrics   *sampleValidationMetrics
 	exemplarValidationMetrics *exemplarValidationMetrics
 	metadataValidationMetrics *metadataValidationMetrics
+	resourceLimitMetrics      *resourceLimitMetrics
 
 	// Metrics to be passed to distributor push handlers
 	PushMetrics *PushMetrics
@@ -695,6 +696,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   newSampleValidationMetrics(reg),
 		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
 		metadataValidationMetrics: newMetadataValidationMetrics(reg),
+		resourceLimitMetrics:      newResourceLimitMetrics(reg),
 
 		hashCollisionCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_distributor_hash_collisions_total",
@@ -1029,6 +1031,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.sampleValidationMetrics.deleteUserMetrics(userID)
 	d.exemplarValidationMetrics.deleteUserMetrics(userID)
 	d.metadataValidationMetrics.deleteUserMetrics(userID)
+	d.resourceLimitMetrics.deleteUserMetrics(userID)
 }
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
@@ -1714,6 +1717,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 		if len(removeIndexes) > 0 {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
+		}
+
+		if len(req.ResourceTable) > 0 {
+			maxAttributes, maxValueLength := d.limits.NativeResourcesLimits(userID)
+			applyResourceLimits(d.resourceLimitMetrics, userID, req, maxAttributes, maxValueLength)
 		}
 
 		if validatedSamples == 0 && validatedMetadata == 0 {
@@ -2559,7 +2567,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+			req := req.ForIndexes(indexes, initialMetadataIndex).WithoutResourceTable()
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
 			if err != nil {
