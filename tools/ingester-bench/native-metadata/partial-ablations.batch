@@ -9,13 +9,13 @@
 #
 # which gives each partial ablation's extras, and their difference from the full ablation's: what the choice turned
 # off costs, or saves, seriesstore. Run it from a checkout of this file's commit; the full ablation is phase2.batch's,
-# of 46d1da3b79, whose code these builds differ from only by the switches' files. Each pair runs twice in each order,
+# of b871973255, whose code these builds differ from only by the switches' files. Each pair runs twice in each order,
 # at the hour of phase2.batch's pairs of one engine.
 
-build noskip 393290e390 tags=native_metadata_ablation,ablation_without_unchanged_skip
-build notable 393290e390 tags=native_metadata_ablation,ablation_without_transaction_table
-build nocache 393290e390 tags=native_metadata_ablation,ablation_without_value_cache
-build nocap 393290e390 tags=native_metadata_ablation,ablation_without_version_cap
+build noskip 38f28487af tags=native_metadata_ablation,ablation_without_unchanged_skip
+build notable 38f28487af tags=native_metadata_ablation,ablation_without_transaction_table
+build nocache 38f28487af tags=native_metadata_ablation,ablation_without_value_cache
+build nocap 38f28487af tags=native_metadata_ablation,ablation_without_version_cap
 
 run noskip-1 noskip seriesstore noskip seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
 run notable-1 notable seriesstore notable seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
