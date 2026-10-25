@@ -22,6 +22,9 @@ const (
 	creditShare = 0.5
 	// Seriesstore with metadata off may cost at most this much more than the TSDB, at the upper bound.
 	exitGateMargin = 0.10
+	// An engine's extra at most this share of the TSDB arm's cost with metadata off, at the upper bound, is within the
+	// cost budget, which says whether metadata is practical at all.
+	budgetShare = 0.05
 	// The bytes of the inline metadata of each series entry seriesstore has room for, which on minus off cancels.
 	structuralBytesPerEntry = 8
 )
@@ -62,6 +65,16 @@ type metricDecision struct {
 	// below 0, "keep seriesstore's" when surely above, or inconclusive, or not evaluated.
 	ChoicesOnSeriesstore estimate
 	SeriesstoreLesson    string
+	// The cost budget, in the metric's terms, and whether each engine's extra is within it.
+	Budget                                    float64
+	TSDBWithinBudget, SeriesstoreWithinBudget bool
+}
+
+// applyBudget checks both engines' extras against the budget, at their upper bounds: an extra without an interval
+// isn't within it.
+func (m *metricDecision) applyBudget(budget float64) {
+	m.Budget = budget
+	m.TSDBWithinBudget, m.SeriesstoreWithinBudget = m.TSDB.High <= budget, m.Seriesstore.High <= budget
 }
 
 type phase2Decision struct {
@@ -69,6 +82,8 @@ type phase2Decision struct {
 	Decision   string
 	Credit     string
 	Outcome    string
+	// Whether Phase 6, the columnar layout, starts: "triggered: " and why, or "not triggered".
+	Phase6 string
 	// The exit gate: seriesstore off against the TSDB off, relative, and the persistent mismatches.
 	ParityCPU, ParityHeap estimate
 	Mismatches            int
@@ -232,9 +247,17 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	if pairs.Ablation.Baseline != "" {
 		ablation = pairExtras(a.Runs, pairs.Ablation)
 	}
-	floor := materialityShare * baselineMean(a.Runs, pairs.TSDB.Baseline)
-	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, floor)
+	cpuBaseline := baselineMean(a.Runs, pairs.TSDB.Baseline, func(run analyzedRun, side int) float64 { return run.Stats[side].ReplayCPUPerSample })
+	heapBaseline := baselineMean(a.Runs, pairs.TSDB.Baseline, func(run analyzedRun, side int) float64 {
+		if series := run.Memory[side][memorySeriesMetric]; series > 0 {
+			return run.Stats[side].LiveHeapEnd / series
+		}
+		return math.NaN()
+	})
+	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, materialityShare*cpuBaseline)
 	d.Bytes = decideMetric(tsdb.Bytes, seriesstore.Bytes, ablation.Bytes, 0)
+	d.CPU.applyBudget(budgetShare * cpuBaseline)
+	d.Bytes.applyBudget(budgetShare * heapBaseline)
 
 	switch {
 	case d.CPU.Verdict == "fail" || d.Bytes.Verdict == "fail":
@@ -269,6 +292,7 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	default:
 		d.Outcome = "port seriesstore's choices to #19563, recorded as inconclusive; seriesstore keeps its own design"
 	}
+	d.Phase6 = phase6Trigger(d)
 
 	parity := compareRuns(a.Runs, pairs.Parity)
 	d.ParityCPU, d.ParityHeap = parity.Estimates["replay CPU per sample"], parity.Estimates["heap live at end"]
@@ -282,13 +306,35 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	return d, nil
 }
 
-// baselineMean is the mean replay CPU per sample of the ingesters named name over the runs that count.
-func baselineMean(runs []analyzedRun, name string) float64 {
+// phase6Trigger says whether Phase 6, the columnar layout, starts: on the outcome towards columnar, or when neither
+// engine's extra is within the cost budget on a metric.
+func phase6Trigger(d phase2Decision) string {
+	var reasons []string
+	if d.Decision == "pass" && d.Credit == "credit" {
+		reasons = append(reasons, "the outcome is towards columnar")
+	}
+	for _, m := range []struct {
+		name string
+		d    metricDecision
+	}{{"CPU", d.CPU}, {"bytes", d.Bytes}} {
+		if !m.d.TSDBWithinBudget && !m.d.SeriesstoreWithinBudget {
+			reasons = append(reasons, fmt.Sprintf("neither engine's %s extra is within the cost budget", m.name))
+		}
+	}
+	if len(reasons) == 0 {
+		return "not triggered"
+	}
+	return "triggered: " + strings.Join(reasons, "; ")
+}
+
+// baselineMean is the mean of a statistic of the ingesters named name over the runs that count, of those it's
+// known for.
+func baselineMean(runs []analyzedRun, name string, of func(run analyzedRun, side int) float64) float64 {
 	sum, n := 0.0, 0
 	for _, run := range runs {
 		for side, other := range run.Names {
-			if other == name && len(run.Discard) == 0 {
-				sum += run.Stats[side].ReplayCPUPerSample
+			if v := of(run, side); other == name && len(run.Discard) == 0 && !math.IsNaN(v) {
+				sum += v
 				n++
 			}
 		}
@@ -320,6 +366,15 @@ func (d phase2Decision) print(w io.Writer) {
 	fmt.Fprintf(w, "decision %s, %s: %s\n", d.Decision, d.Credit, d.Outcome)
 	fmt.Fprintf(w, "on seriesstore, #19563's choices' extra minus its own: CPU %s: %s; bytes %s: %s\n",
 		d.CPU.ChoicesOnSeriesstore.absolute(), d.CPU.SeriesstoreLesson, d.Bytes.ChoicesOnSeriesstore.absolute(), d.Bytes.SeriesstoreLesson)
+	within := func(ok bool) string {
+		if ok {
+			return "within"
+		}
+		return "not within"
+	}
+	fmt.Fprintf(w, "cost budget, %.0f%% of the TSDB's with metadata off: CPU %.4g, TSDB %s, seriesstore %s; bytes %.4g, TSDB %s, seriesstore %s; Phase 6 %s\n",
+		budgetShare*100, d.CPU.Budget, within(d.CPU.TSDBWithinBudget), within(d.CPU.SeriesstoreWithinBudget),
+		d.Bytes.Budget, within(d.Bytes.TSDBWithinBudget), within(d.Bytes.SeriesstoreWithinBudget), d.Phase6)
 	fmt.Fprintf(w, "exit gate %s: seriesstore off against the TSDB off, CPU %s, heap %s, %d persistent mismatches\n", d.ExitGate, d.ParityCPU, d.ParityHeap, d.Mismatches)
 }
 
