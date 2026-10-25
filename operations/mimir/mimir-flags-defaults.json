@@ -424,6 +424,7 @@
   "ingester.native-metric-metadata-change-window": 3600000000000,
   "distributor.native-resources-max-attributes": 128,
   "distributor.native-resources-max-attribute-value-length": 2048,
+  "ingester.native-resources-indexed-attributes": "",
   "blocks-storage.tsdb.float-chunk-encoding": "xor",
   "blocks-storage.tsdb.histogram-chunk-encoding": "histogram",
   "ingester.active-series-custom-trackers": {},

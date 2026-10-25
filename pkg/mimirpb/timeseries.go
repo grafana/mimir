@@ -620,6 +620,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
 	dstTs.SeriesMetadata = SeriesMetadata{Type: srcTs.SeriesMetadata.Type, Help: strings.Clone(srcTs.SeriesMetadata.Help), Unit: strings.Clone(srcTs.SeriesMetadata.Unit)}
 	dstTs.ResourceRef = srcTs.ResourceRef
+	dstTs.Resource = srcTs.Resource
 
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {

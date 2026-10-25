@@ -131,6 +131,8 @@ type prometheusEngine struct {
 	blockDuration int64
 	// The head's max time when the TSDB opened, which native metadata starts after: the WAL replay brings none back.
 	nativeMetadataSince int64
+	// nativeResourcesEnabled is whether the TSDB opened with native resources.
+	nativeResourcesEnabled bool
 }
 
 func (e prometheusEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
@@ -148,7 +150,7 @@ func openPrometheusEngine(dir string, logger *slog.Logger, reg prometheus.Regist
 	}
 	// The ingester compacts on its own schedule.
 	db.DisableCompactions()
-	return prometheusEngine{DB: db, blockDuration: opts.MinBlockDuration, nativeMetadataSince: db.Head().MaxTime()}, nil
+	return prometheusEngine{DB: db, blockDuration: opts.MinBlockDuration, nativeMetadataSince: db.Head().MaxTime(), nativeResourcesEnabled: opts.EnableNativeResources}, nil
 }
 
 func (e prometheusEngine) Head() engineHead {

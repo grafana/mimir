@@ -6122,6 +6122,17 @@
         },
         {
           "kind": "field",
+          "name": "native_resources_indexed_attributes",
+          "required": false,
+          "desc": "Comma-separated descriptive attributes of resources, besides the identifying service.name, service.namespace and service.instance.id, that the ingester indexes, to find series by. Changing it takes effect when the tenant's TSDB next opens.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ingester.native-resources-indexed-attributes",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

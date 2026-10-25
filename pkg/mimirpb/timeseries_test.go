@@ -330,6 +330,9 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 			SkipUnmarshalingExemplars: true,
 			SeriesMetadata:            SeriesMetadata{Type: COUNTER, Help: "help", Unit: "seconds"},
 			ResourceRef:               2,
+			Resource: &ResourceEntry{Attributes: []ResourceAttribute{{
+				Key: "service.name", Type: RESOURCE_ATTRIBUTE_BYTES, StringValue: "frontend", BoolValue: true, IntValue: 1, DoubleValue: 1, BytesValue: []byte{1},
+			}}},
 		},
 	}
 

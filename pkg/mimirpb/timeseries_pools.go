@@ -49,7 +49,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || !ts.SeriesMetadata.IsEmpty() || ts.ResourceRef != 0 {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || !ts.SeriesMetadata.IsEmpty() || ts.ResourceRef != 0 || ts.Resource != nil {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -91,6 +91,7 @@ func ReuseTimeseries(ts *TimeSeries) {
 	// The strings may point into a large gRPC buffer too.
 	ts.SeriesMetadata = SeriesMetadata{}
 	ts.ResourceRef = 0
+	ts.Resource = nil
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)

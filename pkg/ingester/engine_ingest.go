@@ -37,6 +37,8 @@ type ingestBatch struct {
 	NativeMetricMetadata           bool
 	NativeMetricMetadataMaxChanges int
 	NativeMetricMetadataWindowMs   int64
+	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them.
+	NativeResources bool
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time
@@ -113,12 +115,16 @@ type extendedAppender interface {
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
 func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.AppenderV2(ctx).(extendedAppender), batch, sink)
+	var resources resourceStep
+	if batch.NativeResources && e.nativeResourcesEnabled {
+		resources = newTSDBResources(e.DB)
+	}
+	return ingestThroughAppender(e.AppenderV2(ctx).(extendedAppender), batch, sink, resources)
 }
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
-func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, nil, false)
+func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink, resources resourceStep) (ingestOutcome, error) {
+	outcome, err := appendBatch(app, batch, sink, nil, false, resources)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -136,7 +142,8 @@ func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink ingestS
 
 // appendBatch adds the batch to the appender, or with subset only the series at those indices, which the sink has
 // been asked to skip or not already. Errors the sink calls soft are reported to it, and any other error is returned.
-func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int, useSubset bool) (ingestOutcome, error) {
+// With resources, the series' resources go in too.
+func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int, useSubset bool, resources resourceStep) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
@@ -185,7 +192,8 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := outcome.Samples
 
-		// The series' metadata goes with each of its samples, as AppenderV2 takes it, but not with zero samples.
+		// The series' metadata and resource go with each of its samples, as AppenderV2 takes them, but not with zero
+		// samples.
 		sampleOptions := appOptions
 		if batch.NativeMetricMetadata && !ts.SeriesMetadata.IsEmpty() {
 			sampleOptions.Metadata = metadata.Metadata{
@@ -193,6 +201,9 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink ingestSink, subse
 				Unit: ts.SeriesMetadata.Unit,
 				Help: ts.SeriesMetadata.Help,
 			}
+		}
+		if resources != nil && ts.Resource != nil {
+			sampleOptions.Resource = resources.resource(ts.Resource, ref)
 		}
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0

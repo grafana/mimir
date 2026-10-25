@@ -4805,6 +4805,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.native-resources-max-attribute-value-length
 [native_resources_max_attribute_value_length: <int> | default = 2048]
 
+# (experimental) Comma-separated descriptive attributes of resources, besides
+# the identifying service.name, service.namespace and service.instance.id, that
+# the ingester indexes, to find series by. Changing it takes effect when the
+# tenant's TSDB next opens.
+# CLI flag: -ingester.native-resources-indexed-attributes
+[native_resources_indexed_attributes: <string> | default = ""]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

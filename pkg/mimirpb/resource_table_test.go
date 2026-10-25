@@ -36,16 +36,19 @@ func decodeRecord(t *testing.T, req *WriteRequest) *PreallocWriteRequest {
 	return decoded
 }
 
-// requireResources checks that each decoded series refers to the resource the test names it after, or to none.
+// requireResources checks that each decoded series refers to the resource the test names it after, or to none, and
+// has the entry its ref refers to.
 func requireResources(t *testing.T, req *PreallocWriteRequest, want map[string]string) {
 	t.Helper()
 	for _, ts := range req.Timeseries {
 		name := ts.Labels[0].Value
 		if ts.ResourceRef == 0 {
 			require.Empty(t, want[name], name)
+			require.Nil(t, ts.Resource, name)
 			continue
 		}
 		require.Equal(t, testResource(want[name]), req.ResourceTable[ts.ResourceRef-1], name)
+		require.Same(t, &req.ResourceTable[ts.ResourceRef-1], ts.Resource, name)
 	}
 }
 
