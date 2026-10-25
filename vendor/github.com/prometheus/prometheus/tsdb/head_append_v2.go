@@ -124,6 +124,12 @@ func (h *Head) appenderV2() *headAppenderV2 {
 
 type headAppenderV2 struct {
 	headAppenderBase
+
+	// Cached resource conversion to avoid redundant work when the same
+	// ResourceContext pointer is used for many series in a batch (e.g.
+	// histogram buckets and summary quantiles from the same OTLP resource).
+	cachedResourceCtx *storage.ResourceContext
+	cachedWALResource *record.RefResource
 }
 
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
@@ -174,8 +180,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		nativeMetadata  *metadata.Metadata
 		oversizedNative bool
 	)
-	// Quiet zeros are synthetic zero samples, which carry no metadata. Out-of-order ones are also accepted at any
-	// timestamp and only dropped at commit, after native metadata has been committed.
+	// Quiet zeros are synthetic zero samples, which carry no metadata or resource. Out-of-order ones are also accepted
+	// at any timestamp and only dropped at commit, after native metadata and resources have been committed.
 	quietZero := h == nil && fh == nil && math.Float64bits(v) == value.QuietZeroNaN
 	if a.head.nativeMetricMetadata != nil && !opts.Metadata.IsEmpty() && !quietZero {
 		m := opts.Metadata
@@ -267,6 +273,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			})
 			b.metadataSeries = append(b.metadataSeries, s)
 		}
+	}
+	if a.head.opts.EnableNativeResources && opts.Resource != nil && !quietZero {
+		a.updateResource(s, t, opts.Resource)
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
@@ -488,6 +497,41 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		return s
 	}
 	return appended
+}
+
+// updateResource buffers a resource update for a series if not already done in this batch.
+// The actual mutation is deferred to Commit() time.
+func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.ResourceContext) {
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return
+	}
+
+	// Cache the converted WAL record per ResourceContext pointer to avoid
+	// redundant allocations when the same resource is applied to many series
+	// (e.g. histogram sub-series share one ResourceContext).
+	if rc != a.cachedResourceCtx {
+		a.cachedWALResource = &record.RefResource{
+			MinTime:     t,
+			MaxTime:     t,
+			Identifying: rc.Identifying,
+			Descriptive: rc.Descriptive,
+		}
+		a.cachedResourceCtx = rc
+	}
+
+	// Buffer the resource update in the current batch.
+	b := a.getCurrentBatch(stNone, s.ref)
+	rr := *a.cachedWALResource
+	rr.Ref = s.ref
+	rr.MinTime = t
+	rr.MaxTime = t
+	b.resources = append(b.resources, rr)
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
 }
 
 var (

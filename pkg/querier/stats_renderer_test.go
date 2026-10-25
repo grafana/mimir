@@ -106,6 +106,7 @@ func TestStatsRenderer(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		5*time.Minute,
 		false,
 		false,

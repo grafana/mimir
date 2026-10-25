@@ -368,8 +368,20 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// EnableNativeMetadata enables experimental in-memory native metadata.
+	// EnableNativeMetadata enables experimental in-memory native metric metadata, per series.
 	EnableNativeMetadata bool
+
+	// EnableNativeResources enables the experimental in-memory store of OTel resource attributes, per series.
+	EnableNativeResources bool
+
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+
+	// EnableResourceAttrIndex enables the in-memory resource attribute inverted index
+	// for reverse lookup by attribute key:value.
+	EnableResourceAttrIndex bool
 
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
@@ -1343,6 +1355,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.EnableNativeResources = opts.EnableNativeResources
+	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
+	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -2729,6 +2744,18 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 // Head returns the databases's head.
 func (db *DB) Head() *Head {
 	return db.head
+}
+
+// ResourceHasContentHash reports whether the series at labelsHash has
+// a resource version with the given contentHash. Convenience pass-through
+// to Head.ResourceHasContentHash.
+func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ResourceHasContentHash(labelsHash, contentHash)
+}
+
+// ResourceHasContentHashByRef is a pass-through to Head.ResourceHasContentHashByRef.
+func (db *DB) ResourceHasContentHashByRef(ref storage.SeriesRef, contentHash uint64) bool {
+	return db.head.ResourceHasContentHashByRef(ref, contentHash)
 }
 
 // Close the partition.

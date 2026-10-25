@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/prometheus/otlptranslator"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -61,6 +63,12 @@ type Settings struct {
 	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
 	// consecutive underscores in label names when AllowUTF8 is false.
 	LabelNamePreserveMultipleUnderscores bool
+	// EnableNativeResources passes each ResourceMetrics' resource to the appender, in AppendV2Options.Resource, for
+	// a native resource store. Off, the resource isn't built.
+	EnableNativeResources bool
+	// TypedResourceAttributes also fills the resource's typed attributes, ResourceContext.Attributes. It applies only
+	// with EnableNativeResources.
+	TypedResourceAttributes bool
 }
 
 // cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
@@ -94,6 +102,11 @@ type PrometheusConverter struct {
 	resourceLabels *cachedResourceLabels
 	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
+
+	// resourceCtx holds the current resource context for the
+	// current ResourceMetrics boundary. Set once per resource via buildResourceContext,
+	// then passed through AppendV2Options.Resource to the storage layer.
+	resourceCtx *storage.ResourceContext
 
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
@@ -263,6 +276,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			errs = errors.Join(errs, err)
 			continue
 		}
+		c.buildResourceContext(resource, settings)
 
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
@@ -317,6 +331,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						Help: metric.Description(),
 					},
 					MetricFamilyName: promName,
+					Resource:         c.resourceCtx,
 				}
 
 				// handle individual metrics based on type
@@ -552,4 +567,67 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 func (c *PrometheusConverter) clearResourceContext() {
 	c.resourceLabels = nil
 	c.scopeLabels = nil
+	c.resourceCtx = nil
+}
+
+// buildResourceContext builds a ResourceContext from the given OTLP resource, if native resources are enabled.
+// The context is cached on the converter and reused for all datapoints within the same ResourceMetrics.
+func (c *PrometheusConverter) buildResourceContext(resource pcommon.Resource, settings Settings) {
+	c.resourceCtx = nil
+	if !settings.EnableNativeResources {
+		return
+	}
+	attrs := resourceAttrsToMap(resource.Attributes())
+	if len(attrs) == 0 {
+		return
+	}
+
+	identifying, descriptive := seriesmetadata.SplitAttributes(attrs)
+
+	c.resourceCtx = &storage.ResourceContext{
+		Identifying: identifying,
+		Descriptive: descriptive,
+	}
+	if settings.TypedResourceAttributes {
+		c.resourceCtx.Attributes = typedResourceAttributes(resource.Attributes())
+	}
+}
+
+// typedResourceAttributes copies OTel resource attributes with their types, in the resource's order.
+func typedResourceAttributes(attrs pcommon.Map) []storage.ResourceAttribute {
+	result := make([]storage.ResourceAttribute, 0, attrs.Len())
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		a := storage.ResourceAttribute{Key: strings.Clone(key)}
+		switch value.Type() {
+		case pcommon.ValueTypeStr:
+			a.String = strings.Clone(value.Str())
+		case pcommon.ValueTypeBool:
+			a.Type, a.Bool = storage.ResourceAttributeBool, value.Bool()
+		case pcommon.ValueTypeInt:
+			a.Type, a.Int = storage.ResourceAttributeInt, value.Int()
+		case pcommon.ValueTypeDouble:
+			a.Type, a.Double = storage.ResourceAttributeDouble, value.Double()
+		case pcommon.ValueTypeBytes:
+			a.Type, a.Bytes = storage.ResourceAttributeBytes, value.Bytes().AsRaw()
+		default:
+			// Arrays and maps; AsString returns a new string.
+			a.String = value.AsString()
+		}
+		result = append(result, a)
+		return true
+	})
+	return result
+}
+
+// resourceAttrsToMap converts OTel resource attributes to a map[string]string.
+func resourceAttrsToMap(attrs pcommon.Map) map[string]string {
+	if attrs.Len() == 0 {
+		return nil
+	}
+	result := make(map[string]string, attrs.Len())
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		result[key] = value.AsString()
+		return true
+	})
+	return result
 }

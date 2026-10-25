@@ -272,6 +272,7 @@ func NewQuerierHandler(
 		otlpEnabled,
 		false,
 		false,
+		false, // Mimir's distributor ingests OTLP, with its own handling of resources.
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
 		appendMetadata,
