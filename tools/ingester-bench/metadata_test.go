@@ -133,20 +133,26 @@ func consumeRecords(t *testing.T, feed *feed, f func(*kgo.Record, *mimirpb.Write
 	}
 }
 
-// The threshold profile's records are made of what its sample of real partitions' records is, at the bench's size.
-func TestThresholdProfileHasItsComposition(t *testing.T) {
-	profile, err := loadProfile("native-metadata/threshold.json")
-	require.NoError(t, err)
-	require.NotNil(t, profile.Series.Composition)
-	f, err := newFeed(newWorld(profile.Series, 1_650_000, 1), "", 0)
-	require.NoError(t, err)
-	t.Cleanup(f.close)
-	// A third of the profile's scrape interval, whose seconds are alike.
-	start := time.Now().UnixMilli()/60_000*60_000 - 3_600_000
-	require.NoError(t, f.produceSeconds(context.Background(), start, start+20_000))
+// The threshold profile's records, and the production sensitivity profile's, are made of what their samples of real
+// partitions' records are, at the bench's size.
+func TestProfilesHaveTheirComposition(t *testing.T) {
+	// Seconds of records to sample: a third of the profiles' scrape interval, whose seconds are alike, and the whole
+	// interval for the production profile, whose stand-ins, of one request in 50, take more records to settle.
+	for path, seconds := range map[string]int64{"native-metadata/threshold.json": 20, "native-metadata/production.json": 60} {
+		t.Run(path, func(t *testing.T) {
+			profile, err := loadProfile(path)
+			require.NoError(t, err)
+			require.NotNil(t, profile.Series.Composition)
+			f, err := newFeed(newWorld(profile.Series, 1_650_000, 1), "", 0)
+			require.NoError(t, err)
+			t.Cleanup(f.close)
+			start := time.Now().UnixMilli()/60_000*60_000 - 3_600_000
+			require.NoError(t, f.produceSeconds(context.Background(), start, start+seconds*1000))
 
-	report := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
-	report.Composition, report.CompositionTarget = f.Composition(), profile.Series.Composition
-	require.Greater(t, report.Composition.Records, 200)
-	require.Empty(t, analyzeRun("run", report).Discard)
+			report := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+			report.Composition, report.CompositionTarget = f.Composition(), profile.Series.Composition
+			require.Greater(t, report.Composition.Records, 200)
+			require.Empty(t, analyzeRun("run", report).Discard)
+		})
+	}
 }

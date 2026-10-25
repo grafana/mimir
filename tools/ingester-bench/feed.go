@@ -187,7 +187,11 @@ func (f *feed) Composition() Composition {
 func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 	w := f.world
 	partitions, mixTargets := max(1, w.profile.PartitionsPerTenant), w.profile.SeriesPerTarget > 0
-	produce := func(tenant string, series []mimirpb.PreallocTimeseries, families map[string]*mimirpb.MetricMetadata) {
+	produce := func(tenant string, request int, series []mimirpb.PreallocTimeseries, families map[string]*mimirpb.MetricMetadata) {
+		if share := w.profile.LegacyMetadataShare; share < 1 && unitOf(seededHash(w.seed, tenant, strconv.FormatInt(s, 10), strconv.Itoa(request), "legacy")) >= share {
+			// The request's sender sends its families' metadata rarely, in requests of their own.
+			families = nil
+		}
 		// The request's part for each partition, as a distributor splits it: by series, and the metric families'
 		// metadata of the series, which records carry as stand-ins, by family. The ingesters read one partition, so
 		// every part goes to it.
@@ -224,6 +228,8 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 			for t := range tenants {
 				var batch []mimirpb.PreallocTimeseries
 				families := map[string]*mimirpb.MetricMetadata{}
+				// The tenant's requests of the second so far.
+				requests := 0
 				// The metric of the series added, whose family's metadata the request carries.
 				var current *metricModel
 				samples := 0
@@ -234,7 +240,8 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 						families[current.name] = &mimirpb.MetricMetadata{MetricFamilyName: current.name, Type: m.Type, Help: m.Help, Unit: m.Unit}
 					}
 					if len(batch) >= f.requestSeries {
-						produce(t.id, batch, families)
+						produce(t.id, requests, batch, families)
+						requests++
 						batch, families = nil, map[string]*mimirpb.MetricMetadata{}
 					}
 				}
@@ -262,7 +269,7 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 					add(ts)
 				}
 				if len(batch) > 0 {
-					produce(t.id, batch, families)
+					produce(t.id, requests, batch, families)
 				}
 				count.Add(int64(samples))
 			}

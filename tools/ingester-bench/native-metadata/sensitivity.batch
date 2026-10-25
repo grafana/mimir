@@ -1,0 +1,30 @@
+# The native metadata prototype's Phase 2 sensitivity runs, for run-batch.sh: the TSDB's and seriesstore's pairs with
+# the production profile, whose records and help lengths are a production cell's sample's, rather than the threshold
+# profile's. Run it into a RESULTS of its own, and report it with
+#
+#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
+#
+# whose CPU and bytes ratios say whether Phase 2's decision holds for such records; its exit gate and outcome are
+# Phase 2's own, which this has no parity runs for. Run it from a checkout of this file's commit: the build is Phase 2's,
+# and the bench, with the production profile's settings, the checkout's. Each pair runs twice in each order.
+#
+# production.json is the threshold profile with a production cell's sample of 6000 records of three partitions
+# (2026-10-25): 7.74 series each, 1.20 series per family, 0.064 metric family entries, and helps of 30 families, of
+# median 59, p90 97 and at most 118 characters. Its series per request, series per target, partitions per tenant and
+# share of requests with their families' metadata were tuned to reproduce them, at the bench's 1.65M series: 7.73,
+# 1.19 and 0.06, over 5 minutes of records. Its records are smaller and more, which makes replays longer: runs start at
+# 30 past an odd hour, where both of the replay's compaction thresholds are minutes apart and the next is 90 minutes in,
+# past the window of an ingester ready up to 49 minutes in, where an even hour's is 60 minutes in, which a TSDB ready
+# past 28 minutes would compact in.
+
+build phase2 b871973255
+
+run tsdb-1 phase2 prometheus phase2 prometheus metadata=b profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run seriesstore-1 phase2 seriesstore phase2 seriesstore metadata=b profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run tsdb-2 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run seriesstore-2 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run tsdb-3 phase2 prometheus phase2 prometheus metadata=b profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run seriesstore-3 phase2 seriesstore phase2 seriesstore metadata=b profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run tsdb-4 phase2 prometheus phase2 prometheus metadata=a profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
+run seriesstore-4 phase2 seriesstore phase2 seriesstore metadata=a profile=tools/ingester-bench/native-metadata/production.json phase=90 -query-scale=0
