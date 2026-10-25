@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -170,11 +169,11 @@ func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (t
 	if err != nil {
 		return 0, err
 	}
-	end, err := strconv.ParseFloat(values.Get("end"), 64)
+	// The route takes the same timestamps as the query API: seconds or RFC 3339.
+	endMs, err := util.ParseTime(values.Get("end"))
 	if err != nil {
 		return 0, err
 	}
-	endMs := int64(end * 1000)
 	now := c.now()
 	if fresh := validation.MaxDurationPerTenant(tenantIDs, c.limits.MaxCacheFreshness); endMs > now.Add(-fresh).UnixMilli() {
 		return 0, nil
