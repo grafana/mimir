@@ -25,9 +25,12 @@ const MaxCounterBuckets = 1440
 type CounterOptions struct {
 	// MinT and MaxT are the window in milliseconds, [MinT, MaxT).
 	MinT, MaxT int64
-	// Step, when positive, cuts the window into buckets of this width, and
-	// each group gets one count per bucket.
+	// Step, when positive, starts a bucket every Step, and each group gets
+	// one count per bucket.
 	Step int64
+	// Window is each bucket's width, as Buckets describes; 0 means Step.
+	// Only with Step.
+	Window int64
 	// GroupBy is the label to group by, __name__ when empty.
 	GroupBy string
 	// Hashes keeps each group's label-set hashes instead of a count, so a
@@ -81,17 +84,17 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 	if opts.SketchAbove < 0 {
 		return nil, errors.New("sketch_above can't be negative")
 	}
+	if opts.Window != 0 && opts.Step == 0 {
+		return nil, errors.New("a window needs a step")
+	}
 	c := &SeriesCounter{opts: opts, buckets: 1, counts: map[string][]int64{}, sets: map[string]map[uint64]struct{}{}}
 	if opts.Step > 0 {
 		if opts.Hashes {
 			return nil, errors.New("hashes can't be combined with a step")
 		}
-		if (opts.MaxT-opts.MinT)%opts.Step != 0 {
-			return nil, fmt.Errorf("step %d doesn't divide the window [%d, %d)", opts.Step, opts.MinT, opts.MaxT)
-		}
-		c.buckets = int((opts.MaxT - opts.MinT) / opts.Step)
-		if c.buckets > MaxCounterBuckets {
-			return nil, fmt.Errorf("the window has %d buckets of the step, more than %d", c.buckets, MaxCounterBuckets)
+		var err error
+		if c.buckets, err = Buckets(opts.MinT, opts.MaxT, opts.Step, opts.Window); err != nil {
+			return nil, err
 		}
 		c.seen = make([]bool, c.buckets)
 	}
@@ -147,8 +150,7 @@ func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange)
 		if r.MaxTime < c.opts.MinT || r.MinTime >= c.opts.MaxT {
 			continue
 		}
-		first := max(0, (r.MinTime-c.opts.MinT)/c.opts.Step)
-		last := min(int64(c.buckets-1), (r.MaxTime-c.opts.MinT)/c.opts.Step)
+		first, last := BucketSpan(c.opts.MinT, c.opts.Step, c.opts.Window, c.buckets, r.MinTime, r.MaxTime)
 		for i := first; i <= last; i++ {
 			c.seen[i] = true
 		}
