@@ -51,6 +51,10 @@ message MetricNameCountsRequest {
   repeated string block_ids = 1;
   // Refuse with RESOURCE_EXHAUSTED when the blocks hold more distinct metric names than this. 0 means no limit.
   int64 max_names = 2;
+  // Refuse with RESOURCE_EXHAUSTED, before any is read, when the blocks' __name__ postings offsets table entries,
+  // priced from the index-header's samples, come to more than this many bytes. The store-gateway's tenant limit
+  // bounds it too. 0 means only that limit.
+  int64 max_index_bytes = 3;
 }
 
 message MetricNameCount {
@@ -63,6 +67,9 @@ message MetricNameCountsResponse {
   repeated MetricNameCount counts = 1;
   // Blocks that were counted. Set on every message of the stream.
   repeated string block_ids = 2;
+  // Bytes of the __name__ postings offsets table entries walked, priced as for max_index_bytes. Set on the first
+  // message of the stream only.
+  int64 postings_offsets_table_bytes = 3;
 }
 
 message SeriesCountsRequest {

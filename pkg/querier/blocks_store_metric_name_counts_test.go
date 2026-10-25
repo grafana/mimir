@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -161,4 +162,58 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 		require.Error(t, err)
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	})
+}
+
+func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	shards := bucketindex.Blocks{
+		{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
+		{ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"},
+	}
+	gateway := func(addr string, table int64, got *[]*storegatewaypb.MetricNameCountsRequest) *storeGatewayClientMock {
+		return &storeGatewayClientMock{remoteAddr: addr, mockedMetricNameCountsStream: func(req *storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+			*got = append(*got, req)
+			return []*storegatewaypb.MetricNameCountsResponse{
+				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "a", Count: 1}}, PostingsOffsetsTableBytes: table},
+				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "b", Count: 1}}},
+			}, nil
+		}}
+	}
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streamed name table: %t", stream), func(t *testing.T) {
+			var got []*storegatewaypb.MetricNameCountsRequest
+			clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
+			req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000, StreamNames: stream}
+			res, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+			require.NoError(t, err)
+			if res.names != nil {
+				defer res.names.close()
+			}
+			assert.Equal(t, readIndexHeader, res.Read)
+			assert.Equal(t, int64(100), res.PostingsOffsetsTableBytes, "the tables both store-gateways walked")
+			require.Len(t, got, 2)
+			for _, r := range got {
+				assert.Equal(t, int64(500), r.MaxIndexBytes, "max_index_bytes is split across the calls")
+			}
+		})
+	}
+
+	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: func(*storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+		return nil, status.Error(codes.ResourceExhausted, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")
+	}}
+	var got []*storegatewaypb.MetricNameCountsRequest
+	clients := map[BlocksStoreClient][][]ulid.ULID{refusing: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
+	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
+	_, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+	require.ErrorContains(t, err, "max_index_bytes 1000, split into 500 bytes for each of 2 store-gateway calls")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+
+	overNames := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: func(*storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+		return nil, status.Error(codes.ResourceExhausted, "the blocks hold 12 distinct metric names, more than max_names 10")
+	}}
+	clients = map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
+	_, err = seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+	require.ErrorContains(t, err, "more than max_names 10")
+	assert.NotContains(t, err.Error(), "split into", "a max_names refusal isn't blamed on max_index_bytes")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }

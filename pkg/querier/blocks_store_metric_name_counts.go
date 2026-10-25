@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/oklog/ulid/v2"
@@ -26,6 +28,9 @@ type MetricNameCountsResult struct {
 	MissingBlocks []ulid.ULID
 	Retries       int
 	StoreGateways int
+	// PostingsOffsetsTableBytes is the __name__ postings offsets table the
+	// store-gateways walked, as they priced it for max_index_bytes.
+	PostingsOffsetsTableBytes int64
 }
 
 // estimatePart is one compartment's blocks for a window.
@@ -112,27 +117,31 @@ func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID st
 	if err := checkMetricNameCountsBlocks(all, minT, maxT); err != nil {
 		return MetricNameCountsResult{}, err
 	}
-	return q.metricNameCounts(ctx, tenantID, parts)
+	// No max_index_bytes: each store-gateway applies only the tenant's limit
+	// to its own call.
+	return q.metricNameCounts(ctx, tenantID, parts, 0)
 }
 
 // metricNameCounts fans the index-header count out over parts, which the
 // caller has checked to be one block range of series-disjoint blocks. Each
 // call's stream is collected before it is added, so a call that fails
-// part-way and is retried elsewhere is not counted twice.
-func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID string, parts []estimatePart) (MetricNameCountsResult, error) {
+// part-way and is retried elsewhere is not counted twice. maxIndexBytes, 0
+// for none, is split across the calls as for series counts.
+func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID string, parts []estimatePart, maxIndexBytes int64) (MetricNameCountsResult, error) {
 	res := MetricNameCountsResult{Counts: map[string]int64{}}
 	var mtx sync.Mutex
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, 0, func(ctx context.Context, c estimateCall, _ int64, _ int) (estimateCallResult, error) {
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, maxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		addr := c.client.RemoteAddress()
-		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames}
+		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames, MaxIndexBytes: perCall}
 		stream, err := c.client.MetricNameCounts(ctx, req)
 		if err != nil {
-			return estimateCallResult{}, classifyStoreGatewayError(addr, err)
+			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
 		}
 		var (
 			batches [][]*storegatewaypb.MetricNameCount
 			ids     []string
+			table   int64
 		)
 		for {
 			resp, err := stream.Recv()
@@ -140,10 +149,11 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 				break
 			}
 			if err != nil {
-				return estimateCallResult{}, classifyStoreGatewayError(addr, err)
+				return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
 			}
 			batches = append(batches, resp.Counts)
 			ids = resp.BlockIds
+			table = max(table, resp.PostingsOffsetsTableBytes)
 		}
 		counted, err := parseBlockIDs(addr, ids)
 		if err != nil {
@@ -161,7 +171,8 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 				res.Counts[nc.Name] += nc.Count
 			}
 		}
-		return estimateCallResult{counted: counted}, nil
+		res.PostingsOffsetsTableBytes += table
+		return estimateCallResult{counted: counted, indexBytes: table}, nil
 	})
 	if err != nil {
 		return MetricNameCountsResult{}, err
@@ -170,6 +181,18 @@ func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID st
 		return MetricNameCountsResult{}, err
 	}
 	return res, nil
+}
+
+// nameTableCallError classifies a name-table call's error, saying how
+// max_index_bytes was split when a store-gateway refused on it. A refusal on
+// max_names is left as it is.
+func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, calls int) error {
+	onIndexBytes := strings.Contains(err.Error(), "max_index_bytes")
+	err = classifyStoreGatewayError(addr, err)
+	if onIndexBytes && estimateHTTPStatus(err) == http.StatusUnprocessableEntity && maxIndexBytes > 0 {
+		return refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)
+	}
+	return err
 }
 
 // setCoverage records which of the blocks in parts were counted. When no

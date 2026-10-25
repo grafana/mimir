@@ -248,6 +248,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.PostingsFetchedBytes += res.PostingsFetchedBytes
 		out.SeriesFetchedBytes += res.SeriesFetchedBytes
 		out.IndexBytes += res.IndexBytes
+		out.PostingsOffsetsTableBytes += res.PostingsOffsetsTableBytes
 		out.BlocksFromPostings += res.BlocksFromPostings
 		out.HashBytes += res.HashBytes
 		out.SketchBytes += res.SketchBytes
