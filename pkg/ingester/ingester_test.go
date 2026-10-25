@@ -9199,8 +9199,17 @@ func (s *stream) Context() context.Context {
 	return s.ctx
 }
 
+// Send keeps a copy of response, as gRPC encodes it before Send returns: the ingester reuses what it holds.
 func (s *stream) Send(response *client.QueryStreamResponse) error {
-	s.responses = append(s.responses, response)
+	buf, err := response.Marshal()
+	if err != nil {
+		return err
+	}
+	kept := &client.QueryStreamResponse{}
+	if err := kept.Unmarshal(buf); err != nil {
+		return err
+	}
+	s.responses = append(s.responses, kept)
 	return nil
 }
 
