@@ -538,46 +538,48 @@ func TestStreamBinaryReader_LabelValuesOffsetsTableBytes(t *testing.T) {
 		ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 		require.NoError(t, err)
 		bkt := &rangeBytesBucket{InstrumentedBucketReader: objstore.WithNoopInstr(ubkt)}
-		// Two series without the label, since a block needs at least three. The label sorts last in the
-		// postings offsets table, so a version 2 walk of it reads exactly its entries from the bucket.
+		// Label m sits in the middle of the postings offsets table and z sorts last. A version 2 walk of either
+		// should read only that label's entries from the bucket, not the labels that follow.
 		lbls := []labels.Labels{labels.FromStrings("b", "x"), labels.FromStrings("b", "y")}
 		for i := 0; i < values; i++ {
-			lbls = append(lbls, labels.FromStrings("z", fmt.Sprintf("value-%06d", i)))
+			lbls = append(lbls, labels.FromStrings("m", fmt.Sprintf("value-%06d", i)), labels.FromStrings("z", fmt.Sprintf("value-%06d", i)))
 		}
 		blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
 		require.NoError(t, err)
 		_, err = block.Upload(ctx, log.NewNopLogger(), ubkt, filepath.Join(tmpDir, blockID.String()), nil)
 		require.NoError(t, err)
 
-		priced := map[int]int64{}
-		for _, version := range []int{BinaryFormatV1, BinaryFormatV2} {
-			cfg := testIndexHeaderV1Config()
-			cfg.Version = version
-			r, err := NewStreamBinaryReader(ctx, blockID, bkt, filepath.Join(tmpDir, fmt.Sprintf("v%d", version)), cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
-			require.NoError(t, err)
+		for _, name := range []string{"m", "z"} {
+			priced := map[int]int64{}
+			for _, version := range []int{BinaryFormatV1, BinaryFormatV2} {
+				cfg := testIndexHeaderV1Config()
+				cfg.Version = version
+				r, err := NewStreamBinaryReader(ctx, blockID, bkt, filepath.Join(tmpDir, fmt.Sprintf("%s-v%d", name, version)), cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				require.NoError(t, err)
 
-			got, err := r.LabelValuesOffsetsTableBytes(ctx, "z")
-			require.NoError(t, err)
-			priced[version] = got
-			missing, err := r.LabelValuesOffsetsTableBytes(ctx, "missing")
-			require.NoError(t, err)
-			assert.Zero(t, missing)
+				got, err := r.LabelValuesOffsetsTableBytes(ctx, name)
+				require.NoError(t, err)
+				priced[version] = got
+				missing, err := r.LabelValuesOffsetsTableBytes(ctx, "missing")
+				require.NoError(t, err)
+				assert.Zero(t, missing)
 
-			before := bkt.indexBytes.Load()
-			offsets, err := r.LabelValuesOffsets(ctx, "z", "", nil)
-			require.NoError(t, err)
-			require.Len(t, offsets, values)
-			fetched := bkt.indexBytes.Load() - before
-			if version == BinaryFormatV2 {
-				require.Positive(t, fetched, "%d values: version 2 reads the table from the bucket", values)
-				assert.GreaterOrEqual(t, got, fetched, "%d values: the price covers the object-storage read", values)
-				assert.LessOrEqual(t, got-fetched, int64(lastEntrySlack), "%d values: and passes it only by the last entry's slack", values)
-			} else {
-				assert.Zero(t, fetched, "%d values: version 1 reads the table from disk", values)
+				before := bkt.indexBytes.Load()
+				offsets, err := r.LabelValuesOffsets(ctx, name, "", nil)
+				require.NoError(t, err)
+				require.Len(t, offsets, values)
+				fetched := bkt.indexBytes.Load() - before
+				if version == BinaryFormatV2 {
+					require.Positive(t, fetched, "%s, %d values: version 2 reads the table from the bucket", name, values)
+					assert.GreaterOrEqual(t, got, fetched, "%s, %d values: the price covers the object-storage read", name, values)
+					assert.LessOrEqual(t, got-fetched, int64(lastEntrySlack), "%s, %d values: and passes it only by the last entry's slack", name, values)
+				} else {
+					assert.Zero(t, fetched, "%s, %d values: version 1 reads the table from disk", name, values)
+				}
+				require.NoError(t, r.Close())
 			}
-			require.NoError(t, r.Close())
+			assert.Equal(t, priced[BinaryFormatV1], priced[BinaryFormatV2], "%s, %d values: the price doesn't depend on where the table is", name, values)
 		}
-		assert.Equal(t, priced[BinaryFormatV1], priced[BinaryFormatV2], "%d values: the price doesn't depend on where the table is", values)
 		require.NoError(t, ubkt.Close())
 	}
 }

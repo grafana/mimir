@@ -233,7 +233,10 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
 			sectionEndOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
 		} else {
-			sectionEndOffset = math.MaxInt
+			// The walk stops at the label's last value, which is always sampled, so end the section after its entry
+			// rather than at the end of the table, which would fetch the labels that follow.
+			last := e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
+			sectionEndOffset = last.Offset + maxPostingsOffsetEntrySize(name, last.Value)
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
@@ -368,16 +371,20 @@ func (t *PostingsOffsetsTableV2) LabelValuesCountLowerBound(name string) int {
 
 // LabelValuesOffsetsTableBytes implements PostingsOffsetsTable. The label's entries run from its first sampled
 // offset to the end of its last value's entry, which is always sampled; that entry is priced at its largest
-// encoding. A remote table is fetched in streamencoding.ReadBufferSize reads, so the bytes fetched from object
-// storage can pass this by up to one read buffer.
+// encoding. A remote walk with no prefix reads the same section from object storage.
 func (t *PostingsOffsetsTableV2) LabelValuesOffsetsTableBytes(name string) int64 {
 	e, ok := t.SparsePostingsOffsets[name]
 	if !ok || len(e.SparseTableOffsets) == 0 {
 		return 0
 	}
 	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
-	lastEntry := 1 + binary.MaxVarintLen64 + len(name) + binary.MaxVarintLen64 + len(last.Value) + binary.MaxVarintLen64
-	return int64(last.Offset - first.Offset + lastEntry)
+	return int64(last.Offset - first.Offset + maxPostingsOffsetEntrySize(name, last.Value))
+}
+
+// maxPostingsOffsetEntrySize is the largest encoding of one postings offsets table entry: a one-byte key count,
+// the label name and value with their uvarint lengths, and the uvarint postings offset.
+func maxPostingsOffsetEntrySize(name, value string) int {
+	return 1 + binary.MaxVarintLen64 + len(name) + binary.MaxVarintLen64 + len(value) + binary.MaxVarintLen64
 }
 
 func (t *PostingsOffsetsTableV2) PostingsOffsetsInMemSampling() int {
