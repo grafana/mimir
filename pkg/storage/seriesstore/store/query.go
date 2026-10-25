@@ -123,6 +123,88 @@ type selectedSeries struct {
 type coldCandidateSeries struct {
 	labels labels.Labels
 	chunks []ChunkMeta
+	// Its series in memory took its chunks.
+	taken bool
+}
+
+// coldSelection is the cold series of a shard a query selects, by labels: one may be in several blocks, and also back in
+// memory. It is reused for each shard, and kept between queries, with the candidates' chunk lists: growing them was a
+// few percent of what an ingester allocated.
+type coldSelection struct {
+	byLabels   map[labels.Labels]int32
+	candidates []coldCandidateSeries
+	// How many candidates the selection had at most, which give clears.
+	written int
+}
+
+var coldSelections sync.Pool
+
+func takeColdSelection() *coldSelection {
+	if selection, ok := coldSelections.Get().(*coldSelection); ok {
+		return selection
+	}
+	return &coldSelection{}
+}
+
+// reset empties the selection for another shard.
+func (c *coldSelection) reset() {
+	if len(c.byLabels) > 0 {
+		clear(c.byLabels)
+	}
+	c.written = max(c.written, len(c.candidates))
+	c.candidates = c.candidates[:0]
+}
+
+// candidate returns the candidate with the labels, added without chunks when there's none yet.
+func (c *coldSelection) candidate(stored labels.Labels) *coldCandidateSeries {
+	if index, ok := c.byLabels[stored]; ok {
+		return &c.candidates[index]
+	}
+	if c.byLabels == nil {
+		c.byLabels = map[labels.Labels]int32{}
+	}
+	c.byLabels[stored] = int32(len(c.candidates))
+	if len(c.candidates) < cap(c.candidates) {
+		c.candidates = c.candidates[:len(c.candidates)+1]
+	} else {
+		c.candidates = append(c.candidates, coldCandidateSeries{})
+	}
+	candidate := &c.candidates[len(c.candidates)-1]
+	// The chunk list an earlier candidate grew is reused.
+	candidate.labels, candidate.chunks, candidate.taken = stored, candidate.chunks[:0], false
+	return candidate
+}
+
+// take returns the chunks of the cold series with the labels, which then aren't among the ones left.
+func (c *coldSelection) take(stored labels.Labels) ([]ChunkMeta, bool) {
+	if len(c.candidates) == 0 {
+		return nil, false
+	}
+	index, ok := c.byLabels[stored]
+	if !ok {
+		return nil, false
+	}
+	candidate := &c.candidates[index]
+	candidate.taken = true
+	return candidate.chunks, true
+}
+
+// give keeps the selection for another query, unless it is large, with the labels cleared: they point into one tenant's
+// cold blocks, which are unmapped once merged.
+func (c *coldSelection) give() {
+	c.reset()
+	if c.written > 1<<14 {
+		return
+	}
+	written := c.candidates[:c.written]
+	for index := range written {
+		written[index].labels = ""
+		if cap(written[index].chunks) > 1<<10 {
+			written[index].chunks = nil
+		}
+	}
+	c.written = 0
+	coldSelections.Put(c)
 }
 
 // SelectChunks returns the series a query selects, with their chunks in its range, sorted by
@@ -158,10 +240,12 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 		a        arena
 		metas    []ChunkMeta
 	)
+	coldSelected := takeColdSelection()
+	defer coldSelected.give()
 	s.perShardWithCold(tenantID, func(t *tenant, disk *chunks.DiskMapper, cold *coldState) {
-		// Cold series, by labels: one may be in several blocks, and also back in memory.
+		coldSelected.reset()
 		// The store's retention keeps out-of-order chunks by time, of whichever shard.
-		coldSeries := s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, 0)
+		s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, 0, coldSelected)
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
 			if countersEnabled {
 				chunkBoundsDecodes.Add(1)
@@ -179,14 +263,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 			if !overlaps {
 				overlaps = series.headOverlaps(start, end)
 			}
-			var coldChunks []ChunkMeta
-			hasCold := false
-			if len(coldSeries) > 0 {
-				if cold, ok := coldSeries[entry.labels]; ok {
-					coldChunks, hasCold = cold.chunks, true
-					delete(coldSeries, entry.labels)
-				}
-			}
+			coldChunks, hasCold := coldSelected.take(entry.labels)
 			if !overlaps && !hasCold {
 				return true
 			}
@@ -196,10 +273,14 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 			}
 			return true
 		})
-		for stored, cold := range coldSeries {
+		for index := range coldSelected.candidates {
+			cold := &coldSelected.candidates[index]
+			if cold.taken {
+				continue
+			}
 			chunks := queryChunks(nil, nil, cold.chunks, disk, start, end, &a)
 			if len(chunks) > 0 {
-				selected = append(selected, selectedSeries{stored, QuerySeriesView{EncodedLabels: encodeSeriesLabels(stored, &a), Chunks: chunks}})
+				selected = append(selected, selectedSeries{cold.labels, QuerySeriesView{EncodedLabels: encodeSeriesLabels(cold.labels, &a), Chunks: chunks}})
 			}
 		}
 	})
@@ -214,11 +295,10 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 
 // selectCold returns the tenant's cold series of store shard shard that match, by labels, with
 // the chunks the retention kept.
-func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end int64, kept *retained, shard int) map[labels.Labels]*coldCandidateSeries {
+func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end int64, kept *retained, shard int, into *coldSelection) {
 	if len(cold.blocks) == 0 {
-		return nil
+		return
 	}
-	var result map[labels.Labels]*coldCandidateSeries
 	// Like the head's, each regex matcher's result for the label values it saw.
 	remembered := make([]map[string]bool, len(coldLabels))
 	var pairs [][2]string
@@ -304,15 +384,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			if !matched {
 				continue
 			}
-			stored := series.labelsInto(&pairs)
-			if result == nil {
-				result = map[labels.Labels]*coldCandidateSeries{}
-			}
-			candidate, ok := result[stored]
-			if !ok {
-				candidate = &coldCandidateSeries{labels: stored}
-				result[stored] = candidate
-			}
+			candidate := into.candidate(series.labelsInto(&pairs))
 			it := series.chunkIter()
 			for chunk, more := it.next(); more; chunk, more = it.next() {
 				if kept.keeps(chunk, shard) {
@@ -321,7 +393,6 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			}
 		}
 	}
-	return result
 }
 
 // queryChunks returns the series' chunks in [start, end]: completed ones from chunks (its chunk

@@ -330,9 +330,12 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
 		general = e.selectors.get("\x02"+selectorKey(coldLabels), len(e.store.shards))
 	}
+	coldSelected := takeColdSelection()
+	defer coldSelected.give()
 	e.perShard(func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
-		coldSeries := e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, shard)
+		coldSelected.reset()
+		e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, shard, coldSelected)
 		// A series' cold chunks are told apart like its chunks in memory: Prometheus's head keeps an idle series that the
 		// engine evicts, with its in-order chunks until the head is truncated past them and its out-of-order ones until
 		// the out-of-order head is compacted. Merged whatever they were, every query of a series that left decoded and
@@ -390,14 +393,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 			if !overlaps {
 				overlaps = series.headOverlaps(start, end)
 			}
-			var coldChunks []ChunkMeta
-			hasCold := false
-			if len(coldSeries) > 0 {
-				if candidate, ok := coldSeries[entry.labels]; ok {
-					coldChunks, hasCold = candidate.chunks, true
-					delete(coldSeries, entry.labels)
-				}
-			}
+			coldChunks, hasCold := coldSelected.take(entry.labels)
 			if !overlaps && !hasCold {
 				return true
 			}
@@ -407,10 +403,14 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 			}
 			return true
 		})
-		for stored, candidate := range coldSeries {
+		for index := range coldSelected.candidates {
+			candidate := &coldSelected.candidates[index]
+			if candidate.taken {
+				continue
+			}
 			scratch = seriesChunks(nil, candidate.chunks, nil)
 			if len(scratch) > 0 {
-				add(rawSeries{stored, copyOut(scratch, disk)})
+				add(rawSeries{candidate.labels, copyOut(scratch, disk)})
 			}
 		}
 	})
