@@ -296,6 +296,10 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, n, "the same buckets as step=1h alone")
 
+	// A snapped window is widened to a block range before its buckets are cut.
+	_, _, err = parse("start=0&end=9000&step=1h&snap=true")
+	require.NoError(t, err)
+
 	for _, bad := range []string{
 		"start=0&end=7200&window=1h",
 		"start=0&end=7200&step=1h&window=30m",
@@ -308,6 +312,9 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
 		"start=0&end=10&step=0s",
+		"start=0&end=9000&step=1h",     // the step doesn't divide the window, with no window parameter
+		"start=0&end=3600&step=2h",     // a step longer than the window
+		"start=0&end=86400000&step=1s", // more buckets than the most a request may have
 		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&sketch_above=-1",
 		"start=0&end=10&limit=x",

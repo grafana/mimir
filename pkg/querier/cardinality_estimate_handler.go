@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
@@ -530,6 +531,15 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 		req.MinT += req.Step - req.Window
 		if req.MinT < 0 {
 			return req, opts, errors.New("window reaches back before time 0 from the first bucket's end; use a later start or a shorter window")
+		}
+	}
+	// Every step must cut the window into whole buckets, with or without a
+	// window parameter. A snapped window is cut once it is widened to a block
+	// range, so its buckets are checked then. The sources check this too, but
+	// a version that ignores step_ms would not.
+	if req.Step > 0 && !req.Snap {
+		if _, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil {
+			return req, opts, fmt.Errorf("step: %w", err)
 		}
 	}
 	if v := r.FormValue("max_index_bytes"); v != "" {
