@@ -98,6 +98,21 @@ func testBucketStoreMetricNameCounts(t *testing.T, opts ...prepareStoreConfigOpt
 	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxNames: 2}, srv))
 	assert.Equal(t, 1, walked)
 
+	// The tenant's max_index_bytes bounds the __name__ postings offsets table before it is walked.
+	s.store.cardinalityEstimateMaxIndexBytes = func() int64 { return 1 }
+	walked = 0
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	err = s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}}, srv)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	require.ErrorContains(t, err, "__name__ postings offsets table over 1 blocks, more than max_index_bytes 1")
+	assert.Zero(t, walked)
+	assert.Empty(t, srv.sent)
+	s.store.cardinalityEstimateMaxIndexBytes = func() int64 { return 1 << 20 }
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}}, srv))
+	assert.Equal(t, 1, walked)
+	s.store.cardinalityEstimateMaxIndexBytes = nil
+
 	// An unknown block is an empty stream that still says nothing was counted.
 	srv = &mockMetricNameCountsServer{ctx: t.Context()}
 	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{unknown.String()}}, srv))

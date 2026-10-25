@@ -5269,12 +5269,12 @@ blocked_requests:
 # CLI flag: -querier.cardinality-estimate-enabled
 [cardinality_estimate_enabled: <boolean> | default = false]
 
-# (experimental) Maximum index bytes, postings plus series entries, that one
-# cardinality estimate may read across the store-gateways and ingesters it asks.
-# A request that sets no max_index_bytes gets this limit, and a larger
-# max_index_bytes is cut to it. The querier splits it across the calls it sends,
-# and each store-gateway and ingester also applies it to the calls it receives.
-# 0 means no limit.
+# (experimental) Maximum index bytes, postings, series entries and the postings
+# offsets table entries walked, that one cardinality estimate may read across
+# the store-gateways and ingesters it asks. A request that sets no
+# max_index_bytes gets this limit, and a larger max_index_bytes is cut to it.
+# The querier splits it across the calls it sends, and each store-gateway and
+# ingester also applies it to the calls it receives. 0 means no limit.
 # CLI flag: -querier.cardinality-estimate-max-index-bytes
 [cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
 
