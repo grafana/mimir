@@ -679,6 +679,9 @@ func (e *Engine) compactOOOHead() {
 	failed := false
 	watermarks := slices.Clone(e.oooWatermarks)
 	compactedFrom, compactedTo := int64(math.MaxInt64), int64(math.MinInt64)
+	// The series of each block range's out-of-order data, by the range's start: found with the chunks they compact, where
+	// a pass over every series for each range of a month of backdated samples took seconds.
+	byRange := map[int64][]uint64{}
 	for index, shard := range e.store.shards {
 		visit := func(entry *seriesEntry) {
 			series := &entry.series
@@ -705,7 +708,14 @@ func (e *Engine) compactOOOHead() {
 					if oooCompactedHook != nil {
 						oooCompactedHook(uint64(chunk.Ref))
 					}
+					for blockMin := rangeStart(chunk.MinTime); blockMin <= chunk.MaxTime; blockMin += chunkRangeMs {
+						byRange[blockMin] = append(byRange[blockMin], entry.hash)
+					}
 				}
+			}
+			// What failed to be flushed is still the out-of-order head's.
+			for _, sample := range series.ooo() {
+				byRange[rangeStart(sample.T)] = append(byRange[rangeStart(sample.T)], entry.hash)
 			}
 			series.oooChunked = false
 		}
@@ -732,10 +742,7 @@ func (e *Engine) compactOOOHead() {
 	// Like Prometheus's, one block per block range of the out-of-order head's data.
 	wrote := false
 	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
-		blockMax := blockMin + chunkRangeMs
-		wrote = e.writeBlock(blockMin, blockMax, true, false, func(shard int, series *Series) bool {
-			return e.oooIn(shard, series, blockMin, blockMax-1)
-		}) || wrote
+		wrote = e.recordBlock(blockMin, blockMin+chunkRangeMs, true, false, byRange[blockMin]) || wrote
 	}
 	if wrote {
 		// Retention keeps the chunks compacted from the watermarks the compaction started from for as long as its

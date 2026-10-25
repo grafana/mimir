@@ -119,6 +119,12 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool
 		}
 		shard.RUnlock()
 	}
+	return e.recordBlock(minTime, maxTime, outOfOrder, idleEvicted, hashes)
+}
+
+// recordBlock records the block over [minTime, maxTime) of the series with hashes, in any order and repeated, unless
+// there are none, and reports whether it did.
+func (e *Engine) recordBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool, hashes []uint64) bool {
 	if len(hashes) == 0 {
 		return false
 	}
@@ -186,24 +192,6 @@ func inOrderIn(series *Series, start, end, headMin int64) bool {
 	}
 	if hh := series.histogram(); hh != nil && hh.FirstTimestamp() <= end && hh.Last().Timestamp >= start {
 		return true
-	}
-	return false
-}
-
-// oooIn is whether a series has out-of-order chunks in the out-of-order head overlapping
-// [start, end], which an out-of-order block of that range holds.
-func (e *Engine) oooIn(shard int, series *Series, start, end int64) bool {
-	watermark := e.oooWatermarks[shard]
-	it := series.chunks.iter()
-	for chunk, more := it.next(); more; chunk, more = it.next() {
-		if chunk.OutOfOrder && uint64(chunk.Ref) >= watermark && chunk.MinTime <= end && chunk.MaxTime >= start {
-			return true
-		}
-	}
-	for _, sample := range series.ooo() {
-		if sample.T >= start && sample.T <= end {
-			return true
-		}
 	}
 	return false
 }

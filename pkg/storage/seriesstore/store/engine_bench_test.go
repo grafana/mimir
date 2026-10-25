@@ -580,3 +580,35 @@ func BenchmarkEngineExemplars(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkEngineCompactOutOfOrder compacts an out-of-order head whose samples were backdated over a month, as a few
+// of a tenant's series' are: one block for each of the hundreds of block ranges they are in.
+func BenchmarkEngineCompactOutOfOrder(b *testing.B) {
+	const (
+		series, backdated = 100_000, 2_000
+		window            = 720 * 3_600_000
+		now               = window + 3_600_000
+	)
+	e := openEngine(b, b.TempDir(), differentialOptions{oooWindowMs: window}, nil)
+	b.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range series {
+		_, err := app.Append(0, benchLabels(n), now, 1)
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for iteration := range b.N {
+		b.StopTimer()
+		app := e.Appender(context.Background())
+		for n := range backdated {
+			lset := benchLabels((n*37 + iteration*backdated) % series)
+			_, err := app.Append(0, lset, now-1-(int64(n)*window/backdated+int64(iteration)*15_000)%window, 1)
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+		b.StartTimer()
+		e.compactOOOHead()
+	}
+}
