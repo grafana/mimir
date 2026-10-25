@@ -78,6 +78,15 @@ func TestDecidePhase2(t *testing.T) {
 	// Without an ablation, there's no credit to give.
 	require.Equal(t, "not evaluated", d.CPU.Credit)
 	require.Equal(t, "port seriesstore's choices to #19563; seriesstore keeps its own design", d.Outcome)
+	// The budget is 5% of the TSDB's 1e-6 CPU seconds per sample and 1000 bytes per series, with metadata off: the
+	// TSDB's extras are 10% of them, seriesstore's 2%.
+	require.InDelta(t, 5e-8, d.CPU.Budget, 1e-12)
+	require.InDelta(t, 50, d.Bytes.Budget, 1e-6)
+	require.False(t, d.CPU.TSDBWithinBudget)
+	require.True(t, d.CPU.SeriesstoreWithinBudget)
+	require.False(t, d.Bytes.TSDBWithinBudget)
+	require.True(t, d.Bytes.SeriesstoreWithinBudget)
+	require.Equal(t, "not triggered", d.Phase6)
 	require.Equal(t, "met", d.ExitGate)
 	require.NoError(t, writeDecision(results, d))
 }
@@ -99,6 +108,30 @@ func TestDecideReportsTheLessonsForSeriesstore(t *testing.T) {
 	without := decideMetric(tsdb, seriesstore, pairedEstimate([2][]float64{}), 0)
 	require.Equal(t, "not evaluated", without.SeriesstoreLesson)
 	require.True(t, math.IsNaN(without.ChoicesOnSeriesstore.Mean))
+}
+
+// Phase 6 starts on the outcome towards columnar, or when neither engine is within the cost budget on a metric.
+func TestPhase6Triggers(t *testing.T) {
+	oneWithin := metricDecision{SeriesstoreWithinBudget: true}
+	noneWithin := metricDecision{}
+	for _, c := range []struct {
+		decision, credit string
+		cpu, bytes       metricDecision
+		want             string
+	}{
+		{"pass", "no credit", oneWithin, oneWithin, "not triggered"},
+		{"pass", "credit", oneWithin, oneWithin, "triggered: the outcome is towards columnar"},
+		{"fail", "inconclusive", oneWithin, noneWithin, "triggered: neither engine's bytes extra is within the cost budget"},
+		{"pass", "credit", noneWithin, oneWithin, "triggered: the outcome is towards columnar; neither engine's CPU extra is within the cost budget"},
+	} {
+		d := phase2Decision{Decision: c.decision, Credit: c.credit, CPU: c.cpu, Bytes: c.bytes}
+		require.Equal(t, c.want, phase6Trigger(d), "%+v", c)
+	}
+
+	m := metricDecision{TSDB: estimate{Mean: 1, High: 2}, Seriesstore: estimate{Mean: 1, High: math.NaN()}}
+	m.applyBudget(2)
+	require.True(t, m.TSDBWithinBudget)
+	require.False(t, m.SeriesstoreWithinBudget, "an extra without an interval isn't within the budget")
 }
 
 func TestParseLabelledPairs(t *testing.T) {
