@@ -48,6 +48,10 @@ type feed struct {
 	producedMu sync.Mutex
 	produced   []producedSecond
 	samples    atomic.Int64
+	// Bytes of the records produced.
+	recordBytes atomic.Int64
+	// Whether series go without their own metadata, as today's senders' do, their families' still going as stand-ins.
+	withoutSeriesMetadata bool
 	// Seconds produced so far: everything with a timestamp before it, but the late samples, is in Kafka.
 	through atomic.Int64
 
@@ -303,6 +307,7 @@ func (f *feed) produceRequest(ctx context.Context, tenant string, req *mimirpb.W
 		return
 	}
 	for _, record := range records {
+		f.recordBytes.Add(int64(len(record.Value)))
 		if f.produceCount.Add(1)%compositionSample == 0 {
 			f.sampleComposition(record.Value)
 		}
@@ -403,7 +408,7 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 func (f *feed) emitScrape(m *metricModel, slot int, t, start int64, labels [][]mimirpb.LabelAdapter, exemplars bool, emit func(*mimirpb.TimeSeries)) {
 	w := f.world
 	value := m.sample(slot, t, start)
-	if metadata := w.seriesMetadata(m, slot, t); !metadata.IsEmpty() {
+	if metadata := w.seriesMetadata(m, slot, t); !metadata.IsEmpty() && !f.withoutSeriesMetadata {
 		// Each series of the scrape sends it.
 		inner := emit
 		emit = func(ts *mimirpb.TimeSeries) {

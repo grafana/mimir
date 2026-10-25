@@ -60,11 +60,13 @@ func TestDecidePhase2(t *testing.T) {
 			pair("shipped-prometheus", "shipped-prometheus-metadata", 1e-6, 1.1e-6, 1e9, 1.1e9, 0)
 			pair("shipped-seriesstore", "shipped-seriesstore-metadata", 5e-7, 5.2e-7, 2e8, 2.1e8, 1.2e6)
 			pair("shipped-prometheus", "shipped-seriesstore", 1e-6, 5e-7, 1e9, 2e8, 1.2e6)
+			// What the phase cost seriesstore with metadata off: 2%, within the gate's 5%.
+			pair("earlier-seriesstore", "shipped-seriesstore", 4.9e-7, 5e-7, 1.96e8, 2e8, 1.2e6)
 		}
 	}
-	pairs, err := parsePhase2Pairs("tsdb=shipped-prometheus:shipped-prometheus-metadata,seriesstore=shipped-seriesstore:shipped-seriesstore-metadata,parity=shipped-prometheus:shipped-seriesstore")
+	pairs, err := parsePhase2Pairs("tsdb=shipped-prometheus:shipped-prometheus-metadata,seriesstore=shipped-seriesstore:shipped-seriesstore-metadata,parity=shipped-prometheus:shipped-seriesstore,previous=earlier-seriesstore:shipped-seriesstore")
 	require.NoError(t, err)
-	d, err := decidePhase2(results, pairs, true)
+	d, err := decidePhase2(results, pairs, true, "")
 	require.NoError(t, err)
 
 	require.InDelta(t, 1e-7, d.CPU.TSDB.Mean, 2e-9)
@@ -80,14 +82,31 @@ func TestDecidePhase2(t *testing.T) {
 	require.Equal(t, "port seriesstore's choices to #19563; seriesstore keeps its own design", d.Outcome)
 	// The budget is 5% of the TSDB's 1e-6 CPU seconds per sample and 1000 bytes per series, with metadata off: the
 	// TSDB's extras are 10% of them, seriesstore's 2%.
-	require.InDelta(t, 5e-8, d.CPU.Budget, 1e-12)
-	require.InDelta(t, 50, d.Bytes.Budget, 1e-6)
-	require.False(t, d.CPU.TSDBWithinBudget)
-	require.True(t, d.CPU.SeriesstoreWithinBudget)
-	require.False(t, d.Bytes.TSDBWithinBudget)
-	require.True(t, d.Bytes.SeriesstoreWithinBudget)
+	require.InDelta(t, 5e-8, d.Budget.CPU.Budget, 1e-12)
+	require.InDelta(t, 50, d.Budget.Bytes.Budget, 1e-6)
+	require.False(t, d.Budget.CPU.TSDBWithin)
+	require.True(t, d.Budget.CPU.SeriesstoreWithin)
+	require.False(t, d.Budget.Bytes.TSDBWithin)
+	require.True(t, d.Budget.Bytes.SeriesstoreWithin)
+	require.Nil(t, d.SensitivityBudget)
 	require.Equal(t, "not triggered", d.Phase6)
+	require.InDelta(t, 0.02, d.PreviousCPU.Mean, 0.005)
 	require.Equal(t, "met", d.ExitGate)
+
+	// The same runs as sensitivity runs are checked against the budget too, and a previous build that cost seriesstore
+	// less fails the gate.
+	d, err = decidePhase2(results, pairs, true, results)
+	require.NoError(t, err)
+	require.NotNil(t, d.SensitivityBudget)
+	require.True(t, d.SensitivityBudget.CPU.SeriesstoreWithin)
+	pairs.Previous = comparison{Baseline: "shipped-seriesstore", Target: "earlier-seriesstore"}
+	d, err = decidePhase2(results, pairs, true, "")
+	require.NoError(t, err)
+	require.Equal(t, "met", d.ExitGate, "a previous build that cost more isn't a regression")
+	pairs.Previous = comparison{Baseline: "shipped-prometheus", Target: "shipped-prometheus-metadata"}
+	d, err = decidePhase2(results, pairs, true, "")
+	require.NoError(t, err)
+	require.Equal(t, "not met", d.ExitGate, "a 10% regression")
 	require.NoError(t, writeDecision(results, d))
 }
 
@@ -112,26 +131,42 @@ func TestDecideReportsTheLessonsForSeriesstore(t *testing.T) {
 
 // Phase 6 starts on the outcome towards columnar, or when neither engine is within the cost budget on a metric.
 func TestPhase6Triggers(t *testing.T) {
-	oneWithin := metricDecision{SeriesstoreWithinBudget: true}
-	noneWithin := metricDecision{}
+	oneWithin := budgetCheck{SeriesstoreWithin: true}
+	noneWithin := budgetCheck{}
+	within := budgetChecks{CPU: oneWithin, Bytes: oneWithin}
 	for _, c := range []struct {
 		decision, credit string
-		cpu, bytes       metricDecision
+		budget           budgetChecks
+		sensitivity      *budgetChecks
 		want             string
 	}{
-		{"pass", "no credit", oneWithin, oneWithin, "not triggered"},
-		{"pass", "credit", oneWithin, oneWithin, "triggered: the outcome is towards columnar"},
-		{"fail", "inconclusive", oneWithin, noneWithin, "triggered: neither engine's bytes extra is within the cost budget"},
-		{"pass", "credit", noneWithin, oneWithin, "triggered: the outcome is towards columnar; neither engine's CPU extra is within the cost budget"},
+		{"pass", "no credit", within, nil, "not triggered"},
+		{"pass", "credit", within, nil, "triggered: the outcome is towards columnar"},
+		{"fail", "inconclusive", budgetChecks{CPU: oneWithin, Bytes: noneWithin}, nil, "triggered: neither engine's bytes extra is within the cost budget"},
+		{"pass", "credit", budgetChecks{CPU: noneWithin, Bytes: oneWithin}, nil, "triggered: the outcome is towards columnar; neither engine's CPU extra is within the cost budget"},
+		{"pass", "no credit", within, &budgetChecks{CPU: noneWithin, Bytes: oneWithin}, "triggered: neither engine's CPU extra is within the cost budget on the sensitivity runs"},
 	} {
-		d := phase2Decision{Decision: c.decision, Credit: c.credit, CPU: c.cpu, Bytes: c.bytes}
+		d := phase2Decision{Decision: c.decision, Credit: c.credit, Budget: c.budget, SensitivityBudget: c.sensitivity}
 		require.Equal(t, c.want, phase6Trigger(d), "%+v", c)
 	}
+}
 
-	m := metricDecision{TSDB: estimate{Mean: 1, High: 2}, Seriesstore: estimate{Mean: 1, High: math.NaN()}}
-	m.applyBudget(2)
-	require.True(t, m.TSDBWithinBudget)
-	require.False(t, m.SeriesstoreWithinBudget, "an extra without an interval isn't within the budget")
+// An extra is within the budget at its upper bound, and one without an interval isn't.
+func TestCheckBudgets(t *testing.T) {
+	results := t.TempDir()
+	for i, names := range [][2]string{{"t", "t-metadata"}, {"s", "s-metadata"}} {
+		dir := filepath.Join(results, fmt.Sprint(i))
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, writeJSON(filepath.Join(dir, "report.json"), phase2Report(int64(i), names, [2]float64{1e-6, 1.01e-6}, [2]float64{1e9, 1.01e9}, [2]float64{0, 1e6}, [2]float64{0, 0})))
+	}
+	runs, err := phase2Runs(results, true)
+	require.NoError(t, err)
+	b := checkBudgets(runs, phase2Pairs{TSDB: comparison{"t", "t-metadata"}, Seriesstore: comparison{"s", "s-metadata"}})
+	require.InDelta(t, 5e-8, b.CPU.Budget, 1e-12)
+	// One run per pair gives an extra but no interval.
+	require.InDelta(t, 1e-8, b.CPU.TSDB.Mean, 1e-12)
+	require.False(t, b.CPU.TSDBWithin)
+	require.False(t, b.CPU.SeriesstoreWithin)
 }
 
 func TestParseLabelledPairs(t *testing.T) {

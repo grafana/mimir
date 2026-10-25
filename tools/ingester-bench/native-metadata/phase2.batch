@@ -1,12 +1,13 @@
-# The native metadata prototype's Phase 2 runs (plan 2.6), for run-batch.sh, with the threshold profile. Decide with
+# The native metadata prototype's Phase 2 runs (plan 2.6), for run-batch.sh, with the threshold profile. With
+# diagnostic.batch's runs, which complete the diagnostic's pair for the exit gate, and sensitivity.batch's, in a
+# RESULTS of their own, decide with
 #
-#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
-#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
+#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata -sensitivity=$SENSITIVITY_RESULTS \
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore,previous=phase1-seriesstore:phase2-seriesstore
 #
-# and report the memo-off variant and the diagnostic, which don't decide anything, with
+# and report the memo-off variant, which doesn't decide anything, with
 #
-#   go run ./tools/ingester-bench -analyze=$RESULTS \
-#     -pairs=phase2-seriesstore:nomemo-seriesstore-metadata,phase1-seriesstore:phase2-seriesstore
+#   go run ./tools/ingester-bench -analyze=$RESULTS -pairs=phase2-seriesstore:nomemo-seriesstore-metadata
 #
 # Run it from a checkout of this file's commit: the builds are only the ingesters' Mimir, and the bench is the
 # checkout's. Each pair runs twice in each order, after three A/A runs per engine for the noise. Pairs read nothing

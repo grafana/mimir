@@ -4,7 +4,7 @@
 # same RESULTS as phase2.batch, and report it with
 #
 #   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
-#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore \
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore,previous=phase1-seriesstore:phase2-seriesstore \
 #     -extras=noskip=noskip-seriesstore:noskip-seriesstore-metadata,notable=notable-seriesstore:notable-seriesstore-metadata,nocache=nocache-seriesstore:nocache-seriesstore-metadata,nocap=nocap-seriesstore:nocap-seriesstore-metadata
 #
 # which gives each partial ablation's extras, and their difference from the full ablation's: what the choice turned

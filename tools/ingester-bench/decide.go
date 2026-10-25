@@ -22,6 +22,8 @@ const (
 	creditShare = 0.5
 	// Seriesstore with metadata off may cost at most this much more than the TSDB, at the upper bound.
 	exitGateMargin = 0.10
+	// And at most this much more than its previous phase's build, at the upper bound: what the phase cost it.
+	regressionMargin = 0.05
 	// An engine's extra at most this share of the TSDB arm's cost with metadata off, at the upper bound, is within the
 	// cost budget, which says whether metadata is practical at all.
 	budgetShare = 0.05
@@ -36,9 +38,10 @@ const (
 	memorySeriesMetric       = "cortex_ingester_memory_series"
 )
 
-// phase2Pairs are the arms' on/off pairs, by ingester names, and the engines' pair with metadata off.
+// phase2Pairs are the arms' on/off pairs, by ingester names, the engines' pair with metadata off, and seriesstore's
+// previous build against this one, with metadata off.
 type phase2Pairs struct {
-	TSDB, Seriesstore, Ablation, Parity comparison
+	TSDB, Seriesstore, Ablation, Parity, Previous comparison
 }
 
 // extras are an on/off pair's absolute extras: CPU seconds per replayed sample, and bytes per series with metadata.
@@ -65,16 +68,42 @@ type metricDecision struct {
 	// below 0, "keep seriesstore's" when surely above, or inconclusive, or not evaluated.
 	ChoicesOnSeriesstore estimate
 	SeriesstoreLesson    string
-	// The cost budget, in the metric's terms, and whether each engine's extra is within it.
-	Budget                                    float64
-	TSDBWithinBudget, SeriesstoreWithinBudget bool
 }
 
-// applyBudget checks both engines' extras against the budget, at their upper bounds: an extra without an interval
-// isn't within it.
-func (m *metricDecision) applyBudget(budget float64) {
-	m.Budget = budget
-	m.TSDBWithinBudget, m.SeriesstoreWithinBudget = m.TSDB.High <= budget, m.Seriesstore.High <= budget
+// budgetCheck is a metric's cost budget, in the metric's terms, and whether each engine's extra is within it, at its
+// upper bound: an extra without an interval isn't.
+type budgetCheck struct {
+	Budget                        float64
+	TSDB, Seriesstore             estimate
+	TSDBWithin, SeriesstoreWithin bool
+}
+
+// budgetChecks are the cost budget's checks of one results directory's runs.
+type budgetChecks struct {
+	CPU, Bytes budgetCheck
+}
+
+// checkBudgets checks the TSDB's and seriesstore's extras over the runs against the cost budget, which is a share of
+// the TSDB's CPU per sample and live heap per series with metadata off, over the same runs.
+func checkBudgets(runs []analyzedRun, pairs phase2Pairs) budgetChecks {
+	tsdb, seriesstore := pairExtras(runs, pairs.TSDB), pairExtras(runs, pairs.Seriesstore)
+	check := func(budget float64, tsdb, seriesstore estimate) budgetCheck {
+		return budgetCheck{Budget: budget, TSDB: tsdb, Seriesstore: seriesstore, TSDBWithin: tsdb.High <= budget, SeriesstoreWithin: seriesstore.High <= budget}
+	}
+	return budgetChecks{
+		CPU:   check(budgetShare*baselineMean(runs, pairs.TSDB.Baseline, replayCPUPerSample), tsdb.CPU, seriesstore.CPU),
+		Bytes: check(budgetShare*baselineMean(runs, pairs.TSDB.Baseline, liveHeapPerSeries), tsdb.Bytes, seriesstore.Bytes),
+	}
+}
+
+func replayCPUPerSample(run analyzedRun, side int) float64 { return run.Stats[side].ReplayCPUPerSample }
+
+// liveHeapPerSeries is the ingester's live heap at the window's end per series in memory, unknown without series.
+func liveHeapPerSeries(run analyzedRun, side int) float64 {
+	if series := run.Memory[side][memorySeriesMetric]; series > 0 {
+		return run.Stats[side].LiveHeapEnd / series
+	}
+	return math.NaN()
 }
 
 type phase2Decision struct {
@@ -82,13 +111,18 @@ type phase2Decision struct {
 	Decision   string
 	Credit     string
 	Outcome    string
+	// The cost budget's checks of the runs, and of the sensitivity runs', if any.
+	Budget            budgetChecks
+	SensitivityBudget *budgetChecks
 	// Whether Phase 6, the columnar layout, starts: "triggered: " and why, or "not triggered".
 	Phase6 string
-	// The exit gate: seriesstore off against the TSDB off, relative, and the persistent mismatches.
-	ParityCPU, ParityHeap estimate
-	Mismatches            int
-	ExitGate              string
-	Runs                  []analyzedRun
+	// The exit gate: seriesstore off against the TSDB off, and against its previous build, relative, and the
+	// persistent mismatches.
+	ParityCPU, ParityHeap     estimate
+	PreviousCPU, PreviousHeap estimate
+	Mismatches                int
+	ExitGate                  string
+	Runs                      []analyzedRun
 }
 
 // pairExtras are the pair's extras over its runs that count: on minus off in each, in absolute terms.
@@ -220,44 +254,31 @@ func estimateDifference(a, b estimate) estimate {
 	return e
 }
 
-// decidePhase2 applies the decision rules to the runs of the results directory.
-func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2Decision, error) {
-	a, err := analyzeResults(results, nil)
+// decidePhase2 applies the decision rules to the runs of the results directory, and the cost budget also to the
+// sensitivity runs' directory, if any.
+func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool, sensitivity string) (phase2Decision, error) {
+	runs, err := phase2Runs(results, fullMetadata)
 	if err != nil {
 		return phase2Decision{}, err
 	}
-	for i := range a.Runs {
-		run := &a.Runs[i]
-		for side, name := range run.Names {
-			if !strings.HasSuffix(name, "-metadata") {
-				continue
-			}
-			memory := run.Memory[side]
-			if memory[clampedMetric] > 0 {
-				run.Discard = append(run.Discard, fmt.Sprintf("%c's run starts clamped %.0f times", 'A'+side, memory[clampedMetric]))
-			}
-			if fullMetadata && memory[seriesWithMetadataMetric] != memory[memorySeriesMetric] {
-				run.Discard = append(run.Discard, fmt.Sprintf("%c has metadata of %.0f of %.0f series", 'A'+side, memory[seriesWithMetadataMetric], memory[memorySeriesMetric]))
-			}
+	d := phase2Decision{Runs: runs}
+	if sensitivity != "" {
+		sensitivityRuns, err := phase2Runs(sensitivity, fullMetadata)
+		if err != nil {
+			return phase2Decision{}, err
 		}
+		b := checkBudgets(sensitivityRuns, pairs)
+		d.SensitivityBudget = &b
 	}
-	d := phase2Decision{Runs: a.Runs}
-	tsdb, seriesstore := pairExtras(a.Runs, pairs.TSDB), pairExtras(a.Runs, pairs.Seriesstore)
+	tsdb, seriesstore := pairExtras(runs, pairs.TSDB), pairExtras(runs, pairs.Seriesstore)
 	ablation := extras{CPU: pairedEstimate([2][]float64{}), Bytes: pairedEstimate([2][]float64{})}
 	if pairs.Ablation.Baseline != "" {
-		ablation = pairExtras(a.Runs, pairs.Ablation)
+		ablation = pairExtras(runs, pairs.Ablation)
 	}
-	cpuBaseline := baselineMean(a.Runs, pairs.TSDB.Baseline, func(run analyzedRun, side int) float64 { return run.Stats[side].ReplayCPUPerSample })
-	heapBaseline := baselineMean(a.Runs, pairs.TSDB.Baseline, func(run analyzedRun, side int) float64 {
-		if series := run.Memory[side][memorySeriesMetric]; series > 0 {
-			return run.Stats[side].LiveHeapEnd / series
-		}
-		return math.NaN()
-	})
-	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, materialityShare*cpuBaseline)
+	floor := materialityShare * baselineMean(runs, pairs.TSDB.Baseline, replayCPUPerSample)
+	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, floor)
 	d.Bytes = decideMetric(tsdb.Bytes, seriesstore.Bytes, ablation.Bytes, 0)
-	d.CPU.applyBudget(budgetShare * cpuBaseline)
-	d.Bytes.applyBudget(budgetShare * heapBaseline)
+	d.Budget = checkBudgets(runs, pairs)
 
 	switch {
 	case d.CPU.Verdict == "fail" || d.Bytes.Verdict == "fail":
@@ -294,37 +315,78 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	}
 	d.Phase6 = phase6Trigger(d)
 
-	parity := compareRuns(a.Runs, pairs.Parity)
+	parity, previous := compareRuns(runs, pairs.Parity), compareRuns(runs, pairs.Previous)
 	d.ParityCPU, d.ParityHeap = parity.Estimates["replay CPU per sample"], parity.Estimates["heap live at end"]
-	for _, run := range a.Runs {
+	d.PreviousCPU, d.PreviousHeap = previous.Estimates["replay CPU per sample"], previous.Estimates["heap live at end"]
+	for _, run := range runs {
 		d.Mismatches += run.Mismatches
 	}
-	d.ExitGate = "met"
-	if math.IsNaN(d.ParityCPU.High) || d.ParityCPU.High > exitGateMargin || math.IsNaN(d.ParityHeap.High) || d.ParityHeap.High > exitGateMargin || d.Mismatches > 0 {
-		d.ExitGate = "not met"
+	// An estimate without an interval doesn't meet it.
+	within := func(e estimate, margin float64) bool { return e.High <= margin }
+	d.ExitGate = "not met"
+	if within(d.ParityCPU, exitGateMargin) && within(d.ParityHeap, exitGateMargin) && within(d.PreviousCPU, regressionMargin) && within(d.PreviousHeap, regressionMargin) && d.Mismatches == 0 {
+		d.ExitGate = "met"
 	}
 	return d, nil
 }
 
 // phase6Trigger says whether Phase 6, the columnar layout, starts: on the outcome towards columnar, or when neither
-// engine's extra is within the cost budget on a metric.
+// engine's extra is within the cost budget on a metric, of the runs or of the sensitivity runs.
 func phase6Trigger(d phase2Decision) string {
 	var reasons []string
 	if d.Decision == "pass" && d.Credit == "credit" {
 		reasons = append(reasons, "the outcome is towards columnar")
 	}
-	for _, m := range []struct {
-		name string
-		d    metricDecision
-	}{{"CPU", d.CPU}, {"bytes", d.Bytes}} {
-		if !m.d.TSDBWithinBudget && !m.d.SeriesstoreWithinBudget {
-			reasons = append(reasons, fmt.Sprintf("neither engine's %s extra is within the cost budget", m.name))
+	checks := []struct {
+		runs string
+		b    budgetChecks
+	}{{"", d.Budget}}
+	if d.SensitivityBudget != nil {
+		checks = append(checks, struct {
+			runs string
+			b    budgetChecks
+		}{" on the sensitivity runs", *d.SensitivityBudget})
+	}
+	for _, c := range checks {
+		for _, m := range []struct {
+			name string
+			b    budgetCheck
+		}{{"CPU", c.b.CPU}, {"bytes", c.b.Bytes}} {
+			if !m.b.TSDBWithin && !m.b.SeriesstoreWithin {
+				reasons = append(reasons, fmt.Sprintf("neither engine's %s extra is within the cost budget%s", m.name, c.runs))
+			}
 		}
 	}
 	if len(reasons) == 0 {
 		return "not triggered"
 	}
 	return "triggered: " + strings.Join(reasons, "; ")
+}
+
+// phase2Runs are the results directory's runs, with the decision's discards on top of the analysis': runs whose
+// metadata's starts were clamped, and with fullMetadata, runs whose ingesters with metadata don't have it for every
+// series.
+func phase2Runs(results string, fullMetadata bool) ([]analyzedRun, error) {
+	a, err := analyzeResults(results, nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := range a.Runs {
+		run := &a.Runs[i]
+		for side, name := range run.Names {
+			if !strings.HasSuffix(name, "-metadata") {
+				continue
+			}
+			memory := run.Memory[side]
+			if memory[clampedMetric] > 0 {
+				run.Discard = append(run.Discard, fmt.Sprintf("%c's run starts clamped %.0f times", 'A'+side, memory[clampedMetric]))
+			}
+			if fullMetadata && memory[seriesWithMetadataMetric] != memory[memorySeriesMetric] {
+				run.Discard = append(run.Discard, fmt.Sprintf("%c has metadata of %.0f of %.0f series", 'A'+side, memory[seriesWithMetadataMetric], memory[memorySeriesMetric]))
+			}
+		}
+	}
+	return a.Runs, nil
 }
 
 // baselineMean is the mean of a statistic of the ingesters named name over the runs that count, of those it's
@@ -372,10 +434,21 @@ func (d phase2Decision) print(w io.Writer) {
 		}
 		return "not within"
 	}
-	fmt.Fprintf(w, "cost budget, %.0f%% of the TSDB's with metadata off: CPU %.4g, TSDB %s, seriesstore %s; bytes %.4g, TSDB %s, seriesstore %s; Phase 6 %s\n",
-		budgetShare*100, d.CPU.Budget, within(d.CPU.TSDBWithinBudget), within(d.CPU.SeriesstoreWithinBudget),
-		d.Bytes.Budget, within(d.Bytes.TSDBWithinBudget), within(d.Bytes.SeriesstoreWithinBudget), d.Phase6)
-	fmt.Fprintf(w, "exit gate %s: seriesstore off against the TSDB off, CPU %s, heap %s, %d persistent mismatches\n", d.ExitGate, d.ParityCPU, d.ParityHeap, d.Mismatches)
+	budgets := []struct {
+		runs string
+		b    *budgetChecks
+	}{{"", &d.Budget}, {" of the sensitivity runs", d.SensitivityBudget}}
+	for _, c := range budgets {
+		if c.b == nil {
+			continue
+		}
+		fmt.Fprintf(w, "cost budget%s, %.0f%% of the TSDB's with metadata off: CPU %.4g, TSDB %s, seriesstore %s; bytes %.4g, TSDB %s, seriesstore %s\n",
+			c.runs, budgetShare*100, c.b.CPU.Budget, within(c.b.CPU.TSDBWithin), within(c.b.CPU.SeriesstoreWithin),
+			c.b.Bytes.Budget, within(c.b.Bytes.TSDBWithin), within(c.b.Bytes.SeriesstoreWithin))
+	}
+	fmt.Fprintf(w, "Phase 6 %s\n", d.Phase6)
+	fmt.Fprintf(w, "exit gate %s: seriesstore off against the TSDB off, CPU %s, heap %s; against its previous build, CPU %s, heap %s; %d persistent mismatches\n",
+		d.ExitGate, d.ParityCPU, d.ParityHeap, d.PreviousCPU, d.PreviousHeap, d.Mismatches)
 }
 
 func (e estimate) absolute() string {
@@ -385,7 +458,7 @@ func (e estimate) absolute() string {
 	return fmt.Sprintf("%.4g [%.4g, %.4g]", e.Mean, e.Low, e.High)
 }
 
-// parsePhase2Pairs parses tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore.
+// parsePhase2Pairs parses tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after.
 func parsePhase2Pairs(s string) (phase2Pairs, error) {
 	var p phase2Pairs
 	for _, item := range strings.Split(s, ",") {
@@ -406,12 +479,14 @@ func parsePhase2Pairs(s string) (phase2Pairs, error) {
 			p.Ablation = c[0]
 		case "parity":
 			p.Parity = c[0]
+		case "previous":
+			p.Previous = c[0]
 		default:
 			return p, fmt.Errorf("unknown arm %q", key)
 		}
 	}
-	if p.TSDB.Baseline == "" || p.Seriesstore.Baseline == "" || p.Parity.Baseline == "" {
-		return p, fmt.Errorf("the tsdb, seriesstore and parity pairs are needed")
+	if p.TSDB.Baseline == "" || p.Seriesstore.Baseline == "" || p.Parity.Baseline == "" || p.Previous.Baseline == "" {
+		return p, fmt.Errorf("the tsdb, seriesstore, parity and previous pairs are needed")
 	}
 	return p, nil
 }

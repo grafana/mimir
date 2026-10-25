@@ -1,13 +1,11 @@
 # The native metadata prototype's Phase 2 sensitivity runs, for run-batch.sh: the TSDB's and seriesstore's pairs with
 # the production profile, whose records and help lengths are a production cell's sample's, rather than the threshold
-# profile's. Run it into a RESULTS of its own, and report it with
-#
-#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
-#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore
-#
-# whose CPU and bytes ratios say whether Phase 2's decision holds for such records; its exit gate and outcome are
-# Phase 2's own, which this has no parity runs for. Run it from a checkout of this file's commit: the build is Phase 2's,
-# and the bench, with the production profile's settings, the checkout's. Each pair runs twice in each order.
+# profile's. Run it into a RESULTS of its own, which phase2.batch's decision takes as -sensitivity: their extras are
+# held to the cost budget too, and Phase 6 starts if neither engine's is within it on these records either. Its ratios,
+# with the same pairs as -decide=$RESULTS, say whether Phase 2's decision holds for such records; its exit gate and
+# outcome are Phase 2's own, which this has no parity runs for. Run it from a checkout of this file's commit: the
+# build is Phase 2's, and the bench, with the production profile's settings, the checkout's. Each pair runs twice in
+# each order.
 #
 # production.json is the threshold profile with a production cell's sample of 6000 records of three partitions
 # (2026-10-25): 7.74 series each, 1.20 series per family, 0.064 metric family entries, and helps of 30 families, of

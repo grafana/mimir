@@ -1,0 +1,12 @@
+# The rest of the native metadata prototype's Phase 2 diagnostic, for run-batch.sh, with the threshold profile:
+# seriesstore at the end of Phase 1 against Phase 2's, both with metadata off, which the exit gate holds to 5%, at the
+# upper bound, of what the phase cost it. With phase2.batch's diagnostic-1, the pair runs twice in each order. Run it
+# into phase2.batch's RESULTS, from a checkout of this file's commit; its builds are phase2.batch's, and as a pair of
+# one engine, it starts at an even hour.
+
+build phase2 b871973255
+build phase1 fb759c4952
+
+run diagnostic-2 phase2 seriesstore phase1 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run diagnostic-3 phase1 seriesstore phase2 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run diagnostic-4 phase2 seriesstore phase1 seriesstore profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
