@@ -116,31 +116,31 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("refused before the walk when over max_index_bytes", func(t *testing.T) {
-		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 1000})
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 100})
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), "max_index_bytes 1000")
+		assert.Contains(t, st.Message(), "max_index_bytes 100")
 	})
 
 	t.Run("with no matchers the limit is checked from the series each source holds", func(t *testing.T) {
-		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 1000})
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 100})
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "would walk 3 series in 1 head and local blocks")
-		assert.Contains(t, st.Message(), "more than max_index_bytes 1000")
+		assert.Contains(t, st.Message(), "more than max_index_bytes 100")
 	})
 
 	t.Run("a request is refused when its series cost more than max_index_bytes, and not at the limit", func(t *testing.T) {
-		// Three series at 512 bytes each.
+		// Three series at ingesterSeriesCostBytes each.
 		for name, matchers := range map[string][]*client.LabelMatcher{"no matchers": nil, "a matcher": everySeries} {
-			resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3 * 512})
+			resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
 			require.NoError(t, err, name)
 			assert.Equal(t, int64(3), resp.SeriesCounted, name)
 
-			_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3*512 - 1})
+			_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3*ingesterSeriesCostBytes - 1})
 			st, ok := status.FromError(err)
 			require.True(t, ok, name)
 			assert.Equal(t, codes.ResourceExhausted, st.Code(), name)
@@ -254,7 +254,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	})
 
 	t.Run("max_index_bytes prices the series of every source", func(t *testing.T) {
-		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 3 * 512})
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
@@ -277,7 +277,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 
 func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	limits := defaultLimitsTestConfig()
-	limits.CardinalityEstimateMaxIndexBytes = 1000
+	limits.CardinalityEstimateMaxIndexBytes = 100
 	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
 	require.NoError(t, err)
 	startAndWaitHealthy(t, i, r)
@@ -287,7 +287,7 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Three series at 512 bytes each are over the tenant's 1000 bytes,
+	// Three series at ingesterSeriesCostBytes each are over the tenant's 100 bytes,
 	// whether the request asks for no bound or a larger one. The matcher
 	// makes the ingester walk them rather than count postings lengths.
 	everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
@@ -297,7 +297,7 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
-		assert.Contains(t, st.Message(), "more than max_index_bytes 1000")
+		assert.Contains(t, st.Message(), "more than max_index_bytes 100")
 	}
 
 	limits.CardinalityEstimateMaxIndexBytes = 0
