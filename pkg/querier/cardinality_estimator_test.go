@@ -481,6 +481,22 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	require.Len(t, got, 3)
 	assert.Equal(t, int64(0), got[1].StepMs)
 	assert.Equal(t, int64(0), got[2].StepMs)
+
+	// With buckets two hours wide, each bucket answered on its own is its own two-hour window.
+	byBucket[95*hour] = byBucket[96*hour]
+	byBucket[96*hour] = byBucket[97*hour]
+	got = nil
+	res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 95 * hour, MaxT: 98 * hour, Step: hour, Window: 2 * hour})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"up": {3, 3}}, res.Counts)
+	require.Len(t, got, 3)
+	assert.Equal(t, 2*hour, got[0].WindowMs, "the per-bucket request carries the window")
+	for i, start := range []int64{95 * hour, 96 * hour} {
+		assert.Equal(t, start, got[i+1].StartTimestampMs)
+		assert.Equal(t, start+2*hour, got[i+1].EndTimestampMs)
+		assert.Zero(t, got[i+1].StepMs)
+		assert.Zero(t, got[i+1].WindowMs)
+	}
 }
 
 func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
