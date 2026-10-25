@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/grafana/dskit/runutil"
@@ -64,8 +65,13 @@ type seriesCounts struct {
 	buckets    int
 	groupBy    string
 	hashes     bool
-	// maxIndexBytes caps postings plus series entry bytes read, 0 for none.
+	// maxIndexBytes caps postings, series entry and postings offsets table
+	// bytes read, 0 for none.
 	maxIndexBytes int64
+	// tableBytes is the group-by label's postings offsets table read so far,
+	// priced from the index-header's samples. With index-header version 2
+	// these are object-storage reads.
+	tableBytes atomic.Int64
 	// sketchAbove turns a hash set larger than this into an HLL sketch.
 	sketchAbove int64
 
@@ -134,10 +140,27 @@ func indexBytes(stats *safeQueryStats) int64 {
 	return int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
 }
 
+// limitedBytes is what max_index_bytes bounds: index_bytes plus the postings
+// offsets table read.
+func (c *seriesCounts) limitedBytes(stats *safeQueryStats) int64 {
+	return indexBytes(stats) + c.tableBytes.Load()
+}
+
+// checkTable rejects the request before a block's postings offsets table is
+// walked when the index already read, plus the table bytes priced so far,
+// would pass max_index_bytes.
+func (c *seriesCounts) checkTable(read, table int64) error {
+	if c.maxIndexBytes == 0 || read+table <= c.maxIndexBytes {
+		return nil
+	}
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
+		read+table, read, table, c.groupBy, c.maxIndexBytes)
+}
+
 // checkPlan rejects the request before any series entry is read when the
-// postings already read, plus the matching series priced at their blocks'
-// estimated entry size (seriesEntryEstimate), plus the group-by postings
-// still to read, would pass max_index_bytes.
+// postings and postings offsets table already read, plus the matching series
+// priced at their blocks' estimated entry size (seriesEntryEstimate), plus
+// the group-by postings still to read, would pass max_index_bytes.
 func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
@@ -150,7 +173,7 @@ func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings i
 	if series > 0 {
 		avg = seriesBytes / int64(series)
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings read, then %d series at an estimated %d bytes each and %d bytes of group-by postings), more than max_index_bytes %d",
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of group-by postings), more than max_index_bytes %d",
 		estimate, read, series, avg, postings, c.maxIndexBytes)
 }
 
@@ -383,6 +406,19 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			if !c.postingsOnly(o.b.meta, shard, o.pending) {
 				return nil
 			}
+			// The walk reads the group-by label's postings offsets table, from
+			// object storage with index-header version 2. Skip it when the table
+			// alone costs more than reading the series entries would.
+			tableBytes, err := o.b.indexHeaderReader.LabelValuesOffsetsTableBytes(pctx, c.groupBy)
+			if err != nil {
+				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.groupBy, err)
+			}
+			if tableBytes >= int64(len(o.postings))*seriesEntryPlanningBytes {
+				return nil
+			}
+			if err := c.checkTable(indexBytes(stats), c.tableBytes.Add(tableBytes)); err != nil {
+				return err
+			}
 			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.groupBy, "", nil)
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.groupBy, err)
@@ -393,7 +429,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 					cost += off.Off.End - off.Off.Start
 				}
 			}
-			if cost < int64(len(o.postings))*seriesEntryPlanningBytes {
+			if tableBytes+cost < int64(len(o.postings))*seriesEntryPlanningBytes {
 				o.groupOffsets, o.groupPostingsBytes = offsets, cost
 				if o.groupOffsets == nil {
 					o.groupOffsets = []streamindex.PostingListOffset{}
@@ -418,7 +454,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		series += len(o.postings)
 		seriesBytes += int64(len(o.postings)) * seriesEntryEstimate(o.b.meta)
 	}
-	if err := c.checkPlan(indexBytes(stats), series, seriesBytes, groupPostings); err != nil {
+	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, groupPostings); err != nil {
 		return nil, err
 	}
 	resp := &storegatewaypb.SeriesCountsResponse{}
@@ -457,6 +493,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
 	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
+	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
 	return resp, nil
 }
 
@@ -481,7 +518,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 			c.add(series)
 		}
 		mtx.Unlock()
-		if err := c.checkRead(indexBytes(stats)); err != nil {
+		if err := c.checkRead(c.limitedBytes(stats)); err != nil {
 			return err
 		}
 	}
@@ -541,7 +578,7 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 	mtx.Lock()
 	c.addCounts(counts, int64(len(matching))-inGroups)
 	mtx.Unlock()
-	return c.checkRead(indexBytes(stats))
+	return c.checkRead(c.limitedBytes(stats))
 }
 
 // countIntersection counts the refs of p, multiplied by scale, that are in
