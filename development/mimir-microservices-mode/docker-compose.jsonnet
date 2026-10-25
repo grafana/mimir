@@ -69,6 +69,7 @@ std.manifestYamlDoc({
     'distributor-1': mimirService({
       name: 'distributor-1',
       target: 'distributor',
+      jaegerApp: 'distributor-1',
       httpPort: 8000,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
@@ -76,6 +77,7 @@ std.manifestYamlDoc({
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
+      jaegerApp: 'distributor-2',
       httpPort: 8001,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
@@ -250,9 +252,7 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
-      // Mimir reads mimir_cluster_seed.json from object storage on startup and waits up to 5 minutes
-      // from its creation time before becoming ready. The file persists in the MinIO volume across
-      // restarts, so without this flag any component starting within 5 minutes of the previous run blocks.
+      // Do not send anonymous usage reports from a dev environment.
       '-usage-stats.enabled=false',
     ] + options.extraArguments,
 
@@ -340,7 +340,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.34-alpine',
+      image: 'memcached:1.6.45-alpine',
       ports: [
         '11211:11211',
       ],
@@ -373,7 +373,7 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
@@ -388,7 +388,7 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
@@ -404,7 +404,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:12.1.1',
+      image: 'grafana/grafana:13.1.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -412,7 +412,7 @@ std.manifestYamlDoc({
       volumes: [
         './config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
-        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
+        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
       ],
       ports: ['3000:3000'],
     },
@@ -422,7 +422,7 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.37.3',
+      image: 'grafana/agent:v0.44.8',
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
@@ -439,7 +439,7 @@ std.manifestYamlDoc({
 
   otel_collector:: {
     otel_collector: {
-      image: 'otel/opentelemetry-collector-contrib:0.88.0',
+      image: 'otel/opentelemetry-collector-contrib:0.154.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
