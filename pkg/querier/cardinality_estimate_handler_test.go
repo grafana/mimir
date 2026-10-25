@@ -107,6 +107,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		query   string
 		status  int
 		body    string
+		absent  string
 	}{
 		"too many buckets across block ranges is the caller's error": {
 			blocks: bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}},
@@ -115,6 +116,10 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		"a store-gateway refusing on max_index_bytes is 422": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
+		},
+		"an older store-gateway is 422 and not a split of max_index_bytes": {
+			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
+			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "store-gateway 1.1.1.1 does not support cardinality estimates yet", absent: "split into",
 		},
 		"a store-gateway rejecting the request is 400": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.InvalidArgument, "step_ms doesn't divide the window")),
@@ -138,6 +143,9 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			rec := estimateRequest(t, q, tc.cfg, false, context.Background(), tc.query)
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), tc.body)
+			if tc.absent != "" {
+				assert.NotContains(t, rec.Body.String(), tc.absent)
+			}
 		})
 	}
 }
