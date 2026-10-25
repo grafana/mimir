@@ -71,6 +71,9 @@ type SeriesProfile struct {
 	// order of their hashes, as remote write's shards do. Each is 1 when not set.
 	SeriesPerTarget     int `json:"series_per_target"`
 	PartitionsPerTenant int `json:"partitions_per_tenant"`
+	// The share of requests that carry their metric families' metadata, which distributors write from the series' own
+	// and records carry as stand-ins: the rest are of senders that send it rarely, in requests of their own.
+	LegacyMetadataShare float64 `json:"legacy_metadata_share"`
 	// What the records should be made of, as a sample of real partitions' records is: runs whose records aren't don't
 	// count.
 	Composition *Composition `json:"composition,omitempty"`
@@ -270,6 +273,7 @@ func defaultProfile() Profile {
 			ExemplarShare:         0.003,
 			BackdatedSeriesShare:  0.1,
 			BackdatedShare:        0.02,
+			LegacyMetadataShare:   1,
 		},
 		Queries: QueriesProfile{
 			BackdatedRangeShare: 0.2,

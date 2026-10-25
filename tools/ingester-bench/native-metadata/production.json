@@ -1,0 +1,11 @@
+{
+  "series": {
+    "metadata_share": 1,
+    "help_length": {"0": 25, "0.1": 34, "0.5": 59, "0.9": 97, "0.99": 118, "1": 118},
+    "series_per_request": 180,
+    "series_per_target": 1,
+    "partitions_per_tenant": 20,
+    "legacy_metadata_share": 0.02,
+    "composition": {"records": 6000, "series_per_record": 7.743, "series_per_value": 1.2019, "stand_ins_per_record": 0.0642}
+  }
+}
