@@ -77,6 +77,27 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 	})
 
+	t.Run("a window with RFC 3339 timestamps is cached like one with seconds", func(t *testing.T) {
+		d := &downstream{body: `{"counts":[]}`}
+		backend := cache.NewInstrumentedMockCache()
+		rt := newRT(d, backend)
+		rfc := func(hoursAgo int) string {
+			return now.Add(-time.Duration(hoursAgo) * time.Hour).UTC().Format(time.RFC3339)
+		}
+		q := "start=" + rfc(26) + "&end=" + rfc(2) + "&group_by=pod"
+		assert.Equal(t, d.body, roundTrip(rt, q))
+		assert.Equal(t, d.body, roundTrip(rt, q))
+		assert.Equal(t, 1, d.calls)
+		assert.Equal(t, 1, backend.CountStoreCalls())
+
+		// An end within max-cache-freshness is still not cached.
+		d.calls = 0
+		q = "start=" + rfc(1) + "&end=" + now.UTC().Format(time.RFC3339)
+		roundTrip(rt, q)
+		roundTrip(rt, q)
+		assert.Equal(t, 2, d.calls)
+	})
+
 	t.Run("a window ending inside the out-of-order window is kept for the shorter TTL", func(t *testing.T) {
 		d := &downstream{body: `{}`}
 		backend := cache.NewInstrumentedMockCache()
