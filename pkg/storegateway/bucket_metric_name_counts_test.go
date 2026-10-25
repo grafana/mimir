@@ -18,6 +18,14 @@ import (
 )
 
 func TestBucketStore_MetricNameCounts(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			testBucketStoreMetricNameCounts(t, opts...)
+		})
+	}
+}
+
+func testBucketStoreMetricNameCounts(t *testing.T, opts ...prepareStoreConfigOption) {
 	bkt, err := filesystem.NewBucket(t.TempDir())
 	require.NoError(t, err)
 
@@ -35,6 +43,9 @@ func TestBucketStore_MetricNameCounts(t *testing.T) {
 		labels.FromStrings("__name__", "errors_total", "job", "a"),
 		labels.FromStrings("__name__", "errors_total", "job", "b"),
 		labels.FromStrings("__name__", "errors_total", "job", "c"),
+	}
+	for _, o := range opts {
+		o(cfg)
 	}
 	s := prepareStoreWithTestBlocks(t, bkt, cfg)
 
