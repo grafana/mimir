@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -26,6 +28,10 @@ type Composition struct {
 	SeriesPerValue float64 `json:"series_per_value"`
 	// Metric families' metadata entries per record, which the TSDB's batches count as series.
 	StandInsPerRecord float64 `json:"stand_ins_per_record"`
+	// Of a kafkatool dump, the distinct metric families with a help, and the length of their helps, as a profile's
+	// help_length has it.
+	Families   int         `json:"families,omitempty"`
+	HelpLength Percentiles `json:"help_length,omitempty"`
 }
 
 // compositionCounter adds records up into a Composition. In today's records, series carry no metadata of their own:
@@ -35,6 +41,8 @@ type Composition struct {
 type compositionCounter struct {
 	today                             bool
 	records, series, values, standIns int
+	// Of today's records, the help of each family, by family and help.
+	helps map[[2]string]int
 }
 
 func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
@@ -43,6 +51,7 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 	entries := map[string]struct{}{}
 	for _, m := range req.Metadata {
 		entries[fmt.Sprint(m.MetricFamilyName, m.Type, m.Help, m.Unit)] = struct{}{}
+		c.help(m.MetricFamilyName, m.Help)
 	}
 	for _, ts := range req.Timeseries {
 		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 {
@@ -59,6 +68,7 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 			if m := ts.SeriesMetadata; !m.IsEmpty() {
 				// The family's entry the old writer copied onto the series named like it.
 				entries[fmt.Sprint(name, m.Type, m.Help, m.Unit)] = struct{}{}
+				c.help(name, m.Help)
 			}
 			continue
 		}
@@ -72,8 +82,33 @@ func (c *compositionCounter) add(req *mimirpb.WriteRequest) {
 	}
 }
 
+// help counts a family's help, of today's records.
+func (c *compositionCounter) help(family, help string) {
+	if !c.today || help == "" {
+		return
+	}
+	if c.helps == nil {
+		c.helps = map[[2]string]int{}
+	}
+	c.helps[[2]string{family, help}] = len(help)
+}
+
 func (c *compositionCounter) composition() Composition {
 	out := Composition{Records: c.records}
+	if len(c.helps) > 0 {
+		lengths := make([]int, 0, len(c.helps))
+		families := map[string]struct{}{}
+		for key, n := range c.helps {
+			lengths = append(lengths, n)
+			families[key[0]] = struct{}{}
+		}
+		slices.Sort(lengths)
+		out.Families, out.HelpLength = len(families), Percentiles{}
+		for _, q := range []string{"0", "0.1", "0.5", "0.9", "0.99", "1"} {
+			f, _ := strconv.ParseFloat(q, 64)
+			out.HelpLength[q] = float64(lengths[min(len(lengths)-1, int(f*float64(len(lengths))))])
+		}
+	}
 	if c.records > 0 {
 		out.SeriesPerRecord = float64(c.series) / float64(c.records)
 		out.StandInsPerRecord = float64(c.standIns) / float64(c.records)
@@ -103,26 +138,36 @@ func familyName(name string) string {
 	return name
 }
 
-// compositionOfDump is the Composition of the records of a kafkatool dump, a JSON record per line, of today's format.
-func compositionOfDump(path string) (Composition, error) {
+// compositionOfDumps is the Composition of the records of kafkatool dumps, a JSON record per line, of today's format,
+// over them all.
+func compositionOfDumps(paths []string) (Composition, error) {
+	counter := compositionCounter{today: true}
+	for _, path := range paths {
+		if err := counter.addDump(path); err != nil {
+			return Composition{}, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return counter.composition(), nil
+}
+
+func (c *compositionCounter) addDump(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return Composition{}, err
+		return err
 	}
 	defer f.Close()
-	counter := compositionCounter{today: true}
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 1<<20), 64<<20)
 	for scanner.Scan() {
 		var record kgo.Record
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			return Composition{}, err
+			return err
 		}
 		var req mimirpb.PreallocWriteRequest
 		if err := ingest.DeserializeRecordContent(record.Value, &req, ingest.ParseRecordVersion(&record)); err != nil {
-			return Composition{}, fmt.Errorf("record at offset %d: %w", record.Offset, err)
+			return fmt.Errorf("record at offset %d: %w", record.Offset, err)
 		}
-		counter.add(&req.WriteRequest)
+		c.add(&req.WriteRequest)
 	}
-	return counter.composition(), scanner.Err()
+	return scanner.Err()
 }
