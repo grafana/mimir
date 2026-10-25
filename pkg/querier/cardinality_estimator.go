@@ -441,6 +441,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 
 	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
 	m := newEstimateMerger(ctx, sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
+	m.buckets = req.expectedBuckets()
 	var headMinT int64
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
