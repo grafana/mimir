@@ -93,26 +93,27 @@ func (s *metricNameStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool
 // Uncounted blocks are retried as for metricNameCounts. The calls that
 // answered stay open on the returned table; nothing past their first batch
 // is read until the table is merged.
-func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID string, parts []estimatePart) (*nameTable, MetricNameCountsResult, error) {
+func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID string, parts []estimatePart, maxIndexBytes int64) (*nameTable, MetricNameCountsResult, error) {
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	// The streams outlive the calls that open them, so they are opened on
 	// their own context rather than on the attempt's, which ends with it.
 	streamCtx, cancel := context.WithCancel(ctx)
 	t := &nameTable{cancel: cancel, tracker: tracker}
 	var mtx sync.Mutex
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, 0, func(_ context.Context, c estimateCall, _ int64, _ int) (estimateCallResult, error) {
+	var table int64
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, maxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		addr := c.client.RemoteAddress()
-		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames}
+		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames, MaxIndexBytes: perCall}
 		stream, err := c.client.MetricNameCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), req)
 		if err != nil {
-			return estimateCallResult{}, classifyStoreGatewayError(addr, err)
+			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
 		}
 		first, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			return estimateCallResult{}, nil
 		}
 		if err != nil {
-			return estimateCallResult{}, classifyStoreGatewayError(addr, err)
+			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
 		}
 		counted, err := parseBlockIDs(addr, first.BlockIds)
 		if err != nil {
@@ -125,13 +126,14 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 			return estimateCallResult{}, err
 		}
 		t.streams = append(t.streams, s)
-		return estimateCallResult{counted: counted}, nil
+		table += first.PostingsOffsetsTableBytes
+		return estimateCallResult{counted: counted, indexBytes: first.PostingsOffsetsTableBytes}, nil
 	})
 	if err != nil {
 		t.close()
 		return nil, MetricNameCountsResult{}, err
 	}
-	var res MetricNameCountsResult
+	res := MetricNameCountsResult{PostingsOffsetsTableBytes: table}
 	if err := res.setCoverage(parts, cov); err != nil {
 		t.close()
 		return nil, MetricNameCountsResult{}, err

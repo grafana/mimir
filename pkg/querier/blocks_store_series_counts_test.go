@@ -306,7 +306,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	clients := map[BlocksStoreClient][][]ulid.ULID{
 		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
-		}}): {{b1}},
+		}, IndexBytes: 300, PostingsOffsetsTableBytes: 40}): {{b1}},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, clients)
 	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
@@ -329,6 +329,8 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
 	assert.JSONEq(t, `7`, string(raw["total"]))
 	assert.JSONEq(t, `{"start":0,"end":86400000}`, string(raw["window"]))
+	assert.JSONEq(t, `300`, string(raw["index_bytes"]))
+	assert.JSONEq(t, `40`, string(raw["postings_offsets_table_bytes"]), "the table walked is reported next to index_bytes")
 	for _, old := range []string{"series", "min_time", "max_time", "snapped"} {
 		assert.NotContains(t, raw, old)
 	}

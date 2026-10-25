@@ -89,18 +89,21 @@ type estimateResponse struct {
 	GroupCount    int  `json:"group_count"`
 	// Total is the sum of every group's count, including the groups that
 	// min_count or limit left out of the table.
-	Total                int64           `json:"total"`
-	SeriesCounted        int64           `json:"series_counted"`
-	PostingsFetchedBytes int64           `json:"postings_fetched_bytes"`
-	SeriesFetchedBytes   int64           `json:"series_fetched_bytes"`
-	IndexBytes           int64           `json:"index_bytes"`
-	BlocksFromPostings   int64           `json:"blocks_from_postings,omitempty"`
-	EstimatedGroups      int             `json:"estimated_groups"`
-	HashBytes            int64           `json:"hash_bytes"`
-	SketchBytes          int64           `json:"sketch_bytes"`
-	ElapsedMS            float64         `json:"elapsed_ms"`
-	Groups               []estimateGroup `json:"groups"`
-	Compare              *estimateCheck  `json:"compare,omitempty"`
+	Total                int64 `json:"total"`
+	SeriesCounted        int64 `json:"series_counted"`
+	PostingsFetchedBytes int64 `json:"postings_fetched_bytes"`
+	SeriesFetchedBytes   int64 `json:"series_fetched_bytes"`
+	IndexBytes           int64 `json:"index_bytes"`
+	// PostingsOffsetsTableBytes is the postings offsets table the
+	// store-gateways walked, which max_index_bytes bounds with index_bytes.
+	PostingsOffsetsTableBytes int64           `json:"postings_offsets_table_bytes"`
+	BlocksFromPostings        int64           `json:"blocks_from_postings,omitempty"`
+	EstimatedGroups           int             `json:"estimated_groups"`
+	HashBytes                 int64           `json:"hash_bytes"`
+	SketchBytes               int64           `json:"sketch_bytes"`
+	ElapsedMS                 float64         `json:"elapsed_ms"`
+	Groups                    []estimateGroup `json:"groups"`
+	Compare                   *estimateCheck  `json:"compare,omitempty"`
 }
 
 // estimateCheck is the compare=true result: the same request answered by
@@ -185,7 +188,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			GroupCount: len(res.Counts), SeriesCounted: res.SeriesCounted,
-			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, BlocksFromPostings: res.BlocksFromPostings,
+			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, PostingsOffsetsTableBytes: res.PostingsOffsetsTableBytes, BlocksFromPostings: res.BlocksFromPostings,
 			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
 			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
 			Groups:    make([]estimateGroup, 0, len(res.Counts)),

@@ -104,6 +104,10 @@ type CardinalityEstimateResult struct {
 	SeriesFetchedBytes   int64
 	// IndexBytes is measured the way the Series call measures it.
 	IndexBytes int64
+	// PostingsOffsetsTableBytes is the postings offsets table the
+	// store-gateways walked, which max_index_bytes bounds with IndexBytes.
+	// With index-header version 2 it is read from object storage.
+	PostingsOffsetsTableBytes int64
 	// BlocksFromPostings is how many blocks were counted from the group-by
 	// label's postings without reading series entries.
 	BlocksFromPostings int64
@@ -197,6 +201,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		res.PostingsFetchedBytes += resp.PostingsFetchedBytes
 		res.SeriesFetchedBytes += resp.SeriesFetchedBytes
 		res.IndexBytes += resp.IndexBytes
+		res.PostingsOffsetsTableBytes += resp.PostingsOffsetsTableBytes
 		res.BlocksFromPostings += resp.BlocksFromPostings
 		return nil
 	}
@@ -330,22 +335,24 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 	byName := req.GroupBy == "" || req.GroupBy == labels.MetricName
 	if byName && len(req.Matchers) == 0 && req.Step == 0 && len(blocks) > 0 && checkMetricNameCountsBlocks(blocks, req.MinT, req.MaxT) == nil {
 		if req.StreamNames {
-			names, mc, err := q.openNameTable(ctx, tenantID, parts)
+			names, mc, err := q.openNameTable(ctx, tenantID, parts, req.MaxIndexBytes)
 			if err != nil {
 				return CardinalityEstimateResult{}, err
 			}
 			return CardinalityEstimateResult{
 				Read: readIndexHeader, Snapped: snapped, names: names, Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
 				LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+				PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
 			}, nil
 		}
-		mc, err := q.metricNameCounts(ctx, tenantID, parts)
+		mc, err := q.metricNameCounts(ctx, tenantID, parts, req.MaxIndexBytes)
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
 		res := CardinalityEstimateResult{
 			Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
 			LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+			PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
 		}
 		for name, n := range mc.Counts {
 			res.Counts[name] = []int64{n}
