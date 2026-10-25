@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/oklog/ulid/v2"
@@ -170,9 +171,13 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 		{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
 		{ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"},
 	}
+	// The store-gateways are asked concurrently and share the slice of requests.
+	var gotMtx sync.Mutex
 	gateway := func(addr string, table int64, got *[]*storegatewaypb.MetricNameCountsRequest) *storeGatewayClientMock {
 		return &storeGatewayClientMock{remoteAddr: addr, mockedMetricNameCountsStream: func(req *storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+			gotMtx.Lock()
 			*got = append(*got, req)
+			gotMtx.Unlock()
 			return []*storegatewaypb.MetricNameCountsResponse{
 				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "a", Count: 1}}, PostingsOffsetsTableBytes: table},
 				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "b", Count: 1}}},
