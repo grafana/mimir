@@ -25,11 +25,13 @@ import (
 
 // SeriesCounts counts the head's series that match the request's matchers
 // and have a chunk in its window, grouped by one label, from the series'
-// chunk metas. No sample is read. The matching postings are resolved first
-// and priced at mimir_tsdb.EstimatedSeriesP99Size per series, so a request
-// over max_index_bytes, bounded by the tenant's
-// -querier.cardinality-estimate-max-index-bytes, is refused before any
-// series is walked.
+// chunk metas. No sample is read, except that the open head chunk's last
+// sample is read when the chunk starts before the window or the count is per
+// bucket, since its metas don't say where it ends. The matching postings are
+// resolved first and priced at mimir_tsdb.EstimatedSeriesP99Size per series,
+// so a request over max_index_bytes, bounded by the tenant's
+// -querier.cardinality-estimate-max-index-bytes, is refused before any series
+// is walked.
 //
 // The head, its out-of-order chunks included, and the ingester's compacted
 // local blocks that overlap the window are counted; a series in several of
