@@ -74,6 +74,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		MinT:        req.StartTimestampMs,
 		MaxT:        req.EndTimestampMs,
 		Step:        req.StepMs,
+		Window:      req.WindowMs,
 		GroupBy:     req.GroupBy,
 		Hashes:      req.Hashes,
 		SketchAbove: req.SketchAbove,
@@ -99,10 +100,10 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 	db := i.getTSDB(userID)
 	if db == nil {
-		return &client.SeriesCountsResponse{}, nil
+		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, nil
 	}
 	head := db.Head()
-	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime(), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince()}
+	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime(), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
 	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
 		return resp, nil
