@@ -171,7 +171,7 @@ func (f *feed) sampleComposition(content []byte) {
 		return
 	}
 	f.compositionMu.Lock()
-	f.composition.add(&req.WriteRequest)
+	f.composition.add("", &req.WriteRequest)
 	f.compositionMu.Unlock()
 }
 

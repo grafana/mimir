@@ -29,7 +29,7 @@ func TestCompositionOfTodaysAndTheNewWritersRecords(t *testing.T) {
 
 	// Today's: the family's metadata copied onto the series named like it, and a stand-in for the histogram's.
 	today := compositionCounter{today: true}
-	today.add(&mimirpb.WriteRequest{
+	today.add("tenant", &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
 			compositionSeries("requests_total", requests, "pod", "0"), compositionSeries("requests_total", requests, "pod", "1"),
 			compositionSeries("latency_seconds_bucket", mimirpb.SeriesMetadata{}, "le", "1"), compositionSeries("latency_seconds_count", mimirpb.SeriesMetadata{}),
@@ -43,7 +43,7 @@ func TestCompositionOfTodaysAndTheNewWritersRecords(t *testing.T) {
 
 	// The new writer's: each series' own, and a stand-in each for the families.
 	newer := compositionCounter{}
-	newer.add(&mimirpb.WriteRequest{
+	newer.add("", &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
 			compositionSeries("requests_total", requests, "pod", "0"), compositionSeries("requests_total", requests, "pod", "1"),
 			compositionSeries("latency_seconds_bucket", latency, "le", "1"), compositionSeries("latency_seconds_count", latency),
@@ -113,9 +113,67 @@ func TestFamilyNamesFollowTheRecords(t *testing.T) {
 // Of today's records, a gauge and a counter named like a histogram's series are two families, so two values.
 func TestCompositionKeepsMetricsNamedLikeHistogramSeriesApart(t *testing.T) {
 	counter := compositionCounter{today: true}
-	counter.add(&mimirpb.WriteRequest{
+	counter.add("tenant", &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("example", mimirpb.SeriesMetadata{}), compositionSeries("example_count", mimirpb.SeriesMetadata{})},
 		Metadata:   []*mimirpb.MetricMetadata{{MetricFamilyName: "example", Type: mimirpb.GAUGE}, {MetricFamilyName: "example_count", Type: mimirpb.COUNTER}},
 	})
 	require.Equal(t, 1.0, counter.composition().SeriesPerValue)
+}
+
+// writeDump writes the tenant's request as a kafkatool dump's records, keyed by the tenant.
+func writeDump(t *testing.T, tenant string, req *mimirpb.WriteRequest) string {
+	t.Helper()
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, tenant, req, 1<<20)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "dump.json")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	for _, r := range records {
+		require.NoError(t, json.NewEncoder(f).Encode(&kgo.Record{Key: []byte(tenant), Value: r.Value, Headers: r.Headers}))
+	}
+	require.NoError(t, f.Close())
+	return path
+}
+
+// A tenant's metadata says nothing of another's metrics: one tenant's counter named like another's histogram's count
+// leaves that histogram one family.
+func TestCompositionKeepsTenantsFamiliesApart(t *testing.T) {
+	a := writeDump(t, "tenant-a", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			compositionSeries("example_bucket", mimirpb.SeriesMetadata{}, "le", "1"),
+			compositionSeries("example_count", mimirpb.SeriesMetadata{}),
+		},
+		Metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "example", Type: mimirpb.HISTOGRAM}},
+	})
+	b := writeDump(t, "tenant-b", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("example_count", mimirpb.SeriesMetadata{})},
+		Metadata:   []*mimirpb.MetricMetadata{{MetricFamilyName: "example_count", Type: mimirpb.COUNTER}},
+	})
+	alone, err := compositionOfDumps([]string{a})
+	require.NoError(t, err)
+	require.Equal(t, 2.0, alone.SeriesPerValue)
+	alone, err = compositionOfDumps([]string{b})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, alone.SeriesPerValue)
+	both, err := compositionOfDumps([]string{a, b})
+	require.NoError(t, err)
+	require.Equal(t, 1.5, both.SeriesPerValue, "three series of two families, one each tenant's")
+}
+
+// A family a tenant's metadata gives two types is counted, and taken as of no type: its series are told by its buckets
+// and quantiles, or else by their own names.
+func TestCompositionCountsFamiliesOfConflictingTypes(t *testing.T) {
+	path := writeDump(t, "tenant", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("jobs", mimirpb.SeriesMetadata{}), compositionSeries("jobs_count", mimirpb.SeriesMetadata{})},
+		Metadata:   []*mimirpb.MetricMetadata{{MetricFamilyName: "jobs", Type: mimirpb.HISTOGRAM}},
+	})
+	other := writeDump(t, "tenant", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("jobs", mimirpb.SeriesMetadata{})},
+		Metadata:   []*mimirpb.MetricMetadata{{MetricFamilyName: "jobs", Type: mimirpb.COUNTER}},
+	})
+	c, err := compositionOfDumps([]string{path, other})
+	require.NoError(t, err)
+	require.Equal(t, 1, c.ConflictingFamilies)
+	// Without buckets, jobs_count is a family of its own: the first record's two series are two values.
+	require.Equal(t, 3.0/3.0, c.SeriesPerValue)
 }
