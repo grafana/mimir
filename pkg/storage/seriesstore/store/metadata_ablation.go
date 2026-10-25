@@ -24,22 +24,19 @@ import (
 // inherent, so the ablation compares as the engine does, through its memo of a record's values. A transaction is a
 // batch's 150 series, as the TSDB arm's batches are, or an appender's commit.
 //
-// The choices are switches here, each on:
-const (
-	// The append-time unchanged skip: an observation of the series' current value, at or after its start, does
-	// nothing. Without it, every observation is merged, which a repeated value doesn't change.
-	ablationUnchangedSkip = true
-	// The transaction's table of up to 128 values as they came, resolved only when kept, and resolving a value to one
-	// the series already has before the cache. Without it, each value is resolved through the cache as it comes.
-	ablationTransactionTable = true
-	// The engine's cache of 64 shards of 64 values in 4 MiB, which admits a value at its second miss. Without it, every
-	// resolved value is a copy of its own.
-	ablationValueCache = true
-	// The five-version cap: a series keeps at most this many versions, the oldest evicted, which truncates it. 65 is
-	// the default build's 64 older runs and the current one.
-	ablationMaxVersions = 5
-	// A series' state of 48 bytes, out of line and allocated at its first value, is this build itself.
-)
+// The choices are switches, each on unless a build tag turns it off, in metadata_ablation_switches_*.go:
+//   - ablationUnchangedSkip, the append-time unchanged skip: an observation of the series' current value, at or after
+//     its start, does nothing. ablation_without_unchanged_skip merges every observation, which a repeated value
+//     doesn't change.
+//   - ablationTransactionTable, the transaction's table of up to 128 values as they came, resolved only when kept,
+//     and resolving a value to one the series already has before the cache. ablation_without_transaction_table
+//     resolves each value through the cache as it comes.
+//   - ablationValueCache, the engine's cache of 64 shards of 64 values in 4 MiB, which admits a value at its second
+//     miss. ablation_without_value_cache makes every resolved value a copy of its own.
+//   - ablationMaxVersions, the five-version cap: a series keeps at most this many versions, the oldest evicted, which
+//     truncates it. ablation_without_version_cap makes it 65, the default build's 64 older runs and the current one.
+//
+// A series' state of 48 bytes, out of line and allocated at its first value, is this build itself.
 
 const (
 	ablationTableValues       = 128
