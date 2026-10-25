@@ -428,7 +428,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		// head is sure to hold; an older window would miss the series
 		// that are only in local blocks.
 		headOnly := req.MinT >= util.TimeToMillis(e.now().Add(-e.headAlwaysHolds))
-		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.Step == 0 && headOnly {
+		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && req.Step == 0 && headOnly {
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
 				return CardinalityEstimateResult{}, werr
@@ -519,6 +519,8 @@ func classifyIngesterError(err error) error {
 		switch st.Code() {
 		case codes.InvalidArgument:
 			return badEstimateRequest("ingesters: %s", st.Message())
+		case codes.Unimplemented:
+			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
 			if strings.Contains(st.Message(), "max_index_bytes") {
 				return refusedEstimate("ingesters: %s", st.Message())
