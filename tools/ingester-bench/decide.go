@@ -261,13 +261,13 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	}
 	switch {
 	case d.Decision == "fail":
-		d.Outcome = "stop: metric metadata stays on the vendored #19563 path, which seriesstore takes if Mimir moves onto it"
+		d.Outcome = "metadata is no argument for seriesstore: metric metadata stays on the vendored #19563 path, which seriesstore takes if Mimir moves onto it"
 	case d.Decision == "pass" && d.Credit == "credit":
-		d.Outcome = "continue the columnar direction"
+		d.Outcome = "metadata is a reason for an engine Mimir owns: keep building native metadata on seriesstore, towards columnar"
 	case d.Decision == "pass":
-		d.Outcome = "port the lessons back to the TSDB"
+		d.Outcome = "port seriesstore's choices to #19563; seriesstore keeps its own design"
 	default:
-		d.Outcome = "port the lessons back, recorded as inconclusive"
+		d.Outcome = "port seriesstore's choices to #19563, recorded as inconclusive; seriesstore keeps its own design"
 	}
 
 	parity := compareRuns(a.Runs, pairs.Parity)
