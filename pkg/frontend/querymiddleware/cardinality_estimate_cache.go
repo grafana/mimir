@@ -44,7 +44,7 @@ const (
 // cardinalityEstimateCacheKeyParams are the request parameters that change a
 // cardinality estimate's answer, in the order they go into the cache key.
 // compare is left out on purpose: such a request is never cached.
-var cardinalityEstimateCacheKeyParams = []string{"start", "end", "match[]", "group_by", "step", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "shards"}
+var cardinalityEstimateCacheKeyParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "shards"}
 
 // IsCardinalityEstimateQuery reports whether path is the experimental
 // cardinality estimate route.

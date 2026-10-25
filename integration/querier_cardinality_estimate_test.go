@@ -39,6 +39,7 @@ type cardinalityEstimate struct {
 	Dedup      bool   `json:"dedup"`
 	LowerBound bool   `json:"lower_bound"`
 	Total      int64  `json:"total"`
+	WindowMS   int64  `json:"window_ms"`
 	Counts     []struct {
 		Value  string  `json:"value"`
 		Count  int64   `json:"count"`
@@ -190,6 +191,32 @@ func TestCardinalityEstimate(t *testing.T) {
 			}
 		}
 		assert.Equal(t, []int64{1, 1}, buckets["x"], "x has samples in both halves")
+	})
+
+	t.Run("blocks only: by job, buckets every 6h each looking back 12h", func(t *testing.T) {
+		// Buckets end at 12h, 18h and 24h into the day, each counting the 12h before it.
+		start, end := day.Add(6*time.Hour), day.Add(24*time.Hour)
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}, "step": {"6h"}, "window": {"12h"}})
+		assert.Equal(t, int64(12*time.Hour/time.Millisecond), got.WindowMS)
+		buckets := map[string][]int64{}
+		for _, g := range got.Counts {
+			buckets[g.Value] = g.Counts
+		}
+		for i, bucketEnd := range []time.Time{day.Add(12 * time.Hour), day.Add(18 * time.Hour), day.Add(24 * time.Hour)} {
+			want := promqlCount(t, `{__name__="a_total"}`, "job", bucketEnd.Add(-12*time.Hour), bucketEnd)
+			for job := range buckets {
+				assert.Equal(t, want[job], buckets[job][i], "job %s, bucket %d", job, i)
+			}
+			for job, n := range want {
+				require.Contains(t, buckets, job)
+				assert.Equal(t, n, buckets[job][i], "job %s, bucket %d", job, i)
+			}
+		}
+		// x runs to 13h, so the overlapping buckets all hold it; y, from 1h to 5h, is only in the first, and
+		// z, from 20h, only in the last.
+		assert.Equal(t, []int64{1, 1, 1}, buckets["x"])
+		assert.Equal(t, []int64{1, 0, 0}, buckets["y"])
+		assert.Equal(t, []int64{0, 0, 1}, buckets["z"])
 	})
 
 	// Push to both partitions: series spread over the partitions by hash.
