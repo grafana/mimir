@@ -701,7 +701,7 @@ func BenchmarkIngester_EngineActiveSeries(b *testing.B) {
 				b.Run(bc.name, func(b *testing.B) {
 					b.ReportAllocs()
 					for range b.N {
-						require.NoError(b, ingester.ActiveSeries(&client.ActiveSeriesRequest{Matchers: bc.matchers}, &mockActiveSeriesServer{ctx: ctx}))
+						require.NoError(b, ingester.ActiveSeries(&client.ActiveSeriesRequest{Matchers: bc.matchers}, &mockActiveSeriesServer{ctx: ctx, encodeOnly: true}))
 					}
 				})
 			}

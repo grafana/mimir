@@ -1535,17 +1535,15 @@ const checkContextEvery = 1 << 14
 // ActiveSeriesMatching calls visit with the labels of each head series matching matchers that was ingested since
 // cutoffMs, as the active series API lists them from the matchers' postings and the active series, and with its native
 // histogram bucket count: with nativeHistograms, only the series whose last samples were native histograms. The labels
-// point into the series' own, which are their own allocations; visit isn't called with a shard locked.
+// point into the series' own, which are their own allocations, from a slice that is reused once visit returns; visit
+// isn't called with a shard locked.
 func (ix *engineIndex) ActiveSeriesMatching(ctx context.Context, matchers []*promlabels.Matcher, cutoffMs int64, nativeHistograms bool, visit func(lbls []mimirpb.LabelAdapter, buckets int) error) error {
 	compiled, err := compilePromMatchers(nil, matchers)
 	if err != nil {
 		return err
 	}
-	type active struct {
-		labels  labels.Labels
-		buckets int
-	}
-	var selected []active
+	scratch := takeActiveScratch()
+	defer scratch.give()
 	ix.forEachMatching(compiled, func(entry *seriesEntry) {
 		series := &entry.series
 		if !series.isActive(cutoffMs) {
@@ -1558,25 +1556,55 @@ func (ix *engineIndex) ActiveSeriesMatching(ctx context.Context, matchers []*pro
 			}
 			buckets = int(series.lastBucketCount)
 		}
-		selected = append(selected, active{entry.labels, buckets})
+		scratch.selected = append(scratch.selected, activeSeries{entry.labels, buckets})
 	})
-	var adapters []mimirpb.LabelAdapter
-	for index, series := range selected {
+	for index, series := range scratch.selected {
 		if index%checkContextEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		start := len(adapters)
-		series.labels.Range(func(name, value string) { adapters = append(adapters, mimirpb.LabelAdapter{Name: name, Value: value}) })
-		// A series' adapters are cut from one array, which the next ones don't move.
-		if err := visit(adapters[start:len(adapters):len(adapters)], series.buckets); err != nil {
+		scratch.adapters = scratch.adapters[:0]
+		series.labels.Range(func(name, value string) {
+			scratch.adapters = append(scratch.adapters, mimirpb.LabelAdapter{Name: name, Value: value})
+		})
+		if err := visit(scratch.adapters, series.buckets); err != nil {
 			return err
-		}
-		if cap(adapters)-len(adapters) < 32 {
-			// Doubling from small, so a few series don't pay for a large array.
-			adapters = make([]mimirpb.LabelAdapter, 0, min(1024, max(64, 2*cap(adapters))))
 		}
 	}
 	return nil
+}
+
+type activeSeries struct {
+	labels  labels.Labels
+	buckets int
+}
+
+// activeScratch holds the slices an active series listing selects and lists the series in, kept between listings:
+// growing them was most of what one allocated.
+type activeScratch struct {
+	selected []activeSeries
+	adapters []mimirpb.LabelAdapter
+}
+
+var activeScratches sync.Pool
+
+func takeActiveScratch() *activeScratch {
+	if scratch, ok := activeScratches.Get().(*activeScratch); ok {
+		return scratch
+	}
+	return &activeScratch{}
+}
+
+// give keeps the slices for another listing, unless they are large, cleared: they point into the labels of one
+// tenant's series.
+func (s *activeScratch) give() {
+	if cap(s.selected) > 1<<16 {
+		return
+	}
+	clear(s.selected)
+	// Longer series' labels were written past its length: it holds one series' labels, which is short.
+	clear(s.adapters[:cap(s.adapters)])
+	s.selected, s.adapters = s.selected[:0], s.adapters[:0]
+	activeScratches.Put(s)
 }
 
 // IsLabelValueActive reports whether a head series with the label's value was ingested since cutoffMs, as the ingester's

@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -171,19 +172,20 @@ func hasShardMatcher(matchers []*labels.Matcher) bool {
 // sendActiveSeries sends the series list visits as the active series API does, in messages of at most
 // activeSeriesMaxSizeBytes.
 func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogram bool, list func(visit func([]mimirpb.LabelAdapter, int) error) error) error {
-	resp := &client.ActiveSeriesResponse{}
+	scratch := takeActiveSeriesScratch()
+	defer scratch.give()
+	// A response's metrics and labels are copied into the scratch's slices, which the next response reuses from the
+	// start once it is sent, which encodes it.
+	resp := &client.ActiveSeriesResponse{Metric: scratch.pointers[:0], BucketCount: scratch.buckets[:0]}
+	adapters, metrics := scratch.adapters[:0], scratch.metrics[:0]
+	keep := func() {
+		scratch.pointers, scratch.buckets = held(scratch.pointers, resp.Metric), held(scratch.buckets, resp.BucketCount)
+		scratch.adapters, scratch.metrics = held(scratch.adapters, adapters), held(scratch.metrics, metrics)
+	}
+	defer keep()
 	currentSize := 0
-	// The metrics are cut from arrays, which appending never moves: a response lists thousands, each its own allocation
-	// otherwise.
-	var metrics []mimirpb.Metric
 	err := list(func(lbls []mimirpb.LabelAdapter, buckets int) error {
-		if len(metrics) == cap(metrics) {
-			// Doubling from small, so a few series don't pay for a large array.
-			metrics = make([]mimirpb.Metric, 0, min(512, max(16, 2*cap(metrics))))
-		}
-		metrics = append(metrics, mimirpb.Metric{Labels: lbls})
-		m := &metrics[len(metrics)-1]
-		mSize := m.Size()
+		mSize := (&mimirpb.Metric{Labels: lbls}).Size()
 		if isNativeHistogram {
 			mSize += 8 // 8 bytes for the bucket count.
 		}
@@ -191,10 +193,17 @@ func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogr
 			if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
 				return fmt.Errorf("error sending response: %w", err)
 			}
-			resp = &client.ActiveSeriesResponse{}
+			keep()
+			resp = &client.ActiveSeriesResponse{Metric: resp.Metric[:0], BucketCount: resp.BucketCount[:0]}
+			adapters, metrics = adapters[:0], metrics[:0]
 			currentSize = 0
 		}
-		resp.Metric = append(resp.Metric, m)
+		// The labels are the engine's only until visit returns. Growing a slice leaves the metrics already in the
+		// response pointing into the one it had.
+		start := len(adapters)
+		adapters = append(adapters, lbls...)
+		metrics = append(metrics, mimirpb.Metric{Labels: adapters[start:len(adapters):len(adapters)]})
+		resp.Metric = append(resp.Metric, &metrics[len(metrics)-1])
 		if isNativeHistogram {
 			resp.BucketCount = append(resp.BucketCount, uint64(buckets))
 		}
@@ -210,6 +219,41 @@ func sendActiveSeries(stream client.Ingester_ActiveSeriesServer, isNativeHistogr
 		}
 	}
 	return nil
+}
+
+// activeSeriesScratch holds the slices an active series response is built in, kept between responses: growing them
+// for each was most of what an engine's listing allocated.
+type activeSeriesScratch struct {
+	pointers []*mimirpb.Metric
+	buckets  []uint64
+	adapters []mimirpb.LabelAdapter
+	metrics  []mimirpb.Metric
+}
+
+var activeSeriesScratches sync.Pool
+
+// maxKeptActiveSeriesScratch is how many labels a kept scratch holds at most: what a response of a full size has of
+// series with short labels, which one of a large listing grows to as it is reused for each response.
+const maxKeptActiveSeriesScratch = activeSeriesMaxSizeBytes / 8
+
+func takeActiveSeriesScratch() *activeSeriesScratch {
+	if scratch, ok := activeSeriesScratches.Get().(*activeSeriesScratch); ok {
+		return scratch
+	}
+	return &activeSeriesScratch{}
+}
+
+// give keeps the slices for another response, unless they are large, cleared as far as a response wrote them: they
+// point into one tenant's labels.
+func (s *activeSeriesScratch) give() {
+	if cap(s.adapters) > maxKeptActiveSeriesScratch {
+		return
+	}
+	clear(s.pointers)
+	clear(s.adapters)
+	clear(s.metrics)
+	s.pointers, s.buckets, s.adapters, s.metrics = s.pointers[:0], s.buckets[:0], s.adapters[:0], s.metrics[:0]
+	activeSeriesScratches.Put(s)
 }
 
 // activeLabelValueIndex is an index of an engine that keeps the active series in its series, which tells whether a series
