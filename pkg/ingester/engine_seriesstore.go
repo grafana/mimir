@@ -689,7 +689,7 @@ func (i *Ingester) rewindKafkaOffsetsToCheckpoints(checkpoints [][]byte) error {
 // ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
 // asked to skip already.
 func ingestSubsetThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
-	outcome, err := appendBatch(ctx, app, batch, subset, true, ingested)
+	outcome, err := appendBatch(ctx, app, batch, subset, true, ingested, nil)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))

@@ -168,6 +168,8 @@ type ingestBatch struct {
 	NativeMetricMetadata           bool
 	NativeMetricMetadataMaxChanges int
 	NativeMetricMetadataWindowMs   int64
+	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them.
+	NativeResources bool
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time

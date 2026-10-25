@@ -696,6 +696,9 @@ type TimeSeries struct {
 	// ResourceRef is the series' OTel resource, 1-based into its request's ResourceTable, or 0 for none. It isn't part
 	// of the message, and it's set from OTLP and on records only.
 	ResourceRef uint32
+	// Resource is the entry ResourceRef refers to, which decoding a record resolves, so that the series keeps its
+	// resource without its request. It isn't part of the message.
+	Resource *ResourceEntry
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
@@ -8440,10 +8443,14 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Metadata = metadata.slice()
 		}
 		m.rw2symbols.releasePages()
-		// The resource table follows the series, so their refs are checked once it's read.
+		// The resource table follows the series, so their refs are checked and resolved once it's read.
 		for i := range m.Timeseries {
-			if int(m.Timeseries[i].ResourceRef) > len(m.ResourceTable) {
+			ts := m.Timeseries[i].TimeSeries
+			if int(ts.ResourceRef) > len(m.ResourceTable) {
 				return errorInvalidResourceRef
+			}
+			if ts.ResourceRef != 0 {
+				ts.Resource = &m.ResourceTable[ts.ResourceRef-1]
 			}
 		}
 	}

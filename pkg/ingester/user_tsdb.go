@@ -104,6 +104,8 @@ type userTSDB struct {
 	nativeActive activeSeriesHead
 	// The engine, when it can keep native metric metadata.
 	nativeMetadata nativeMetadataEngine
+	// The engine, when it can keep native resources.
+	nativeResources nativeResourcesEngine
 	// The time the active series were last counted at, in Unix nanoseconds.
 	activeAsOf     atomic.Int64
 	seriesInMetric *metricCounter

@@ -249,6 +249,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if engine, ok := db.(nativeMetadataEngine); ok {
 		userDB.nativeMetadata = engine
 	}
+	if engine, ok := db.(nativeResourcesEngine); ok {
+		userDB.nativeResources = engine
+	}
 
 	// An engine that keeps the active series itself counts them by the tenant's custom trackers.
 	if head, ok := db.Head().(activeSeriesHead); ok && !testNoNativeActive {

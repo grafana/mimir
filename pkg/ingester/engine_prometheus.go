@@ -191,7 +191,7 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestO
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
 func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
-	outcome, err := appendBatch(ctx, app, batch, nil, false, nil)
+	outcome, err := appendBatch(ctx, app, batch, nil, false, nil, nil)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -209,7 +209,8 @@ func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch inges
 
 // appendBatch adds the batch to the appender, or with subset only the series at those indices, which ctx has
 // been asked to skip or not already. Errors ctx calls soft are reported to it, and any other error is returned.
-func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
+// With resources, the series' resources go in too.
+func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool, ingested *[]store.IngestedSeries, resources resourceStep) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
@@ -260,7 +261,8 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := outcome.Samples
 
-		// The series' metadata goes with each of its samples, as AppenderV2 takes it, but not with zero samples.
+		// The series' metadata and resource go with each of its samples, as AppenderV2 takes them, but not with zero
+		// samples.
 		sampleOptions := appOptions
 		if batch.NativeMetricMetadata && !ts.SeriesMetadata.IsEmpty() {
 			sampleOptions.Metadata = metadata.Metadata{
@@ -268,6 +270,9 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 				Unit: ts.SeriesMetadata.Unit,
 				Help: ts.SeriesMetadata.Help,
 			}
+		}
+		if resources != nil && ts.Resource != nil {
+			sampleOptions.Resource = resources.resource(ts.Resource, ref)
 		}
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0

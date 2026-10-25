@@ -220,7 +220,7 @@ func handler(
 			if len(req.ResourceTable) > 0 {
 				req.ResourceTable = nil
 				for _, ts := range req.Timeseries {
-					ts.ResourceRef = 0
+					ts.ResourceRef, ts.Resource = 0, nil
 				}
 			}
 

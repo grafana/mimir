@@ -437,6 +437,7 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		NativeMetricMetadata:           i.limits.NativeMetricMetadataEnabled(userID),
 		NativeMetricMetadataMaxChanges: maxChanges,
 		NativeMetricMetadataWindowMs:   changeWindow.Milliseconds(),
+		NativeResources:                i.limits.NativeResourcesEnabled(userID),
 		IngestedAt:                     startAppend,
 		OTLP:                           req.source() == mimirpb.OTLP,
 	})
