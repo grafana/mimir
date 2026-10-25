@@ -77,7 +77,7 @@ message SeriesCountsRequest {
   // Window in milliseconds, [start_timestamp_ms, end_timestamp_ms). A series counts if one of its chunks overlaps it.
   int64 start_timestamp_ms = 2;
   int64 end_timestamp_ms = 3;
-  // If set, the window is cut into buckets of this width and each group gets one count per bucket.
+  // If set, a bucket starts every step_ms from start_timestamp_ms and each group gets one count per bucket.
   int64 step_ms = 4;
   // Label to group by. Empty means __name__.
   string group_by = 5;
@@ -92,6 +92,11 @@ message SeriesCountsRequest {
   // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
   // up counts across partitions sets it, since a series can be in two partitions after the shard grows.
   int64 shard_size_unchanged_before_ms = 9;
+  // With step_ms, each bucket's width: bucket i covers [start + i*step_ms, start + i*step_ms + window_ms), and the
+  // last one ends at end_timestamp_ms. 0 means step_ms, adjacent buckets. A window wider than the step makes the
+  // buckets overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the
+  // response, so a caller can tell a source that ignored it.
+  int64 window_ms = 10;
 }
 
 message SeriesCountGroup {
@@ -120,6 +125,8 @@ message SeriesCountsResponse {
   int64 shard_size_unchanged_since_ms = 8;
   // Set when the request's shard_size_unchanged_before_ms was not met. Nothing is counted then.
   bool shard_size_changed = 9;
+  // The request's window_ms, which this ingester counted with.
+  int64 window_ms = 10;
 }
 
 message LabelValuesCardinalityRequest {
