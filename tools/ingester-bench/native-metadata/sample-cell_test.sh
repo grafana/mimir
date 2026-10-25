@@ -64,9 +64,10 @@ grep -q "^create -f -" "$tmp/log" || fail "the Job wasn't created with create"
 grep -q "^delete" "$tmp/log" && fail "a Job this run didn't create was deleted"
 echo "ok: nothing deleted when the create fails"
 
-# A Job that was created goes, also when the sample fails, and only it.
+# A Job that was created goes, also when the sample fails, and only it, without waiting for it to complete.
 reset
 if run env FAKE_FAIL=exec; then fail "a failed sample succeeded"; fi
+grep -q "^wait --for=condition=complete" "$tmp/log" && fail "a failed sample waited for its Job to complete"
 [[ "$(grep -c '^delete job' "$tmp/log")" == 1 ]] || fail "the created Job wasn't deleted once"
 [[ -z "$(jobs_left)" ]] || fail "the created Job is left: $(jobs_left)"
 echo "ok: the created Job is deleted when the sample fails"
@@ -80,7 +81,18 @@ grep -q "tools prebuilt" "$report" || fail "the report doesn't say what ran"
 grep -q "arm64-kafkafetch" "$report" || fail "the report doesn't have the tools' hashes"
 grep -q "apply" "$tmp/log" && fail "the Job was applied rather than created"
 [[ -z "$(jobs_left)" ]] || fail "the Job is left"
-echo "ok: the report is kept and the Job deleted"
+# The Job is deleted only once it completed, with the report in its log.
+name="$(sed -n 's/^delete job \([^ ]*\).*/\1/p' "$tmp/log")"
+completed="$(grep -n "^wait --for=condition=complete job/$name " "$tmp/log" | cut -d: -f1)"
+deleted="$(grep -n "^delete job $name " "$tmp/log" | cut -d: -f1)"
+[[ -n $completed && $completed -lt $deleted ]] || fail "the Job was deleted before it completed"
+# The probe's fetch is bounded too, by a limit of its own.
+grep -q "PROBE_MAX_BYTES=256000000 " "$tmp/log" || fail "the probe's byte limit isn't passed to the Job"
+# shellcheck disable=SC2016 # The Job's script, as it's passed, names the variables.
+grep -q -- '-records 10 -max-bytes "$PROBE_MAX_BYTES"' "$tmp/log" || fail "the probe's fetch isn't bounded by its byte limit"
+# shellcheck disable=SC2016 # Likewise.
+grep -q -- '-max-bytes "$MAX_BYTES"' "$tmp/log" || fail "the sample's fetch isn't bounded by its byte limit"
+echo "ok: the report is kept, the probe and the sample bounded, and the Job deleted once it completed"
 
 # Two runs at once have Jobs of their own, and each deletes only its own.
 reset

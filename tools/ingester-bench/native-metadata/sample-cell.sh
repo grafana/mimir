@@ -34,8 +34,10 @@ set -euo pipefail
 # alpine:3.22, by its multi-architecture digest.
 IMAGE=alpine@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 RECORDS=2000
-# Each partition's sample may take this many bytes, which 3 of fit the emptyDir with room for the tools.
+# Each partition's sample may take this many bytes, which 3 of fit the emptyDir with room for the tools; the probe's
+# 10 records of each, as many as 10 records of the largest size, at most 16 MiB and a third more as JSON.
 MAX_BYTES=3000000000
+PROBE_MAX_BYTES=256000000
 owner="$(printf '%s' "${USER:-anonymous}" | tr -c 'a-z0-9-' '-' | cut -c1-16)"
 # A name of this run's own: the script creates the Job, never takes one over, and deletes only it.
 NAME="native-metadata-sample-$owner-$(date -u +%m%d%H%M%S)-$((RANDOM % 1000))"
@@ -58,7 +60,7 @@ trap cleanup EXIT
 
 {
   echo "sample $NAME, $(date -u +%Y-%m-%dT%H:%M:%SZ), of $KUBE_CONTEXT/$NAMESPACE"
-  echo "$RECORDS records of 3 partitions, at most $MAX_BYTES bytes each, in $IMAGE"
+  echo "$RECORDS records of 3 partitions, at most $MAX_BYTES bytes each after a probe of at most $PROBE_MAX_BYTES, in $IMAGE"
 } | tee "$out"
 if [[ -n "${SAMPLE_CELL_BIN:-}" ]]; then
   for arch in amd64 arm64; do
@@ -153,14 +155,14 @@ done
 
 # shellcheck disable=SC2016 # The Job's shell expands these, not this one.
 k exec "$pod" -- env U="$KAFKA_SASL_USERNAME" P="$KAFKA_SASL_PASSWORD" ADDR="$KAFKA_ADDRESS" CID="$KAFKA_CLIENT_ID" \
-  RECORDS="$RECORDS" MAX_BYTES="$MAX_BYTES" sh -c '
+  RECORDS="$RECORDS" MAX_BYTES="$MAX_BYTES" PROBE_MAX_BYTES="$PROBE_MAX_BYTES" sh -c '
   set -eo pipefail
   cd /work
   chmod +x kafkafetch kafkatool ingester-bench
   fetch() { ./kafkafetch -kafka-address "$ADDR" -kafka-client-id "$CID" "$@" 2>&1 | grep -v "^dumped"; }
   {
     echo "== 10 records of 3 partitions, to check they can be fetched and decoded"
-    fetch -partitions active:3 -records 10 -file-prefix /work/probe- -timeout 3m | tee /work/probe.log
+    fetch -partitions active:3 -records 10 -max-bytes "$PROBE_MAX_BYTES" -file-prefix /work/probe- -timeout 3m | tee /work/probe.log
     ./ingester-bench -composition="$(ls /work/probe-*.json | paste -sd, -)" | grep "\"records\""
     partitions=$(sed -n "s/^partitions \[\(.*\)\]$/\1/p" /work/probe.log | tr " " ",")
     first=${partitions%%,*}
@@ -187,3 +189,6 @@ k exec "$pod" -- env U="$KAFKA_SASL_USERNAME" P="$KAFKA_SASL_PASSWORD" ADDR="$KA
   rm -f /work/dump-*.json
   touch /work/done' | tee -a "$out"
 echo "report in $out"
+# The Job's container prints the report to its log once it sees the sample done: it's deleted once it has, or after a
+# minute, as the report is kept anyway.
+k wait --for=condition=complete "job/$NAME" --timeout=60s >/dev/null || echo "the Job didn't complete within a minute, so its log may not have the report" >&2
