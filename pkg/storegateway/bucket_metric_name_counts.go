@@ -28,7 +28,9 @@ const metricNameCountsBatch = 10_000
 // batches, each message naming the blocks that were counted. Summing is exact only if the blocks share no
 // series, which the caller has to ensure. With max_names set, more distinct names than that is refused with
 // ResourceExhausted before anything is sent: before any postings offset table is walked when the sampled
-// offsets the index-header holds in memory already show one block over it, and after the walk otherwise.
+// offsets the index-header holds in memory already show one block over it, and after the walk otherwise. The
+// tenant's max_index_bytes limit bounds the postings offsets table bytes walked, which index-header version 2
+// reads from object storage, priced from the same sampled offsets before any walk.
 func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequest, srv storegatewaypb.StoreGateway_MetricNameCountsServer) error {
 	ctx := srv.Context()
 	want := make(map[ulid.ULID]bool, len(req.BlockIds))
@@ -77,6 +79,22 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 			}
 			if int64(n) > req.MaxNames {
 				return status.Errorf(codes.ResourceExhausted, "block %s holds at least %d distinct metric names, more than max_names %d", o.b.meta.ULID, n, req.MaxNames)
+			}
+		}
+	}
+
+	if s.cardinalityEstimateMaxIndexBytes != nil {
+		if limit := s.cardinalityEstimateMaxIndexBytes(); limit > 0 {
+			var table int64
+			for _, o := range blocks {
+				n, err := o.b.indexHeaderReader.LabelValuesOffsetsTableBytes(ctx, labels.MetricName)
+				if err != nil {
+					return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
+				}
+				table += n
+			}
+			if table > limit {
+				return status.Errorf(codes.ResourceExhausted, "the request would read about %d bytes of the %s postings offsets table over %d blocks, more than max_index_bytes %d", table, labels.MetricName, len(blocks), limit)
 			}
 		}
 	}

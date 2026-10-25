@@ -256,6 +256,25 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.LessOrEqual(t, resp.IndexBytes, int64(1<<20))
 	})
 
+	t.Run("max_index_bytes covers the group-by label's postings offsets table", func(t *testing.T) {
+		req := func(limit int64) *storegatewaypb.SeriesCountsRequest {
+			return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod", MaxIndexBytes: limit}
+		}
+		resp, err := store.SeriesCounts(ctx, req(0))
+		require.NoError(t, err)
+		require.Equal(t, int64(1), resp.BlocksFromPostings)
+		require.Positive(t, resp.PostingsOffsetsTableBytes, "the pod offsets were walked")
+		total := resp.IndexBytes + resp.PostingsOffsetsTableBytes
+
+		resp, err = store.SeriesCounts(ctx, req(total))
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"p1": {2}, "p2": {1}, "p3": {1}}, countsByGroup(resp))
+
+		_, err = store.SeriesCounts(ctx, req(total-1))
+		require.Equal(t, codes.ResourceExhausted, status.Code(err), "postings alone fit, the table doesn't")
+		assert.Contains(t, err.Error(), "pod postings offsets table")
+	})
+
 	t.Run("unknown blocks are skipped", func(t *testing.T) {
 		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ulid.MustNew(1, nil).String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		require.NoError(t, err)
@@ -285,12 +304,15 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, c.checkPlan(900, 2, 2*512, 0), "900 + 2 x 512 is under the limit")
 	err := c.checkPlan(1000, 2, 2*512, 0)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
+	require.NoError(t, c.checkTable(1000, 1000))
+	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkTable(1000, 1001)), "postings plus the offsets table are over the limit")
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
 	unlimited := &seriesCounts{}
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
+	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
 }
 
 func TestSeriesEntryEstimate(t *testing.T) {
