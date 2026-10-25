@@ -10,10 +10,13 @@ import (
 	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -77,8 +80,15 @@ func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelecti
 		{Labels: upA, Chunks: []chunks.Meta{chunkAt(4*hourMs, 8*hourMs-1)}},
 		{Labels: labels.FromStrings("__name__", "up", "pod", "p4"), Chunks: []chunks.Meta{chunkAt(4*hourMs, 5*hourMs)}},
 	}
+	s, ids := prepareSeriesCountsStoreFromSpecs(t, bkt, dir, []block.SeriesSpecs{first, second}, strategy, opts...)
+	return s, ids[0], ids[1]
+}
+
+// prepareSeriesCountsStoreFromSpecs uploads one block per spec, in the
+// directory dir, to bkt and returns a store over them with the blocks' IDs.
+func prepareSeriesCountsStoreFromSpecs(t *testing.T, bkt objstore.Bucket, dir string, blocks []block.SeriesSpecs, strategy postingsSelectionStrategy, opts ...prepareStoreConfigOption) (*BucketStore, []ulid.ULID) {
 	var ids []ulid.ULID
-	for _, specs := range []block.SeriesSpecs{first, second} {
+	for _, specs := range blocks {
 		meta, err := block.GenerateBlockFromSpec(dir, specs)
 		require.NoError(t, err)
 		_, err = block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(dir, meta.ULID.String()), nil)
@@ -95,7 +105,7 @@ func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelecti
 		o(cfg)
 	}
 	s := prepareStoreWithTestBlocks(t, bkt, cfg)
-	return s.store, ids[0], ids[1]
+	return s.store, ids
 }
 
 func countsByGroup(resp *storegatewaypb.SeriesCountsResponse) map[string][]int64 {
@@ -143,6 +153,48 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Zero(t, allPods.SeriesFetchedBytes)
 	})
 
+	t.Run("with no matchers a block is counted from the offsets table without fetching its postings", func(t *testing.T) {
+		for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
+			"by metric name": {BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs},
+			"by pod":         {BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"},
+		} {
+			resp, err := store.SeriesCounts(ctx, req)
+			require.NoError(t, err, name)
+			assert.Equal(t, int64(1), resp.BlocksFromPostings, name)
+			assert.Zero(t, resp.PostingsFetchedBytes, name)
+			assert.Zero(t, resp.IndexBytes, "%s: no postings list and no series entry is read", name)
+		}
+		all, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "job"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"": {4}}, countsByGroup(all), "series without the label are counted from the series count alone")
+	})
+
+	t.Run("a request refused on the offsets table fetches no postings", func(t *testing.T) {
+		before := postingsBytesObserved(t, store)
+		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
+		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+		assert.Contains(t, err.Error(), "pod postings offsets table")
+		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was touched or fetched")
+	})
+
+	t.Run("the series count from the offsets table is the length of the all-postings list", func(t *testing.T) {
+		counted := 0
+		store.blockSet.forEach(func(b *bucketBlock) {
+			stats := newSafeQueryStats()
+			b.ensureIndexHeaderLoaded(ctx, stats)
+			fromTable, err := allPostingsCount(ctx, b.indexHeaderReader)
+			require.NoError(t, err)
+			indexr := b.indexReader(store.postingsStrategy)
+			defer func() { require.NoError(t, indexr.Close()) }()
+			list, err := allPostingsForBlock(ctx, indexr, stats)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(list)), fromTable, "block %s", b.meta.ULID)
+			assert.Equal(t, int64(b.meta.Stats.NumSeries), fromTable, "block %s", b.meta.ULID)
+			counted++
+		})
+		assert.Equal(t, 2, counted)
+	})
+
 	t.Run("a window that cuts through the block reads series entries", func(t *testing.T) {
 		resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1})
 		require.NoError(t, err)
@@ -155,7 +207,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Less(t, resp.IndexBytes, resp.PostingsFetchedBytes+resp.SeriesFetchedBytes)
 	})
 
-	t.Run("no matchers reads the all-postings list and counts every series", func(t *testing.T) {
+	t.Run("no matchers counts every series, as one postings list per name does", func(t *testing.T) {
 		all, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		require.NoError(t, err)
 		anyName := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: "__name__", Value: ".+"}}
@@ -163,7 +215,8 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		require.NoError(t, err)
 		assert.Equal(t, countsByGroup(viaNames), countsByGroup(all))
 		assert.Equal(t, int64(4), all.SeriesCounted)
-		assert.LessOrEqual(t, all.PostingsFetchedBytes, viaNames.PostingsFetchedBytes, "one all-postings list costs no more than one list per name")
+		assert.Zero(t, all.PostingsFetchedBytes, "the block is counted from the offsets table")
+		assert.Positive(t, viaNames.PostingsFetchedBytes, "matching every name reads a postings list per name")
 	})
 
 	t.Run("a matcher left pending by the postings strategy is applied to the series", func(t *testing.T) {
@@ -280,7 +333,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Equal(t, map[string][]int64{"p1": {2}, "p2": {1}, "p3": {1}}, countsByGroup(resp))
 
 		_, err = store.SeriesCounts(ctx, req(total-1))
-		require.Equal(t, codes.ResourceExhausted, status.Code(err), "postings alone fit, the table doesn't")
+		require.Equal(t, codes.ResourceExhausted, status.Code(err), "nothing else is read, so only the table doesn't fit")
 		assert.Contains(t, err.Error(), "pod postings offsets table")
 	})
 
@@ -341,4 +394,42 @@ func TestSeriesEntryEstimate(t *testing.T) {
 	assert.Equal(t, int64(512), seriesEntryEstimate(meta(0, 150_000)), "no series count: the p99")
 	assert.Equal(t, int64(512), seriesEntryEstimate(meta(10, 1<<20)), "never above the p99")
 	assert.Equal(t, int64(32), seriesEntryEstimate(meta(1000, 1000)), "never below the floor")
+}
+
+// postingsBytesObserved is the postings bytes every request so far touched
+// and fetched, as the store recorded them.
+func postingsBytesObserved(t *testing.T, store *BucketStore) [2]float64 {
+	sum := func(vec *prometheus.SummaryVec) float64 {
+		m := &dto.Metric{}
+		require.NoError(t, vec.WithLabelValues("postings", "").(prometheus.Metric).Write(m))
+		return m.GetSummary().GetSampleSum()
+	}
+	return [2]float64{sum(store.metrics.seriesDataSizeTouched), sum(store.metrics.seriesDataSizeFetched)}
+}
+
+func TestAllPostingsCount_SmallBlocks(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			bkt, err := filesystem.NewBucket(t.TempDir())
+			require.NoError(t, err)
+			one := block.SeriesSpecs{{Labels: labels.FromStrings("__name__", "up"), Chunks: []chunks.Meta{chunkAt(0, 10)}}}
+			store, ids := prepareSeriesCountsStoreFromSpecs(t, bkt, t.TempDir(), []block.SeriesSpecs{one}, nil, opts...)
+			require.Len(t, ids, 1)
+
+			ctx := t.Context()
+			stats := newSafeQueryStats()
+			store.blockSet.forEach(func(b *bucketBlock) {
+				b.ensureIndexHeaderLoaded(ctx, stats)
+				fromTable, err := allPostingsCount(ctx, b.indexHeaderReader)
+				require.NoError(t, err)
+				assert.Equal(t, int64(1), fromTable)
+			})
+
+			// A one-series block inside the window is counted without its postings.
+			resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ids[0].String()}, MinTime: 0, MaxTime: 4 * hourMs})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"up": {1}}, countsByGroup(resp))
+			assert.Zero(t, resp.PostingsFetchedBytes)
+		})
+	}
 }
