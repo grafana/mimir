@@ -81,3 +81,22 @@ func TestDecidePhase2(t *testing.T) {
 	require.Equal(t, "met", d.ExitGate)
 	require.NoError(t, writeDecision(results, d))
 }
+
+// The ablation's extra against seriesstore's says whether #19563's choices would cost seriesstore less than its own,
+// which decides nothing.
+func TestDecideReportsTheLessonsForSeriesstore(t *testing.T) {
+	at := func(mean float64) estimate { return estimate{Mean: mean, se: 1e-9, df: 10} }
+	tsdb, seriesstore := at(1e-7), at(2e-8)
+	for ablation, lesson := range map[float64]string{
+		1e-8:   "port #19563's choices to seriesstore",
+		4e-8:   "keep seriesstore's",
+		2.1e-8: "inconclusive",
+	} {
+		d := decideMetric(tsdb, seriesstore, at(ablation), 0)
+		require.Equal(t, lesson, d.SeriesstoreLesson, "ablation %g", ablation)
+		require.InDelta(t, ablation-2e-8, d.ChoicesOnSeriesstore.Mean, 1e-12)
+	}
+	without := decideMetric(tsdb, seriesstore, pairedEstimate([2][]float64{}), 0)
+	require.Equal(t, "not evaluated", without.SeriesstoreLesson)
+	require.True(t, math.IsNaN(without.ChoicesOnSeriesstore.Mean))
+}
