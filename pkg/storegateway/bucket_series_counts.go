@@ -358,6 +358,10 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		indexr   *bucketIndexReader
 		postings []storage.SeriesRef
 		pending  []*labels.Matcher
+		// seriesCount is how many series match: len(postings), or, for a
+		// block counted from postings with no matchers, the count read from
+		// the offsets table without fetching the postings.
+		seriesCount int64
 		// groupOffsets is set when the block is counted from the group-by
 		// label's postings instead of series entries.
 		groupOffsets []streamindex.PostingListOffset
@@ -392,7 +396,15 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		pg.Go(func() error {
 			o.b.ensureIndexHeaderLoaded(pctx, stats)
 			var err error
-			if len(c.matchers) == 0 {
+			// A block counted from postings with no matchers needs only how
+			// many series it holds, which the offsets table gives. Fetching
+			// the all-postings list instead would read 4 bytes per series
+			// before max_index_bytes has priced anything. The list is
+			// fetched below if the block turns out to be walked.
+			countOnly := len(c.matchers) == 0 && c.postingsOnly(o.b.meta, shard, nil)
+			if countOnly {
+				o.seriesCount, err = allPostingsCount(pctx, o.b.indexHeaderReader)
+			} else if len(c.matchers) == 0 {
 				o.postings, err = allPostingsForBlock(pctx, o.indexr, stats)
 			} else {
 				o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, stats)
@@ -400,7 +412,22 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
 			}
-			if !c.postingsOnly(o.b.meta, shard, o.pending) {
+			if !countOnly {
+				o.seriesCount = int64(len(o.postings))
+				if !c.postingsOnly(o.b.meta, shard, o.pending) {
+					return nil
+				}
+			}
+			// fetchPostings reads the all-postings list of a block that is
+			// walked after all.
+			fetchPostings := func() error {
+				if !countOnly {
+					return nil
+				}
+				var err error
+				if o.postings, err = allPostingsForBlock(pctx, o.indexr, stats); err != nil {
+					return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
+				}
 				return nil
 			}
 			// The walk reads the group-by label's postings offsets table, from
@@ -410,8 +437,8 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.groupBy, err)
 			}
-			if tableBytes >= int64(len(o.postings))*seriesEntryPlanningBytes {
-				return nil
+			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
+				return fetchPostings()
 			}
 			if err := c.checkTable(indexBytes(stats), c.tableBytes.Add(tableBytes)); err != nil {
 				return err
@@ -426,13 +453,14 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 					cost += off.Off.End - off.Off.Start
 				}
 			}
-			if tableBytes+cost < int64(len(o.postings))*seriesEntryPlanningBytes {
+			if tableBytes+cost < o.seriesCount*seriesEntryPlanningBytes {
 				o.groupOffsets, o.groupPostingsBytes = offsets, cost
 				if o.groupOffsets == nil {
 					o.groupOffsets = []streamindex.PostingListOffset{}
 				}
+				return nil
 			}
-			return nil
+			return fetchPostings()
 		})
 	}
 	if err := pg.Wait(); err != nil {
@@ -465,7 +493,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		sg.Go(func() error {
 			var err error
 			if o.groupOffsets != nil {
-				err = addBlockCountsFromPostings(sctx, o.b, o.indexr, o.postings, o.groupOffsets, len(c.matchers) == 0, c, &mtx, stats)
+				err = addBlockCountsFromPostings(sctx, o.b, o.indexr, o.postings, o.seriesCount, o.groupOffsets, len(c.matchers) == 0, c, &mtx, stats)
 			} else {
 				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, shard, c, &mtx, stats)
 			}
@@ -530,7 +558,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 // postings are read and intersected with the matching series. A series
 // carries at most one value of a label, so the matching series not in any
 // value's list are the ones without it.
-func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, offsets []streamindex.PostingListOffset, all bool, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
+func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, total int64, offsets []streamindex.PostingListOffset, all bool, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
 	counts := make(map[string]int64, len(offsets))
 	var inGroups int64
 	if all {
@@ -574,7 +602,7 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 		}
 	}
 	mtx.Lock()
-	c.addCounts(counts, int64(len(matching))-inGroups)
+	c.addCounts(counts, total-inGroups)
 	mtx.Unlock()
 	return c.checkRead(c.limitedBytes(stats))
 }
@@ -597,6 +625,25 @@ func countIntersection(p index.Postings, sorted []storage.SeriesRef, scale stora
 		}
 	}
 	return n, p.Err()
+}
+
+// allPostingsCount returns how many series a block holds, from the all-postings
+// list's range in the postings offsets table and without reading the list: the
+// range starts at the list's 4-byte entry count and ends before its CRC, so it
+// holds 4 bytes per series after the count field.
+func allPostingsCount(ctx context.Context, r indexheader.Reader) (int64, error) {
+	off, err := r.PostingsOffset(ctx, allPostingsKey.Name, allPostingsKey.Value)
+	if errors.Is(err, indexheader.NotFoundRangeErr) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("all postings offset: %w", err)
+	}
+	size := off.End - off.Start - 4
+	if size < 0 || size%4 != 0 {
+		return 0, fmt.Errorf("the all-postings range spans %d bytes, which is not a count field plus 4-byte entries", off.End-off.Start)
+	}
+	return size / 4, nil
 }
 
 // allPostingsForBlock reads a block's all-postings list, one range read, which is
