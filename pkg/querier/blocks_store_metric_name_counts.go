@@ -107,8 +107,9 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 // when the blocks share no series. So the window must be exactly one block
 // range, whose blocks are a single block or split-compactor shards with one
 // shard count and distinct shard IDs. Counts across several block ranges
-// need deduplication and are refused. Experimental: there is no ingester
-// side yet.
+// need deduplication and are refused. It reads the store-gateways only: a
+// window the ingesters hold is answered by CardinalityEstimator, which asks
+// them. Experimental.
 func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID string, minT, maxT int64) (MetricNameCountsResult, error) {
 	parts, all, err := q.estimateParts(ctx, tenantID, minT, maxT)
 	if err != nil {
