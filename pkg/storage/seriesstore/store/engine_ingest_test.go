@@ -382,12 +382,12 @@ func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 		// A few series each round, which only stay in the head for it.
 		for n := range perBlock {
 			// The cluster is on all the series, so its posting list is the whole block's.
-			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "cluster", "c1", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, 1)
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "cluster", "c1", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*defaultChunkRangeMs, 1)
 			require.NoError(b, err)
 		}
 		require.NoError(b, app.Commit())
 		// A series far ahead moves the head past the others, which compaction takes out of it.
-		_, err := engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*chunkRangeMs*2, 1)
+		_, err := engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*defaultChunkRangeMs*2, 1)
 		require.NoError(b, err)
 		require.NoError(b, engine.Compact(ctx))
 	}
@@ -398,7 +398,7 @@ func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 	b.Run("label-names", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
-			q, err := engine.Querier(0, int64(blocks)*chunkRangeMs*3)
+			q, err := engine.Querier(0, int64(blocks)*defaultChunkRangeMs*3)
 			require.NoError(b, err)
 			_, _, err = q.LabelNames(ctx, nil, eq("__name__", "old"))
 			require.NoError(b, err)
@@ -408,7 +408,7 @@ func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 	b.Run("label-values", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
-			q, err := engine.Querier(0, int64(blocks)*chunkRangeMs*3)
+			q, err := engine.Querier(0, int64(blocks)*defaultChunkRangeMs*3)
 			require.NoError(b, err)
 			_, _, err = q.LabelValues(ctx, "pod", nil, eq("__name__", "old"))
 			require.NoError(b, err)
@@ -427,7 +427,7 @@ func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				q, err := engine.ChunkQuerier(0, int64(blocks)*chunkRangeMs*3)
+				q, err := engine.ChunkQuerier(0, int64(blocks)*defaultChunkRangeMs*3)
 				require.NoError(b, err)
 				set := q.Select(ctx, true, nil, matchers...)
 				for set.Next() {
@@ -612,14 +612,14 @@ func TestEngineMergesSmallColdBlocks(t *testing.T) {
 	for round := range rounds {
 		app := engine.Appender(ctx)
 		for n := range 6 {
-			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*chunkRangeMs, float64(round))
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", fmt.Sprint(round), "pod", fmt.Sprint(n)), int64(round)*defaultChunkRangeMs, float64(round))
 			require.NoError(t, err)
 		}
 		// One series in every block.
-		_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", "all", "pod", "stable"), int64(round)*chunkRangeMs, float64(round))
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "old", "round", "all", "pod", "stable"), int64(round)*defaultChunkRangeMs, float64(round))
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		_, err = engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*chunkRangeMs*2, 1)
+		_, err = engine.Appender(ctx).Append(0, promlabels.FromStrings("__name__", "live"), int64(round+1)*defaultChunkRangeMs*2, 1)
 		require.NoError(t, err)
 		require.NoError(t, engine.Compact(ctx))
 	}
@@ -630,7 +630,7 @@ func TestEngineMergesSmallColdBlocks(t *testing.T) {
 	require.Less(t, blocks, rounds*len(engine.store.shards)/2, "the small blocks were merged")
 
 	read := func(matchers ...*promlabels.Matcher) map[string][]float64 {
-		q, err := engine.ChunkQuerier(0, rounds*chunkRangeMs*3)
+		q, err := engine.ChunkQuerier(0, rounds*defaultChunkRangeMs*3)
 		require.NoError(t, err)
 		defer q.Close()
 		out := map[string][]float64{}

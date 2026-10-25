@@ -17,9 +17,12 @@ import (
 // The wire encoding of float chunks.
 const xorEncoding = uint8(chunks.EncodingXOR)
 
+// defaultChunkRangeMs is the chunk range of an engine opened without one: a series' chunks end at its boundaries, as a
+// head's blocks do.
+const defaultChunkRangeMs = int64(2 * 60 * 60 * 1000)
+
 const (
 	samplesPerChunk              = 120
-	chunkRangeMs                 = int64(2 * 60 * 60 * 1000)
 	outOfOrderCapacity           = 32
 	targetBytesPerHistogramChunk = 1024
 	minSamplesPerHistogramChunk  = 10

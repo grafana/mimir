@@ -19,16 +19,18 @@ type appendRules struct {
 	headMaxTime  int64
 	minValidTime int64
 	oooWindowMs  int64
+	// The chunk range, at whose boundaries a series' chunks end.
+	rangeMs int64
 }
 
 // newAppendRules is Prometheus's `appendableMinValidTime`: half a block range behind the head's
 // max time, and never before where the last compaction truncated the head.
-func newAppendRules(headMaxTime, truncatedTo, oooWindowMs int64) appendRules {
+func newAppendRules(headMaxTime, truncatedTo, oooWindowMs, rangeMs int64) appendRules {
 	minValid := int64(math.MinInt64)
 	if headMaxTime != math.MinInt64 {
-		minValid = max(satSub(headMaxTime, minValidTimeWindowMs), truncatedTo)
+		minValid = max(satSub(headMaxTime, rangeMs/2), truncatedTo)
 	}
-	return appendRules{headMaxTime: headMaxTime, minValidTime: minValid, oooWindowMs: oooWindowMs}
+	return appendRules{headMaxTime: headMaxTime, minValidTime: minValid, oooWindowMs: oooWindowMs, rangeMs: rangeMs}
 }
 
 type appendKind uint8
@@ -312,7 +314,7 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 		result, err := insertOutOfOrder(series, disk, oooSample{T: timestamp, F: value})
 		return result, 0, true, err
 	}
-	result, err := appendFloatInOrder(series, disk, timestamp, value, false)
+	result, err := appendFloatInOrder(series, disk, timestamp, value, false, rules.rangeMs)
 	if err != nil {
 		return appended{}, 0, false, err
 	}
@@ -321,7 +323,7 @@ func appendFloat(series *Series, disk *chunks.DiskMapper, rules *appendRules, he
 
 // appendFloatInOrder appends a sample the head appender accepted in order, cutting the open chunk
 // on its size, then its estimated end time or sample count, like Prometheus's head.
-func appendFloatInOrder(series *Series, disk *chunks.DiskMapper, timestamp int64, value float64, oneOpenChunk bool) (appended, error) {
+func appendFloatInOrder(series *Series, disk *chunks.DiskMapper, timestamp int64, value float64, oneOpenChunk bool, rangeMs int64) (appended, error) {
 	// Prometheus's head has one open chunk: a float after histograms starts a new one. The Kafka
 	// path keeps both open, like the Rust store it's checked against.
 	if oneOpenChunk && series.histogram() != nil {
@@ -348,7 +350,7 @@ func appendFloatInOrder(series *Series, disk *chunks.DiskMapper, timestamp int64
 	}
 	opened := series.floatHead == nil
 	if opened {
-		series.floatHead = &floatHead{appender: chunks.NewXORAppender(), minTime: timestamp, nextAt: rangeEnd(timestamp)}
+		series.floatHead = &floatHead{appender: chunks.NewXORAppender(), minTime: timestamp, nextAt: rangeEnd(timestamp, rangeMs)}
 	}
 	fh := series.floatHead
 	// A float after an older float in the head can only follow a histogram at a later time, which
@@ -386,7 +388,7 @@ func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules
 		result, err := insertOutOfOrder(series, disk, oooSample{T: h.Timestamp, H: &copied})
 		return result, 0, true, err
 	}
-	result, err := appendHistogramInOrder(series, disk, h, false)
+	result, err := appendHistogramInOrder(series, disk, h, false, rules.rangeMs)
 	if err != nil {
 		return appended{}, 0, false, err
 	}
@@ -394,7 +396,7 @@ func appendHistogram(series *Series, disk *chunks.DiskMapper, rules *appendRules
 }
 
 // appendHistogramInOrder appends a histogram the head appender accepted in order.
-func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.Histogram, oneOpenChunk bool) (appended, error) {
+func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.Histogram, oneOpenChunk bool, rangeMs int64) (appended, error) {
 	// A histogram after floats starts a new chunk, like the head's one open chunk.
 	if oneOpenChunk && series.floatHead != nil {
 		if err := cutFloatHead(series, disk); err != nil {
@@ -409,7 +411,7 @@ func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.
 		bytes := hh.EncodedLen()
 		nextRangeStart := series.histogramNextAtValue()
 		if series.histogramEndComputedValue() {
-			nextRangeStart = rangeEnd(hh.FirstTimestamp())
+			nextRangeStart = rangeEnd(hh.FirstTimestamp(), rangeMs)
 		}
 		if !series.histogramEndComputedValue() && bytes >= targetBytesPerHistogramChunk/4 {
 			series.setHistogramNextAt(computeChunkEndTime(hh.FirstTimestamp(), hh.Last().Timestamp, series.histogramNextAtValue(), float64(targetBytesPerHistogramChunk)/float64(bytes)))
@@ -422,14 +424,14 @@ func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.
 				return appended{}, err
 			}
 			series.setHistogram(next)
-			series.setHistogramNextAt(rangeEnd(timestamp))
+			series.setHistogramNextAt(rangeEnd(timestamp, rangeMs))
 			series.setHistogramEndComputed(false)
 			return appended{opened: true}, nil
 		}
 	}
 	if series.histogram() == nil {
 		series.setHistogram(chunks.NewHistogramAppender(h, nil))
-		series.setHistogramNextAt(rangeEnd(timestamp))
+		series.setHistogramNextAt(rangeEnd(timestamp, rangeMs))
 		series.setHistogramEndComputed(false)
 		return appended{opened: true}, nil
 	}
@@ -444,7 +446,7 @@ func appendHistogramInOrder(series *Series, disk *chunks.DiskMapper, h *mimirpb.
 		return appended{}, err
 	}
 	series.setHistogram(next)
-	series.setHistogramNextAt(rangeEnd(timestamp))
+	series.setHistogramNextAt(rangeEnd(timestamp, rangeMs))
 	series.setHistogramEndComputed(false)
 	return appended{opened: true}, nil
 }

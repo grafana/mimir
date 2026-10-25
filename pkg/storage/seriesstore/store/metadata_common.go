@@ -21,11 +21,11 @@ import (
 // dictionary's ids by default (metadata.go), or #19563's state with the native_metadata_ablation tag
 // (metadata_ablation.go), each with its seriesMetadata, shardMetadata, metadataMemo and metricMetadataValues.
 
-// metadataBaseMargin is how far before the first observation a shard's base is: samples down to the out-of-order
-// window or half a block range before it can still come in, and a replay after an unclean shutdown starts further
-// back still, which clamps.
-func metadataBaseMargin(oooWindowMs int64) int64 {
-	return max(oooWindowMs, chunkRangeMs/2)
+// metadataBaseMargin is how far before the first observation a shard's native metadata and resources' base is:
+// samples down to the out-of-order window or half a chunk range before it can still come in, and a replay after an
+// unclean shutdown starts further back still, which clamps.
+func (e *Engine) metadataBaseMargin() int64 {
+	return max(e.oooWindow.Load(), e.store.chunkRangeMs/2)
 }
 
 // metadataRebaseAfter is how far past its shard's base a series' run may start before the shard is rebased: half the

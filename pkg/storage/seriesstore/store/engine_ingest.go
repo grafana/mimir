@@ -111,7 +111,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 	}
 	var (
 		headMaxt     = maxTime
-		minValidTime = appendableMinValidTime(maxTime, minValid)
+		minValidTime = appendableMinValidTime(maxTime, minValid, e.store.chunkRangeMs)
 		oooWindow    = e.oooWindow.Load()
 		appender     = &engineAppender{e: e, headMaxt: headMaxt, minValidTime: minValidTime, oooWindow: oooWindow}
 		// The ids of the batch's metadata values, while the series' own metadata is kept.
@@ -322,7 +322,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						// The usual scrape: one in-order float, which the series' state still allows, so it is
 						// appended without checking it again.
 						sample := accepted[0]
-						result, appendErr := appendFloatInOrder(&entry.series, state.disk, sample.TimestampMs, sample.Value, true)
+						result, appendErr := appendFloatInOrder(&entry.series, state.disk, sample.TimestampMs, sample.Value, true, e.store.chunkRangeMs)
 						if appendErr != nil {
 							stop, err = true, appendErr
 						} else if !result.noop {

@@ -299,8 +299,8 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 			if t.headMin == math.MinInt64 && report.HeadMinTime != math.MaxInt64 {
 				t.headMin = report.HeadMinTime
 			}
-			for t.maxTime != math.MinInt64 && t.headMin != math.MinInt64 && t.maxTime-t.headMin > chunkRangeMs/2*3 {
-				t.headMin = rangeEnd(t.headMin)
+			for t.maxTime != math.MinInt64 && t.headMin != math.MinInt64 && t.maxTime-t.headMin > s.chunkRangeMs/2*3 {
+				t.headMin = rangeEnd(t.headMin, s.chunkRangeMs)
 				t.truncatedTo = t.headMin
 				t.ownedRecompute = true
 				s.freezePending.Store(true)

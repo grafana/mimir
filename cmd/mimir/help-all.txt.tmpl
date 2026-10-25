@@ -921,6 +921,8 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 367001600)
   -blocks-storage.tsdb.seriesstore-compaction-jitter-enabled
     	[experimental] Whether the seriesstore engine delays each tenant's head compactions by a random time, up to a quarter of a block range, so tenants don't compact at once. Disable it to compact on time, for example in benchmarks. (default true)
+  -blocks-storage.tsdb.seriesstore-idle-eviction duration
+    	[experimental] How long the seriesstore engine keeps series that stopped in memory, past the active series' timeout: they leave the head at a compaction, instead of hours later, with their data still queryable. 0 keeps them until they leave the head, for example in benchmarks. (default 1h0m0s)
   -blocks-storage.tsdb.seriesstore-snapshot-interval duration
     	[experimental] How often the seriesstore engine snapshots each tenant's head while ingesting, paced to use little CPU and disk. After an unclean shutdown, the ingester replays Kafka from the oldest snapshot instead of from the retention period. 0 disables the snapshots. (default 15m0s)
   -blocks-storage.tsdb.shared-postings-for-matchers-cache

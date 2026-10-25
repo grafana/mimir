@@ -127,7 +127,7 @@ func (a *engineAppender) start() {
 	_, maxTime, minValid := a.e.headTimes()
 	a.started = true
 	a.headMaxt = maxTime
-	a.minValidTime = appendableMinValidTime(maxTime, minValid)
+	a.minValidTime = appendableMinValidTime(maxTime, minValid, a.e.store.chunkRangeMs)
 	a.oooWindow = a.e.oooWindow.Load()
 }
 
@@ -872,7 +872,7 @@ func (a *engineAppender) commitSample(series *Series, state *shardState, sample 
 		if math.Float64bits(v) == value.QuietZeroNaN {
 			v = 0
 		}
-		result, err := appendFloatInOrder(series, state.disk, sample.t, v, true)
+		result, err := appendFloatInOrder(series, state.disk, sample.t, v, true, a.e.store.chunkRangeMs)
 		return err == nil && !result.noop, false, err
 	default:
 		isOOO, err := appendableHistogram(last, sample.t, sample.h, sample.fh, a.headMaxt, a.minValidTime, a.oooWindow)
@@ -894,7 +894,7 @@ func (a *engineAppender) commitSample(series *Series, state *shardState, sample 
 		if last.ok && sample.t == last.t {
 			return false, false, nil
 		}
-		result, err := appendHistogramInOrder(series, state.disk, &proto, true)
+		result, err := appendHistogramInOrder(series, state.disk, &proto, true, a.e.store.chunkRangeMs)
 		return err == nil && !result.noop, false, err
 	}
 }

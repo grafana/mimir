@@ -462,7 +462,7 @@ func BenchmarkRealistic(b *testing.B) {
 		engines = benchEngines
 	}
 	rounds := int(int64(hours) * realisticHoursMs / intervalMs)
-	t0 := int64(realisticStartRaw) - int64(realisticStartRaw)%chunkRangeMs
+	t0 := int64(realisticStartRaw) - int64(realisticStartRaw)%defaultChunkRangeMs
 
 	lsets := make([]promlabels.Labels, series)
 	for n := range lsets {

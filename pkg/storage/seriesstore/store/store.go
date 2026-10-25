@@ -40,9 +40,6 @@ const DefaultShards = 16
 // a few small records, and handing them to other threads cost more than the work.
 const parallelMinSeries = 1024
 
-// Mimir's head appender rejects in-order samples more than half a block range behind the head.
-const minValidTimeWindowMs = chunkRangeMs / 2
-
 // Retention is how long samples are kept, when Set.
 type Retention struct {
 	Ms  int64
@@ -216,6 +213,8 @@ type Store struct {
 	activeWindowMs int64
 	retention      Retention
 	overrides      *limits.Overrides
+	// The chunk range, at whose boundaries series' chunks end and the emulated head's blocks are cut.
+	chunkRangeMs int64
 
 	exemplarsLock sync.Mutex
 	exemplars     map[string]*exemplars.TenantExemplars[labels.Labels]
@@ -296,6 +295,7 @@ func NewWithShards(activeWindowMs int64, retention Retention, chunkDir string, s
 
 func fromShards(shards []*shardState, threads int, activeWindowMs int64, retention Retention) *Store {
 	s := &Store{
+		chunkRangeMs:               defaultChunkRangeMs,
 		shards:                     shards,
 		threads:                    max(threads, 1),
 		activeWindowMs:             activeWindowMs,
@@ -729,7 +729,7 @@ func (s *Store) IngestFlushes(records []IngestRecord) (uint64, error) {
 			if states, ok := flushes[key]; ok && states[shard] != nil && states[shard].hasRules {
 				minAppend, hasMinAppend = states[shard].rules.minValidTime, true
 			} else if homeTenant.maxTime != math.MinInt64 {
-				minAppend, hasMinAppend = max(satSub(homeTenant.maxTime, minValidTimeWindowMs), homeTenant.truncatedTo), true
+				minAppend, hasMinAppend = max(satSub(homeTenant.maxTime, s.chunkRangeMs/2), homeTenant.truncatedTo), true
 			}
 			histogramsCount := lim.NativeHistogramsIngestionEnabled
 			if window <= 0 && hasMinAppend && len(series.Exemplars) == 0 &&
@@ -801,12 +801,12 @@ func (s *Store) IngestFlushes(records []IngestRecord) (uint64, error) {
 				if headMax == math.MinInt64 {
 					headMax = firstSample
 				}
-				flush.rules, flush.hasRules = newAppendRules(headMax, homeTenant.truncatedTo, window), true
+				flush.rules, flush.hasRules = newAppendRules(headMax, homeTenant.truncatedTo, window, s.chunkRangeMs), true
 			}
 			flush.series++
 			rules := flush.rules
 			if !flush.hasRules {
-				rules = newAppendRules(homeTenant.maxTime, homeTenant.truncatedTo, window)
+				rules = newAppendRules(homeTenant.maxTime, homeTenant.truncatedTo, window, s.chunkRangeMs)
 			}
 			// Older samples are rejected whatever the series holds.
 			acceptableFrom := rules.minValidTime
@@ -1255,17 +1255,18 @@ func satSub(a, b int64) int64 {
 	return difference
 }
 
-// rangeStart saturates, since lookups ask for ranges up to the ends of int64.
-func rangeStart(timestamp int64) int64 {
-	rem := timestamp % chunkRangeMs
+// rangeStart is the start of timestamp's chunk range of rangeMs. It saturates, since lookups ask for ranges up to the
+// ends of int64.
+func rangeStart(timestamp, rangeMs int64) int64 {
+	rem := timestamp % rangeMs
 	if rem < 0 {
-		rem += chunkRangeMs
+		rem += rangeMs
 	}
 	return satSub(timestamp, rem)
 }
 
-func rangeEnd(timestamp int64) int64 {
-	return satAdd(rangeStart(timestamp), chunkRangeMs)
+func rangeEnd(timestamp, rangeMs int64) int64 {
+	return satAdd(rangeStart(timestamp, rangeMs), rangeMs)
 }
 
 // Port of Prometheus computeChunkEndTime: spread the remaining range evenly over chunks of the

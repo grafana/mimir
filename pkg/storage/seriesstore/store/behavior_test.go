@@ -463,7 +463,7 @@ func TestParallelBatchAppliesEachSeriesInRecordOrder(t *testing.T) {
 func TestPrunesWholeExpiredChunksAndSeries(t *testing.T) {
 	s := Default()
 	now := nowMs()
-	require.NoError(t, s.Ingest("tenant", floatRequest(samplesRange(0, 300, func(index int64) sample { return sample{now - 3*chunkRangeMs + index*15_000, 1} })...)))
+	require.NoError(t, s.Ingest("tenant", floatRequest(samplesRange(0, 300, func(index int64) sample { return sample{now - 3*defaultChunkRangeMs + index*15_000, 1} })...)))
 	require.NoError(t, s.Ingest("tenant", floatRequest(sample{now, 2})))
 	withSeries(t, s, func(series *Series) { require.False(t, series.chunks.isEmpty()) })
 	require.NoError(t, s.pruneBefore(now-1_000))

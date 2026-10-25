@@ -118,7 +118,7 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 		onResourceLimited := func(limit store.ResourceLimit) {
 			i.metrics.discardedResourcesPerLimit[limit].WithLabelValues(userID).Inc()
 		}
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter, coalesced.Inc, onResourceLimited)
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter, i.cfg.BlocksStorageConfig.TSDB.SeriesstoreIdleEviction, coalesced.Inc, onResourceLimited)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

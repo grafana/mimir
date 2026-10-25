@@ -119,7 +119,7 @@ func TestShardMetadataObservationsLikeAModel(t *testing.T) {
 						at -= int64(r.Intn(10)) * 1000
 					}
 					id := values[r.Intn(len(values))]
-					m.observe(&series[i], id, at, 0, metadataLimits{})
+					m.observe(&series[i], id, at, defaultChunkRangeMs/2, metadataLimits{})
 					models[i].observe(at, id)
 				}
 				for i := range series {
@@ -160,11 +160,11 @@ func TestShardMetadataClampsObservationsBeforeTheBase(t *testing.T) {
 	m := newShardMetadata(d, stats)
 	id := d.intern(metadata.Metadata{Type: model.MetricTypeGauge})
 	series := Series{ref: 1}
-	m.observe(&series, id, chunkRangeMs, 0, metadataLimits{})
-	require.Equal(t, chunkRangeMs/2, m.base)
+	m.observe(&series, id, defaultChunkRangeMs, defaultChunkRangeMs/2, metadataLimits{})
+	require.Equal(t, defaultChunkRangeMs/2, m.base)
 	other := Series{ref: 2}
-	m.observe(&other, id, 0, 0, metadataLimits{})
-	require.Equal(t, chunkRangeMs/2, m.start(&other))
+	m.observe(&other, id, 0, defaultChunkRangeMs/2, metadataLimits{})
+	require.Equal(t, defaultChunkRangeMs/2, m.start(&other))
 	require.EqualValues(t, 1, stats.clamped.Load())
 }
 
@@ -203,7 +203,7 @@ func TestShardMetadataCoalescesChangesOverTheLimit(t *testing.T) {
 		// The next window closes the coalesced range with its latest value, and counts afresh.
 		{70, "g"},
 	} {
-		m.observe(&series, values[o.help], o.at*minute, 0, limits)
+		m.observe(&series, values[o.help], o.at*minute, defaultChunkRangeMs/2, limits)
 	}
 	require.Equal(t, []metadataRun{
 		{from: 10 * minute, id: values["a"]},
@@ -238,7 +238,7 @@ func TestShardMetadataCapsASeriesRuns(t *testing.T) {
 		if n%2 == 1 {
 			id = b
 		}
-		m.observe(&series, id, int64(n)*1_000, 0, metadataLimits{})
+		m.observe(&series, id, int64(n)*1_000, defaultChunkRangeMs/2, metadataLimits{})
 	}
 	runs := m.runsOf(&series, nil)
 	require.Len(t, runs, maxMetadataRunsPerSeries+1)

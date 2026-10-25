@@ -203,9 +203,9 @@ func (m *shardMetadata) start(series *Series) int64 {
 
 // offset is t as an offset from the base, which it sets on the first observation; t before the base clamps to it,
 // and is counted.
-func (m *shardMetadata) offset(t, oooWindowMs int64) uint32 {
+func (m *shardMetadata) offset(t, marginMs int64) uint32 {
 	if !m.baseSet {
-		m.base, m.baseSet = t-metadataBaseMargin(oooWindowMs), true
+		m.base, m.baseSet = t-marginMs, true
 	}
 	switch delta := t - m.base; {
 	case delta < 0:
@@ -224,10 +224,10 @@ func (m *shardMetadata) offset(t, oooWindowMs int64) uint32 {
 // the series takes another one of if it keeps it. Equal neighbouring runs merge, the last of observations at the same
 // time wins, and an observation older than the series' current run is put among its older runs. A change over the
 // limits' coalesces with the window's later ones.
-func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64, limits metadataLimits) {
+func (m *shardMetadata) observe(series *Series, id uint32, t, marginMs int64, limits metadataLimits) {
 	if series.metadataID == 0 {
 		m.dictionary.acquire(id)
-		series.metadataID, series.metadataStart = id, m.offset(t, oooWindowMs)
+		series.metadataID, series.metadataStart = id, m.offset(t, marginMs)
 		m.series++
 		return
 	}
@@ -237,7 +237,7 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64,
 		return
 	}
 	if series.metadataID&metadataCoalesced != 0 {
-		if m.absorb(series, id, t, start, oooWindowMs) {
+		if m.absorb(series, id, t, start, marginMs) {
 			return
 		}
 		start = m.start(series)
@@ -247,13 +247,13 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64,
 	}
 	if t > start {
 		if !m.charge(series.ref, t, limits) {
-			m.coalesceFrom(series, id, t, oooWindowMs, limits)
+			m.coalesceFrom(series, id, t, marginMs, limits)
 			return
 		}
 		m.dictionary.acquire(id)
 		m.older[series.ref] = append(m.older[series.ref], metadataRun{from: start, id: series.metadataID})
 		m.runs++
-		series.metadataID, series.metadataStart = id, m.offset(t, oooWindowMs)
+		series.metadataID, series.metadataStart = id, m.offset(t, marginMs)
 		m.capRuns(series.ref)
 		return
 	}
@@ -297,13 +297,13 @@ func (m *shardMetadata) observe(series *Series, id uint32, t, oooWindowMs int64,
 		}
 		merged = append(merged, run)
 	}
-	m.setRuns(series, merged, oooWindowMs)
+	m.setRuns(series, merged, marginMs)
 }
 
 // setRuns makes runs, oldest first, the series' runs: the newest inline, and the others its older ones.
-func (m *shardMetadata) setRuns(series *Series, runs []metadataRun, oooWindowMs int64) {
+func (m *shardMetadata) setRuns(series *Series, runs []metadataRun, marginMs int64) {
 	newest := runs[len(runs)-1]
-	series.metadataID, series.metadataStart = newest.id, m.offset(newest.from, oooWindowMs)
+	series.metadataID, series.metadataStart = newest.id, m.offset(newest.from, marginMs)
 	m.runs -= len(m.older[series.ref])
 	if older := runs[:len(runs)-1]; len(older) > 0 {
 		m.older[series.ref] = slices.Clip(older)
@@ -336,14 +336,14 @@ func (m *shardMetadata) capRuns(ref uint64) {
 // absorb takes an observation into the series' coalesced current run, which started at start: one in its window is
 // absorbed, the latest by time being its value. One after its window closes it: the series goes on from the window's
 // end with that value, as a run of its own, and absorb returns false for the caller to go on with the observation.
-func (m *shardMetadata) absorb(series *Series, id uint32, t, start, oooWindowMs int64) bool {
+func (m *shardMetadata) absorb(series *Series, id uint32, t, start, marginMs int64) bool {
 	c := m.changes[series.ref]
 	if t >= c.coalescedEnd {
 		m.older[series.ref] = append(m.older[series.ref], metadataRun{from: start, id: series.metadataID})
 		m.runs++
 		latest := series.metadataID &^ metadataCoalesced
 		m.dictionary.acquire(latest)
-		series.metadataID, series.metadataStart = latest, m.offset(c.coalescedEnd, oooWindowMs)
+		series.metadataID, series.metadataStart = latest, m.offset(c.coalescedEnd, marginMs)
 		m.changes[series.ref] = metadataChanges{window: c.coalescedEnd}
 		m.capRuns(series.ref)
 		return false
@@ -386,11 +386,11 @@ func (m *shardMetadata) charge(ref uint64, t int64, limits metadataLimits) bool 
 }
 
 // coalesceFrom starts the series' coalesced run at t, with the value id, to the end of t's window.
-func (m *shardMetadata) coalesceFrom(series *Series, id uint32, t, oooWindowMs int64, limits metadataLimits) {
+func (m *shardMetadata) coalesceFrom(series *Series, id uint32, t, marginMs int64, limits metadataLimits) {
 	m.dictionary.acquire(id)
 	m.older[series.ref] = append(m.older[series.ref], metadataRun{from: m.start(series), id: series.metadataID})
 	m.runs++
-	series.metadataID, series.metadataStart = id|metadataCoalesced, m.offset(t, oooWindowMs)
+	series.metadataID, series.metadataStart = id|metadataCoalesced, m.offset(t, marginMs)
 	m.capRuns(series.ref)
 	window := limits.windowOf(t)
 	m.changes[series.ref] = metadataChanges{window: window, coalescedEnd: window + limits.windowMs, latestAt: t, count: limits.maxChanges}
@@ -554,7 +554,7 @@ func (e *Engine) observeMetadataLocked(t *tenant, series *Series, _ *metadataMem
 		}
 	}
 	limits := metadataLimits{maxChanges: int(e.metadataMaxChanges.Load()), windowMs: e.metadataChangeWindowMs.Load()}
-	e.shardMetadataLocked(t).observe(series, id, timestamp, e.oooWindow.Load(), limits)
+	e.shardMetadataLocked(t).observe(series, id, timestamp, e.metadataBaseMargin(), limits)
 }
 
 // trimMetadataLocked drops the older runs of the shard's series that end by minTime, the head's min time, and rebases
@@ -573,7 +573,7 @@ func (e *Engine) trimMetadataLocked(t *tenant, minTime, maxTime int64) {
 	if !m.baseSet || maxTime-m.base < metadataRebaseAfter {
 		return
 	}
-	base := minTime - metadataBaseMargin(e.oooWindow.Load())
+	base := minTime - e.metadataBaseMargin()
 	for group := range t.series.groups {
 		entries := t.series.groups[group].entries
 		for index := range entries {

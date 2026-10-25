@@ -560,6 +560,7 @@ type headView struct {
 	// Whether every series in memory is in the head, as the engine's head garbage collection
 	// keeps it; the store's Kafka path keeps series out of the head until its next head tick.
 	memoryIsHead bool
+	chunkRangeMs int64
 }
 
 var emptyHeadView = headView{headMin: math.MinInt64, minTime: math.MaxInt64, maxTime: math.MinInt64}
@@ -600,8 +601,8 @@ func (h headView) labelWindow(start, end int64) labelWindow {
 		return h.engineLabelWindow(w, start, end)
 	}
 	if h.headMin != math.MinInt64 {
-		lower := rangeStart(start)
-		upper := satSub(min(rangeEnd(end), h.headMin), 1)
+		lower := rangeStart(start, h.chunkRangeMs)
+		upper := satSub(min(rangeEnd(end, h.chunkRangeMs), h.headMin), 1)
 		if lower <= upper {
 			w.hasBlocks, w.lower, w.upper = true, lower, upper
 		}
@@ -671,7 +672,7 @@ func (s *Store) headView(tenantID string) headView {
 	if !ok {
 		return emptyHeadView
 	}
-	return headView{headMin: t.headMin, minTime: t.minTime, maxTime: t.maxTime, memoryIsHead: s.memoryIsHead, minOOOTime: t.minOOOTime, maxOOOTime: t.maxOOOTime, blocks: t.blocks}
+	return headView{headMin: t.headMin, minTime: t.minTime, maxTime: t.maxTime, memoryIsHead: s.memoryIsHead, minOOOTime: t.minOOOTime, maxOOOTime: t.maxOOOTime, blocks: t.blocks, chunkRangeMs: s.chunkRangeMs}
 }
 
 // perShardWithColdParallel is perShardWithCold with a goroutine per shard, for lookups that scan

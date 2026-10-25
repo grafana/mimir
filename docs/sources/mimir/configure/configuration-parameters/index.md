@@ -6649,6 +6649,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.seriesstore-compaction-jitter-enabled
   [seriesstore_compaction_jitter_enabled: <boolean> | default = true]
 
+  # (experimental) How long the seriesstore engine keeps series that stopped in
+  # memory, past the active series' timeout: they leave the head at a
+  # compaction, instead of hours later, with their data still queryable. 0 keeps
+  # them until they leave the head, for example in benchmarks.
+  # CLI flag: -blocks-storage.tsdb.seriesstore-idle-eviction
+  [seriesstore_idle_eviction: <duration> | default = 1h]
+
   # TSDB blocks retention before a block is removed. If shipping is enabled, the
   # retention will be relative to the time when the block was uploaded to
   # storage. If shipping is disabled then it's relative to the creation time of

@@ -17,8 +17,8 @@ import (
 // the TSDB would delete is deleted once it was written longer than the retention period ago.
 func openRetainingPrometheus(t *testing.T, opts differentialOptions, retention time.Duration) prometheusHead {
 	promOpts := tsdb.DefaultOptions()
-	promOpts.MinBlockDuration = chunkRangeMs
-	promOpts.MaxBlockDuration = chunkRangeMs
+	promOpts.MinBlockDuration = defaultChunkRangeMs
+	promOpts.MaxBlockDuration = defaultChunkRangeMs
 	promOpts.NoLockfile = true
 	promOpts.IsolationDisabled = true
 	promOpts.OutOfOrderTimeWindow = opts.oooWindowMs

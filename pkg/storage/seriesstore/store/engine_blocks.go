@@ -456,9 +456,9 @@ func splitChunks(series *Series, disk *chunks.DiskMapper, cuts func(meta ChunkMe
 
 // alignedCuts are the block range starts inside a chunk: out-of-order and selected series blocks
 // are aligned on block ranges.
-func alignedCuts(meta ChunkMeta) []int64 {
+func alignedCuts(meta ChunkMeta, rangeMs int64) []int64 {
 	var cuts []int64
-	for boundary := rangeStart(meta.MinTime) + chunkRangeMs; boundary <= meta.MaxTime; boundary += chunkRangeMs {
+	for boundary := rangeStart(meta.MinTime, rangeMs) + rangeMs; boundary <= meta.MaxTime; boundary += rangeMs {
 		cuts = append(cuts, boundary)
 	}
 	return cuts

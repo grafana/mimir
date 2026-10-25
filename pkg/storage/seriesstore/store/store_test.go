@@ -84,7 +84,9 @@ func TestMovesCompletedFloatChunksToDiskAtRangeBoundaries(t *testing.T) {
 	s, err := New(20*60*1000, Retention{}, directory)
 	require.NoError(t, err)
 	defer s.Close()
-	samples := samplesRange(0, 2_000, func(index int64) sample { return sample{chunkRangeMs - 3_600_000 + index*15_000, float64(index)} })
+	samples := samplesRange(0, 2_000, func(index int64) sample {
+		return sample{defaultChunkRangeMs - 3_600_000 + index*15_000, float64(index)}
+	})
 	for start := 0; start < len(samples); start += 100 {
 		require.NoError(t, s.Ingest("tenant", floatRequest(samples[start:start+100]...)))
 	}
@@ -92,7 +94,7 @@ func TestMovesCompletedFloatChunksToDiskAtRangeBoundaries(t *testing.T) {
 		require.GreaterOrEqual(t, series.chunks.count(), 8)
 		require.LessOrEqual(t, series.floatHead.appender.Len(), samplesPerChunk*2)
 		for _, chunk := range series.chunks.toSlice() {
-			require.Equal(t, rangeEnd(chunk.MinTime), rangeEnd(chunk.MaxTime), "chunk %d..%d crosses a range boundary", chunk.MinTime, chunk.MaxTime)
+			require.Equal(t, rangeEnd(chunk.MinTime, defaultChunkRangeMs), rangeEnd(chunk.MaxTime, defaultChunkRangeMs), "chunk %d..%d crosses a range boundary", chunk.MinTime, chunk.MaxTime)
 		}
 	})
 	entries, err := os.ReadDir(directory)

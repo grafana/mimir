@@ -42,7 +42,7 @@ func TestEngineAppenderV2MatchesPrometheus(t *testing.T) {
 				return &histogram.Histogram{Count: count, Sum: float64(count), Schema: 0, ZeroThreshold: 0.001, ZeroCount: count}
 			}
 			zeroHistogram := &histogram.Histogram{CounterResetHint: histogram.CounterReset, Schema: 0, ZeroThreshold: 0.001}
-			base := int64(10 * chunkRangeMs)
+			base := int64(10 * defaultChunkRangeMs)
 
 			type call struct {
 				name string
@@ -74,7 +74,7 @@ func TestEngineAppenderV2MatchesPrometheus(t *testing.T) {
 						return app.Append(0, floats, 0, base+30_000, 0, nil, nil, zero)
 					}},
 					{"zero too old", func(app EngineAppenderV2) (storage.SeriesRef, error) {
-						return app.Append(0, floats, 0, base-2*chunkRangeMs, 0, nil, nil, zero)
+						return app.Append(0, floats, 0, base-2*defaultChunkRangeMs, 0, nil, nil, zero)
 					}},
 					{"zero histogram out of order", func(app EngineAppenderV2) (storage.SeriesRef, error) {
 						return app.Append(0, histograms, 0, base-15_000, 0, zeroHistogram, nil, zero)

@@ -66,6 +66,9 @@ type EngineOptions struct {
 	SecondaryHashFunction func(promlabels.Labels) uint32
 	// Called for each change of a series' metadata over the change limit that the engine coalesces, if set.
 	OnMetricMetadataCoalesced func()
+	// The chunk range, at whose boundaries series' chunks end and the head compacts blocks of, as a TSDB's block range:
+	// 2 hours without one.
+	ChunkRangeMs int64
 	// The descriptive attributes of resources the reverse index has, besides the identifying ones.
 	IndexedResourceAttributes []string
 	// Called for each change of a series' resource over one of the limits, if set.
@@ -169,8 +172,12 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
 	// A restored head may hold out-of-order data that was never compacted.
 	e.oooDirty.Store(true)
+	if opts.ChunkRangeMs <= 0 {
+		opts.ChunkRangeMs = defaultChunkRangeMs
+	}
+	e.opts = opts
 	if opts.JitterCompaction {
-		e.compactionJitterMs = rand.Int64N(chunkRangeMs / 4)
+		e.compactionJitterMs = rand.Int64N(opts.ChunkRangeMs / 4)
 	}
 	e.oooCompactedRange = math.MinInt64
 	e.metricMetadata = newMetricMetadataValues()
@@ -214,6 +221,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		}
 		if restored != nil && len(restored.Store.shards) <= maxShards {
 			e.store = restored.Store
+			e.store.chunkRangeMs = opts.ChunkRangeMs
 			e.store.memoryIsHead = true
 			e.store.guardChunkFiles()
 			if opts.Checkpoints {
@@ -251,6 +259,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		return nil, err
 	}
 	e.store = s
+	s.chunkRangeMs = opts.ChunkRangeMs
 	s.memoryIsHead = true
 	s.guardChunkFiles()
 	if opts.Checkpoints {
@@ -500,8 +509,8 @@ func (e *Engine) observeOOO(minTime, maxTime int64) {
 
 // appendableMinValidTime is Prometheus's: half a block range behind the head's max time, and
 // never before where the head was last truncated.
-func appendableMinValidTime(maxTime, minValid int64) int64 {
-	return max(satSub(maxTime, chunkRangeMs/2), minValid)
+func appendableMinValidTime(maxTime, minValid, rangeMs int64) int64 {
+	return max(satSub(maxTime, rangeMs/2), minValid)
 }
 
 // AppendableMinValidTime is the oldest in-order sample appenders accept, false until the head has
@@ -511,7 +520,7 @@ func (e *Engine) AppendableMinValidTime() (int64, bool) {
 	if minTime == math.MaxInt64 {
 		return 0, false
 	}
-	return appendableMinValidTime(maxTime, minValid), true
+	return appendableMinValidTime(maxTime, minValid, e.store.chunkRangeMs), true
 }
 
 // NumSeries is the head's series count.
@@ -569,14 +578,14 @@ func (e *Engine) compactableAfter(jitterMs int64) bool {
 		return false
 	}
 	if e.opts.TimelyCompaction {
-		return satAdd(rangeForTimestamp(minTime), jitterMs) < appendableMinValidTime(maxTime, minValid)
+		return satAdd(rangeForTimestamp(minTime, e.store.chunkRangeMs), jitterMs) < appendableMinValidTime(maxTime, minValid, e.store.chunkRangeMs)
 	}
-	return maxTime-minTime > chunkRangeMs/2*3+jitterMs
+	return maxTime-minTime > e.store.chunkRangeMs/2*3+jitterMs
 }
 
-// rangeForTimestamp is Prometheus's: the end of the block range of t.
-func rangeForTimestamp(t int64) int64 {
-	return (t/chunkRangeMs)*chunkRangeMs + chunkRangeMs
+// rangeForTimestamp is Prometheus's: the end of the block range of rangeMs of t.
+func rangeForTimestamp(t, rangeMs int64) int64 {
+	return (t/rangeMs)*rangeMs + rangeMs
 }
 
 // Compact compacts the head's oldest block ranges while the head is compactable, then its
@@ -591,12 +600,12 @@ func (e *Engine) Compact(context.Context) error {
 	// due without it, once for each range.
 	dueRange := int64(math.MinInt64)
 	if e.compactableAfter(0) {
-		dueRange = rangeForTimestamp(e.MinTime())
+		dueRange = rangeForTimestamp(e.MinTime(), e.store.chunkRangeMs)
 	}
 	for e.compactable() {
 		minTime := e.MinTime()
-		e.truncateMemory(minTime, rangeForTimestamp(minTime))
-		dueRange = max(dueRange, rangeForTimestamp(minTime))
+		e.truncateMemory(minTime, rangeForTimestamp(minTime, e.store.chunkRangeMs))
+		dueRange = max(dueRange, rangeForTimestamp(minTime, e.store.chunkRangeMs))
 	}
 	if dueRange > e.oooCompactedRange {
 		e.compactOOOHead()
@@ -734,7 +743,7 @@ func (e *Engine) compactOOOHead() {
 			// Out-of-order blocks are aligned on block ranges.
 			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
 				if meta.OutOfOrder && uint64(meta.Ref) >= e.oooWatermarks[index] {
-					return alignedCuts(meta)
+					return alignedCuts(meta, e.store.chunkRangeMs)
 				}
 				return nil
 			}); err != nil {
@@ -776,8 +785,8 @@ func (e *Engine) compactOOOHead() {
 	}
 	// Like Prometheus's, one block per block range of the out-of-order head's data.
 	wrote := false
-	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
-		blockMax := blockMin + chunkRangeMs
+	for blockMin := rangeStart(compactedFrom, e.store.chunkRangeMs); blockMin <= compactedTo; blockMin += e.store.chunkRangeMs {
+		blockMax := blockMin + e.store.chunkRangeMs
 		wrote = e.writeBlock(blockMin, blockMax, true, false, func(shard int, series *Series) bool {
 			return e.oooIn(shard, series, blockMin, blockMax-1)
 		}) || wrote
@@ -954,7 +963,7 @@ func (e *Engine) headGC() {
 	home, t = e.home()
 	home.Lock()
 	if actualMint > t.minTime {
-		appendable := appendableMinValidTime(t.maxTime, t.truncatedTo)
+		appendable := appendableMinValidTime(t.maxTime, t.truncatedTo, e.store.chunkRangeMs)
 		if actualMint < appendable {
 			t.minTime, t.headMin, t.truncatedTo = actualMint, actualMint, actualMint
 		} else {
@@ -1131,8 +1140,8 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 	if len(selected) == 0 {
 		return nil
 	}
-	for blockMin := rangeStart(minTime); blockMin <= maxt; blockMin += chunkRangeMs {
-		blockMax := blockMin + chunkRangeMs
+	for blockMin := rangeStart(minTime, e.store.chunkRangeMs); blockMin <= maxt; blockMin += e.store.chunkRangeMs {
+		blockMax := blockMin + e.store.chunkRangeMs
 		e.writeBlock(blockMin, blockMax, false, idle, func(_ int, series *Series) bool {
 			_, ok := selected[series.ref]
 			return ok && inOrderIn(series, blockMin, blockMax-1, minTime)
@@ -1172,7 +1181,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 				}
 				if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
 					if !meta.OutOfOrder {
-						return alignedCuts(meta)
+						return alignedCuts(meta, e.store.chunkRangeMs)
 					}
 					return nil
 				}); err != nil {

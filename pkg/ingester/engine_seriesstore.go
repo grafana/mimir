@@ -62,25 +62,18 @@ func seriesstoreShardsFor(maxSeries int) int {
 	}
 }
 
-// seriesstoreIdleEviction is how long the seriesstore keeps series that stopped in memory, past the active series'
-// timeout: they leave the head at a compaction, instead of hours later, with their data still queryable.
-const seriesstoreIdleEviction = time.Hour
-
 // testNoIdleEviction makes tests keep the series they expect in memory; it's always false outside tests.
 var testNoIdleEviction bool
-
-func idleEvictionMs() int64 {
-	if testNoIdleEviction {
-		return 0
-	}
-	return seriesstoreIdleEviction.Milliseconds()
-}
 
 // testNoCompactionJitter makes tests compact when they expect to, not a random time later; it's always false outside
 // tests.
 var testNoCompactionJitter bool
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints, jitter bool, onCoalesced func(), onResourceLimited func(store.ResourceLimit)) (tenantEngine, error) {
+// openSeriesstoreEngine opens the tenant's engine, which evicts series idle for idleEviction, with 0 for never.
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints, jitter bool, idleEviction time.Duration, onCoalesced func(), onResourceLimited func(store.ResourceLimit)) (tenantEngine, error) {
+	if testNoIdleEviction {
+		idleEviction = 0
+	}
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -94,13 +87,15 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		}),
 	}
 	engine, err := store.OpenEngine(dir, userID, store.EngineOptions{
-		Shards:                  shards,
-		RetentionMs:             opts.RetentionDuration,
-		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
-		MaxExemplars:            opts.MaxExemplars,
-		TimelyCompaction:        opts.TimelyCompaction,
-		JitterCompaction:        jitter,
-		IdleEvictionMs:          idleEvictionMs(),
+		Shards:                 shards,
+		RetentionMs:            opts.RetentionDuration,
+		OutOfOrderTimeWindowMs: opts.OutOfOrderTimeWindow,
+		MaxExemplars:           opts.MaxExemplars,
+		TimelyCompaction:       opts.TimelyCompaction,
+		JitterCompaction:       jitter,
+		IdleEvictionMs:         idleEviction.Milliseconds(),
+		// The engine's chunk ranges are the TSDB's block ranges.
+		ChunkRangeMs:            opts.MinBlockDuration,
 		Checkpoints:             checkpoints,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,

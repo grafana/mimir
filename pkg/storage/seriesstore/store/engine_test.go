@@ -197,8 +197,8 @@ func secondaryHash(lset promlabels.Labels) uint32 {
 // openPrometheus opens the reference TSDB in dir, replaying its WAL.
 func openPrometheus(t testing.TB, dir string, opts differentialOptions, callback tsdb.SeriesLifecycleCallback) prometheusHead {
 	promOpts := tsdb.DefaultOptions()
-	promOpts.MinBlockDuration = chunkRangeMs
-	promOpts.MaxBlockDuration = chunkRangeMs
+	promOpts.MinBlockDuration = defaultChunkRangeMs
+	promOpts.MaxBlockDuration = defaultChunkRangeMs
 	promOpts.NoLockfile = true
 	promOpts.IsolationDisabled = true
 	promOpts.EnableExemplarStorage = true
@@ -311,7 +311,7 @@ func runRound(t *testing.T, r *rand.Rand, heads [2]headUnderTest, series []workl
 		case roll < 8:
 			ts = *cursor - int64(r.IntN(int(max(oooWindow, 60_000)*2)))
 		case roll < 12:
-			ts = *cursor - 3*chunkRangeMs
+			ts = *cursor - 3*defaultChunkRangeMs
 		case roll < 16:
 			ts = *cursor
 		}
@@ -522,7 +522,7 @@ func compareHeads(t *testing.T, heads [2]headUnderTest, callbacks [2]*recordingC
 	require.Equal(t, callbacks[0].liveSeries(), callbacks[1].liveSeries(), "created minus deleted series, %s", msg)
 
 	maxTime := heads[0].MaxTime()
-	ranges := [][2]int64{{math.MinInt64, math.MaxInt64}, {maxTime - chunkRangeMs, maxTime}, {maxTime - 3*chunkRangeMs, maxTime - chunkRangeMs}, {maxTime - 20*60_000, maxTime - 5*60_000}}
+	ranges := [][2]int64{{math.MinInt64, math.MaxInt64}, {maxTime - defaultChunkRangeMs, maxTime}, {maxTime - 3*defaultChunkRangeMs, maxTime - defaultChunkRangeMs}, {maxTime - 20*60_000, maxTime - 5*60_000}}
 	matcherSets := [][]*promlabels.Matcher{
 		{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+")},
 		{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")},
@@ -737,7 +737,7 @@ func TestEngineMatchesPrometheusHead(t *testing.T) {
 	for _, opts := range []differentialOptions{
 		{},
 		{oooWindowMs: 30 * 60_000},
-		{oooWindowMs: 2 * chunkRangeMs / 2, maxExemplars: 50},
+		{oooWindowMs: 2 * defaultChunkRangeMs / 2, maxExemplars: 50},
 		{timely: true, maxExemplars: 1000},
 		{timely: true, oooWindowMs: 20 * 60_000, seriesLimit: 40},
 	} {
@@ -758,7 +758,7 @@ func TestEngineMatchesPrometheusHead(t *testing.T) {
 					conflicts = newAppendHistory()
 					t.Cleanup(func() { conflicts = nil })
 					series := workloadSeriesSet(70)
-					cursor := int64(10 * chunkRangeMs)
+					cursor := int64(10 * defaultChunkRangeMs)
 					for round := range 90 {
 						runRound(t, r, heads, series, &cursor, opts.oooWindowMs)
 						if traceSeries != "" {

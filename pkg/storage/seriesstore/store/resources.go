@@ -576,9 +576,9 @@ func (m *shardResources) start(series *Series) int64 {
 }
 
 // offset is t as an offset from the base, which it sets on the first observation; t before the base clamps to it.
-func (m *shardResources) offset(t, oooWindowMs int64) uint32 {
+func (m *shardResources) offset(t, marginMs int64) uint32 {
 	if !m.baseSet {
-		m.base, m.baseSet = t-metadataBaseMargin(oooWindowMs), true
+		m.base, m.baseSet = t-marginMs, true
 	}
 	switch delta := t - m.base; {
 	case delta < 0:
@@ -595,11 +595,11 @@ func (m *shardResources) offset(t, oooWindowMs int64) uint32 {
 // observe records that series has identity id from t on, an id the caller holds a reference to, within the limit on
 // the series' identity changes: past it, the series' run is of unknown resource until the window ends, with the latest
 // identity. Equal neighbouring runs merge, and an observation older than the current run goes among the older ones.
-func (m *shardResources) observe(series *Series, id uint32, t, oooWindowMs int64) {
+func (m *shardResources) observe(series *Series, id uint32, t, marginMs int64) {
 	if series.resourceID == 0 {
 		m.r.identities.acquire(id)
 		m.r.addSeries(id, series.ref)
-		series.resourceID, series.resourceStart = id, m.offset(t, oooWindowMs)
+		series.resourceID, series.resourceStart = id, m.offset(t, marginMs)
 		m.series++
 		return
 	}
@@ -625,7 +625,7 @@ func (m *shardResources) observe(series *Series, id uint32, t, oooWindowMs int64
 			m.r.identities.acquire(latest)
 			m.older[series.ref] = append(m.older[series.ref], resourceRun{from: start, id: series.resourceID})
 			m.runs++
-			series.resourceID, series.resourceStart = latest, m.offset(c.coalescedEnd, oooWindowMs)
+			series.resourceID, series.resourceStart = latest, m.offset(c.coalescedEnd, marginMs)
 			m.changes[series.ref] = resourceChanges{window: c.coalescedEnd}
 			start = m.start(series)
 			if series.resourceID == id {
@@ -647,7 +647,7 @@ func (m *shardResources) observe(series *Series, id uint32, t, oooWindowMs int64
 		} else {
 			series.resourceID = id
 		}
-		series.resourceStart = m.offset(t, oooWindowMs)
+		series.resourceStart = m.offset(t, marginMs)
 		m.changes[series.ref] = c
 		m.capRuns(series)
 		return
@@ -679,7 +679,7 @@ func (m *shardResources) observe(series *Series, id uint32, t, oooWindowMs int64
 		merged = append(merged, run)
 	}
 	newest := merged[len(merged)-1]
-	series.resourceID, series.resourceStart = newest.id, m.offset(newest.from, oooWindowMs)
+	series.resourceID, series.resourceStart = newest.id, m.offset(newest.from, marginMs)
 	m.runs -= len(m.older[series.ref])
 	if older := merged[:len(merged)-1]; len(older) > 0 {
 		m.older[series.ref] = slices.Clip(older)
@@ -927,7 +927,7 @@ func (e *Engine) observeResourceLocked(t *tenant, series *Series, o *resourceObs
 	if t.nativeResources == nil {
 		t.nativeResources = newShardResources(e.resources)
 	}
-	t.nativeResources.observe(series, id, timestamp, e.oooWindow.Load())
+	t.nativeResources.observe(series, id, timestamp, e.metadataBaseMargin())
 }
 
 // trimResourcesLocked drops the older runs of the shard's series that end by minTime, and rebases the shard's run
@@ -946,7 +946,7 @@ func (e *Engine) trimResourcesLocked(t *tenant, minTime, maxTime int64) {
 	if !m.baseSet || maxTime-m.base < metadataRebaseAfter {
 		return
 	}
-	base := minTime - metadataBaseMargin(e.oooWindow.Load())
+	base := minTime - e.metadataBaseMargin()
 	for group := range t.series.groups {
 		entries := t.series.groups[group].entries
 		for index := range entries {
