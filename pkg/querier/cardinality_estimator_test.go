@@ -286,6 +286,18 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 
+	t.Run("ingesters that don't know the count RPC are refused, not counted from the whole head", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.Unimplemented, "unknown method SeriesCounts")}
+		// A window inside what every head holds, where a request over the index
+		// bytes limit would fall back to the whole-head count.
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.ErrorIs(t, err, errCountsNotSupported)
+		assert.ErrorContains(t, err, "ingesters does not support cardinality estimates yet")
+		assert.Nil(t, ing.gotLabelNames, "the whole-head count is not asked")
+	})
+
 	t.Run("an ingester that ignored step_ms is refused", func(t *testing.T) {
 		// Two buckets of one hour. An ingester that doesn't know step_ms
 		// answers one count per group.

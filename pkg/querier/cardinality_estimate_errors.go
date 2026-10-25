@@ -35,6 +35,11 @@ func (e estimateError) Unwrap() error { return e.err }
 // bucket instead.
 var errStepNeedsOneSource = errors.New("per-bucket counts need each bucket held by sources that share no series")
 
+// errCountsNotSupported is wrapped by the refusal of a source that doesn't
+// know the count RPCs, such as an older version during a rolling update. It
+// is not a limit, so callers that read a refusal as a limit check for it.
+var errCountsNotSupported = errors.New("does not support cardinality estimates")
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {
@@ -47,7 +52,8 @@ func refusedEstimate(format string, args ...any) error {
 }
 
 // classifyStoreGatewayError turns a store-gateway's gRPC status into an
-// estimate error. ResourceExhausted means a refusal only when the message
+// estimate error. Unimplemented means the store-gateway is older than the
+// querier and is refused with 422. ResourceExhausted means a refusal only when the message
 // names one of the limits; gRPC also uses that code for a message over the
 // size limit, which is a failure, not a refusal.
 func classifyStoreGatewayError(addr string, err error) error {
@@ -58,6 +64,8 @@ func classifyStoreGatewayError(addr string, err error) error {
 	switch st.Code() {
 	case codes.InvalidArgument:
 		return badEstimateRequest("store-gateway %s: %s", addr, st.Message())
+	case codes.Unimplemented:
+		return refusedEstimate("store-gateway %s %w yet, it may run an older version", addr, errCountsNotSupported)
 	case codes.ResourceExhausted:
 		if strings.Contains(st.Message(), "max_index_bytes") || strings.Contains(st.Message(), "max_names") {
 			return refusedEstimate("store-gateway %s: %s", addr, st.Message())
