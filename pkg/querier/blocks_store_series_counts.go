@@ -200,7 +200,8 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		if err := merge(c.client.RemoteAddress(), resp); err != nil {
 			return estimateCallResult{}, err
 		}
-		return estimateCallResult{counted: counted, indexBytes: resp.IndexBytes}, nil
+		// max_index_bytes bounds the postings offsets table walked as well as index_bytes.
+		return estimateCallResult{counted: counted, indexBytes: resp.IndexBytes + resp.PostingsOffsetsTableBytes}, nil
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, err
