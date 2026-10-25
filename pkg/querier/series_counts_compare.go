@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -60,7 +61,10 @@ func (q *BlocksStoreQueryable) SeriesCountsFromChunks(ctx context.Context, req C
 func countSeriesSamples(set storage.SeriesSet, req CardinalityEstimateRequest) (map[string][]int64, error) {
 	buckets := 1
 	if req.Step > 0 {
-		buckets = int((req.MaxT - req.MinT) / req.Step)
+		var err error
+		if buckets, err = cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil {
+			return nil, err
+		}
 	}
 	groupBy := req.GroupBy
 	if groupBy == "" {
@@ -79,11 +83,15 @@ func countSeriesSamples(set storage.SeriesSet, req CardinalityEstimateRequest) (
 			if t < req.MinT || t >= req.MaxT {
 				continue
 			}
-			i := 0
-			if req.Step > 0 {
-				i = int((t - req.MinT) / req.Step)
+			found = true
+			if req.Step == 0 {
+				seen[0] = true
+				continue
 			}
-			seen[i], found = true, true
+			first, last := cardinality.BucketSpan(req.MinT, req.Step, req.Window, buckets, t, t)
+			for i := first; i <= last; i++ {
+				seen[i] = true
+			}
 		}
 		if err := it.Err(); err != nil {
 			return nil, err

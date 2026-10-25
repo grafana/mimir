@@ -23,7 +23,11 @@ type CardinalityEstimateRequest struct {
 	Matchers   []*labels.Matcher
 	MinT, MaxT int64
 	Step       int64
-	GroupBy    string
+	// Window is each bucket's width with Step, 0 for Step; see
+	// cardinality.Buckets. [MinT, MaxT) is then the data read, and the
+	// first bucket ends at MinT+Window.
+	Window  int64
+	GroupBy string
 	// MaxIndexBytes caps the index bytes the whole request reads, 0 for
 	// none. It is split evenly across the store-gateway calls.
 	MaxIndexBytes int64
@@ -41,6 +45,26 @@ type CardinalityEstimateRequest struct {
 	// name table, in the result's names, instead of in Counts, so the caller
 	// can merge it without holding it. The caller must close it.
 	StreamNames bool
+}
+
+// windowMs is the window_ms to send: 0 when the buckets are the step wide,
+// so a source that doesn't know the field counts them the same way.
+func (r CardinalityEstimateRequest) windowMs() int64 {
+	if r.Step == 0 || r.Window == r.Step {
+		return 0
+	}
+	return r.Window
+}
+
+// checkWindowEcho refuses an answer counted with a different window_ms than
+// asked, which comes from a source that doesn't know the field, such as an
+// older version during a rolling update: it counts adjacent step-wide
+// buckets instead.
+func checkWindowEcho(source string, asked, got int64) error {
+	if asked == got {
+		return nil
+	}
+	return fmt.Errorf("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", source, got, asked, sourceKind(source))
 }
 
 // CardinalityEstimateResult holds one count per bucket for each group.
@@ -161,6 +185,9 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
 		defer mtx.Unlock()
+		if err := checkWindowEcho("store-gateway "+addr, req.windowMs(), resp.WindowMs); err != nil {
+			return err
+		}
 		for _, g := range resp.Groups {
 			if err := m.add("store-gateway "+addr, g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
 				return err
@@ -181,6 +208,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MinTime:       req.MinT,
 			MaxTime:       req.MaxT,
 			StepMs:        req.Step,
+			WindowMs:      req.windowMs(),
 			GroupBy:       req.GroupBy,
 			Hashes:        res.Dedup,
 			MaxIndexBytes: perCall,
