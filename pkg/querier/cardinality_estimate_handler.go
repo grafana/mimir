@@ -49,10 +49,15 @@ type estimateWindow struct {
 }
 
 type estimateResponse struct {
-	Window  estimateWindow `json:"window"`
-	StepMS  int64          `json:"step_ms,omitempty"`
-	GroupBy string         `json:"group_by"`
-	Read    string         `json:"read"`
+	Window estimateWindow `json:"window"`
+	StepMS int64          `json:"step_ms,omitempty"`
+	// WindowMS is each bucket's width with step_ms when it is not the step:
+	// the count at a bucket's end is the series with a sample in the
+	// window_ms before it, and window starts window_ms before the first
+	// bucket's end.
+	WindowMS int64  `json:"window_ms,omitempty"`
+	GroupBy  string `json:"group_by"`
+	Read     string `json:"read"`
 	// Source says where the counts come from: "blocks" for the
 	// store-gateways, "head" for the ingesters, "blocks+head" for both.
 	Source string `json:"source"`
@@ -176,7 +181,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		elapsed := time.Since(start)
 		out := estimateResponse{
-			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, GroupBy: req.GroupBy, Read: res.Read,
+			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
 			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
 			GroupCount: len(res.Counts), SeriesCounted: res.SeriesCounted,
@@ -496,6 +501,33 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 			return req, opts, errors.New("step must be a positive duration such as 1h")
 		}
 		req.Step = time.Duration(d).Milliseconds()
+	}
+	// window, with step, is how far back each bucket's count looks from the
+	// bucket's end. The buckets still end every step from start+step, so
+	// zooming changes how many there are, not what each one counts; the
+	// window read starts one window before the first bucket's end.
+	if v := r.FormValue("window"); v != "" {
+		d, err := model.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return req, opts, errors.New("window must be a positive duration such as 1h")
+		}
+		if req.Step == 0 {
+			return req, opts, errors.New("window needs step")
+		}
+		if req.Snap {
+			return req, opts, errors.New("window can't be combined with snap")
+		}
+		req.Window = time.Duration(d).Milliseconds()
+		if req.Window < req.Step {
+			return req, opts, errors.New("window must be at least step, so every sample falls in a bucket")
+		}
+		if (req.MaxT-req.MinT)%req.Step != 0 {
+			return req, opts, fmt.Errorf("step %d doesn't divide the window [%d, %d)", req.Step, req.MinT, req.MaxT)
+		}
+		req.MinT += req.Step - req.Window
+		if req.MinT < 0 {
+			return req, opts, errors.New("window reaches back before time 0 from the first bucket's end; use a later start or a shorter window")
+		}
 	}
 	if v := r.FormValue("max_index_bytes"); v != "" {
 		if req.MaxIndexBytes, err = strconv.ParseInt(v, 10, 64); err != nil || req.MaxIndexBytes < 0 {

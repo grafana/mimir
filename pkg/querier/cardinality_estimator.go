@@ -187,10 +187,14 @@ const maxPerBucketEstimates = 48
 // blocks/ingesters cut is deduplicated by hash on its own. The buckets
 // share max_index_bytes evenly and the request's memory limit.
 func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	if (req.MaxT-req.MinT)%req.Step != 0 {
-		return CardinalityEstimateResult{}, badEstimateRequest("step %d doesn't divide the window [%d, %d)", req.Step, req.MinT, req.MaxT)
+	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
+	if err != nil {
+		return CardinalityEstimateResult{}, badEstimateRequest("%v", err)
 	}
-	n := int((req.MaxT - req.MinT) / req.Step)
+	width := req.Window
+	if width == 0 {
+		width = req.Step
+	}
 	if n > maxPerBucketEstimates {
 		return CardinalityEstimateResult{}, badEstimateRequest("%w; answering the %d buckets one by one is capped at %d, so use a larger step or a window inside one source", errStepNeedsOneSource, n, maxPerBucketEstimates)
 	}
@@ -200,10 +204,10 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	for i := range n {
 		sub := *req
 		sub.MinT = req.MinT + int64(i)*req.Step
-		sub.MaxT = sub.MinT + req.Step
+		sub.MaxT = sub.MinT + width
 		// A bucket's counts are read from its result, so its name table
 		// must come back in Counts, not as an open stream.
-		sub.Step, sub.Snap, sub.StreamNames = 0, false, false
+		sub.Step, sub.Window, sub.Snap, sub.StreamNames = 0, 0, false, false
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
@@ -408,6 +412,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		StartTimestampMs: req.MinT,
 		EndTimestampMs:   req.MaxT,
 		StepMs:           req.Step,
+		WindowMs:         req.windowMs(),
 		GroupBy:          req.GroupBy,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    req.MaxIndexBytes,

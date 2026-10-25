@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -78,6 +79,29 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, int64(60*60*1000), got.StepMs)
 		require.Len(t, got.Matchers, 1)
 		assert.Equal(t, "up", got.Matchers[0].Value)
+	})
+
+	t.Run("sends a window wider than the step and refuses a store-gateway that ignored it", func(t *testing.T) {
+		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		const hour = 60 * 60 * 1000
+		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, Window: 2 * hour, GroupBy: "__name__"}
+		var got *storegatewaypb.SeriesCountsRequest
+		honours := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, WindowMs: 2 * hour})
+		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{honours: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {1, 2}}, res.Counts)
+		require.NotNil(t, got)
+		assert.Equal(t, int64(2*hour), got.WindowMs)
+
+		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2, 3}}}})
+		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		require.ErrorContains(t, err, "store-gateway 2.2.2.2 counted with window_ms 0 instead of the 7200000 asked for")
+
+		req.Window = hour
+		got = nil
+		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("3.3.3.3", &got, storegatewaypb.SeriesCountsResponse{}): {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		require.NoError(t, err)
+		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none, which every version counts the same way")
 	})
 
 	t.Run("unions hashes across block ranges", func(t *testing.T) {
@@ -245,7 +269,23 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	assert.Equal(t, "__name__", req.GroupBy)
 	assert.Empty(t, req.Matchers)
 
+	// The buckets still end every step from start+step; the window read starts one window before the first end.
+	req, _, err = parse("start=7200&end=14400&step=1h&window=2h")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3600000), req.MinT)
+	assert.Equal(t, int64(14400000), req.MaxT)
+	assert.Equal(t, int64(7200000), req.Window)
+	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "the same buckets as step=1h alone")
+
 	for _, bad := range []string{
+		"start=0&end=7200&window=1h",
+		"start=0&end=7200&step=1h&window=30m",
+		"start=0&end=7200&step=1h&window=0s",
+		"start=0&end=7200&step=1h&window=2h&snap=true",
+		"start=0&end=5400&step=1h&window=2h",
+		"start=0&end=7200&step=1h&window=2h",
 		"start=x&end=10",
 		"start=10&end=5",
 		"start=0&end=10&match[]=up{&",
