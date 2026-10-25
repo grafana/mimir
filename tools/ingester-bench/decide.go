@@ -57,6 +57,11 @@ type metricDecision struct {
 	// credit, no credit, inconclusive, or not evaluated.
 	Ablated ratio
 	Credit  string
+	// Reported, deciding nothing: the ablation's extra minus seriesstore's, whether #19563's choices cost seriesstore
+	// less than its own do, for if Mimir moves onto seriesstore. "port #19563's choices to seriesstore" when surely
+	// below 0, "keep seriesstore's" when surely above, or inconclusive, or not evaluated.
+	ChoicesOnSeriesstore estimate
+	SeriesstoreLesson    string
 }
 
 type phase2Decision struct {
@@ -147,8 +152,20 @@ func (r ratio) verdict(threshold float64) string {
 // decideMetric decides a metric on its extras: the ratio rule, with for CPU the materiality floor first, and the
 // ablation's credit, evaluated only when the TSDB's extra is surely above seriesstore's.
 func decideMetric(tsdb, seriesstore, ablation estimate, floor float64) metricDecision {
-	d := metricDecision{TSDB: tsdb, Seriesstore: seriesstore, Ablation: ablation, Credit: "not evaluated"}
+	d := metricDecision{TSDB: tsdb, Seriesstore: seriesstore, Ablation: ablation, Credit: "not evaluated", SeriesstoreLesson: "not evaluated",
+		ChoicesOnSeriesstore: estimate{Mean: math.NaN(), Low: math.NaN(), High: math.NaN()}}
 	d.Ratio = fieller(seriesstore, tsdb, 0)
+	if !math.IsNaN(ablation.Mean) {
+		d.ChoicesOnSeriesstore = estimateDifference(ablation, seriesstore)
+		switch c := d.ChoicesOnSeriesstore; {
+		case !math.IsNaN(c.High) && c.High < 0:
+			d.SeriesstoreLesson = "port #19563's choices to seriesstore"
+		case !math.IsNaN(c.Low) && c.Low > 0:
+			d.SeriesstoreLesson = "keep seriesstore's"
+		default:
+			d.SeriesstoreLesson = "inconclusive"
+		}
+	}
 	switch {
 	case floor > 0 && !math.IsNaN(tsdb.High) && tsdb.High < floor && !math.IsNaN(seriesstore.High) && seriesstore.High < floor:
 		d.Verdict = "immaterial"
@@ -244,7 +261,7 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool) (phase2D
 	}
 	switch {
 	case d.Decision == "fail":
-		d.Outcome = "stop: metric metadata stays on the vendored #19563 path"
+		d.Outcome = "stop: metric metadata stays on the vendored #19563 path, which seriesstore takes if Mimir moves onto it"
 	case d.Decision == "pass" && d.Credit == "credit":
 		d.Outcome = "continue the columnar direction"
 	case d.Decision == "pass":
@@ -301,6 +318,8 @@ func (d phase2Decision) print(w io.Writer) {
 			m.d.Ablated.Mean, m.d.Ablated.Low, m.d.Ablated.High, m.d.Credit)
 	}
 	fmt.Fprintf(w, "decision %s, %s: %s\n", d.Decision, d.Credit, d.Outcome)
+	fmt.Fprintf(w, "on seriesstore, #19563's choices' extra minus its own: CPU %s: %s; bytes %s: %s\n",
+		d.CPU.ChoicesOnSeriesstore.absolute(), d.CPU.SeriesstoreLesson, d.Bytes.ChoicesOnSeriesstore.absolute(), d.Bytes.SeriesstoreLesson)
 	fmt.Fprintf(w, "exit gate %s: seriesstore off against the TSDB off, CPU %s, heap %s, %d persistent mismatches\n", d.ExitGate, d.ParityCPU, d.ParityHeap, d.Mismatches)
 }
 
