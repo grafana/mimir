@@ -294,7 +294,10 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		return CardinalityEstimateResult{}, err
 	}
 	if len(blocks) == 0 {
-		return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}}, nil
+		// No block is listed for a window the ingesters no longer answer for.
+		// The bucket index may not list a block yet, or a block-builder may
+		// lag, so an empty table is a lower bound and is not cached.
+		return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
 	}
 	covered := req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
 	res, err := e.blocks.CardinalityEstimate(ctx, tenantID, req)
