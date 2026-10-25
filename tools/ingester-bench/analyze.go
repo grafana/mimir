@@ -22,9 +22,12 @@ const (
 	readRejections    = "cortex_ingester_utilization_limited_read_requests_total"
 	// Between ingesters of the same engine, their compactions at /ready may differ by this share of them: the count has
 	// the out-of-order compactions too, whose number follows how the replay's compaction checks fell, which differ with
-	// the ingesters' speeds. Their head truncations, checkpoints and WAL truncations must still match.
+	// the ingesters' speeds. Their WAL checkpoints and truncations may differ by one: whether a tenant's head truncation
+	// checkpoints its WAL depends on how much of it the replay had written at the check, which the largest tenants
+	// straddle. Their head truncations must still match.
 	compactions               = "cortex_ingester_tsdb_compactions_total"
 	readyCompactionsTolerance = 0.02
+	readyCheckpointsTolerance = 1
 	// How far a run's records may be from the profile's composition, relative to it: stand-ins per record vary most
 	// between partitions.
 	compositionTolerance         = 0.1
@@ -180,6 +183,9 @@ func analyzeRun(dir string, report Report) analyzedRun {
 			if name == compactions && math.Abs(a-b) <= readyCompactionsTolerance*max(a, b) {
 				continue
 			}
+			if walCheckpointCounters[name] && math.Abs(a-b) <= readyCheckpointsTolerance {
+				continue
+			}
 			discard("A's and B's %s differ at ready", name)
 		}
 	}
@@ -198,6 +204,13 @@ func analyzeRun(dir string, report Report) analyzedRun {
 		}
 	}
 	return run
+}
+
+// walCheckpointCounters are the counters of the WAL's checkpoints and truncations.
+var walCheckpointCounters = map[string]bool{
+	"cortex_ingester_tsdb_checkpoint_creations_total": true,
+	"cortex_ingester_tsdb_checkpoint_deletions_total": true,
+	"cortex_ingester_tsdb_wal_truncations_total":      true,
 }
 
 // changedCounters are the counters that differ between before and after, but for the read path's rejections, which

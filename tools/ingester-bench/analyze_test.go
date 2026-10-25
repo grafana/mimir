@@ -81,20 +81,25 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	require.Empty(t, analyzeRun("run", composed).Discard)
 	miscomposed := composed
 	miscomposed.Composition.SeriesPerValue = 2.3
-	// The same engine's compactions may differ by 2% at ready, but not its head truncations.
-	counters := func(compactions, truncations float64) map[string]float64 {
-		return map[string]float64{"cortex_ingester_tsdb_compactions_total": compactions, "cortex_ingester_tsdb_head_truncations_total": truncations}
+	// The same engine's compactions may differ by 2% at ready and its checkpoints by one, but not its head truncations.
+	counters := func(compactions, truncations, checkpoints float64) map[string]float64 {
+		return map[string]float64{"cortex_ingester_tsdb_compactions_total": compactions, "cortex_ingester_tsdb_head_truncations_total": truncations,
+			"cortex_ingester_tsdb_checkpoint_creations_total": checkpoints, "cortex_ingester_tsdb_wal_truncations_total": checkpoints}
 	}
 	nearly := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
-	nearly.Counters = [2]Counters{{Ready: counters(300, 100), WindowEnd: counters(300, 100)}, {Ready: counters(297, 100), WindowEnd: counters(297, 100)}}
+	nearly.Counters = [2]Counters{{Ready: counters(300, 100, 1), WindowEnd: counters(300, 100, 1)}, {Ready: counters(297, 100, 2), WindowEnd: counters(297, 100, 2)}}
 	require.Empty(t, analyzeRun("run", nearly).Discard)
 	farther := nearly
-	farther.Counters[1] = Counters{Ready: counters(290, 100), WindowEnd: counters(290, 100)}
+	farther.Counters[1] = Counters{Ready: counters(290, 100, 1), WindowEnd: counters(290, 100, 1)}
 	truncated := nearly
-	truncated.Counters[1] = Counters{Ready: counters(300, 99), WindowEnd: counters(300, 99)}
+	truncated.Counters[1] = Counters{Ready: counters(300, 99, 1), WindowEnd: counters(300, 99, 1)}
+	checkpointed := nearly
+	checkpointed.Counters[1] = Counters{Ready: counters(300, 100, 3), WindowEnd: counters(300, 100, 3)}
 	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed, "compactions 3% apart": farther, "head truncations differ": truncated} {
 		require.Len(t, analyzeRun("run", report).Discard, 1, name)
 	}
+	// Checkpoints two apart make two discards: their creations and the WAL's truncations.
+	require.Len(t, analyzeRun("run", checkpointed).Discard, 2)
 
 	// Engines count differently, and triggers of compactions are counted whether or not anything compacts.
 	engines := validReport(0, "x-prometheus", "x-seriesstore", 1, 1)
