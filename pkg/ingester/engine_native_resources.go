@@ -4,9 +4,12 @@ package ingester
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -18,6 +21,23 @@ type resourceStep interface {
 	resource(entry *mimirpb.ResourceEntry, ref storage.SeriesRef) *storage.ResourceContext
 }
 
+// resourceAttributeString is an attribute's value as a string, as OTLP's AsString gives it, which is how #17740 stores
+// values.
+func resourceAttributeString(a mimirpb.ResourceAttribute) string {
+	switch a.Type {
+	case mimirpb.RESOURCE_ATTRIBUTE_BOOL:
+		return strconv.FormatBool(a.BoolValue)
+	case mimirpb.RESOURCE_ATTRIBUTE_INT:
+		return strconv.FormatInt(a.IntValue, 10)
+	case mimirpb.RESOURCE_ATTRIBUTE_DOUBLE:
+		return pcommon.NewValueDouble(a.DoubleValue).AsString()
+	case mimirpb.RESOURCE_ATTRIBUTE_BYTES:
+		return base64.StdEncoding.EncodeToString(a.BytesValue)
+	default:
+		return a.StringValue
+	}
+}
+
 // nativeResourcesEngine is a tenantEngine that keeps native resources: the OTel resource attributes of each series, as
 // versions over time.
 type nativeResourcesEngine interface {
@@ -26,6 +46,8 @@ type nativeResourcesEngine interface {
 	// EffectiveFrom until the next one's.
 	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error)
 }
+
+var _ nativeResourcesEngine = seriesstoreEngine{}
 
 // nativeResourcesResult is native resources, in the same shape from either engine.
 type nativeResourcesResult struct {
@@ -50,4 +72,61 @@ type nativeResourcesSeries struct {
 type nativeResourceVersion struct {
 	EffectiveFrom            int64
 	Identifying, Descriptive map[string]string
+}
+
+// seriesstoreResources is the seriesstore engine's resource step: its appender takes a series' resource with its types,
+// so it builds each resource once per batch, as typed attributes only.
+type seriesstoreResources struct {
+	built map[*mimirpb.ResourceEntry]*storage.ResourceContext
+}
+
+func newSeriesstoreResources() *seriesstoreResources {
+	return &seriesstoreResources{built: map[*mimirpb.ResourceEntry]*storage.ResourceContext{}}
+}
+
+func (r *seriesstoreResources) resource(entry *mimirpb.ResourceEntry, _ storage.SeriesRef) *storage.ResourceContext {
+	if built, ok := r.built[entry]; ok {
+		return built
+	}
+	built := &storage.ResourceContext{Attributes: make([]storage.ResourceAttribute, len(entry.Attributes))}
+	for i, a := range entry.Attributes {
+		built.Attributes[i] = storage.ResourceAttribute{
+			Key: a.Key, Type: storage.ResourceAttributeType(a.Type), String: a.StringValue, Bool: a.BoolValue, Int: a.IntValue, Double: a.DoubleValue, Bytes: a.BytesValue,
+		}
+	}
+	r.built[entry] = built
+	return built
+}
+
+func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error) {
+	series, limited, err := e.NativeResources(ctx, matcherSets, mint, maxt, limit)
+	if err != nil {
+		return nativeResourcesResult{}, err
+	}
+	result := nativeResourcesResult{Series: make([]nativeResourcesSeries, 0, len(series)), Limited: limited, CoverageStart: e.NativeResourcesCoverageStart()}
+	for _, s := range series {
+		out := nativeResourcesSeries{Labels: s.Labels, Versions: make([]nativeResourceVersion, 0, len(s.Versions))}
+		for _, v := range s.Versions {
+			out.Coalesced = out.Coalesced || v.Coalesced
+			out.Versions = append(out.Versions, nativeResourceVersion{
+				EffectiveFrom: v.EffectiveFrom,
+				Identifying:   resourceAttributesAsStrings(v.Identifying),
+				Descriptive:   resourceAttributesAsStrings(v.Descriptive),
+			})
+		}
+		result.Series = append(result.Series, out)
+	}
+	return result, nil
+}
+
+// resourceAttributesAsStrings is attributes as #17740 keeps them, with values as strings; nil without any.
+func resourceAttributesAsStrings(attributes []mimirpb.ResourceAttribute) map[string]string {
+	if len(attributes) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(attributes))
+	for _, a := range attributes {
+		out[a.Key] = resourceAttributeString(a)
+	}
+	return out
 }

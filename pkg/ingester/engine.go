@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -139,7 +140,11 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
 		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
 		coalesced := i.metrics.discardedMetadataPerSeriesChangeLimit.WithLabelValues(userID)
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout, coalesced.Inc)
+		// Counted once a limit is hit, so that tenants without native resources don't get the series.
+		onResourceLimited := func(limit store.ResourceLimit) {
+			i.metrics.discardedResourcesPerLimit[limit].WithLabelValues(userID).Inc()
+		}
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.limits.NativeResourcesIndexedAttributes(userID), coalesced.Inc, onResourceLimited)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }
@@ -168,8 +173,10 @@ type ingestBatch struct {
 	NativeMetricMetadata           bool
 	NativeMetricMetadataMaxChanges int
 	NativeMetricMetadataWindowMs   int64
-	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them.
-	NativeResources bool
+	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them, and
+	// for the seriesstore engine, its limits on them.
+	NativeResources      bool
+	NativeResourceLimits store.ResourceLimits
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time

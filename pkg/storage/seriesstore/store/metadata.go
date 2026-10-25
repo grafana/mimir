@@ -197,13 +197,6 @@ func newShardMetadata(dictionary *metricMetadataDictionary, stats *metricMetadat
 	return &shardMetadata{dictionary: dictionary, stats: stats, older: map[uint64][]metadataRun{}, changes: map[uint64]metadataChanges{}, truncated: map[uint64]struct{}{}}
 }
 
-// metadataBaseMargin is how far before the first observation a shard's base is: samples down to the out-of-order
-// window or half a block range before it can still come in, and a replay after an unclean shutdown starts further
-// back still, which clamps.
-func metadataBaseMargin(oooWindowMs int64) int64 {
-	return max(oooWindowMs, chunkRangeMs/2)
-}
-
 func (m *shardMetadata) start(series *Series) int64 {
 	return m.base + int64(series.metadataStart)
 }
@@ -563,10 +556,6 @@ func (e *Engine) observeMetadataLocked(t *tenant, series *Series, _ *metadataMem
 	limits := metadataLimits{maxChanges: int(e.metadataMaxChanges.Load()), windowMs: e.metadataChangeWindowMs.Load()}
 	e.shardMetadataLocked(t).observe(series, id, timestamp, e.oooWindow.Load(), limits)
 }
-
-// metadataRebaseAfter is how far past its shard's base a series' run may start before the shard is rebased: half the
-// range of the offsets.
-const metadataRebaseAfter = 1 << 31
 
 // trimMetadataLocked drops the older runs of the shard's series that end by minTime, the head's min time, and rebases
 // the shard's run starts onto minTime once the head's max time nears the end of the offsets' range. The caller holds

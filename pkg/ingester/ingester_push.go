@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -408,6 +409,14 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	}
 	maxChanges, changeWindow := i.limits.NativeMetricMetadataChangeLimit(userID)
+	resourceWindow, maxIdentityChanges, maxVersions, maxNewIdentities, maxResourceBytes := i.limits.NativeResourcesSoftLimits(userID)
+	resourceLimits := store.ResourceLimits{
+		WindowMs:                    resourceWindow.Milliseconds(),
+		MaxIdentityChangesPerSeries: maxIdentityChanges,
+		MaxVersionsPerIdentity:      maxVersions,
+		MaxNewIdentities:            maxNewIdentities,
+		MaxBytes:                    maxResourceBytes,
+	}
 	outcome, ingestErr := db.db.Ingest(&ingestContext{
 		Context:                          ctx,
 		i:                                i,
@@ -438,6 +447,7 @@ func (i *Ingester) push(ctx context.Context, req *pushRequest) (returnErr error)
 		NativeMetricMetadataMaxChanges: maxChanges,
 		NativeMetricMetadataWindowMs:   changeWindow.Milliseconds(),
 		NativeResources:                i.limits.NativeResourcesEnabled(userID),
+		NativeResourceLimits:           resourceLimits,
 		IngestedAt:                     startAppend,
 		OTLP:                           req.source() == mimirpb.OTLP,
 	})

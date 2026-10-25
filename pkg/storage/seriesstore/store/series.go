@@ -71,6 +71,8 @@ type Series struct {
 	nonOwnedSinceS uint32
 	// The series' native metric metadata, 8 bytes in every build.
 	seriesMetadata
+	// The series' native resource's current run.
+	seriesResource
 	// Whether the last request's samples ended with a native histogram, as Mimir's active series
 	// tracker records it.
 	nativeHistogram bool
