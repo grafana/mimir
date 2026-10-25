@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -271,11 +272,18 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.True(t, res.CoverageGap, "nothing holds [76h, 90h)")
 	})
 
-	t.Run("a window older than the ingesters with no block is empty", func(t *testing.T) {
+	t.Run("a window older than the ingesters with no block is empty and flagged", func(t *testing.T) {
 		res, err := newEstimator(nil, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 0, MaxT: 24 * hour})
 		require.NoError(t, err)
 		assert.Empty(t, res.Counts)
 		assert.Equal(t, sourceBlocks, res.Source)
+		assert.True(t, res.LowerBound, "no block may only mean the bucket index does not list one yet")
+		assert.True(t, res.CoverageGap)
+
+		// The handler must not let the query-frontend keep the empty table.
+		rec := httptest.NewRecorder()
+		setEstimateCacheControl(rec, &estimateResponse{LowerBound: res.LowerBound, CoverageGap: res.CoverageGap})
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 
 	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {
