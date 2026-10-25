@@ -125,6 +125,22 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.MinTimeMs = min(resp.MinTimeMs, src.minT)
 	}
 
+	// Every series of a local block has a chunk in the block, so when the
+	// block is the only source and sits inside the window, and nothing else
+	// is asked for, each group's count is its postings list's length and no
+	// series is walked. The head is always walked: it can hold series with
+	// no chunk, left by a rolled-back append until the next garbage
+	// collection or kept for an exemplar, which the walk doesn't count. Two
+	// sources can hold the same series, so they are walked and counted by
+	// hash.
+	if src := sources[0]; len(sources) == 1 && src.block && len(matchers) == 0 && req.StepMs == 0 && !req.Hashes &&
+		src.blockMinT >= req.StartTimestampMs && src.blockMaxT < req.EndTimestampMs {
+		if err := countFromPostings(ctx, src.idx, counter.GroupBy(), resp); err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
+
 	// Resolve every source's postings first, so max_index_bytes is checked
 	// against the whole request before any series is walked.
 	total := 0
@@ -242,6 +258,65 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	return resp, nil
 }
 
+// countFromPostings sets resp's groups to one count per value of groupBy,
+// the length of its postings list in idx, and counts the series without the
+// label under the empty value. It reads postings only, no series, so idx
+// must not change while it reads: a block's index, not the head's.
+func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string, resp *client.SeriesCountsResponse) error {
+	countPostings := func(name, value string) (int64, error) {
+		p, err := idx.Postings(ctx, name, value)
+		if err != nil {
+			return 0, err
+		}
+		var n int64
+		for p.Next() {
+			n++
+			if n%(1<<16) == 0 {
+				if err := ctx.Err(); err != nil {
+					return 0, err
+				}
+			}
+		}
+		return n, p.Err()
+	}
+	allName, allValue := index.AllPostingsKey()
+	all, err := countPostings(allName, allValue)
+	if err != nil {
+		return err
+	}
+	values, err := idx.SortedLabelValues(ctx, groupBy, nil)
+	if err != nil {
+		return err
+	}
+	// The first slot is for the series without the label.
+	groups := make([]*client.SeriesCountGroup, 1, len(values)+1)
+	withLabel := int64(0)
+	for j, v := range values {
+		if j%1024 == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		n, err := countPostings(groupBy, v)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			continue
+		}
+		withLabel += n
+		groups = append(groups, &client.SeriesCountGroup{Value: v, Counts: []int64{n}})
+	}
+	if without := all - withLabel; without > 0 {
+		groups[0] = &client.SeriesCountGroup{Value: "", Counts: []int64{without}}
+	} else {
+		groups = groups[1:]
+	}
+	resp.Groups = groups
+	resp.SeriesCounted = all
+	return nil
+}
+
 // lastSampleTime is the timestamp of the last sample in the head chunk
 // meta points to. An empty chunk reports its start.
 func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
@@ -265,9 +340,13 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 // countSource is one place an ingester holds a tenant's series: its head or
 // one of its compacted local blocks.
 type countSource struct {
-	minT   int64
-	idx    tsdb.IndexReader
-	chunkr tsdb.ChunkReader // head only, to find the open chunk's end
+	minT int64
+	// block is set for a local block, whose bounds are blockMinT and
+	// blockMaxT, both included.
+	block                bool
+	blockMinT, blockMaxT int64
+	idx                  tsdb.IndexReader
+	chunkr               tsdb.ChunkReader // head only, to find the open chunk's end
 	// ooo reads the head's out-of-order chunks, head only, when the
 	// out-of-order head overlaps the window. Its refs are the head's.
 	ooo   tsdb.IndexReader
@@ -340,7 +419,8 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 		if err != nil {
 			return out, err
 		}
-		out = append(out, &countSource{minT: b.MinTime(), idx: idx, close: func() { _ = idx.Close() }})
+		// A block's max time is exclusive.
+		out = append(out, &countSource{minT: b.MinTime(), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
 	}
 	return out, nil
 }
