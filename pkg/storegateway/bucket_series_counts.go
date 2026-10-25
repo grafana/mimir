@@ -51,10 +51,6 @@ func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
 	return s.countGate.Done, nil
 }
 
-// maxSeriesCountsBuckets caps step_ms so a request can't ask for a huge
-// count slice per group.
-const maxSeriesCountsBuckets = 1440
-
 // seriesCounts accumulates one SeriesCounts request over several blocks.
 type seriesCounts struct {
 	// matchers is empty when every series is wanted; then the block's all-postings list is read directly
@@ -62,9 +58,11 @@ type seriesCounts struct {
 	matchers   []*labels.Matcher
 	minT, maxT int64 // [minT, maxT)
 	step       int64
-	buckets    int
-	groupBy    string
-	hashes     bool
+	// window is each bucket's width, 0 for step; see cardinality.Buckets.
+	window  int64
+	buckets int
+	groupBy string
+	hashes  bool
 	// maxIndexBytes caps postings, series entry and postings offsets table
 	// bytes read, 0 for none.
 	maxIndexBytes int64
@@ -98,6 +96,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		minT:          req.MinTime,
 		maxT:          req.MaxTime,
 		step:          req.StepMs,
+		window:        req.WindowMs,
 		buckets:       1,
 		groupBy:       req.GroupBy,
 		hashes:        req.Hashes,
@@ -112,16 +111,15 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if c.step < 0 {
 		return nil, errors.New("step_ms can't be negative")
 	}
+	if c.window != 0 && c.step == 0 {
+		return nil, errors.New("window_ms needs step_ms")
+	}
 	if c.step > 0 {
 		if c.hashes {
 			return nil, errors.New("hashes can't be combined with step_ms")
 		}
-		if (c.maxT-c.minT)%c.step != 0 {
-			return nil, fmt.Errorf("step_ms %d doesn't divide the window [%d, %d)", c.step, c.minT, c.maxT)
-		}
-		c.buckets = int((c.maxT - c.minT) / c.step)
-		if c.buckets > maxSeriesCountsBuckets {
-			return nil, fmt.Errorf("the window has %d buckets of step_ms, more than %d", c.buckets, maxSeriesCountsBuckets)
+		if c.buckets, err = cardinality.Buckets(c.minT, c.maxT, c.step, c.window); err != nil {
+			return nil, err
 		}
 		c.seen = make([]bool, c.buckets)
 	}
@@ -278,8 +276,7 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	// several of its chunks touch that bucket.
 	clear(c.seen)
 	for _, r := range s.refs {
-		first := max(0, (r.minTime-c.minT)/c.step)
-		last := min(int64(c.buckets-1), (r.maxTime-c.minT)/c.step)
+		first, last := cardinality.BucketSpan(c.minT, c.step, c.window, c.buckets, r.minTime, r.maxTime)
 		for i := first; i <= last; i++ {
 			c.seen[i] = true
 		}
@@ -494,6 +491,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
 	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
 	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
+	resp.WindowMs = c.window
 	return resp, nil
 }
 

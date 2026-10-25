@@ -142,6 +142,12 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			if err != nil {
 				return seriesCountsAnswer{}, err
 			}
+			// An ingester that doesn't know window_ms, such as an older
+			// version during a rolling update, counts adjacent step-wide
+			// buckets instead and echoes no window.
+			if resp.WindowMs != req.WindowMs {
+				return seriesCountsAnswer{}, fmt.Errorf("ingester %s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every ingester is updated", desc.Addr, resp.WindowMs, req.WindowMs)
+			}
 			return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
 		}, func(seriesCountsAnswer) {})
 		perSet[idx] = answers
@@ -309,6 +315,7 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 			}
 			out.HeadMinTimeMs = max(out.HeadMinTimeMs, r.HeadMinTimeMs)
 			out.HeadMaxTimeMs = max(out.HeadMaxTimeMs, r.HeadMaxTimeMs)
+			out.WindowMs = r.WindowMs
 		}
 		for v, sum := range zone {
 			into := merged[v]

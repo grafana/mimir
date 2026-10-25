@@ -73,7 +73,7 @@ message SeriesCountsRequest {
   // Window in milliseconds, [min_time, max_time). A series counts if one of its chunks overlaps the window.
   int64 min_time = 3;
   int64 max_time = 4;
-  // If set, the window is cut into buckets of this width and each group gets one count per bucket.
+  // If set, a bucket starts every step_ms from min_time and each group gets one count per bucket.
   int64 step_ms = 5;
   // Label to group by. Empty means __name__.
   string group_by = 6;
@@ -88,6 +88,11 @@ message SeriesCountsRequest {
   // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
   // hashes, so its payload is a fixed size. 0 means always hashes.
   int64 sketch_above = 10;
+  // With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
+  // the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
+  // overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the response, so a
+  // caller can tell a store-gateway that ignored it.
+  int64 window_ms = 11;
 }
 
 message SeriesCountGroup {
@@ -117,4 +122,6 @@ message SeriesCountsResponse {
   // index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
   // bounds index_bytes plus these.
   int64 postings_offsets_table_bytes = 9;
+  // The request's window_ms, which this store-gateway counted with.
+  int64 window_ms = 10;
 }
