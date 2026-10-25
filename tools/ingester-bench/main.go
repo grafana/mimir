@@ -110,7 +110,7 @@ func main() {
 	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
 	analyzePath := flag.String("analyze", "", "Compare the runs of this results directory, writing its analysis.json, instead of running a bench: every A/A, and -pairs.")
 	pairs := flag.String("pairs", "", "With -analyze, the comparisons, as baseline:target ingester names, comma separated.")
-	compositionPath := flag.String("composition", "", "Print the composition of the records of this kafkatool dump, of today's record format, instead of running a bench.")
+	compositionPath := flag.String("composition", "", "Print the composition of the records of these kafkatool dumps, comma separated, of today's record format, over them all, instead of running a bench.")
 	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
 	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore ingester names; ablation is optional.")
 	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
@@ -144,7 +144,7 @@ func main() {
 		return
 	}
 	if *compositionPath != "" {
-		composition, err := compositionOfDump(*compositionPath)
+		composition, err := compositionOfDumps(strings.Split(*compositionPath, ","))
 		if err != nil {
 			log.Fatal(err)
 		}

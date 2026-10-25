@@ -37,7 +37,9 @@ func TestCompositionOfTodaysAndTheNewWritersRecords(t *testing.T) {
 		},
 		Metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "latency_seconds", Type: mimirpb.HISTOGRAM, Help: "Latency."}},
 	})
-	require.Equal(t, Composition{Records: 1, SeriesPerRecord: 4, SeriesPerValue: 2, StandInsPerRecord: 2}, today.composition())
+	// With its two families' helps, "Latency." and "Requests.".
+	require.Equal(t, Composition{Records: 1, SeriesPerRecord: 4, SeriesPerValue: 2, StandInsPerRecord: 2, Families: 2,
+		HelpLength: Percentiles{"0": 8, "0.1": 8, "0.5": 9, "0.9": 9, "0.99": 9, "1": 9}}, today.composition())
 
 	// The new writer's: each series' own, and a stand-in each for the families.
 	newer := compositionCounter{}
@@ -68,7 +70,9 @@ func TestCompositionOfAKafkatoolDump(t *testing.T) {
 		}
 	}
 	require.NoError(t, f.Close())
-	composition, err := compositionOfDump(path)
+	composition, err := compositionOfDumps([]string{path, path})
 	require.NoError(t, err)
-	require.Equal(t, Composition{Records: 3, SeriesPerRecord: 2, SeriesPerValue: 1, StandInsPerRecord: 1}, composition)
+	// Over both, and with the length of the family's help.
+	require.Equal(t, Composition{Records: 6, SeriesPerRecord: 2, SeriesPerValue: 1, StandInsPerRecord: 1, Families: 1,
+		HelpLength: Percentiles{"0": 9, "0.1": 9, "0.5": 9, "0.9": 9, "0.99": 9, "1": 9}}, composition)
 }
