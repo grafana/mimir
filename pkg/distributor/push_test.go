@@ -132,7 +132,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
+			_, res, _, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			}, log.NewNopLogger())
 			require.NoError(t, err)
@@ -1871,6 +1871,14 @@ func (o otlpLimitsMock) OTelLabelNameUnderscoreSanitization(string) bool {
 
 func (o otlpLimitsMock) OTelLabelNamePreserveMultipleUnderscores(string) bool {
 	return true
+}
+
+func (o otlpLimitsMock) NativeResourcesEnabled(string) bool {
+	return false
+}
+
+func (o otlpLimitsMock) NativeResourcesLimits(string) (int, int) {
+	return 0, 0
 }
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {

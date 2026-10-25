@@ -22,8 +22,9 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// Records whose series carry metadata of their own, with stand-ins for the metric families' metadata, build the same
-// series as their request pushed directly: the stand-ins add none.
+// Records whose series carry metadata and resources of their own, with stand-ins for the metric families' metadata,
+// build the same series as their request pushed directly: the stand-ins add none, and the block-builder doesn't keep
+// resources.
 func TestTSDBBuilderBuildsTheSameSeriesFromRecordsWithSeriesMetadata(t *testing.T) {
 	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
 	logger := log.NewNopLogger()
@@ -40,7 +41,12 @@ func TestTSDBBuilderBuildsTheSameSeriesFromRecordsWithSeriesMetadata(t *testing.
 		second.Samples = []mimirpb.Sample{{TimestampMs: 1000, Value: 3}}
 		latency := series(mimirpb.SeriesMetadata{Type: mimirpb.HISTOGRAM, Help: "Latency.", Unit: "seconds"}, model.MetricNameLabel, "latency_seconds")
 		latency.Histograms = []mimirpb.Histogram{{Timestamp: 1000, Count: &mimirpb.Histogram_CountInt{CountInt: 1}, ZeroCount: &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 1}, ZeroThreshold: 1e-128}}
+		first.ResourceRef, latency.ResourceRef = 1, 2
 		return &mimirpb.WriteRequest{
+			ResourceTable: []mimirpb.ResourceEntry{
+				{Attributes: []mimirpb.ResourceAttribute{{Key: "service.name", StringValue: "frontend"}}},
+				{Attributes: []mimirpb.ResourceAttribute{{Key: "service.name", StringValue: "backend"}, {Key: "host.cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: 8}}},
+			},
 			Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: first}, {TimeSeries: second}, {TimeSeries: latency}},
 			Metadata: []*mimirpb.MetricMetadata{
 				{MetricFamilyName: "requests_total", Type: mimirpb.COUNTER, Help: "Requests.", Unit: "requests"},

@@ -526,6 +526,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"TimeseriesRW2",
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
+		"ResourceTable",
 		"skipUnmarshalingExemplars",
 		"skipNormalizeMetadataMetricName",
 		"skipDeduplicateMetadata",

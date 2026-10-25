@@ -133,6 +133,7 @@ type recordSerializer interface {
 type versionZeroRecordSerializer struct{}
 
 func (v versionZeroRecordSerializer) ToRecords(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	req = req.WithoutResourceTable()
 	reqSize := req.Size()
 	records, err := marshalWriteRequestToRecords(topic, partitionID, tenantID, req, reqSize, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
 	return records, reqSize, err
@@ -144,6 +145,7 @@ func (v versionZeroRecordSerializer) ToRecords(topic string, partitionID int32, 
 type versionOneRecordSerializer struct{}
 
 func (v versionOneRecordSerializer) ToRecords(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	req = req.WithoutResourceTable()
 	reqSize := req.Size()
 	records, err := marshalWriteRequestToRecords(topic, partitionID, tenantID, req, reqSize, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
 	if err != nil {

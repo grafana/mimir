@@ -466,3 +466,82 @@ func BenchmarkRecordSerializer(b *testing.B) {
 		}
 	})
 }
+
+// Only version 2 records carry resources: the others don't carry the series' refs, so they leave out the table.
+func TestRecordSerializerResources(t *testing.T) {
+	newRequest := func() *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+				Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1")),
+				Samples:     []mimirpb.Sample{{TimestampMs: 20}},
+				ResourceRef: 1,
+			}}},
+			ResourceTable: []mimirpb.ResourceEntry{{Attributes: []mimirpb.ResourceAttribute{{Key: "service.name", StringValue: "frontend"}}}},
+		}
+	}
+	for version, serializer := range map[int]recordSerializer{0: versionZeroRecordSerializer{}, 1: versionOneRecordSerializer{}, 2: versionTwoRecordSerializer{}} {
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+			req := newRequest()
+			records, _, err := serializer.ToRecords("test", 1, "user-1", req, 100000)
+			require.NoError(t, err)
+			require.Len(t, records, 1)
+			require.Equal(t, newRequest(), req, "the request isn't changed")
+
+			decoded := &mimirpb.PreallocWriteRequest{}
+			require.NoError(t, DeserializeRecordContent(records[0].Value, decoded, version))
+			if version < 2 {
+				require.Empty(t, decoded.ResourceTable)
+				return
+			}
+			require.Equal(t, req.ResourceTable, decoded.ResourceTable)
+			require.Equal(t, uint32(1), decoded.Timeseries[0].ResourceRef)
+		})
+	}
+}
+
+// The v2 records' CPU and bytes per sample, with resources and without, for 100 series per resource.
+func BenchmarkRecordSerializerResources(b *testing.B) {
+	const (
+		numSeries         = 2000
+		seriesPerResource = 100
+	)
+	newRequest := func(resources bool) *mimirpb.WriteRequest {
+		req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, numSeries)}
+		for i := range req.Timeseries {
+			req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+		}
+		if !resources {
+			return req
+		}
+		for r := range numSeries / seriesPerResource {
+			entry := mimirpb.ResourceEntry{Attributes: []mimirpb.ResourceAttribute{
+				{Key: "service.name", StringValue: fmt.Sprintf("service-%d", r)},
+				{Key: "service.instance.id", StringValue: fmt.Sprintf("instance-%d", r)},
+			}}
+			for i := range 18 {
+				entry.Attributes = append(entry.Attributes, mimirpb.ResourceAttribute{Key: fmt.Sprintf("k8s.label.%d", i), StringValue: fmt.Sprintf("value-%d-%d", r, i)})
+			}
+			req.ResourceTable = append(req.ResourceTable, entry)
+		}
+		for i := range req.Timeseries {
+			req.Timeseries[i].ResourceRef = uint32(i/seriesPerResource) + 1
+		}
+		return req
+	}
+
+	for _, resources := range []bool{false, true} {
+		b.Run(fmt.Sprintf("resources=%t", resources), func(b *testing.B) {
+			req := newRequest(resources)
+			var bytes int
+			for b.Loop() {
+				records, _, err := versionTwoRecordSerializer{}.ToRecords("test", 123, "user-1", req, 16000000)
+				if err != nil {
+					b.Fatal(err)
+				}
+				bytes = len(records[0].Value)
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*numSeries), "ns/sample")
+			b.ReportMetric(float64(bytes)/numSeries, "bytes/sample")
+		})
+	}
+}

@@ -4784,6 +4784,27 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-metric-metadata-change-window
 [native_metric_metadata_change_window: <duration> | default = 1h]
 
+# (experimental) Carry each OTLP series' OTel resource from the distributor to
+# the ingester, which stores the resources' attributes in its memory, as
+# versions over time, besides the target_info series. Turning it on takes effect
+# in the ingester when the tenant's TSDB next opens.
+# CLI flag: -distributor.native-resources-enabled
+[native_resources_enabled: <boolean> | default = false]
+
+# (experimental) How many attributes a resource carried to the ingester can
+# have. Past them, the distributor drops descriptive attributes, in key order,
+# never the service.name, service.namespace and service.instance.id attributes.
+# 0 means no limit.
+# CLI flag: -distributor.native-resources-max-attributes
+[native_resources_max_attributes: <int> | default = 128]
+
+# (experimental) How long a value of a resource's attribute carried to the
+# ingester can be. The distributor drops a descriptive attribute with a longer
+# value, and carries no resource for the series of a resource with a longer
+# service.name, service.namespace or service.instance.id. 0 means no limit.
+# CLI flag: -distributor.native-resources-max-attribute-value-length
+[native_resources_max_attribute_value_length: <int> | default = 2048]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

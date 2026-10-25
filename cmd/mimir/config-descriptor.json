@@ -6089,6 +6089,39 @@
         },
         {
           "kind": "field",
+          "name": "native_resources_enabled",
+          "required": false,
+          "desc": "Carry each OTLP series' OTel resource from the distributor to the ingester, which stores the resources' attributes in its memory, as versions over time, besides the target_info series. Turning it on takes effect in the ingester when the tenant's TSDB next opens.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.native-resources-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_attributes",
+          "required": false,
+          "desc": "How many attributes a resource carried to the ingester can have. Past them, the distributor drops descriptive attributes, in key order, never the service.name, service.namespace and service.instance.id attributes. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 128,
+          "fieldFlag": "distributor.native-resources-max-attributes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_attribute_value_length",
+          "required": false,
+          "desc": "How long a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2048,
+          "fieldFlag": "distributor.native-resources-max-attribute-value-length",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

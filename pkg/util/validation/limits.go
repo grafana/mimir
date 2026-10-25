@@ -264,6 +264,9 @@ type Limits struct {
 	NativeMetricMetadataEnabled             bool           `yaml:"native_metric_metadata_enabled" json:"native_metric_metadata_enabled" category:"experimental"`
 	NativeMetricMetadataMaxChangesPerSeries int            `yaml:"native_metric_metadata_max_changes_per_series" json:"native_metric_metadata_max_changes_per_series" category:"experimental"`
 	NativeMetricMetadataChangeWindow        model.Duration `yaml:"native_metric_metadata_change_window" json:"native_metric_metadata_change_window" category:"experimental"`
+	NativeResourcesEnabled                  bool           `yaml:"native_resources_enabled" json:"native_resources_enabled" category:"experimental"`
+	NativeResourcesMaxAttributes            int            `yaml:"native_resources_max_attributes" json:"native_resources_max_attributes" category:"experimental"`
+	NativeResourcesMaxAttributeValueLength  int            `yaml:"native_resources_max_attribute_value_length" json:"native_resources_max_attribute_value_length" category:"experimental"`
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
@@ -496,6 +499,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.NativeMetricMetadataMaxChangesPerSeries, "ingester.native-metric-metadata-max-changes-per-series", 10, "How many changes of a series' own metric metadata the seriesstore engine keeps per change window, in sample time. Past them, the window's changes coalesce into one range, which has the latest of their values. 0 keeps them all.")
 	_ = l.NativeMetricMetadataChangeWindow.Set("1h")
 	f.Var(&l.NativeMetricMetadataChangeWindow, "ingester.native-metric-metadata-change-window", "The window, in sample time, that -ingester.native-metric-metadata-max-changes-per-series counts the changes of a series' own metric metadata in.")
+	f.BoolVar(&l.NativeResourcesEnabled, "distributor.native-resources-enabled", false, "Carry each OTLP series' OTel resource from the distributor to the ingester, which stores the resources' attributes in its memory, as versions over time, besides the target_info series. Turning it on takes effect in the ingester when the tenant's TSDB next opens.")
+	f.IntVar(&l.NativeResourcesMaxAttributes, "distributor.native-resources-max-attributes", 128, "How many attributes a resource carried to the ingester can have. Past them, the distributor drops descriptive attributes, in key order, never the service.name, service.namespace and service.instance.id attributes. 0 means no limit.")
+	f.IntVar(&l.NativeResourcesMaxAttributeValueLength, "distributor.native-resources-max-attribute-value-length", 2048, "How long a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit.")
 	f.BoolVar(&l.NativeMetricMetadataEnabled, "ingester.native-metric-metadata-enabled", false, "Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.")
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
@@ -1535,6 +1541,19 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
+}
+
+// NativeResourcesEnabled returns whether the distributor carries the tenant's OTel resources to the ingester, which
+// stores them.
+func (o *Overrides) NativeResourcesEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).NativeResourcesEnabled
+}
+
+// NativeResourcesLimits returns how many attributes a resource carried to the ingester can have, and how long their
+// values can be, with 0 for no limit.
+func (o *Overrides) NativeResourcesLimits(userID string) (maxAttributes, maxValueLength int) {
+	limits := o.getOverridesForUser(userID)
+	return limits.NativeResourcesMaxAttributes, limits.NativeResourcesMaxAttributeValueLength
 }
 
 // NativeMetricMetadataEnabled returns whether the ingester stores the tenant's per-series metric metadata.

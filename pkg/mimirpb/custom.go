@@ -247,6 +247,18 @@ func (m *WriteRequest) IsEmpty() bool {
 	return len(m.Timeseries) == 0 && len(m.Metadata) == 0
 }
 
+// WithoutResourceTable returns the request without its resource table, for encodings that don't carry the series'
+// resource refs, which aren't part of TimeSeries' message: Remote Write 1.0 records, and the ingesters' push. The
+// returned request shares everything else, buffers included, and isn't to be freed.
+func (m *WriteRequest) WithoutResourceTable() *WriteRequest {
+	if len(m.ResourceTable) == 0 {
+		return m
+	}
+	withoutTable := *m
+	withoutTable.ResourceTable = nil
+	return &withoutTable
+}
+
 // MetadataSize is like Size() but returns only the marshalled size of Metadata field.
 func (m *WriteRequest) MetadataSize() int {
 	var l, n int

@@ -54,6 +54,7 @@ func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) 
 //
 // The request will split the RW2 symbols among the various sub-requests. The original symbols table will no longer be valid for the individual timeseries.
 // Timeseries are re-symbolized in place, so this function mutates the input.
+// Likewise, each sub-request gets a resource table of the resources its timeseries refer to, which their refs index.
 func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize int, offset uint32, commonSymbols *CommonSymbols) []*WriteRequest {
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
@@ -88,16 +89,34 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	defer reuseSymbolsTable(nextReqSymbols)
 	nextReq, nextReqSize := newPartialReq()
 	nextReqSymbolsSize := 0
+	// nextReqResourceRefs maps a resource ref to the next partial request's, or to 0 until it has one.
+	var nextReqResourceRefs []uint32
+	if len(req.ResourceTable) > 0 {
+		nextReqResourceRefs = make([]uint32, len(req.ResourceTable)+1)
+	}
 
 	for i := 0; i < len(req.TimeseriesRW2); i++ {
 		// Both are upper bounds. In particular symbolsSize does not have knowledge of whether symbols can be re-used.
 		// The actual growth will be less than or equal to these values.
 		seriesSize, symbolsSize := maxRW2SeriesSizeAfterResymbolization(&req.TimeseriesRW2[i], req.SymbolsRW2, offset)
+		resourceRef := req.TimeseriesRW2[i].ResourceRef
+		if int(resourceRef) >= len(nextReqResourceRefs) {
+			// Not a resource of this request.
+			resourceRef = 0
+		}
+		resourceSize := 0
+		if resourceRef != 0 {
+			// The partial request's ref is at most the table's length.
+			seriesSize += sovMimir(uint64(len(req.ResourceTable))) - sovMimir(uint64(resourceRef))
+			if nextReqResourceRefs[resourceRef] == 0 {
+				resourceSize = resourceTableEntryFieldSize(&req.ResourceTable[resourceRef-1])
+			}
+		}
 
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if nextReqSize+seriesSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
+		if nextReqSize+seriesSize+symbolsSize+resourceSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
 			// Finalize the next partial request.
 			nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 			partialReqs = append(partialReqs, nextReq)
@@ -107,10 +126,22 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 			nextReqSymbolsSize = 0
 			nextReqSymbols.Reset()
 			nextReqSymbols.ConfigureCommonSymbols(offset, commonSymbols)
+			clear(nextReqResourceRefs)
 		}
 
 		// Resymbolize the current series and add it to next partial request.
 		newTS := resymbolizeTimeSeriesRW2(&req.TimeseriesRW2[i], req.SymbolsRW2, nextReqSymbols)
+		// Give the series' resource a ref in the partial request, adding the resource to its table if it's the first
+		// series to refer to it.
+		newTS.ResourceRef = 0
+		if resourceRef != 0 {
+			if nextReqResourceRefs[resourceRef] == 0 {
+				nextReq.ResourceTable = append(nextReq.ResourceTable, req.ResourceTable[resourceRef-1])
+				nextReqResourceRefs[resourceRef] = uint32(len(nextReq.ResourceTable))
+				nextReqSize += resourceTableEntryFieldSize(&req.ResourceTable[resourceRef-1])
+			}
+			newTS.ResourceRef = nextReqResourceRefs[resourceRef]
+		}
 		// Add the growth in series size...
 		nextReqSize += newTS.Size() + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
 		// ...and the growth in symbols size.
@@ -262,6 +293,13 @@ func newPartialWriteRequest(req *WriteRequest) *WriteRequest {
 
 func embeddedMessageFieldSize(messageSize int) int {
 	return 1 + messageSize + sovMimir(uint64(messageSize))
+}
+
+// resourceTableEntryFieldSize is the size of an entry of WriteRequest's resource_table, whose field number, 1002, takes
+// a 2-byte tag.
+func resourceTableEntryFieldSize(e *ResourceEntry) int {
+	n := e.Size()
+	return 2 + n + sovMimir(uint64(n))
 }
 
 // maxSeriesSizeAfterResymbolization calculates an upper bound for the size of the given TimeSeries, and its referenced symbols.
