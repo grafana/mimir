@@ -68,6 +68,11 @@ const (
 	perMetricMetadataLimit = "per_metric_metadata_limit"
 	// The changes of a series' own metric metadata over the change limit, which the seriesstore engine coalesces.
 	perSeriesMetadataChangeLimit = "per_series_metadata_change_limit"
+	// The changes of a series' resource over the seriesstore engine's limits, which it coalesces into ranges of
+	// unknown resource or versions, and the resources it refuses.
+	perSeriesResourceIdentityChangeLimit = "per_series_resource_identity_change_limit"
+	perIdentityResourceVersionLimit      = "per_identity_resource_version_limit"
+	perUserResourceDictionaryLimit       = "per_user_resource_dictionary_limit"
 
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute

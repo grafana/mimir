@@ -1965,8 +1965,18 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Store each series' metric metadata (type, unit and help) in the ingester's memory, as versions over time, in addition to the metric families' metadata. Turning it on takes effect when the tenant's TSDB next opens; turning it off stops storing new metadata right away.
   -ingester.native-metric-metadata-max-changes-per-series int
     	[experimental] How many changes of a series' own metric metadata the seriesstore engine keeps per change window, in sample time. Past them, the window's changes coalesce into one range, which has the latest of their values. 0 keeps them all. (default 10)
+  -ingester.native-resources-change-window duration
+    	[experimental] The window, in sample time, that the seriesstore engine's limits on native resources count in. (default 1h)
   -ingester.native-resources-indexed-attributes comma-separated-list-of-strings
     	[experimental] Comma-separated descriptive attributes of resources, besides the identifying service.name, service.namespace and service.instance.id, that the ingester indexes, to find series by. Changing it takes effect when the tenant's TSDB next opens.
+  -ingester.native-resources-max-dictionary-bytes int
+    	[experimental] How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit.
+  -ingester.native-resources-max-identity-changes-per-series int
+    	[experimental] How many times the seriesstore engine lets a series' resource identity change per window. Past them, the series' resource is unknown until the window ends. 0 means no limit. (default 10)
+  -ingester.native-resources-max-new-identities int
+    	[experimental] How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit.
+  -ingester.native-resources-max-versions-per-identity int
+    	[experimental] How many versions of a resource's descriptive attributes the seriesstore engine keeps per window. Past them, the window's versions coalesce into one, which has the latest attributes. 0 means no limit. (default 10)
   -ingester.out-of-order-blocks-external-label-enabled
     	Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration

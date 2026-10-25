@@ -6133,6 +6133,61 @@
         },
         {
           "kind": "field",
+          "name": "native_resources_change_window",
+          "required": false,
+          "desc": "The window, in sample time, that the seriesstore engine's limits on native resources count in.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3600000000000,
+          "fieldFlag": "ingester.native-resources-change-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_identity_changes_per_series",
+          "required": false,
+          "desc": "How many times the seriesstore engine lets a series' resource identity change per window. Past them, the series' resource is unknown until the window ends. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10,
+          "fieldFlag": "ingester.native-resources-max-identity-changes-per-series",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_versions_per_identity",
+          "required": false,
+          "desc": "How many versions of a resource's descriptive attributes the seriesstore engine keeps per window. Past them, the window's versions coalesce into one, which has the latest attributes. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10,
+          "fieldFlag": "ingester.native-resources-max-versions-per-identity",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_new_identities",
+          "required": false,
+          "desc": "How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.native-resources-max-new-identities",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "native_resources_max_dictionary_bytes",
+          "required": false,
+          "desc": "How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.native-resources-max-dictionary-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
           "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",

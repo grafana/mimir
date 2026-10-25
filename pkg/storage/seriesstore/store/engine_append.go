@@ -58,6 +58,8 @@ type pendingSample struct {
 	fh       *histogram.FloatHistogram
 	// The id of the series' own metric metadata the sample came with, which the appender's memo holds, or 0.
 	metadata uint32
+	// The series' resource the sample came with, which the appender's memo holds, or nil.
+	resource *resourceObservation
 }
 
 type pendingExemplar struct {
@@ -88,6 +90,8 @@ type engineAppender struct {
 	created []uint64
 	// The ids of the metric metadata the samples came with, once one did.
 	metadata *metadataMemo
+	// The resources the samples came with, once one did.
+	resources *resourceMemo
 }
 
 // appendBuffers are an appender's buffers, which appenders reuse: the ingester opens one per
@@ -394,6 +398,13 @@ func (a *engineAppender) Append(ref storage.SeriesRef, lset promlabels.Labels, _
 			a.samples[len(a.samples)-1].metadata = a.metadata.byValue(kept)
 		}
 	}
+	if err == nil && !stale && opts.Resource != nil && (h != nil || fh != nil || math.Float64bits(v) != value.QuietZeroNaN) {
+		// Like metadata, a quiet zero carries no resource.
+		if a.resources == nil {
+			a.resources = a.e.newResourceMemo()
+		}
+		a.samples[len(a.samples)-1].resource = a.resources.byResourceContext(opts.Resource, t)
+	}
 	// Like the TSDB, a staleness marker takes no exemplars.
 	if err != nil || stale || len(opts.Exemplars) == 0 {
 		return ref, err
@@ -472,6 +483,10 @@ func (a *engineAppender) release() {
 	if a.metadata != nil {
 		a.metadata.release()
 		a.metadata = nil
+	}
+	if a.resources != nil {
+		a.resources.release()
+		a.resources = nil
 	}
 	const maxKept = 1 << 16
 	if cap(a.samples) > maxKept {
@@ -806,9 +821,12 @@ func (a *engineAppender) Commit() error {
 			if ooo {
 				oooMin, oooMax = min(oooMin, sample.t), max(oooMax, sample.t)
 			}
-			// Only a sample that went in records its metadata.
+			// Only a sample that went in records its metadata and resource.
 			if sample.metadata != 0 && (inOrder || ooo) {
 				a.e.observeMetadataLocked(t, &entry.series, a.metadata, sample.metadata, sample.t)
+			}
+			if sample.resource != nil && (inOrder || ooo) {
+				a.e.observeResourceLocked(t, &entry.series, sample.resource, sample.t)
 			}
 		}
 		state.Unlock()

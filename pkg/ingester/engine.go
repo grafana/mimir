@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -113,7 +114,11 @@ func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg
 		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
 		jitter := i.cfg.BlocksStorageConfig.TSDB.SeriesstoreCompactionJitterEnabled && !testNoCompactionJitter
 		coalesced := i.metrics.discardedMetadataPerSeriesChangeLimit.WithLabelValues(userID)
-		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter, coalesced.Inc)
+		// Counted once a limit is hit, so that tenants without native resources don't get the series.
+		onResourceLimited := func(limit store.ResourceLimit) {
+			i.metrics.discardedResourcesPerLimit[limit].WithLabelValues(userID).Inc()
+		}
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints, jitter, coalesced.Inc, onResourceLimited)
 	}
 	return openPrometheusEngine(dir, logger, reg, opts)
 }

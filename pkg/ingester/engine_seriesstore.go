@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,7 +80,7 @@ func idleEvictionMs() int64 {
 // tests.
 var testNoCompactionJitter bool
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints, jitter bool, onCoalesced func()) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints, jitter bool, onCoalesced func(), onResourceLimited func(store.ResourceLimit)) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -105,6 +106,9 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
 		// The changes of the series' metadata over the change limit, which the engine coalesces, are discarded metadata.
 		OnMetricMetadataCoalesced: onCoalesced,
+		IndexedResourceAttributes: slices.Collect(maps.Keys(opts.IndexedResourceAttrs)),
+		// So are the changes of the series' resources over the limits.
+		OnResourceLimited: onResourceLimited,
 	})
 	if err != nil {
 		return nil, err
@@ -114,6 +118,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		Help: "Total number of series in the head block.",
 	}, func() float64 { return float64(engine.NumSeries()) })
 	registerSeriesstoreMetricMetadata(reg, engine)
+	registerSeriesstoreResources(reg, engine)
 	compactions := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
@@ -154,6 +159,40 @@ func registerSeriesstoreMetricMetadata(reg prometheus.Registerer, engine *store.
 	}
 }
 
+// registerSeriesstoreResources registers the engine's native resources metrics on the tenant's registry.
+func registerSeriesstoreResources(reg prometheus.Registerer, engine *store.Engine) {
+	stats := func(of func(store.ResourceStats) float64) func() float64 {
+		return func() float64 { return of(engine.ResourceStats()) }
+	}
+	for _, gauge := range []struct {
+		name, help string
+		of         func(store.ResourceStats) float64
+	}{
+		{"seriesstore_native_resources_series", "Number of head series with a native resource.", func(s store.ResourceStats) float64 { return float64(s.Series) }},
+		{"seriesstore_native_resources_runs", "Number of runs of the head series' resource identities.", func(s store.ResourceStats) float64 { return float64(s.Runs) }},
+		{"seriesstore_native_resources_identities", "Number of distinct resource identities the engine keeps.", func(s store.ResourceStats) float64 { return float64(s.Identities) }},
+		{"seriesstore_native_resources_descriptions", "Number of distinct resource descriptions the engine keeps.", func(s store.ResourceStats) float64 { return float64(s.Descriptions) }},
+		{"seriesstore_native_resources_versions", "Number of versions of the resource identities' descriptions.", func(s store.ResourceStats) float64 { return float64(s.Versions) }},
+		{"seriesstore_native_resources_dictionary_bytes", "Bytes of the resource attributes the engine keeps.", func(s store.ResourceStats) float64 { return float64(s.Bytes) }},
+	} {
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{Name: gauge.name, Help: gauge.help}, stats(gauge.of))
+	}
+	for _, counter := range []struct {
+		name, help string
+		of         func(store.ResourceStats) float64
+	}{
+		{"seriesstore_native_resources_coalesced_identity_changes_total", "Total number of ranges of unknown resource, for identity changes over the limit.", func(s store.ResourceStats) float64 { return float64(s.CoalescedIdentityChanges) }},
+		{"seriesstore_native_resources_coalesced_versions_total", "Total number of coalesced versions, for description changes over the limit.", func(s store.ResourceStats) float64 { return float64(s.CoalescedVersions) }},
+		{"seriesstore_native_resources_refused_total", "Total number of resource values the limits on new identities and bytes refused.", func(s store.ResourceStats) float64 { return float64(s.Refused) }},
+		{"seriesstore_native_resources_clamped_total", "Total number of resource runs whose start was clamped to their shard's base.", func(s store.ResourceStats) float64 { return float64(s.Clamped) }},
+		{"seriesstore_native_resources_memo_hits_total", "Total number of resources found in a batch's memo.", func(s store.ResourceStats) float64 { return float64(s.MemoHits) }},
+		{"seriesstore_native_resources_memo_misses_total", "Total number of resources a batch's memo didn't have yet.", func(s store.ResourceStats) float64 { return float64(s.MemoMisses) }},
+		{"seriesstore_native_resources_evictions_total", "Total number of resource runs and versions evicted by the per-series cap.", func(s store.ResourceStats) float64 { return float64(s.Evictions) }},
+	} {
+		promauto.With(reg).NewCounterFunc(prometheus.CounterOpts{Name: counter.name, Help: counter.help}, stats(counter.of))
+	}
+}
+
 // countingSeriesCallback counts the series the engine creates and removes, like the TSDB head's metrics.
 type countingSeriesCallback struct {
 	tsdb.SeriesLifecycleCallback
@@ -177,6 +216,8 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink i
 	// The appender gets the series' metadata with their samples when it's kept, and the store's own paths this way.
 	e.Engine.SetNativeMetricMetadata(batch.NativeMetricMetadata)
 	e.Engine.SetMetricMetadataChangeLimit(batch.NativeMetricMetadataMaxChanges, batch.NativeMetricMetadataWindowMs)
+	e.Engine.SetNativeResources(batch.NativeResources)
+	e.Engine.SetResourceLimits(batch.NativeResourceLimits)
 	if batch.Record != nil {
 		return e.ingestRecord(ctx, batch, sink)
 	}
@@ -684,7 +725,11 @@ func (i *Ingester) rewindKafkaOffsetsToCheckpoints(checkpoints [][]byte) error {
 // ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
 // asked to skip already.
 func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink ingestSink, subset []int) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, subset, true, nil)
+	var resources resourceStep
+	if batch.NativeResources {
+		resources = newSeriesstoreResources()
+	}
+	outcome, err := appendBatch(app, batch, sink, subset, true, resources)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))

@@ -66,6 +66,10 @@ type EngineOptions struct {
 	SecondaryHashFunction func(promlabels.Labels) uint32
 	// Called for each change of a series' metadata over the change limit that the engine coalesces, if set.
 	OnMetricMetadataCoalesced func()
+	// The descriptive attributes of resources the reverse index has, besides the identifying ones.
+	IndexedResourceAttributes []string
+	// Called for each change of a series' resource over one of the limits, if set.
+	OnResourceLimited func(ResourceLimit)
 }
 
 // Engine is one tenant's series behind the per-tenant TSDB interface Mimir's ingester uses:
@@ -132,6 +136,13 @@ type Engine struct {
 	metadataObservedFrom atomic.Int64
 	// The change limit of the series' metadata, which the ingester sets for each batch.
 	metadataMaxChanges, metadataChangeWindowMs atomic.Int64
+
+	// Whether the ingester has the tenant's series' resources kept, which it sets for each batch, and the engine's
+	// resources, which the series' runs refer to.
+	nativeResources atomic.Bool
+	resources       *resources
+	// The oldest time a series' resource was first observed at since the engine opened, math.MaxInt64 before.
+	resourcesObservedFrom atomic.Int64
 }
 
 // A nop callback, for engines opened without one.
@@ -165,6 +176,14 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e.metricMetadata = newMetricMetadataValues()
 	e.metricMetadataStats.onCoalesced = opts.OnMetricMetadataCoalesced
 	e.metadataObservedFrom.Store(math.MaxInt64)
+	e.resources = newResources()
+	indexed := make(map[string]struct{}, len(opts.IndexedResourceAttributes))
+	for _, name := range opts.IndexedResourceAttributes {
+		indexed[name] = struct{}{}
+	}
+	e.resources.indexed.Store(&indexed)
+	e.resources.stats.onLimited = opts.OnResourceLimited
+	e.resourcesObservedFrom.Store(math.MaxInt64)
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)
 	e.windowMax.Store(math.MinInt64)
@@ -924,9 +943,11 @@ func (e *Engine) headGC() {
 		}
 		e.freezeLeaving(shard, t, leaving, deleted, &builder)
 		e.trimMetadataLocked(t, mint, headMaxt)
+		e.trimResourcesLocked(t, mint, headMaxt)
 		shard.Unlock()
 	}
 	e.metricMetadata.reclaim()
+	e.resources.trim(mint)
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
 	}

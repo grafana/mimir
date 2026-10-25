@@ -83,12 +83,15 @@ func (e *Engine) syncCost(cutoffMs int64, now time.Time) {
 }
 
 // uncount tells the cost attribution that a series that is leaving the index isn't active any more.
-// release gives up what the tenant keeps of a series that leaves its memory: its cost attribution and its native metric
-// metadata.
+// release gives up what the tenant keeps of a series that leaves its memory: its cost attribution, and its native metric
+// metadata and resources.
 func (t *tenant) release(entry *seriesEntry, builder *promlabels.ScratchBuilder) {
 	t.uncount(entry, builder)
 	if t.nativeMetadata != nil {
 		t.nativeMetadata.drop(&entry.series)
+	}
+	if t.nativeResources != nil {
+		t.nativeResources.drop(&entry.series)
 	}
 }
 

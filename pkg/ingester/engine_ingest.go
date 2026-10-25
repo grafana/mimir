@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -37,8 +38,10 @@ type ingestBatch struct {
 	NativeMetricMetadata           bool
 	NativeMetricMetadataMaxChanges int
 	NativeMetricMetadataWindowMs   int64
-	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them.
-	NativeResources bool
+	// NativeResources gives the engine each series' resource to store, if it opened the tenant's TSDB with them, and
+	// for the seriesstore engine, its limits on them.
+	NativeResources      bool
+	NativeResourceLimits store.ResourceLimits
 	// When the request was ingested, and whether it came by OTLP, which an engine that keeps the active series
 	// records in the series it ingests.
 	IngestedAt time.Time

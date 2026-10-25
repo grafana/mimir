@@ -6,10 +6,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -33,18 +36,22 @@ func testResourceEntry(service, host string) mimirpb.ResourceEntry {
 
 // Each engine stores each series' resource from records, with the sequential and the parallel pusher, which keep
 // the series' resources when they rebatch them, and serves them through the engine. #17740 keeps a series' first
-// resource per appender, so the parallel pusher, which may append both records with one, may record a change only
-// with a later batch.
+// resource per appender, so with the parallel pusher, which may append both records with one, the TSDB may record a
+// change only with a later batch.
 func TestEnginesServeNativeResources(t *testing.T) {
 	skipIfSeriesstore(t, "it runs the engines itself")
-	for _, concurrency := range []int{0, 8} {
+	for _, test := range []struct {
+		engine      string
+		concurrency int
+	}{{mimir_tsdb.EnginePrometheus, 0}, {mimir_tsdb.EnginePrometheus, 8}, {mimir_tsdb.EngineSeriesstore, 0}, {mimir_tsdb.EngineSeriesstore, 8}} {
 		for _, enabled := range []bool{false, true} {
-			t.Run(fmt.Sprintf("engine=%s concurrency=%d enabled=%t", mimir_tsdb.EnginePrometheus, concurrency, enabled), func(t *testing.T) {
+			engine, concurrency := test.engine, test.concurrency
+			t.Run(fmt.Sprintf("engine=%s concurrency=%d enabled=%t", engine, concurrency, enabled), func(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.NativeResourcesEnabled = enabled
 				cfg := defaultIngesterTestConfig(t)
 				cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
-				cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EnginePrometheus
+				cfg.BlocksStorageConfig.TSDB.Engine = engine
 				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = concurrency
 				if concurrency > 0 {
 					cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = 150
@@ -79,8 +86,14 @@ func TestEnginesServeNativeResources(t *testing.T) {
 				require.NotNil(t, db.nativeResources)
 				matchers := [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total")}}
 				result, err := db.nativeResources.nativeResources(context.Background(), matchers, math.MinInt64, math.MaxInt64, 6)
-				if !enabled {
+				if !enabled && engine == mimir_tsdb.EnginePrometheus {
 					require.ErrorIs(t, err, errNativeResourcesDisabled)
+					return
+				}
+				if !enabled {
+					// The seriesstore engine keeps none while it's off.
+					require.NoError(t, err)
+					require.Empty(t, result.Series)
 					return
 				}
 				require.NoError(t, err)
@@ -100,7 +113,7 @@ func TestEnginesServeNativeResources(t *testing.T) {
 						}, series.Versions)
 						continue
 					}
-					if concurrency > 0 && len(series.Versions) == 1 {
+					if engine == mimir_tsdb.EnginePrometheus && concurrency > 0 && len(series.Versions) == 1 {
 						require.Equal(t, backendVersions[:1], series.Versions)
 						continue
 					}
@@ -159,4 +172,51 @@ func TestTSDBResources(t *testing.T) {
 	require.Nil(t, newTSDBResources(db).resource(entry, ref), "the series has the resource")
 	changed := &mimirpb.ResourceEntry{Attributes: append([]mimirpb.ResourceAttribute{{Key: "host.name", StringValue: "node-1"}}, entry.Attributes...)}
 	require.NotNil(t, newTSDBResources(db).resource(changed, ref))
+}
+
+// The seriesstore engine coalesces a series' resource changes over the limits, and counts them as discarded metadata.
+func TestSeriesstoreCountsResourcesOverTheLimits(t *testing.T) {
+	skipIfSeriesstore(t, "it runs the seriesstore engine itself")
+	limits := defaultLimitsTestConfig()
+	limits.NativeResourcesEnabled = true
+	limits.NativeResourcesMaxIdentityChanges = 1
+	limits.NativeResourcesMaxVersionsPerIdentity = 1
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	reg := prometheus.NewPedanticRegistry()
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, validation.NewOverrides(limits, nil), nil, reg, nil)
+
+	// In one window, the first series' identity changes three times, and the second series' resource's host does.
+	base := time.Now().Truncate(time.Hour).Add(-2 * time.Hour).UnixMilli()
+	write, last := compatProducer(t, cfg.IngestStorageConfig.KafkaConfig)
+	for step, change := range []string{"a", "b", "c", "d"} {
+		first := compatSeries("requests_total", mimirpb.Sample{TimestampMs: base + int64(step)*60_000, Value: 1})
+		first.ResourceRef = 1
+		second := compatSeries("errors_total", mimirpb.Sample{TimestampMs: base + int64(step)*60_000, Value: 1})
+		second.ResourceRef = 2
+		write("tenant", &mimirpb.WriteRequest{
+			Timeseries:    []mimirpb.PreallocTimeseries{first, second},
+			ResourceTable: []mimirpb.ResourceEntry{testResourceEntry(change, "node-1"), testResourceEntry("backend", "node-"+change)},
+		})
+	}
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, ingester.ingestReader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(last())))
+
+	result, err := ingester.getTSDB("tenant").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0)
+	require.NoError(t, err)
+	require.Len(t, result.Series, 2)
+	for _, series := range result.Series {
+		require.True(t, series.Coalesced, series.Labels)
+	}
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
+		# TYPE cortex_discarded_metadata_total counter
+		cortex_discarded_metadata_total{reason="per_identity_resource_version_limit",user="tenant"} 1
+		cortex_discarded_metadata_total{reason="per_series_metadata_change_limit",user="tenant"} 0
+		cortex_discarded_metadata_total{reason="per_series_resource_identity_change_limit",user="tenant"} 1
+	`), "cortex_discarded_metadata_total"))
 }

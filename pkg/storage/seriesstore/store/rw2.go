@@ -247,6 +247,15 @@ func (s *rw2Source) metricMetadataID(index int, memo *metadataMemo) uint32 {
 	return memo.byRefs([3]uint32{uint32(m.metricType), m.helpRef, m.unitRef}, mimirpb.SeriesMetadata{Type: m.metricType, Help: m.help, Unit: m.unit})
 }
 
+// resource implements floatSource: a record's series with the same resource have the same ref.
+func (s *rw2Source) resource(index int, memo *resourceMemo, t int64) *resourceObservation {
+	ref := s.series[index].resource
+	if ref == 0 {
+		return nil
+	}
+	return memo.byRecordRef(ref, s.resources[ref-1], t)
+}
+
 func (s *rw2Source) readMetadata(message []byte) (rw2Metadata, error) {
 	var metadata rw2Metadata
 	for len(message) > 0 {

@@ -116,7 +116,10 @@ type nativeResourcesEngine interface {
 	nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error)
 }
 
-var _ nativeResourcesEngine = prometheusEngine{}
+var (
+	_ nativeResourcesEngine = prometheusEngine{}
+	_ nativeResourcesEngine = seriesstoreEngine{}
+)
 
 var errNativeResourcesDisabled = tsdb.ErrNativeMetadataDisabled
 
@@ -209,4 +212,61 @@ func (e prometheusEngine) nativeResources(ctx context.Context, matcherSets [][]*
 		result.Series, result.Limited = result.Series[:limit], true
 	}
 	return result, nil
+}
+
+// seriesstoreResources is the seriesstore engine's resource step: its appender takes a series' resource with its types,
+// so it builds each resource once per batch, as typed attributes only.
+type seriesstoreResources struct {
+	built map[*mimirpb.ResourceEntry]*storage.ResourceContext
+}
+
+func newSeriesstoreResources() *seriesstoreResources {
+	return &seriesstoreResources{built: map[*mimirpb.ResourceEntry]*storage.ResourceContext{}}
+}
+
+func (r *seriesstoreResources) resource(entry *mimirpb.ResourceEntry, _ storage.SeriesRef) *storage.ResourceContext {
+	if built, ok := r.built[entry]; ok {
+		return built
+	}
+	built := &storage.ResourceContext{Attributes: make([]storage.ResourceAttribute, len(entry.Attributes))}
+	for i, a := range entry.Attributes {
+		built.Attributes[i] = storage.ResourceAttribute{
+			Key: a.Key, Type: storage.ResourceAttributeType(a.Type), String: a.StringValue, Bool: a.BoolValue, Int: a.IntValue, Double: a.DoubleValue, Bytes: a.BytesValue,
+		}
+	}
+	r.built[entry] = built
+	return built
+}
+
+func (e seriesstoreEngine) nativeResources(ctx context.Context, matcherSets [][]*labels.Matcher, mint, maxt int64, limit int) (nativeResourcesResult, error) {
+	series, limited, err := e.NativeResources(ctx, matcherSets, mint, maxt, limit)
+	if err != nil {
+		return nativeResourcesResult{}, err
+	}
+	result := nativeResourcesResult{Series: make([]nativeResourcesSeries, 0, len(series)), Limited: limited, CoverageStart: e.NativeResourcesCoverageStart()}
+	for _, s := range series {
+		out := nativeResourcesSeries{Labels: s.Labels, Versions: make([]nativeResourceVersion, 0, len(s.Versions))}
+		for _, v := range s.Versions {
+			out.Coalesced = out.Coalesced || v.Coalesced
+			out.Versions = append(out.Versions, nativeResourceVersion{
+				EffectiveFrom: v.EffectiveFrom,
+				Identifying:   resourceAttributesAsStrings(v.Identifying),
+				Descriptive:   resourceAttributesAsStrings(v.Descriptive),
+			})
+		}
+		result.Series = append(result.Series, out)
+	}
+	return result, nil
+}
+
+// resourceAttributesAsStrings is attributes as #17740 keeps them, with values as strings; nil without any.
+func resourceAttributesAsStrings(attributes []mimirpb.ResourceAttribute) map[string]string {
+	if len(attributes) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(attributes))
+	for _, a := range attributes {
+		out[a.Key] = resourceAttributeString(a)
+	}
+	return out
 }

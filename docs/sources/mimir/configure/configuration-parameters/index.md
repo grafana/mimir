@@ -4812,6 +4812,34 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-resources-indexed-attributes
 [native_resources_indexed_attributes: <string> | default = ""]
 
+# (experimental) The window, in sample time, that the seriesstore engine's
+# limits on native resources count in.
+# CLI flag: -ingester.native-resources-change-window
+[native_resources_change_window: <duration> | default = 1h]
+
+# (experimental) How many times the seriesstore engine lets a series' resource
+# identity change per window. Past them, the series' resource is unknown until
+# the window ends. 0 means no limit.
+# CLI flag: -ingester.native-resources-max-identity-changes-per-series
+[native_resources_max_identity_changes_per_series: <int> | default = 10]
+
+# (experimental) How many versions of a resource's descriptive attributes the
+# seriesstore engine keeps per window. Past them, the window's versions coalesce
+# into one, which has the latest attributes. 0 means no limit.
+# CLI flag: -ingester.native-resources-max-versions-per-identity
+[native_resources_max_versions_per_identity: <int> | default = 10]
+
+# (experimental) How many new resource identities the seriesstore engine takes
+# per window. Past them, the resources of series with new identities are
+# unknown. 0 means no limit.
+# CLI flag: -ingester.native-resources-max-new-identities
+[native_resources_max_new_identities: <int> | default = 0]
+
+# (experimental) How many bytes of resource attributes the seriesstore engine
+# keeps. Past them, new resources are unknown. 0 means no limit.
+# CLI flag: -ingester.native-resources-max-dictionary-bytes
+[native_resources_max_dictionary_bytes: <int> | default = 0]
+
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.

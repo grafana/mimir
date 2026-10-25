@@ -103,6 +103,8 @@ type tenant struct {
 	oooCompactions []outOfOrderCompaction
 	// An engine's native metric metadata of this shard's series, once it has any.
 	nativeMetadata *shardMetadata
+	// An engine's native resources of this shard's series, once it has any.
+	nativeResources *shardResources
 	// An engine's series of this shard that appenders created, by how many of them haven't committed or rolled back:
 	// without samples until then, the head's garbage collection would take them, and their appender's samples with
 	// them, like Prometheus's memSeries.pendingCommit keeps them.

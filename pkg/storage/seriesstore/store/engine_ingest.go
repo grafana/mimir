@@ -73,6 +73,8 @@ type floatSource interface {
 	samples(index int) []mimirpb.Sample
 	// metricMetadataID is the id of the series' own metric metadata through memo, or 0 without any it keeps.
 	metricMetadataID(index int, memo *metadataMemo) uint32
+	// resource is the series' resource through memo, as observed first at t, or nil without one.
+	resource(index int, memo *resourceMemo, t int64) *resourceObservation
 }
 
 // adapterSource is the series of a decoded request.
@@ -95,6 +97,13 @@ func (s adapterSource) metricMetadataID(index int, memo *metadataMemo) uint32 {
 	return memo.byContent(s[index].SeriesMetadata)
 }
 
+func (s adapterSource) resource(index int, memo *resourceMemo, t int64) *resourceObservation {
+	if s[index].Resource == nil {
+		return nil
+	}
+	return memo.byResourceEntry(s[index].Resource, t)
+}
+
 func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs, maxTimestampMs, ingestedAtMs int64, otlp bool, sink FloatSink) (leftover []int, ingested int, err error) {
 	minTime, maxTime, minValid := e.headTimes()
 	if minTime == math.MaxInt64 {
@@ -107,10 +116,16 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 		appender     = &engineAppender{e: e, headMaxt: headMaxt, minValidTime: minValidTime, oooWindow: oooWindow}
 		// The ids of the batch's metadata values, while the series' own metadata is kept.
 		memo *metadataMemo
+		// The batch's resources, while the series' resources are kept.
+		resourceMemo *resourceMemo
 	)
 	if e.nativeMetadata.Load() {
 		memo = e.newMetadataMemo()
 		defer memo.release()
+	}
+	if e.nativeResources.Load() {
+		resourceMemo = e.newResourceMemo()
+		defer resourceMemo.release()
 	}
 
 	// Group the series by their store shard, which the labels' hash decides, before taking any lock.
@@ -299,6 +314,10 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 					if memo != nil && len(accepted) > 0 {
 						metadataID = source.metricMetadataID(prep.index, memo)
 					}
+					var resource *resourceObservation
+					if resourceMemo != nil && len(accepted) > 0 {
+						resource = source.resource(prep.index, resourceMemo, accepted[0].TimestampMs)
+					}
 					if len(accepted) == 1 && acceptedInOrder {
 						// The usual scrape: one in-order float, which the series' state still allows, so it is
 						// appended without checking it again.
@@ -311,6 +330,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 							if metadataID != 0 {
 								e.observeMetadataLocked(t, &entry.series, memo, metadataID, sample.TimestampMs)
 							}
+							e.observeResourceLocked(t, &entry.series, resource, sample.TimestampMs)
 						}
 						accepted = accepted[:0]
 					}
@@ -327,9 +347,12 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 						if ooo {
 							oooMin, oooMax = min(oooMin, sample.TimestampMs), max(oooMax, sample.TimestampMs)
 						}
-						// A quiet zero, which goes in as 0, carries no metadata.
-						if metadataID != 0 && (inOrder || ooo) && math.Float64bits(sample.Value) != value.QuietZeroNaN {
-							e.observeMetadataLocked(t, &entry.series, memo, metadataID, sample.TimestampMs)
+						// A quiet zero, which goes in as 0, carries no metadata or resource.
+						if (inOrder || ooo) && math.Float64bits(sample.Value) != value.QuietZeroNaN {
+							if metadataID != 0 {
+								e.observeMetadataLocked(t, &entry.series, memo, metadataID, sample.TimestampMs)
+							}
+							e.observeResourceLocked(t, &entry.series, resource, sample.TimestampMs)
 						}
 					}
 					if ingested > oldIngested {

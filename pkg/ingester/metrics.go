@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -97,6 +98,7 @@ type ingesterMetrics struct {
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
 	discardedMetadataPerMetricMetadataLimit *prometheus.CounterVec
 	discardedMetadataPerSeriesChangeLimit   *prometheus.CounterVec
+	discardedResourcesPerLimit              map[store.ResourceLimit]*prometheus.CounterVec
 
 	// Shutdown marker for ingester scale down
 	shutdownMarker prometheus.Gauge
@@ -442,6 +444,11 @@ func newIngesterMetrics(
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
 		discardedMetadataPerSeriesChangeLimit:   validation.DiscardedMetadataCounter(r, perSeriesMetadataChangeLimit),
+		discardedResourcesPerLimit: map[store.ResourceLimit]*prometheus.CounterVec{
+			store.ResourceIdentityChangeLimit: validation.DiscardedMetadataCounter(r, perSeriesResourceIdentityChangeLimit),
+			store.ResourceVersionLimit:        validation.DiscardedMetadataCounter(r, perIdentityResourceVersionLimit),
+			store.ResourceDictionaryLimit:     validation.DiscardedMetadataCounter(r, perUserResourceDictionaryLimit),
+		},
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
@@ -484,6 +491,9 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerSeriesChangeLimit.DeleteLabelValues(userID)
+	for _, counter := range m.discardedResourcesPerLimit {
+		counter.DeleteLabelValues(userID)
+	}
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
