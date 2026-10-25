@@ -5,6 +5,7 @@ package storegateway
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/axiomhq/hyperloglog"
@@ -430,6 +431,24 @@ func TestAllPostingsCount_SmallBlocks(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, map[string][]int64{"up": {1}}, countsByGroup(resp))
 			assert.Zero(t, resp.PostingsFetchedBytes)
+		})
+
+		t.Run(name+", a block whose offsets table costs more than its series is walked", func(t *testing.T) {
+			bkt, err := filesystem.NewBucket(t.TempDir())
+			require.NoError(t, err)
+			// One series with a long label value: walking the label's offsets table
+			// is dearer than reading the series entry, so the block is not counted
+			// from the table, and the postings list it skipped must be fetched.
+			long := strings.Repeat("v", 300)
+			specs := block.SeriesSpecs{{Labels: labels.FromStrings("__name__", "up", "pod", long), Chunks: []chunks.Meta{chunkAt(0, 10)}}}
+			store, ids := prepareSeriesCountsStoreFromSpecs(t, bkt, t.TempDir(), []block.SeriesSpecs{specs}, nil, opts...)
+
+			resp, err := store.SeriesCounts(t.Context(), &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ids[0].String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{long: {1}}, countsByGroup(resp))
+			assert.Zero(t, resp.BlocksFromPostings, "the block was walked")
+			assert.Positive(t, resp.PostingsFetchedBytes, "the all-postings list was fetched after all")
+			assert.Positive(t, resp.SeriesFetchedBytes)
 		})
 	}
 }
