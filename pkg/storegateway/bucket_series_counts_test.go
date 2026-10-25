@@ -31,10 +31,17 @@ func chunkAt(minT, maxT int64) chunks.Meta {
 	return must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: minT, Val: 1}, test.Sample{TS: maxT, Val: 1}}))
 }
 
+// countIndexHeaderVersions runs the count tests on both index-header
+// versions: version 2 reads the postings offsets table from the bucket.
+var countIndexHeaderVersions = map[string][]prepareStoreConfigOption{
+	"index-header v1": nil,
+	"index-header v2": {withIndexHeaderBucketReaderEnabled()},
+}
+
 // prepareSeriesCountsStore builds a store over two four-hour blocks whose
 // chunk times are set by hand, and returns it with the blocks' IDs.
-func prepareSeriesCountsStore(t *testing.T) (*BucketStore, ulid.ULID, ulid.ULID) {
-	return prepareSeriesCountsStoreWithStrategy(t, nil)
+func prepareSeriesCountsStore(t *testing.T, opts ...prepareStoreConfigOption) (*BucketStore, ulid.ULID, ulid.ULID) {
+	return prepareSeriesCountsStoreWithStrategy(t, nil, opts...)
 }
 
 // keepFirstGroupStrategy fetches only the first matcher's postings and
@@ -50,7 +57,7 @@ func (keepFirstGroupStrategy) selectPostings(groups []postingGroup) (selected, o
 	return groups[:1], groups[1:]
 }
 
-func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelectionStrategy) (*BucketStore, ulid.ULID, ulid.ULID) {
+func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelectionStrategy, opts ...prepareStoreConfigOption) (*BucketStore, ulid.ULID, ulid.ULID) {
 	bkt, err := filesystem.NewBucket(t.TempDir())
 	require.NoError(t, err)
 	dir := t.TempDir()
@@ -84,6 +91,9 @@ func prepareSeriesCountsStoreWithStrategy(t *testing.T, strategy postingsSelecti
 	if strategy != nil {
 		cfg.postingsStrategy = strategy
 	}
+	for _, o := range opts {
+		o(cfg)
+	}
 	s := prepareStoreWithTestBlocks(t, bkt, cfg)
 	return s.store, ids[0], ids[1]
 }
@@ -97,7 +107,15 @@ func countsByGroup(resp *storegatewaypb.SeriesCountsResponse) map[string][]int64
 }
 
 func TestBucketStore_SeriesCounts(t *testing.T) {
-	store, b1, b2 := prepareSeriesCountsStore(t)
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			testBucketStoreSeriesCounts(t, opts...)
+		})
+	}
+}
+
+func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption) {
+	store, b1, b2 := prepareSeriesCountsStore(t, opts...)
 	ctx := t.Context()
 	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
 
@@ -152,7 +170,7 @@ func TestBucketStore_SeriesCounts(t *testing.T) {
 		// A store whose strategy fetches only the first matcher's postings
 		// leaves the second matcher pending, so the filtering iterator has to
 		// apply it to the loaded series.
-		lazyStore, lb1, _ := prepareSeriesCountsStoreWithStrategy(t, keepFirstGroupStrategy{})
+		lazyStore, lb1, _ := prepareSeriesCountsStoreWithStrategy(t, keepFirstGroupStrategy{}, opts...)
 		upOnP1P2 := []*storepb.LabelMatcher{
 			{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"},
 			{Type: storepb.LabelMatcher_RE, Name: "pod", Value: "p[12]"},
