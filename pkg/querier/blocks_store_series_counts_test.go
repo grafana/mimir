@@ -104,6 +104,23 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none, which every version counts the same way")
 	})
 
+	t.Run("refuses a store-gateway that ignored step_ms", func(t *testing.T) {
+		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		const hour = 60 * 60 * 1000
+		// Three buckets of one hour. A store-gateway that doesn't know step_ms
+		// answers one count per group.
+		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, GroupBy: "__name__"}
+		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
+		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		require.ErrorContains(t, err, "store-gateway 2.2.2.2 returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
+
+		// Without a step one count per group is right.
+		req.Step = 0
+		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {6}}, res.Counts)
+	})
+
 	t.Run("unions hashes across block ranges", func(t *testing.T) {
 		days := bucketindex.Blocks{
 			{ID: b1, MinTime: 0, MaxTime: dayMs},
