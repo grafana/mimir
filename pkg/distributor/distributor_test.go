@@ -7110,7 +7110,10 @@ type mockIngester struct {
 	seriesCountsShardSizeUnchangedSinceMs int64
 	// seriesCountsIgnoreWindow has SeriesCounts answer as a version that
 	// doesn't know window_ms: it echoes no window.
-	seriesCountsIgnoreWindow      bool
+	seriesCountsIgnoreWindow bool
+	// seriesCountsIgnoreStep has SeriesCounts answer as a version that doesn't
+	// know step_ms: one count per group.
+	seriesCountsIgnoreStep        bool
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
@@ -7848,8 +7851,19 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 			counts[v]++
 		}
 	}
+	// The mock keeps no chunks, so a series is in every bucket.
+	buckets := 1
+	if req.StepMs > 0 && !req.Hashes && !i.seriesCountsIgnoreStep {
+		if n, err := cardinality.Buckets(req.StartTimestampMs, req.EndTimestampMs, req.StepMs, req.WindowMs); err == nil {
+			buckets = n
+		}
+	}
 	for v, n := range counts {
-		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Counts: []int64{n}})
+		perBucket := make([]int64, buckets)
+		for b := range perBucket {
+			perBucket[b] = n
+		}
+		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Counts: perBucket})
 	}
 	for v, h := range hashes {
 		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Hashes: h})

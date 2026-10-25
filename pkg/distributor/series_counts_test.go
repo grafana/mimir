@@ -232,14 +232,69 @@ func TestDistributor_SeriesCounts_Window(t *testing.T) {
 		assert.Equal(t, int64(200000), resp.WindowMs, "the window is passed on and echoed")
 	}
 
+	// Calls that returned at quorum may still have requests running.
 	for _, ing := range ingesters {
+		ing.Lock()
 		ing.seriesCountsIgnoreWindow = true
+		ing.Unlock()
 	}
 	_, err = ds[0].SeriesCounts(ctx, nil, req)
 	require.ErrorContains(t, err, "window_ms 0 instead of the 200000 asked for")
 
 	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000, StepMs: 100000})
 	require.NoError(t, err, "a source that doesn't know window_ms still answers step-wide buckets")
+}
+
+func TestDistributor_SeriesCounts_Step(t *testing.T) {
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+	ctx := user.InjectOrgID(context.Background(), "series-counts")
+	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+	require.NoError(t, err)
+	// Three buckets of 100s.
+	req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000, StepMs: 100000}
+
+	res, err := ds[0].SeriesCounts(ctx, nil, req)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Responses)
+	for _, resp := range res.Responses {
+		for _, g := range resp.Groups {
+			assert.Len(t, g.Counts, 3, "one count per bucket")
+		}
+	}
+
+	// One zone running a version that ignores step_ms is a failed replica: the
+	// other zones answer, and its one-bucket counts are not merged with theirs.
+	// Calls that returned at quorum may still have requests running.
+	ingesters[0].Lock()
+	ingesters[0].seriesCountsIgnoreStep = true
+	ingesters[0].Unlock()
+	res, err = ds[0].SeriesCounts(ctx, nil, req)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Responses)
+	for _, resp := range res.Responses {
+		for _, g := range resp.Groups {
+			assert.Len(t, g.Counts, 3, "the zone that ignored step_ms is left out")
+		}
+	}
+
+	// When no zone knows step_ms, the request fails and says why.
+	for _, ing := range ingesters {
+		ing.Lock()
+		ing.seriesCountsIgnoreStep = true
+		ing.Unlock()
+	}
+	_, err = ds[0].SeriesCounts(ctx, nil, req)
+	require.ErrorContains(t, err, `returned 1 buckets for "test_1" instead of the 3 asked for with step_ms`)
+
+	// Without a step one count per group is right, whatever the version.
+	res, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000})
+	require.NoError(t, err)
+	for _, resp := range res.Responses {
+		for _, g := range resp.Groups {
+			assert.Len(t, g.Counts, 1)
+		}
+	}
 }
 
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier

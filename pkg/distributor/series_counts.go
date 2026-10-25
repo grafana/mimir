@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 )
 
@@ -148,12 +149,36 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			if resp.WindowMs != req.WindowMs {
 				return seriesCountsAnswer{}, fmt.Errorf("ingester %s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every ingester is updated", desc.Addr, resp.WindowMs, req.WindowMs)
 			}
+			// The same for step_ms: a version that ignores it answers one
+			// count per group, which maxOverZones can't merge with the
+			// buckets of the other zones.
+			if want := seriesCountsBuckets(req); want > 0 {
+				for _, g := range resp.Groups {
+					if len(g.Counts) != want {
+						return seriesCountsAnswer{}, fmt.Errorf("ingester %s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every ingester is updated", desc.Addr, len(g.Counts), g.Value, want)
+					}
+				}
+			}
 			return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
 		}, func(seriesCountsAnswer) {})
 		perSet[idx] = answers
 		return err
 	})
 	return perSet, err
+}
+
+// seriesCountsBuckets is how many counts each group of an answer to req
+// carries: the buckets of its step and window, or 0 when it asks for hashes or
+// has no step.
+func seriesCountsBuckets(req *ingester_client.SeriesCountsRequest) int {
+	if req.StepMs <= 0 || req.Hashes {
+		return 0
+	}
+	n, err := cardinality.Buckets(req.StartTimestampMs, req.EndTimestampMs, req.StepMs, req.WindowMs)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // shardSizeUnchanged reports whether every ingester that counted something
