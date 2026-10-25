@@ -113,6 +113,29 @@ func testBucketStoreMetricNameCounts(t *testing.T, opts ...prepareStoreConfigOpt
 	assert.Equal(t, 1, walked)
 	s.store.cardinalityEstimateMaxIndexBytes = nil
 
+	// The first message reports the table walked, and the request's max_index_bytes bounds it like the tenant's limit.
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}}, srv))
+	require.NotEmpty(t, srv.sent)
+	table := srv.sent[0].PostingsOffsetsTableBytes
+	require.Positive(t, table)
+	for _, msg := range srv.sent[1:] {
+		assert.Zero(t, msg.PostingsOffsetsTableBytes, "set on the first message only")
+	}
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxIndexBytes: table}, srv))
+	walked = 0
+	srv = &mockMetricNameCountsServer{ctx: t.Context()}
+	err = s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxIndexBytes: table - 1}, srv)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Zero(t, walked)
+	s.store.cardinalityEstimateMaxIndexBytes = func() int64 { return table - 1 }
+	err = s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxIndexBytes: 1 << 30}, &mockMetricNameCountsServer{ctx: t.Context()})
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), "a larger request is cut to the tenant's limit")
+	s.store.cardinalityEstimateMaxIndexBytes = nil
+	err = s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{first}, MaxIndexBytes: -1}, &mockMetricNameCountsServer{ctx: t.Context()})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
 	// An unknown block is an empty stream that still says nothing was counted.
 	srv = &mockMetricNameCountsServer{ctx: t.Context()}
 	require.NoError(t, s.store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{unknown.String()}}, srv))

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
@@ -29,8 +30,9 @@ const metricNameCountsBatch = 10_000
 // series, which the caller has to ensure. With max_names set, more distinct names than that is refused with
 // ResourceExhausted before anything is sent: before any postings offset table is walked when the sampled
 // offsets the index-header holds in memory already show one block over it, and after the walk otherwise. The
-// tenant's max_index_bytes limit bounds the postings offsets table bytes walked, which index-header version 2
-// reads from object storage, priced from the same sampled offsets before any walk.
+// request's max_index_bytes, bounded by the tenant's limit, bounds the postings offsets table bytes walked, which
+// index-header version 2 reads from object storage, priced from the same sampled offsets before any walk. The first
+// message reports that price.
 func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequest, srv storegatewaypb.StoreGateway_MetricNameCountsServer) error {
 	ctx := srv.Context()
 	want := make(map[ulid.ULID]bool, len(req.BlockIds))
@@ -43,6 +45,9 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	}
 	if req.MaxNames < 0 {
 		return status.Error(codes.InvalidArgument, "max_names can't be negative")
+	}
+	if req.MaxIndexBytes < 0 {
+		return status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
 	}
 	done, err := s.startCount(ctx)
 	if err != nil {
@@ -83,20 +88,22 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 		}
 	}
 
+	// The request's max_index_bytes, bounded by the tenant's limit whoever sends it, bounds the postings offsets
+	// table entries walked, priced from the sampled offsets before any walk.
+	limit := req.MaxIndexBytes
 	if s.cardinalityEstimateMaxIndexBytes != nil {
-		if limit := s.cardinalityEstimateMaxIndexBytes(); limit > 0 {
-			var table int64
-			for _, o := range blocks {
-				n, err := o.b.indexHeaderReader.LabelValuesOffsetsTableBytes(ctx, labels.MetricName)
-				if err != nil {
-					return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
-				}
-				table += n
-			}
-			if table > limit {
-				return status.Errorf(codes.ResourceExhausted, "the request would read about %d bytes of the %s postings offsets table over %d blocks, more than max_index_bytes %d", table, labels.MetricName, len(blocks), limit)
-			}
+		limit = cardinality.BoundMaxIndexBytes(limit, s.cardinalityEstimateMaxIndexBytes())
+	}
+	var table int64
+	for _, o := range blocks {
+		n, err := o.b.indexHeaderReader.LabelValuesOffsetsTableBytes(ctx, labels.MetricName)
+		if err != nil {
+			return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 		}
+		table += n
+	}
+	if limit > 0 && table > limit {
+		return status.Errorf(codes.ResourceExhausted, "the request would read about %d bytes of the %s postings offsets table over %d blocks, more than max_index_bytes %d", table, labels.MetricName, len(blocks), limit)
 	}
 
 	counts := map[string]int64{}
@@ -139,6 +146,9 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	for start := 0; start == 0 || start < len(names); start += metricNameCountsBatch {
 		end := min(start+metricNameCountsBatch, len(names))
 		msg := &storegatewaypb.MetricNameCountsResponse{BlockIds: blockIDs, Counts: make([]*storegatewaypb.MetricNameCount, 0, end-start)}
+		if start == 0 {
+			msg.PostingsOffsetsTableBytes = table
+		}
 		for _, name := range names[start:end] {
 			msg.Counts = append(msg.Counts, &storegatewaypb.MetricNameCount{Name: name, Count: counts[name]})
 		}
