@@ -166,7 +166,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			return nil, status.Error(codes.Unavailable, "connection refused")
 		}}
-		up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, IndexBytes: 100})
+		up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, IndexBytes: 100, PostingsOffsetsTableBytes: 50})
 		q := seriesCountsQueryable(0, dayMs, blocks, nil)
 		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
 		var gotRetry *storegatewaypb.SeriesCountsRequest
@@ -183,7 +183,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, 3, res.StoreGateways)
 		require.NotNil(t, gotRetry)
 		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds)
-		assert.Equal(t, int64(900), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes")
+		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes, postings offsets table included")
 	})
 
 	t.Run("a block no replica counts makes the counts a lower bound", func(t *testing.T) {
