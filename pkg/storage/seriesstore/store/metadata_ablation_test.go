@@ -95,6 +95,9 @@ func TestAblationMergesLikeNineteen563(t *testing.T) {
 
 // The cache shares a value once it missed twice, as a copy of its own.
 func TestAblationCacheAdmitsAValueAtItsSecondMiss(t *testing.T) {
+	if !ablationValueCache {
+		t.Skip("the value cache is off in this build")
+	}
 	c := newMetricMetadataValues()
 	var strs ablationStrings
 	help := string([]byte("Requests served."))
@@ -110,7 +113,7 @@ func TestAblationCacheAdmitsAValueAtItsSecondMiss(t *testing.T) {
 }
 
 // A record's series share their value, a transaction ends every 150 series, the unchanged path keeps them as they
-// are, a change is a version, five versions at most, and a series that leaves memory gives them up.
+// are, a change is a version, as many as the cap keeps, and a series that leaves memory gives them up.
 func TestAblationKeepsSeriesMetadataLikeNineteen563(t *testing.T) {
 	var series []promlabels.Labels
 	for n := range 200 {
@@ -143,7 +146,8 @@ func TestAblationKeepsSeriesMetadataLikeNineteen563(t *testing.T) {
 	})
 	require.Len(t, values, 2)
 
-	// Each change is a version, the oldest past five evicted.
+	// Each change is a version, the oldest past the cap evicted: the first value and six changes are seven.
+	const versions = 7
 	one := series[:1]
 	for step := range 6 {
 		metadataRoutes["complete record"](t, e, int64(4_000+step*1_000), mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: fmt.Sprintf("v%d", step)}, one...)
@@ -151,11 +155,11 @@ func TestAblationKeepsSeriesMetadataLikeNineteen563(t *testing.T) {
 	found, _, err := e.NativeMetricMetadata(t.Context(), [][]*promlabels.Matcher{{promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "pod-000")}}, 0)
 	require.NoError(t, err)
 	require.Len(t, found, 1)
-	require.Len(t, found[0].Versions, ablationMaxVersions)
-	require.True(t, found[0].Truncated)
+	require.Len(t, found[0].Versions, min(versions, ablationMaxVersions))
+	require.Equal(t, versions > ablationMaxVersions, found[0].Truncated)
 	require.False(t, found[0].Coalesced)
-	require.Equal(t, "v5", found[0].Versions[ablationMaxVersions-1].Metadata.Help)
-	require.EqualValues(t, 2, e.metricMetadataStats.evictions.Load())
+	require.Equal(t, "v5", found[0].Versions[len(found[0].Versions)-1].Metadata.Help)
+	require.EqualValues(t, max(0, versions-ablationMaxVersions), e.metricMetadataStats.evictions.Load())
 
 	// Series that leave memory give their metadata up.
 	var refs []storage.SeriesRef
