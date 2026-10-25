@@ -147,6 +147,13 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		}
 	})
 
+	t.Run("a cancelled request stops the walk", func(t *testing.T) {
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := i.seriesCountsWithStatus(cancelled, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
 	t.Run("an invalid request is InvalidArgument", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, StepMs: 7 * minute})
 		st, ok := status.FromError(err)
