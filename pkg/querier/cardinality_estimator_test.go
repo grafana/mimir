@@ -286,6 +286,16 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 
+	t.Run("an ingester that ignored step_ms is refused", func(t *testing.T) {
+		// Two buckets of one hour. An ingester that doesn't know step_ms
+		// answers one count per group.
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
+		}}}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__"})
+		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of the 2 asked for with step_ms")
+	})
+
 	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {
 		res, err := newEstimator(day, nil).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)

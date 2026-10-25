@@ -37,6 +37,11 @@ type estimateMerger struct {
 
 	hashBytes, sketchBytes int64
 
+	// buckets, when positive, is how many counts every group of a request
+	// with a step must carry. A source that doesn't know step_ms, such as an
+	// older version during a rolling update, answers one count per group.
+	buckets int
+
 	// tracker, when set, bounds the memory the groups and hashes hold.
 	tracker *limiter.MemoryConsumptionTracker
 }
@@ -129,6 +134,9 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 			return refusedEstimate("deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", m.maxHeld)
 		}
 		return nil
+	}
+	if m.buckets > 0 && len(counts) != m.buckets {
+		return fmt.Errorf("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", source, len(counts), value, m.buckets, sourceKind(source))
 	}
 	sum := m.counts[value]
 	if sum == nil {
