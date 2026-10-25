@@ -214,3 +214,27 @@ func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
 	finder.AssertNotCalled(t, "GetBlocks", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	assert.Nil(t, ing.gotSeriesCounts, "no ingester may be asked for a disabled tenant")
 }
+
+func TestSetEstimateCacheControl(t *testing.T) {
+	for name, tc := range map[string]struct {
+		out     estimateResponse
+		noStore bool
+	}{
+		"a complete answer may be cached": {out: estimateResponse{}, noStore: false},
+		"a lower bound":                   {out: estimateResponse{LowerBound: true}, noStore: true},
+		"a coverage gap":                  {out: estimateResponse{CoverageGap: true}, noStore: true},
+		"the whole head counted as one":   {out: estimateResponse{HeadWhole: true}, noStore: true},
+		"a table cut by limit":            {out: estimateResponse{HasMore: true}, noStore: false},
+		"estimated groups":                {out: estimateResponse{EstimatedGroups: 2}, noStore: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			setEstimateCacheControl(rec, &tc.out)
+			if tc.noStore {
+				assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+			} else {
+				assert.Empty(t, rec.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
