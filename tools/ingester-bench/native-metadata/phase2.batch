@@ -25,7 +25,7 @@
 #
 # threshold.json is 2.0's threshold profile: every series with metadata, a metric's shared by its series, no churn of
 # it, and help of a stated length (median 50, p90 110, p99 250 characters), which no sample measured. Its records are
-# made of what 6000 records of three cortex-dev-01 partitions were (2026-10-23): 28.7 series each, 1.89 series per
+# made of what 6000 records of three of a dev cell's partitions were (2026-10-23): 28.7 series each, 1.89 series per
 # family, 2.99 metric family entries. Its series per request, series per target and partitions per tenant were tuned to
 # reproduce them, at the bench's 1.65M series: 28.2, 1.94 and 3.48, within the agreed 10%, 10% and 25%.
 
