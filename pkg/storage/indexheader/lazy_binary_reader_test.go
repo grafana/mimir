@@ -590,6 +590,10 @@ func (m mockReader) LabelValuesCountLowerBound(context.Context, string) (int, er
 	panic("not implemented")
 }
 
+func (m mockReader) LabelValuesOffsetsTableBytes(context.Context, string) (int64, error) {
+	panic("not implemented")
+}
+
 func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t *testing.T) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 

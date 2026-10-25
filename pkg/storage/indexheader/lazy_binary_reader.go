@@ -316,6 +316,17 @@ func (r *LazyBinaryReader) LabelValuesCountLowerBound(ctx context.Context, name 
 	return loaded.reader.LabelValuesCountLowerBound(ctx, name)
 }
 
+// LabelValuesOffsetsTableBytes implements Reader.
+func (r *LazyBinaryReader) LabelValuesOffsetsTableBytes(ctx context.Context, name string) (int64, error) {
+	loaded := r.getOrLoadReader(ctx)
+	if loaded.err != nil {
+		return 0, loaded.err
+	}
+	defer loaded.inUse.Done()
+
+	return loaded.reader.LabelValuesOffsetsTableBytes(ctx, name)
+}
+
 // LabelNames implements Reader.
 func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	loaded := r.getOrLoadReader(ctx)
