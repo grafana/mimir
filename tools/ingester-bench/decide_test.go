@@ -100,3 +100,14 @@ func TestDecideReportsTheLessonsForSeriesstore(t *testing.T) {
 	require.Equal(t, "not evaluated", without.SeriesstoreLesson)
 	require.True(t, math.IsNaN(without.ChoicesOnSeriesstore.Mean))
 }
+
+func TestParseLabelledPairs(t *testing.T) {
+	pairs, err := parseLabelledPairs("noskip=a-seriesstore:a-seriesstore-metadata,nocap=b-seriesstore:b-seriesstore-metadata")
+	require.NoError(t, err)
+	require.Equal(t, []labelledPair{
+		{label: "noskip", comparison: comparison{Baseline: "a-seriesstore", Target: "a-seriesstore-metadata"}},
+		{label: "nocap", comparison: comparison{Baseline: "b-seriesstore", Target: "b-seriesstore-metadata"}},
+	}, pairs)
+	_, err = parseLabelledPairs("noskip")
+	require.Error(t, err)
+}

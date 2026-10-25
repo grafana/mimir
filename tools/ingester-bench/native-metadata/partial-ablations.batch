@@ -1,0 +1,35 @@
+# The native metadata prototype's partial ablations, for run-batch.sh, with the threshold profile: each a build of the
+# ablation with one of #19563's choices turned off, off against on within it. Run it only if Phase 2's lessons for
+# seriesstore are mixed, one metric each way, to find which of the choices is worth porting to seriesstore, into the
+# same RESULTS as phase2.batch, and report it with
+#
+#   go run ./tools/ingester-bench -decide=$RESULTS -full-metadata \
+#     -arms=tsdb=phase2-prometheus:phase2-prometheus-metadata,seriesstore=phase2-seriesstore:phase2-seriesstore-metadata,ablation=ablation-seriesstore:ablation-seriesstore-metadata,parity=phase2-prometheus:phase2-seriesstore \
+#     -extras=noskip=noskip-seriesstore:noskip-seriesstore-metadata,notable=notable-seriesstore:notable-seriesstore-metadata,nocache=nocache-seriesstore:nocache-seriesstore-metadata,nocap=nocap-seriesstore:nocap-seriesstore-metadata
+#
+# which gives each partial ablation's extras, and their difference from the full ablation's: what the choice turned
+# off costs, or saves, seriesstore. Run it from a checkout of this file's commit; the full ablation is phase2.batch's,
+# of 46d1da3b79, whose code these builds differ from only by the switches' files. Each pair runs twice in each order,
+# at the hour of phase2.batch's pairs of one engine.
+
+build noskip 393290e390 tags=native_metadata_ablation,ablation_without_unchanged_skip
+build notable 393290e390 tags=native_metadata_ablation,ablation_without_transaction_table
+build nocache 393290e390 tags=native_metadata_ablation,ablation_without_value_cache
+build nocap 393290e390 tags=native_metadata_ablation,ablation_without_version_cap
+
+run noskip-1 noskip seriesstore noskip seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run notable-1 notable seriesstore notable seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocache-1 nocache seriesstore nocache seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocap-1 nocap seriesstore nocap seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run noskip-2 noskip seriesstore noskip seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run notable-2 notable seriesstore notable seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocache-2 nocache seriesstore nocache seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocap-2 nocap seriesstore nocap seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run noskip-3 noskip seriesstore noskip seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run notable-3 notable seriesstore notable seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocache-3 nocache seriesstore nocache seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocap-3 nocap seriesstore nocap seriesstore metadata=b profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run noskip-4 noskip seriesstore noskip seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run notable-4 notable seriesstore notable seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocache-4 nocache seriesstore nocache seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0
+run nocap-4 nocap seriesstore nocap seriesstore metadata=a profile=tools/ingester-bench/native-metadata/threshold.json phase=0 -query-scale=0

@@ -361,6 +361,26 @@ func parsePhase2Pairs(s string) (phase2Pairs, error) {
 	return p, nil
 }
 
+// labelledPair is an on/off pair of ingester names with a label of its own.
+type labelledPair struct {
+	label string
+	comparison
+}
+
+// parseLabelledPairs parses label=off:on pairs, comma separated.
+func parseLabelledPairs(s string) ([]labelledPair, error) {
+	var out []labelledPair
+	for _, item := range strings.Split(s, ",") {
+		label, pair, ok := strings.Cut(item, "=")
+		c, err := parseComparisons(pair)
+		if !ok || err != nil || len(c) != 1 {
+			return nil, fmt.Errorf("%q is not label=off:on", item)
+		}
+		out = append(out, labelledPair{label: label, comparison: c[0]})
+	}
+	return out, nil
+}
+
 func writeDecision(results string, d phase2Decision) error {
 	data, err := json.MarshalIndent(d, "", " ")
 	if err != nil {

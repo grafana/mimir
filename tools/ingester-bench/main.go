@@ -114,6 +114,7 @@ func main() {
 	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
 	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore ingester names; ablation is optional.")
 	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
+	moreExtras := flag.String("extras", "", "With -decide, more on/off pairs to report the extras of, each against the ablation's, as label=off:on ingester names, comma separated: the partial ablations.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
 	}
@@ -138,6 +139,17 @@ func main() {
 			log.Fatal(err)
 		}
 		d.print(os.Stdout)
+		if *moreExtras != "" {
+			more, err := parseLabelledPairs(*moreExtras)
+			if err != nil {
+				log.Fatal(err)
+			}
+			for _, p := range more {
+				e := pairExtras(d.Runs, p.comparison)
+				fmt.Printf("%s: CPU %s, bytes %s; minus the ablation's: CPU %s, bytes %s\n", p.label, e.CPU.absolute(), e.Bytes.absolute(),
+					estimateDifference(e.CPU, d.CPU.Ablation).absolute(), estimateDifference(e.Bytes, d.Bytes.Ablation).absolute())
+			}
+		}
 		if err := writeDecision(*decidePath, d); err != nil {
 			log.Fatal(err)
 		}
